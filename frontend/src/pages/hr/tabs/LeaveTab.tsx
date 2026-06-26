@@ -33,7 +33,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({ leaves, onApprove, onReject }) => {
 
   return (
     <Panel>
-      <div className="flex justify-between items-center flex-wrap gap-3 mb-2">
+      <div className="flex">
         <div>
           <div
             style={{
@@ -57,7 +57,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({ leaves, onApprove, onReject }) => {
         </div>
         <button
           onClick={downloadLeaveReport}
-          className="bg-green-600 text-white px-2 py-1 rounded whitespace-nowrap"
+          className="bg-green-600 text-white px-2 py-1 rounded ml-[800px] mb-[10px]"
         >
           Download Leave Report
         </button>
@@ -66,7 +66,6 @@ const LeaveTab: React.FC<LeaveTabProps> = ({ leaves, onApprove, onReject }) => {
       <div
         style={{
           overflowX: "auto",
-          WebkitOverflowScrolling: "touch",
           border: `1px solid ${theme.border}`,
           borderRadius: 12,
           background: "#fff",

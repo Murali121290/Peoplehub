@@ -231,8 +231,6 @@ console.log(
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    flexWrap: "wrap",
-    rowGap: 12,
     marginBottom: 20
   }}
 >
@@ -274,56 +272,45 @@ console.log(
       {dateRange}
     </div>
   </div>
+  <button
+  onClick={downloadAttendance}
+  className="bg-green-600 text-white px-4 py-2 rounded ml-[600px]"
+>
+  Download Excel
+</button>
 
+  {/* Tabs */}
   <div
     style={{
       display: "flex",
-      alignItems: "center",
-      flexWrap: "wrap",
       gap: 8
     }}
   >
-    <button
-      onClick={downloadAttendance}
-      className="bg-green-600 text-white px-4 py-2 rounded whitespace-nowrap"
-    >
-      Download Excel
-    </button>
-
-    {/* Tabs */}
-    <div
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 8
-      }}
-    >
-      {["today", "weekly", "monthly"].map((tab) => (
-        <button
-          key={tab}
-          onClick={() => setAttendanceView(tab)}
-          style={{
-            padding: "6px 14px",
-            borderRadius: 6,
-            border:
-              attendanceView === tab
-                ? "2px solid #2563eb"
-                : "1px solid #e5e7eb",
-            background:
-              attendanceView === tab
-                ? "#eff6ff"
-                : "#fff",
-            cursor: "pointer",
-            fontWeight: 600,
-            fontSize: 12,
-            color: attendanceView === tab ? "#2563eb" : "#6b7280",
-            transition: "all 0.2s"
-          }}
-        >
-          {tab.charAt(0).toUpperCase() + tab.slice(1)}
-        </button>
-      ))}
-    </div>
+    {["today", "weekly", "monthly"].map((tab) => (
+      <button
+        key={tab}
+        onClick={() => setAttendanceView(tab)}
+        style={{
+          padding: "6px 14px",
+          borderRadius: 6,
+          border:
+            attendanceView === tab
+              ? "2px solid #2563eb"
+              : "1px solid #e5e7eb",
+          background:
+            attendanceView === tab
+              ? "#eff6ff"
+              : "#fff",
+          cursor: "pointer",
+          fontWeight: 600,
+          fontSize: 12,
+          color: attendanceView === tab ? "#2563eb" : "#6b7280",
+          transition: "all 0.2s"
+        }}
+      >
+        {tab.charAt(0).toUpperCase() + tab.slice(1)}
+      </button>
+    ))}
   </div>
 </div>
 
@@ -331,7 +318,7 @@ console.log(
 <div
   style={{
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+    gridTemplateColumns: "repeat(4, 1fr)",
     gap: 12,
     marginBottom: 16
   }}
@@ -562,7 +549,6 @@ console.log(
         <div
           style={{
             overflowX: "auto",
-            WebkitOverflowScrolling: "touch",
           }}
         >
           <table

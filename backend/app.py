@@ -8,7 +8,7 @@ from flask import send_from_directory
 from flask_socketio import (
     SocketIO
 )
-from extensions import socketio
+
 from socket_events import (
     register_socket_events
 )
@@ -42,13 +42,11 @@ from routes.communications import communication_bp
 from models.shift_request import ShiftRequest
 from routes.shift_request import shift_bp
 from routes.employee_details import employee_details_bp
-from routes.notifications import notification_bp
-# from routes.telecom import telecom_bp
-from routes.meeting_rooms import meeting_rooms_bp
-
-from services.meeting_room_scheduler import (
-    complete_old_bookings
+from routes.notifications import (
+    notification_bp
 )
+from routes.meeting_rooms import meeting_rooms_bp
+from routes.telecom import telecom_bp
 
 def create_app():
     app = Flask(__name__)
@@ -74,12 +72,11 @@ def create_app():
     url_prefix="/api/employees"
 )
     
-    # app.register_blueprint(
-    #     telecom_bp,
-    #     url_perfix="/api/telecom"
-    # )
-    
-    
+
+    app.register_blueprint(
+    meeting_rooms_bp,
+    url_prefix="/api/meeting-rooms"
+)
     app.register_blueprint(
     attendance_bp,
     url_prefix="/api/attendance"
@@ -93,6 +90,11 @@ def create_app():
     url_prefix="/api/notifications"
 )
     app.register_blueprint(
+    telecom_bp,
+    url_prefix="/api/telecom"
+)
+    
+    app.register_blueprint(
     shift_bp,
     url_prefix="/api/shifts"
 )
@@ -103,10 +105,6 @@ def create_app():
     app.register_blueprint(
     payroll_bp,
     url_prefix="/api/payroll"
-)
-    app.register_blueprint(
-    meeting_rooms_bp,
-    url_prefix="/api/meeting-rooms"
 )
 
 
@@ -130,12 +128,7 @@ def create_app():
     minutes=1
 )
 
-    scheduler.add_job(
-    complete_old_bookings,
-    "cron",
-    hour=0,
-    minute=0
-)   
+    scheduler.start()
 
     # Register blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')

@@ -29,7 +29,6 @@ def apply_shift():
     try:
 
         data = request.json
-        print("SHIFT DATA:", data)
 
 
         shift_request = ShiftRequest(
@@ -38,21 +37,14 @@ def apply_shift():
     current_shift=data["current_shift"],
     requested_shift=data["requested_shift"],
 
-    request_type=data["request_type"],
-
-    from_date=datetime.strptime(
-       data["from_date"],
-       "%Y-%m-%d"
-    ).date(),
-
-    to_date=datetime.strptime(
-        data["to_date"],
+    shift_date=datetime.strptime(
+        data["shift_date"],
         "%Y-%m-%d"
     ).date(),
 
     reason=data["reason"],
     reporting_manager=data["reporting_manager"]
- )
+)
 
         db.session.add(
             shift_request
@@ -134,28 +126,31 @@ def get_shift_approvals():
 
     return jsonify([
         {
-    "id": shift.id,
-    "employee_id": shift.employee_id,
-    "employee_name": shift.employee_name,
-    "current_shift": shift.current_shift,
-    "requested_shift": shift.requested_shift,
-    "request_type": shift.request_type,
-    "from_date": shift.from_date.isoformat() if shift.from_date else None,
-    "to_date": shift.to_date.isoformat() if shift.to_date else None,
-    "reason": shift.reason,
-    "status": shift.status
-}
+            "id": shift.id,
+            "employee_id": shift.employee_id,
+            "employee_name": shift.employee_name,
+            "current_shift": shift.current_shift,
+            "requested_shift": shift.requested_shift,
+            "reason": shift.reason,
+            "status": shift.status
+        }
         for shift in shifts
     ])
 # ==========================================
 # APPROVE SHIFT REQUEST
 # ==========================================
-@shift_bp.route("/approve/<int:id>", methods=["PUT"])
+@shift_bp.route(
+    "/approve/<int:id>",
+    methods=["PUT"]
+)
 def approve_shift(id):
+
     try:
+
         shift = ShiftRequest.query.get(id)
 
         if not shift:
+
             return jsonify({
                 "success": False,
                 "message": "Shift Request Not Found"
@@ -163,22 +158,31 @@ def approve_shift(id):
 
         attendance = Attendance.query.filter_by(
             user_id=shift.employee_id,
-            attendance_date=shift.from_date
+            attendance_date=shift.shift_date
         ).first()
 
         if attendance:
-            attendance.shift_timing = shift.requested_shift
+
+            attendance.shift_timing = (
+                shift.requested_shift
+            )
+
         else:
+
             attendance = Attendance(
                 user_id=shift.employee_id,
-                attendance_date=shift.from_date,
+                attendance_date=shift.shift_date,
                 shift_timing=shift.requested_shift,
                 status="Absent"
             )
+
             db.session.add(attendance)
 
         shift.status = "Approved"
-        shift.approved_at = datetime.utcnow()
+
+        shift.approved_at = (
+            datetime.utcnow()
+        )
 
         db.session.commit()
 
@@ -188,6 +192,7 @@ def approve_shift(id):
         })
 
     except Exception as e:
+
         db.session.rollback()
 
         return jsonify({
@@ -305,7 +310,5 @@ def delete_request(id):
             "success": False,
             "message": str(e)
         }), 500
-    
-
     
 

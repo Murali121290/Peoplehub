@@ -151,17 +151,6 @@ class Employee(db.Model):
         default=True
     )
 
-    paid_payroll_start = db.Column(
-        db.Date,
-        nullable=True
-    )    
-
-    paid_payroll_end = db.Column(
-        db.Date,
-        nullable=True
-    )
-    
-
     team_id = db.Column(
     db.Integer,
     db.ForeignKey("teams.id"),
@@ -332,4 +321,3 @@ bonus = db.Column(
     db.Float,
     nullable=True
 )
-

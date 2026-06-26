@@ -1,14 +1,14 @@
 from flask import Blueprint, request, jsonify
 from models.database import db
 from models.leave import LeaveRequest
-from datetime import datetime, date
+from datetime import datetime
 from models.employee import Employee
 from openpyxl import Workbook
 from flask import send_file
 from io import BytesIO
 
 from services.leave_balance_service import (
-    update_all_employee_leave_balances  
+    update_all_employee_leave_balances
 )
 
 leave_bp = Blueprint(
@@ -368,62 +368,6 @@ def export_leave_report():
 
         ws.title = "Leave Working Update"
 
-        today = date.today()
-
-        if today.day < 25:
-
-            if today.month == 1:
-
-                start_date = date(
-                    today.year - 1,
-                    11,
-                    25
-            )
-
-                end_date = date(
-                    today.year - 1,
-                    12,
-                    24
-            )        
-
-            else:
-
-                start_date = date(
-                    today.year,
-                    today.month - 2,
-                    25
-                )
-
-                end_date = date(
-                    today.year,
-                    today.month - 1,
-                    24
-                )
-
-        else:
-
-            if today.month == 1:
-
-                start_date = date(
-                    today.year - 1,
-                    12,
-                    25
-            )        
-
-            else:
-
-                start_date = date(
-                    today.year,
-                    today.month - 1,
-                    25
-                )
-
-                end_date = date(
-                    today.year,
-                    today.month,
-                    24
-                )
-
         # =========================
         # STYLES
         # =========================
@@ -477,12 +421,9 @@ def export_leave_report():
 
         ws["A1"] = "LEAVE WORKING UPDATE"
 
-        ws["A1"].fill = blue_fill
-
         ws["A1"].font = Font(
             bold=True,
-            size=16,
-            color="FFFFFF"
+            size=16
         )
 
         ws["A1"].alignment = Alignment(
@@ -490,64 +431,26 @@ def export_leave_report():
         )
 
         # =========================
-        # MONTH HEADER
-        # =========================
-
-        ws.merge_cells("A2:T2")
-
-        ws["A2"] = (
-            f"Leave Summary {today.strftime('%B %Y')}"
-        )
-
-        ws["A2"].fill = blue_fill
-
-        ws["A2"].font = Font(
-            bold=True,
-            color="FFFFFF"
-        )
-
-        ws["A2"].alignment = Alignment(
-            horizontal="center"
-        )
-
-        # =========================
-        # LEAVE CYCLE
-        # =========================
-
-        ws.merge_cells("A3:T3")
-
-        ws["A3"] = (
-            f"Leave Cycle : "
-            f"{start_date.strftime('%d-%b-%Y')} "
-            f"to "
-            f"{end_date.strftime('%d-%b-%Y')}"
-        )
-
-        ws["A3"].alignment = Alignment(
-            horizontal="center"
-        )
-
-        # =========================
         # GROUP HEADERS
         # =========================
 
-        ws.merge_cells("F4:H4")
-        ws["F4"] = "Opening Balance"
+        ws.merge_cells("F3:H3")
+        ws["F3"] = "Opening Balance"
 
-        ws.merge_cells("I4:K4")
-        ws["I4"] = "Monthly Credit"
+        ws.merge_cells("I3:K3")
+        ws["I3"] = "Monthly Credit"
 
-        ws.merge_cells("L4:N4")
-        ws["L4"] = "Leaves Deducted"
+        ws.merge_cells("L3:N3")
+        ws["L3"] = "Leaves Deducted"
 
-        ws.merge_cells("P4:R4")
-        ws["P4"] = "Closing Balance"
+        ws.merge_cells("P3:R3")
+        ws["P3"] = "Closing Balance"
 
         for cell in [
-            "F4",
-            "I4",
-            "L4",
-            "P4"
+            "F3",
+            "I3",
+            "L3",
+            "P3"
         ]:
 
             ws[cell].fill = black_fill
@@ -597,7 +500,7 @@ def export_leave_report():
         ):
 
             cell = ws.cell(
-                row=5,
+                row=4,
                 column=col_num
             )
 
@@ -631,7 +534,7 @@ def export_leave_report():
             Employee.first_name
         ).all()
 
-        row = 6
+        row = 5
 
         for employee in employees:
 
@@ -641,9 +544,7 @@ def export_leave_report():
 
             approved_leaves = LeaveRequest.query.filter(
                 LeaveRequest.employee_id == str(employee.id),
-                LeaveRequest.status == "Approved",
-                LeaveRequest.from_date >= start_date,
-                LeaveRequest.from_date <= end_date
+                LeaveRequest.status == "Approved"
             ).all()
 
             for leave in approved_leaves:
@@ -723,34 +624,10 @@ def export_leave_report():
 
             for col in range(1, 21):
 
-                cell = ws.cell(
+                ws.cell(
                     row=row,
                     column=col
-                )
-
-                cell.border = thin_border
-
-                # Employee ID, DOJ, and all numeric columns -> center
-                if col in [
-                    1,
-                    5,
-                    6, 7, 8, 9, 10, 11,
-                    12, 13, 14, 15,
-                    16, 17, 18, 19
-                ]:
-
-                    cell.alignment = Alignment(
-                        horizontal="center",
-                        vertical="center"
-                    )
-
-                # Employee Name, Department, Designation, Remarks -> left
-                else:
-
-                    cell.alignment = Alignment(
-                        horizontal="left",
-                        vertical="center"
-                    )
+                ).border = thin_border
 
             row += 1
 
@@ -773,14 +650,11 @@ def export_leave_report():
                 )
             ].width = length + 5
 
-        # Keep Employee ID column compact regardless of auto width
-        ws.column_dimensions["A"].width = 12
-
         # =========================
         # FILTER
         # =========================
 
-        ws.auto_filter.ref = f"A5:T{row}"
+        ws.auto_filter.ref = f"A4:T{row}"
 
         # =========================
         # DOWNLOAD

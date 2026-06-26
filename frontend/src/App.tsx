@@ -33,9 +33,8 @@ import EmployeeDashboardPage from './pages/employee/EmployeeDashboardPage';
 import Editorpage from './pages/EditorPage';
 import CompleteProfile from './pages/Compeleteprofilepage';
 import AnnouncementsPage from './pages/AnnouncementsPage';
-import TelecomDirectory from "./pages/Telecomdirectory ";
-import Mettingroom from "./pages/mettingroom/MeetingRooms"
-
+import TelecomDirectoryPage from "./pages/Telecomdirectory ";
+import MeetingRoomsPage from "./pages/mettingroom/MeetingRooms";
 
 
 
@@ -141,13 +140,6 @@ return ( <BrowserRouter>
       }
     />
 
-    <Route
-  path="/meeting-rooms"
-  element={
-    <ProtectedRoute><Mettingroom /></ProtectedRoute>
-  }
-/>
-
     {/* Clients */}
 
     <Route
@@ -214,6 +206,28 @@ return ( <BrowserRouter>
         />
       }
     />
+
+    {/* Telecom Directory */}
+
+<Route
+  path="/telecom-directory"
+  element={
+    <ProtectedRoute>
+      <TelecomDirectoryPage />
+    </ProtectedRoute>
+  }
+/>
+
+{/* Meeting Rooms */}
+
+<Route
+  path="/meeting-rooms"
+  element={
+    <ProtectedRoute>
+      <MeetingRoomsPage />
+    </ProtectedRoute>
+  }
+/>
 
     
 
@@ -308,9 +322,6 @@ return ( <BrowserRouter>
       <CompleteProfile />
   }
 />
-
-<Route path="/telecom-directory" element={<TelecomDirectory />} />
-
 
 
 

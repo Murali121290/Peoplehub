@@ -18,10 +18,15 @@ employees_bp = Blueprint("employees", __name__)
 # ======================================
 # HR CREATE EMPLOYEE
 # ======================================
+
+print("Creating employee...")
 @employees_bp.route("/", methods=["POST"])
 def create_employee():
     try:
         data = request.form
+        print("========== CREATE EMPLOYEE ==========")
+        print("FORM DATA:", request.form)
+        print("FILES:", request.files)
 
         image = request.files.get(
         "profile_image"
@@ -83,6 +88,8 @@ def create_employee():
 
         db.session.add(employee)
         db.session.commit()
+        print("Employee saved successfully.")
+        print("Database ID:", employee.id)
 
         return jsonify({
             "success": True,

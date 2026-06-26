@@ -228,13 +228,23 @@ export default function HRAdminDashboard() {
       if (profileImage) {
         formData.append("profile_image", profileImage);
       }
+const response = await fetch(`${BASE_URL}/employees/`, {
+  method: "POST",
+  body: formData,
+});
 
-      const response = await fetch(`${BASE_URL}/employees/`, {
-        method: "POST",
-        body: formData,
-      });
+console.log("STATUS:", response.status);
+console.log("OK:", response.ok);
 
-      const data = await response.json();
+const text = await response.text();
+console.log("RAW RESPONSE:", text);
+
+let data = {};
+try {
+  data = JSON.parse(text);
+} catch (e) {
+  console.log("Not JSON");
+}
 
       console.log("SERVER RESPONSE:", data);
 

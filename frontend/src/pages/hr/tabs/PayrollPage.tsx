@@ -15,8 +15,6 @@ interface Employee {
   monthly_salary: number;
   payment_status: "Paid" | "Pending";
   paid_date?: string;
-
-  last_paid_month?: string; 
 }
 
 interface PayrollResponse {
@@ -29,17 +27,11 @@ const PayrollPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const today = new Date();
-const isPayDay = today.getDate() === 1;
-
-
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
 
   const [showModal, setShowModal] = useState(false);
 
   const fetchEmployeeDetails = async (employeeId: number) => {
-
-
     try {
       const res = await axios.get(
         `${BASE_URL}/employees/employee-details/${employeeId}`,
@@ -100,12 +92,10 @@ const isPayDay = today.getDate() === 1;
           <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-xs font-medium">
             Paid
           </span>
-          <div className="text-xs text-gray-400 mt-0.5">{emp.last_paid_month}</div>
+          <div className="text-xs text-gray-400 mt-0.5">{emp.paid_date}</div>
         </div>
       );
     }
-
-   
 
     return (
       <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-xs font-medium">
@@ -117,48 +107,41 @@ const isPayDay = today.getDate() === 1;
   const renderActions = (emp: Employee): React.JSX.Element => {
     return (
       <>
-        {/* PAYSLIP BUTTON */}
+        {emp.payment_status === "Paid" ? (
+          <button
+            onClick={() => downloadPayslip(emp.id)}
+            className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200"
+            aria-label={`Download payslip for ${emp.employee_name}`}
+          >
+            Payslip
+          </button>
+        ) : (
+          <button
+            disabled
+            className="bg-gray-400 text-white px-3 py-1.5 rounded-md text-xs cursor-not-allowed"
+            aria-label="Payslip available after payment"
+          >
+            Payslip
+          </button>
+        )}
 
-{emp.payment_status === "Paid" ? (
-  <button
-    onClick={() => downloadPayslip(emp.id)}
-    className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200"
-    aria-label={`Download payslip for ${emp.employee_name}`}
-  >
-    Payslip
-  </button>
-) : (
-  <button
-    disabled
-    className="bg-gray-400 text-white px-3 py-1.5 rounded-md text-xs cursor-not-allowed"
-    aria-label="Payslip available after payment"
-  >
-    Payslip
-  </button>
-)}
-
-{/* PAY BUTTON */}
-
-{emp.payment_status === "Paid" ? (
-
-  <button
-    disabled
-    className="bg-gray-400 text-white px-3 py-1.5 rounded-md text-xs cursor-not-allowed"
-  >
-    Paid
-  </button>
-
-):(
-
-  <button
-    onClick={() => markAsPaid(emp.id)}
-    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200"
-    aria-label={`Mark salary as paid for ${emp.employee_name}`}
-  >
-    Pay
-  </button>
-
-)}
+        {emp.payment_status === "Paid" ? (
+          <button
+            disabled
+            className="bg-gray-400 text-white px-3 py-1.5 rounded-md text-xs cursor-not-allowed"
+            aria-label="Salary already paid"
+          >
+            Paid
+          </button>
+        ) : (
+          <button
+            onClick={() => markAsPaid(emp.id)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200"
+            aria-label={`Mark salary as paid for ${emp.employee_name}`}
+          >
+            Pay
+          </button>
+        )}
       </>
     );
   };

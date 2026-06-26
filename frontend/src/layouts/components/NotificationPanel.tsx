@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from 'react';
 
 interface NotificationPanelProps {
   notifications: any[];
@@ -15,143 +15,80 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
   onClearAll,
   onDismiss,
 }) => {
-  const [expanded, setExpanded] = useState(false);
-
-  const handleBellClick = () => {
-    setExpanded(true);
-    onToggle();
-  };
-
-  useEffect(() => {
-    if (showNotifications) {
-      const timer = setTimeout(() => {
-        setExpanded(false);
-      }, 3000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [showNotifications]);
-
   return (
-    <>
-      {/* Bell Button */}
-      <div
-        className={`fixed top-5 z-[9999] transition-all duration-500 ${
-          expanded ? "right-5" : "-right-7"
-        }`}
+    <div className="fixed top-5 right-5 z-[9998]">
+      <button
+        onClick={onToggle}
+        className="relative bg-white rounded-full p-3 shadow-xl border border-gray-200 hover:shadow-2xl hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        aria-label="Notifications"
       >
-        <button
-          onClick={handleBellClick}
-          className="relative bg-white rounded-full p-4 shadow-xl border border-gray-200 hover:scale-105 transition-all"
-        >
-          <span className="text-2xl">🔔</span>
+        <span className="text-xl">🔔</span>
+        {notifications.length > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-semibold shadow">
+            {notifications.length}
+          </span>
+        )}
+      </button>
 
-          {notifications.length > 0 && (
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
-              {notifications.length}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {/* Notification Panel */}
       {showNotifications && (
-        <div className="fixed top-20 right-5 z-[9998] w-[380px] bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-fadeIn">
-
-          {/* Header */}
-          <div className="p-4 border-b flex justify-between items-center">
-            <h3 className="font-bold text-lg">
-              Notifications
-            </h3>
-
+        <div
+          className="absolute top-14 right-0 mt-2 w-[380px] bg-white rounded-2xl shadow-2xl border border-gray-200 max-h-[480px] overflow-y-auto"
+          role="dialog"
+          aria-label="Notifications Panel"
+        >
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-800">Notifications</h3>
             {notifications.length > 0 && (
-              <button
-                onClick={onClearAll}
-                className="text-red-600 text-sm font-medium"
-              >
-                Clear All
+              <button onClick={onClearAll} className="text-sm text-gray-600 hover:text-red-600 hover:font-medium transition-colors">
+                Clear all
               </button>
             )}
           </div>
 
-          {/* Empty State */}
           {notifications.length === 0 ? (
-            <div className="p-8 text-center">
-              <div className="text-5xl mb-3">
-                📭
-              </div>
-
-              <h4 className="font-semibold">
-                No Notifications
-              </h4>
-
-              <p className="text-gray-500 text-sm mt-1">
-                You're all clear for now.
-              </p>
+            <div className="p-8 text-center text-gray-500">
+              <div className="text-4xl mb-2">📭</div>
+              <p className="font-medium">No Notifications</p>
+              <p className="text-sm mt-1">You're all clear for now.</p>
             </div>
           ) : (
-            <div className="max-h-[450px] overflow-y-auto">
-
+            <ul className="divide-y divide-gray-100">
               {notifications.map((item: any) => (
-                <div
-                  key={item.id}
-                  className="p-4 border-b hover:bg-gray-50 transition"
-                >
-                  <div className="flex justify-between">
-
-                    <div className="flex-1">
-
-                      <h4 className="font-semibold text-gray-800">
-                        {item.title}
-                      </h4>
-
-                      <p className="text-sm text-gray-600 mt-1">
-                        {item.message}
-                      </p>
-
-                      <p className="text-xs text-gray-400 mt-2">
-                        {item.timestamp
-                          ? new Date(
-                              item.timestamp
-                            ).toLocaleString()
-                          : "Just now"}
-                      </p>
-
-                    </div>
-
-                    <button
-                      onClick={() => onDismiss(item.id)}
-                      className="text-red-500 ml-3"
-                    >
-                      ✕
-                    </button>
-
+                <li key={item.id} className="p-4 hover:bg-gray-50 transition-colors flex gap-3 items-start rounded-lg mx-3 my-2 border border-gray-200">
+                  <span className="text-lg">
+                    {item.type === "success" && "🟢"}
+                    {item.type === "warning" && "🟡"}
+                    {item.type === "error" && "🔴"}
+                    {(item.type === "info" || !item.type) && "🔵"}
+                  </span>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-gray-800">{item.title}</h4>
+                    <p className="text-sm text-gray-700 mt-0.5">{item.message}</p>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {item.timestamp ? new Date(item.timestamp).toLocaleString() : "Just now"}
+                    </p>
                   </div>
-                </div>
+                  <button
+                    onClick={() => onDismiss(item.id)}
+                    className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-gray-300"
+                    aria-label="Dismiss notification"
+                  >
+                    ✕
+                  </button>
+                </li>
               ))}
-
-            </div>
+            </ul>
           )}
         </div>
       )}
 
       <style>{`
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-in-out;
+        @keyframes fadeInSlide {
+          from { opacity: 0; transform: translateY(-8px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-    </>
+    </div>
   );
 };
 

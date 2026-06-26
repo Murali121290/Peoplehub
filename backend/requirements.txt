@@ -2,10 +2,24 @@ Flask==3.0.0
 Flask-SQLAlchemy==3.1.1
 Flask-JWT-Extended==4.6.0
 Flask-Mail==0.9.1
+Flask-CORS==5.0.0
+
+# Socket.IO
+Flask-SocketIO==5.3.6
+python-socketio==5.11.4
+python-engineio==4.9.1
+eventlet==0.36.1
+
+# Database
 psycopg2-binary==2.9.9
+
+# Scheduler
+APScheduler==3.10.4
+
+# Environment
 python-dotenv==1.0.0
+
+# Utilities
 Werkzeug==3.0.1
 python-magic==0.4.27
-zipfile38==1.0.0
-cross-origin-resource-policy==0.0.1
-CORS==1.0.1
+openpyxl==3.1.5

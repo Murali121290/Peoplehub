@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: wms_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: $$vBr@2150
+      POSTGRES_DB: wms_db
+      TZ: Asia/Kolkata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: wms_backend
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql://postgres:$$vBr%402150@postgres:5432/wms_db
+      TZ: Asia/Kolkata
+    ports:
+      - "5000:5000"
+
+  frontend:
+    build: ./frontend
+    container_name: wms_frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+
+volumes:
+  postgres_data:

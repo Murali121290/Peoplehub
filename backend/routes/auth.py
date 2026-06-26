@@ -39,28 +39,32 @@ def login():
         password = data.get("password")
 
         if not login_id or not password:
-          return jsonify({
-        "success": False,
-        "error": "Username and Password are required"
-    }), 400
+            return jsonify({
+                "success": False,
+                "error": "Username and Password are required"
+            }), 400
 
         # Find user
-        
-
         user = User.query.filter(
-        or_(
-        User.company_email == login_id,
-        User.email == login_id,
-        User.full_name.ilike(f"{login_id}%")
-    )
-).first()
+            or_(
+                User.company_email == login_id,
+                User.email == login_id,
+                User.full_name.ilike(f"{login_id}%")
+            )
+        ).first()
 
+        print("================================")
+        print("LOGIN ID:", login_id)
         print("USER FOUND:", user)
 
         if user:
-           print("DB EMAIL:", user.company_email)
-           print("HASH:", user.password_hash)
-           print("PASSWORD MATCH:", user.check_password(password))
+            print("DB EMAIL:", user.email)
+            print("COMPANY EMAIL:", user.company_email)
+            print("HASH:", user.password_hash)
+            print("PASSWORD MATCH:", user.check_password(password))
+        else:
+            print("USER NOT FOUND")
+        print("================================")
 
         if not user:
             return jsonify({

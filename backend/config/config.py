@@ -10,9 +10,12 @@ class Config:
 
     # Database Configuration
     # Password: $vBr@2150
+    # SQLALCHEMY_DATABASE_URI = (
+    #     'postgresql://postgres:$vBr%402150@localhost:5432/wms_db'
+    # )
     SQLALCHEMY_DATABASE_URI = (
-        'postgresql://postgres:$vBr%402150@localhost:5432/wms_db'
-    )
+    'postgresql://postgres:$vBr%402150@postgres:5432/wms_db'
+)
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

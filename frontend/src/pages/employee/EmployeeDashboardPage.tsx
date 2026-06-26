@@ -450,19 +450,16 @@ const EmployeeDashboardPage: React.FC = () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-  employee_id: currentEmployee.user_id,
-  employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
-  current_shift: "General Shift",
+          employee_id: currentEmployee.user_id,
+          employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
+          current_shift: "General Shift",
+          requested_shift: shiftForm.requestedShift,
 
-  requested_shift: shiftForm.requestedShift,
+          shift_date: shiftForm.shiftDate,
 
-  request_type: shiftForm.request_type,
-  from_date: shiftForm.from_date,
-  to_date: shiftForm.to_date,
-
-  reporting_manager: currentEmployee.reporting_manager,
-  reason: shiftForm.reason,
-}),
+          reporting_manager: currentEmployee.reporting_manager,
+          reason: shiftForm.reason,
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
