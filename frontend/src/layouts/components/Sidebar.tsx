@@ -40,18 +40,18 @@ const Sidebar: React.FC<SidebarProps> = ({
       animate={{ x: 0 }}
       exit={{ x: -280 }}
       transition={{ type: "spring", damping: 22, stiffness: 220 }}
-      className="fixed left-0 top-0 z-40 h-screen w-64 overflow-y-auto border-r border-gray-700 bg-gray-800 lg:sticky"
+      className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-gray-700 bg-gray-800 lg:sticky flex flex-col"
     >
       {/* Logo */}
-      <div className="flex justify-center items-center mb-10 mt-2">
+      <div className="flex justify-center items-center mb-10 mt-2 flex-shrink-0">
         <div className="relative w-[180px] h-[95px] bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-3xl border border-white/40 shadow-[0_8px_30px_rgba(0,0,0,0.12)] flex items-center justify-center overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-[0_10px_40px_rgba(59,130,246,0.25)]">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-orange-500/5" />
           <img src={logo} alt="S4 Carlisle" className="relative z-10 w-[150px] h-auto object-contain drop-shadow-sm select-none pointer-events-none" draggable="false" />
         </div>
       </div>
 
-      {/* Nav Links */}
-      <nav className="mt-4 px-3 pb-28">
+      {/* Nav Links — scrollable */}
+      <nav className="flex-1 overflow-y-auto mt-4 px-3">
         {sidebarItems.map((item) => {
           const isActive = location.pathname === item.path;
           const isReportsParent = location.pathname.startsWith("/reports/");
@@ -129,8 +129,8 @@ const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      {/* Profile + Logout */}
-      <div className="absolute bottom-0 left-0 right-0 border-t border-gray-700 bg-gray-800 p-4">
+      {/* Profile + Logout — always at bottom, never overlaps */}
+      <div className="flex-shrink-0 border-t border-gray-700 bg-gray-800 p-4">
         <div className="mb-4 flex items-center">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white">
             <img

@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from models.client import Client
 from models.user import User
-from middleware.auth import auth_required, role_required
+from middleware.auth import auth_required, access_level_required
 from datetime import datetime
 from models.database import db
 
@@ -45,7 +45,7 @@ def get_clients():
 
 @clients_bp.route('/', methods=['POST'])
 @auth_required
-@role_required('Admin', 'Super Admin')
+@access_level_required('admin')
 def create_client():
     data = request.get_json()
     
@@ -78,7 +78,7 @@ def create_client():
 
 @clients_bp.route('/<int:client_id>', methods=['PUT'])
 @auth_required
-@role_required('Admin', 'Super Admin')
+@access_level_required('admin')
 def update_client(client_id):
     client = Client.query.get(client_id)
     if not client:
@@ -96,7 +96,7 @@ def update_client(client_id):
 
 @clients_bp.route('/<int:client_id>', methods=['DELETE'])
 @auth_required
-@role_required('Admin', 'Super Admin')
+@access_level_required('admin')
 def delete_client(client_id):
     client = Client.query.get(client_id)
 

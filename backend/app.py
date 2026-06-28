@@ -22,7 +22,9 @@ from services.checkin_monitor import (
 )
 
 from extensions import socketio
-
+from seed.seed_teams import seed_teams
+from seed.seed_roles import seed_roles
+from seed.seed_users import seed_users
 
 load_dotenv()
 
@@ -106,6 +108,7 @@ def create_app():
     payroll_bp,
     url_prefix="/api/payroll"
 )
+    
 
 
     # JWT
@@ -113,6 +116,13 @@ def create_app():
 
     # Initialize database
     init_db(app)
+
+    with app.app_context():
+        db.create_all()
+
+        seed_teams()
+        seed_roles()
+        seed_users()
 
     # Check missed check-ins every minute
 
@@ -127,6 +137,7 @@ def create_app():
     "interval",
     minutes=1
 )
+    
 
     scheduler.start()
 
