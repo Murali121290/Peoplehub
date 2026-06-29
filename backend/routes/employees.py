@@ -49,6 +49,7 @@ def create_employee():
             print("ROLE =", data.get("role"))
 
         employee = Employee(
+             user_id=data.get("user_id"),
     employee_id=data.get("employee_id"),
     first_name=data.get("first_name"),
     last_name=data.get("last_name"),

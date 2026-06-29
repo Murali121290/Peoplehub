@@ -208,6 +208,7 @@ export default function HRAdminDashboard() {
 
       const formData = new FormData();
 
+      formData.append("user_id", newEmp.user_id);
       formData.append("employee_id", newEmp.employee_id);
       formData.append("first_name", newEmp.first_name);
       formData.append("last_name", newEmp.last_name);

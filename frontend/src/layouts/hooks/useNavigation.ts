@@ -7,7 +7,7 @@ export const useNavigation = (user: any) => {
   const getNavigationItems = () => {
     if (user?.access_level === "admin") {
       return [
-        { name: "Dashboard", icon: HomeIcon, path: "/dashboard" },
+      { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         { name: "Projects", icon: FolderIcon, path: "/projects" },
         { name: "Clients", icon: UserGroupIcon, path: "/clients" },
   { name: "Telecom Directory", icon: PhoneIcon, path: "/telecom-directory" },
@@ -21,10 +21,9 @@ export const useNavigation = (user: any) => {
 
     if (user?.access_level === "manager") {
       return [
-        { name: "Dashboard", icon: HomeIcon, path: "/dashboard" },
+      { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         { name: "Projects", icon: FolderIcon, path: "/projects" },
         { name: "Team Management", icon: UserGroupIcon, path: "/manager-dashboard" },
-        { name: "Employee Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         { name: "Calendar", icon: CalendarIcon, path: "/calendar" },
         { name: "Reports", icon: ChartBarIcon, path: "/reports" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
@@ -35,6 +34,8 @@ export const useNavigation = (user: any) => {
 
     if (user?.access_level === "hr") {
       return [
+              { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
+
         { name: "HR Management", icon: UserGroupIcon, path: "/hrms" },
         { name: "Calendar", icon: CalendarIcon, path: "/calendar" },
         { name: "Reports", icon: ChartBarIcon, path: "/reports" },

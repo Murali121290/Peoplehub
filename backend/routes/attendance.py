@@ -931,8 +931,8 @@ def export_monthly_attendance():
             ).all()
 
             leave_requests = LeaveRequest.query.filter(
-            LeaveRequest.employee_id == employee.id,
-            LeaveRequest.status == "Approved"
+                LeaveRequest.employee_id == employee.employee_id,
+                LeaveRequest.status == "Approved"
             ).all()
 
             days_worked = len([
@@ -1366,7 +1366,7 @@ def export_paysheet():
             ).all()
 
             leave_requests = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == str(employee.id),
+                LeaveRequest.employee_id == employee.employee_id,
                 LeaveRequest.status == "Approved"
             ).all()
 
