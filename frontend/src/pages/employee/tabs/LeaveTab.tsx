@@ -4,6 +4,14 @@ import { PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getStatusColor } from '../utils/employeeHelpers';
 import { leaveReasons } from '../data/employeeMockData';
 
+const permissionReasons = [
+  "Personal Emergency",
+  "Medical Appointment",
+  "Accident",
+  "Family Emergency",
+  "Official Work",
+];
+
 interface LeaveTabProps {
   leaveRequests: any[];
   currentEmployee: any;
@@ -25,80 +33,93 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const [editingLeave, setEditingLeave] = useState<any>(null);
   const [leaveTab, setLeaveTab] = useState("myRequests");
   const [leaveForm, setLeaveForm] = useState({
-    leaveType: "", leaveDuration: "Full Day", fromDate: "", toDate: "",
-    totalDays: 0, reason: "", emergencyContact: "", reportingManager: "",
-    handoverTo: "", attachment: null,
+    requestType: "Leave",
+    leaveType: "",
+    leaveDuration: "Full Day",
+    fromDate: "",
+    toDate: "",
+    permissionDate: "",
+    fromTime: "",
+    toTime: "",
+    totalDays: 0,
+    reason: "",
+    emergencyContact: "",
+    reportingManager: "",
+    handoverTo: "",
+    attachment: null,
   });
 
   useEffect(() => {
+    if (leaveForm.fromDate && leaveForm.toDate) {
+      const fromDate = new Date(leaveForm.fromDate);
+      const toDate = new Date(leaveForm.toDate);
 
-  if (
-    leaveForm.fromDate &&
-    leaveForm.toDate
-  ) {
+      let totalDays =
+        Math.floor((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
-    const fromDate =
-      new Date(leaveForm.fromDate);
+      if (leaveForm.leaveDuration === "First Half" || leaveForm.leaveDuration === "Second Half") {
+        totalDays = 0.5;
+      }
 
-    const toDate =
-      new Date(leaveForm.toDate);
-
-    let totalDays =
-      Math.floor(
-        (
-          toDate.getTime() -
-          fromDate.getTime()
-        ) /
-        (1000 * 60 * 60 * 24)
-      ) + 1;
-
-    if (
-      leaveForm.leaveDuration === "First Half" ||
-      leaveForm.leaveDuration === "Second Half"
-    ) {
-
-      totalDays = 0.5;
-
+      setLeaveForm(prev => ({
+        ...prev,
+        totalDays: totalDays > 0 ? totalDays : 0
+      }));
     }
+  }, [leaveForm.fromDate, leaveForm.toDate, leaveForm.leaveDuration]);
 
-    setLeaveForm(prev => ({
-      ...prev,
-      totalDays:
-        totalDays > 0
-          ? totalDays
-          : 0
-    }));
-
-  }
-
-}, [
-  leaveForm.fromDate,
-  leaveForm.toDate,
-  leaveForm.leaveDuration
-]);
+  const resetLeaveForm = () => {
+    setLeaveForm({
+      requestType: "Leave",
+      leaveType: "",
+      leaveDuration: "Full Day",
+      fromDate: "",
+      toDate: "",
+      permissionDate: "",
+      fromTime: "",
+      toTime: "",
+      totalDays: 0,
+      reason: "",
+      emergencyContact: "",
+      reportingManager: "",
+      handoverTo: "",
+      attachment: null,
+    });
+  };
 
   const editLeave = (leave: any) => {
     setLeaveForm({
-      leaveType: leave.leave_type || "", leaveDuration: leave.leave_duration || "Full Day",
-      fromDate: leave.from_date || "", toDate: leave.to_date || "",
-      totalDays: leave.total_days || 0, reason: leave.reason || "",
+      requestType: leave.request_type || "Leave",
+      leaveType: leave.leave_type || "",
+      leaveDuration: leave.leave_duration || "Full Day",
+      fromDate: leave.from_date || "",
+      toDate: leave.to_date || "",
+      permissionDate: leave.permission_date || "",
+      fromTime: leave.from_time || "",
+      toTime: leave.to_time || "",
+      totalDays: leave.total_days || 0,
+      reason: leave.reason || "",
       emergencyContact: leave.emergency_contact || "",
       reportingManager: leave.reporting_manager || "",
-      handoverTo: leave.handover_to || "", attachment: null,
+      handoverTo: leave.handover_to || "",
+      attachment: null,
     });
     setEditingLeave(leave);
     setShowLeaveForm(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
-    onSubmitLeave(e, leaveForm, editingLeave);
+    const payload = {
+      ...leaveForm,
+      request_type: leaveForm.requestType,
+      permission_date: leaveForm.permissionDate,
+      from_time: leaveForm.fromTime,
+      to_time: leaveForm.toTime,
+    };
+    onSubmitLeave(e, payload, editingLeave);
     setShowLeaveForm(false);
     setEditingLeave(null);
-    setLeaveForm({
-      leaveType: "", leaveDuration: "Full Day", fromDate: "", toDate: "",
-      totalDays: 0, reason: "", emergencyContact: "", reportingManager: "",
-      handoverTo: "", attachment: null,
-    });
+    resetLeaveForm();
   };
 
   return (
@@ -161,6 +182,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-y-auto"
               >
+
                 <div className="flex items-center justify-between p-6 border-b">
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">{editingLeave ? "Edit Leave" : "Apply Leave"}</h2>
@@ -173,76 +195,159 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
                 <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-4 gap-6 p-6">
                   <div className="lg:col-span-3 space-y-5">
-                    <div>
-                      <label className="block text-sm font-semibold mb-2 text-gray-700">Leave Type <span className="text-red-500">*</span></label>
-                      <select required value={leaveForm.leaveType}
-                        onChange={(e) => setLeaveForm({ ...leaveForm, leaveType: e.target.value })}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500">
-                        <option value="">Select Leave Type</option>
-                        <option value="Sick Leave">Sick Leave</option>
-                        <option value="Casual Leave">Casual Leave</option>
-                        <option value="Earned Leave">Earned Leave</option>
+
+                    {/* Request Type */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium mb-2">
+                        Request Type
+                      </label>
+                      <select
+                        value={leaveForm.requestType}
+                        onChange={(e) =>
+                          setLeaveForm({
+                            ...leaveForm,
+                            requestType: e.target.value,
+                            reason: "",
+                          })
+                        }
+                        className="w-full border rounded-lg px-3 py-2"
+                      >
+                        <option value="Leave">Leave</option>
+                        <option value="Permission">Permission</option>
                       </select>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-semibold mb-2">Leave Duration</label>
-                      <select value={leaveForm.leaveDuration}
-                        onChange={(e) => setLeaveForm({ ...leaveForm, leaveDuration: e.target.value })}
-                        className="w-full border rounded-lg px-4 py-2">
-                        <option value="Full Day">Full Day</option>
-                        <option value="First Half">First Half</option>
-                        <option value="Second Half">Second Half</option>
-                      </select>
-                    </div>
+                    {leaveForm.requestType === "Leave" && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-gray-700">Leave Type <span className="text-red-500">*</span></label>
+                          <select required value={leaveForm.leaveType}
+                            onChange={(e) => setLeaveForm({ ...leaveForm, leaveType: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500">
+                            <option value="">Select Leave Type</option>
+                            <option value="Sick Leave">Sick Leave</option>
+                            <option value="Casual Leave">Casual Leave</option>
+                            <option value="Earned Leave">Earned Leave</option>
+                          </select>
+                        </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-semibold mb-2 text-gray-700">From Date <span className="text-red-500">*</span></label>
-                        <input type="date" required value={leaveForm.fromDate}
-                          onChange={(e) => setLeaveForm({ ...leaveForm, fromDate: e.target.value })}
-                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-semibold mb-2 text-gray-700">To Date <span className="text-red-500">*</span></label>
-                        <input type="date" required value={leaveForm.toDate}
-                          onChange={(e) => setLeaveForm({ ...leaveForm, toDate: e.target.value })}
-                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-semibold mb-2 text-gray-700">Total Days</label>
-                        <input readOnly value={leaveForm.totalDays || 0}
-                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 bg-gray-50 text-gray-600 font-semibold" />
-                      </div>
-                    </div>
+                        <div>
+                          <label className="block text-sm font-semibold mb-2">Leave Duration</label>
+                          <select value={leaveForm.leaveDuration}
+                            onChange={(e) => setLeaveForm({ ...leaveForm, leaveDuration: e.target.value })}
+                            className="w-full border rounded-lg px-4 py-2">
+                            <option value="Full Day">Full Day</option>
+                            <option value="First Half">First Half</option>
+                            <option value="Second Half">Second Half</option>
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="block text-sm font-semibold mb-2 text-gray-700">Reporting Manager</label>
-                      <input type="text" value={currentEmployee?.reporting_manager || ""} readOnly
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 text-gray-600" />
-                    </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-gray-700">From Date <span className="text-red-500">*</span></label>
+                            <input type="date" required value={leaveForm.fromDate}
+                              onChange={(e) => setLeaveForm({ ...leaveForm, fromDate: e.target.value })}
+                              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-gray-700">To Date <span className="text-red-500">*</span></label>
+                            <input type="date" required value={leaveForm.toDate}
+                              onChange={(e) => setLeaveForm({ ...leaveForm, toDate: e.target.value })}
+                              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-gray-700">Total Days</label>
+                            <input readOnly value={leaveForm.totalDays || 0}
+                              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 bg-gray-50 text-gray-600 font-semibold" />
+                          </div>
+                        </div>
 
-                    <div>
-                      <label className="block text-sm font-semibold mb-2 text-gray-700">Work Handover To</label>
-                      <select value={leaveForm.handoverTo}
-                        onChange={(e) => setLeaveForm({ ...leaveForm, handoverTo: e.target.value })}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5">
-                        <option value="">Select Employee</option>
-                        {employees?.map((emp) => (
-                          <option key={emp.id} value={`${emp.first_name} ${emp.last_name}`}>
-                            {emp.first_name} {emp.last_name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-gray-700">Reporting Manager</label>
+                          <input type="text" value={currentEmployee?.reporting_manager || ""} readOnly
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 text-gray-600" />
+                        </div>
 
-                    <div>
-                      <label className="block text-sm font-semibold mb-2 text-gray-700">Emergency Contact <span className="text-red-500">*</span></label>
-                      <input type="text" required value={leaveForm.emergencyContact}
-                        onChange={(e) => setLeaveForm({ ...leaveForm, emergencyContact: e.target.value })}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500"
-                        placeholder="Enter emergency contact number" />
-                    </div>
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-gray-700">Work Handover To</label>
+                          <select value={leaveForm.handoverTo}
+                            onChange={(e) => setLeaveForm({ ...leaveForm, handoverTo: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-4 py-2.5">
+                            <option value="">Select Employee</option>
+                            {employees?.map((emp) => (
+                              <option key={emp.id} value={`${emp.first_name} ${emp.last_name}`}>
+                                {emp.first_name} {emp.last_name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-gray-700">Emergency Contact <span className="text-red-500">*</span></label>
+                          <input type="text" required value={leaveForm.emergencyContact}
+                            onChange={(e) => setLeaveForm({ ...leaveForm, emergencyContact: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500"
+                            placeholder="Enter emergency contact number" />
+                        </div>
+                      </>
+                    )}
+
+                    {leaveForm.requestType === "Permission" && (
+                      <>
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium mb-2">
+                            Permission Date
+                          </label>
+                          <input
+                            type="date"
+                            value={leaveForm.permissionDate}
+                            onChange={(e) =>
+                              setLeaveForm({
+                                ...leaveForm,
+                                permissionDate: e.target.value,
+                              })
+                            }
+                            className="w-full border rounded-lg px-3 py-2"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium mb-2">
+                              From Time
+                            </label>
+                            <input
+                              type="time"
+                              value={leaveForm.fromTime}
+                              onChange={(e) =>
+                                setLeaveForm({
+                                  ...leaveForm,
+                                  fromTime: e.target.value,
+                                })
+                              }
+                              className="w-full border rounded-lg px-3 py-2"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium mb-2">
+                              To Time
+                            </label>
+                            <input
+                              type="time"
+                              value={leaveForm.toTime}
+                              onChange={(e) =>
+                                setLeaveForm({
+                                  ...leaveForm,
+                                  toTime: e.target.value,
+                                })
+                              }
+                              className="w-full border rounded-lg px-3 py-2"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
 
                     <div>
                       <label className="block text-sm font-semibold mb-2">Reason</label>
@@ -250,9 +355,14 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
                         className="w-full border rounded-lg px-4 py-2">
                         <option value="">Select Reason</option>
-                        {leaveForm.leaveType && leaveReasons[leaveForm.leaveType]?.map((reason) => (
-                          <option key={reason} value={reason}>{reason}</option>
-                        ))}
+                        {leaveForm.requestType === "Permission"
+                          ? permissionReasons.map((reason) => (
+                              <option key={reason} value={reason}>{reason}</option>
+                            ))
+                          : leaveForm.leaveType && leaveReasons[leaveForm.leaveType]?.map((reason) => (
+                              <option key={reason} value={reason}>{reason}</option>
+                            ))
+                        }
                       </select>
                     </div>
 

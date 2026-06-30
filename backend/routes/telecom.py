@@ -23,9 +23,7 @@ def add_telecom():
         department_name=data["department_name"],
         team_name=data["team_name"],
         employee_name=data["employee_name"],
-        designation=data["designation"],
         extension_number=data["extension_number"],
-        direct_number=data.get("direct_number"),
         location=data.get("location"),
         status=data.get("status", "Active")
     )
@@ -100,9 +98,7 @@ def update_telecom(id):
         telecom.department_name = data["department_name"]
         telecom.team_name = data["team_name"]
         telecom.employee_name = data["employee_name"]
-        telecom.designation = data["designation"]
         telecom.extension_number = data["extension_number"]
-        telecom.direct_number = data["direct_number"]
         telecom.location = data["location"]
         telecom.status = data["status"]
 

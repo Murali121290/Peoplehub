@@ -6,7 +6,6 @@ class LeaveRequest(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
 
-
     employee_id = db.Column(db.String(50))
     employee_name = db.Column(db.String(200))
 
@@ -26,6 +25,26 @@ class LeaveRequest(db.Model):
     status = db.Column(
         db.String(50),
         default="Pending"
+    )
+
+    request_type = db.Column(
+        db.String(30),
+        default="Leave"
+    )
+
+    permission_date = db.Column(
+        db.Date,
+        nullable=True
+    )
+
+    from_time = db.Column(
+        db.Time,
+        nullable=True
+    )
+
+    to_time = db.Column(
+        db.Time,
+        nullable=True
     )
 
 

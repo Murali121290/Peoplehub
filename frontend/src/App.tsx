@@ -16,21 +16,10 @@ import DashboardLayout from './layouts/DashboardLayout';
 
 // Pages
 import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import ProjectsPage from './pages/ProjectsPage';
-import ClientsPage from './pages/ClientsPage';
 import SettingsPage from './pages/SettingsPage';
-import PreEditingPage from './pages/PreEditingPage';
-import CopywritingPage from './pages/CopywritingPage';
-import QAPage from './pages/QAPage';
-import ScheduleReport from "./Reports/ScheduleReport"
-import TodaySchedule  from "./Reports/TodaySchedule"
-import ProjectSchedule   from "./Reports/ProjectSchedule"
 import  HrmsModule  from "./pages/hr/HRAdminDashboard";
-import CalendarPage from "./pages/Calendarpage"
 import ManagerDashboardPage from './pages/ManagerDashboardPage';
 import EmployeeDashboardPage from './pages/employee/EmployeeDashboardPage';
-import Editorpage from './pages/EditorPage';
 import CompleteProfile from './pages/Compeleteprofilepage';
 import AnnouncementsPage from './pages/AnnouncementsPage';
 import TelecomDirectoryPage from "./pages/Telecomdirectory ";
@@ -118,38 +107,7 @@ return ( <BrowserRouter>
       element={<LoginPage />}
     />
 
-    {/* Dashboard */}
 
-    <Route
-      path="/dashboard"
-      element={
-        <ProtectedRoute>
-          <DashboardPage />
-        </ProtectedRoute>
-      }
-    />
-
-    {/* Projects */}
-
-    <Route
-      path="/projects"
-      element={
-        <ProtectedRoute>
-          <ProjectsPage />
-        </ProtectedRoute>
-      }
-    />
-
-    {/* Clients */}
-
-    <Route
-      path="/clients"
-      element={
-        <ProtectedRoute>
-          <ClientsPage />
-        </ProtectedRoute>
-      }
-    />
 
     {/* Settings */}
 
@@ -164,36 +122,13 @@ return ( <BrowserRouter>
 
     {/* Pre Editing */}
 
-    <Route
-      path="/pre-editing"
-      element={
-        <ProtectedRoute>
-          <PreEditingPage />
-        </ProtectedRoute>
-      }
-    />
+
 
     {/* Copywriting */}
 
-    <Route
-      path="/copywriting"
-      element={
-        <ProtectedRoute>
-          <CopywritingPage />
-        </ProtectedRoute>
-      }
-    />
 
     {/* QA */}
 
-    <Route
-      path="/qa"
-      element={
-        <ProtectedRoute>
-          <QAPage />
-        </ProtectedRoute>
-      }
-    />
 
     {/* Default Redirect */}
 
@@ -231,34 +166,7 @@ return ( <BrowserRouter>
 
     
 
-{/* Reports */}
 
-<Route
-  path="/reports/schedule"
-  element={
-    <ProtectedRoute>
-      <ScheduleReport />
-    </ProtectedRoute>
-  }
-/>
-
-<Route
-  path="/reports/today-schedule"
-  element={
-    <ProtectedRoute>
-      <TodaySchedule />
-    </ProtectedRoute>
-  }
-/>
-
-<Route
-  path="/reports/project-schedule"
-  element={
-    <ProtectedRoute>
-      <ProjectSchedule />
-    </ProtectedRoute>
-  }
-/>
 
 <Route
   path="/manager-dashboard"
@@ -287,14 +195,6 @@ return ( <BrowserRouter>
   }
 />
 
-        <Route
-          path="/calendar"
-          element={
-            <ProtectedRoute>
-              <CalendarPage />
-            </ProtectedRoute>
-          }
-        />
 
 <Route
   path="/hrms"
@@ -305,14 +205,6 @@ return ( <BrowserRouter>
   }
 />
 
-<Route
-  path="/editor"
-  element={
-    <ProtectedRoute>
-      <Editorpage />
-    </ProtectedRoute>
-  }
-/>
 
 {/* Complete Profile */}
 

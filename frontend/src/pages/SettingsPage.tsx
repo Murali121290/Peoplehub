@@ -8,7 +8,6 @@ import {
   SwatchIcon,
 } from '@heroicons/react/24/outline';
 import UsersPage from './UsersPage';
-import ClientsPage from './ClientsPage';
 
 type TabType =
   | 'users'
@@ -103,7 +102,6 @@ const SettingsPage: React.FC = () => {
         return <UsersPage />;
 
       case 'clients':
-        return <ClientsPage />;
 
       case 'profile':
         return (

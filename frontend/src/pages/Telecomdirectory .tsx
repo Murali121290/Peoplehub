@@ -6,21 +6,16 @@ interface TelecomEntry {
   department_name: string;
   team_name: string;
   employee_name: string;
-  designation: string;
   extension_number: string;
-  direct_number?: string;
   location?: string;
   status: "Active" | "Inactive";
-  created_at?: string;
 }
 
 interface FormData {
   department_name: string;
   team_name: string;
   employee_name: string;
-  designation: string;
   extension_number: string;
-  direct_number: string;
   location: string;
   status: "Active" | "Inactive";
 }
@@ -29,9 +24,7 @@ const EMPTY_FORM: FormData = {
   department_name: "",
   team_name: "",
   employee_name: "",
-  designation: "",
   extension_number: "",
-  direct_number: "",
   location: "",
   status: "Active",
 };
@@ -216,9 +209,7 @@ console.log("Can Edit:", canEdit);
           department_name: entry.department_name,
           team_name: entry.team_name,
           employee_name: entry.employee_name,
-          designation: entry.designation,
           extension_number: entry.extension_number,
-          direct_number: entry.direct_number || "",
           location: entry.location || "",
           status: newStatus,
         }),
@@ -247,9 +238,7 @@ console.log("Can Edit:", canEdit);
       department_name: entry.department_name,
       team_name: entry.team_name,
       employee_name: entry.employee_name,
-      designation: entry.designation,
       extension_number: entry.extension_number,
-      direct_number: entry.direct_number || "",
       location: entry.location || "",
       status: entry.status,
     });
@@ -537,9 +526,7 @@ console.log("Can Edit:", canEdit);
                   Contact Person <SortIcon field="employee_name" />
                 </th>
 
-                <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                  Direct Number
-                </th>
+              
 
                 <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
                   Location
@@ -606,17 +593,14 @@ console.log("Can Edit:", canEdit);
                       >
                         {r.employee_name}
                       </div>
-                      {r.designation && (
+                      {/* {r.designation && (
                         <div className="text-xs text-gray-400 truncate max-w-[160px]">
                           {r.designation}
                         </div>
-                      )}
+                      )} */}
                     </td>
 
-                    <td className="px-4 py-3 text-gray-600 text-sm">
-                      {r.direct_number || <span className="text-gray-300">—</span>}
-                    </td>
-
+                 
                     <td className="px-4 py-3 text-gray-600 text-sm">
                       {r.location || <span className="text-gray-300">—</span>}
                     </td>
@@ -767,24 +751,14 @@ console.log("Can Edit:", canEdit);
                   placeholder: "e.g. Priya Rajan",
                   required: true,
                 },
-                {
-                  label: "Designation",
-                  key: "designation",
-                  placeholder: "e.g. Senior Editor",
-                  required: false,
-                },
+             
                 {
                   label: "Extension Number",
                   key: "extension_number",
                   placeholder: "e.g. 118",
                   required: true,
                 },
-                {
-                  label: "Direct Number",
-                  key: "direct_number",
-                  placeholder: "e.g. +91 44 2200 0118",
-                  required: false,
-                },
+             
                 {
                   label: "Location",
                   key: "location",

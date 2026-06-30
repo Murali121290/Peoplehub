@@ -21,50 +21,74 @@ def apply_leave():
 
     try:
 
-        data = request.json
+        data = request.get_json()
+
+        request_type = data.get("request_type", "Leave")
 
         leave = LeaveRequest(
-
-            employee_id=data["employee_id"],
-
-            employee_name=data["employee_name"],
-
-            leave_type=data["leave_type"],
-
-            from_date=datetime.strptime(
-                data["from_date"],
-                "%Y-%m-%d"
-            ).date(),
-
-            to_date=datetime.strptime(
-                data["to_date"],
-                "%Y-%m-%d"
-            ).date(),
-
-            total_days=data["total_days"],
-
-            reporting_manager=data["reporting_manager"],
-
-            handover_to=data["handover_to"],
-
-            emergency_contact=data[
-                "emergency_contact"
-            ],
-
-            reason=data["reason"]
+            employee_id=data.get("employee_id"),
+            employee_name=data.get("employee_name"),
+            request_type=request_type,
+            leave_type=data.get("leave_type"),
+            reporting_manager=data.get("reporting_manager"),
+            handover_to=data.get("handover_to"),
+            emergency_contact=data.get("emergency_contact"),
+            reason=data.get("reason")
         )
+
+        # ===========================
+        # LEAVE REQUEST
+        # ===========================
+        if request_type == "Leave":
+
+            leave.from_date = datetime.strptime(
+                data.get("from_date"),
+                "%Y-%m-%d"
+            ).date()
+
+            leave.to_date = datetime.strptime(
+                data.get("to_date"),
+                "%Y-%m-%d"
+            ).date()
+
+            leave.total_days = int(data.get("total_days", 0))
+
+        # ===========================
+        # PERMISSION REQUEST
+        # ===========================
+        elif request_type == "Permission":
+
+            leave.permission_date = datetime.strptime(
+                data.get("permission_date"),
+                "%Y-%m-%d"
+            ).date()
+
+            leave.from_time = datetime.strptime(
+                data.get("from_time"),
+                "%H:%M"
+            ).time()
+
+            leave.to_time = datetime.strptime(
+                data.get("to_time"),
+                "%H:%M"
+            ).time()
+
+            leave.total_days = 0
 
         db.session.add(leave)
         db.session.commit()
 
         return jsonify({
             "success": True,
-            "message": "Leave Applied Successfully"
-        })
+            "message": f"{request_type} Applied Successfully"
+        }), 200
 
     except Exception as e:
 
         db.session.rollback()
+
+        import traceback
+        traceback.print_exc()
 
         return jsonify({
             "success": False,

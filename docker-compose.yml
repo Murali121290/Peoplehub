@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -14,25 +16,40 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
     container_name: wms_backend
     restart: always
     depends_on:
       - postgres
+    working_dir: /app
+    command: python app.py
     environment:
       DATABASE_URL: postgresql://postgres:$$vBr%402150@postgres:5432/wms_db
       TZ: Asia/Kolkata
     ports:
       - "5000:5000"
+    volumes:
+      - ./backend:/app
 
   frontend:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
     container_name: wms_frontend
     restart: always
     depends_on:
       - backend
+    working_dir: /app
+    command: npm run dev -- --host
     ports:
       - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
 
 volumes:
   postgres_data:
