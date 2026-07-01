@@ -50,6 +50,7 @@ from routes.notifications import (
 from routes.meeting_rooms import meeting_rooms_bp
 from routes.telecom import telecom_bp
 from seed.seed_employees import seed_employees
+from seed.seed_telecom import seed_telecom
 
 def create_app():
     app = Flask(__name__)
@@ -125,6 +126,8 @@ def create_app():
         seed_roles()
         seed_users()
         seed_employees()
+        seed_telecom()
+        
 
     # Check missed check-ins every minute
 

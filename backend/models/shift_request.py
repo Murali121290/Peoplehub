@@ -29,10 +29,7 @@ class ShiftRequest(db.Model):
         db.String(100),
         nullable=False
     )
-    shift_date = db.Column(
-    db.Date,
-    nullable=False
-)
+
 
     reason = db.Column(
         db.Text,
@@ -69,6 +66,27 @@ class ShiftRequest(db.Model):
         nullable=True
     )
 
+    request_type = db.Column(
+    db.String(50),
+    default="Shift"
+    )
+
+    from_date = db.Column(
+        db.Date,
+        nullable=True
+    )
+
+    to_date = db.Column(
+        db.Date,
+        nullable=True
+    ) 
+
+    shift_date = db.Column(
+    db.Date,
+    nullable=False
+)
+    
+
 
 
     def to_dict(self):
@@ -92,14 +110,28 @@ class ShiftRequest(db.Model):
                 if self.approved_at
                 else None
             ),
+            "shift_date": (
+    self.shift_date.isoformat()
+    if self.shift_date
+    else None
+),
             "rejected_at": (
                 self.rejected_at.isoformat()
                 if self.rejected_at
                 else None
             ),
-"shift_date": (
-    self.shift_date.isoformat()
-    if self.shift_date
+
+"request_type": self.request_type,
+
+"from_date": (
+    self.from_date.isoformat()
+    if self.from_date
+    else None
+),
+
+"to_date": (
+    self.to_date.isoformat()
+    if self.to_date
     else None
 ),
         }

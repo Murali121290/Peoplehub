@@ -367,22 +367,8 @@ const ManagerDashboardPage = () => {
       label: "Team",
       icon: UsersIcon,
     },
-    {
-      id: "leave",
-      label: "Leave Requests",
-      icon: CalendarDaysIcon,
-      count: pendingLeaveCount,
-    },
-    {
-      id: "performance",
-      label: "Performance",
-      icon: ChartBarIcon,
-    },
-    {
-      id: "settings",
-      label: "Settings",
-      icon: Cog6ToothIcon,
-    },
+
+
   ];
 
   // YOUR RETURN STARTS BELOW
@@ -760,124 +746,7 @@ const ManagerDashboardPage = () => {
           </div>
         )}
 
-        {activeTab === "leave" && (
-          <div className="space-y-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-800">
-                  Leave Requests
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Approve or reject employee leave requests.
-                </p>
-              </div>
-              <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600">
-                Pending: {pendingLeaveCount}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {leaveRequests.map((request) => (
-                <div
-                  key={request.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-                >
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex items-start gap-4">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-                        {request.employeeName
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </div>
-
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-sm font-semibold text-slate-700">
-                            {request.employeeName}
-                          </h3>
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${getStatusColor(
-                              request.status,
-                            )}`}
-                          >
-                            {request.status}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500">
-                          {request.role}
-                        </p>
-
-                        <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
-                          <p>
-                            <span className="font-medium text-slate-700">
-                              Leave Type:
-                            </span>{" "}
-                            {request.leaveType}
-                          </p>
-                          <p>
-                            <span className="font-medium text-slate-700">
-                              Submitted:
-                            </span>{" "}
-                            {request.submittedAt}
-                          </p>
-                          <p>
-                            <span className="font-medium text-slate-700">
-                              From:
-                            </span>{" "}
-                            {request.fromDate}
-                          </p>
-                          <p>
-                            <span className="font-medium text-slate-700">
-                              To:
-                            </span>{" "}
-                            {request.toDate}
-                          </p>
-                        </div>
-
-                        <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
-                          <span className="font-medium text-slate-700">
-                            Reason:
-                          </span>{" "}
-                          {request.reason}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2 lg:flex-col">
-                      {request.status === "Pending" ? (
-                        <>
-                          <button
-                            onClick={() =>
-                              handleLeaveAction(request.id, "approve")
-                            }
-                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-100 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-200"
-                          >
-                            <CheckBadgeIcon className="h-4 w-4" />
-                            Approve
-                          </button>
-                          <button
-                            onClick={() =>
-                              handleLeaveAction(request.id, "reject")
-                            }
-                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-rose-100 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-200"
-                          >
-                            <XMarkIcon className="h-4 w-4" />
-                            Reject
-                          </button>
-                        </>
-                      ) : (
-                        <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600">
-                          {request.status}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        
 
         {activeTab === "performance" && (
           <div className="space-y-5">

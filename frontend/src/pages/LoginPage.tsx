@@ -95,14 +95,14 @@ try {
   ) {
 
     navigate(
-      "/dashboard"
+      "/employee-dashboard"
     );
 
   }
   else {
 
     navigate(
-      "/dashboard"
+      "/employee-dashboard"
     );
 
   }
@@ -139,15 +139,6 @@ try {
   />
 
   {/* PrepOps Text */}
-  <h1
-    className="text-[52px] font-bold leading-none"
-    style={{ fontFamily: "Georgia, serif" }}
-  >
-    <span className="text-[#2B609E]">S</span>
-      <span className="text-[#FF0000]">4</span>
-      <span className="text-[#2B609E]">C</span>
-      <span className="text-[#F5975B] ml-[20px]">IPH</span>
-  </h1>
 </div>
         
 
@@ -181,9 +172,9 @@ try {
                   </span>
                 </div>
 
-                <h2 className="font-serif font-semibold text-white leading-[0.95] text-[52px] sm:text-[70px] lg:text-[72px] xl:text-[78px]">
-                  Intelligent
-                  <span className="block text-[#efc15b]">Production Hub</span>
+                <h2 className="font-serif font-semibold text-white leading-[0.95] text-[62px] sm:text-[60px] lg:text-[62px] xl:text-[68px]">
+                  HR
+                  <span className="block text-[#efc15b]">Management System</span>
                 </h2>
 
                 <p className="mt-7 max-w-[620px] text-[20px] leading-[1.5] text-white">
@@ -204,11 +195,11 @@ try {
               className="w-full max-w-[360px]"
             >
               <div className="mb-10">
-                <h3 className="text-[24px] sm:text-[26px] font-bold font-serif text-[#22345a]">
-                  Welcome to S4C IPH
+                <h3 className="text-[20px] sm:text-[19px] font-bold font-serif text-[#22345a]">
+                  Welcome to HR Management System
                 </h3>
                 <p className="mt-2 text-[15px] text-[#8a93a3]">
-                  Sign in to your S4C IPH workspace
+                  Sign in to your S4C HR workspace
                 </p>
               </div>
 

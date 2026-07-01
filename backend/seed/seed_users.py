@@ -69,7 +69,7 @@ def seed_users():
     )
 
     create_user(
-        full_name="Project Manager",
+        full_name="Manager",
         email="manager@wms.com",
         company_email="manager@wms.com",
         password="Manager@12345",
@@ -79,7 +79,7 @@ def seed_users():
     )
 
     create_user(
-        full_name="Employee User",
+        full_name="User",
         email="user@wms.com",
         company_email="user@wms.com",
         password="User@12345",

@@ -339,60 +339,98 @@ const EmployeeDashboardPage: React.FC = () => {
 
   // --- Leave Handlers ---
   const handleLeaveSubmit = async (
-    e: React.FormEvent,
-    leaveForm: any,
-    editingLeave: any,
-  ) => {
-    e.preventDefault();
-    try {
-      let response;
-      if (editingLeave) {
-        response = await fetch(`${BASE_URL}/leaves/update/${editingLeave.id}`, {
+  e: React.FormEvent,
+  leaveForm: any,
+  editingLeave: any,
+) => {
+
+  e.preventDefault();
+
+  try {
+
+    let response;
+
+    const payload = {
+      employee_id: currentEmployee?.id,
+      employee_name: `${currentEmployee?.first_name} ${currentEmployee?.last_name}`,
+
+      request_type: leaveForm.requestType,
+
+      leave_type: leaveForm.leaveType,
+
+      from_date: leaveForm.fromDate,
+      to_date: leaveForm.toDate,
+
+      permission_date: leaveForm.permissionDate,
+      from_time: leaveForm.fromTime,
+      to_time: leaveForm.toTime,
+
+      total_days: leaveForm.totalDays,
+
+      reporting_manager: currentEmployee?.reporting_manager,
+
+      handover_to: leaveForm.handoverTo,
+
+      emergency_contact: leaveForm.emergencyContact,
+
+      reason: leaveForm.reason,
+    };
+
+    if (editingLeave) {
+
+      response = await fetch(
+        `${BASE_URL}/leaves/update/${editingLeave.id}`,
+        {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            leave_type: leaveForm.leaveType,
-            from_date: leaveForm.fromDate,
-            to_date: leaveForm.toDate,
-            total_days: leaveForm.totalDays,
-            handover_to: leaveForm.handoverTo,
-            emergency_contact: leaveForm.emergencyContact,
-            reason: leaveForm.reason,
-          }),
-        });
-      } else {
-        response = await fetch(`${BASE_URL}/leaves/`, {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+    } else {
+
+      response = await fetch(
+        `${BASE_URL}/leaves/`,
+        {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            employee_id: currentEmployee?.id,
-            employee_name: `${currentEmployee?.first_name} ${currentEmployee?.last_name}`,
-            leave_type: leaveForm.leaveType,
-            from_date: leaveForm.fromDate,
-            to_date: leaveForm.toDate,
-            total_days: leaveForm.totalDays,
-            reporting_manager: currentEmployee?.reporting_manager,
-            handover_to: leaveForm.handoverTo,
-            emergency_contact: leaveForm.emergencyContact,
-            reason: leaveForm.reason,
-          }),
-        });
-      }
-      const data = await response.json();
-      if (data.success) {
-        toast.success(
-          editingLeave
-            ? "Leave Updated Successfully"
-            : "Leave Applied Successfully",
-        );
-        loadLeaves();
-      } else {
-        toast.error(data.message || "Operation Failed");
-      }
-    } catch (error) {
-      toast.error("Server Error");
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
     }
-  };
+
+    const data = await response.json();
+
+    if (data.success) {
+
+      toast.success(
+        editingLeave
+          ? "Request Updated Successfully"
+          : `${leaveForm.requestType} Applied Successfully`
+      );
+
+      loadLeaves();
+
+    } else {
+
+      toast.error(data.error || data.message || "Operation Failed");
+
+    }
+
+  } catch (error) {
+
+    console.error(error);
+
+    toast.error("Server Error");
+
+  }
+
+};
 
   const approveLeave = async (id: number) => {
     try {
@@ -441,41 +479,51 @@ const EmployeeDashboardPage: React.FC = () => {
 
   // --- Shift Handlers ---
   const submitShiftRequest = async (shiftForm: any) => {
-    try {
-      if (!currentEmployee) {
-        toast.error("Employee details not found");
-        return;
-      }
-      const response = await fetch(`${BASE_URL}/shifts/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          employee_id: currentEmployee.user_id,
-          employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
-          current_shift: "General Shift",
-          requested_shift: shiftForm.requestedShift,
-
-          shift_date: shiftForm.shiftDate,
-
-          reporting_manager: currentEmployee.reporting_manager,
-          reason: shiftForm.reason,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        toast.error(data.message || "Failed to submit shift request");
-        return;
-      }
-      if (data.success) {
-        toast.success("Shift Request Submitted Successfully");
-        loadShiftRequests();
-      } else {
-        toast.error(data.message || "Request Failed");
-      }
-    } catch (error) {
-      toast.error("Server Error");
+  try {
+    if (!currentEmployee) {
+      toast.error("Employee details not found");
+      return;
     }
-  };
+
+    console.log("Sending Shift Request:", shiftForm);
+
+    const response = await fetch(`${BASE_URL}/shifts/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        employee_id: shiftForm.employee_id,
+        employee_name: shiftForm.employee_name,
+        current_shift: shiftForm.current_shift,
+        requested_shift: shiftForm.requested_shift,
+        request_type: shiftForm.request_type,
+        from_date: shiftForm.from_date,
+        to_date: shiftForm.to_date,
+        reporting_manager: shiftForm.reporting_manager,
+        reason: shiftForm.reason,
+      }),
+    });
+
+    const data = await response.json();
+
+    console.log(data);
+
+    if (!response.ok) {
+      toast.error(data.message);
+      return;
+    }
+
+    toast.success("Shift Request Submitted Successfully");
+
+    loadShiftRequests();
+    loadManagerShiftRequests();
+
+  } catch (err) {
+    console.error(err);
+    toast.error("Server Error");
+  }
+};
 
   const approveShift = async (id: number) => {
     const response = await fetch(`${BASE_URL}/shifts/approve/${id}`, {
