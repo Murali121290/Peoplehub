@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { XMarkIcon } from "@heroicons/react/24/outline";
-import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import { apiService } from "../services/api";
 import { User, Role, Team } from "../types/index";
+import { Modal } from "../components/ui/Modal";
+import { Button } from "../components/ui/Button";
+import { FormField, Input, Select } from "../components/ui/Form";
 
 interface UserModalProps {
   user: User | null;
@@ -15,15 +16,15 @@ const UserModal: React.FC<UserModalProps> = ({ user, onClose }) => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
-  const [selectedEmployee, setSelectedEmployee] = useState("");
+  const [selectedEmployee, setSelectedEmployee] = useState<number | string>("");
   const [formData, setFormData] = useState({
     employee_id: 0,
     full_name: "",
     email: "",
     password: "",
     company_email: "",
-    role_id: 0,
-    team_id: 0,
+    role_id: 0 as number | string,
+    team_id: 0 as number | string,
     access_level: "user",
     status: "active",
   });
@@ -35,6 +36,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, onClose }) => {
   useEffect(() => {
     if (user) {
       setFormData({
+        employee_id: user.employee_id || 0,
         full_name: user.full_name,
         email: user.email,
         password: "",
@@ -84,7 +86,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, onClose }) => {
     });
 
     try {
-      const response = await apiService.getRolesByTeam(teamId);
+      const response = await apiService.getRolesByTeam(Number(teamId));
 
       setRoles(response.data.roles);
       setRoles(response.data.roles);
@@ -149,223 +151,160 @@ const UserModal: React.FC<UserModalProps> = ({ user, onClose }) => {
   };
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.92, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.92, y: 10 }}
-          transition={{ duration: 0.2 }}
-          className="w-full max-w-3xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
-        >
-          <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-indigo-50 via-white to-white px-6 py-5">
-            <div>
-              <div className="text-xl font-bold text-slate-900">
-                {user ? "Edit User" : "Create New User"}
-              </div>
-              <div className="mt-1 text-sm text-slate-500">
-                Fill in the employee access and account details below
-              </div>
-            </div>
+    <Modal
+      isOpen
+      onClose={() => onClose(false)}
+      size="lg"
+      title={user ? "Edit User" : "Create New User"}
+    >
+      <p className="-mt-3 mb-5 text-sm text-neutral-500">
+        Fill in the employee access and account details below
+      </p>
 
-            <button
-              onClick={() => onClose(false)}
-              className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
-          </div>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="rounded-2xl border border-neutral-200 bg-primary-50 p-4">
+          <FormField label="Select Employee">
+            <Select
+              value={selectedEmployee}
+              onChange={(value) =>
+                handleEmployeeSelect({
+                  target: { value },
+                } as React.ChangeEvent<HTMLSelectElement>)
+              }
+              placeholder="Select Employee"
+              options={employees.map((emp: any) => ({
+                label: `${emp.first_name} ${emp.last_name}`,
+                value: emp.id,
+              }))}
+            />
+          </FormField>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6 p-6">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
-                Select Employee
-              </label>
-              <select
-                value={selectedEmployee}
-                onChange={handleEmployeeSelect}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-              >
-                <option value="">Select Employee</option>
-                {employees.map((emp: any) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.first_name} {emp.last_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+          <FormField label="Full Name" required>
+            <Input
+              type="text"
+              required
+              value={formData.full_name}
+              onChange={(e) =>
+                setFormData({ ...formData, full_name: e.target.value })
+              }
+              placeholder="Enter full name"
+            />
+          </FormField>
 
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.full_name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, full_name: e.target.value })
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-                  placeholder="Enter full name"
-                />
-              </div>
+          <FormField label="Email" required>
+            <Input
+              type="email"
+              required
+              value={formData.email}
+              onChange={(e) =>
+                setFormData({ ...formData, email: e.target.value })
+              }
+              placeholder="Enter email"
+            />
+          </FormField>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={formData.email}
-                  onChange={(e) =>
-                    setFormData({ ...formData, email: e.target.value })
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-                  placeholder="Enter email"
-                />
-              </div>
+          <FormField label="Company Email" required>
+            <Input
+              type="email"
+              required
+              value={formData.company_email}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  company_email: e.target.value,
+                })
+              }
+              placeholder="employee@s4carlisle.com"
+            />
+          </FormField>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Company Email *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={formData.company_email}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      company_email: e.target.value,
-                    })
-                  }
-                  placeholder="employee@s4carlisle.com"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-                />
-              </div>
+          <FormField label={`Password ${!user ? "*" : ""}`}>
+            <Input
+              type="password"
+              required={!user}
+              value={formData.password}
+              onChange={(e) =>
+                setFormData({ ...formData, password: e.target.value })
+              }
+              placeholder={
+                user ? "Leave blank to keep same" : "Enter password"
+              }
+            />
+          </FormField>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Password {!user && "*"}
-                </label>
-                <input
-                  type="password"
-                  required={!user}
-                  value={formData.password}
-                  onChange={(e) =>
-                    setFormData({ ...formData, password: e.target.value })
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-                  placeholder={
-                    user ? "Leave blank to keep same" : "Enter password"
-                  }
-                />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Team *
-                </label>
-                <select
-                  required
-                  value={formData.team_id}
-                  onChange={(e) => handleTeamChange(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-                >
-                  <option value="">Select Team</option>
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <FormField label="Team" required>
+            <Select
+              value={formData.team_id}
+              onChange={(value) => handleTeamChange(value)}
+              placeholder="Select Team"
+              options={teams.map((team) => ({
+                label: team.name,
+                value: team.id,
+              }))}
+            />
+          </FormField>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Role *
-                </label>
-                <select
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-                  value={formData.role_id}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      role_id: e.target.value,
-                    })
-                  }
-                >
-                  <option value="">Select Role</option>
+          <FormField label="Role" required>
+            <Select
+              value={formData.role_id}
+              onChange={(value) =>
+                setFormData({
+                  ...formData,
+                  role_id: value,
+                })
+              }
+              placeholder="Select Role"
+              options={roles.map((role: any) => ({
+                label: role.name,
+                value: role.id,
+              }))}
+            />
+          </FormField>
 
-                  {roles.map((role: any) => (
-                    <option key={role.id} value={role.id}>
-                      {role.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <FormField label="Access Level">
+            <Select
+              value={formData.access_level}
+              onChange={(value) =>
+                setFormData({
+                  ...formData,
+                  access_level: value,
+                })
+              }
+              options={[
+                { label: "User", value: "user" },
+                { label: "Manager", value: "manager" },
+                { label: "HR", value: "hr" },
+                { label: "Admin", value: "admin" },
+              ]}
+            />
+          </FormField>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Access Level
-                </label>
+          <FormField label="Status">
+            <Select
+              value={formData.status}
+              onChange={(value) =>
+                setFormData({ ...formData, status: value })
+              }
+              options={[
+                { label: "Active", value: "active" },
+                { label: "Inactive", value: "inactive" },
+              ]}
+            />
+          </FormField>
+        </div>
 
-                <select
-                  value={formData.access_level}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      access_level: e.target.value,
-                    })
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-                >
-                  <option value="user">User</option>
-                  <option value="manager">Manager</option>
-                  <option value="hr">HR</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Status
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) =>
-                    setFormData({ ...formData, status: e.target.value })
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-5">
-              <button
-                type="button"
-                onClick={() => onClose(false)}
-                className="rounded-xl border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {loading ? "Saving..." : user ? "Update User" : "Create User"}
-              </button>
-            </div>
-          </form>
-        </motion.div>
-      </div>
-    </AnimatePresence>
+        <div className="flex items-center justify-end gap-3 border-t border-neutral-200 pt-5">
+          <Button type="button" variant="outline" onClick={() => onClose(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" loading={loading}>
+            {loading ? "Saving..." : user ? "Update User" : "Create User"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 };
 

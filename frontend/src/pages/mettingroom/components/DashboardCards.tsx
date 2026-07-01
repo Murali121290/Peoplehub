@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
+import {
+  BuildingOffice2Icon,
+  CheckCircleIcon,
+  CalendarDaysIcon,
+  ClockIcon,
+  ChartBarIcon,
+} from "@heroicons/react/24/outline";
 import { getDashboardStats } from "../../../services/meetingRoomService";
+import { StatCard } from "../../../components/ui/StatCard";
+import type { StatCardColor } from "../../../components/ui/StatCard";
 
 const DashboardCards = () => {
 
@@ -25,51 +34,54 @@ const DashboardCards = () => {
     }
   };
 
-  const cards = [
+  const cards: {
+    title: string;
+    value: string | number;
+    color: StatCardColor;
+    icon: React.ElementType;
+  }[] = [
     {
       title: "Total Rooms",
       value: stats.total_rooms,
-      color: "text-slate-800",
+      color: "neutral",
+      icon: BuildingOffice2Icon,
     },
     {
       title: "Available",
       value: stats.available_rooms,
-      color: "text-green-600",
+      color: "success",
+      icon: CheckCircleIcon,
     },
     {
       title: "Booked Today",
       value: stats.booked_today,
-      color: "text-blue-600",
+      color: "primary",
+      icon: CalendarDaysIcon,
     },
     {
       title: "Pending",
       value: stats.pending,
-      color: "text-amber-600",
+      color: "warning",
+      icon: ClockIcon,
     },
     {
       title: "Utilization",
       value: `${stats.utilization}%`,
-      color: "text-purple-600",
+      color: "info",
+      icon: ChartBarIcon,
     },
   ];
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
       {cards.map((item) => (
-        <div
+        <StatCard
           key={item.title}
-          className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
-        >
-          <p className="text-sm text-slate-500">
-            {item.title}
-          </p>
-
-          <h2
-            className={`mt-2 text-3xl font-bold ${item.color}`}
-          >
-            {item.value}
-          </h2>
-        </div>
+          title={item.title}
+          value={item.value}
+          color={item.color}
+          icon={item.icon}
+        />
       ))}
     </div>
   );

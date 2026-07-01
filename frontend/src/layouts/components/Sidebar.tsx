@@ -6,6 +6,8 @@ import {
   DocumentChartBarIcon, ClockIcon, PresentationChartLineIcon,
 } from '@heroicons/react/24/outline';
 import logo from '../../images/s.png';
+import { Button } from '../../components/ui/Button';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 
 interface SidebarProps {
   sidebarItems: any[];
@@ -32,7 +34,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const location = useLocation();
   const reportMenuRef = useRef<HTMLDivElement | null>(null);
-  const isDesktop = typeof window !== "undefined" && window.innerWidth >= 1024;
+  const isDesktop = useIsDesktop();
 
   return (
     <motion.aside
@@ -40,7 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       animate={{ x: 0 }}
       exit={{ x: -280 }}
       transition={{ type: "spring", damping: 22, stiffness: 220 }}
-      className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-gray-700 bg-gray-800 lg:sticky flex flex-col"
+      className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-neutral-200 bg-white shadow-sm lg:sticky flex flex-col"
     >
       {/* Logo */}
       <div className="flex justify-center items-center mb-10 mt-2 flex-shrink-0">
@@ -68,7 +70,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   onClick={() => setShowReportMenu(!showReportMenu)}
                   className={`flex w-full items-center justify-between rounded-xl px-4 py-3 transition-all duration-200 ${
-                    isReportsParent || showReportMenu ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white"
+                    isReportsParent || showReportMenu ? "bg-primary-50 text-primary-700" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
                   }`}
                 >
                   <div className="flex items-center">
@@ -89,7 +91,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       transition={{ duration: 0.22, ease: "easeOut" }}
                       className="overflow-hidden"
                     >
-                      <div className="mt-2 space-y-1 rounded-2xl border border-gray-700 bg-gray-900/60 p-2 backdrop-blur-sm">
+                      <div className="mt-2 space-y-1 rounded-2xl border border-neutral-200 bg-neutral-50 p-2">
                         {reportLinks.map((report) => {
                           const isSubActive = location.pathname === report.path;
                           return (
@@ -98,7 +100,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                               to={report.path}
                               state={report.state}
                               className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-all ${
-                                isSubActive ? "bg-white text-gray-900 font-semibold" : "text-gray-300 hover:bg-gray-700 hover:text-white"
+                                isSubActive ? "bg-primary-500 text-white font-semibold" : "text-neutral-600 hover:bg-white hover:text-neutral-800"
                               }`}
                             >
                               <report.icon className="h-4 w-4" />
@@ -119,7 +121,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               key={item.path}
               to={item.path}
               className={`mb-2 flex items-center rounded-xl px-4 py-3 transition-colors ${
-                isActive ? "bg-white font-semibold text-gray-900" : "text-gray-300 hover:bg-gray-700 hover:text-white"
+                isActive ? "bg-primary-50 font-semibold text-primary-700" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
               }`}
             >
               <item.icon className="mr-3 h-5 w-5" />
@@ -130,9 +132,9 @@ const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* Profile + Logout — always at bottom, never overlaps */}
-      <div className="flex-shrink-0 border-t border-gray-700 bg-gray-800 p-4">
+      <div className="flex-shrink-0 border-t border-neutral-200 bg-white p-4">
         <div className="mb-4 flex items-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-50 border border-neutral-200">
             <img
               src={profileImageUrl}
               alt="Profile"
@@ -143,22 +145,18 @@ const Sidebar: React.FC<SidebarProps> = ({
                 if (fallback) fallback.style.display = "flex";
               }}
             />
-            <div className="w-10 h-10 rounded-full bg-white text-black font-semibold items-center justify-center hidden">
+            <div className="w-10 h-10 rounded-full bg-primary-50 text-primary-700 font-semibold items-center justify-center hidden">
               {user?.full_name?.charAt(0)?.toUpperCase()}
             </div>
           </div>
           <div className="ml-3 flex-1 overflow-hidden">
-            <p className="truncate text-sm font-medium text-white">{user?.full_name}</p>
-            <p className="text-xs text-gray-400">{user?.role}</p>
+            <p className="truncate text-sm font-medium text-neutral-800">{user?.full_name}</p>
+            <p className="text-xs text-neutral-400">{user?.role}</p>
           </div>
         </div>
-        <button
-          onClick={onLogout}
-          className="flex w-full items-center justify-center rounded-xl bg-red-600 px-4 py-2.5 text-white transition-colors hover:bg-red-700"
-        >
-          <ArrowRightOnRectangleIcon className="mr-2 h-5 w-5" />
+        <Button variant="danger" fullWidth icon={ArrowRightOnRectangleIcon} onClick={onLogout}>
           Logout
-        </button>
+        </Button>
       </div>
     </motion.aside>
   );

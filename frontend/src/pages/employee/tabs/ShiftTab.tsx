@@ -1,4 +1,7 @@
 import React, { useState } from "react";
+import { Button } from "../../../components/ui/Button";
+import { Card } from "../../../components/ui/Card";
+import { Modal } from "../../../components/ui/Modal";
 
 interface ShiftTabProps {
   currentEmployee: any;
@@ -77,98 +80,89 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
 
   return (
     <div className="space-y-6">
-      {showShiftForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white w-[500px] rounded-xl p-6">
-            <h2 className="text-xl font-bold mb-4">Apply Shift Request</h2>
-            <select
-              value={requestType}
-              onChange={(e) => setRequestType(e.target.value)}
-              className="w-full border p-3 rounded mb-4"
-            >
-              <option value="Shift">Shift Change</option>
+      <Modal
+        isOpen={showShiftForm}
+        onClose={() => setShowShiftForm(false)}
+        size="sm"
+        title="Apply Shift Request"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setShowShiftForm(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit}>Submit</Button>
+          </>
+        }
+      >
+        <select
+          value={requestType}
+          onChange={(e) => setRequestType(e.target.value)}
+          className="w-full border border-neutral-200 p-3 rounded-lg mb-4"
+        >
+          <option value="Shift">Shift Change</option>
 
-              <option value="WFH">Work From Home</option>
-            </select>
-            <select
-              value={shiftForm.requestedShift}
-              onChange={(e) =>
-                setShiftForm({ ...shiftForm, requestedShift: e.target.value })
-              }
-              className="w-full border p-3 rounded mb-4"
-            >
-              <option value="First Shift">
-                First Shift (06:00 AM - 02:00 PM)
-              </option>
+          <option value="WFH">Work From Home</option>
+        </select>
+        <select
+          value={shiftForm.requestedShift}
+          onChange={(e) =>
+            setShiftForm({ ...shiftForm, requestedShift: e.target.value })
+          }
+          className="w-full border border-neutral-200 p-3 rounded-lg mb-4"
+        >
+          <option value="First Shift">
+            First Shift (06:00 AM - 02:00 PM)
+          </option>
 
-              <option value="General Shift">
-                General Shift (09:00 AM - 06:00 PM)
-              </option>
+          <option value="General Shift">
+            General Shift (09:00 AM - 06:00 PM)
+          </option>
 
-              <option value="Second Shift">
-                Second Shift (02:00 PM - 10:00 PM)
-              </option>
+          <option value="Second Shift">
+            Second Shift (02:00 PM - 10:00 PM)
+          </option>
 
-              <option value="Night Shift">
-                Night Shift (10:00 PM - 06:00 AM)
-              </option>
-            </select>
-            <div style={{ marginBottom: 15 }}>
-              <label>From Date</label>
+          <option value="Night Shift">
+            Night Shift (10:00 PM - 06:00 AM)
+          </option>
+        </select>
+        <div style={{ marginBottom: 15 }}>
+          <label className="block text-sm font-medium mb-1 text-neutral-700">From Date</label>
 
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="w-full border p-2 rounded mb-4"
-              />
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="w-full border border-neutral-200 p-2 rounded-lg mb-4"
+          />
 
-              <label>To Date</label>
+          <label className="block text-sm font-medium mb-1 text-neutral-700">To Date</label>
 
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="w-full border p-2 rounded"
-              />
-            </div>
-            <textarea
-              placeholder="Reason"
-              value={shiftForm.reason}
-              onChange={(e) =>
-                setShiftForm({ ...shiftForm, reason: e.target.value })
-              }
-              className="w-full border p-3 rounded mb-4"
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowShiftForm(false)}
-                className="px-4 py-2 border rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                className="px-4 py-2 bg-blue-600 text-white rounded"
-              >
-                Submit
-              </button>
-            </div>
-          </div>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="w-full border border-neutral-200 p-2 rounded-lg"
+          />
         </div>
-      )}
+        <textarea
+          placeholder="Reason"
+          value={shiftForm.reason}
+          onChange={(e) =>
+            setShiftForm({ ...shiftForm, reason: e.target.value })
+          }
+          className="w-full border border-neutral-200 p-3 rounded-lg"
+        />
+      </Modal>
 
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold">Shift Request</h2>
-          <p className="text-gray-500">Manage your shift change requests</p>
+          <h2 className="text-2xl font-bold text-neutral-800">Shift Request</h2>
+          <p className="text-neutral-500">Manage your shift change requests</p>
         </div>
-        <button
-          onClick={() => setShowShiftForm(true)}
-          className="bg-gray-600 hover:bg-gray-700 text-white px-5 py-3 rounded-lg"
-        >
+        <Button onClick={() => setShowShiftForm(true)}>
           + Apply Shift
-        </button>
+        </Button>
       </div>
 
       <div className="flex gap-3">
@@ -176,26 +170,26 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
           <button
             key={tab}
             onClick={() => setShiftTab(tab)}
-            className={`px-6 py-3 rounded-lg ${shiftTab === tab ? "border-2 border-black bg-white" : "bg-gray-100"}`}
+            className={`px-6 py-3 rounded-lg text-sm font-medium ${shiftTab === tab ? "border-2 border-primary-500 bg-primary-50 text-primary-700" : "bg-neutral-100 text-neutral-600"}`}
           >
             {tab === "my" ? "My Requests" : "Approval Requests"}
           </button>
         ))}
       </div>
 
-      <div className="bg-white rounded-xl shadow p-6">
-        <h3 className="text-lg font-semibold">Current Shift</h3>
-        <p className="text-gray-500 mt-2">
+      <Card>
+        <h3 className="text-lg font-semibold text-neutral-800">Current Shift</h3>
+        <p className="text-neutral-500 mt-2">
           {currentEmployee?.shift_timing || "General Shift"}
         </p>
-      </div>
+      </Card>
 
       {shiftTab === "my" && (
-        <div className="bg-white rounded-xl shadow p-6">
-          <h3 className="font-semibold mb-4">My Shift Requests</h3>
+        <Card>
+          <h3 className="font-semibold text-neutral-800 mb-4">My Shift Requests</h3>
           <table className="w-full">
             <thead>
-              <tr className="border-b">
+              <tr className="border-b border-neutral-200">
                 {[
                   "Type",
                   "Current Shift",
@@ -205,7 +199,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                   "Reason",
                   "Status",
                 ].map((h) => (
-                  <th key={h} className="text-left p-3">
+                  <th key={h} className="text-left p-3 text-xs font-semibold uppercase text-neutral-500">
                     {h}
                   </th>
                 ))}
@@ -214,27 +208,27 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
             <tbody>
               {Array.isArray(shiftRequests) &&
                 shiftRequests.map((item: any) => (
-                  <tr key={item.id} className="border-b">
-                    <td className="p-3">{item.request_type}</td>
+                  <tr key={item.id} className="border-b border-neutral-100">
+                    <td className="p-3 text-sm text-neutral-700">{item.request_type}</td>
 
-                    <td className="p-3">{item.current_shift}</td>
+                    <td className="p-3 text-sm text-neutral-700">{item.current_shift}</td>
 
-                    <td className="p-3">{item.from_date}</td>
+                    <td className="p-3 text-sm text-neutral-700">{item.from_date}</td>
 
-                    <td className="p-3">{item.to_date}</td>
+                    <td className="p-3 text-sm text-neutral-700">{item.to_date}</td>
 
-                    <td className="p-3">{item.requested_shift}</td>
+                    <td className="p-3 text-sm text-neutral-700">{item.requested_shift}</td>
 
-                    <td className="p-3">{item.reason}</td>
+                    <td className="p-3 text-sm text-neutral-700">{item.reason}</td>
 
                     <td className="p-3">
                       <span
                         className={`px-3 py-1 rounded-full text-sm ${
                           item.status === "Approved"
-                            ? "bg-green-100 text-green-700"
+                            ? "bg-success-100 text-success-700"
                             : item.status === "Rejected"
-                              ? "bg-red-100 text-red-700"
-                              : "bg-yellow-100 text-yellow-700"
+                              ? "bg-danger-100 text-danger-700"
+                              : "bg-warning-100 text-warning-700"
                         }`}
                       >
                         {item.status}
@@ -244,15 +238,15 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                 ))}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
 
       {shiftTab === "approval" && (
-        <div className="bg-white rounded-xl shadow p-6">
-          <h3 className="font-semibold mb-4">Shift Approval Requests</h3>
+        <Card>
+          <h3 className="font-semibold text-neutral-800 mb-4">Shift Approval Requests</h3>
           <table className="w-full">
             <thead>
-              <tr className="border-b">
+              <tr className="border-b border-neutral-200">
                 {[
 "Employee",
 "Current Shift",
@@ -262,7 +256,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
 "Reason",
 "Action",
 ].map((h) => (
-                  <th key={h} className="text-left p-3">
+                  <th key={h} className="text-left p-3 text-xs font-semibold uppercase text-neutral-500">
                     {h}
                   </th>
                 ))}
@@ -273,51 +267,45 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                 managerShiftRequests
                   .filter((item: any) => item.status === "Pending")
                   .map((item: any) => (
-                    <tr key={item.id} className="border-b">
-<td className="p-3">
+                    <tr key={item.id} className="border-b border-neutral-100">
+<td className="p-3 text-sm text-neutral-700">
   {item.employee_name}
 </td>
 
-<td className="p-3">
+<td className="p-3 text-sm text-neutral-700">
   {item.current_shift}
 </td>
 
-<td className="p-3">
+<td className="p-3 text-sm text-neutral-700">
   {item.requested_shift}
 </td>
 
-<td className="p-3">
+<td className="p-3 text-sm text-neutral-700">
   {item.from_date}
 </td>
 
-<td className="p-3">
+<td className="p-3 text-sm text-neutral-700">
   {item.to_date}
 </td>
 
-<td className="p-3">
+<td className="p-3 text-sm text-neutral-700">
   {item.reason}
 </td>
 
 <td className="p-3 flex gap-2">
-  <button
-    onClick={() => onApprove(item.id)}
-    className="bg-green-600 text-white px-3 py-1 rounded"
-  >
+  <Button size="sm" variant="success" onClick={() => onApprove(item.id)}>
     Approve
-  </button>
+  </Button>
 
-  <button
-    onClick={() => onReject(item.id)}
-    className="bg-red-600 text-white px-3 py-1 rounded"
-  >
+  <Button size="sm" variant="danger" onClick={() => onReject(item.id)}>
     Reject
-  </button>
+  </Button>
 </td>
                     </tr>
                   ))}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
     </div>
   );

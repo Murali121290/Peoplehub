@@ -4,13 +4,17 @@ export interface User {
   email: string;
   role: string;
   role_id: number;
+  role_name?: string;
   team: string;
   team_id: number;
+  team_name?: string;
   access_level: string;
   status: string;
   is_active: boolean;
   created_at: string;
   last_login: string | null;
+  company_email?: string;
+  employee_id?: number;
 }
 
 export interface Role {
@@ -27,6 +31,9 @@ export interface Team {
 
 export interface Client {
   id: number;
+  first_name?: string;
+  surname?: string;
+  company?: string;
   category: string;
   client_type: string;
   email: string;

@@ -105,7 +105,6 @@ const EmployeeDashboardPage: React.FC = () => {
 
   const showPopup = (type: string, title: string, message: string) => {
     setPopup({ show: true, type, title, message });
-    setTimeout(() => setPopup((prev) => ({ ...prev, show: false })), 3000);
   };
 
   // --- API Calls ---
@@ -677,22 +676,21 @@ const EmployeeDashboardPage: React.FC = () => {
 
   return (
     <>
-      {confirmModal && (
-        <ConfirmModal
-          onCancel={() => setConfirmModal(false)}
-          onConfirm={() => {
-            setConfirmModal(false);
-            handleCheckOut();
-          }}
-        />
-      )}
+      <ConfirmModal
+        isOpen={confirmModal}
+        onCancel={() => setConfirmModal(false)}
+        onConfirm={() => {
+          setConfirmModal(false);
+          handleCheckOut();
+        }}
+      />
 
       <PopupModal
         popup={popup}
         onClose={() => setPopup({ ...popup, show: false })}
       />
 
-      <div className="min-h-screen bg-gray-100">
+      <div className="min-h-screen bg-neutral-50">
         {birthdayModal && birthdayEmployees.length > 0 && (
           <BirthdayModal
             birthdayEmployees={birthdayEmployees}
@@ -705,18 +703,18 @@ const EmployeeDashboardPage: React.FC = () => {
         )}
 
         {/* Header */}
-        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+        <header className="bg-white shadow-sm border-b border-neutral-200 sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-[#022B3A] rounded-lg flex items-center justify-center">
+                <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center">
                   <SparklesIcon className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold text-gray-900">
+                  <h1 className="text-xl font-bold text-neutral-800">
                     Employee Dashboard
                   </h1>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-neutral-500">
                     Workflow Management System
                   </p>
                 </div>
@@ -726,7 +724,7 @@ const EmployeeDashboardPage: React.FC = () => {
         </header>
 
         {/* Navigation */}
-        <nav className="bg-white border-b border-gray-200">
+        <nav className="bg-white border-b border-neutral-200">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex space-x-1 overflow-x-auto py-2">
               {tabs.map((tab) => {
@@ -737,15 +735,15 @@ const EmployeeDashboardPage: React.FC = () => {
                     onClick={() => setActiveTab(tab.id)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
                       activeTab === tab.id
-                        ? "bg-blue-50 text-blue-700 border-b-2 border-blue-600"
-                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                        ? "bg-primary-50 text-primary-700 border-b-2 border-primary-600"
+                        : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"
                     }`}
                   >
                     <Icon className="w-4 h-4" />
                     <div className="relative flex items-center">
                       <span>{tab.label}</span>
                       {tab.id === "leave" && pendingLeaveCount > 0 && (
-                        <span className="absolute -top-3 -right-6 bg-red-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full">
+                        <span className="absolute -top-3 -right-6 bg-danger-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full">
                           {pendingLeaveCount}
                         </span>
                       )}

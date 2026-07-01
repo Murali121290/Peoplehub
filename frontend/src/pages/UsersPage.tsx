@@ -13,18 +13,7 @@ import {
   EllipsisHorizontalIcon,
 } from '@heroicons/react/24/outline';
 import UserModal from '../modals/UserModal';
-
-interface User {
-  id: number;
-  full_name: string;
-  email: string;
-  role: string;
-  team: string;
-  access_level: string;
-  status: string;
-  created_at: string;
-  last_login: string | null;
-}
+import { User } from '../types/index';
 
 const roleOptions = [
   'Admin',

@@ -17,6 +17,7 @@ import AttendanceSummaryModal from "./components/AttendanceSummaryModal";
 import AttendanceDetailModal from "./components/AttendanceDetailModal";
 import ChatPanel from "./components/ChatPanel";
 import { useNavigation } from "./hooks/useNavigation";
+import { useIsDesktop } from "./hooks/useIsDesktop";
 
 const BASE_URL = "http://localhost:5000/api";
 
@@ -26,6 +27,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const { sidebarItems } = useNavigation(user);
+  const isDesktop = useIsDesktop();
 
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -354,7 +356,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   };
 
   return (
-    <div className="min-h-screen bg-gray-900">
+    <div className="min-h-screen bg-neutral-50">
       {/* Attendance Detail Modal */}
       {showAttendanceModal && selectedEmployee && (
         <AttendanceDetailModal
@@ -401,10 +403,10 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       )}
 
       {/* Mobile Header */}
-      <div className="flex items-center justify-between border-b border-gray-700 bg-gray-800 px-4 py-3 lg:hidden">
+      <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3 lg:hidden">
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="rounded-lg p-2 text-white transition hover:bg-gray-700"
+          className="rounded-lg p-2 text-neutral-600 transition hover:bg-neutral-100"
         >
           {sidebarOpen ? (
             <XMarkIcon className="h-6 w-6" />
@@ -412,15 +414,14 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
             <Bars3Icon className="h-6 w-6" />
           )}
         </button>
-        <h1 className="text-lg font-bold text-white">WMS</h1>
+        <h1 className="text-lg font-bold text-neutral-800">WMS</h1>
         <div className="w-10" />
       </div>
 
       <div className="flex">
         {/* Sidebar */}
         <AnimatePresence>
-          {(sidebarOpen ||
-            (typeof window !== "undefined" && window.innerWidth >= 1024)) && (
+          {(sidebarOpen || isDesktop) && (
             <Sidebar
               sidebarItems={sidebarItems}
               showReportMenu={showReportMenu}
@@ -439,7 +440,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       {/* Chat Floating Button */}
       <button
         onClick={() => setShowCommunication(true)}
-        className="fixed bottom-6 right-6 z-50 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-xl"
+        className="fixed bottom-6 right-6 z-50 bg-primary-500 hover:bg-primary-600 text-white rounded-full p-4 shadow-lg"
       >
         <ChatBubbleLeftRightIcon className="w-7 h-7" />
       </button>

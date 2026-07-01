@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { PencilIcon } from "@heroicons/react/24/outline";
+import { Card } from "../../../components/ui/Card";
+import { Button } from "../../../components/ui/Button";
+import { Input } from "../../../components/ui/Form";
 
 const BASE_URL = "http://localhost:5000/api";
 
@@ -64,31 +67,31 @@ const ProfileTab = () => {
   return (
     <>
       <div>
-        <h2 className="text-xl font-bold text-gray-900">Profile</h2>
+        <h2 className="text-xl font-bold text-neutral-800">Profile</h2>
 
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-neutral-500">
           Manage your personal information
         </p>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <Card className="lg:col-span-2">
           <div className="flex items-start gap-6 mb-6">
-            <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">
+            <div className="w-20 h-20 bg-primary-500 rounded-full flex items-center justify-center text-white text-2xl font-bold">
               {profile.first_name?.charAt(0)}
               {profile.last_name?.charAt(0)}
             </div>
 
             <div>
-              <h3 className="text-xl font-bold">
+              <h3 className="text-xl font-bold text-neutral-800">
                 {profile.first_name} {profile.last_name}
               </h3>
 
-              <p className="text-gray-500">{profile.designation}</p>
+              <p className="text-neutral-500">{profile.designation}</p>
 
-              <p className="text-sm text-gray-400">{profile.department}</p>
+              <p className="text-sm text-neutral-400">{profile.department}</p>
 
-              <button className="mt-3 flex items-center gap-2 text-blue-600">
+              <button className="mt-3 flex items-center gap-2 text-primary-600">
                 <PencilIcon className="w-4 h-4" />
                 Edit Profile
               </button>
@@ -97,108 +100,102 @@ const ProfileTab = () => {
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs text-gray-500">Employee ID</label>
+              <label className="text-xs text-neutral-500">Employee ID</label>
 
-              <p>{profile.employee_id}</p>
+              <p className="text-neutral-800">{profile.employee_id}</p>
             </div>
 
             <div>
-              <label className="text-xs text-gray-500">Department</label>
+              <label className="text-xs text-neutral-500">Department</label>
 
-              <p>{profile.department}</p>
+              <p className="text-neutral-800">{profile.department}</p>
             </div>
 
             <div>
-              <label className="text-xs text-gray-500">Email</label>
+              <label className="text-xs text-neutral-500">Email</label>
 
-              <p>{profile.email}</p>
+              <p className="text-neutral-800">{profile.email}</p>
             </div>
 
             <div>
-              <label className="text-xs text-gray-500">Phone</label>
+              <label className="text-xs text-neutral-500">Phone</label>
 
-              <p>{profile.phone}</p>
+              <p className="text-neutral-800">{profile.phone}</p>
             </div>
 
             <div>
-              <label className="text-xs text-gray-500">Manager</label>
+              <label className="text-xs text-neutral-500">Manager</label>
 
-              <p>{profile.reporting_manager}</p>
+              <p className="text-neutral-800">{profile.reporting_manager}</p>
             </div>
 
             <div>
-              <label className="text-xs text-gray-500">Joining Date</label>
+              <label className="text-xs text-neutral-500">Joining Date</label>
 
-              <p>{profile.joining_date}</p>
+              <p className="text-neutral-800">{profile.joining_date}</p>
             </div>
           </div>
-        </div>
+        </Card>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="font-semibold mb-4">Quick Stats</h3>
+        <Card>
+          <h3 className="font-semibold text-neutral-800 mb-4">Quick Stats</h3>
 
           <div className="space-y-3">
-            <div className="flex justify-between bg-gray-50 p-3 rounded">
+            <div className="flex justify-between bg-neutral-50 p-3 rounded-lg text-neutral-700">
               <span>Department</span>
               <span>{profile.department}</span>
             </div>
 
-            <div className="flex justify-between bg-gray-50 p-3 rounded">
+            <div className="flex justify-between bg-neutral-50 p-3 rounded-lg text-neutral-700">
               <span>Designation</span>
               <span>{profile.designation}</span>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-6">
-        <h3 className="text-lg font-semibold mb-4">Change Password</h3>
+      <Card className="mt-6">
+        <h3 className="text-lg font-semibold text-neutral-800 mb-4">Change Password</h3>
 
         <div className="grid md:grid-cols-3 gap-4">
           <div>
-            <label className="block mb-2">Current Password</label>
+            <label className="block mb-2 text-sm font-medium text-neutral-700">Current Password</label>
 
-            <input
+            <Input
               type="password"
               name="current_password"
               value={passwordData.current_password}
               onChange={handleChange}
-              className="w-full border rounded-lg px-3 py-2"
             />
           </div>
 
           <div>
-            <label className="block mb-2">New Password</label>
+            <label className="block mb-2 text-sm font-medium text-neutral-700">New Password</label>
 
-            <input
+            <Input
               type="password"
               name="new_password"
               value={passwordData.new_password}
               onChange={handleChange}
-              className="w-full border rounded-lg px-3 py-2"
             />
           </div>
 
           <div>
-            <label className="block mb-2">Confirm Password</label>
+            <label className="block mb-2 text-sm font-medium text-neutral-700">Confirm Password</label>
 
-            <input
+            <Input
               type="password"
               name="confirm_password"
               value={passwordData.confirm_password}
               onChange={handleChange}
-              className="w-full border rounded-lg px-3 py-2"
             />
           </div>
         </div>
 
-        <button
-          onClick={updatePassword}
-          className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg"
-        >
+        <Button className="mt-4" onClick={updatePassword}>
           Update Password
-        </button>
-      </div>
+        </Button>
+      </Card>
     </>
   );
 };

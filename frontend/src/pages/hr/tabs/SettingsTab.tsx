@@ -1,6 +1,6 @@
 import React from 'react';
 import Panel from '../components/Panel';
-import { theme } from '../data/hrMockData';
+import { Button } from '../../../components/ui/Button';
 
 const SETTINGS = [
   { label: "System Notifications", sub: "Receive dashboard notifications", default: true },
@@ -13,24 +13,20 @@ const SETTINGS = [
 const SettingsTab: React.FC = () => {
   return (
     <Panel>
-      <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 20 }}>HR Admin Settings</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="text-[15px] font-extrabold text-neutral-800 mb-5">HR Admin Settings</div>
+      <div className="flex flex-col gap-4">
         {SETTINGS.map((s) => (
-          <div key={s.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 16, background: theme.surface2, borderRadius: 10 }}>
+          <div key={s.label} className="flex items-center justify-between p-4 bg-neutral-50 rounded-[10px]">
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{s.label}</div>
-              <div style={{ fontSize: 11, color: theme.textMuted }}>{s.sub}</div>
+              <div className="text-sm font-semibold text-neutral-800">{s.label}</div>
+              <div className="text-[11px] text-neutral-500">{s.sub}</div>
             </div>
-            <input type="checkbox" defaultChecked={s.default} style={{ width: 20, height: 20, cursor: "pointer" }} />
+            <input type="checkbox" defaultChecked={s.default} className="w-5 h-5 cursor-pointer accent-primary-500" />
           </div>
         ))}
-        <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-          <button style={{ flex: 1, padding: 14, background: theme.accent, color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer" }}>
-            Save All Settings
-          </button>
-          <button style={{ padding: 14, background: "transparent", color: theme.textMuted, border: `1px solid ${theme.border}`, borderRadius: 8, fontWeight: 700, cursor: "pointer" }}>
-            Reset to Defaults
-          </button>
+        <div className="flex gap-3 mt-2">
+          <Button fullWidth>Save All Settings</Button>
+          <Button variant="outline">Reset to Defaults</Button>
         </div>
       </div>
     </Panel>

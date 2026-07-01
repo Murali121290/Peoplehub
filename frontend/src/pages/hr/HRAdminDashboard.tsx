@@ -13,8 +13,6 @@ import {
   CurrencyDollarIcon,
 } from "@heroicons/react/24/outline";
 
-import Btn from "./components/Btn";
-import Avatar from "./components/Avatar";
 import DashboardTab from "./tabs/DashboardTab";
 import DirectoryTab from "./tabs/DirectoryTab";
 import AttendanceTab from "./tabs/AttendanceTab";
@@ -25,8 +23,8 @@ import DocumentsTab from "./tabs/DocumentsTab";
 import SettingsTab from "./tabs/SettingsTab";
 import AddEmployeeModal from "./modals/AddEmployeeModal";
 import ProfileCompleteModal from "./modals/ProfileCompleteModal";
+import { Tabs } from "../../components/ui/Tabs";
 import {
-  theme,
   NAV,
   DEFAULT_NEW_EMP,
   DEFAULT_PROFILE_DATA,
@@ -240,7 +238,7 @@ console.log("OK:", response.ok);
 const text = await response.text();
 console.log("RAW RESPONSE:", text);
 
-let data = {};
+let data: any = {};
 try {
   data = JSON.parse(text);
 } catch (e) {
@@ -288,53 +286,26 @@ try {
     }
   };
 
+  const navTabs = NAV.map((item) => ({
+    id: item.id,
+    label: item.label,
+    icon: NAV_ICONS[item.id],
+  }));
+
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: theme.bg,
-        fontFamily: "system-ui, -apple-system, sans-serif",
-      }}
-    >
+    <div className="min-h-screen bg-neutral-50 font-sans">
       {/* Header */}
-      <header
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 40,
-          background: theme.surface,
-          borderBottom: `1px solid ${theme.border}`,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "16px 24px",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 10,
-                background: "#1F748C",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <BuildingOfficeIcon
-                style={{ width: 22, height: 22, color: "#fff" }}
-              />
+      <header className="sticky top-0 z-40 bg-white border-b border-neutral-200">
+        <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-[10px] bg-primary-500 flex items-center justify-center">
+              <BuildingOfficeIcon className="w-[22px] h-[22px] text-white" />
             </div>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800 }}>
+              <div className="text-base font-extrabold text-neutral-800">
                 HR Admin Dashboard
               </div>
-              <div style={{ fontSize: 11, color: theme.textMuted }}>
+              <div className="text-[11px] text-neutral-500">
                 Full Access • All Features • Manage Everything
               </div>
             </div>
@@ -342,46 +313,13 @@ try {
         </div>
 
         {/* Navigation */}
-        <div
-          style={{
-            display: "flex",
-            gap: 4,
-            padding: "0 24px 10px",
-            overflowX: "auto",
-          }}
-        >
-          {NAV.map((item) => {
-            const Icon = NAV_ICONS[item.id];
-            const isActive = nav === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setNav(item.id)}
-                style={{
-                  border: "none",
-                  background: isActive ? `${theme.accent}18` : "transparent",
-                  color: isActive ? theme.accent : theme.textMuted,
-                  padding: "8px 14px",
-                  borderRadius: 8,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: 13,
-                  fontWeight: isActive ? 700 : 500,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {Icon && <Icon style={{ width: 16, height: 16 }} />}
-                {item.label}
-              </button>
-            );
-          })}
+        <div className="px-6 pb-2.5 overflow-x-auto">
+          <Tabs items={navTabs} activeId={nav} onChange={setNav} variant="pill" />
         </div>
       </header>
 
       {/* Main Content */}
-      <main style={{ padding: 24 }}>
+      <main className="p-6">
         {nav === "dashboard" && (
           <DashboardTab counts={counts} employees={employees} />
         )}
@@ -404,14 +342,7 @@ try {
             onReject={handleRejectLeave}
           />
         )}
-        {nav === "payroll" && (
-          <PayrollPage
-            employees={employees}
-            attendance={attendance}
-            leaves={leaves}
-            BASE_URL={BASE_URL}
-          />
-        )}
+        {nav === "payroll" && <PayrollPage />}
         {nav === "performance" && <PerformanceTab />}
         {nav === "documents" && <DocumentsTab />}
         {nav === "settings" && <SettingsTab />}

@@ -2,6 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { MagnifyingGlassIcon, FunnelIcon, EyeIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { tasksData } from '../data/employeeMockData';
 import { getStatusColor, getPriorityColor } from '../utils/employeeHelpers';
+import { Card } from '../../../components/ui/Card';
+import { Input } from '../../../components/ui/Form';
+import { Select } from '../../../components/ui/Form';
 
 const TasksTab: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -20,66 +23,66 @@ const TasksTab: React.FC = () => {
     <>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">My Tasks</h2>
-          <p className="text-sm text-gray-500">Manage and track your assigned tasks</p>
+          <h2 className="text-xl font-bold text-neutral-800">My Tasks</h2>
+          <p className="text-sm text-neutral-500">Manage and track your assigned tasks</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      <Card>
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-neutral-400" />
+            <Input
               type="text"
               placeholder="Search tasks by name or ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="pl-10"
             />
           </div>
           <div className="flex items-center gap-2">
-            <FunnelIcon className="w-5 h-5 text-gray-500" />
-            <select
+            <FunnelIcon className="w-5 h-5 text-neutral-500 flex-shrink-0" />
+            <Select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="All">All Status</option>
-              <option value="Pending">Pending</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Completed">Completed</option>
-              <option value="On Hold">On Hold</option>
-            </select>
+              onChange={setFilterStatus}
+              options={[
+                { label: 'All Status', value: 'All' },
+                { label: 'Pending', value: 'Pending' },
+                { label: 'In Progress', value: 'In Progress' },
+                { label: 'Completed', value: 'Completed' },
+                { label: 'On Hold', value: 'On Hold' },
+              ]}
+            />
           </div>
         </div>
-      </div>
+      </Card>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <Card padding="none" className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50">
+            <thead className="bg-neutral-50">
               <tr>
-                <th className="text-left p-3 font-semibold text-gray-700 text-xs uppercase">Task ID</th>
-                <th className="text-left p-3 font-semibold text-gray-700 text-xs uppercase">Project</th>
-                <th className="text-left p-3 font-semibold text-gray-700 text-xs uppercase">Complexity</th>
-                <th className="text-left p-3 font-semibold text-gray-700 text-xs uppercase">Assigned</th>
-                <th className="text-left p-3 font-semibold text-gray-700 text-xs uppercase">Due Date</th>
-                <th className="text-left p-3 font-semibold text-gray-700 text-xs uppercase">Priority</th>
-                <th className="text-left p-3 font-semibold text-gray-700 text-xs uppercase">Status</th>
-                <th className="text-left p-3 font-semibold text-gray-700 text-xs uppercase">Actions</th>
+                <th className="text-left p-3 font-semibold text-neutral-700 text-xs uppercase">Task ID</th>
+                <th className="text-left p-3 font-semibold text-neutral-700 text-xs uppercase">Project</th>
+                <th className="text-left p-3 font-semibold text-neutral-700 text-xs uppercase">Complexity</th>
+                <th className="text-left p-3 font-semibold text-neutral-700 text-xs uppercase">Assigned</th>
+                <th className="text-left p-3 font-semibold text-neutral-700 text-xs uppercase">Due Date</th>
+                <th className="text-left p-3 font-semibold text-neutral-700 text-xs uppercase">Priority</th>
+                <th className="text-left p-3 font-semibold text-neutral-700 text-xs uppercase">Status</th>
+                <th className="text-left p-3 font-semibold text-neutral-700 text-xs uppercase">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-neutral-100">
               {filteredTasks.map((task) => (
-                <tr key={task.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="p-3 text-sm font-medium text-gray-900">{task.taskId}</td>
-                  <td className="p-3 text-sm text-gray-700">
+                <tr key={task.id} className="hover:bg-neutral-50 transition-colors">
+                  <td className="p-3 text-sm font-medium text-neutral-800">{task.taskId}</td>
+                  <td className="p-3 text-sm text-neutral-700">
                     <p className="font-medium">{task.projectName}</p>
-                    <p className="text-xs text-gray-500 truncate max-w-xs">{task.description}</p>
+                    <p className="text-xs text-neutral-500 truncate max-w-xs">{task.description}</p>
                   </td>
-                  <td className="p-3 text-sm text-gray-700">{task.complexity}</td>
-                  <td className="p-3 text-sm text-gray-700">{task.assignedDate}</td>
-                  <td className="p-3 text-sm text-gray-700">{task.dueDate}</td>
+                  <td className="p-3 text-sm text-neutral-700">{task.complexity}</td>
+                  <td className="p-3 text-sm text-neutral-700">{task.assignedDate}</td>
+                  <td className="p-3 text-sm text-neutral-700">{task.dueDate}</td>
                   <td className="p-3">
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${getPriorityColor(task.priority)}`}>
                       {task.priority}
@@ -92,11 +95,11 @@ const TasksTab: React.FC = () => {
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-2">
-                      <button className="p-1 hover:bg-blue-50 rounded transition-colors" title="View">
-                        <EyeIcon className="w-4 h-4 text-gray-600 hover:text-blue-600" />
+                      <button className="p-1 hover:bg-primary-50 rounded transition-colors" title="View">
+                        <EyeIcon className="w-4 h-4 text-neutral-600 hover:text-primary-600" />
                       </button>
-                      <button className="p-1 hover:bg-yellow-50 rounded transition-colors" title="Edit">
-                        <PencilIcon className="w-4 h-4 text-gray-600 hover:text-yellow-600" />
+                      <button className="p-1 hover:bg-warning-50 rounded transition-colors" title="Edit">
+                        <PencilIcon className="w-4 h-4 text-neutral-600 hover:text-warning-600" />
                       </button>
                     </div>
                   </td>
@@ -105,7 +108,7 @@ const TasksTab: React.FC = () => {
             </tbody>
           </table>
         </div>
-      </div>
+      </Card>
     </>
   );
 };

@@ -5,7 +5,8 @@ import React, {
 
 import Panel from "../components/Panel";
 import Chip from "../components/Chip";
-import { theme } from "../data/hrMockData";
+import { Button } from "../../../components/ui/Button";
+import { Table } from "../../../components/ui/Table";
 
 interface AttendanceTabProps {
   attendance: any[];
@@ -189,7 +190,7 @@ console.log(
 );
 
     const response = await fetch(
-      
+
       `${BASE_URL}/attendance/export-monthly`
     );
 
@@ -221,38 +222,63 @@ console.log(
 
 };
 
+  const attendanceColumns = [
+    {
+      key: "employee_name",
+      header: "Employee",
+      render: (at: any) => at.employee_name,
+    },
+    {
+      key: "team",
+      header: "Team",
+      render: (at: any) =>
+        at.team || at.department || at.designation || "-",
+    },
+    {
+      key: "date",
+      header: "Date",
+      render: (at: any) => at.date || "-",
+    },
+    {
+      key: "check_in",
+      header: "Check In",
+      render: (at: any) => at.check_in || "-",
+    },
+    {
+      key: "check_out",
+      header: "Check Out",
+      render: (at: any) => at.check_out || "-",
+    },
+    {
+      key: "total_hours",
+      header: "Working Hours",
+      render: (at: any) => at.total_hours || "-",
+    },
+    {
+      key: "shift",
+      header: "Shift",
+      render: (at: any) =>
+        at.shift || at.shift_timing || "General Shift",
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (at: any) => <Chip type={at.status} />,
+    },
+  ];
+
   return (
     <Panel>
 
       {/* Header */}
 
-     <div
-  style={{
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20
-  }}
->
+     <div className="flex justify-between items-center mb-5">
   <div>
-    <div
-      style={{
-        fontSize: 18,
-        fontWeight: 700,
-        color: "#1f2937"
-      }}
-    >
+    <div className="text-lg font-bold text-neutral-800">
       Attendance Management
     </div>
 
-    <div
-      style={{
-        fontSize: 12,
-        color: "#6b7280",
-        marginTop: 4,
-        fontWeight: 500
-      }}
-    >
+    <div className="text-xs text-neutral-500 mt-1 font-medium">
       {new Date().toLocaleDateString("en-US", {
         month: "long",
         day: "numeric",
@@ -261,52 +287,30 @@ console.log(
       })}
     </div>
 
-    <div
-      style={{
-        fontSize: 11,
-        color: "#9ca3af",
-        marginTop: 5,
-        fontWeight: 500
-      }}
-    >
+    <div className="text-[11px] text-neutral-400 mt-1.5 font-medium">
       {dateRange}
     </div>
   </div>
-  <button
+  <Button
   onClick={downloadAttendance}
-  className="bg-green-600 text-white px-4 py-2 rounded ml-[600px]"
+  variant="success"
+  className="ml-[600px]"
 >
   Download Excel
-</button>
+</Button>
 
   {/* Tabs */}
-  <div
-    style={{
-      display: "flex",
-      gap: 8
-    }}
-  >
+  <div className="flex gap-2">
     {["today", "weekly", "monthly"].map((tab) => (
       <button
         key={tab}
         onClick={() => setAttendanceView(tab)}
-        style={{
-          padding: "6px 14px",
-          borderRadius: 6,
-          border:
-            attendanceView === tab
-              ? "2px solid #2563eb"
-              : "1px solid #e5e7eb",
-          background:
-            attendanceView === tab
-              ? "#eff6ff"
-              : "#fff",
-          cursor: "pointer",
-          fontWeight: 600,
-          fontSize: 12,
-          color: attendanceView === tab ? "#2563eb" : "#6b7280",
-          transition: "all 0.2s"
-        }}
+        className={
+          "px-3.5 py-1.5 rounded-md font-semibold text-xs transition-all " +
+          (attendanceView === tab
+            ? "border-2 border-info-600 bg-info-50 text-info-600"
+            : "border border-neutral-200 bg-white text-neutral-500")
+        }
       >
         {tab.charAt(0).toUpperCase() + tab.slice(1)}
       </button>
@@ -315,207 +319,90 @@ console.log(
 </div>
 
 {/* Shift Cards */}
-<div
-  style={{
-    display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
-    gap: 12,
-    marginBottom: 16
-  }}
->
+<div className="grid grid-cols-4 gap-3 mb-4">
   <div
     onClick={() => setSelectedShift("Morning Shift")}
-    style={{
-      cursor: "pointer",
-      background:
-        selectedShift === "Morning Shift"
-          ? "#fef3c7"
-          : "#f9fafb",
-      border:
-        selectedShift === "Morning Shift"
-          ? "2px solid #f59e0b"
-          : "1px solid #e5e7eb",
-      borderRadius: 10,
-      padding: 16,
-      textAlign: "center",
-      transition: "all 0.2s"
-    }}
+    className={
+      "cursor-pointer rounded-[10px] p-4 text-center transition-all " +
+      (selectedShift === "Morning Shift"
+        ? "bg-warning-100 border-2 border-warning-500"
+        : "bg-neutral-50 border border-neutral-200")
+    }
   >
-    <div
-      style={{
-        fontSize: 11,
-        color: "#92400e",
-        fontWeight: 600,
-        marginBottom: 6,
-        textTransform: "uppercase"
-      }}
-    >
+    <div className="text-[11px] text-warning-700 font-semibold mb-1.5 uppercase">
       Morning
     </div>
-    <div
-      style={{
-        fontSize: 22,
-        fontWeight: 700,
-        color: "#1f2937"
-      }}
-    >
+    <div className="text-[22px] font-bold text-neutral-800">
       {morningCount}
     </div>
   </div>
 
   <div
     onClick={() => setSelectedShift("General Shift")}
-    style={{
-      cursor: "pointer",
-      background:
-        selectedShift === "General Shift"
-          ? "#dbeafe"
-          : "#f9fafb",
-      border:
-        selectedShift === "General Shift"
-          ? "2px solid #3b82f6"
-          : "1px solid #e5e7eb",
-      borderRadius: 10,
-      padding: 16,
-      textAlign: "center",
-      transition: "all 0.2s"
-    }}
+    className={
+      "cursor-pointer rounded-[10px] p-4 text-center transition-all " +
+      (selectedShift === "General Shift"
+        ? "bg-info-100 border-2 border-info-500"
+        : "bg-neutral-50 border border-neutral-200")
+    }
   >
-    <div
-      style={{
-        fontSize: 11,
-        color: "#1e40af",
-        fontWeight: 600,
-        marginBottom: 6,
-        textTransform: "uppercase"
-      }}
-    >
+    <div className="text-[11px] text-info-700 font-semibold mb-1.5 uppercase">
       General
     </div>
-    <div
-      style={{
-        fontSize: 22,
-        fontWeight: 700,
-        color: "#1f2937"
-      }}
-    >
+    <div className="text-[22px] font-bold text-neutral-800">
       {generalCount}
     </div>
   </div>
 
   <div
     onClick={() => setSelectedShift("Second Shift")}
-    style={{
-      cursor: "pointer",
-      background:
-        selectedShift === "Second Shift"
-          ? "#fce7f3"
-          : "#f9fafb",
-      border:
-        selectedShift === "Second Shift"
-          ? "2px solid #ec4899"
-          : "1px solid #e5e7eb",
-      borderRadius: 10,
-      padding: 16,
-      textAlign: "center",
-      transition: "all 0.2s"
-    }}
+    className={
+      "cursor-pointer rounded-[10px] p-4 text-center transition-all " +
+      (selectedShift === "Second Shift"
+        ? "bg-pink-100 border-2 border-pink-500"
+        : "bg-neutral-50 border border-neutral-200")
+    }
   >
-    <div
-      style={{
-        fontSize: 11,
-        color: "#9d174d",
-        fontWeight: 600,
-        marginBottom: 6,
-        textTransform: "uppercase"
-      }}
-    >
+    <div className="text-[11px] text-pink-800 font-semibold mb-1.5 uppercase">
       Second
     </div>
-    <div
-      style={{
-        fontSize: 22,
-        fontWeight: 700,
-        color: "#1f2937"
-      }}
-    >
+    <div className="text-[22px] font-bold text-neutral-800">
       {secondCount}
     </div>
   </div>
 
   <div
     onClick={() => setSelectedShift("Night Shift")}
-    style={{
-      cursor: "pointer",
-      background:
-        selectedShift === "Night Shift"
-          ? "#e9d5ff"
-          : "#f9fafb",
-      border:
-        selectedShift === "Night Shift"
-          ? "2px solid #8b5cf6"
-          : "1px solid #e5e7eb",
-      borderRadius: 10,
-      padding: 16,
-      textAlign: "center",
-      transition: "all 0.2s"
-    }}
+    className={
+      "cursor-pointer rounded-[10px] p-4 text-center transition-all " +
+      (selectedShift === "Night Shift"
+        ? "bg-purple-100 border-2 border-purple-500"
+        : "bg-neutral-50 border border-neutral-200")
+    }
   >
-    <div
-      style={{
-        fontSize: 11,
-        color: "#5b21b6",
-        fontWeight: 600,
-        marginBottom: 6,
-        textTransform: "uppercase"
-      }}
-    >
+    <div className="text-[11px] text-purple-800 font-semibold mb-1.5 uppercase">
       Night
     </div>
-    <div
-      style={{
-        fontSize: 22,
-        fontWeight: 700,
-        color: "#1f2937"
-      }}
-    >
+    <div className="text-[22px] font-bold text-neutral-800">
       {nightCount}
     </div>
   </div>
 </div>
 
-<div
-  style={{
-    marginBottom: 16
-  }}
->
-  <button
+<div className="mb-4">
+  <Button
     onClick={() => setSelectedShift("All")}
-    style={{
-      padding: "6px 14px",
-      borderRadius: 6,
-      border: "1px solid #e5e7eb",
-      background: "#fff",
-      cursor: "pointer",
-      fontWeight: 600,
-      fontSize: 12,
-      color: "#6b7280"
-    }}
+    variant="outline"
+    size="sm"
   >
     Show All
-  </button>
+  </Button>
 </div>
 
 
       {/* Title */}
 
-      <div
-        style={{
-          marginBottom: 15,
-          fontWeight: 700,
-          fontSize: 15,
-        }}
-      >
+      <div className="mb-4 font-bold text-[15px]">
         {attendanceView ===
           "today" &&
           "Today's Attendance"}
@@ -529,191 +416,28 @@ console.log(
           "Monthly Attendance"}
       </div>
 
-      
+
 
       {/* Loading */}
 
       {loading ? (
 
-        <div
-          style={{
-            textAlign: "center",
-            padding: 30,
-          }}
-        >
+        <div className="text-center p-8">
           Loading Attendance...
         </div>
 
       ) : (
 
-        <div
-          style={{
-            overflowX: "auto",
-          }}
-        >
-          <table
-            style={{
-              width: "100%",
-              textAlign:
-                "left",
-              fontSize: 13,
-              borderCollapse:
-                "collapse",
-            }}
-          >
-
-            <thead>
-              <tr
-                style={{
-                  borderBottom:
-                    `2px solid ${theme.border}`,
-                  color:
-                    theme.textMuted,
-                }}
-              >
-                {[
-                  "Employee",
-                  "Team",
-                  "Date",
-                  "Check In",
-                  "Check Out",
-                  "Working Hours",
-                  "Shift",
-                  "Status",
-                ].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      padding:
-                        "14px 12px",
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody>
-
-              {filteredAttendance.length >
-              0 ? (
-
-                filteredAttendance.map(
-                  (
-                    at,
-                    i
-                  ) => (
-                    <tr
-                      key={i}
-                      style={{
-                        borderBottom:
-                          "1px solid #f1f5f9",
-                      }}
-                    >
-                      <td
-                        style={{
-                          padding:
-                            "14px 12px",
-                        }}
-                      >
-                        {
-                          at.employee_name
-                        }
-                      </td>
-
-                      <td
-                        style={{
-                          padding:
-                            "14px 12px",
-                        }}
-                      >
-                        {at.team ||
-                          at.department ||
-                          at.designation ||
-                          "-"}
-                      </td>
-
-                      <td
-  style={{
-    padding: "14px 12px",
-  }}
->
-  {at.date || "-"}
-</td>
-
-                      <td
-                        style={{
-                          padding:
-                            "14px 12px",
-                        }}
-                      >
-                        {at.check_in ||
-                          "-"}
-                      </td>
-
-                      <td
-                        style={{
-                          padding:
-                            "14px 12px",
-                        }}
-                      >
-                        {at.check_out ||
-                          "-"}
-                      </td>
-
-                      <td
-                        style={{
-                          padding:
-                            "14px 12px",
-                        }}
-                      >
-                        {at.total_hours ||
-                          "-"}
-                      </td>
-
-     <td style={{ padding: "14px 12px" }}>
-  {at.shift || at.shift_timing || "General Shift"}
-</td>
-
-                      <td
-                        style={{
-                          padding:
-                            "14px 12px",
-                        }}
-                      >
-                        <Chip
-                          type={
-                            at.status
-                          }
-                        />
-                      </td>
-                    </tr>
-                  )
-                )
-
-              ) : (
-
-                <tr>
-                  <td
-                    colSpan={6}
-                    style={{
-                      textAlign:
-                        "center",
-                      padding: 30,
-                    }}
-                  >
-                    No Attendance
-                    Records Found
-                  </td>
-                </tr>
-
-              )}
-
-            </tbody>
-
-          </table>
-        </div>
+        <Table
+          columns={attendanceColumns}
+          data={filteredAttendance}
+          rowKey={(_at, i) => i}
+          emptyState={
+            <div className="text-center p-8 text-neutral-500">
+              No Attendance Records Found
+            </div>
+          }
+        />
 
       )}
 

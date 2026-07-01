@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { PlusIcon } from "@heroicons/react/24/outline";
-import { labelStyle, inputStyle } from "../utils/hrHelpers";
+import { Modal } from "../../../components/ui/Modal";
+import { Button } from "../../../components/ui/Button";
+import { FormField, Input, Select } from "../../../components/ui/Form";
 
 interface AddEmployeeModalProps {
   newEmp: any;
@@ -93,296 +94,161 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(15,23,42,0.55)",
-        backdropFilter: "blur(6px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-        padding: 16,
-      }}
+    <Modal
+      isOpen
+      onClose={onClose}
+      className="max-w-[920px]"
+      title="Add New Employee"
+      footer={
+        <>
+          <Button variant="outline" type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={validateForm}>
+            Add Employee
+          </Button>
+        </>
+      }
     >
-      <div
-        style={{
-          background: "#FFFFFF",
-          borderRadius: 24,
-          width: 920,
-          maxWidth: "100%",
-          maxHeight: "92vh",
-          overflowY: "auto",
-          boxShadow: "0 24px 60px rgba(15,23,42,0.25)",
-          border: "1px solid #E2E8F0",
-        }}
-      >
-        <div
-          style={{
-            padding: "22px 26px",
-            borderBottom: "1px solid #E2E8F0",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            background: "linear-gradient(135deg, #EEF2FF, #FFFFFF)",
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "#0F172A" }}>
-              Add New Employee
-            </div>
-            <div style={{ fontSize: 13, color: "#64748B", marginTop: 4 }}>
-              HR can create a new employee record with essential details
-            </div>
+      <p className="text-sm text-neutral-500 -mt-3 mb-5">
+        HR can create a new employee record with essential details
+      </p>
+
+      <form>
+        {isEmptyField && (
+          <div className="mb-4 p-3 bg-danger-50 border border-danger-200 rounded-lg text-danger-600 text-sm">
+            ⚠️ Please fill all mandatory fields including Profile Image before
+            adding employee.
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              border: "none",
-              background: "#F1F5F9",
-              width: 38,
-              height: 38,
-              borderRadius: 12,
-              cursor: "pointer",
-              fontSize: 22,
-              color: "#475569",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            ×
-          </button>
-        </div>
+        )}
 
-        <form style={{ padding: 26 }}>
-          {isEmptyField && (
-            <div
-              style={{
-                marginBottom: 16,
-                padding: 12,
-                background: "#FEF2F2",
-                border: "1px solid #FECACA",
-                borderRadius: 8,
-                color: "#DC2626",
-                fontSize: 14,
-              }}
-            >
-              ⚠️ Please fill all mandatory fields including Profile Image before
-              adding employee.
-            </div>
-          )}
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-              gap: 18,
-            }}
-          >
-            {[
-              {
-                label: "EMPLOYEE ID *",
-                key: "employee_id",
-                placeholder: "e.g., EMP001",
-              },
-              {
-                label: "FIRST NAME *",
-                key: "first_name",
-                placeholder: "e.g., John",
-              },
-              {
-                label: "LAST NAME *",
-                key: "last_name",
-                placeholder: "e.g., Smith",
-              },
-              {
-                label: "EMAIL *",
-                key: "email",
-                placeholder: "e.g., john@company.com",
-                type: "email",
-              },
-              {
-                label: "PHONE *",
-                key: "phone",
-                placeholder: "e.g., +91 9876543210",
-              },
-              { label: "JOINING DATE *", key: "joining_date", type: "date" },
-              {
-                label: "SALARY *",
-                key: "salary",
-                placeholder: "e.g., 150000",
-                type: "number",
-              },
-            ].map((field) => (
-              <div key={field.key}>
-                <label style={labelStyle}>{field.label}</label>
-                <input
-                  required
-                  type={field.type || "text"}
-                  value={newEmp[field.key]}
-                  onChange={(e) =>
-                    setNewEmp({ ...newEmp, [field.key]: e.target.value })
-                  }
-                  placeholder={field.placeholder || ""}
-                  style={inputStyle}
-                />
-              </div>
-            ))}
-
-            <div>
-              <label style={labelStyle}>Designation *</label>
-              <select
+        <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+          {[
+            {
+              label: "EMPLOYEE ID *",
+              key: "employee_id",
+              placeholder: "e.g., EMP001",
+            },
+            {
+              label: "FIRST NAME *",
+              key: "first_name",
+              placeholder: "e.g., John",
+            },
+            {
+              label: "LAST NAME *",
+              key: "last_name",
+              placeholder: "e.g., Smith",
+            },
+            {
+              label: "EMAIL *",
+              key: "email",
+              placeholder: "e.g., john@company.com",
+              type: "email",
+            },
+            {
+              label: "PHONE *",
+              key: "phone",
+              placeholder: "e.g., +91 9876543210",
+            },
+            { label: "JOINING DATE *", key: "joining_date", type: "date" },
+            {
+              label: "SALARY *",
+              key: "salary",
+              placeholder: "e.g., 150000",
+              type: "number",
+            },
+          ].map((field) => (
+            <FormField key={field.key} label={field.label}>
+              <Input
                 required
-                value={newEmp.team_id || ""}
-                onChange={(e) => {
-                  const selectedTeam = teams.find(
-                    (team) => team.id === Number(e.target.value),
-                  );
-
-                  setNewEmp({
-                    ...newEmp,
-
-                    team_id: e.target.value,
-
-                    // Save department/designation automatically
-                    department: selectedTeam?.name || "",
-                    designation: selectedTeam?.name || "",
-
-                    role: "",
-                  });
-                }}
-                style={inputStyle}
-              >
-                <option value="">Select Team</option>
-
-                {teams?.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={labelStyle}>REPORTING MANAGER *</label>
-              <select
-                required
-                value={newEmp.reporting_manager}
+                type={field.type || "text"}
+                value={newEmp[field.key]}
                 onChange={(e) =>
-                  setNewEmp({ ...newEmp, reporting_manager: e.target.value })
+                  setNewEmp({ ...newEmp, [field.key]: e.target.value })
                 }
-                style={inputStyle}
-              >
-                <option value="">Select Manager</option>
-                {employees?.map((emp) => (
-                  <option
-                    key={emp.id}
-                    value={`${emp.first_name} ${emp.last_name}`}
-                  >
-                    {emp.first_name} {emp.last_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={labelStyle}>Role *</label>
-              <select
-                required
-                value={newEmp.role}
-                onChange={(e) =>
-                  setNewEmp({
-                    ...newEmp,
-                    role: e.target.value,
-                  })
-                }
-                style={inputStyle}
-              >
-                <option value="">Select Role</option>
-                {filteredRoles?.map((role) => (
-                  <option key={role.id} value={role.name}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={labelStyle}>STATUS *</label>
-              <select
-                required
-                value={newEmp.status}
-                onChange={(e) =>
-                  setNewEmp({ ...newEmp, status: e.target.value })
-                }
-                style={inputStyle}
-              >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="On Leave">On Leave</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={labelStyle}>PROFILE IMAGE *</label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e: any) => setProfileImage(e.target.files[0])}
-                style={inputStyle}
-                required
+                placeholder={field.placeholder || ""}
               />
-            </div>
-          </div>
+            </FormField>
+          ))}
 
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              marginTop: 28,
-              justifyContent: "flex-end",
-              flexWrap: "wrap",
-            }}
-          >
-            <button
-              onClick={onClose}
-              type="button"
-              style={{
-                padding: "12px 20px",
-                background: "#F8FAFC",
-                color: "#334155",
-                border: "1px solid #CBD5E1",
-                borderRadius: 12,
-                fontWeight: 700,
-                cursor: "pointer",
-                minWidth: 120,
+          <FormField label="Designation *">
+            <Select
+              value={newEmp.team_id || ""}
+              onChange={(value) => {
+                const selectedTeam = teams.find(
+                  (team) => team.id === Number(value),
+                );
+
+                setNewEmp({
+                  ...newEmp,
+
+                  team_id: value,
+
+                  // Save department/designation automatically
+                  department: selectedTeam?.name || "",
+                  designation: selectedTeam?.name || "",
+
+                  role: "",
+                });
               }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={validateForm}
-              style={{
-                padding: "12px 20px",
-                background: "#4C5C68",
-                color: "#fff",
-                border: "none",
-                borderRadius: 12,
-                fontWeight: 700,
-                cursor: "pointer",
-                minWidth: 140,
-              }}
-            >
-              Add Employee
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+              placeholder="Select Team"
+              options={(teams || []).map((team) => ({ label: team.name, value: team.id }))}
+            />
+          </FormField>
+
+          <FormField label="REPORTING MANAGER *">
+            <Select
+              value={newEmp.reporting_manager}
+              onChange={(value) =>
+                setNewEmp({ ...newEmp, reporting_manager: value })
+              }
+              placeholder="Select Manager"
+              options={(employees || []).map((emp) => ({
+                label: `${emp.first_name} ${emp.last_name}`,
+                value: `${emp.first_name} ${emp.last_name}`,
+              }))}
+            />
+          </FormField>
+
+          <FormField label="Role *">
+            <Select
+              value={newEmp.role}
+              onChange={(value) =>
+                setNewEmp({
+                  ...newEmp,
+                  role: value,
+                })
+              }
+              placeholder="Select Role"
+              options={(filteredRoles || []).map((role) => ({ label: role.name, value: role.name }))}
+            />
+          </FormField>
+
+          <FormField label="STATUS *">
+            <Select
+              value={newEmp.status}
+              onChange={(value) =>
+                setNewEmp({ ...newEmp, status: value })
+              }
+              options={[
+                { label: "Active", value: "Active" },
+                { label: "Inactive", value: "Inactive" },
+                { label: "On Leave", value: "On Leave" },
+              ]}
+            />
+          </FormField>
+
+          <FormField label="PROFILE IMAGE *">
+            <Input
+              type="file"
+              accept="image/*"
+              onChange={(e: any) => setProfileImage(e.target.files[0])}
+              required
+            />
+          </FormField>
+        </div>
+      </form>
+    </Modal>
   );
 };
 

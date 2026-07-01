@@ -6,6 +6,8 @@ interface User {
   full_name: string
   email: string
   role?: string
+  access_level?: string
+  user?: { access_level?: string }
 
   profile_completed?: boolean
   is_first_login?: boolean

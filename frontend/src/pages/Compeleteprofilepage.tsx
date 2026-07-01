@@ -5,25 +5,25 @@ import toast from "react-hot-toast";
 // ─── Moved OUTSIDE the parent component ───────────────────────────────────────
 
 const inputCls =
-  "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all";
+  "w-full rounded-xl border border-neutral-300 bg-white px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all";
 const selectCls = `${inputCls} cursor-pointer`;
 
-const InfoCard = ({ label, value, className = "" }) => (
+const InfoCard = ({ label, value, className = "" }: { label: string; value?: any; className?: string }) => (
   <div
-    className={`group rounded-2xl border border-slate-200 bg-slate-50/70 p-4 transition-all duration-200 hover:border-indigo-200 hover:bg-white hover:shadow-md ${className}`}
+    className={`group rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 transition-all duration-200 hover:border-primary-200 hover:bg-white hover:shadow-md ${className}`}
   >
-    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+    <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
       {label}
     </p>
-    <p className="mt-2 break-words text-sm font-semibold text-slate-900 sm:text-base">
+    <p className="mt-2 break-words text-sm font-semibold text-neutral-800 sm:text-base">
       {value || "N/A"}
     </p>
   </div>
 );
 
-const Field = ({ label, children, full = false }) => (
+const Field = ({ label, children, full = false }: { label: string; children: React.ReactNode; full?: boolean }) => (
   <div className={full ? "col-span-full" : ""}>
-    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+    <label className="mb-1.5 block text-sm font-medium text-neutral-700">
       {label}
     </label>
     {children}
@@ -35,8 +35,8 @@ const Field = ({ label, children, full = false }) => (
 const Completeprofilepage = () => {
   const navigate = useNavigate();
   const [skillInput, setSkillInput] = useState("");
-  const [skills, setSkills] = useState([]);
-  const [employeeInfo, setEmployeeInfo] = useState(null);
+  const [skills, setSkills] = useState<string[]>([]);
+  const [employeeInfo, setEmployeeInfo] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const employeeId = localStorage.getItem("employee_id");
@@ -116,14 +116,14 @@ const Completeprofilepage = () => {
     }
   };
 
-  const removeSkill = (skill) => {
+  const removeSkill = (skill: string) => {
     const updated = skills.filter((s) => s !== skill);
     setSkills(updated);
     setFormData((p) => ({ ...p, skills: updated.join(",") }));
   };
 
   // ─── Handlers ─────────────────────────────────────────────
-  const handleChange = (e) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     if (name === "total_experience") {
       const isFresher =
@@ -138,9 +138,9 @@ const Completeprofilepage = () => {
     setFormData((p) => ({ ...p, [name]: value }));
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, files } = e.target;
-    setFormData((p) => ({ ...p, [name]: files[0] }));
+    setFormData((p) => ({ ...p, [name]: files ? files[0] : null }));
   };
 
   // ─── Fetch existing employee data ─────────────────────────
@@ -169,7 +169,7 @@ const Completeprofilepage = () => {
           setSkills(
             data.skills
               .split(",")
-              .map((s) => s.trim())
+              .map((s: string) => s.trim())
               .filter(Boolean),
           );
         }
@@ -181,7 +181,7 @@ const Completeprofilepage = () => {
   }, []);
 
   // ─── Submit ───────────────────────────────────────────────
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -227,7 +227,7 @@ const Completeprofilepage = () => {
     ];
 
     for (const { key, label } of requiredFields) {
-      const val = formData[key];
+      const val = (formData as Record<string, any>)[key];
       if (val === undefined || val === null || String(val).trim() === "") {
         toast.error(`${label} is required`);
         document
@@ -517,7 +517,7 @@ const Completeprofilepage = () => {
         <>
           {/* 10th */}
           <div className="col-span-full">
-            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-primary-600">
               10th Standard
             </p>
           </div>
@@ -556,7 +556,7 @@ const Completeprofilepage = () => {
 
           {/* 12th */}
           <div className="col-span-full mt-2">
-            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-primary-600">
               12th Standard
             </p>
           </div>
@@ -595,7 +595,7 @@ const Completeprofilepage = () => {
 
           {/* UG */}
           <div className="col-span-full mt-2">
-            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-primary-600">
               Under Graduate (UG)
             </p>
           </div>
@@ -645,7 +645,7 @@ const Completeprofilepage = () => {
 
           {/* PG */}
           <div className="col-span-full mt-2">
-            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-neutral-400">
               Post Graduate (PG) — Optional
             </p>
           </div>
@@ -726,7 +726,7 @@ const Completeprofilepage = () => {
               onChange={handleChange}
               placeholder="e.g. Infosys"
               disabled={isFresher}
-              className={`${inputCls} disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400`}
+              className={`${inputCls} disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-400`}
             />
           </Field>
 
@@ -792,7 +792,7 @@ const Completeprofilepage = () => {
               <button
                 type="button"
                 onClick={addSkill}
-                className="rounded-xl bg-[#46494C] px-5 py-3 font-medium text-white hover:bg-slate-700 transition-all"
+                className="rounded-xl bg-primary-500 px-5 py-3 font-medium text-white hover:bg-primary-600 transition-all"
               >
                 Add
               </button>
@@ -802,7 +802,7 @@ const Completeprofilepage = () => {
                 {skills.map((skill, i) => (
                   <span
                     key={i}
-                    className="flex items-center gap-1.5 rounded-full bg-indigo-100 px-4 py-1.5 text-sm font-medium text-indigo-700"
+                    className="flex items-center gap-1.5 rounded-full bg-primary-100 px-4 py-1.5 text-sm font-medium text-primary-700"
                   >
                     {skill}
                     <button
@@ -930,8 +930,8 @@ const Completeprofilepage = () => {
               className={inputCls}
             />
           </Field>
-          <div className="col-span-full rounded-xl bg-indigo-50 border border-indigo-100 p-4">
-            <p className="text-sm font-medium text-indigo-700">
+          <div className="col-span-full rounded-xl bg-primary-50 border border-primary-100 p-4">
+            <p className="text-sm font-medium text-primary-700">
               ℹ️ PF, UAN and ESI are mandatory for eligible employees.
             </p>
           </div>
@@ -1037,11 +1037,11 @@ const Completeprofilepage = () => {
 
   // ─── Render ────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-100 p-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-neutral-50 via-primary-50/30 to-neutral-100 p-4 py-8">
       <div className="mx-auto max-w-7xl">
         {/* Page Header */}
         <div className="mb-8 text-center">
-          <div className="mb-4 inline-flex items-center justify-center rounded-2xl bg-[#1F7A8C] p-4 shadow-lg">
+          <div className="mb-4 inline-flex items-center justify-center rounded-2xl bg-primary-500 p-4 shadow-lg">
             <svg
               className="h-8 w-8 text-white"
               fill="none"
@@ -1056,19 +1056,19 @@ const Completeprofilepage = () => {
               />
             </svg>
           </div>
-          <h1 className="text-4xl font-bold text-slate-900">
+          <h1 className="text-4xl font-bold text-neutral-800">
             Complete Your Profile
           </h1>
-          <p className="mx-auto mt-3 max-w-2xl text-lg text-slate-600">
+          <p className="mx-auto mt-3 max-w-2xl text-lg text-neutral-600">
             Fill in all the details below to unlock your dashboard.
           </p>
         </div>
 
-        <div className="rounded-3xl bg-white shadow-2xl shadow-slate-200/50">
+        <div className="rounded-3xl bg-white shadow-2xl shadow-neutral-200/50">
           {/* Employee Info Card */}
           {employeeInfo && (
-            <section className="overflow-hidden rounded-t-3xl border-b border-slate-200">
-              <div className="bg-[#4C5C68] px-6 py-8 sm:px-8">
+            <section className="overflow-hidden rounded-t-3xl border-b border-neutral-200">
+              <div className="bg-primary-600 px-6 py-8 sm:px-8">
                 <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex flex-col items-center gap-4 sm:flex-row">
                     <div className="relative">
@@ -1076,29 +1076,29 @@ const Completeprofilepage = () => {
                         src={profileImageUrl}
                         alt="Profile"
                         className="h-28 w-28 rounded-2xl object-cover ring-4 ring-white/20 shadow-2xl"
-                        onError={(e) => {
-                          e.target.style.display = "none";
+                        onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                          (e.target as HTMLImageElement).style.display = "none";
                         }}
                       />
-                      <span className="absolute -bottom-2 -right-2 rounded-full border-4 border-[#4C5C68] bg-emerald-400 px-2 py-1 text-[10px] font-bold text-slate-900">
+                      <span className="absolute -bottom-2 -right-2 rounded-full border-4 border-primary-600 bg-emerald-400 px-2 py-1 text-[10px] font-bold text-neutral-900">
                         Active
                       </span>
                     </div>
                     <div className="text-center sm:text-left">
-                      <p className="text-xs font-medium text-indigo-200 uppercase tracking-wider">
+                      <p className="text-xs font-medium text-primary-100 uppercase tracking-wider">
                         Employee Profile
                       </p>
                       <h2 className="mt-1 text-2xl font-bold text-white">
                         {employeeInfo.first_name} {employeeInfo.last_name}
                       </h2>
-                      <p className="mt-0.5 text-sm text-slate-300">
+                      <p className="mt-0.5 text-sm text-primary-100">
                         {employeeInfo.designation} • {employeeInfo.department}
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white">
                           ID: {employeeInfo.employee_id}
                         </span>
-                        <span className="rounded-full bg-indigo-400/20 px-3 py-1 text-xs text-indigo-100">
+                        <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-primary-50">
                           Role: {employeeInfo.role}
                         </span>
                       </div>
@@ -1114,7 +1114,7 @@ const Completeprofilepage = () => {
                         key={l}
                         className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"
                       >
-                        <p className="text-xs text-slate-300">{l}</p>
+                        <p className="text-xs text-primary-100">{l}</p>
                         <p className="mt-1 truncate text-sm font-semibold text-white">
                           {v || "N/A"}
                         </p>
@@ -1124,7 +1124,7 @@ const Completeprofilepage = () => {
                 </div>
               </div>
               <div className="p-6 sm:p-8">
-                <h3 className="mb-4 text-lg font-bold text-slate-900">
+                <h3 className="mb-4 text-lg font-bold text-neutral-800">
                   Pre-filled Employee Information
                 </h3>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -1170,11 +1170,11 @@ const Completeprofilepage = () => {
                 {sections.map((section, idx) => (
                   <div
                     key={idx}
-                    className={`rounded-2xl border border-slate-200 bg-slate-50/50 p-6 transition-all hover:border-indigo-300 hover:shadow-md
+                    className={`rounded-2xl border border-neutral-200 bg-neutral-50/50 p-6 transition-all hover:border-primary-300 hover:shadow-md
                       ${["Education", "Experience & Skills"].includes(section.title) ? "lg:col-span-2" : ""}`}
                   >
                     <div className="mb-5 flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1F7A8C] text-white">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-500 text-white">
                         <svg
                           className="h-5 w-5"
                           fill="none"
@@ -1184,7 +1184,7 @@ const Completeprofilepage = () => {
                           {section.icon}
                         </svg>
                       </div>
-                      <h3 className="text-lg font-bold text-slate-900">
+                      <h3 className="text-lg font-bold text-neutral-800">
                         {section.title}
                       </h3>
                     </div>
@@ -1197,11 +1197,11 @@ const Completeprofilepage = () => {
             </div>
 
             {/* Footer */}
-            <div className="border-t border-slate-200 bg-slate-50 px-6 py-5 rounded-b-3xl">
+            <div className="border-t border-neutral-200 bg-neutral-50 px-6 py-5 rounded-b-3xl">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <p className="text-sm text-slate-500 flex items-center gap-2">
+                <p className="text-sm text-neutral-500 flex items-center gap-2">
                   <svg
-                    className="h-4 w-4 text-indigo-500"
+                    className="h-4 w-4 text-primary-500"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -1218,7 +1218,7 @@ const Completeprofilepage = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#46494C] px-8 py-3.5 font-semibold text-white shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-[#46494C] focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary-500 px-8 py-3.5 font-semibold text-white shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
                 >
                   {isSubmitting ? (
                     <>
@@ -1269,11 +1269,11 @@ const Completeprofilepage = () => {
 
         {/* Progress bar */}
         <div className="mt-6 text-center">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-neutral-500">
             Step 2 of 3 — Complete Profile Information
           </p>
-          <div className="mx-auto mt-2 max-w-md overflow-hidden rounded-full bg-slate-200">
-            <div className="h-2 w-2/3 rounded-full bg-[#46494C] transition-all" />
+          <div className="mx-auto mt-2 max-w-md overflow-hidden rounded-full bg-neutral-200">
+            <div className="h-2 w-2/3 rounded-full bg-primary-500 transition-all" />
           </div>
         </div>
       </div>

@@ -1,5 +1,7 @@
 import React from 'react';
-import { theme } from '../data/hrMockData';
+import { Modal } from '../../../components/ui/Modal';
+import { Button } from '../../../components/ui/Button';
+import { FormField, Input, Select, Textarea } from '../../../components/ui/Form';
 
 interface ProfileCompleteModalProps {
   currentEmployee: any;
@@ -9,9 +11,7 @@ interface ProfileCompleteModalProps {
   onClose: () => void;
 }
 
-const fieldStyle: React.CSSProperties = { width: "100%", padding: 12, background: "#F0F4FF", border: "1px solid #DCDEF5", borderRadius: 8, fontSize: 13, outline: "none" };
-const labelS: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#64748B", display: "block", marginBottom: 6 };
-const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: "#1F7A8C", marginBottom: 10 };
+const sectionTitleClass = "text-xs font-bold text-primary-600 mb-2.5";
 
 const ProfileCompleteModal: React.FC<ProfileCompleteModalProps> = ({
   currentEmployee, profileData, setProfileData, onSubmit, onClose,
@@ -19,123 +19,146 @@ const ProfileCompleteModal: React.FC<ProfileCompleteModalProps> = ({
   const upd = (key: string, val: string) => setProfileData({ ...profileData, [key]: val });
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16, overflowY: "auto" }}>
-      <div style={{ background: theme.surface, borderRadius: 20, padding: 28, width: 600, maxWidth: "100%", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>Complete Your Profile</div>
-            <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>Welcome, {currentEmployee?.name}! Please fill the remaining details</div>
-          </div>
-          <button onClick={onClose} style={{ border: "none", background: "transparent", fontSize: 24, cursor: "pointer", color: theme.textMuted }}>×</button>
+    <Modal
+      isOpen
+      onClose={onClose}
+      size="md"
+      title="Complete Your Profile"
+      footer={
+        <>
+          <Button variant="outline" fullWidth onClick={onClose}>Skip for Now</Button>
+          <Button fullWidth onClick={onSubmit}>Complete Profile</Button>
+        </>
+      }
+    >
+      <p className="text-xs text-neutral-500 -mt-3 mb-4">Welcome, {currentEmployee?.name}! Please fill the remaining details</p>
+
+      <div className="flex flex-col gap-3.5">
+
+        {/* Personal Information */}
+        <div className={sectionTitleClass}>PERSONAL INFORMATION</div>
+        <div className="grid grid-cols-2 gap-3.5">
+          <FormField label="DATE OF BIRTH *">
+            <Input type="date" value={profileData.dob} onChange={(e) => upd("dob", e.target.value)} />
+          </FormField>
+          <FormField label="GENDER *">
+            <Select
+              value={profileData.gender}
+              onChange={(value) => upd("gender", value)}
+              placeholder="Select Gender"
+              options={[
+                { label: "Male", value: "Male" },
+                { label: "Female", value: "Female" },
+                { label: "Other", value: "Other" },
+              ]}
+            />
+          </FormField>
+          <FormField label="MARITAL STATUS *">
+            <Select
+              value={profileData.marital_status}
+              onChange={(value) => upd("marital_status", value)}
+              placeholder="Select Status"
+              options={[
+                { label: "Single", value: "Single" },
+                { label: "Married", value: "Married" },
+                { label: "Divorced", value: "Divorced" },
+                { label: "Widowed", value: "Widowed" },
+              ]}
+            />
+          </FormField>
+          <FormField label="BLOOD GROUP *">
+            <Select
+              value={profileData.blood_group}
+              onChange={(value) => upd("blood_group", value)}
+              placeholder="Select Blood Group"
+              options={["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((bg) => ({ label: bg, value: bg }))}
+            />
+          </FormField>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, maxHeight: "70vh", overflowY: "auto", padding: "0 4px" }}>
-
-          {/* Personal Information */}
-          <div style={sectionTitle}>PERSONAL INFORMATION</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div><label style={labelS}>DATE OF BIRTH *</label><input type="date" value={profileData.dob} onChange={(e) => upd("dob", e.target.value)} style={fieldStyle} /></div>
-            <div>
-              <label style={labelS}>GENDER *</label>
-              <select value={profileData.gender} onChange={(e) => upd("gender", e.target.value)} style={fieldStyle}>
-                <option value="">Select Gender</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelS}>MARITAL STATUS *</label>
-              <select value={profileData.marital_status} onChange={(e) => upd("marital_status", e.target.value)} style={fieldStyle}>
-                <option value="">Select Status</option>
-                <option value="Single">Single</option>
-                <option value="Married">Married</option>
-                <option value="Divorced">Divorced</option>
-                <option value="Widowed">Widowed</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelS}>BLOOD GROUP *</label>
-              <select value={profileData.blood_group} onChange={(e) => upd("blood_group", e.target.value)} style={fieldStyle}>
-                <option value="">Select Blood Group</option>
-                {["A+","A-","B+","B-","AB+","AB-","O+","O-"].map(bg => <option key={bg} value={bg}>{bg}</option>)}
-              </select>
-            </div>
+        {/* Address */}
+        <div className={sectionTitleClass}>ADDRESS</div>
+        <div className="grid grid-cols-2 gap-3.5">
+          <div className="col-span-2">
+            <FormField label="ADDRESS *">
+              <Textarea value={profileData.address} onChange={(e) => upd("address", e.target.value)} rows={2} placeholder="Enter full address" />
+            </FormField>
           </div>
+          {[
+            { label: "CITY *", key: "city" },
+            { label: "STATE *", key: "state" },
+            { label: "COUNTRY *", key: "country", placeholder: "e.g., India" },
+            { label: "PINCODE *", key: "pincode", placeholder: "e.g., 600032" },
+          ].map((f) => (
+            <FormField key={f.key} label={f.label}>
+              <Input value={profileData[f.key]} onChange={(e) => upd(f.key, e.target.value)} placeholder={f.placeholder || ""} />
+            </FormField>
+          ))}
+        </div>
 
-          {/* Address */}
-          <div style={sectionTitle}>ADDRESS</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label style={labelS}>ADDRESS *</label>
-              <textarea value={profileData.address} onChange={(e) => upd("address", e.target.value)} rows={2} placeholder="Enter full address" style={{ ...fieldStyle, resize: "vertical" }} />
-            </div>
-            {[
-              { label: "CITY *", key: "city" },
-              { label: "STATE *", key: "state" },
-              { label: "COUNTRY *", key: "country", placeholder: "e.g., India" },
-              { label: "PINCODE *", key: "pincode", placeholder: "e.g., 600032" },
-            ].map((f) => (
-              <div key={f.key}>
-                <label style={labelS}>{f.label}</label>
-                <input value={profileData[f.key]} onChange={(e) => upd(f.key, e.target.value)} placeholder={f.placeholder || ""} style={fieldStyle} />
-              </div>
-            ))}
-          </div>
+        {/* Identity Documents */}
+        <div className={sectionTitleClass}>IDENTITY DOCUMENTS</div>
+        <div className="grid grid-cols-2 gap-3.5">
+          <FormField label="PAN NUMBER *">
+            <Input value={profileData.pan_number} onChange={(e) => upd("pan_number", e.target.value.toUpperCase())} placeholder="e.g., ABCDE1234F" />
+          </FormField>
+          <FormField label="AADHAAR NUMBER *">
+            <Input value={profileData.aadhaar_number} onChange={(e) => upd("aadhaar_number", e.target.value)} placeholder="e.g., 1234 5678 9012" />
+          </FormField>
+        </div>
 
-          {/* Identity Documents */}
-          <div style={sectionTitle}>IDENTITY DOCUMENTS</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div><label style={labelS}>PAN NUMBER *</label><input value={profileData.pan_number} onChange={(e) => upd("pan_number", e.target.value.toUpperCase())} placeholder="e.g., ABCDE1234F" style={fieldStyle} /></div>
-            <div><label style={labelS}>AADHAAR NUMBER *</label><input value={profileData.aadhaar_number} onChange={(e) => upd("aadhaar_number", e.target.value)} placeholder="e.g., 1234 5678 9012" style={fieldStyle} /></div>
+        {/* Bank Details */}
+        <div className={sectionTitleClass}>BANK DETAILS</div>
+        <div className="grid grid-cols-2 gap-3.5">
+          <FormField label="BANK NAME *">
+            <Input value={profileData.bank_name} onChange={(e) => upd("bank_name", e.target.value)} placeholder="e.g., HDFC Bank" />
+          </FormField>
+          <FormField label="ACCOUNT NUMBER *">
+            <Input value={profileData.account_number} onChange={(e) => upd("account_number", e.target.value)} placeholder="Enter account number" />
+          </FormField>
+          <div className="col-span-2">
+            <FormField label="IFSC CODE *">
+              <Input value={profileData.ifsc_code} onChange={(e) => upd("ifsc_code", e.target.value.toUpperCase())} placeholder="e.g., HDFC0001234" />
+            </FormField>
           </div>
+        </div>
 
-          {/* Bank Details */}
-          <div style={sectionTitle}>BANK DETAILS</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div><label style={labelS}>BANK NAME *</label><input value={profileData.bank_name} onChange={(e) => upd("bank_name", e.target.value)} placeholder="e.g., HDFC Bank" style={fieldStyle} /></div>
-            <div><label style={labelS}>ACCOUNT NUMBER *</label><input value={profileData.account_number} onChange={(e) => upd("account_number", e.target.value)} placeholder="Enter account number" style={fieldStyle} /></div>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label style={labelS}>IFSC CODE *</label>
-              <input value={profileData.ifsc_code} onChange={(e) => upd("ifsc_code", e.target.value.toUpperCase())} placeholder="e.g., HDFC0001234" style={fieldStyle} />
-            </div>
-          </div>
+        {/* Education */}
+        <div className={sectionTitleClass}>EDUCATION</div>
+        <div className="grid grid-cols-2 gap-3.5">
+          <FormField label="QUALIFICATION *">
+            <Select
+              value={profileData.qualification}
+              onChange={(value) => upd("qualification", value)}
+              placeholder="Select Qualification"
+              options={["10th", "12th", "Diploma", "B.E/B.Tech", "M.E/M.Tech", "MBA", "MCA", "B.Sc", "M.Sc", "B.Com", "M.Com", "PhD"].map((q) => ({ label: q, value: q }))}
+            />
+          </FormField>
+          <FormField label="COLLEGE/UNIVERSITY *">
+            <Input value={profileData.college} onChange={(e) => upd("college", e.target.value)} placeholder="e.g., Anna University" />
+          </FormField>
+          <FormField label="PASSING YEAR *">
+            <Input type="number" value={profileData.passing_year} onChange={(e) => upd("passing_year", e.target.value)} placeholder="e.g., 2022" />
+          </FormField>
+        </div>
 
-          {/* Education */}
-          <div style={sectionTitle}>EDUCATION</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div>
-              <label style={labelS}>QUALIFICATION *</label>
-              <select value={profileData.qualification} onChange={(e) => upd("qualification", e.target.value)} style={fieldStyle}>
-                <option value="">Select Qualification</option>
-                {["10th","12th","Diploma","B.E/B.Tech","M.E/M.Tech","MBA","MCA","B.Sc","M.Sc","B.Com","M.Com","PhD"].map(q => <option key={q} value={q}>{q}</option>)}
-              </select>
-            </div>
-            <div><label style={labelS}>COLLEGE/UNIVERSITY *</label><input value={profileData.college} onChange={(e) => upd("college", e.target.value)} placeholder="e.g., Anna University" style={fieldStyle} /></div>
-            <div><label style={labelS}>PASSING YEAR *</label><input type="number" value={profileData.passing_year} onChange={(e) => upd("passing_year", e.target.value)} placeholder="e.g., 2022" style={fieldStyle} /></div>
-          </div>
+        {/* Skills */}
+        <FormField label="SKILLS">
+          <Textarea value={profileData.skills} onChange={(e) => upd("skills", e.target.value)} rows={2} placeholder="e.g., JavaScript, React, Node.js (comma separated)" />
+        </FormField>
 
-          {/* Skills */}
-          <div>
-            <label style={labelS}>SKILLS</label>
-            <textarea value={profileData.skills} onChange={(e) => upd("skills", e.target.value)} rows={2} placeholder="e.g., JavaScript, React, Node.js (comma separated)" style={{ ...fieldStyle, resize: "vertical" }} />
-          </div>
-
-          {/* Emergency Contact */}
-          <div style={sectionTitle}>EMERGENCY CONTACT</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div><label style={labelS}>CONTACT NAME *</label><input value={profileData.emergency_contact_name} onChange={(e) => upd("emergency_contact_name", e.target.value)} placeholder="e.g., Parent/Spouse Name" style={fieldStyle} /></div>
-            <div><label style={labelS}>CONTACT NUMBER *</label><input value={profileData.emergency_contact_number} onChange={(e) => upd("emergency_contact_number", e.target.value)} placeholder="e.g., +91 9876543210" style={fieldStyle} /></div>
-          </div>
-
-          {/* Buttons */}
-          <div style={{ display: "flex", gap: 12, marginTop: 8, paddingTop: 8 }}>
-            <button onClick={onClose} style={{ flex: 1, padding: 12, background: "transparent", color: theme.textMuted, border: `1px solid ${theme.border}`, borderRadius: 8, fontWeight: 700, cursor: "pointer" }}>Skip for Now</button>
-            <button onClick={onSubmit} style={{ flex: 1, padding: 12, background: theme.accent, color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer" }}>Complete Profile</button>
-          </div>
+        {/* Emergency Contact */}
+        <div className={sectionTitleClass}>EMERGENCY CONTACT</div>
+        <div className="grid grid-cols-2 gap-3.5">
+          <FormField label="CONTACT NAME *">
+            <Input value={profileData.emergency_contact_name} onChange={(e) => upd("emergency_contact_name", e.target.value)} placeholder="e.g., Parent/Spouse Name" />
+          </FormField>
+          <FormField label="CONTACT NUMBER *">
+            <Input value={profileData.emergency_contact_number} onChange={(e) => upd("emergency_contact_number", e.target.value)} placeholder="e.g., +91 9876543210" />
+          </FormField>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

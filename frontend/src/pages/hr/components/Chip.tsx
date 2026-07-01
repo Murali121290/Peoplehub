@@ -1,26 +1,42 @@
 import React from 'react';
+import { Badge } from '../../../components/ui/Badge';
+import type { BadgeStatus } from '../../../components/ui/Badge';
 
 interface ChipProps {
   type: string;
 }
 
+const STATUS_MAP: Record<string, BadgeStatus> = {
+  active: 'active',
+  pending: 'pending',
+  approved: 'approved',
+  rejected: 'rejected',
+  present: 'present',
+  absent: 'absent',
+  late: 'late',
+  on_leave: 'onLeave',
+};
+
+const LABELS: Record<string, string> = {
+  active: 'ACTIVE',
+  pending: 'PENDING',
+  approved: 'APPROVED',
+  rejected: 'REJECTED',
+  present: 'PRESENT',
+  absent: 'ABSENT',
+  late: 'LATE',
+  on_leave: 'ON LEAVE',
+};
+
 const Chip: React.FC<ChipProps> = ({ type }) => {
-  const status = (type || "").toLowerCase();
-  const styles: Record<string, { bg: string; c: string; txt: string }> = {
-    active:   { bg: "#D1FAE5", c: "#10B981", txt: "ACTIVE" },
-    pending:  { bg: "#FEF3C7", c: "#F59E0B", txt: "PENDING" },
-    approved: { bg: "#D1FAE5", c: "#10B981", txt: "APPROVED" },
-    rejected: { bg: "#FEE2E2", c: "#EF4444", txt: "REJECTED" },
-    present:  { bg: "#D1FAE5", c: "#10B981", txt: "PRESENT" },
-    absent:   { bg: "#FEE2E2", c: "#EF4444", txt: "ABSENT" },
-    late:     { bg: "#FEF3C7", c: "#F59E0B", txt: "LATE" },
-    on_leave: { bg: "#DBEAFE", c: "#3B82F6", txt: "ON LEAVE" },
-  };
-  const s = styles[status] || styles.absent;
+  const key = (type || '').toLowerCase();
+  const status = STATUS_MAP[key] ?? 'absent';
+  const label = LABELS[key] ?? LABELS.absent;
+
   return (
-    <span style={{ background: s.bg, color: s.c, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999 }}>
-      {s.txt}
-    </span>
+    <Badge status={status} size="sm" className="tracking-wide">
+      {label}
+    </Badge>
   );
 };
 

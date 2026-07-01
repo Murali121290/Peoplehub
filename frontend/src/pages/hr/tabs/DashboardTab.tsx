@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { ChevronDownIcon, Squares2X2Icon } from '@heroicons/react/24/outline';
 import Panel from '../components/Panel';
-import { theme } from '../data/hrMockData';
+import { Card } from '../../../components/ui/Card';
 
 interface DashboardTabProps {
   counts: {
@@ -23,31 +24,26 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, employees }) => {
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className="flex flex-col gap-6">
       {/* Stats Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginBottom: 24 }}>
+      <div className="grid gap-5 mb-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
         {statCards.map((card) => (
-          <Panel key={card.label} style={{ padding: 24, borderLeft: "4px solid #46494C", boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          <Card key={card.label} variant="accent-left" accentColor="#46494C" padding="lg" className="shadow-md">
+            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
               {card.label}
             </div>
-            <div style={{ fontSize: 38, fontWeight: 800, color: "#46494C", marginTop: 12 }}>
+            <div className="text-4xl font-extrabold text-neutral-800 mt-3">
               {card.value}
             </div>
-            <div style={{ marginTop: 8, fontSize: 13, color: "#94A3B8" }}>{card.sub}</div>
-          </Panel>
+            <div className="mt-2 text-sm text-neutral-400">{card.sub}</div>
+          </Card>
         ))}
       </div>
 
       {/* Team Overview */}
       <Panel>
-        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: theme.text, display: "flex", alignItems: "center", gap: 10 }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="7" height="7" rx="1" />
-            <rect x="14" y="3" width="7" height="7" rx="1" />
-            <rect x="3" y="14" width="7" height="7" rx="1" />
-            <rect x="14" y="14" width="7" height="7" rx="1" />
-          </svg>
+        <div className="text-lg font-bold text-neutral-800 mb-5 flex items-center gap-2.5">
+          <Squares2X2Icon className="w-5 h-5" />
           Team Overview
         </div>
 
@@ -61,62 +57,57 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, employees }) => {
             <div key={team}>
               <div
                 onClick={() => setSelectedTeam(isActive ? null : team)}
-                style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  padding: "16px 18px",
-                  background: isActive ? "#4362EE08" : theme.surface2,
-                  border: isActive ? "2px solid #4362EE" : "1px solid #E5E7EB",
-                  borderRadius: 14, marginBottom: 12, cursor: "pointer",
-                  transition: "all 0.2s ease",
-                  boxShadow: isActive ? "0 2px 8px rgba(67,98,234,0.15)" : "0 1px 3px rgba(0,0,0,0.05)",
-                }}
+                className={`flex justify-between items-center px-[18px] py-4 rounded-2xl mb-3 cursor-pointer transition-all ${
+                  isActive
+                    ? "bg-primary-50 border-2 border-primary-500 shadow-md"
+                    : "bg-neutral-50 border border-neutral-200 shadow-sm"
+                }`}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 12, background: "#1F7A8C", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16 }}>
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-primary-500 text-white flex items-center justify-center font-bold text-base">
                     {team.charAt(0)}
                   </div>
                   <div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: theme.text }}>{team}</div>
-                    <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{empCount} {empCount === 1 ? "Member" : "Members"}</div>
+                    <div className="text-base font-semibold text-neutral-800">{team}</div>
+                    <div className="text-xs text-neutral-500 mt-0.5">{empCount} {empCount === 1 ? "Member" : "Members"}</div>
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ background: "#4362EE15", color: "#4362EE", padding: "6px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+                <div className="flex items-center gap-2">
+                  <div className="bg-primary-100 text-primary-700 px-3 py-1.5 rounded-lg text-sm font-semibold">
                     {empCount}
                   </div>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={isActive ? "#4362EE" : theme.textMuted} strokeWidth="2"
-                    style={{ transition: "transform 0.2s ease", transform: isActive ? "rotate(180deg)" : "rotate(0deg)" }}>
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
+                  <ChevronDownIcon
+                    className={`w-[18px] h-[18px] transition-transform ${isActive ? "rotate-180 text-primary-600" : "text-neutral-500"}`}
+                  />
                 </div>
               </div>
 
               {isActive && (
-                <div style={{ marginBottom: 20, padding: "16px 18px", background: theme.surface2, borderRadius: 12, border: "1px solid #E5E7EB", animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-                    <span style={{ background: "#1F7A8C", color: "#fff", padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+                <div className="mb-5 px-[18px] py-4 bg-neutral-50 rounded-xl border border-neutral-200 animate-fadeIn">
+                  <div className="flex gap-3 mb-4 flex-wrap">
+                    <span className="bg-primary-500 text-white px-3.5 py-1.5 rounded-lg text-sm font-semibold">
                       Members: {empCount}
                     </span>
-                    <span style={{ background: "#16A34A", color: "#fff", padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+                    <span className="bg-success-600 text-white px-3.5 py-1.5 rounded-lg text-sm font-semibold">
                       Total Salary: ₹{totalTeamSalary.toLocaleString()}
                     </span>
                   </div>
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
                       <thead>
-                        <tr style={{ background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
+                        <tr className="bg-neutral-50 border-b-2 border-neutral-200">
                           {["Employee Name", "Role", "Reporting Manager", "Salary"].map((h) => (
-                            <th key={h} style={{ padding: "12px 14px", textAlign: "left", fontWeight: 600, color: theme.text, fontSize: 13 }}>{h}</th>
+                            <th key={h} className="px-3.5 py-3 text-left font-semibold text-neutral-800 text-sm">{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {teamEmployees.map((emp, idx) => (
-                          <tr key={emp.id} style={{ borderBottom: idx !== teamEmployees.length - 1 ? "1px solid #F3F4F6" : "none", background: idx % 2 === 0 ? "#fff" : theme.surface2 }}>
-                            <td style={{ padding: "12px 14px", color: theme.text }}>{emp.first_name} {emp.last_name}</td>
-                            <td style={{ padding: "12px 14px", color: theme.text }}>{emp.role}</td>
-                            <td style={{ padding: "12px 14px", color: theme.text }}>{emp.reporting_manager}</td>
-                            <td style={{ padding: "12px 14px", color: theme.text, fontWeight: 500 }}>₹{Number(emp.salary || 0).toLocaleString()}</td>
+                          <tr key={emp.id} className={`${idx !== teamEmployees.length - 1 ? "border-b border-neutral-100" : ""} ${idx % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
+                            <td className="px-3.5 py-3 text-neutral-800">{emp.first_name} {emp.last_name}</td>
+                            <td className="px-3.5 py-3 text-neutral-800">{emp.role}</td>
+                            <td className="px-3.5 py-3 text-neutral-800">{emp.reporting_manager}</td>
+                            <td className="px-3.5 py-3 text-neutral-800 font-medium">₹{Number(emp.salary || 0).toLocaleString()}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -127,7 +118,6 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, employees }) => {
             </div>
           );
         })}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }`}</style>
       </Panel>
     </div>
   );

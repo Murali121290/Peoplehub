@@ -2,23 +2,9 @@ import React from "react";
 import Panel from "../components/Panel";
 import Avatar from "../components/Avatar";
 import Chip from "../components/Chip";
-import { theme } from "../data/hrMockData";
+import { Button } from "../../../components/ui/Button";
 
 const BASE_URL = "http://localhost:5000/api";
-
-const thS: React.CSSProperties = {
-  padding: "14px",
-  textAlign: "left",
-  fontSize: 12,
-  fontWeight: 700,
-  color: "#64748B",
-  textTransform: "uppercase",
-};
-
-const tdS: React.CSSProperties = {
-  padding: "14px",
-  fontSize: 13,
-};
 
 interface LeaveTabProps {
   leaves: any[];
@@ -33,68 +19,28 @@ const LeaveTab: React.FC<LeaveTabProps> = ({ leaves, onApprove, onReject }) => {
 
   return (
     <Panel>
-      <div className="flex">
+      <div className="flex items-start justify-between mb-5">
         <div>
-          <div
-            style={{
-              fontSize: 15,
-              fontWeight: 800,
-              marginBottom: 4,
-            }}
-          >
+          <div className="text-[15px] font-extrabold text-neutral-800 mb-1">
             Leave Management
           </div>
 
-          <div
-            style={{
-              fontSize: 12,
-              color: theme.textMuted,
-              marginBottom: 20,
-            }}
-          >
+          <div className="text-xs text-neutral-500">
             Approve or reject leave requests as HR Admin
           </div>
         </div>
-        <button
-          onClick={downloadLeaveReport}
-          className="bg-green-600 text-white px-2 py-1 rounded ml-[800px] mb-[10px]"
-        >
+        <Button variant="success" size="sm" onClick={downloadLeaveReport}>
           Download Leave Report
-        </button>
+        </Button>
       </div>
 
-      <div
-        style={{
-          overflowX: "auto",
-          border: `1px solid ${theme.border}`,
-          borderRadius: 12,
-          background: "#fff",
-        }}
-      >
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            minWidth: "1200px",
-          }}
-        >
+      <div className="overflow-x-auto border border-neutral-200 rounded-xl bg-white">
+        <table className="w-full border-collapse" style={{ minWidth: "1200px" }}>
           <thead>
-            <tr
-              style={{
-                background: theme.surface2,
-                borderBottom: `2px solid ${theme.border}`,
-              }}
-            >
-              <th style={thS}>Employee</th>
-              <th style={thS}>Employee ID</th>
-              <th style={thS}>Leave Type</th>
-              <th style={thS}>From Date</th>
-              <th style={thS}>To Date</th>
-              <th style={thS}>Days</th>
-              <th style={thS}>Reason</th>
-              <th style={thS}>Reporting Manager</th>
-              <th style={thS}>Status</th>
-              <th style={thS}>Action</th>
+            <tr className="bg-neutral-50 border-b-2 border-neutral-200">
+              {["Employee", "Employee ID", "Leave Type", "From Date", "To Date", "Days", "Reason", "Reporting Manager", "Status", "Action"].map((h) => (
+                <th key={h} className="p-3.5 text-left text-xs font-bold text-neutral-500 uppercase">{h}</th>
+              ))}
             </tr>
           </thead>
 
@@ -102,73 +48,44 @@ const LeaveTab: React.FC<LeaveTabProps> = ({ leaves, onApprove, onReject }) => {
             {leaves.map((l: any, index: number) => (
               <tr
                 key={l.id}
-                style={{
-                  borderBottom: `1px solid ${theme.border}`,
-                  background: index % 2 === 0 ? "#FFFFFF" : "#F8FAFC",
-                }}
+                className={`border-b border-neutral-200 ${index % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}
               >
-                <td style={tdS}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                    }}
-                  >
+                <td className="p-3.5 text-sm">
+                  <div className="flex items-center gap-2.5">
                     <Avatar initials={l.av || "NA"} size={36} />
 
-                    <span style={{ fontWeight: 600 }}>{l.empName}</span>
+                    <span className="font-semibold">{l.empName}</span>
                   </div>
                 </td>
 
-                <td style={tdS}>{l.empId}</td>
+                <td className="p-3.5 text-sm">{l.empId}</td>
 
-                <td style={tdS}>{l.type}</td>
+                <td className="p-3.5 text-sm">{l.type}</td>
 
-                <td style={tdS}>{l.from}</td>
+                <td className="p-3.5 text-sm">{l.from}</td>
 
-                <td style={tdS}>{l.to}</td>
+                <td className="p-3.5 text-sm">{l.to}</td>
 
-                <td style={tdS}>{l.days}</td>
+                <td className="p-3.5 text-sm">{l.days}</td>
 
-                <td style={tdS}>{l.reason}</td>
+                <td className="p-3.5 text-sm">{l.reason}</td>
 
-                <td style={tdS}>{l.reporting_manager}</td>
+                <td className="p-3.5 text-sm">{l.reporting_manager}</td>
 
-                <td style={tdS}>
+                <td className="p-3.5 text-sm">
                   <Chip type={l.status} />
                 </td>
 
-                <td style={tdS}>
+                <td className="p-3.5 text-sm">
                   {l.status === "pending" ? (
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={() => onApprove(l.id)}
-                        style={{
-                          background: "#10B981",
-                          color: "#fff",
-                          border: "none",
-                          padding: "8px 12px",
-                          borderRadius: 8,
-                          cursor: "pointer",
-                        }}
-                      >
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="success" onClick={() => onApprove(l.id)}>
                         Approve
-                      </button>
+                      </Button>
 
-                      <button
-                        onClick={() => onReject(l.id)}
-                        style={{
-                          background: "#EF4444",
-                          color: "#fff",
-                          border: "none",
-                          padding: "8px 12px",
-                          borderRadius: 8,
-                          cursor: "pointer",
-                        }}
-                      >
+                      <Button size="sm" variant="danger" onClick={() => onReject(l.id)}>
                         Reject
-                      </button>
+                      </Button>
                     </div>
                   ) : (
                     l.status
@@ -181,36 +98,16 @@ const LeaveTab: React.FC<LeaveTabProps> = ({ leaves, onApprove, onReject }) => {
       </div>
 
       {leaves.length === 0 && (
-        <div
-          style={{
-            textAlign: "center",
-            padding: 40,
-            color: theme.textMuted,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 48,
-              marginBottom: 12,
-            }}
-          >
+        <div className="text-center py-10 text-neutral-500">
+          <div className="text-5xl mb-3">
             ✓
           </div>
 
-          <div
-            style={{
-              fontSize: 16,
-              fontWeight: 700,
-            }}
-          >
+          <div className="text-base font-bold">
             All caught up!
           </div>
 
-          <div
-            style={{
-              fontSize: 13,
-            }}
-          >
+          <div className="text-sm">
             No leave requests found
           </div>
         </div>

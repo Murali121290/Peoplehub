@@ -1,4 +1,9 @@
 import { useEffect, useState } from "react";
+import {
+  CheckCircleIcon,
+  XCircleIcon,
+  InformationCircleIcon,
+} from "@heroicons/react/24/outline";
 import DashboardCards from "./components/DashboardCards";
 import BookingForm from "./components/BookingForm";
 import RoomCard from "./components/RoomCard";
@@ -9,6 +14,11 @@ import {
   getBookings,
   createRoom,
 } from "../../services/meetingRoomService";
+
+import { Card } from "../../components/ui/Card";
+import { Button } from "../../components/ui/Button";
+import { Modal } from "../../components/ui/Modal";
+import { FormField, Input, Select } from "../../components/ui/Form";
 
 type ToastType = "success" | "error" | "info";
 
@@ -124,81 +134,51 @@ const MeetingRooms = () => {
 
   const toastStyles = {
     success: {
-      container: "border-green-200 bg-green-50 text-green-800",
-      iconBg: "bg-green-100",
-      iconColor: "text-green-600",
+      container: "border-success-200 bg-success-50 text-success-800",
+      iconBg: "bg-success-100",
+      iconColor: "text-success-600",
     },
     error: {
-      container: "border-red-200 bg-red-50 text-red-800",
-      iconBg: "bg-red-100",
-      iconColor: "text-red-600",
+      container: "border-danger-200 bg-danger-50 text-danger-800",
+      iconBg: "bg-danger-100",
+      iconColor: "text-danger-600",
     },
     info: {
-      container: "border-blue-200 bg-blue-50 text-blue-800",
-      iconBg: "bg-blue-100",
-      iconColor: "text-blue-600",
+      container: "border-info-200 bg-info-50 text-info-800",
+      iconBg: "bg-info-100",
+      iconColor: "text-info-600",
     },
   };
 
   const currentToastStyle = toastStyles[toast.type];
 
+  const roomTypeOptions = [
+    { label: "Conference Room", value: "Conference Room" },
+    { label: "Board Room", value: "Board Room" },
+    { label: "Training Room", value: "Training Room" },
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-100 p-6">
+    <div className="min-h-screen bg-neutral-50 p-6">
       {/* Toast Notification */}
       {toast.show && (
-        <div className="fixed top-5 right-5 z-[100] animate-in slide-in-from-top-3 duration-300">
+        <div className="fixed top-5 right-5 z-toast animate-in slide-in-from-top-3 duration-300">
           <div
-            className={`flex items-start gap-3 rounded-2xl border px-4 py-3 shadow-lg min-w-[320px] max-w-md ${currentToastStyle.container}`}
+            className={`flex items-start gap-3 rounded-2xl border px-4 py-3 shadow-popover min-w-[320px] max-w-md ${currentToastStyle.container}`}
           >
             <div
               className={`flex h-10 w-10 items-center justify-center rounded-full ${currentToastStyle.iconBg}`}
             >
               {toast.type === "success" && (
-                <svg
-                  className={`h-5 w-5 ${currentToastStyle.iconColor}`}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
+                <CheckCircleIcon className={`h-5 w-5 ${currentToastStyle.iconColor}`} />
               )}
 
               {toast.type === "error" && (
-                <svg
-                  className={`h-5 w-5 ${currentToastStyle.iconColor}`}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
+                <XCircleIcon className={`h-5 w-5 ${currentToastStyle.iconColor}`} />
               )}
 
               {toast.type === "info" && (
-                <svg
-                  className={`h-5 w-5 ${currentToastStyle.iconColor}`}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M13 16h-1v-4h-1m1-4h.01"
-                  />
-                </svg>
+                <InformationCircleIcon className={`h-5 w-5 ${currentToastStyle.iconColor}`} />
               )}
             </div>
 
@@ -224,223 +204,163 @@ const MeetingRooms = () => {
       )}
 
       {/* Header */}
-      <div className="mb-6 rounded-3xl bg-white p-6 shadow-sm border border-slate-200">
+      <Card className="mb-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-sm font-medium text-slate-500">
+            <p className="text-sm font-medium text-neutral-500">
               Workspace / Meeting Rooms
             </p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-800">
+            <h1 className="mt-1 text-3xl font-bold tracking-tight text-neutral-800">
               Meeting Room Management
             </h1>
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-sm text-neutral-500">
               Manage rooms, create bookings, and monitor workplace availability.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
             {(user?.access_level === "admin" || user?.access_level === "hr") && (
-              <button
-                onClick={() => setShowRoomModal(true)}
-                className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
-              >
+              <Button variant="success" onClick={() => setShowRoomModal(true)}>
                 + Create Room
-              </button>
+              </Button>
             )}
 
-            <button
-              onClick={() => setShowBookingModal(true)}
-              className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
-            >
+            <Button variant="primary" onClick={() => setShowBookingModal(true)}>
               + Create Booking
-            </button>
+            </Button>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Dashboard Sections */}
       <div className="space-y-6">
-        <div className="rounded-3xl bg-white p-4 shadow-sm border border-slate-200">
+        <Card>
           <DashboardCards />
-        </div>
+        </Card>
 
-        <div className="rounded-3xl bg-white p-4 shadow-sm border border-slate-200">
+        <Card>
           <RoomCard rooms={rooms} />
-        </div>
+        </Card>
 
-        <div className="rounded-3xl bg-white p-4 shadow-sm border border-slate-200">
+        <Card padding="none" className="overflow-hidden">
           <BookingTable
   bookings={bookings}
   onRefresh={fetchBookings}
 />
-        </div>
+        </Card>
       </div>
 
       {/* Create Room Modal */}
-      {showRoomModal &&
-        (user?.access_level === "admin" || user?.access_level === "hr") && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm px-4">
-            <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl border border-slate-200">
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-800">
-                    Create Meeting Room
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Add a new room to your workspace inventory.
-                  </p>
-                </div>
+      <Modal
+        isOpen={
+          showRoomModal &&
+          (user?.access_level === "admin" || user?.access_level === "hr")
+        }
+        onClose={() => setShowRoomModal(false)}
+        size="lg"
+        title="Create Meeting Room"
+        eyebrow={{ label: "Add a new room to your workspace inventory." }}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setShowRoomModal(false)}>
+              Cancel
+            </Button>
 
-                <button
-                  onClick={() => setShowRoomModal(false)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
-                >
-                  ✕
-                </button>
-              </div>
+            <Button
+              variant="success"
+              onClick={handleCreateRoom}
+              disabled={isCreatingRoom}
+              loading={isCreatingRoom}
+            >
+              {isCreatingRoom ? "Saving..." : "Save Room"}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <FormField label="Name">
+            <Input
+              type="text"
+              placeholder="Enter name"
+              value={roomForm.room_name}
+              onChange={(e) =>
+                setRoomForm({
+                  ...roomForm,
+                  room_name: e.target.value,
+                })
+              }
+            />
+          </FormField>
 
-              <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                     Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Enter name"
-                    value={roomForm.room_name}
-                    onChange={(e) =>
-                      setRoomForm({
-                        ...roomForm,
-                        room_name: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white"
-                  />
-                </div>
+          <FormField label="Location">
+            <Input
+              type="text"
+              placeholder="Enter location"
+              value={roomForm.location}
+              onChange={(e) =>
+                setRoomForm({
+                  ...roomForm,
+                  location: e.target.value,
+                })
+              }
+            />
+          </FormField>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Location
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Enter location"
-                    value={roomForm.location}
-                    onChange={(e) =>
-                      setRoomForm({
-                        ...roomForm,
-                        location: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white"
-                  />
-                </div>
+          <FormField label="Floor">
+            <Input
+              type="text"
+              placeholder="Enter floor"
+              value={roomForm.floor}
+              onChange={(e) =>
+                setRoomForm({
+                  ...roomForm,
+                  floor: e.target.value,
+                })
+              }
+            />
+          </FormField>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Floor
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Enter floor"
-                    value={roomForm.floor}
-                    onChange={(e) =>
-                      setRoomForm({
-                        ...roomForm,
-                        floor: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white"
-                  />
-                </div>
+          <FormField label="Capacity">
+            <Input
+              type="number"
+              placeholder="Enter capacity"
+              value={roomForm.capacity}
+              onChange={(e) =>
+                setRoomForm({
+                  ...roomForm,
+                  capacity: e.target.value,
+                })
+              }
+            />
+          </FormField>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Capacity
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="Enter capacity"
-                    value={roomForm.capacity}
-                    onChange={(e) =>
-                      setRoomForm({
-                        ...roomForm,
-                        capacity: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Room Type
-                  </label>
-                  <select
-                    value={roomForm.room_type}
-                    onChange={(e) =>
-                      setRoomForm({
-                        ...roomForm,
-                        room_type: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white"
-                  >
-                    <option>Conference Room</option>
-                    <option>Board Room</option>
-                    <option>Training Room</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
-                <button
-                  onClick={() => setShowRoomModal(false)}
-                  className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  onClick={handleCreateRoom}
-                  disabled={isCreatingRoom}
-                  className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isCreatingRoom ? "Saving..." : "Save Room"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-      {/* Create Booking Modal */}
-      {showBookingModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm px-4">
-          <div className="w-full max-w-3xl rounded-3xl bg-white shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-800">
-                  Create Booking
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Schedule and manage a room reservation.
-                </p>
-              </div>
-
-              <button
-                onClick={() => setShowBookingModal(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-6">
-              <BookingForm />
-            </div>
+          <div className="md:col-span-2">
+            <FormField label="Room Type">
+              <Select
+                value={roomForm.room_type}
+                onChange={(value) =>
+                  setRoomForm({
+                    ...roomForm,
+                    room_type: value,
+                  })
+                }
+                options={roomTypeOptions}
+              />
+            </FormField>
           </div>
         </div>
-      )}
+      </Modal>
+
+      {/* Create Booking Modal */}
+      <Modal
+        isOpen={showBookingModal}
+        onClose={() => setShowBookingModal(false)}
+        size="xl"
+        title="Create Booking"
+        eyebrow={{ label: "Schedule and manage a room reservation." }}
+      >
+        <BookingForm />
+      </Modal>
     </div>
   );
 };

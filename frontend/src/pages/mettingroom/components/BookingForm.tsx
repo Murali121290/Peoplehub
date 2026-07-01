@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { createBooking } from "../../../services/meetingRoomService";
+import { FormField, Input, Select, Textarea } from "../../../components/ui/Form";
+import { Button } from "../../../components/ui/Button";
 
 const BookingForm = () => {
   const today = new Date().toISOString().split("T")[0];
@@ -32,6 +34,23 @@ const BookingForm = () => {
   ) => {
     const { name, value } = e.target;
 
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    setErrors((prev) => ({
+      ...prev,
+      [name]: "",
+    }));
+
+    setMessage({
+      type: "",
+      text: "",
+    });
+  };
+
+  const handleFieldChange = (name: string, value: string) => {
     setForm((prev) => ({
       ...prev,
       [name]: value,
@@ -98,13 +117,6 @@ const BookingForm = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const inputClass = (fieldName: string) =>
-    `w-full rounded-xl border px-4 py-3 text-sm outline-none transition ${
-      errors[fieldName]
-        ? "border-red-300 bg-red-50 focus:border-red-500"
-        : "border-slate-300 bg-slate-50 focus:border-blue-500 focus:bg-white"
-    }`;
-
   const handleBooking = async () => {
     if (!validateForm()) {
       setMessage({
@@ -147,13 +159,19 @@ const BookingForm = () => {
     }
   };
 
+  const roomOptions = [
+    { label: "Conference Room A", value: "1" },
+    { label: "Board Room", value: "2" },
+    { label: "Training Room", value: "3" },
+  ];
+
   return (
     <div className="rounded-3xl bg-white">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-slate-800">
+        <h2 className="text-2xl font-bold text-neutral-800">
           Create Booking
         </h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-neutral-500">
           Schedule a meeting room with date, time, and organizer details.
         </p>
       </div>
@@ -162,8 +180,8 @@ const BookingForm = () => {
         <div
           className={`mb-5 rounded-2xl border px-4 py-3 text-sm ${
             message.type === "success"
-              ? "border-green-200 bg-green-50 text-green-700"
-              : "border-red-200 bg-red-50 text-red-700"
+              ? "border-success-200 bg-success-50 text-success-700"
+              : "border-danger-200 bg-danger-50 text-danger-700"
           }`}
         >
           {message.text}
@@ -171,195 +189,127 @@ const BookingForm = () => {
       )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Meeting Title <span className="text-red-500">*</span>
-          </label>
-          <input
+        <FormField label="Meeting Title" required error={errors.meeting_title}>
+          <Input
             type="text"
             name="meeting_title"
             placeholder="Enter meeting title"
             value={form.meeting_title}
             onChange={handleChange}
-            className={inputClass("meeting_title")}
+            error={!!errors.meeting_title}
           />
-          {errors.meeting_title && (
-            <p className="mt-1 text-xs text-red-500">
-              {errors.meeting_title}
-            </p>
-          )}
-        </div>
+        </FormField>
 
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Room <span className="text-red-500">*</span>
-          </label>
-          <select
+        <FormField label="Room" required error={errors.room_id}>
+          <Select
             name="room_id"
             value={form.room_id}
-            onChange={handleChange}
-            className={inputClass("room_id")}
-          >
-            <option value="">Select Room</option>
-            <option value="1">Conference Room A</option>
-            <option value="2">Board Room</option>
-            <option value="3">Training Room</option>
-          </select>
-          {errors.room_id && (
-            <p className="mt-1 text-xs text-red-500">
-              {errors.room_id}
-            </p>
-          )}
-        </div>
+            onChange={(value) => handleFieldChange("room_id", value)}
+            options={roomOptions}
+            placeholder="Select Room"
+            error={!!errors.room_id}
+          />
+        </FormField>
 
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Organizer Name <span className="text-red-500">*</span>
-          </label>
-          <input
+        <FormField label="Organizer Name" required error={errors.organizer_name}>
+          <Input
             type="text"
             name="organizer_name"
             placeholder="Enter organizer name"
             value={form.organizer_name}
             onChange={handleChange}
-            className={inputClass("organizer_name")}
+            error={!!errors.organizer_name}
           />
-          {errors.organizer_name && (
-            <p className="mt-1 text-xs text-red-500">
-              {errors.organizer_name}
-            </p>
-          )}
-        </div>
+        </FormField>
 
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Department <span className="text-red-500">*</span>
-          </label>
-          <input
+        <FormField label="Department" required error={errors.department}>
+          <Input
             type="text"
             name="department"
             placeholder="Enter department"
             value={form.department}
             onChange={handleChange}
-            className={inputClass("department")}
+            error={!!errors.department}
           />
-          {errors.department && (
-            <p className="mt-1 text-xs text-red-500">
-              {errors.department}
-            </p>
-          )}
-        </div>
+        </FormField>
 
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Meeting Date <span className="text-red-500">*</span>
-          </label>
-          <input
+        <FormField label="Meeting Date" required error={errors.meeting_date}>
+          <Input
             type="date"
             name="meeting_date"
             value={form.meeting_date}
             min={today}
             onChange={handleChange}
-            className={inputClass("meeting_date")}
+            error={!!errors.meeting_date}
           />
-          {errors.meeting_date && (
-            <p className="mt-1 text-xs text-red-500">
-              {errors.meeting_date}
-            </p>
-          )}
-        </div>
+        </FormField>
 
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Attendees
-          </label>
-          <input
+        <FormField label="Attendees" error={errors.attendees_count}>
+          <Input
             type="number"
             name="attendees_count"
             placeholder="Enter attendee count"
             value={form.attendees_count}
             onChange={handleChange}
-            className={inputClass("attendees_count")}
+            error={!!errors.attendees_count}
           />
-          {errors.attendees_count && (
-            <p className="mt-1 text-xs text-red-500">
-              {errors.attendees_count}
-            </p>
-          )}
-        </div>
+        </FormField>
 
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Start Time <span className="text-red-500">*</span>
-          </label>
-          <input
+        <FormField label="Start Time" required error={errors.start_time}>
+          <Input
             type="time"
             name="start_time"
             value={form.start_time}
             onChange={handleChange}
-            className={inputClass("start_time")}
+            error={!!errors.start_time}
           />
-          {errors.start_time && (
-            <p className="mt-1 text-xs text-red-500">
-              {errors.start_time}
-            </p>
-          )}
-        </div>
+        </FormField>
 
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            End Time <span className="text-red-500">*</span>
-          </label>
-          <input
+        <FormField label="End Time" required error={errors.end_time}>
+          <Input
             type="time"
             name="end_time"
             value={form.end_time}
             onChange={handleChange}
-            className={inputClass("end_time")}
+            error={!!errors.end_time}
           />
-          {errors.end_time && (
-            <p className="mt-1 text-xs text-red-500">
-              {errors.end_time}
-            </p>
-          )}
-        </div>
+        </FormField>
 
         <div className="md:col-span-2 xl:col-span-3">
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Remarks
-          </label>
-          <textarea
-            name="remarks"
-            placeholder="Add meeting notes or booking remarks"
-            value={form.remarks}
-            onChange={handleChange}
-            rows={4}
-            className={inputClass("remarks")}
-          />
+          <FormField label="Remarks">
+            <Textarea
+              name="remarks"
+              placeholder="Add meeting notes or booking remarks"
+              value={form.remarks}
+              onChange={handleChange}
+              rows={4}
+            />
+          </FormField>
         </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={() => {
             setForm(initialForm);
             setErrors({});
             setMessage({ type: "", text: "" });
           }}
-          className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
         >
           Reset
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
+          variant="primary"
           onClick={handleBooking}
           disabled={isSubmitting}
-          className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          loading={isSubmitting}
         >
           {isSubmitting ? "Creating Booking..." : "Create Booking"}
-        </button>
+        </Button>
       </div>
     </div>
   );

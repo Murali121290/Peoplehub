@@ -7,7 +7,7 @@ Route,
 Navigate,
 } from 'react-router-dom';
 
-import { Toaster } from 'react-hot-toast';
+import { AppToaster } from './components/ui/ToastConfig';
 
 
 import { useAuthStore } from './store/authStore';
@@ -47,7 +47,7 @@ checkAuth();
 // Loading Screen
 
 if (loading) {
-return ( <div className="min-h-screen bg-gray-900 flex items-center justify-center"> <div className="h-16 w-16 rounded-full border-4 border-white border-t-transparent animate-spin"></div> </div>
+return ( <div className="min-h-screen bg-neutral-50 flex items-center justify-center"> <div className="h-16 w-16 rounded-full border-4 border-primary-200 border-t-primary-500 animate-spin"></div> </div>
 );
 }
 
@@ -69,32 +69,7 @@ return ( <BrowserRouter>
 
   {/* Toast Notifications */}
 
-  <Toaster
-    position="top-right"
-    toastOptions={{
-      duration: 4000,
-
-      style: {
-        background: '#1f2937',
-        color: '#ffffff',
-        border: '1px solid #374151',
-      },
-
-      success: {
-        iconTheme: {
-          primary: '#10B981',
-          secondary: '#ffffff',
-        },
-      },
-
-      error: {
-        iconTheme: {
-          primary: '#EF4444',
-          secondary: '#ffffff',
-        },
-      },
-    }}
-  />
+  <AppToaster />
 
   {/* Application Routes */}
 
