@@ -1,6 +1,7 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from sqlalchemy import text
 from dotenv import load_dotenv
 from routes.payroll_routes import payroll_bp
 import os
@@ -121,6 +122,16 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+
+        # db.create_all() only creates missing tables, it never alters
+        # existing ones, so columns added to a model after the table
+        # already existed in a deployed database need to be patched in here.
+        db.session.execute(text(
+            "ALTER TABLE telecom_directory "
+            "ADD COLUMN IF NOT EXISTS designation VARCHAR(150), "
+            "ADD COLUMN IF NOT EXISTS location VARCHAR(100)"
+        ))
+        db.session.commit()
 
         seed_teams()
         seed_roles()

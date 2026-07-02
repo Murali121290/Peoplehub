@@ -41,13 +41,8 @@ services:
     restart: always
     depends_on:
       - backend
-    working_dir: /app
-    command: npm run dev -- --host
     ports:
-      - "5174:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - "5555:80"
 
 volumes:
   postgres_data:
