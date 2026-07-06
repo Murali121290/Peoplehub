@@ -20,75 +20,103 @@ employees_bp = Blueprint("employees", __name__)
 # ======================================
 
 print("Creating employee...")
+
 @employees_bp.route("/", methods=["POST"])
 def create_employee():
     try:
         data = request.form
+
         print("========== CREATE EMPLOYEE ==========")
         print("FORM DATA:", request.form)
         print("FILES:", request.files)
 
-        image = request.files.get(
-        "profile_image"
-        )
+        # -----------------------------
+        # Profile Image
+        # -----------------------------
+        image = request.files.get("profile_image")
 
         image_data = None
-
         if image:
             image_data = image.read()
 
+        # -----------------------------
+        # USER ID
+        # -----------------------------
+        user_id = data.get("user_id")
+
+        if user_id == "":
+            user_id = None
+
+        print("USER ID =", repr(user_id))
+        print("TEAM ID =", repr(data.get("team_id")))
+        print("DEPARTMENT =", data.get("department"))
+        print("DESIGNATION =", data.get("designation"))
+        print("ROLE =", data.get("role"))
+
+        # -----------------------------
+        # Joining Date
+        # -----------------------------
         joining_date = None
+
         if data.get("joining_date"):
             joining_date = datetime.strptime(
                 data["joining_date"],
                 "%Y-%m-%d"
             ).date()
-            print("TEAM ID =", data.get("team_id"))
-            print("DEPARTMENT =", data.get("department"))
-            print("DESIGNATION =", data.get("designation"))
-            print("ROLE =", data.get("role"))
 
+        # -----------------------------
+        # Create Employee
+        # -----------------------------
         employee = Employee(
-             user_id=data.get("user_id"),
-    employee_id=data.get("employee_id"),
-    first_name=data.get("first_name"),
-    last_name=data.get("last_name"),
-    email=data.get("email"),
-    phone=data.get("phone"),
 
-    department=data.get("department"),
-    designation=data.get("designation"),
-    role=data.get("role"),
-    profile_image=image_data,
+            user_id=user_id,
 
-    reporting_manager=data.get(
-        "reporting_manager"
-    ),
+            employee_id=data.get("employee_id"),
 
-    joining_date=joining_date,
+            first_name=data.get("first_name"),
+            last_name=data.get("last_name"),
 
-    salary=float(data.get("salary", 0)),
+            email=data.get("email"),
+            phone=data.get("phone"),
 
-      # PF / UAN / ESI
-    pf_number=data.get(
-        "pf_number"
-    ),
+            department=data.get("department"),
+            designation=data.get("designation"),
+            role=data.get("role"),
 
-    uan_number=data.get(
-        "uan_number"
-    ),
+            profile_image=image_data,
 
-    esi_number=data.get(
-        "esi_number"
-    ),
+            reporting_manager=data.get(
+                "reporting_manager"
+            ),
 
-    profile_completed=False,
-    is_first_login=True,
-    status="Active"
-)
+            joining_date=joining_date,
+
+            salary=float(
+                data.get("salary", 0)
+            ),
+
+            pf_number=data.get(
+                "pf_number"
+            ),
+
+            uan_number=data.get(
+                "uan_number"
+            ),
+
+            esi_number=data.get(
+                "esi_number"
+            ),
+
+            profile_completed=False,
+
+            is_first_login=True,
+
+            status="Active"
+        )
 
         db.session.add(employee)
         db.session.commit()
+
         print("Employee saved successfully.")
         print("Database ID:", employee.id)
 
@@ -107,7 +135,6 @@ def create_employee():
             "success": False,
             "error": str(e)
         }), 500
-    
 
 
 # ======================================
@@ -821,6 +848,12 @@ def get_reporting_employees(user_id):
                 user_id=employee.user_id,
                 attendance_date=yesterday
             ).first()
+
+            if not attendance:
+                continue
+
+            if attendance.manager_status == "Approved":
+                continue
 
             result.append({
 

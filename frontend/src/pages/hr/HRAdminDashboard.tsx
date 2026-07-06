@@ -12,6 +12,7 @@ import {
   PlusIcon,
   CurrencyDollarIcon,
 } from "@heroicons/react/24/outline";
+import { toast } from "react-hot-toast";
 
 import DashboardTab from "./tabs/DashboardTab";
 import DirectoryTab from "./tabs/DirectoryTab";
@@ -251,7 +252,7 @@ try {
         throw new Error(data.message || "Failed to add employee");
       }
 
-      alert("Employee Added Successfully");
+     toast.success("Employee Added Successfully");
 
       await fetchEmployees();
 
@@ -261,7 +262,7 @@ try {
     } catch (error: any) {
       console.error(error);
 
-      alert(error.message || "Error adding employee");
+      toast.error(error.message || "Error adding employee");
     }
   };
 
@@ -277,12 +278,12 @@ try {
         },
       );
       const data = await response.json();
-      alert(data.message || "Profile Completed Successfully");
+      toast.success(data.message || "Profile Completed Successfully");
       setProfileCompleteOpen(false);
       setProfileData(DEFAULT_PROFILE_DATA);
     } catch (error) {
       console.error(error);
-      alert("Error completing profile");
+      toast.error("Error completing profile");
     }
   };
 

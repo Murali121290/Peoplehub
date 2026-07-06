@@ -3,8 +3,8 @@ import React from 'react';
 interface AttendanceDetailModalProps {
   selectedEmployee: any;
   onClose: () => void;
-  onApprove: (id: string) => void;
-  onReject: (id: string) => void;
+  onApprove: (id: number) => void;
+  onReject: (id: number) => void;
 }
 
 const AttendanceDetailModal: React.FC<AttendanceDetailModalProps> = ({

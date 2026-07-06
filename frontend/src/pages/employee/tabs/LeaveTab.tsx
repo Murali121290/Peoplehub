@@ -418,7 +418,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             <Card className="mb-4">
               <h3 className="text-sm font-semibold text-neutral-800 mb-4">Leave Request Tracking</h3>
               {leaveRequests
-                .filter((leave: any) => leave.employee_id === currentEmployee?.id)
+                .filter((leave: any) => Number(leave.employee_id) === Number(currentEmployee?.id))
                 .slice(0, 1)
                 .map((leave: any) => (
                   <div key={leave.id}>
@@ -474,19 +474,46 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
                   {leaveRequests
-                    .filter((request: any) => request.employee_id === currentEmployee?.id)
+                    .filter(
+  (request: any) =>
+    Number(request.employee_id) === Number(currentEmployee?.id)
+)
                     .map((request: any) => (
                       <tr key={request.id} className="hover:bg-neutral-50 transition-colors">
-                        <td className="p-4 text-sm font-semibold text-neutral-800">{request.leave_type}</td>
-                        <td className="p-4 text-sm">
-                          <p className="text-neutral-800 font-medium">{request.from_date}</p>
-                          <p className="text-xs text-neutral-500">to {request.to_date}</p>
-                        </td>
-                        <td className="p-4 text-sm">
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-info-100 text-info-700">
-                            {request.total_days} days
-                          </span>
-                        </td>
+<td className="p-4 text-sm font-semibold text-neutral-800">
+  {request.request_type === "Permission"
+    ? "Permission"
+    : request.leave_type}
+</td>                        <td className="p-4 text-sm">
+  {request.request_type === "Permission" ? (
+    <>
+      <p className="text-neutral-800 font-medium">
+        {request.permission_date}
+      </p>
+
+      <p className="text-xs text-neutral-500">
+        {request.from_time} - {request.to_time}
+      </p>
+    </>
+  ) : (
+    <>
+      <p className="text-neutral-800 font-medium">
+        {request.from_date}
+      </p>
+
+      <p className="text-xs text-neutral-500">
+        to {request.to_date}
+      </p>
+    </>
+  )}
+</td>
+                       <td className="p-4 text-sm">
+  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-info-100 text-info-700">
+    {request.request_type === "Permission"
+      ? "Permission"
+      : `${request.total_days} days`}
+  </span>
+</td>
                         <td className="p-4">
                           <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold border ${getStatusColor(request.status)}`}>
                             {request.status}

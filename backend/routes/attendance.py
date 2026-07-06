@@ -1567,3 +1567,75 @@ def export_paysheet():
             "success": False,
             "message": str(e)
         }), 500
+
+
+@attendance_bp.route(
+    "/approve/<int:employee_id>",
+    methods=["PUT"]
+)
+def approve_attendance(employee_id):
+
+    try:
+
+        attendance = Attendance.query.filter_by(
+            user_id=employee_id,
+            attendance_date=date.today() - timedelta(days=1)
+        ).first()
+
+        if not attendance:
+            return jsonify({
+                "success": False,
+                "message": "Attendance not found"
+            }), 404
+
+        attendance.manager_status = "Approved"
+
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Attendance Approved"
+        })
+
+    except Exception as e:
+
+        db.session.rollback()
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    
+@attendance_bp.route(
+    "/approve-all",
+    methods=["PUT"]
+)
+def approve_all_attendance():
+
+    try:
+
+        yesterday = date.today() - timedelta(days=1)
+
+        attendances = Attendance.query.filter_by(
+            attendance_date=yesterday
+        ).all()
+
+        for attendance in attendances:
+
+            attendance.manager_status = "Approved"
+
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "All attendance approved"
+        })
+
+    except Exception as e:
+
+        db.session.rollback()
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500

@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDownIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
 import {
@@ -35,6 +35,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   const location = useLocation();
   const reportMenuRef = useRef<HTMLDivElement | null>(null);
   const isDesktop = useIsDesktop();
+
+  const navigate = useNavigate();
+
+const showUpdateProfile =
+  !user?.profile_completed;
 
   return (
     <motion.aside
@@ -154,9 +159,27 @@ const Sidebar: React.FC<SidebarProps> = ({
             <p className="text-xs text-neutral-400">{user?.role}</p>
           </div>
         </div>
-        <Button variant="danger" fullWidth icon={ArrowRightOnRectangleIcon} onClick={onLogout}>
-          Logout
-        </Button>
+        <>
+  {showUpdateProfile && (
+    <Button
+      variant="secondary"
+      fullWidth
+      className="mb-3"
+      onClick={() => navigate("/complete-profile")}
+    >
+      Update Profile
+    </Button>
+  )}
+
+  <Button
+    variant="danger"
+    fullWidth
+    icon={ArrowRightOnRectangleIcon}
+    onClick={onLogout}
+  >
+    Logout
+  </Button>
+</>
       </div>
     </motion.aside>
   );

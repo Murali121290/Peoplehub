@@ -17,6 +17,8 @@ interface BookingTableProps {
 
 const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
 
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+
     const handleCancel = async (id: number) => {
   try {
     await cancelBooking(id);
@@ -162,22 +164,32 @@ const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
         </Badge>
       ),
     },
-    {
-      key: "action",
-      header: "Action",
-      render: (booking) =>
-        canCancel(booking.status) ? (
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={() => setSelectedBooking(booking)}
-          >
-            Cancel
-          </Button>
-        ) : (
-          <span className="text-xs text-neutral-400">—</span>
-        ),
-    },
+  {
+  key: "action",
+  header: "Action",
+  render: (booking) => {
+    const isCreator =
+      booking.organizer_name === user.employee_name;
+
+    if (!canCancel(booking.status)) {
+      return <span className="text-xs text-neutral-400">—</span>;
+    }
+
+    return isCreator ? (
+      <Button
+        variant="danger"
+        size="sm"
+        onClick={() => setSelectedBooking(booking)}
+      >
+        Cancel
+      </Button>
+    ) : (
+      <Badge variant="neutral">
+        Booked
+      </Badge>
+    );
+  },
+},
   ];
 
   return (

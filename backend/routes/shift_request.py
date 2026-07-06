@@ -10,6 +10,7 @@ from models.attendance import Attendance
 from models.database import db
 from models.shift_request import ShiftRequest
 from models.employee import Employee
+from models.notification import Notification
 
 shift_bp = Blueprint(
     "shift_bp",
@@ -58,6 +59,16 @@ def apply_shift():
         )
 
         db.session.add(shift_request)
+        db.session.flush()
+
+        notification = Notification(
+            receiver_name=shift_request.reporting_manager,
+            title="New Shift Request",
+            message=f"{shift_request.employee_name} submitted a shift request.",
+            is_read=False
+    )
+
+        db.session.add(notification)
         db.session.commit()
 
         return jsonify({
@@ -135,19 +146,21 @@ def get_shift_approvals():
 
     return jsonify([
         {
-    "id": shift.id,
-    "employee_id": shift.employee_id,
-    "employee_name": shift.employee_name,
-    "current_shift": shift.current_shift,
-    "requested_shift": shift.requested_shift,
-    "request_type": shift.request_type,
-    "from_date": shift.from_date.isoformat() if shift.from_date else None,
-    "to_date": shift.to_date.isoformat() if shift.to_date else None,
-    "reason": shift.reason,
-    "status": shift.status
-}
+            "id": shift.id,
+            "employee_id": shift.employee_id,
+            "employee_name": shift.employee_name,
+            "current_shift": shift.current_shift,
+            "requested_shift": shift.requested_shift,
+            "request_type": shift.request_type,
+            "from_date": shift.from_date.isoformat() if shift.from_date else None,
+            "to_date": shift.to_date.isoformat() if shift.to_date else None,
+            "reason": shift.reason,
+            "status": shift.status
+        }
         for shift in shifts
     ])
+
+
 # ==========================================
 # APPROVE SHIFT REQUEST
 # ==========================================
@@ -181,6 +194,14 @@ def approve_shift(id):
         shift.status = "Approved"
         shift.approved_at = datetime.utcnow()
 
+        notification = Notification(
+            receiver_name=shift.employee_name,
+            title="Shift Request Approved",
+            message="Your shift request has been approved.",
+            is_read=False
+    )
+
+        db.session.add(notification)
         db.session.commit()
 
         return jsonify({
@@ -195,6 +216,7 @@ def approve_shift(id):
             "success": False,
             "message": str(e)
         }), 500
+
 
 # ==========================================
 # REJECT SHIFT REQUEST
@@ -218,11 +240,16 @@ def reject_shift(id):
             }), 404
 
         shift.status = "Rejected"
+        shift.rejected_at = datetime.utcnow()
 
-        shift.rejected_at = (
-            datetime.utcnow()
-        )
+        notification = Notification(
+            receiver_name=shift.employee_name,
+            title="Shift Request Rejected",
+            message="Your shift request has been rejected.",
+            is_read=False
+    )
 
+        db.session.add(notification)
         db.session.commit()
 
         return jsonify({
@@ -306,6 +333,3 @@ def delete_request(id):
             "success": False,
             "message": str(e)
         }), 500
-    
-
-    

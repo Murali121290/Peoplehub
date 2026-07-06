@@ -181,15 +181,25 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const approveAttendance = async (empId: string) => {
-    console.log("Approve:", empId);
-    setShowAttendanceModal(false);
-  };
+ const approveAttendance = async (empId: number) => {
+  try {
+    await fetch(`${BASE_URL}/attendance/approve/${empId}`, {
+      method: "PUT",
+    });
 
-  const rejectAttendance = async (empId: string) => {
-    console.log("Reject:", empId);
     setShowAttendanceModal(false);
-  };
+
+    setReportingEmployees((prev) =>
+      prev.filter((emp) => emp.employee_id !== empId)
+    );
+  } catch (error) {
+    console.error(error);
+  }
+};
+const rejectAttendance = async (empId: number) => {
+  console.log("Reject:", empId);
+  setShowAttendanceModal(false);
+};
 
   // --- Employees ---
   useEffect(() => {
@@ -292,9 +302,19 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   };
 
   // --- Socket ---
-  useEffect(() => {
-    socket.emit("join", { employee_id: employeeId });
-  }, []);
+ useEffect(() => {
+  if (!employeeId) return;
+
+  socket.connect();
+
+  socket.emit("join", {
+    employee_id: employeeId,
+  });
+
+  return () => {
+    socket.disconnect();
+  };
+}, [employeeId]);
 
   useEffect(() => {
     socket.on("receive_message", (message) => {
@@ -355,6 +375,41 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+    const handleApproveAll = async () => {
+    try {
+      await fetch(`${BASE_URL}/attendance/approve-all`, {
+        method: "PUT",
+      });
+      // Remove all employees from the popup
+      setReportingEmployees([]);
+
+      // Close the popup
+      setShowPopup(false);
+
+      // Optional: refresh the latest data
+      // fetchReportingEmployees();
+    } catch (error) {
+      console.error("Approve All Error:", error);
+    }
+  };
+
+  const handleApproveEmployee = async (employeeId: number) => {
+    await fetch(`${BASE_URL}/attendance/approve/${employeeId}`, {
+      method: "PUT",
+    });
+    const updated = reportingEmployees.filter(
+      (emp) => emp.employee_id !== employeeId,
+    );
+
+    setReportingEmployees(updated);
+
+    setSelectedEmployee(null);
+
+    if (updated.length === 0) {
+      setShowPopup(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Attendance Detail Modal */}
@@ -393,13 +448,15 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       {/* Attendance Summary Popup */}
       {showPopup && reportingEmployees.length > 0 && (
         <AttendanceSummaryModal
-          reportingEmployees={reportingEmployees}
-          onClose={() => setShowPopup(false)}
-          onViewEmployee={(emp) => {
-            setSelectedEmployee(emp);
-            setShowAttendanceModal(true);
-          }}
-        />
+  reportingEmployees={reportingEmployees}
+  onClose={() => setShowPopup(false)}
+  onViewEmployee={(emp) => {
+    setSelectedEmployee(emp);
+    setShowAttendanceModal(true);
+  }}
+  onApproveAll={handleApproveAll}
+  onApproveEmployee={handleApproveEmployee}
+/>
       )}
 
       {/* Mobile Header */}
