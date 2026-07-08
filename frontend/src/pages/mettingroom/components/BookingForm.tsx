@@ -3,7 +3,15 @@ import { createBooking } from "../../../services/meetingRoomService";
 import { FormField, Input, Select, Textarea } from "../../../components/ui/Form";
 import { Button } from "../../../components/ui/Button";
 
-const BookingForm = () => {
+interface BookingFormProps {
+    rooms: any[];
+    onSuccess?: () => void;
+}
+
+const BookingForm: React.FC<BookingFormProps> = ({
+    rooms,
+    onSuccess,
+}) => {
   const today = new Date().toISOString().split("T")[0];
 
   const initialForm = {
@@ -146,6 +154,9 @@ const BookingForm = () => {
 
       setForm(initialForm);
       setErrors({});
+      if (onSuccess) {
+    onSuccess();
+}
     } catch (error: any) {
       console.error("BOOKING ERROR:", error);
 
@@ -159,12 +170,10 @@ const BookingForm = () => {
     }
   };
 
-  const roomOptions = [
-    { label: "Conference Room A", value: "1" },
-    { label: "Board Room", value: "2" },
-    { label: "Training Room", value: "3" },
-  ];
-
+const roomOptions = rooms.map((room) => ({
+  label: room.room_name,
+  value: String(room.id),
+}));
   return (
     <div className="rounded-3xl bg-white">
       <div className="mb-6">

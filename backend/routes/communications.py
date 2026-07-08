@@ -168,11 +168,38 @@ def get_announcements():
 
     try:
 
-        announcements = Communication.query.filter_by(
-            message_type="announcement"
-        ).order_by(
-            Communication.created_at.desc()
-        ).all()
+        role = request.args.get("role", "").strip().lower()
+
+        if role:
+            # If the user is admin or hr, show all announcements
+            if role in ["admin", "hr"]:
+                announcements = Communication.query.filter_by(
+                    message_type="announcement"
+                ).order_by(
+                    Communication.created_at.desc()
+                ).all()
+            # If manager, show both 'all' and 'manager' targeted announcements
+            elif "manager" in role or "lead" in role:
+                announcements = Communication.query.filter(
+                    Communication.message_type == "announcement",
+                    Communication.target_role.in_(["all", "manager"])
+                ).order_by(
+                    Communication.created_at.desc()
+                ).all()
+            # Else (employee/user/standard), show 'all' and 'employee' targeted announcements
+            else:
+                announcements = Communication.query.filter(
+                    Communication.message_type == "announcement",
+                    Communication.target_role.in_(["all", "employee"])
+                ).order_by(
+                    Communication.created_at.desc()
+                ).all()
+        else:
+            announcements = Communication.query.filter_by(
+                message_type="announcement"
+            ).order_by(
+                Communication.created_at.desc()
+            ).all()
 
         return jsonify({
             "success": True,

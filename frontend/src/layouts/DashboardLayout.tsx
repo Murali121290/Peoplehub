@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -26,6 +26,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const { sidebarItems } = useNavigation(user);
   const isDesktop = useIsDesktop();
 
@@ -61,6 +62,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   const [realtimeMessages, setRealtimeMessages] = useState<any[]>([]);
   const [hasNewMessage, setHasNewMessage] = useState(false);
   const [lastMessageCount, setLastMessageCount] = useState(0);
+  const [unreadAnnouncements, setUnreadAnnouncements] = useState(0);
 
   const employeeId = localStorage.getItem("employee_id");
   const userId = localStorage.getItem("user_id");
@@ -77,12 +79,29 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
 
   // --- Notifications ---
   useEffect(() => {
-    notifications.forEach((item: any) => {
-      if (!shownNotifications.current.has(item.id)) {
+    if (!notifications || notifications.length === 0) return;
+
+    try {
+      const storedShown = JSON.parse(localStorage.getItem("shown_notifications_ids") || "[]");
+      const shownSet = new Set<number>(storedShown);
+      let updated = false;
+
+      notifications.forEach((item: any) => {
+        if (!shownSet.has(item.id)) {
+          shownSet.add(item.id);
+          toast.error(item.message, { duration: 2000 });
+          updated = true;
+        }
+        // Also ensure shownNotifications ref is synchronized
         shownNotifications.current.add(item.id);
-        toast.error(item.message, { duration: 10000 });
+      });
+
+      if (updated) {
+        localStorage.setItem("shown_notifications_ids", JSON.stringify(Array.from(shownSet)));
       }
-    });
+    } catch (e) {
+      console.error("Error reading/writing shown notifications:", e);
+    }
   }, [notifications]);
 
   useEffect(() => {
@@ -266,10 +285,12 @@ const rejectAttendance = async (empId: number) => {
   // --- Announcements ---
   const loadAnnouncements = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/communications/announcements`);
+      const roleParam = user?.access_level || "";
+      const response = await fetch(`${BASE_URL}/communications/announcements?role=${roleParam}`);
       if (!response.ok) return;
       const data = await response.json();
-      setOfficeMessages(Array.isArray(data) ? data : []);
+      const list = data.announcements || (Array.isArray(data) ? data : []);
+      setOfficeMessages(list);
     } catch (error) {
       console.error("Announcement Error:", error);
     }
@@ -277,7 +298,29 @@ const rejectAttendance = async (empId: number) => {
 
   useEffect(() => {
     loadAnnouncements();
-  }, []);
+  }, [user]);
+
+  // Track unread announcements count
+  useEffect(() => {
+    const lastViewed = localStorage.getItem("last_viewed_announcement_time") || "1970-01-01T00:00:00.000Z";
+    const lastViewedDate = new Date(lastViewed);
+    
+    const allAnnouncements = [...liveAnnouncements, ...officeMessages];
+    const unread = allAnnouncements.filter((ann: any) => {
+      const created = ann.created_at ? new Date(ann.created_at) : new Date();
+      return created > lastViewedDate;
+    }).length;
+    
+    setUnreadAnnouncements(unread);
+  }, [officeMessages, liveAnnouncements]);
+
+  // Clear unread count when visiting the announcements page
+  useEffect(() => {
+    if (location.pathname === "/announcements") {
+      localStorage.setItem("last_viewed_announcement_time", new Date().toISOString());
+      setUnreadAnnouncements(0);
+    }
+  }, [location.pathname, officeMessages, liveAnnouncements]);
 
   const sendAnnouncement = async () => {
     if (!officeText.trim()) return;
@@ -410,6 +453,17 @@ const rejectAttendance = async (empId: number) => {
     }
   };
 
+  const dismissNotification = async (id: number) => {
+    try {
+      await fetch(`${BASE_URL}/notifications/${id}`, {
+        method: "DELETE",
+      });
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+    } catch (err) {
+      console.error("Failed to dismiss notification:", err);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Attendance Detail Modal */}
@@ -428,9 +482,7 @@ const rejectAttendance = async (empId: number) => {
         showNotifications={showNotifications}
         onToggle={() => setShowNotifications(!showNotifications)}
         onClearAll={() => setNotifications([])}
-        onDismiss={(id) =>
-          setNotifications((prev) => prev.filter((n) => n.id !== id))
-        }
+        onDismiss={dismissNotification}
       />
 
       {/* Birthday Modal */}
@@ -486,6 +538,7 @@ const rejectAttendance = async (empId: number) => {
               user={user}
               profileImageUrl={profileImageUrl}
               onLogout={handleLogout}
+              unreadAnnouncements={unreadAnnouncements}
             />
           )}
         </AnimatePresence>
@@ -495,12 +548,12 @@ const rejectAttendance = async (empId: number) => {
       </div>
 
       {/* Chat Floating Button */}
-      <button
+      {/* <button
         onClick={() => setShowCommunication(true)}
         className="fixed bottom-6 right-6 z-50 bg-primary-500 hover:bg-primary-600 text-white rounded-full p-4 shadow-lg"
       >
         <ChatBubbleLeftRightIcon className="w-7 h-7" />
-      </button>
+      </button> */}
 
       {/* Chat Panel */}
       {showCommunication && (

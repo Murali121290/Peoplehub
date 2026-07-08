@@ -630,7 +630,7 @@ def export_leave_report():
             el_taken = 0
 
             approved_leaves = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == employee.id,
+                LeaveRequest.employee_id == employee.employee_id,
                 LeaveRequest.status == "Approved",
                 LeaveRequest.request_type == "Leave"
 ).all()

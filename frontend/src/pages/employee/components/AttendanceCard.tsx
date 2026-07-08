@@ -57,11 +57,11 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs font-medium text-neutral-500 bg-neutral-100 px-2.5 py-0.5 rounded-full">
-                {user?.role || "Employee"}
+                {currentEmployee?.role || user?.role || "Employee"}
               </span>
               <span className="text-neutral-300 text-xs">|</span>
               <span className="text-xs text-neutral-500">
-                {user?.team || "Pre-Editing"}
+                {user?.access_level || "Access Level"}
               </span>
             </div>
           </div>
@@ -89,17 +89,22 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
           <p className="text-2xl font-bold font-mono text-neutral-800 leading-none tracking-tight">
             {timer}
           </p>
-          {checkInTime && (
-            <p className="text-xs text-neutral-400 mt-2">
-              Since{" "}
-              <span className="text-neutral-700 font-medium">
-                {checkInTime.toLocaleTimeString("en-US", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
-            </p>
-          )}
+          <p className="text-xs text-neutral-400 mt-2">
+            {isCheckedIn && checkInTime ? (
+              <>Since{' '}
+                <span className="text-neutral-700 font-medium">
+                  {checkInTime.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              </>
+            ) : timer !== "00:00:00" ? (
+              'Today’s tracked working hours.'
+            ) : (
+              'Check in today to start tracking hours.'
+            )}
+          </p>
         </div>
 
         <div className="px-6 py-5">
@@ -111,12 +116,18 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
             <span className="text-lg font-medium text-neutral-400 ml-1">min</span>
           </p>
           <p className="text-xs text-neutral-400 mt-2">
-            {isLunchBreak ? (
-              <span className="text-warning-600 font-medium">
-                ● Break running
-              </span>
+            {isCheckedIn ? (
+              isLunchBreak ? (
+                <span className="text-warning-600 font-medium">
+                  ● Break running
+                </span>
+              ) : (
+                'Lunch break duration'
+              )
+            ) : totalLunchSeconds > 0 ? (
+              'Today’s lunch break total.'
             ) : (
-              "Lunch break duration"
+              'Check in to track lunch duration.'
             )}
           </p>
         </div>
@@ -130,12 +141,18 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
             <span className="text-lg font-medium text-neutral-400 ml-1">min</span>
           </p>
           <p className="text-xs text-neutral-400 mt-2">
-            {isTeaBreak ? (
-              <span className="text-success-600 font-medium">
-                ● Break running
-              </span>
+            {isCheckedIn ? (
+              isTeaBreak ? (
+                <span className="text-success-600 font-medium">
+                  ● Break running
+                </span>
+              ) : (
+                'Tea break duration'
+              )
+            ) : totalTeaSeconds > 0 ? (
+              'Today’s tea break total.'
             ) : (
-              "Tea break duration"
+              'Check in to track tea duration.'
             )}
           </p>
         </div>

@@ -16,6 +16,7 @@ interface SidebarProps {
   user: any;
   profileImageUrl: string;
   onLogout: () => void;
+  unreadAnnouncements?: number;
 }
 
 const reportLinks = [
@@ -31,6 +32,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   user,
   profileImageUrl,
   onLogout,
+  unreadAnnouncements = 0,
 }) => {
   const location = useLocation();
   const reportMenuRef = useRef<HTMLDivElement | null>(null);
@@ -38,8 +40,14 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const navigate = useNavigate();
 
-const showUpdateProfile =
-  !user?.profile_completed;
+  const accessLevel = `${user?.access_level || ''}`.toLowerCase();
+  const isEmployeeOrManager = 
+    accessLevel === 'user' || 
+    accessLevel === 'manager' || 
+    accessLevel === 'standard' ||
+    ['copyeditor', 'project manager', 'editorial manager'].includes(user?.role?.toLowerCase() || '');
+
+  const showUpdateProfile = isEmployeeOrManager;
 
   return (
     <motion.aside
@@ -125,12 +133,19 @@ const showUpdateProfile =
             <Link
               key={item.path}
               to={item.path}
-              className={`mb-2 flex items-center rounded-xl px-4 py-3 transition-colors ${
+              className={`mb-2 flex items-center justify-between rounded-xl px-4 py-3 transition-colors ${
                 isActive ? "bg-primary-50 font-semibold text-primary-700" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
               }`}
             >
-              <item.icon className="mr-3 h-5 w-5" />
-              {item.name}
+              <div className="flex items-center">
+                <item.icon className="mr-3 h-5 w-5" />
+                {item.name}
+              </div>
+              {item.name === "Announcements" && unreadAnnouncements > 0 && (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-pulse">
+                  {unreadAnnouncements}
+                </span>
+              )}
             </Link>
           );
         })}

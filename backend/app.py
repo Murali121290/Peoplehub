@@ -48,10 +48,12 @@ from routes.employee_details import employee_details_bp
 from routes.notifications import (
     notification_bp
 )
+from routes.appraisal_routes import appraisal_bp
 from routes.meeting_rooms import meeting_rooms_bp
 from routes.telecom import telecom_bp
 from seed.seed_employees import seed_employees
 from seed.seed_telecom import seed_telecom
+from seed.seed_appraisal import seed_appraisal
 
 def create_app():
     app = Flask(__name__)
@@ -138,6 +140,7 @@ def create_app():
         seed_users()
         seed_employees()
         seed_telecom()
+        seed_appraisal()
         
 
     # Check missed check-ins every minute
@@ -168,6 +171,11 @@ def create_app():
     communication_bp,
     url_prefix="/api/communications"
 )
+    app.register_blueprint(
+    appraisal_bp,
+    url_prefix="/api"
+)
+
 
     # Health check
     @app.route('/api/health')

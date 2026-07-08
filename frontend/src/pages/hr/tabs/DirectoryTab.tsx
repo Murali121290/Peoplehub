@@ -2,14 +2,12 @@ import React from 'react';
 import { MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/24/outline';
 import Panel from '../components/Panel';
 import Btn from '../components/Btn';
-import { useState } from 'react';
-import { Modal } from '../../../components/ui/Modal';
-import { Spinner } from '../../../components/ui/Spinner';
 import { Badge } from '../../../components/ui/Badge';
 
 interface DirectoryTabProps {
   filteredEmps: any[];
   search: string;
+  onEditEmployee: (employee: any) => void;
   onSearchChange: (val: string) => void;
   onAddEmployee: () => void;
   BASE_URL: string;
@@ -19,223 +17,15 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
   filteredEmps,
   search,
   onSearchChange,
+  onEditEmployee,
   onAddEmployee,
   BASE_URL
 }) => {
 
 
-const [loadingEmployee, setLoadingEmployee] =
-  useState(false);
-
-  const [selectedEmployee, setSelectedEmployee] =
-  useState<any>(null);
-
-  const fetchEmployeeDetails = async (employeeId: number) => {
-  try {
-    setLoadingEmployee(true);
-
-    console.log("BASE_URL =", BASE_URL);
-    console.log(
-      "URL =",
-      `${BASE_URL}/employee-details/${employeeId}`
-    );
-
-    const response = await fetch(
-      `${BASE_URL}/employee-details/${employeeId}`
-    );
-
-    const text = await response.text();
-
-    console.log("Response Text:", text);
-
-    const data = JSON.parse(text);
-
-    setSelectedEmployee(data.employee);
-
-  } catch (error) {
-    console.error(error);
-  } finally {
-    setLoadingEmployee(false);
-  }
-};
   return (
     <Panel>
 
-      {loadingEmployee && (
-        <div className="fixed inset-0 z-modal flex items-center justify-center bg-neutral-900/40">
-          <div className="rounded-xl bg-white px-6 py-5 shadow-popover">
-            <Spinner size="md" label="Loading Employee Details..." />
-          </div>
-        </div>
-      )}
-
-      <Modal
-        isOpen={!!selectedEmployee}
-        onClose={() => setSelectedEmployee(null)}
-        size="lg"
-        title="Employee Details"
-      >
-        {selectedEmployee && (
-          <>
-            {/* Basic Information */}
-            <div className="mb-5">
-              <h3 className="mb-2.5 text-xs font-semibold uppercase text-neutral-600">
-                Basic Information
-              </h3>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                {[
-                  { label: "Name", value: selectedEmployee.name },
-                  { label: "Role", value: selectedEmployee.role },
-                  { label: "Designation", value: selectedEmployee.designation },
-                  { label: "Manager", value: selectedEmployee.reporting_manager },
-                  { label: "Shift", value: selectedEmployee.shift }
-                ].map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5"
-                  >
-                    <div className="mb-0.5 text-[10px] font-semibold uppercase text-neutral-500">
-                      {item.label}
-                    </div>
-                    <div className="text-[13px] font-semibold text-neutral-800">
-                      {item.value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Attendance Summary */}
-            <div className="mb-5">
-              <h3 className="mb-2.5 text-xs font-semibold uppercase text-neutral-600">
-                Attendance Summary
-              </h3>
-
-              <div className="grid grid-cols-3 gap-2.5">
-                <div className="rounded-lg border border-success-200 bg-success-50 p-3 text-center">
-                  <div className="mb-1 text-[10px] font-semibold text-success-700">
-                    Present
-                  </div>
-                  <div className="text-2xl font-bold text-success-700">
-                    {selectedEmployee.present_days || 0}
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-center">
-                  <div className="mb-1 text-[10px] font-semibold text-danger-700">
-                    Absent
-                  </div>
-                  <div className="text-2xl font-bold text-danger-700">
-                    {selectedEmployee.absent_days || 0}
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-warning-200 bg-warning-50 p-3 text-center">
-                  <div className="mb-1 text-[10px] font-semibold text-warning-700">
-                    Leave
-                  </div>
-                  <div className="text-2xl font-bold text-warning-700">
-                    {selectedEmployee.leave_days || 0}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Leave Summary */}
-            <div className="mb-5">
-              <h3 className="mb-2.5 text-xs font-semibold uppercase text-neutral-600">
-                Leave Summary
-              </h3>
-
-              <div className="grid grid-cols-3 gap-2.5">
-                <div className="rounded-lg border border-neutral-200 bg-white p-2.5 text-center">
-                  <div className="mb-1 text-[9px] font-semibold text-neutral-400">
-                    Total
-                  </div>
-                  <div className="text-lg font-bold text-neutral-500">
-                    {selectedEmployee.total_leave_requests || 0}
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-neutral-200 bg-white p-2.5 text-center">
-                  <div className="mb-1 text-[9px] font-semibold text-neutral-400">
-                    Approved
-                  </div>
-                  <div className="text-lg font-bold text-success-700">
-                    {selectedEmployee.approved_leaves || 0}
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-neutral-200 bg-white p-2.5 text-center">
-                  <div className="mb-1 text-[9px] font-semibold text-neutral-400">
-                    Rejected
-                  </div>
-                  <div className="text-lg font-bold text-danger-700">
-                    {selectedEmployee.rejected_leaves || 0}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Recent Attendance Table */}
-            <div>
-              <h3 className="mb-2.5 text-xs font-semibold uppercase text-neutral-600">
-                Recent Attendance
-              </h3>
-
-              <div className="overflow-hidden rounded-lg border border-neutral-200">
-                <table className="w-full border-collapse text-xs">
-                  <thead className="bg-neutral-50">
-                    <tr>
-                      {["Date", "In", "Out", "Status"].map((header) => (
-                        <th
-                          key={header}
-                          className="border-b border-neutral-200 px-2 py-2.5 text-left text-[11px] font-semibold text-neutral-500"
-                        >
-                          {header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedEmployee.recent_attendance?.map((att: any, index: number) => (
-                      <tr
-                        key={index}
-                        className={`border-b border-neutral-200 ${index % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}
-                      >
-                        <td className="px-2 py-2.5 text-neutral-600">
-                          {att.date}
-                        </td>
-                        <td className="px-2 py-2.5 text-neutral-600">
-                          {att.check_in}
-                        </td>
-                        <td className="px-2 py-2.5 text-neutral-600">
-                          {att.check_out}
-                        </td>
-                        <td className="px-2 py-2.5">
-                          <Badge
-                            size="sm"
-                            variant={
-                              att.status === "Present"
-                                ? "success"
-                                : att.status === "Absent"
-                                  ? "danger"
-                                  : "warning"
-                            }
-                          >
-                            {att.status}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        )}
-      </Modal>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="m-0 mb-1 text-[26px] font-bold text-neutral-800">Employee Directory</h1>
@@ -268,11 +58,9 @@ const [loadingEmployee, setLoadingEmployee] =
           </thead>
           <tbody>
             {filteredEmps.map((emp, index) => (
-              <tr
-                key={emp.id}
-                onClick={() =>
-                  fetchEmployeeDetails(emp.user_id)
-                }
+             <tr
+    key={emp.id}
+    onClick={() => onEditEmployee(emp)}
                 className={`cursor-pointer border-b border-neutral-200 transition-colors duration-150 hover:bg-primary-50 ${
                   index % 2 === 0 ? "bg-neutral-100" : "bg-white"
                 }`}

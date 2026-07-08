@@ -20,166 +20,168 @@ employee_details_bp = Blueprint(
     methods=["GET"]
 )
 def get_employee_details(user_id):
+    try:
+        employee = Employee.query.filter_by(
+            user_id=user_id
+        ).first()
 
-    employee = Employee.query.filter_by(
-        user_id=user_id
-    ).first()
+        if not employee:
+            return jsonify({
+                "success": False,
+                "message": "Employee not found"
+            }), 404
 
-    if not employee:
+        today = date.today()
+
+        first_day = date(
+            today.year,
+            today.month,
+            1
+        )
+
+        last_day = date(
+            today.year,
+            today.month,
+            monthrange(
+                today.year,
+                today.month
+            )[1]
+        )
+
+        # Attendance Records
+        attendance_records = Attendance.query.filter(
+            Attendance.user_id == user_id,
+            Attendance.attendance_date >= first_day,
+            Attendance.attendance_date <= last_day
+        ).all() or []
+
+        present_days = len([
+            a for a in attendance_records
+            if a.status == "Present"
+        ])
+
+        total_attendance_days = len(
+            attendance_records
+        )
+
+        absent_days = max(
+            0,
+            today.day - present_days
+        )
+
+        total_hours = sum(
+            [
+                a.total_hours or 0
+                for a in attendance_records
+            ]
+        )
+
+        # Leave Summary
+        leave_requests = LeaveRequest.query.filter(
+            LeaveRequest.employee_id == employee.employee_id
+        ).all() or []
+
+        approved_leaves = len([
+            l for l in leave_requests
+            if l.status == "Approved"
+        ])
+
+        rejected_leaves = len([
+            l for l in leave_requests
+            if l.status == "Rejected"
+        ])
+
+        leave_days = sum([
+            l.total_days or 0
+            for l in leave_requests
+            if l.status == "Approved"
+        ])
+
+        recent_attendance = []
+
+        recent_records = Attendance.query.filter_by(
+            user_id=user_id
+        ).order_by(
+            Attendance.attendance_date.desc()
+        ).limit(10).all() or []
+
+        for record in recent_records:
+            recent_attendance.append({
+                "date":
+                record.attendance_date.strftime(
+                    "%d-%m-%Y"
+                ) if record.attendance_date else "-",
+
+                "check_in":
+                record.check_in.strftime(
+                    "%I:%M %p"
+                )
+                if record.check_in
+                else "-",
+
+                "check_out":
+                record.check_out.strftime(
+                    "%I:%M %p"
+                )
+                if record.check_out
+                else "-",
+
+                "status":
+                record.status
+            })
 
         return jsonify({
-            "success": False,
-            "message": "Employee not found"
-        }), 404
+            "success": True,
+            "employee": {
+                "employee_id":
+                employee.employee_id,
 
-    today = date.today()
+                "name":
+                f"{employee.first_name} "
+                f"{employee.last_name}",
 
-    first_day = date(
-        today.year,
-        today.month,
-        1
-    )
+                "role":
+                employee.role,
 
-    last_day = date(
-        today.year,
-        today.month,
-        monthrange(
-            today.year,
-            today.month
-        )[1]
-    )
+                "designation":
+                employee.designation,
 
-    # Attendance Records
-    attendance_records = Attendance.query.filter(
-        Attendance.user_id == user_id,
-        Attendance.attendance_date >= first_day,
-        Attendance.attendance_date <= last_day
-    ).all()
+                "department":
+                employee.department,
 
-    present_days = len([
-        a for a in attendance_records
-        if a.status == "Present"
-    ])
+                "reporting_manager":
+                employee.reporting_manager,
 
-    total_attendance_days = len(
-        attendance_records
-    )
+                "shift":
+                employee.shift_timing,
 
-    absent_days = max(
-        0,
-        today.day - present_days
-    )
+                "present_days":
+                present_days,
 
-    total_hours = sum(
-        [
-            a.total_hours or 0
-            for a in attendance_records
-        ]
-    )
+                "absent_days":
+                absent_days,
 
-    # Leave Summary
-    leave_requests = LeaveRequest.query.filter(
-    LeaveRequest.employee_id == employee.id
-    ).all()
+                "leave_days":
+                leave_days,
 
-    approved_leaves = len([
-        l for l in leave_requests
-        if l.status == "Approved"
-    ])
+                "approved_leaves":
+                approved_leaves,
 
-    rejected_leaves = len([
-        l for l in leave_requests
-        if l.status == "Rejected"
-    ])
+                "rejected_leaves":
+                rejected_leaves,
 
-    leave_days = sum([
-        l.total_days or 0
-        for l in leave_requests
-        if l.status == "Approved"
-    ])
+                "total_hours":
+                round(total_hours, 2),
 
-    recent_attendance = []
-
-    recent_records = Attendance.query.filter_by(
-        user_id=user_id
-    ).order_by(
-        Attendance.attendance_date.desc()
-    ).limit(10).all()
-
-    for record in recent_records:
-
-        recent_attendance.append({
-
-            "date":
-            record.attendance_date.strftime(
-                "%d-%m-%Y"
-            ),
-
-            "check_in":
-            record.check_in.strftime(
-                "%I:%M %p"
-            )
-            if record.check_in
-            else "-",
-
-            "check_out":
-            record.check_out.strftime(
-                "%I:%M %p"
-            )
-            if record.check_out
-            else "-",
-
-            "status":
-            record.status
+                "recent_attendance":
+                recent_attendance
+            }
         })
-
-    return jsonify({
-
-        "success": True,
-
-        "employee": {
-
-            "employee_id":
-            employee.employee_id,
-
-            "name":
-            f"{employee.first_name} "
-            f"{employee.last_name}",
-
-            "role":
-            employee.role,
-
-            "designation":
-            employee.designation,
-
-            "department":
-            employee.department,
-
-            "reporting_manager":
-            employee.reporting_manager,
-
-            "shift":
-            employee.shift_timing,
-
-            "present_days":
-            present_days,
-
-            "absent_days":
-            absent_days,
-
-            "leave_days":
-            leave_days,
-
-            "approved_leaves":
-            approved_leaves,
-
-            "rejected_leaves":
-            rejected_leaves,
-
-            "total_hours":
-            round(total_hours, 2),
-
-            "recent_attendance":
-            recent_attendance
-        }
-    })
+    except Exception as e:
+        import traceback
+        print(f"Error in get_employee_details: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "message": f"Error fetching employee details: {str(e)}"
+        }), 500

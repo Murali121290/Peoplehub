@@ -376,10 +376,60 @@ def update_employee_profile(employee_id):
                 "error": "Employee not found"
             }), 404
 
+        user = User.query.get(employee.user_id)
+
         data = request.form
 
+        # Basic Employee Information (from directory edit)
+        if data.get("employee_id"):
+            employee.employee_id = data.get("employee_id")
+
+        if data.get("first_name"):
+            employee.first_name = data.get("first_name")
+
+        if data.get("last_name"):
+            employee.last_name = data.get("last_name")
+
+        if data.get("email"):
+            employee.email = data.get("email")
+
+        if data.get("phone"):
+            employee.phone = data.get("phone")
+
+        if data.get("joining_date"):
+            employee.joining_date = datetime.strptime(
+                data["joining_date"],
+                "%Y-%m-%d"
+            ).date()
+
+        if data.get("salary"):
+            employee.salary = float(data.get("salary"))
+
+        if data.get("team_id"):
+            employee.team_id = data.get("team_id")
+
+        if data.get("department"):
+            employee.department = data.get("department")
+
+        if data.get("designation"):
+            employee.designation = data.get("designation")
+
+        if data.get("role"):
+            employee.role = data.get("role")
+
+        if data.get("reporting_manager"):
+            employee.reporting_manager = data.get("reporting_manager")
+
+        if data.get("status"):
+            employee.status = data.get("status")
+
+        # Profile image
+        profile_image = request.files.get("profile_image")
+        if profile_image:
+            employee.profile_image = profile_image.read()
+
         resume = request.files.get("resume_file")
-        aadhaar = request.files.get("aadhaar_file") 
+        aadhaar = request.files.get("aadhaar_file")
         pan = request.files.get("pan_file")
         degree = request.files.get("degree_certificate")
 
@@ -404,43 +454,44 @@ def update_employee_profile(employee_id):
             "blood_group",
             employee.blood_group
         )
+
         # PF
         employee.pf_number = data.get(
-        "pf_number",
-        employee.pf_number
-       )
+            "pf_number",
+            employee.pf_number
+        )
 
         employee.uan_number = data.get(
-        "uan_number",
-         employee.uan_number 
+            "uan_number",
+            employee.uan_number
         )
 
         employee.esi_number = data.get(
-        "esi_number",
-        employee.esi_number
+            "esi_number",
+            employee.esi_number
         )
 
-# Boards
+        # Boards
         employee.tenth_board = data.get(
-    "tenth_board",
-    employee.tenth_board
-   )
+            "tenth_board",
+            employee.tenth_board
+        )
 
         employee.twelfth_board = data.get(
-    "twelfth_board",
-    employee.twelfth_board
-)
+            "twelfth_board",
+            employee.twelfth_board
+        )
 
-# Universities
+        # Universities
         employee.ug_university = data.get(
-    "ug_university",
-    employee.ug_university
-)
+            "ug_university",
+            employee.ug_university
+        )
 
         employee.pg_university = data.get(
-        "pg_university",
-        employee.pg_university
-    )
+            "pg_university",
+            employee.pg_university
+        )
 
         # Address
         employee.address = data.get(
@@ -582,16 +633,16 @@ def update_employee_profile(employee_id):
         )
 
         employee.current_ctc = (
-        float(data["current_ctc"])
-        if data.get("current_ctc")
-        else None
+            float(data["current_ctc"])
+            if data.get("current_ctc")
+            else None
         )
 
         employee.expected_ctc = (
-        float(data["expected_ctc"])
-        if data.get("expected_ctc")
-        else None
-)
+            float(data["expected_ctc"])
+            if data.get("expected_ctc")
+            else None
+        )
 
         employee.notice_period = data.get(
             "notice_period",
@@ -644,6 +695,7 @@ def update_employee_profile(employee_id):
 
         # Profile Status
         employee.profile_completed = True
+
         # Documents
         if resume:
             employee.resume_file = resume.read()
@@ -656,7 +708,32 @@ def update_employee_profile(employee_id):
 
         if degree:
             employee.degree_certificate = degree.read()
+
         employee.is_first_login = False
+
+        # Sync corresponding User record
+        if user:
+            first = data.get("first_name", employee.first_name)
+            last = data.get("last_name", employee.last_name)
+
+            user.full_name = f"{first} {last}".strip()
+
+            if data.get("email"):
+                user.email = data.get("email")
+                user.company_email = data.get("email")
+
+
+            if data.get("access_level"):
+                user.access_level = data.get("access_level")
+
+            if data.get("team_id"):
+                user.team_id = int(data.get("team_id"))
+
+            if data.get("role_id"):
+                user.role_id = int(data.get("role_id"))
+
+            if data.get("status"):
+                user.status = data.get("status")
 
         db.session.commit()
 
@@ -672,8 +749,7 @@ def update_employee_profile(employee_id):
         return jsonify({
             "success": False,
             "error": str(e)
-        }), 500
-    
+        }), 500 
 @employees_bp.route('/list', methods=['GET'])
 def get_employees_list():
     employees = Employee.query.all()

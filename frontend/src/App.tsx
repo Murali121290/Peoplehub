@@ -24,6 +24,7 @@ import CompleteProfile from './pages/Compeleteprofilepage';
 import AnnouncementsPage from './pages/AnnouncementsPage';
 import TelecomDirectoryPage from "./pages/Telecomdirectory ";
 import MeetingRoomsPage from "./pages/mettingroom/MeetingRooms";
+import AppraisalDashboard from "./pages/appraisal/AppraisalDashboard";
 
 
 
@@ -135,6 +136,15 @@ return ( <BrowserRouter>
   element={
     <ProtectedRoute>
       <MeetingRoomsPage />
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/appraisal"
+  element={
+    <ProtectedRoute>
+      <AppraisalDashboard />
     </ProtectedRoute>
   }
 />

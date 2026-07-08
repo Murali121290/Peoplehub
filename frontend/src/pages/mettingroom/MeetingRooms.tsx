@@ -359,7 +359,14 @@ const MeetingRooms = () => {
         title="Create Booking"
         eyebrow={{ label: "Schedule and manage a room reservation." }}
       >
-        <BookingForm />
+        <BookingForm
+    rooms={rooms}
+    onSuccess={() => {
+        fetchBookings();
+        fetchRooms();
+        setShowBookingModal(false);
+    }}
+/>
       </Modal>
     </div>
   );

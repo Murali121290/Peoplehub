@@ -1,16 +1,25 @@
 # routes/shift_request.py
 
+# pyrefly: ignore [missing-import]
 from flask import Blueprint
+# pyrefly: ignore [missing-import]
 from flask import request
+# pyrefly: ignore [missing-import]
 from flask import jsonify
 
 from datetime import datetime
+# pyrefly: ignore [missing-import]
 from models.attendance import Attendance
-
+# pyrefly: ignore [missing-import]
 from models.database import db
+# pyrefly: ignore [missing-import]
 from models.shift_request import ShiftRequest
+# pyrefly: ignore [missing-import]
 from models.employee import Employee
+# pyrefly: ignore [missing-import]
 from models.notification import Notification
+# pyrefly: ignore [missing-import]
+from sqlalchemy import func
 
 shift_bp = Blueprint(
     "shift_bp",
@@ -134,31 +143,34 @@ def get_employee_requests(
 # ==========================================
 # GET MANAGER APPROVAL REQUESTS
 # ==========================================
-@shift_bp.route(
-    "/approvals",
-    methods=["GET"]
-)
-def get_shift_approvals():
+@shift_bp.route("/approvals/<manager_name>", methods=["GET"])
+def get_shift_approvals(manager_name):
 
-    shifts = ShiftRequest.query.order_by(
+    normalized_manager = manager_name.strip().lower()
+
+    shifts = ShiftRequest.query.filter(
+        func.lower(func.trim(ShiftRequest.reporting_manager)) == normalized_manager,
+        ShiftRequest.status == "Pending"
+    ).order_by(
         ShiftRequest.id.desc()
     ).all()
 
     return jsonify([
-        {
-            "id": shift.id,
-            "employee_id": shift.employee_id,
-            "employee_name": shift.employee_name,
-            "current_shift": shift.current_shift,
-            "requested_shift": shift.requested_shift,
-            "request_type": shift.request_type,
-            "from_date": shift.from_date.isoformat() if shift.from_date else None,
-            "to_date": shift.to_date.isoformat() if shift.to_date else None,
-            "reason": shift.reason,
-            "status": shift.status
-        }
-        for shift in shifts
-    ])
+    {
+        "id": shift.id,
+        "employee_id": shift.employee_id,
+        "employee_name": shift.employee_name,
+        "reporting_manager": shift.reporting_manager,
+        "current_shift": shift.current_shift,
+        "requested_shift": shift.requested_shift,
+        "request_type": shift.request_type,
+        "from_date": shift.from_date.isoformat() if shift.from_date else None,
+        "to_date": shift.to_date.isoformat() if shift.to_date else None,
+        "reason": shift.reason,
+        "status": shift.status
+    }
+    for shift in shifts
+])
 
 
 # ==========================================
@@ -175,31 +187,64 @@ def approve_shift(id):
                 "message": "Shift Request Not Found"
             }), 404
 
-        attendance = Attendance.query.filter_by(
-            user_id=shift.employee_id,
-            attendance_date=shift.from_date
-        ).first()
+        # Resolve user_id dynamically
+        employee = Employee.query.get(shift.employee_id)
+        resolved_user_id = employee.user_id if employee else shift.employee_id
 
-        if attendance:
-            attendance.shift_timing = shift.requested_shift
-        else:
-            attendance = Attendance(
-                user_id=shift.employee_id,
-                attendance_date=shift.from_date,
-                shift_timing=shift.requested_shift,
-                status="Absent"
-            )
-            db.session.add(attendance)
+        from datetime import timedelta, time
+
+        start_date = shift.from_date or shift.shift_date
+        end_date = shift.to_date or start_date
+
+        if start_date:
+            current_date = start_date
+            while current_date <= end_date:
+                check_in_time = datetime.combine(current_date, time(9, 0))
+                check_out_time = datetime.combine(current_date, time(14, 30))
+
+                attendance = Attendance.query.filter_by(
+                    user_id=resolved_user_id,
+                    attendance_date=current_date
+                ).first()
+
+                if attendance:
+                    attendance.shift_timing = shift.requested_shift
+                    attendance.status = "Present"
+                    attendance.total_hours = 5.5
+                    attendance.check_in = check_in_time
+                    attendance.check_out = check_out_time
+                else:
+                    attendance = Attendance(
+                        user_id=resolved_user_id,
+                        attendance_date=current_date,
+                        shift_timing=shift.requested_shift,
+                        status="Present",
+                        total_hours=5.5,
+                        check_in=check_in_time,
+                        check_out=check_out_time
+                    )
+                    db.session.add(attendance)
+                
+                current_date += timedelta(days=1)
 
         shift.status = "Approved"
         shift.approved_at = datetime.utcnow()
+
+        # Delete any pending "New Shift Request" notifications for this shift
+        try:
+            Notification.query.filter(
+                Notification.title == "New Shift Request",
+                Notification.message.like(f"%{shift.employee_name} submitted a shift request.%")
+            ).delete(synchronize_session=False)
+        except Exception as delete_err:
+            print("Failed to delete new shift request notification:", str(delete_err))
 
         notification = Notification(
             receiver_name=shift.employee_name,
             title="Shift Request Approved",
             message="Your shift request has been approved.",
             is_read=False
-    )
+        )
 
         db.session.add(notification)
         db.session.commit()
@@ -241,6 +286,15 @@ def reject_shift(id):
 
         shift.status = "Rejected"
         shift.rejected_at = datetime.utcnow()
+
+        # Delete any pending "New Shift Request" notifications for this shift
+        try:
+            Notification.query.filter(
+                Notification.title == "New Shift Request",
+                Notification.message.like(f"%{shift.employee_name} submitted a shift request.%")
+            ).delete(synchronize_session=False)
+        except Exception as delete_err:
+            print("Failed to delete new shift request notification:", str(delete_err))
 
         notification = Notification(
             receiver_name=shift.employee_name,

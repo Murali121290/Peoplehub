@@ -13,6 +13,9 @@ interface AddEmployeeModalProps {
   setProfileImage: (val: any) => void;
   onSubmit: (e: any) => void;
   onClose: () => void;
+
+  // ADD THESE
+  isEdit?: boolean;
 }
 
 const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
@@ -25,6 +28,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   setProfileImage,
   onSubmit,
   onClose,
+  isEdit = false,
 }) => {
   const [filteredRoles, setFilteredRoles] = useState<any[]>([]);
   const [isEmptyField, setIsEmptyField] = useState(false);
@@ -78,11 +82,10 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
     console.log("PROFILE IMAGE =", profileImage);
 
-    if (!profileImage) {
-      setIsEmptyField(true);
-
-      return;
-    }
+    if (!isEdit && !profileImage) {
+    setIsEmptyField(true);
+    return;
+}
 
     console.log("ALL VALID");
 
@@ -98,27 +101,28 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       isOpen
       onClose={onClose}
       className="max-w-[920px]"
-      title="Add New Employee"
+      title={isEdit ? "Edit Employee" : "Add New Employee"}
       footer={
         <>
           <Button variant="outline" type="button" onClick={onClose}>
             Cancel
           </Button>
           <Button type="button" onClick={validateForm}>
-            Add Employee
+            {isEdit ? "Update Employee" : "Add Employee"}
           </Button>
         </>
       }
     >
       <p className="text-sm text-neutral-500 -mt-3 mb-5">
-        HR can create a new employee record with essential details
+        {isEdit
+  ? "Update employee information."
+  : "HR can create a new employee record with essential details"}
       </p>
 
       <form>
         {isEmptyField && (
           <div className="mb-4 p-3 bg-danger-50 border border-danger-200 rounded-lg text-danger-600 text-sm">
-            ⚠️ Please fill all mandatory fields including Profile Image before
-            adding employee.
+            ⚠️ Please fill all mandatory fields{!isEdit && " including Profile Image"} before {isEdit ? "updating" : "adding"} employee.
           </div>
         )}
 
@@ -180,16 +184,16 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 );
 
                 setNewEmp({
-                  ...newEmp,
+  ...newEmp,
 
-                  team_id: value,
+  team_id: value,
 
-                  // Save department/designation automatically
-                  department: selectedTeam?.name || "",
-                  designation: selectedTeam?.name || "",
+  department: selectedTeam?.name || "",
+  designation: selectedTeam?.name || "",
 
-                  role: "",
-                });
+  role: "",
+  role_id: "",
+});
               }}
               placeholder="Select Team"
               options={(teams || []).map((team) => ({ label: team.name, value: team.id }))}
@@ -211,18 +215,27 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
           </FormField>
 
           <FormField label="Role *">
-            <Select
-              value={newEmp.role}
-              onChange={(value) =>
-                setNewEmp({
-                  ...newEmp,
-                  role: value,
-                })
-              }
-              placeholder="Select Role"
-              options={(filteredRoles || []).map((role) => ({ label: role.name, value: role.name }))}
-            />
-          </FormField>
+  <Select
+    value={newEmp.role}
+    onChange={(value) => {
+
+      const selectedRole = filteredRoles.find(
+        (r) => r.name === value
+      );
+
+      setNewEmp({
+        ...newEmp,
+        role: value,
+        role_id: selectedRole?.id || "",
+      });
+    }}
+    placeholder="Select Role"
+    options={(filteredRoles || []).map((role) => ({
+      label: role.name,
+      value: role.name,
+    }))}
+  />
+</FormField>
 
           <FormField label="STATUS *">
             <Select
@@ -238,7 +251,9 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             />
           </FormField>
 
-          <FormField label="PROFILE IMAGE *">
+          <FormField
+    label={isEdit ? "PROFILE IMAGE" : "PROFILE IMAGE *"}
+>
             <Input
               type="file"
               accept="image/*"

@@ -33,12 +33,16 @@ export const theme = {
 };
 
 export const DEFAULT_NEW_EMP = {
+  id: "",              // <-- ADD THIS
   user_id: "",
   employee_id: "",
   first_name: "",
   last_name: "",
   email: "",
   phone: "",
+  role_id: "",          // add
+  access_level: "",     // add
+
   team_id: "",
   department: "",
   designation: "",

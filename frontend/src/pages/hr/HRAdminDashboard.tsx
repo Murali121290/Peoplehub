@@ -58,6 +58,7 @@ export default function HRAdminDashboard() {
   const [profileImage, setProfileImage] = useState<any>(null);
   const [newEmp, setNewEmp] = useState(DEFAULT_NEW_EMP);
   const [profileData, setProfileData] = useState(DEFAULT_PROFILE_DATA);
+  const [isEditMode, setIsEditMode] = useState(false);
 
   // --- API Calls ---
   const fetchEmployees = async () => {
@@ -203,6 +204,7 @@ export default function HRAdminDashboard() {
 
     try {
       console.log("HANDLE ADD EMPLOYEE CALLED");
+      console.log("IS EDIT MODE:", isEditMode);
       console.log(newEmp);
 
       const formData = new FormData();
@@ -221,6 +223,9 @@ export default function HRAdminDashboard() {
 
       formData.append("designation", newEmp.designation || "");
       formData.append("role", newEmp.role);
+      formData.append("role_id", String(newEmp.role_id || ""));
+      formData.append("access_level", newEmp.access_level || "");
+      formData.append("company_email", newEmp.email || "");
       formData.append("reporting_manager", newEmp.reporting_manager);
 
       formData.append("status", newEmp.status);
@@ -228,43 +233,62 @@ export default function HRAdminDashboard() {
       if (profileImage) {
         formData.append("profile_image", profileImage);
       }
-const response = await fetch(`${BASE_URL}/employees/`, {
-  method: "POST",
-  body: formData,
-});
 
-console.log("STATUS:", response.status);
-console.log("OK:", response.ok);
+      // Determine method and URL based on edit mode
+      const method = isEditMode ? "PATCH" : "POST";
+      const url = isEditMode 
+        ? `${BASE_URL}/employees/${newEmp.id}` 
+        : `${BASE_URL}/employees/`;
 
-const text = await response.text();
-console.log("RAW RESPONSE:", text);
+      const response = await fetch(url, {
+        method,
+        body: formData,
+      });
 
-let data: any = {};
-try {
-  data = JSON.parse(text);
-} catch (e) {
-  console.log("Not JSON");
-}
+      console.log("STATUS:", response.status);
+      console.log("OK:", response.ok);
+
+      const text = await response.text();
+      console.log("RAW RESPONSE:", text);
+
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.log("Not JSON");
+      }
 
       console.log("SERVER RESPONSE:", data);
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to add employee");
+        throw new Error(data.message || "Failed to save employee");
       }
 
-     toast.success("Employee Added Successfully");
+      toast.success(isEditMode ? "Employee Updated Successfully" : "Employee Added Successfully");
 
       await fetchEmployees();
 
       setAddEmpOpen(false);
 
       setNewEmp(DEFAULT_NEW_EMP);
+
+      setIsEditMode(false);
     } catch (error: any) {
       console.error(error);
 
-      toast.error(error.message || "Error adding employee");
+      toast.error(error.message || "Error saving employee");
     }
   };
+  const handleEditEmployee = (employee: any) => {
+
+  setNewEmp(employee);
+
+  setProfileImage(null);
+
+  setIsEditMode(true);
+
+  setAddEmpOpen(true);
+};
 
   const handleProfileComplete = async () => {
     if (!currentEmployee) return;
@@ -326,12 +350,23 @@ try {
         )}
         {nav === "directory" && (
           <DirectoryTab
-            filteredEmps={filteredEmps}
-            search={search}
-            onSearchChange={setSearch}
-            onAddEmployee={() => setAddEmpOpen(true)}
-            BASE_URL={BASE_URL}
-          />
+    filteredEmps={filteredEmps}
+    search={search}
+    onSearchChange={setSearch}
+    onAddEmployee={() => {
+
+        setIsEditMode(false);
+
+        setNewEmp(DEFAULT_NEW_EMP);
+
+        setProfileImage(null);
+
+        setAddEmpOpen(true);
+
+    }}
+    onEditEmployee={handleEditEmployee}
+    BASE_URL={BASE_URL}
+/>
         )}
         {nav === "attendance" && (
           <AttendanceTab attendance={attendance} BASE_URL={BASE_URL} />
@@ -357,6 +392,7 @@ try {
           employees={employees}
           teams={teams}
           roles={roles}
+          isEdit={isEditMode}
           profileImage={profileImage}
           setProfileImage={setProfileImage}
           onSubmit={handleAddEmployee}

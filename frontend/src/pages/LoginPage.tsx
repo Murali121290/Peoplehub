@@ -67,7 +67,7 @@ const LoginPage: React.FC = () => {
     } catch (error: any) {
       console.error(error);
       toast.error(error.response?.data?.error || "Login failed");
-    } finally {
+    } finally { 
       setLoading(false);
     }
   };

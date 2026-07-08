@@ -19,25 +19,27 @@ def seed_employees():
             continue
 
         # Department & Designation
+        role_name = user.role.name if user.role else ""
+
         if user.access_level == "admin":
             department = "Administration"
-            designation = "Administrator"
+            designation = role_name
             reporting_manager = ""
 
         elif user.access_level == "hr":
             department = "Human Resources"
-            designation = "HR Manager"
+            designation = role_name
             reporting_manager = "Admin"
 
         elif user.access_level == "manager":
             department = "Production"
-            designation = "Project Manager"
+            designation = role_name
             reporting_manager = "Admin"
 
         else:
-            department = "Production"
-            designation = "Employee"
-            reporting_manager = "Project Manager"
+            department = "Editorial Team"
+            designation = role_name
+            reporting_manager = "Team Lead - Editorial"
 
         # Split full name
         names = user.full_name.split()
@@ -50,28 +52,21 @@ def seed_employees():
             last_name = " ".join(names[1:])
 
         employee = Employee(
-
             user_id=user.id,
-
             employee_id=f"EMP{user.id:03d}",
-
             first_name=first_name,
             last_name=last_name,
-
             email=user.email,
 
             department=department,
             designation=designation,
-            role=user.access_level.title(),
+            role=role_name,
 
             joining_date=date.today(),
-
             reporting_manager=reporting_manager,
 
             salary=25000,
-
             shift_timing="General Shift",
-
             status="Active",
 
             profile_completed=False,

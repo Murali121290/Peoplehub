@@ -17,7 +17,6 @@ import ConfirmModal from "./components/ConfirmModal";
 import PopupModal from "./components/PopupModal";
 import BirthdayModal from "../../layouts/components/BirthdayModal";
 import OverviewTab from "./tabs/OverviewTab";
-import TasksTab from "./tabs/TasksTab";
 import LeaveTab from "./tabs/LeaveTab";
 import ShiftTab from "./tabs/ShiftTab";
 import AttendanceTab from "./tabs/AttendanceTab";
@@ -38,7 +37,6 @@ const itemVariants = {
 
 const tabs = [
   { id: "overview", label: "Overview", icon: HomeIcon },
-  { id: "tasks", label: "My Tasks", icon: CheckCircleIcon },
   { id: "leave", label: "Leave Requests", icon: CalendarDaysIcon },
   { id: "shift", label: "Shift Request", icon: ClockIcon },
   { id: "attendance", label: "Attendance", icon: ClockIcon },
@@ -60,6 +58,10 @@ const EmployeeDashboardPage: React.FC = () => {
     const currentEmployee = Array.isArray(employees)
     ? employees.find((emp: any) => Number(emp.user_id) === Number(user?.id))
     : null;
+    console.log(currentEmployee);
+console.log("Reporting Manager:", currentEmployee?.reporting_manager);
+console.log("Access Level:", user?.access_level);
+console.log("Role:", user?.role);
   const managerName =
   `${currentEmployee?.first_name} ${currentEmployee?.last_name}`
     .trim()
@@ -80,6 +82,12 @@ const EmployeeDashboardPage: React.FC = () => {
   const [teaStartTime, setTeaStartTime] = useState<Date | null>(null);
   const [totalLunchSeconds, setTotalLunchSeconds] = useState(0);
   const [totalTeaSeconds, setTotalTeaSeconds] = useState(0);
+  const [todayAttendanceSummary, setTodayAttendanceSummary] = useState<{
+    date: string;
+    timer: string;
+    totalLunchSeconds: number;
+    totalTeaSeconds: number;
+  } | null>(null);
   const [shiftDate, setShiftDate] = useState("");
   // Modal state
   const [confirmModal, setConfirmModal] = useState(false);
@@ -115,6 +123,48 @@ const pendingLeaveCount = approvalLeaves.filter(
     setPopup({ show: true, type, title, message });
   };
 
+  const getTodayKey = () => new Date().toISOString().split("T")[0];
+
+  const formatSeconds = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  };
+
+  const loadTodayAttendanceSummary = (userId: string) => {
+    try {
+      const summaryJson = localStorage.getItem(`todayAttendanceSummary_${userId}`);
+      if (!summaryJson) return null;
+      const summary = JSON.parse(summaryJson);
+      if (summary?.date === getTodayKey()) {
+        return summary;
+      }
+      localStorage.removeItem(`todayAttendanceSummary_${userId}`);
+      return null;
+    } catch {
+      localStorage.removeItem(`todayAttendanceSummary_${userId}`);
+      return null;
+    }
+  };
+
+  const saveTodayAttendanceSummary = (
+    userId: string,
+    summary: {
+      date: string;
+      timer: string;
+      totalLunchSeconds: number;
+      totalTeaSeconds: number;
+    },
+  ) => {
+    localStorage.setItem(`todayAttendanceSummary_${userId}`, JSON.stringify(summary));
+  };
+
+  const clearTodayAttendanceSummary = (userId: string) => {
+    localStorage.removeItem(`todayAttendanceSummary_${userId}`);
+    setTodayAttendanceSummary(null);
+  };
+
   // --- API Calls ---
   const fetchTodayBirthdays = async () => {
     try {
@@ -137,6 +187,7 @@ const pendingLeaveCount = approvalLeaves.filter(
     }
   };
 
+
   const loadShiftRequests = async () => {
     if (!currentEmployee?.user_id) return;
     try {
@@ -150,15 +201,50 @@ const pendingLeaveCount = approvalLeaves.filter(
     }
   };
 
-  const loadManagerShiftRequests = async () => {
-    try {
-      const res = await fetch(`${BASE_URL}/shifts/approvals`);
-      const data = await res.json();
-      setManagerShiftRequests(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.log(err);
+const loadManagerShiftRequests = async () => {
+
+  if (!currentEmployee) {
+    console.log("Current employee not loaded");
+    return;
+  }
+
+  try {
+
+    const managerName =
+      `${currentEmployee.first_name} ${currentEmployee.last_name}`.trim();
+
+    console.log("Logged In Manager:", managerName);
+
+    const url =
+      `${BASE_URL}/shifts/approvals/${encodeURIComponent(managerName)}`;
+
+    console.log("Request URL:", url);
+
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      console.error("Failed to fetch approval requests");
+      setManagerShiftRequests([]);
+      return;
     }
-  };
+
+    const data = await res.json();
+
+    console.log("Approval Requests:", data);
+
+    setManagerShiftRequests(
+      Array.isArray(data) ? data : []
+    );
+
+  } catch (err) {
+
+    console.error("Load Manager Shift Requests Error:", err);
+
+    setManagerShiftRequests([]);
+
+  }
+
+};
 
   // --- Attendance Handlers ---
   const handleCheckIn = async () => {
@@ -191,6 +277,10 @@ const pendingLeaveCount = approvalLeaves.filter(
         "Check In Successful",
         data.message || "You have checked in successfully.",
       );
+      const nowIso = new Date().toISOString();
+      localStorage.setItem(`checkInTime_${userId}`, nowIso);
+      localStorage.setItem(`checkInDate_${userId}`, nowIso.split("T")[0]);
+      clearTodayAttendanceSummary(userId);
       setTimeout(() => window.location.reload(), 1000);
     } catch (error) {
       showPopup(
@@ -239,9 +329,27 @@ const pendingLeaveCount = approvalLeaves.filter(
       );
       const attendanceHistory = await attendanceResponse.json();
       setAttendanceData(attendanceHistory);
+      const todayDate = getTodayKey();
+      const totalWorkedSeconds = checkInTime
+        ? Math.max(
+            Math.floor((new Date().getTime() - checkInTime.getTime()) / 1000) -
+              totalLunchSeconds -
+              totalTeaSeconds,
+            0,
+          )
+        : 0;
+      const formattedTimer = formatSeconds(totalWorkedSeconds);
+      const summary = {
+        date: todayDate,
+        timer: formattedTimer,
+        totalLunchSeconds,
+        totalTeaSeconds,
+      };
+      saveTodayAttendanceSummary(userId, summary);
+      setTodayAttendanceSummary(summary);
       setIsCheckedIn(false);
       setCheckInTime(null);
-      setTimer("00:00:00");
+      setTimer(formattedTimer);
       localStorage.removeItem(`checkInTime_${userId}`);
       showPopup(
         "success",
@@ -594,10 +702,15 @@ useEffect(() => {
   useEffect(() => {
     const userId = localStorage.getItem("user_id");
     if (!userId) return;
+    const savedCheckInDate = localStorage.getItem(`checkInDate_${userId}`);
     const savedCheckIn = localStorage.getItem(`checkInTime_${userId}`);
-    if (savedCheckIn) {
+    const todayKey = new Date().toISOString().split("T")[0];
+    if (savedCheckIn && savedCheckInDate === todayKey) {
       setIsCheckedIn(true);
       setCheckInTime(new Date(savedCheckIn));
+    } else {
+      localStorage.removeItem(`checkInTime_${userId}`);
+      localStorage.removeItem(`checkInDate_${userId}`);
     }
   }, []);
 
@@ -616,8 +729,16 @@ useEffect(() => {
           if (data.tea_start) setTeaStartTime(new Date(data.tea_start));
           setTotalLunchSeconds((data.lunch_minutes || 0) * 60);
           setTotalTeaSeconds((data.tea_minutes || 0) * 60);
+          clearTodayAttendanceSummary(userId);
         } else {
           setIsCheckedIn(false);
+          const summary = loadTodayAttendanceSummary(userId);
+          if (summary) {
+            setTodayAttendanceSummary(summary);
+            setTimer(summary.timer);
+            setTotalLunchSeconds(summary.totalLunchSeconds);
+            setTotalTeaSeconds(summary.totalTeaSeconds);
+          }
         }
       })
       .catch((err) => console.error("Attendance Status Error:", err));
@@ -804,7 +925,6 @@ useEffect(() => {
                 itemVariants={itemVariants}
               />
             )}
-            {activeTab === "tasks" && <TasksTab />}
             {activeTab === "leave" && (
               <LeaveTab
                 leaveRequests={leaveRequests}

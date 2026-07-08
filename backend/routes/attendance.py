@@ -59,15 +59,35 @@ def check_in():
         # =====================================
         # SHIFT VALIDATION
         # =====================================
+        from models.shift_request import ShiftRequest
+        from sqlalchemy import or_
+        today_date = datetime.now().date()
 
-        shift_name = (
-            employee.shift_timing or ""
-        ).strip().lower()
+        # Check if there is an approved shift request for today
+        approved_request = ShiftRequest.query.filter(
+            or_(
+                ShiftRequest.employee_id == employee.id,
+                ShiftRequest.employee_id == employee.user_id
+            ),
+            ShiftRequest.status == "Approved",
+            ShiftRequest.from_date <= today_date,
+            ShiftRequest.to_date >= today_date
+        ).first()
+
+        if approved_request:
+            shift_name = (approved_request.requested_shift or "").strip().lower()
+            print("================================")
+            print("Approved requested shift active today:", shift_name)
+            print("================================")
+        else:
+            shift_name = (
+                employee.shift_timing or ""
+            ).strip().lower()
 
         current_time = datetime.now().time()
         
         print("================================")
-        print("Employee Shift:", employee.shift_timing)
+        print("Employee Shift name resolved:", shift_name)
         print("Current Time:", current_time)
         print("================================")
 
@@ -76,7 +96,6 @@ def check_in():
             print("================================")
             print("USER ID:", user_id)
             print("EMPLOYEE:", employee.first_name)
-            print("SHIFT RAW:", employee.shift_timing)
             print("SHIFT LOWER:", shift_name)
             print("CURRENT TIME:", current_time)
             print("================================")
@@ -134,13 +153,12 @@ def check_in():
                 "%H:%M"
             ).time()
 
-
             if current_time < allowed_time:
 
                 return jsonify({
                     "success": False,
                     "message":
-                    "Night Shift check-in allowed only after 10:00 PM"
+                    "You have a night shift"
                 }), 400
 
         # =====================================
@@ -174,6 +192,16 @@ def check_in():
         )
 
         db.session.add(attendance)
+
+        # Delete any "Missed Check In" notifications for this employee immediately
+        try:
+            from models.notification import Notification
+            Notification.query.filter(
+                Notification.title == "Missed Check In",
+                Notification.message.like(f"%{employee.employee_id}%")
+            ).delete(synchronize_session=False)
+        except Exception as delete_err:
+            print("Failed to delete missed check-in notification:", str(delete_err))
 
         db.session.commit()
 

@@ -1,7 +1,7 @@
 import axios from "axios";
+import { API_URL } from "../config/api";
 
-const API =
-  "http://localhost:5000/api/meeting-rooms";
+const API = `${API_URL}/api/meeting-rooms`;
 
 export const getRooms = () =>
   axios.get(`${API}/rooms`);
@@ -22,5 +22,5 @@ export const cancelBooking = (id: number) =>
 
   export const getDashboardStats = () =>
   axios.get(
-    "http://localhost:5000/api/meeting-rooms/dashboard-stats"
+    `${API_URL}/api/meeting-rooms/dashboard-stats`
   );

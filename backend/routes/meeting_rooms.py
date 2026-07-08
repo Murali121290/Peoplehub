@@ -41,27 +41,31 @@ def create_room():
         "message": "Room created successfully"
     }), 201
 
-@meeting_rooms_bp.route(
-    "/rooms",
-    methods=["GET"]
-)
+@meeting_rooms_bp.route("/rooms", methods=["GET"])
 def get_rooms():
+    try:
+        rooms = MeetingRoom.query.all()
 
-    rooms = MeetingRoom.query.all()
+        result = []
 
-    result = []
+        for room in rooms:
+            result.append({
+                "id": room.id,
+                "name": room.room_name,
+                "room_name": room.room_name,
+                "location": room.location,
+                "floor": room.floor,
+                "capacity": room.capacity,
+                "status": room.status
+            })
 
-    for room in rooms:
-        result.append({
-            "id": room.id,
-            "room_name": room.room_name,
-            "location": room.location,
-            "floor": room.floor,
-            "capacity": room.capacity,
-            "status": room.status
-        })
+        return jsonify(result), 200
 
-    return jsonify(result)
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
 
 @meeting_rooms_bp.route("/bookings", methods=["POST"])
 def create_booking():
@@ -263,3 +267,4 @@ def dashboard_stats():
         "pending": pending,
         "utilization": utilization
     })
+

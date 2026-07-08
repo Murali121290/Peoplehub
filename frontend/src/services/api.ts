@@ -6,8 +6,9 @@ import axios, {
 } from "axios";
 import { useAuthStore } from "../store/authStore";
 import toast from "react-hot-toast";
+import { API_URL as CONFIG_API_URL } from "../config/api";
 
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+const API_URL = import.meta.env.VITE_API_URL || (CONFIG_API_URL ? `${CONFIG_API_URL}/api` : "/api");
 
 type ApiErrorResponse = {
   message?: string;
@@ -260,6 +261,24 @@ class ApiService {
   async getWorkflows() {
     return this.api.get("/workflow");
   }
+
+  // ================= COMMON METHODS =================
+
+async get(url: string, config?: any) {
+  return this.api.get(url, config);
+}
+
+async post(url: string, data?: any, config?: any) {
+  return this.api.post(url, data, config);
+}
+
+async put(url: string, data?: any, config?: any) {
+  return this.api.put(url, data, config);
+}
+
+async delete(url: string, config?: any) {
+  return this.api.delete(url, config);
+}
 }
 
 export const apiService = new ApiService();

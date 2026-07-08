@@ -1,0 +1,262 @@
+/* ==========================================
+   Appraisal Module Styles
+========================================== */
+
+/* Main Container */
+
+.appraisal-container {
+    min-height: 100vh;
+    background: #f9fafb;
+}
+
+/* ==========================================
+   Dashboard
+========================================== */
+
+.appraisal-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    transition: all 0.25s ease;
+}
+
+.appraisal-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+}
+
+/* ==========================================
+   Buttons
+========================================== */
+
+.appraisal-btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    transition: 0.25s;
+}
+
+.appraisal-btn-primary {
+    background: #111827;
+    color: white;
+}
+
+.appraisal-btn-primary:hover {
+    background: #000;
+}
+
+.appraisal-btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+.appraisal-btn-secondary:hover {
+    background: #e5e7eb;
+}
+
+/* ==========================================
+   Status Badge
+========================================== */
+
+.status-open {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-reviewed {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.status-completed {
+    background: #ede9fe;
+    color: #6d28d9;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* ==========================================
+   Rating Badge
+========================================== */
+
+.rating-excellent {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.rating-good {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.rating-average {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.rating-needs-improvement {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+/* ==========================================
+   Table
+========================================== */
+
+.appraisal-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.appraisal-table th {
+    background: #f9fafb;
+    padding: 14px;
+    text-align: left;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 600;
+}
+
+.appraisal-table td {
+    padding: 14px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.appraisal-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+/* ==========================================
+   Textarea
+========================================== */
+
+.appraisal-textarea {
+    width: 100%;
+    min-height: 130px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 12px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.appraisal-textarea:focus {
+    border-color: #111827;
+}
+
+/* ==========================================
+   Input
+========================================== */
+
+.appraisal-input {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+}
+
+.appraisal-input:focus {
+    outline: none;
+    border-color: #111827;
+}
+
+/* ==========================================
+   Progress Bar
+========================================== */
+
+.progress-container {
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    background: #e5e7eb;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 10px;
+    background: #111827;
+    transition: width 0.3s ease;
+}
+
+/* ==========================================
+   Tabs
+========================================== */
+
+.appraisal-tab {
+    transition: all 0.25s;
+}
+
+.appraisal-tab:hover {
+    background: #f3f4f6;
+}
+
+.appraisal-tab-active {
+    background: #111827;
+    color: white;
+}
+
+/* ==========================================
+   Scrollbar
+========================================== */
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #9ca3af;
+    border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+}
+
+/* ==========================================
+   Fade Animation
+========================================== */
+
+.fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ==========================================
+   Responsive
+========================================== */
+
+@media (max-width: 768px) {
+
+    .appraisal-table {
+        font-size: 14px;
+    }
+
+    .appraisal-btn {
+        width: 100%;
+    }
+}
