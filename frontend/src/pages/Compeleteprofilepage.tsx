@@ -8,18 +8,6 @@ const inputCls =
   "w-full rounded-xl border border-neutral-300 bg-white px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all";
 const selectCls = `${inputCls} cursor-pointer`;
 
-const InfoCard = ({ label, value, className = "" }: { label: string; value?: any; className?: string }) => (
-  <div
-    className={`group rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 transition-all duration-200 hover:border-primary-200 hover:bg-white hover:shadow-md ${className}`}
-  >
-    <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-      {label}
-    </p>
-    <p className="mt-2 break-words text-sm font-semibold text-neutral-800 sm:text-base">
-      {value || "N/A"}
-    </p>
-  </div>
-);
 
 const Field = ({ label, children, full = false }: { label: string; children: React.ReactNode; full?: boolean }) => (
   <div className={full ? "col-span-full" : ""}>
@@ -40,7 +28,6 @@ const Completeprofilepage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const employeeId = localStorage.getItem("employee_id");
-  const profileImageUrl = `http://localhost:5000/api/employees/image/${employeeId}`;
 
   const [formData, setFormData] = useState({
     // Personal
@@ -265,11 +252,20 @@ const Completeprofilepage = () => {
 
       const data = await res.json();
 
-      if (res.ok) {
-        toast.success("Profile Completed Successfully!");
-        localStorage.setItem("profile_completed", "true");
-        setTimeout(() => navigate("/employee-dashboard"), 1200);
-      } else {
+    if (res.ok) {
+  toast.success("Profile Completed Successfully!");
+
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+
+  user.profile_completed = true;
+  user.is_first_login = false;
+
+  localStorage.setItem("user", JSON.stringify(user));
+
+  setTimeout(() => {
+    window.location.href = "/employee-dashboard";
+  }, 1200);
+}else {
         toast.error(data.error || data.message || "Failed to update profile");
       }
     } catch (err) {
@@ -1065,103 +1061,6 @@ const Completeprofilepage = () => {
         </div>
 
         <div className="rounded-3xl bg-white shadow-2xl shadow-neutral-200/50">
-          {/* Employee Info Card */}
-          {employeeInfo && (
-            <section className="overflow-hidden rounded-t-3xl border-b border-neutral-200">
-              <div className="bg-primary-600 px-6 py-8 sm:px-8">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex flex-col items-center gap-4 sm:flex-row">
-                    <div className="relative">
-                      <img
-                        src={profileImageUrl}
-                        alt="Profile"
-                        className="h-28 w-28 rounded-2xl object-cover ring-4 ring-white/20 shadow-2xl"
-                        onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                      />
-                      <span className="absolute -bottom-2 -right-2 rounded-full border-4 border-primary-600 bg-emerald-400 px-2 py-1 text-[10px] font-bold text-neutral-900">
-                        Active
-                      </span>
-                    </div>
-                    <div className="text-center sm:text-left">
-                      <p className="text-xs font-medium text-primary-100 uppercase tracking-wider">
-                        Employee Profile
-                      </p>
-                      <h2 className="mt-1 text-2xl font-bold text-white">
-                        {employeeInfo.first_name} {employeeInfo.last_name}
-                      </h2>
-                      <p className="mt-0.5 text-sm text-primary-100">
-                        {employeeInfo.designation} • {employeeInfo.department}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white">
-                          ID: {employeeInfo.employee_id}
-                        </span>
-                        <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-primary-50">
-                          Role: {employeeInfo.role}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      ["Email", employeeInfo.email],
-                      ["Phone", employeeInfo.phone],
-                      ["Joining", employeeInfo.joining_date],
-                    ].map(([l, v]) => (
-                      <div
-                        key={l}
-                        className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"
-                      >
-                        <p className="text-xs text-primary-100">{l}</p>
-                        <p className="mt-1 truncate text-sm font-semibold text-white">
-                          {v || "N/A"}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 sm:p-8">
-                <h3 className="mb-4 text-lg font-bold text-neutral-800">
-                  Pre-filled Employee Information
-                </h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <InfoCard
-                    label="Employee ID"
-                    value={employeeInfo.employee_id}
-                  />
-                  <InfoCard
-                    label="First Name"
-                    value={employeeInfo.first_name}
-                  />
-                  <InfoCard label="Last Name" value={employeeInfo.last_name} />
-                  <InfoCard label="Email" value={employeeInfo.email} />
-                  <InfoCard label="Phone" value={employeeInfo.phone} />
-                  <InfoCard
-                    label="Department"
-                    value={employeeInfo.department}
-                  />
-                  <InfoCard
-                    label="Designation"
-                    value={employeeInfo.designation}
-                  />
-                  <InfoCard label="Role" value={employeeInfo.role} />
-                  <InfoCard label="Salary" value={employeeInfo.salary} />
-                  <InfoCard
-                    label="Joining Date"
-                    value={employeeInfo.joining_date}
-                  />
-                  <InfoCard
-                    label="Reporting Manager"
-                    value={employeeInfo.reporting_manager}
-                    className="sm:col-span-2 xl:col-span-1"
-                  />
-                </div>
-              </div>
-            </section>
-          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} method="post" action="#">

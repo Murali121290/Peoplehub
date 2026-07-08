@@ -15,7 +15,7 @@ import { Attendance } from "../../types/employee.types";
 
 import ConfirmModal from "./components/ConfirmModal";
 import PopupModal from "./components/PopupModal";
-import BirthdayModal from "./components/BirthdayModal";
+import BirthdayModal from "../../layouts/components/BirthdayModal";
 import OverviewTab from "./tabs/OverviewTab";
 import TasksTab from "./tabs/TasksTab";
 import LeaveTab from "./tabs/LeaveTab";
@@ -57,6 +57,19 @@ const EmployeeDashboardPage: React.FC = () => {
   const [shiftRequests, setShiftRequests] = useState<any[]>([]);
   const [managerShiftRequests, setManagerShiftRequests] = useState<any[]>([]);
 
+    const currentEmployee = Array.isArray(employees)
+    ? employees.find((emp: any) => Number(emp.user_id) === Number(user?.id))
+    : null;
+  const managerName =
+  `${currentEmployee?.first_name} ${currentEmployee?.last_name}`
+    .trim()
+    .toLowerCase();
+ const pendingShiftCount = managerShiftRequests.filter(
+  (shift: any) =>
+    shift.reporting_manager?.trim().toLowerCase() === managerName &&
+    shift.status === "Pending"
+).length;
+
   // Attendance/timer state
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [checkInTime, setCheckInTime] = useState<Date | null>(null);
@@ -79,18 +92,13 @@ const EmployeeDashboardPage: React.FC = () => {
     message: "",
   });
 
-  const currentEmployee = Array.isArray(employees)
-    ? employees.find((emp: any) => Number(emp.user_id) === Number(user?.id))
-    : null;
+
 
   const isMyBirthday = birthdayEmployees.some(
     (emp: any) => Number(emp.user_id) === Number(user?.id),
   );
 
-  const managerName =
-    `${currentEmployee?.first_name} ${currentEmployee?.last_name}`
-      .trim()
-      .toLowerCase();
+
   const approvalLeaves = leaveRequests.filter(
     (leave: any) =>
       leave.reporting_manager?.trim().toLowerCase() === managerName,
@@ -99,9 +107,9 @@ const EmployeeDashboardPage: React.FC = () => {
     (currentEmployee?.sick_leave || 0) +
     (currentEmployee?.casual_leave || 0) +
     (currentEmployee?.earned_leave || 0);
-  const pendingLeaveCount = leaveRequests.filter(
-    (leave: any) => leave.status === "Pending",
-  ).length;
+const pendingLeaveCount = approvalLeaves.filter(
+  (leave: any) => leave.status === "Pending"
+).length;
 
   const showPopup = (type: string, title: string, message: string) => {
     setPopup({ show: true, type, title, message });
@@ -564,6 +572,15 @@ const EmployeeDashboardPage: React.FC = () => {
     });
   };
 
+
+
+useEffect(() => {
+  if (currentEmployee) {
+    loadShiftRequests();
+    loadManagerShiftRequests();
+  }
+}, [currentEmployee]);
+
   // --- Effects ---
   useEffect(() => {
     fetch(`${BASE_URL}/employees/`)
@@ -742,11 +759,15 @@ const EmployeeDashboardPage: React.FC = () => {
                     <Icon className="w-4 h-4" />
                     <div className="relative flex items-center">
                       <span>{tab.label}</span>
-                      {tab.id === "leave" && pendingLeaveCount > 0 && (
-                        <span className="absolute -top-3 -right-6 bg-danger-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full">
-                          {pendingLeaveCount}
-                        </span>
-                      )}
+                      {/* Leave Notification */}
+{tab.id === "leave" && pendingLeaveCount > 0 && (
+  <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
+)}
+
+{/* Shift Notification */}
+{tab.id === "shift" && pendingShiftCount > 0 && (
+  <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
+)}
                     </div>
                   </button>
                 );

@@ -98,48 +98,58 @@ def apply_leave():
 @leave_bp.route("/", methods=["GET"])
 def get_leaves():
 
-    leaves = LeaveRequest.query.order_by(
-        LeaveRequest.id.desc()
-    ).all()
+    try:
 
-    return jsonify([
-        {
-            "id": leave.id,
+        leaves = LeaveRequest.query.order_by(
+            LeaveRequest.id.desc()
+        ).all()
 
-            "employee_id":
-                leave.employee_id,
+        print("========== LEAVE REQUESTS ==========")
+        print(f"Total Leaves: {len(leaves)}")
 
-            "employee_name":
-                leave.employee_name,
+        for leave in leaves:
+            print(
+                f"ID: {leave.id}, "
+                f"Employee ID: {leave.employee_id}, "
+                f"Employee: {leave.employee_name}, "
+                f"Status: {leave.status}"
+            )
 
-            "leave_type":
-                leave.leave_type,
+        return jsonify([
+            {
+                "id": leave.id,
+                "employee_id": leave.employee_id,
+                "employee_name": leave.employee_name,
+                "leave_type": leave.leave_type,
+                "from_date": str(leave.from_date) if leave.from_date else None,
+                "to_date": str(leave.to_date) if leave.to_date else None,
+                "total_days": leave.total_days,
+                "reporting_manager": leave.reporting_manager,
+                "handover_to": leave.handover_to,
+                "emergency_contact": leave.emergency_contact,
+                "reason": leave.reason,
+                "status": leave.status,
+                "request_type": leave.request_type,
+                "permission_date": str(leave.permission_date) if leave.permission_date else None,
+                "from_time": str(leave.from_time) if leave.from_time else None,
+                "to_time": str(leave.to_time) if leave.to_time else None,
+            }
+            for leave in leaves
+        ]), 200
 
-            "from_date":
-                str(leave.from_date),
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
 
-            "to_date":
-                str(leave.to_date),
-
-            "total_days":
-                leave.total_days,
-
-            "reporting_manager":
-                leave.reporting_manager,
-
-            "status":
-                leave.status,
-
-            "reason":
-                leave.reason
-        }
-
-        for leave in leaves
-    ])
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    
 
 @leave_bp.route(
-"/approve/<int:leave_id>",
-methods=["PUT"]
+    "/approve/<int:leave_id>",
+    methods=["PUT"]
 )
 def approve_leave(leave_id):
 
@@ -149,99 +159,105 @@ def approve_leave(leave_id):
 
         if not leave:
             return jsonify({
-            "success": False,
-            "error": "Leave not found"
+                "success": False,
+                "error": "Leave not found"
             }), 404
 
-    # Prevent double approval
+        # Prevent double approval
         if leave.status == "Approved":
-                return jsonify({
-            "success": False,
-            "error": "Leave already approved"
-             }), 400
+            return jsonify({
+                "success": False,
+                "error": "Leave already approved"
+            }), 400
 
         print("Leave Employee ID:", leave.employee_id)
-        
 
-        employee = Employee.query.get(
-        int(leave.employee_id)
-        )
+        employee = Employee.query.get(int(leave.employee_id))
+
         print("Employee Found:", employee)
 
         if not employee:
-          return jsonify({
-            "success": False,
-            "error": "Employee not found"
-        }), 404
+            return jsonify({
+                "success": False,
+                "error": "Employee not found"
+            }), 404
 
-    # Update leave status
+        # ===========================
+        # PERMISSION REQUEST
+        # ===========================
+        if leave.request_type == "Permission":
+
+            leave.status = "Approved"
+
+            db.session.commit()
+
+            return jsonify({
+                "success": True,
+                "message": "Permission Approved Successfully"
+            }), 200
+
+        # ===========================
+        # LEAVE REQUEST
+        # ===========================
+
         leave.status = "Approved"
 
-        leave_type = (
-        leave.leave_type or ""
-        ).strip().lower()
+        leave_type = (leave.leave_type or "").strip().lower()
 
         leave_days = leave.total_days or 0
 
-    # Deduct leave balance
         if leave_type == "sick leave":
 
-           employee.sick_leave = max(
-            0,
-            (employee.sick_leave or 0) - leave_days
-        )
+            employee.sick_leave = max(
+                0,
+                (employee.sick_leave or 0) - leave_days
+            )
 
         elif leave_type == "casual leave":
 
-           employee.casual_leave = max(
-            0,
-            (employee.casual_leave or 0) - leave_days
-          )
+            employee.casual_leave = max(
+                0,
+                (employee.casual_leave or 0) - leave_days
+            )
 
         elif leave_type == "earned leave":
 
-           employee.earned_leave = max(
-            0,
-            (employee.earned_leave or 0) - leave_days
-          )
+            employee.earned_leave = max(
+                0,
+                (employee.earned_leave or 0) - leave_days
+            )
 
         else:
-          return jsonify({
-            "success": False,
-            "error": f"Invalid leave type: {leave.leave_type}"
-        }), 400
+
+            return jsonify({
+                "success": False,
+                "error": f"Invalid leave type: {leave.leave_type}"
+            }), 400
 
         db.session.commit()
 
         return jsonify({
-        "success": True,
-        "message": "Leave Approved Successfully",
-        "leave_balance": {
-
-            "sick_leave":
-                employee.sick_leave,
-
-            "casual_leave":
-                employee.casual_leave,
-
-            "earned_leave":
-                employee.earned_leave,
-
-            "total_balance":
-                (employee.sick_leave or 0) +
-                (employee.casual_leave or 0) +
-                (employee.earned_leave or 0)
+            "success": True,
+            "message": "Leave Approved Successfully",
+            "leave_balance": {
+                "sick_leave": employee.sick_leave,
+                "casual_leave": employee.casual_leave,
+                "earned_leave": employee.earned_leave,
+                "total_balance":
+                    (employee.sick_leave or 0) +
+                    (employee.casual_leave or 0) +
+                    (employee.earned_leave or 0)
             }
         }), 200
 
     except Exception as e:
 
-      db.session.rollback()
-      return jsonify({
-        "success": False,
-        "error": str(e)
-    }), 500
+        db.session.rollback()
 
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 @leave_bp.route(
     "/reject/<int:leave_id>",
@@ -319,39 +335,85 @@ def update_leave(leave_id):
 
     try:
 
-        leave = LeaveRequest.query.get(
-            leave_id
-        )
+        leave = LeaveRequest.query.get(leave_id)
 
         if not leave:
             return jsonify({
-                "success": False
+                "success": False,
+                "error": "Request not found"
             }), 404
 
-        data = request.json
+        data = request.get_json()
 
-        leave.leave_type = data["leave_type"]
+        # Common fields
+        leave.reason = data.get("reason", leave.reason)
+        leave.emergency_contact = data.get(
+            "emergency_contact",
+            leave.emergency_contact
+        )
+        leave.handover_to = data.get(
+            "handover_to",
+            leave.handover_to
+        )
 
-        leave.from_date = datetime.strptime(
-            data["from_date"],
-            "%Y-%m-%d"
-        ).date()
+        # ===========================
+        # UPDATE LEAVE
+        # ===========================
+        if leave.request_type == "Leave":
 
-        leave.to_date = datetime.strptime(
-            data["to_date"],
-            "%Y-%m-%d"
-        ).date()
+            leave.leave_type = data.get("leave_type")
 
-        leave.reason = data["reason"]
+            leave.from_date = datetime.strptime(
+                data.get("from_date"),
+                "%Y-%m-%d"
+            ).date()
 
-        leave.total_days = data["total_days"]
+            leave.to_date = datetime.strptime(
+                data.get("to_date"),
+                "%Y-%m-%d"
+            ).date()
+
+            leave.total_days = float(
+                data.get("total_days", 0)
+            )
+
+            # Clear permission fields
+            leave.permission_date = None
+            leave.from_time = None
+            leave.to_time = None
+
+        # ===========================
+        # UPDATE PERMISSION
+        # ===========================
+        elif leave.request_type == "Permission":
+
+            leave.permission_date = datetime.strptime(
+                data.get("permission_date"),
+                "%Y-%m-%d"
+            ).date()
+
+            leave.from_time = datetime.strptime(
+                data.get("from_time"),
+                "%H:%M"
+            ).time()
+
+            leave.to_time = datetime.strptime(
+                data.get("to_time"),
+                "%H:%M"
+            ).time()
+
+            # Clear leave fields
+            leave.leave_type = None
+            leave.from_date = None
+            leave.to_date = None
+            leave.total_days = 0
 
         db.session.commit()
 
         return jsonify({
             "success": True,
-            "message": "Leave Updated"
-        })
+            "message": f"{leave.request_type} Updated Successfully"
+        }), 200
 
     except Exception as e:
 
@@ -362,6 +424,7 @@ def update_leave(leave_id):
             "error": str(e)
         }), 500
     
+     
 @leave_bp.route(
     "/export-leave-report",
     methods=["GET"]
@@ -567,9 +630,10 @@ def export_leave_report():
             el_taken = 0
 
             approved_leaves = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == str(employee.id),
-                LeaveRequest.status == "Approved"
-            ).all()
+                LeaveRequest.employee_id == employee.id,
+                LeaveRequest.status == "Approved",
+                LeaveRequest.request_type == "Leave"
+).all()
 
             for leave in approved_leaves:
 

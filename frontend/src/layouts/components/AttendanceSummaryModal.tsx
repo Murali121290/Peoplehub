@@ -4,12 +4,16 @@ interface AttendanceSummaryModalProps {
   reportingEmployees: any[];
   onClose: () => void;
   onViewEmployee: (emp: any) => void;
+  onApproveAll: () => void;
+  onApproveEmployee: (employeeId: number) => void;
 }
 
 const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
   reportingEmployees,
   onClose,
   onViewEmployee,
+  onApproveAll,
+  onApproveEmployee,
 }) => {
   const presentCount = reportingEmployees.filter(e => e.status === "Present").length;
   const absentCount = reportingEmployees.filter(e => e.status === "Absent").length;
@@ -117,13 +121,22 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                     </td>
 
                     <td className="py-3 px-4">
-                      <button
-                        className="px-3 py-1.5 bg-gray-800 text-white rounded-lg text-sm hover:bg-gray-900 transition-colors"
-                        onClick={() => onViewEmployee(emp)}
-                      >
-                        View
-                      </button>
-                    </td>
+  <div className="flex gap-2">
+    <button
+      className="px-3 py-1.5 bg-gray-800 text-white rounded-lg text-sm hover:bg-gray-900 transition-colors"
+      onClick={() => onViewEmployee(emp)}
+    >
+      View
+    </button>
+
+    <button
+      className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors"
+      onClick={() => onApproveEmployee(emp.employee_id)}
+    >
+      Approve
+    </button>
+  </div>
+</td>
                   </tr>
                 ))}
               </tbody>
@@ -155,9 +168,12 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
               <span className="text-sm font-medium text-gray-700">Total: {reportingEmployees.length} Employees</span>
             </div>
 
-            <button className="bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-lg font-medium shadow-md transition-all ml-[140px]">
-              ✓ Approve All
-            </button>
+            <button
+  onClick={onApproveAll}
+  className="bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-lg font-medium shadow-md transition-all ml-[140px]"
+>
+  ✓ Approve All
+</button>
           </div>
         </div>
       </div>

@@ -46,7 +46,15 @@ export const useAuthStore = create<AuthState>((set) => ({
       console.log('LOGIN RESPONSE:', response.data)
 
       const accessToken = response.data.access_token
-      const userData = response.data.user
+      const userData = {
+  ...response.data.user,
+  profile_completed: response.data.profile_completed,
+  is_first_login: response.data.is_first_login,
+}
+localStorage.setItem(
+  "user",
+  JSON.stringify(userData)
+);
 
       const profileCompleted =
   response.data.profile_completed

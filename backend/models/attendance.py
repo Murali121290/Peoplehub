@@ -101,3 +101,8 @@ class Attendance(db.Model):
     db.String(50),
     default="General Shift"
 )
+    
+    manager_status = db.Column(
+    db.String(20),
+    default="Pending"
+)
