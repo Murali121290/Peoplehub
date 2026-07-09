@@ -20,10 +20,9 @@ import OverviewTab from "./tabs/OverviewTab";
 import LeaveTab from "./tabs/LeaveTab";
 import ShiftTab from "./tabs/ShiftTab";
 import AttendanceTab from "./tabs/AttendanceTab";
-import PerformanceTab from "./tabs/PerformanceTab";
 import ProfileTab from "./tabs/ProfileTab";
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = "http://localhost:5001/api";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -40,7 +39,6 @@ const tabs = [
   { id: "leave", label: "Leave Requests", icon: CalendarDaysIcon },
   { id: "shift", label: "Shift Request", icon: ClockIcon },
   { id: "attendance", label: "Attendance", icon: ClockIcon },
-  { id: "performance", label: "Performance", icon: ChartBarIcon },
   { id: "profile", label: "Profile", icon: UserCircleIcon },
 ];
 
@@ -55,22 +53,22 @@ const EmployeeDashboardPage: React.FC = () => {
   const [shiftRequests, setShiftRequests] = useState<any[]>([]);
   const [managerShiftRequests, setManagerShiftRequests] = useState<any[]>([]);
 
-    const currentEmployee = Array.isArray(employees)
+  const currentEmployee = Array.isArray(employees)
     ? employees.find((emp: any) => Number(emp.user_id) === Number(user?.id))
     : null;
-    console.log(currentEmployee);
-console.log("Reporting Manager:", currentEmployee?.reporting_manager);
-console.log("Access Level:", user?.access_level);
-console.log("Role:", user?.role);
+  console.log(currentEmployee);
+  console.log("Reporting Manager:", currentEmployee?.reporting_manager);
+  console.log("Access Level:", user?.access_level);
+  console.log("Role:", user?.role);
   const managerName =
-  `${currentEmployee?.first_name} ${currentEmployee?.last_name}`
-    .trim()
-    .toLowerCase();
- const pendingShiftCount = managerShiftRequests.filter(
-  (shift: any) =>
-    shift.reporting_manager?.trim().toLowerCase() === managerName &&
-    shift.status === "Pending"
-).length;
+    `${currentEmployee?.first_name} ${currentEmployee?.last_name}`
+      .trim()
+      .toLowerCase();
+  const pendingShiftCount = managerShiftRequests.filter(
+    (shift: any) =>
+      shift.reporting_manager?.trim().toLowerCase() === managerName &&
+      shift.status === "Pending"
+  ).length;
 
   // Attendance/timer state
   const [isCheckedIn, setIsCheckedIn] = useState(false);
@@ -115,9 +113,9 @@ console.log("Role:", user?.role);
     (currentEmployee?.sick_leave || 0) +
     (currentEmployee?.casual_leave || 0) +
     (currentEmployee?.earned_leave || 0);
-const pendingLeaveCount = approvalLeaves.filter(
-  (leave: any) => leave.status === "Pending"
-).length;
+  const pendingLeaveCount = approvalLeaves.filter(
+    (leave: any) => leave.status === "Pending"
+  ).length;
 
   const showPopup = (type: string, title: string, message: string) => {
     setPopup({ show: true, type, title, message });
@@ -201,50 +199,50 @@ const pendingLeaveCount = approvalLeaves.filter(
     }
   };
 
-const loadManagerShiftRequests = async () => {
+  const loadManagerShiftRequests = async () => {
 
-  if (!currentEmployee) {
-    console.log("Current employee not loaded");
-    return;
-  }
-
-  try {
-
-    const managerName =
-      `${currentEmployee.first_name} ${currentEmployee.last_name}`.trim();
-
-    console.log("Logged In Manager:", managerName);
-
-    const url =
-      `${BASE_URL}/shifts/approvals/${encodeURIComponent(managerName)}`;
-
-    console.log("Request URL:", url);
-
-    const res = await fetch(url);
-
-    if (!res.ok) {
-      console.error("Failed to fetch approval requests");
-      setManagerShiftRequests([]);
+    if (!currentEmployee) {
+      console.log("Current employee not loaded");
       return;
     }
 
-    const data = await res.json();
+    try {
 
-    console.log("Approval Requests:", data);
+      const managerName =
+        `${currentEmployee.first_name} ${currentEmployee.last_name}`.trim();
 
-    setManagerShiftRequests(
-      Array.isArray(data) ? data : []
-    );
+      console.log("Logged In Manager:", managerName);
 
-  } catch (err) {
+      const url =
+        `${BASE_URL}/shifts/approvals/${encodeURIComponent(managerName)}`;
 
-    console.error("Load Manager Shift Requests Error:", err);
+      console.log("Request URL:", url);
 
-    setManagerShiftRequests([]);
+      const res = await fetch(url);
 
-  }
+      if (!res.ok) {
+        console.error("Failed to fetch approval requests");
+        setManagerShiftRequests([]);
+        return;
+      }
 
-};
+      const data = await res.json();
+
+      console.log("Approval Requests:", data);
+
+      setManagerShiftRequests(
+        Array.isArray(data) ? data : []
+      );
+
+    } catch (err) {
+
+      console.error("Load Manager Shift Requests Error:", err);
+
+      setManagerShiftRequests([]);
+
+    }
+
+  };
 
   // --- Attendance Handlers ---
   const handleCheckIn = async () => {
@@ -332,11 +330,11 @@ const loadManagerShiftRequests = async () => {
       const todayDate = getTodayKey();
       const totalWorkedSeconds = checkInTime
         ? Math.max(
-            Math.floor((new Date().getTime() - checkInTime.getTime()) / 1000) -
-              totalLunchSeconds -
-              totalTeaSeconds,
-            0,
-          )
+          Math.floor((new Date().getTime() - checkInTime.getTime()) / 1000) -
+          totalLunchSeconds -
+          totalTeaSeconds,
+          0,
+        )
         : 0;
       const formattedTimer = formatSeconds(totalWorkedSeconds);
       const summary = {
@@ -454,98 +452,98 @@ const loadManagerShiftRequests = async () => {
 
   // --- Leave Handlers ---
   const handleLeaveSubmit = async (
-  e: React.FormEvent,
-  leaveForm: any,
-  editingLeave: any,
-) => {
+    e: React.FormEvent,
+    leaveForm: any,
+    editingLeave: any,
+  ) => {
 
-  e.preventDefault();
+    e.preventDefault();
 
-  try {
+    try {
 
-    let response;
+      let response;
 
-    const payload = {
-      employee_id: currentEmployee?.id,
-      employee_name: `${currentEmployee?.first_name} ${currentEmployee?.last_name}`,
+      const payload = {
+        employee_id: currentEmployee?.id,
+        employee_name: `${currentEmployee?.first_name} ${currentEmployee?.last_name}`,
 
-      request_type: leaveForm.requestType,
+        request_type: leaveForm.requestType,
 
-      leave_type: leaveForm.leaveType,
+        leave_type: leaveForm.leaveType,
 
-      from_date: leaveForm.fromDate,
-      to_date: leaveForm.toDate,
+        from_date: leaveForm.fromDate,
+        to_date: leaveForm.toDate,
 
-      permission_date: leaveForm.permissionDate,
-      from_time: leaveForm.fromTime,
-      to_time: leaveForm.toTime,
+        permission_date: leaveForm.permissionDate,
+        from_time: leaveForm.fromTime,
+        to_time: leaveForm.toTime,
 
-      total_days: leaveForm.totalDays,
+        total_days: leaveForm.totalDays,
 
-      reporting_manager: currentEmployee?.reporting_manager,
+        reporting_manager: currentEmployee?.reporting_manager,
 
-      handover_to: leaveForm.handoverTo,
+        handover_to: leaveForm.handoverTo,
 
-      emergency_contact: leaveForm.emergencyContact,
+        emergency_contact: leaveForm.emergencyContact,
 
-      reason: leaveForm.reason,
-    };
+        reason: leaveForm.reason,
+      };
 
-    if (editingLeave) {
+      if (editingLeave) {
 
-      response = await fetch(
-        `${BASE_URL}/leaves/update/${editingLeave.id}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
+        response = await fetch(
+          `${BASE_URL}/leaves/update/${editingLeave.id}`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          }
+        );
 
-    } else {
+      } else {
 
-      response = await fetch(
-        `${BASE_URL}/leaves/`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
+        response = await fetch(
+          `${BASE_URL}/leaves/`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          }
+        );
+
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+
+        toast.success(
+          editingLeave
+            ? "Request Updated Successfully"
+            : `${leaveForm.requestType} Applied Successfully`
+        );
+
+        loadLeaves();
+
+      } else {
+
+        toast.error(data.error || data.message || "Operation Failed");
+
+      }
+
+    } catch (error) {
+
+      console.error(error);
+
+      toast.error("Server Error");
 
     }
 
-    const data = await response.json();
-
-    if (data.success) {
-
-      toast.success(
-        editingLeave
-          ? "Request Updated Successfully"
-          : `${leaveForm.requestType} Applied Successfully`
-      );
-
-      loadLeaves();
-
-    } else {
-
-      toast.error(data.error || data.message || "Operation Failed");
-
-    }
-
-  } catch (error) {
-
-    console.error(error);
-
-    toast.error("Server Error");
-
-  }
-
-};
+  };
 
   const approveLeave = async (id: number) => {
     try {
@@ -594,51 +592,51 @@ const loadManagerShiftRequests = async () => {
 
   // --- Shift Handlers ---
   const submitShiftRequest = async (shiftForm: any) => {
-  try {
-    if (!currentEmployee) {
-      toast.error("Employee details not found");
-      return;
+    try {
+      if (!currentEmployee) {
+        toast.error("Employee details not found");
+        return;
+      }
+
+      console.log("Sending Shift Request:", shiftForm);
+
+      const response = await fetch(`${BASE_URL}/shifts/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          employee_id: shiftForm.employee_id,
+          employee_name: shiftForm.employee_name,
+          current_shift: shiftForm.current_shift,
+          requested_shift: shiftForm.requested_shift,
+          request_type: shiftForm.request_type,
+          from_date: shiftForm.from_date,
+          to_date: shiftForm.to_date,
+          reporting_manager: shiftForm.reporting_manager,
+          reason: shiftForm.reason,
+        }),
+      });
+
+      const data = await response.json();
+
+      console.log(data);
+
+      if (!response.ok) {
+        toast.error(data.message);
+        return;
+      }
+
+      toast.success("Shift Request Submitted Successfully");
+
+      loadShiftRequests();
+      loadManagerShiftRequests();
+
+    } catch (err) {
+      console.error(err);
+      toast.error("Server Error");
     }
-
-    console.log("Sending Shift Request:", shiftForm);
-
-    const response = await fetch(`${BASE_URL}/shifts/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        employee_id: shiftForm.employee_id,
-        employee_name: shiftForm.employee_name,
-        current_shift: shiftForm.current_shift,
-        requested_shift: shiftForm.requested_shift,
-        request_type: shiftForm.request_type,
-        from_date: shiftForm.from_date,
-        to_date: shiftForm.to_date,
-        reporting_manager: shiftForm.reporting_manager,
-        reason: shiftForm.reason,
-      }),
-    });
-
-    const data = await response.json();
-
-    console.log(data);
-
-    if (!response.ok) {
-      toast.error(data.message);
-      return;
-    }
-
-    toast.success("Shift Request Submitted Successfully");
-
-    loadShiftRequests();
-    loadManagerShiftRequests();
-
-  } catch (err) {
-    console.error(err);
-    toast.error("Server Error");
-  }
-};
+  };
 
   const approveShift = async (id: number) => {
     const response = await fetch(`${BASE_URL}/shifts/approve/${id}`, {
@@ -682,12 +680,12 @@ const loadManagerShiftRequests = async () => {
 
 
 
-useEffect(() => {
-  if (currentEmployee) {
-    loadShiftRequests();
-    loadManagerShiftRequests();
-  }
-}, [currentEmployee]);
+  useEffect(() => {
+    if (currentEmployee) {
+      loadShiftRequests();
+      loadManagerShiftRequests();
+    }
+  }, [currentEmployee]);
 
   // --- Effects ---
   useEffect(() => {
@@ -721,14 +719,24 @@ useEffect(() => {
       .then((res) => res.json())
       .then((data) => {
         if (data.checked_in) {
+          const checkIn = new Date(data.check_in);
+          const lunchSecs = (data.lunch_minutes || 0) * 60;
+          const teaSecs = (data.tea_minutes || 0) * 60;
           setIsCheckedIn(true);
-          setCheckInTime(new Date(data.check_in));
+          setCheckInTime(checkIn);
           setIsLunchBreak(data.lunch_break || false);
           setIsTeaBreak(data.tea_break || false);
           if (data.lunch_start) setLunchStartTime(new Date(data.lunch_start));
           if (data.tea_start) setTeaStartTime(new Date(data.tea_start));
-          setTotalLunchSeconds((data.lunch_minutes || 0) * 60);
-          setTotalTeaSeconds((data.tea_minutes || 0) * 60);
+          setTotalLunchSeconds(lunchSecs);
+          setTotalTeaSeconds(teaSecs);
+          // Immediately show the correct timer on re-login
+          const elapsedSeconds = Math.floor((new Date().getTime() - checkIn.getTime()) / 1000);
+          const workingSeconds = Math.max(elapsedSeconds - lunchSecs - teaSecs, 0);
+          const hrs = Math.floor(workingSeconds / 3600);
+          const mins = Math.floor((workingSeconds % 3600) / 60);
+          const secs = workingSeconds % 60;
+          setTimer(`${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`);
           clearTodayAttendanceSummary(userId);
         } else {
           setIsCheckedIn(false);
@@ -744,14 +752,45 @@ useEffect(() => {
       .catch((err) => console.error("Attendance Status Error:", err));
   }, []);
 
-  useEffect(() => {
-    const userId = localStorage.getItem("user_id");
-    if (!userId) return;
-    fetch(`${BASE_URL}/attendance/history/${userId}`)
-      .then((res) => res.json())
-      .then((data) => setAttendanceData(data))
-      .catch((err) => console.log(err));
-  }, []);
+useEffect(() => {
+  const userId = localStorage.getItem("user_id");
+  if (!userId) return;
+
+  fetch(`${BASE_URL}/attendance/history/${userId}`)
+    .then((res) => res.json())
+    .then((data) => {
+      setAttendanceData(data);
+
+      // Find today's attendance
+      const today = new Date().toISOString().split("T")[0];
+
+      const todayRecord = data.find(
+        (record: any) => record.date === today
+      );
+
+      // If today's attendance is available and employee has checked out
+      if (
+        todayRecord &&
+        todayRecord.checkOut !== "-" &&
+        todayRecord.workingHours
+      ) {
+        const totalSeconds = Math.floor(
+          Number(todayRecord.workingHours) * 3600
+        );
+
+        setTimer(formatSeconds(totalSeconds));
+
+        setTotalLunchSeconds(
+          (todayRecord.lunchMinutes || 0) * 60
+        );
+
+        setTotalTeaSeconds(
+          (todayRecord.teaMinutes || 0) * 60
+        );
+      }
+    })
+    .catch((err) => console.log(err));
+}, []);
 
   useEffect(() => {
     if (
@@ -871,24 +910,23 @@ useEffect(() => {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
-                      activeTab === tab.id
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id
                         ? "bg-primary-50 text-primary-700 border-b-2 border-primary-600"
                         : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"
-                    }`}
+                      }`}
                   >
                     <Icon className="w-4 h-4" />
                     <div className="relative flex items-center">
                       <span>{tab.label}</span>
                       {/* Leave Notification */}
-{tab.id === "leave" && pendingLeaveCount > 0 && (
-  <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
-)}
+                      {tab.id === "leave" && pendingLeaveCount > 0 && (
+                        <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
+                      )}
 
-{/* Shift Notification */}
-{tab.id === "shift" && pendingShiftCount > 0 && (
-  <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
-)}
+                      {/* Shift Notification */}
+                      {tab.id === "shift" && pendingShiftCount > 0 && (
+                        <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
+                      )}
                     </div>
                   </button>
                 );
@@ -952,7 +990,6 @@ useEffect(() => {
             {activeTab === "attendance" && (
               <AttendanceTab attendanceData={attendanceData} />
             )}
-            {activeTab === "performance" && <PerformanceTab />}
             {activeTab === "profile" && <ProfileTab />}
           </motion.div>
         </main>

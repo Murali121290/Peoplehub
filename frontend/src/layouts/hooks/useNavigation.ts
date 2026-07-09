@@ -13,7 +13,7 @@ export const useNavigation = (user: any) => {
     const commonItems = [
       { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
       { name: "Announcements", icon: BellIcon, path: "/announcements" },
-      { name: "Telecom Directory", icon: PhoneIcon, path: "/telecom-directory" },
+      { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
       { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
       { name: "Appraisal", icon: ClipboardDocumentCheckIcon, path: "/appraisal" },
     ];
@@ -21,7 +21,7 @@ export const useNavigation = (user: any) => {
     if (isAdmin) {
       return [
         ...commonItems.slice(0, 1),
-        { name: "Telecom Directory", icon: PhoneIcon, path: "/telecom-directory" },
+        { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
         { name: "Appraisal", icon: ClipboardDocumentCheckIcon, path: "/appraisal" },
         { name: "Settings", icon: Cog6ToothIcon, path: "/settings" },
@@ -34,7 +34,7 @@ export const useNavigation = (user: any) => {
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         { name: "Team Management", icon: UserGroupIcon, path: "/manager-dashboard" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
-        { name: "Telecom Directory", icon: PhoneIcon, path: "/telecom-directory" },
+        { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
         { name: "Appraisal", icon: ClipboardDocumentCheckIcon, path: "/appraisal" },
       ];
@@ -44,7 +44,7 @@ export const useNavigation = (user: any) => {
       return [
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         { name: "HR Management", icon: UserGroupIcon, path: "/hrms" },
-        { name: "Telecom Directory", icon: PhoneIcon, path: "/telecom-directory" },
+        { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
         { name: "Appraisal", icon: ClipboardDocumentCheckIcon, path: "/appraisal" },

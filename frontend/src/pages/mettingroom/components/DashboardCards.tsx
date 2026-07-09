@@ -10,7 +10,7 @@ import { getDashboardStats } from "../../../services/meetingRoomService";
 import { StatCard } from "../../../components/ui/StatCard";
 import type { StatCardColor } from "../../../components/ui/StatCard";
 
-const DashboardCards = () => {
+const DashboardCards = ({ refreshTrigger }: { refreshTrigger?: any }) => {
 
   const [stats, setStats] = useState({
     total_rooms: 0,
@@ -22,7 +22,7 @@ const DashboardCards = () => {
 
   useEffect(() => {
     fetchStats();
-  }, []);
+  }, [refreshTrigger]);
 
   const fetchStats = async () => {
     try {

@@ -13,6 +13,7 @@ import {
   getRooms,
   getBookings,
   createRoom,
+  updateRoom,
 } from "../../services/meetingRoomService";
 
 import { Card } from "../../components/ui/Card";
@@ -29,6 +30,8 @@ const MeetingRooms = () => {
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingRoomId, setEditingRoomId] = useState<number | null>(null);
 
   const [toast, setToast] = useState<{
     show: boolean;
@@ -42,7 +45,6 @@ const MeetingRooms = () => {
 
   const [roomForm, setRoomForm] = useState({
     room_name: "",
-    location: "",
     floor: "",
     capacity: "",
     room_type: "Conference Room",
@@ -93,12 +95,37 @@ const MeetingRooms = () => {
     }
   };
 
-  const handleCreateRoom = async () => {
+  const handleOpenCreateModal = () => {
+    setIsEditMode(false);
+    setEditingRoomId(null);
+    setRoomForm({
+      room_name: "",
+      floor: "",
+      capacity: "",
+      room_type: "Conference Room",
+    });
+    setShowRoomModal(true);
+  };
+
+  const handleRoomClick = (room: any) => {
+    if (user?.access_level === "admin" || user?.access_level === "hr") {
+      setIsEditMode(true);
+      setEditingRoomId(room.id);
+      setRoomForm({
+        room_name: room.room_name || room.name || "",
+        floor: room.floor || "",
+        capacity: room.capacity?.toString() || "",
+        room_type: room.room_type || "Conference Room",
+      });
+      setShowRoomModal(true);
+    }
+  };
+
+  const handleSaveRoom = async () => {
     if (
       !roomForm.room_name.trim() ||
-      !roomForm.location.trim() ||
       !roomForm.floor.trim() ||
-      !roomForm.capacity.trim()
+      !roomForm.capacity.toString().trim()
     ) {
       showToast("Please fill all room details", "error");
       return;
@@ -107,26 +134,33 @@ const MeetingRooms = () => {
     try {
       setIsCreatingRoom(true);
 
-      await createRoom({
-        ...roomForm,
-        capacity: Number(roomForm.capacity),
-      });
+      if (isEditMode && editingRoomId) {
+        await updateRoom(editingRoomId, {
+          ...roomForm,
+          capacity: Number(roomForm.capacity),
+        });
+        showToast("Meeting room updated successfully", "success");
+      } else {
+        await createRoom({
+          ...roomForm,
+          capacity: Number(roomForm.capacity),
+        });
+        showToast("Room created successfully", "success");
+      }
 
       setShowRoomModal(false);
 
       setRoomForm({
         room_name: "",
-        location: "",
         floor: "",
         capacity: "",
         room_type: "Conference Room",
       });
 
-      showToast("Room created successfully", "success");
       fetchRooms();
     } catch (error) {
       console.error(error);
-      showToast("Failed to create room", "error");
+      showToast(isEditMode ? "Failed to update room" : "Failed to create room", "error");
     } finally {
       setIsCreatingRoom(false);
     }
@@ -220,13 +254,13 @@ const MeetingRooms = () => {
 
           <div className="flex flex-wrap gap-3">
             {(user?.access_level === "admin" || user?.access_level === "hr") && (
-              <Button variant="success" onClick={() => setShowRoomModal(true)}>
+              <Button variant="success" onClick={handleOpenCreateModal}>
                 + Create Room
               </Button>
             )}
 
             <Button variant="primary" onClick={() => setShowBookingModal(true)}>
-              + Create Booking
+              + Room Booking
             </Button>
           </div>
         </div>
@@ -235,11 +269,11 @@ const MeetingRooms = () => {
       {/* Dashboard Sections */}
       <div className="space-y-6">
         <Card>
-          <DashboardCards />
+          <DashboardCards refreshTrigger={rooms} />
         </Card>
 
         <Card>
-          <RoomCard rooms={rooms} />
+          <RoomCard rooms={rooms} onRoomClick={handleRoomClick} />
         </Card>
 
         <Card padding="none" className="overflow-hidden">
@@ -258,8 +292,8 @@ const MeetingRooms = () => {
         }
         onClose={() => setShowRoomModal(false)}
         size="lg"
-        title="Create Meeting Room"
-        eyebrow={{ label: "Add a new room to your workspace inventory." }}
+        title={isEditMode ? "Edit Meeting Room" : "Create Meeting Room"}
+        eyebrow={{ label: isEditMode ? "Update the details of your workspace inventory." : "Add a new room to your workspace inventory." }}
         footer={
           <>
             <Button variant="outline" onClick={() => setShowRoomModal(false)}>
@@ -268,11 +302,11 @@ const MeetingRooms = () => {
 
             <Button
               variant="success"
-              onClick={handleCreateRoom}
+              onClick={handleSaveRoom}
               disabled={isCreatingRoom}
               loading={isCreatingRoom}
             >
-              {isCreatingRoom ? "Saving..." : "Save Room"}
+              {isCreatingRoom ? "Saving..." : isEditMode ? "Update Room" : "Save Room"}
             </Button>
           </>
         }
@@ -287,20 +321,6 @@ const MeetingRooms = () => {
                 setRoomForm({
                   ...roomForm,
                   room_name: e.target.value,
-                })
-              }
-            />
-          </FormField>
-
-          <FormField label="Location">
-            <Input
-              type="text"
-              placeholder="Enter location"
-              value={roomForm.location}
-              onChange={(e) =>
-                setRoomForm({
-                  ...roomForm,
-                  location: e.target.value,
                 })
               }
             />

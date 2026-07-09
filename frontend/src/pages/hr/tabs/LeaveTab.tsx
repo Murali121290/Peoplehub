@@ -4,7 +4,7 @@ import Avatar from "../components/Avatar";
 import Chip from "../components/Chip";
 import { Button } from "../../../components/ui/Button";
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = "http://localhost:5001/api";
 
 interface LeaveTabProps {
   leaves: any[];

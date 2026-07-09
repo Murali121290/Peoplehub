@@ -68,6 +68,13 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     attachment: null,
   });
 
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+
+  const canApproveLeaves =
+  ["admin", "manager", "hr"].includes(
+    (user?.access_level || "").toLowerCase()
+  );
+
   useEffect(() => {
     if (leaveForm.fromDate && leaveForm.toDate) {
       const fromDate = new Date(leaveForm.fromDate);
@@ -175,7 +182,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           { 
             label: "Sick Leave", 
             value: currentEmployee?.sick_leave || 0, 
-            total: 12, 
+            total: 1.5, 
             bg: "from-blue-500/5 to-indigo-500/5 hover:from-blue-500/10 hover:to-indigo-500/10 border-blue-100", 
             iconBg: "bg-blue-500 text-white", 
             textCls: "text-blue-700",
@@ -185,7 +192,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           { 
             label: "Casual Leave", 
             value: currentEmployee?.casual_leave || 0, 
-            total: 15, 
+            total: 1.5, 
             bg: "from-amber-500/5 to-orange-500/5 hover:from-amber-500/10 hover:to-orange-500/10 border-amber-100", 
             iconBg: "bg-amber-500 text-white", 
             textCls: "text-amber-700",
@@ -195,7 +202,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           { 
             label: "Earned Leave", 
             value: currentEmployee?.earned_leave || 0, 
-            total: 18, 
+            total: 1.5, 
             bg: "from-emerald-500/5 to-teal-500/5 hover:from-emerald-500/10 hover:to-teal-500/10 border-emerald-100", 
             iconBg: "bg-emerald-500 text-white", 
             textCls: "text-emerald-700",
@@ -260,18 +267,20 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               : "text-neutral-500 hover:text-neutral-800"
           }`}
         >
-          My Requests
+          Leave Report
         </button>
-        <button
-          onClick={() => setLeaveTab("approvalRequests")}
-          className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
-            leaveTab === "approvalRequests" 
-              ? "bg-white text-primary-700 shadow-sm border border-neutral-200/50" 
-              : "text-neutral-500 hover:text-neutral-800"
-          }`}
-        >
-          Approval Requests
-        </button>
+        {canApproveLeaves && (
+  <button
+    onClick={() => setLeaveTab("approvalRequests")}
+    className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+      leaveTab === "approvalRequests"
+        ? "bg-white text-primary-700 shadow-sm border border-neutral-200/50"
+        : "text-neutral-500 hover:text-neutral-800"
+    }`}
+  >
+    Approval Requests
+  </button>
+)}
       </div>
 
       {leaveTab === "myRequests" && (
@@ -603,7 +612,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         </>
       )}
 
-      {leaveTab === "approvalRequests" && (
+      {leaveTab === "approvalRequests" && canApproveLeaves && (
         <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
           <div className="px-6 py-5 border-b border-neutral-200 bg-neutral-50/50">
             <h3 className="text-lg font-bold text-neutral-850">Leave Approval Requests</h3>

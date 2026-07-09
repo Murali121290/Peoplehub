@@ -1,10 +1,10 @@
 import React, { useEffect } from 'react';
 
 import {
-BrowserRouter,
-Routes,
-Route,
-Navigate,
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
 } from 'react-router-dom';
 
 import { AppToaster } from './components/ui/ToastConfig';
@@ -17,7 +17,7 @@ import DashboardLayout from './layouts/DashboardLayout';
 // Pages
 import LoginPage from './pages/LoginPage';
 import SettingsPage from './pages/SettingsPage';
-import  HrmsModule  from "./pages/hr/HRAdminDashboard";
+import HrmsModule from "./pages/hr/HRAdminDashboard";
 import ManagerDashboardPage from './pages/ManagerDashboardPage';
 import EmployeeDashboardPage from './pages/employee/EmployeeDashboardPage';
 import CompleteProfile from './pages/Compeleteprofilepage';
@@ -29,196 +29,196 @@ import AppraisalDashboard from "./pages/appraisal/AppraisalDashboard";
 
 
 interface ProtectedRouteProps {
-children: React.ReactNode;
+  children: React.ReactNode;
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
-children,
+  children,
 }) => {
-const {
-isAuthenticated,
-checkAuth,
-loading,
-} = useAuthStore();
+  const {
+    isAuthenticated,
+    checkAuth,
+    loading,
+  } = useAuthStore();
 
-useEffect(() => {
-checkAuth();
-}, [checkAuth]);
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
-// Loading Screen
+  // Loading Screen
 
-if (loading) {
-return ( <div className="min-h-screen bg-neutral-50 flex items-center justify-center"> <div className="h-16 w-16 rounded-full border-4 border-primary-200 border-t-primary-500 animate-spin"></div> </div>
-);
-}
+  if (loading) {
+    return (<div className="min-h-screen bg-neutral-50 flex items-center justify-center"> <div className="h-16 w-16 rounded-full border-4 border-primary-200 border-t-primary-500 animate-spin"></div> </div>
+    );
+  }
 
-// Redirect if not authenticated
+  // Redirect if not authenticated
 
-if (!isAuthenticated) {
-return <Navigate to="/login" replace />;
-}
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
 
-// Render protected layout
+  // Render protected layout
 
-return ( <DashboardLayout>
-{children} </DashboardLayout>
-);
+  return (<DashboardLayout>
+    {children} </DashboardLayout>
+  );
 };
 
 function App() {
-return ( <BrowserRouter>
+  return (<BrowserRouter>
 
-  {/* Toast Notifications */}
+    {/* Toast Notifications */}
 
-  <AppToaster />
+    <AppToaster />
 
-  {/* Application Routes */}
+    {/* Application Routes */}
 
-  <Routes>
+    <Routes>
 
-    {/* Login */}
+      {/* Login */}
 
-    <Route
-      path="/login"
-      element={<LoginPage />}
-    />
-
-
-
-    {/* Settings */}
-
-    <Route
-      path="/settings"
-      element={
-        <ProtectedRoute>
-          <SettingsPage />
-        </ProtectedRoute>
-      }
-    />
-
-    {/* Pre Editing */}
+      <Route
+        path="/login"
+        element={<LoginPage />}
+      />
 
 
 
-    {/* Copywriting */}
+      {/* Settings */}
 
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <SettingsPage />
+          </ProtectedRoute>
+        }
+      />
 
-    {/* QA */}
-
-
-    {/* Default Redirect */}
-
-    <Route
-      path="/"
-      element={
-        <Navigate
-          to="/login"
-          replace
-        />
-      }
-    />
-
-    {/* Telecom Directory */}
-
-<Route
-  path="/telecom-directory"
-  element={
-    <ProtectedRoute>
-      <TelecomDirectoryPage />
-    </ProtectedRoute>
-  }
-/>
-
-{/* Meeting Rooms */}
-
-<Route
-  path="/meeting-rooms"
-  element={
-    <ProtectedRoute>
-      <MeetingRoomsPage />
-    </ProtectedRoute>
-  }
-/>
-
-<Route
-  path="/appraisal"
-  element={
-    <ProtectedRoute>
-      <AppraisalDashboard />
-    </ProtectedRoute>
-  }
-/>
-
-    
+      {/* Pre Editing */}
 
 
 
-<Route
-  path="/manager-dashboard"
-  element={
-    <ProtectedRoute>
-      <ManagerDashboardPage />
-    </ProtectedRoute>
-  }
-/>
-<Route
-  path="/employee-dashboard"
-  element={
-    <ProtectedRoute>
-      <EmployeeDashboardPage />
-    </ProtectedRoute>
-  }
-/>
-
-<Route
-  path="/announcements"
-  element={
-    <ProtectedRoute>
-      <AnnouncementsPage />
-    </ProtectedRoute>
-    
-  }
-/>
+      {/* Copywriting */}
 
 
-<Route
-  path="/hrms"
-  element={
-    <ProtectedRoute>
-      <HrmsModule />
-    </ProtectedRoute>
-  }
-/>
+      {/* QA */}
 
 
-{/* Complete Profile */}
+      {/* Default Redirect */}
 
-<Route
-  path="/complete-profile"
-  element={
-      <CompleteProfile />
-  }
-/>
+      <Route
+        path="/"
+        element={
+          <Navigate
+            to="/login"
+            replace
+          />
+        }
+      />
+
+      {/* Intercom Directory */}
+
+      <Route
+        path="/telecom-directory"
+        element={
+          <ProtectedRoute>
+            <TelecomDirectoryPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Meeting Rooms */}
+
+      <Route
+        path="/meeting-rooms"
+        element={
+          <ProtectedRoute>
+            <MeetingRoomsPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/appraisal"
+        element={
+          <ProtectedRoute>
+            <AppraisalDashboard />
+          </ProtectedRoute>
+        }
+      />
 
 
 
-    {/* 404 */}
 
-    <Route
-      path="*"
-      element={
-        <div className="min-h-screen bg-black flex items-center justify-center">
-          <h1 className="text-4xl font-bold text-white">
-            404 - Page Not Found
-          </h1>
-        </div>
-      }
-    />
 
-  </Routes>
-</BrowserRouter>
+      <Route
+        path="/manager-dashboard"
+        element={
+          <ProtectedRoute>
+            <ManagerDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/employee-dashboard"
+        element={
+          <ProtectedRoute>
+            <EmployeeDashboardPage />
+          </ProtectedRoute>
+        }
+      />
 
-);
+      <Route
+        path="/announcements"
+        element={
+          <ProtectedRoute>
+            <AnnouncementsPage />
+          </ProtectedRoute>
+
+        }
+      />
+
+
+      <Route
+        path="/hrms"
+        element={
+          <ProtectedRoute>
+            <HrmsModule />
+          </ProtectedRoute>
+        }
+      />
+
+
+      {/* Complete Profile */}
+
+      <Route
+        path="/complete-profile"
+        element={
+          <CompleteProfile />
+        }
+      />
+
+
+
+      {/* 404 */}
+
+      <Route
+        path="*"
+        element={
+          <div className="min-h-screen bg-black flex items-center justify-center">
+            <h1 className="text-4xl font-bold text-white">
+              404 - Page Not Found
+            </h1>
+          </div>
+        }
+      />
+
+    </Routes>
+  </BrowserRouter>
+
+  );
 }
 
 export default App;

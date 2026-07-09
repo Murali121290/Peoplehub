@@ -40,7 +40,7 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
             <img
               src={
                 currentEmployee?.id
-                  ? `http://localhost:5000/api/employees/image/${currentEmployee.id}`
+                  ? `http://localhost:5001/api/employees/image/${currentEmployee.id}`
                   : "https://cdn-icons-png.flaticon.com/512/149/149071.png"
               }
               alt="profile"

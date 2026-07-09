@@ -436,6 +436,7 @@ def export_leave_report():
         from io import BytesIO
 
         from openpyxl import Workbook
+        from datetime import date
 
         from openpyxl.styles import (
             PatternFill,
@@ -712,10 +713,15 @@ def export_leave_report():
 
             for col in range(1, 21):
 
-                ws.cell(
+                c = ws.cell(
                     row=row,
                     column=col
-                ).border = thin_border
+                )
+                c.border = thin_border
+                val = c.value
+                if val is not None and val != "":
+                    if isinstance(val, (int, float, date, datetime)) or (isinstance(val, str) and (val.isdigit() or val.startswith("EMP"))):
+                        c.alignment = Alignment(horizontal="center")
 
             row += 1
 

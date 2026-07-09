@@ -57,11 +57,10 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, employees }) => {
             <div key={team}>
               <div
                 onClick={() => setSelectedTeam(isActive ? null : team)}
-                className={`flex justify-between items-center px-[18px] py-4 rounded-2xl mb-3 cursor-pointer transition-all ${
-                  isActive
+                className={`flex justify-between items-center px-[18px] py-4 rounded-2xl mb-3 cursor-pointer transition-all ${isActive
                     ? "bg-primary-50 border-2 border-primary-500 shadow-md"
                     : "bg-neutral-50 border border-neutral-200 shadow-sm"
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-3.5">
                   <div className="w-10 h-10 rounded-xl bg-primary-500 text-white flex items-center justify-center font-bold text-base">

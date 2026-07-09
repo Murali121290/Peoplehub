@@ -45,30 +45,30 @@ const EMPTY_FORM: FormData = {
 
 export default function TelecomDirectory() {
   const user =
-  typeof window !== "undefined"
-    ? JSON.parse(localStorage.getItem("user") || "{}")
-    : {};
+    typeof window !== "undefined"
+      ? JSON.parse(localStorage.getItem("user") || "{}")
+      : {};
 
-// Debug
-console.log("User Data:", user);
-console.log("Role:", user?.role);
-console.log("Access Level:", user?.access_level);
+  // Debug
+  console.log("User Data:", user);
+  console.log("Role:", user?.role);
+  console.log("Access Level:", user?.access_level);
 
-// Support both role and access_level
-const isAdmin =
-  user?.role === "Admin" ||
-  user?.role === "admin" ||
-  user?.access_level === "admin";
+  // Support both role and access_level
+  const isAdmin =
+    user?.role === "Admin" ||
+    user?.role === "admin" ||
+    user?.access_level === "admin";
 
-const isHR =
-  user?.role === "HR" ||
-  user?.role === "hr" ||
-  user?.access_level === "hr";
+  const isHR =
+    user?.role === "HR" ||
+    user?.role === "hr" ||
+    user?.access_level === "hr";
 
-const canEdit = isAdmin || isHR;
+  const canEdit = isAdmin || isHR;
 
-// Temporary testing
-console.log("Can Edit:", canEdit);
+  // Temporary testing
+  console.log("Can Edit:", canEdit);
 
   const [telecoms, setTelecoms] = useState<TelecomEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,13 +99,13 @@ console.log("Can Edit:", canEdit);
   const loadTelecoms = async () => {
     try {
       setLoading(true);
-      const response = await fetch("http://localhost:5000/api/telecom/");
+      const response = await fetch("http://localhost:5001/api/telecom/");
       if (!response.ok) throw new Error("Failed to fetch telecoms");
       const data = await response.json();
       setTelecoms(Array.isArray(data) ? data : []);
     } catch {
       setTelecoms([]);
-      toast.error("Failed to load telecom directory.");
+      toast.error("Failed to load Intercom Directory.");
     } finally {
       setLoading(false);
     }
@@ -124,7 +124,7 @@ console.log("Can Edit:", canEdit);
 
     setFormLoading(true);
     try {
-      const res = await fetch("http://localhost:5000/api/telecom/", {
+      const res = await fetch("http://localhost:5001/api/telecom/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -143,59 +143,59 @@ console.log("Can Edit:", canEdit);
   }
 
   async function handleUpdateTelecom() {
-  if (
-    !form.department_name ||
-    !form.team_name ||
-    !form.employee_name ||
-    !form.extension_number
-  ) {
-    toast.error("Please fill in all required fields.");
-    return;
-  }
-
-  if (!editingId) return;
-
-  setFormLoading(true);
-
-  try {
-    const res = await fetch(
-      `http://localhost:5000/api/telecom/${editingId}`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(form),
-      }
-    );
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      toast.error(data.message || "Failed to update extension.");
+    if (
+      !form.department_name ||
+      !form.team_name ||
+      !form.employee_name ||
+      !form.extension_number
+    ) {
+      toast.error("Please fill in all required fields.");
       return;
     }
 
-    toast.success(
-      data.message || "Extension updated successfully."
-    );
+    if (!editingId) return;
 
-    closeModal();
-    loadTelecoms();
+    setFormLoading(true);
 
-  } catch (error) {
-    console.error("Update Telecom Error:", error);
-    toast.error("Server error. Please try again.");
-  } finally {
-    setFormLoading(false);
+    try {
+      const res = await fetch(
+        `http://localhost:5001/api/telecom/${editingId}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(form),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.message || "Failed to update extension.");
+        return;
+      }
+
+      toast.success(
+        data.message || "Extension updated successfully."
+      );
+
+      closeModal();
+      loadTelecoms();
+
+    } catch (error) {
+      console.error("Update Telecom Error:", error);
+      toast.error("Server error. Please try again.");
+    } finally {
+      setFormLoading(false);
+    }
   }
-}
   async function handleDeleteTelecom() {
     if (!deleteId) return;
 
     setDeleteLoading(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/telecom/${deleteId}`, {
+      const res = await fetch(`http://localhost:5001/api/telecom/${deleteId}`, {
         method: "DELETE",
       });
 
@@ -216,7 +216,7 @@ console.log("Can Edit:", canEdit);
     const newStatus = entry.status === "Active" ? "Inactive" : "Active";
 
     try {
-      const res = await fetch(`http://localhost:5000/api/telecom/${entry.id}`, {
+      const res = await fetch(`http://localhost:5001/api/telecom/${entry.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -330,22 +330,20 @@ console.log("Can Edit:", canEdit);
   }) => (
     <span className="ml-1 inline-flex flex-col" style={{ lineHeight: 0 }}>
       <svg
-        className={`w-2.5 h-2.5 ${
-          sortField === field && sortDir === "asc"
+        className={`w-2.5 h-2.5 ${sortField === field && sortDir === "asc"
             ? "text-neutral-900"
             : "text-neutral-300"
-        }`}
+          }`}
         viewBox="0 0 10 6"
         fill="currentColor"
       >
         <path d="M5 0L10 6H0L5 0Z" />
       </svg>
       <svg
-        className={`w-2.5 h-2.5 mt-0.5 ${
-          sortField === field && sortDir === "desc"
+        className={`w-2.5 h-2.5 mt-0.5 ${sortField === field && sortDir === "desc"
             ? "text-neutral-900"
             : "text-neutral-300"
-        }`}
+          }`}
         viewBox="0 0 10 6"
         fill="currentColor"
       >
@@ -360,10 +358,10 @@ console.log("Can Edit:", canEdit);
         <div>
           <div className="text-xs text-neutral-400 mb-0.5">
             Home &rsaquo;{" "}
-            <span className="text-neutral-600">Telecom Directory</span>
+            <span className="text-neutral-600">Intercom Directory</span>
           </div>
           <h1 className="text-lg font-bold text-neutral-900 tracking-tight">
-            Telecom Directory
+            Intercom Directory
           </h1>
         </div>
 
@@ -372,50 +370,6 @@ console.log("Can Edit:", canEdit);
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-        {[
-          {
-            label: "Total Extensions",
-            sub: "All telecom numbers",
-            value: telecoms.length,
-            accent: "#0ea5e9",
-          },
-          {
-            label: "Active Numbers",
-            sub: "Currently in service",
-            value: totalActive,
-            accent: "#22c55e",
-          },
-          {
-            label: "Departments Covered",
-            sub: "Unique departments",
-            value: totalDepts,
-            accent: "#a855f7",
-          },
-          {
-            label: "Recently Added",
-            sub: "Last 30 days",
-            value: recentlyAdded,
-            accent: "#fb923c",
-          },
-        ].map((card) => (
-          <Card
-            key={card.label}
-            variant="accent-left"
-            accentColor={card.accent}
-            padding="none"
-            className="px-5 py-4"
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400 mb-1">
-              {card.label}
-            </p>
-            <p className="text-3xl font-extrabold text-neutral-900 leading-none mb-1">
-              {card.value}
-            </p>
-            <p className="text-xs text-neutral-400">{card.sub}</p>
-          </Card>
-        ))}
-      </div>
 
       <Card padding="none" className="px-4 py-3 mb-4 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="relative flex-1 min-w-0 max-w-md">
@@ -515,10 +469,6 @@ console.log("Can Edit:", canEdit);
                   Department <SortIcon field="department_name" />
                 </th>
 
-                <th className="px-4 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">
-                  Team Name
-                </th>
-
                 <th
                   className="px-4 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wider cursor-pointer select-none whitespace-nowrap"
                   onClick={() => toggleSort("employee_name")}
@@ -527,6 +477,12 @@ console.log("Can Edit:", canEdit);
                 </th>
 
 
+
+                <th className="px-4 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">
+                  Designation
+                </th>
+
+                
 
                 <th className="px-4 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">
                   Location
@@ -579,14 +535,7 @@ console.log("Can Edit:", canEdit);
                       </span>
                     </td>
 
-                    <td
-                      className="px-4 py-3 text-neutral-700 max-w-[180px] truncate"
-                      title={r.team_name}
-                    >
-                      {r.team_name}
-                    </td>
-
-                    <td className="px-4 py-3">
+                       <td className="px-4 py-3">
                       <div
                         className="text-neutral-900 font-medium text-sm truncate max-w-[160px]"
                         title={r.employee_name}
@@ -599,6 +548,15 @@ console.log("Can Edit:", canEdit);
                         </div>
                       )} */}
                     </td>
+
+                    <td
+                      className="px-4 py-3 text-neutral-700 max-w-[180px] truncate"
+                      title={r.team_name}
+                    >
+                      {r.team_name}
+                    </td>
+
+                 
 
 
                     <td className="px-4 py-3 text-neutral-600 text-sm">
@@ -657,12 +615,12 @@ console.log("Can Edit:", canEdit);
               {filtered.length === 0
                 ? "No records"
                 : `Showing ${Math.min(
-                    (currentPage - 1) * PAGE_SIZE + 1,
-                    filtered.length
-                  )}–${Math.min(
-                    currentPage * PAGE_SIZE,
-                    filtered.length
-                  )} of ${filtered.length} records`}
+                  (currentPage - 1) * PAGE_SIZE + 1,
+                  filtered.length
+                )}–${Math.min(
+                  currentPage * PAGE_SIZE,
+                  filtered.length
+                )} of ${filtered.length} records`}
             </p>
 
             <div className="flex gap-1 items-center">
@@ -678,11 +636,10 @@ console.log("Can Edit:", canEdit);
                 <button
                   key={p}
                   onClick={() => setCurrentPage(p)}
-                  className={`h-8 min-w-[32px] px-2 text-xs border rounded-md ${
-                    currentPage === p
+                  className={`h-8 min-w-[32px] px-2 text-xs border rounded-md ${currentPage === p
                       ? "bg-primary-600 text-white border-primary-600 font-semibold"
                       : "border-neutral-200 text-neutral-500 hover:bg-neutral-50"
-                  }`}
+                    }`}
                 >
                   {p}
                 </button>

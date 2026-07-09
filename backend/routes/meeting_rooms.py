@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 from flask import Blueprint, request, jsonify
 from models.database import db
 from datetime import datetime
@@ -21,7 +22,6 @@ def create_room():
 
     room = MeetingRoom(
         room_name=data["room_name"],
-        location=data["location"],
         floor=data["floor"],
         capacity=data["capacity"],
         room_type=data["room_type"],
@@ -41,6 +41,32 @@ def create_room():
         "message": "Room created successfully"
     }), 201
 
+@meeting_rooms_bp.route("/rooms/<int:room_id>", methods=["PUT"])
+def update_room(room_id):
+    try:
+        room = MeetingRoom.query.get(room_id)
+        if not room:
+            return jsonify({"message": "Room not found"}), 404
+
+        data = request.json
+        room.room_name = data.get("room_name", room.room_name)
+        room.floor = data.get("floor", room.floor)
+        room.capacity = data.get("capacity", room.capacity)
+        room.room_type = data.get("room_type", room.room_type)
+        if "status" in data:
+            room.status = data["status"]
+            
+        room.projector = data.get("projector", room.projector)
+        room.tv = data.get("tv", room.tv)
+        room.whiteboard = data.get("whiteboard", room.whiteboard)
+        room.video_conference = data.get("video_conference", room.video_conference)
+
+        db.session.commit()
+
+        return jsonify({"message": "Meeting room updated successfully"}), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
 @meeting_rooms_bp.route("/rooms", methods=["GET"])
 def get_rooms():
     try:
@@ -53,7 +79,6 @@ def get_rooms():
                 "id": room.id,
                 "name": room.room_name,
                 "room_name": room.room_name,
-                "location": room.location,
                 "floor": room.floor,
                 "capacity": room.capacity,
                 "status": room.status
@@ -129,10 +154,11 @@ def create_booking():
 
             suggestions = []
 
-            for room in available_rooms:
+            # Rename loop variable to avoid overwriting 'room'
+            for available_room in available_rooms:
 
                 room_overlap = RoomBooking.query.filter(
-                    RoomBooking.room_id == room.id,
+                    RoomBooking.room_id == available_room.id,
                     RoomBooking.meeting_date == meeting_date,
                     RoomBooking.status == "Confirmed",
                     RoomBooking.start_time < end_time,
@@ -141,13 +167,19 @@ def create_booking():
 
                 if not room_overlap:
                     suggestions.append({
-                        "id": room.id,
-                        "room_name": room.room_name
+                        "id": available_room.id,
+                        "room_name": available_room.room_name
                     })
 
             return jsonify({
                 "success": False,
-                "message": "Selected room is already booked",
+                "message": (
+                    f"{room.room_name} is already booked by "
+                    f"{overlap.organizer_name} "
+                    f"from {overlap.start_time.strftime('%I:%M %p')} "
+                    f"to {overlap.end_time.strftime('%I:%M %p')}. "
+                    f"Please select another room or choose a different time."
+                ),
                 "available_rooms": suggestions
             }), 400
 
@@ -182,7 +214,6 @@ def create_booking():
             "success": False,
             "message": str(e)
         }), 500
-
 @meeting_rooms_bp.route(
     "/bookings",
     methods=["GET"]

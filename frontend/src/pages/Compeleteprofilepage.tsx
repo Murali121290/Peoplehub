@@ -136,7 +136,7 @@ const Completeprofilepage = () => {
     const fetchEmployee = async () => {
       try {
         const res = await fetch(
-          `http://localhost:5000/api/employees/${employeeId}`,
+          `http://localhost:5001/api/employees/${employeeId}`,
         );
         const data = await res.json();
         setEmployeeInfo(data);
@@ -243,7 +243,7 @@ const Completeprofilepage = () => {
       });
 
       const res = await fetch(
-        `http://localhost:5000/api/employees/${employeeId}`,
+        `http://localhost:5001/api/employees/${employeeId}`,
         {
           method: "PATCH",
           body: payload,

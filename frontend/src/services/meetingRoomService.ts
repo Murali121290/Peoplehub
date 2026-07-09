@@ -15,6 +15,9 @@ export const createBooking = (data: any) =>
 export const createRoom = (data: any) =>
   axios.post(`${API}/rooms`, data);
 
+export const updateRoom = (id: number, data: any) =>
+  axios.put(`${API}/rooms/${id}`, data);
+
 export const cancelBooking = (id: number) =>
   axios.put(
     `${API}/bookings/${id}/cancel`

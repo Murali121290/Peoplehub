@@ -24,6 +24,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const [loading, setLoading] = useState(false);
   const [selectedShift, setSelectedShift] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Format Date Range professionally
   const formatReadableDate = (dateObj: Date) => {
@@ -363,7 +364,13 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       }
     }
 
-    return matchesShift && matchesStatus;
+    // 3. Search filter
+    const matchesSearch =
+      (emp.employee_name || "")
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+
+    return matchesShift && matchesStatus && matchesSearch;
   });
 
   const displayData =
@@ -581,6 +588,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const clearFilters = () => {
     setSelectedShift("All");
     setStatusFilter("All");
+    setSearchQuery("");
   };
 
   return (
@@ -786,13 +794,30 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         </div>
       </div>
 
+      {/* Employee Search Input */}
+      <div className="mb-5 flex items-center justify-between gap-4 bg-white p-3 rounded-xl border border-neutral-200 shadow-sm">
+        <div className="flex-1 max-w-md">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search employee by name..."
+            className="block w-full rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-2 text-sm text-neutral-800 placeholder-neutral-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+          />
+        </div>
+        <div className="text-xs text-neutral-400 font-medium">
+          Showing {displayData.length} records
+        </div>
+      </div>
+
       {/* Active Filters Display */}
-      {(selectedShift !== "All" || statusFilter !== "All") && (
+      {(selectedShift !== "All" || statusFilter !== "All" || searchQuery !== "") && (
         <div className="mb-4 flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-200 w-fit">
           <span className="text-xs text-neutral-600 font-semibold">
             Active Filters: 
             {selectedShift !== "All" && ` [Shift: ${selectedShift}]`}
             {statusFilter !== "All" && ` [Status: ${statusFilter}]`}
+            {searchQuery !== "" && ` [Search: "${searchQuery}"]`}
           </span>
           <Button onClick={clearFilters} variant="outline" size="sm" className="h-6 py-0 text-[10px]">
             Clear Filters

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createBooking } from "../../../services/meetingRoomService";
 import { FormField, Input, Select, Textarea } from "../../../components/ui/Form";
 import { Button } from "../../../components/ui/Button";
@@ -29,6 +29,54 @@ const BookingForm: React.FC<BookingFormProps> = ({
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [employees, setEmployees] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      try {
+        const response = await fetch("http://localhost:5001/api/employees/");
+        if (response.ok) {
+          const data = await response.json();
+          setEmployees(data || []);
+        }
+      } catch (error) {
+        console.error("Failed to fetch employees", error);
+      }
+    };
+    fetchEmployees();
+  }, []);
+
+  const organizerOptions = employees
+  .filter((emp) =>
+    ["manager", "admin", "hr"].includes(
+      (emp.access_level || emp.role || "").toLowerCase()
+    )
+  )
+  .map((emp) => ({
+    label: `${emp.first_name} ${emp.last_name}`,
+    value: `${emp.first_name} ${emp.last_name}`,
+    department: emp.department || "",
+  }));
+
+  const handleOrganizerChange = (value: string) => {
+    const selectedOrg = organizerOptions.find((opt) => opt.value === value);
+
+    setForm((prev) => ({
+      ...prev,
+      organizer_name: value,
+      department: selectedOrg ? selectedOrg.department : prev.department,
+    }));
+
+    setErrors((prev) => ({
+      ...prev,
+      organizer_name: "",
+      department: "",
+    }));
+
+    setMessage({ type: "", text: "" });
+  };
+
   const [message, setMessage] = useState<{
     type: "success" | "error" | "";
     text: string;
@@ -221,12 +269,15 @@ const roomOptions = rooms.map((room) => ({
         </FormField>
 
         <FormField label="Organizer Name" required error={errors.organizer_name}>
-          <Input
-            type="text"
+          <Select
             name="organizer_name"
-            placeholder="Enter organizer name"
             value={form.organizer_name}
-            onChange={handleChange}
+            onChange={handleOrganizerChange}
+            options={[
+              { label: "Select Organizer", value: "" },
+              ...organizerOptions
+            ]}
+            placeholder="Select Organizer"
             error={!!errors.organizer_name}
           />
         </FormField>

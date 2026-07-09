@@ -1571,7 +1571,7 @@ if (user?.role === "HR") {
   const employeeId = localStorage.getItem("employee_id");
 
 const profileImageUrl =
-  `http://localhost:5000/api/employees/image/${employeeId}`;
+  `http://localhost:5001/api/employees/image/${employeeId}`;
 
   useEffect(() => {
   fetchMessages();
@@ -1588,7 +1588,7 @@ const fetchMessages = async () => {
 
     const response =
       await fetch(
-        `http://localhost:5000/api/communications/employee/${employeeId}`
+        `http://localhost:5001/api/communications/employee/${employeeId}`
       );
 
     const data =
@@ -1631,7 +1631,7 @@ const sendMessage =
     try {
 
       await fetch(
-        "http://localhost:5000/api/communications/",
+        "http://localhost:5001/api/communications/",
         {
           method: "POST",
 
@@ -1745,7 +1745,7 @@ useEffect(() => {
 
 const fetchEmployees = async () => {
   const res = await fetch(
-    "http://localhost:5000/api/employees"
+    "http://localhost:5001/api/employees"
   );
 
   const data = await res.json();
@@ -1772,7 +1772,7 @@ const loadMessages = async (
 
   const response =
     await fetch(
-      `http://localhost:5000/api/communications/employee/${employeeId}`
+      `http://localhost:5001/api/communications/employee/${employeeId}`
     );
 
   const data =

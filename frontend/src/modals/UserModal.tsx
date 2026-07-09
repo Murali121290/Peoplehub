@@ -52,7 +52,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, onClose }) => {
 
   const fetchEmployees = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/employees/");
+      const response = await fetch("http://localhost:5001/api/employees/");
 
       const data = await response.json();
 

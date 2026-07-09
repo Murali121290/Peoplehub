@@ -10,9 +10,10 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 
 interface RoomCardProps {
   rooms: any[];
+  onRoomClick?: (room: any) => void;
 }
 
-const RoomCard = ({ rooms }: RoomCardProps) => {
+const RoomCard = ({ rooms, onRoomClick }: RoomCardProps) => {
   const getStatusVariant = (status: string): BadgeVariant => {
     switch ((status || "").toLowerCase()) {
       case "available":
@@ -43,7 +44,10 @@ const RoomCard = ({ rooms }: RoomCardProps) => {
       {rooms.map((room: any) => (
         <Card
           key={room.id}
-          className="group transition-all duration-300 hover:-translate-y-1 hover:shadow-popover"
+          className={`group transition-all duration-300 hover:-translate-y-1 hover:shadow-popover ${
+            onRoomClick ? "cursor-pointer" : ""
+          }`}
+          onClick={() => onRoomClick && onRoomClick(room)}
         >
           <div className="mb-5 flex items-start justify-between gap-3">
             <div>
@@ -61,20 +65,7 @@ const RoomCard = ({ rooms }: RoomCardProps) => {
           </div>
 
           <div className="space-y-3">
-            <div className="flex items-center gap-3 rounded-2xl bg-neutral-50 px-4 py-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-100 text-primary-600">
-                <MapPinIcon className="h-5 w-5" />
-              </div>
 
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-                  Location
-                </p>
-                <p className="text-sm font-semibold text-neutral-700">
-                  {room.location || "-"}
-                </p>
-              </div>
-            </div>
 
             <div className="flex items-center gap-3 rounded-2xl bg-neutral-50 px-4 py-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary-100 text-secondary-600">

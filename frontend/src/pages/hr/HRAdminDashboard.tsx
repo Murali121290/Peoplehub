@@ -42,7 +42,7 @@ const NAV_ICONS: Record<string, React.ElementType> = {
   settings: Cog6ToothIcon,
 };
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = "http://localhost:5001/api";
 
 export default function HRAdminDashboard() {
   const [nav, setNav] = useState("dashboard");
@@ -140,23 +140,52 @@ export default function HRAdminDashboard() {
       const role = emp.role?.toLowerCase() || "";
       return !["hr", "admin", "manager", "project manager"].includes(role);
     });
-    const today = new Date().toISOString().split("T")[0];
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const today = `${year}-${month}-${day}`;
+
     const presentEmployeeIds = [
       ...new Set(
         attendance
-          .filter((att) => att.attendance_date === today)
+          .filter((att) => {
+            const status = (att.status || "").toLowerCase();
+            return att.attendance_date === today && (status === "present" || status === "late");
+          })
           .map((att) => att.user_id),
       ),
     ];
     const activeEmployees = employeeUsers.filter((emp) =>
       presentEmployeeIds.includes(emp.user_id),
     ).length;
-    const onLeaveEmployees = employeeUsers.length - activeEmployees;
+
+    const onLeaveEmployees = employeeUsers.filter((emp) => {
+      return leaves.some((leave) => {
+        const isUserMatch = 
+          String(leave.employee_id) === String(emp.id) || 
+          String(leave.employee_id) === String(emp.user_id);
+        if (!isUserMatch) return false;
+
+        const isApproved = (leave.status || "").toLowerCase() === "approved";
+        if (!isApproved) return false;
+
+        try {
+          const fromDate = new Date(leave.from_date).toISOString().split("T")[0];
+          const toDate = new Date(leave.to_date).toISOString().split("T")[0];
+          return fromDate <= today && today <= toDate;
+        } catch (e) {
+          return false;
+        }
+      });
+    }).length;
+
     return {
       total: employeeUsers.length,
       active: activeEmployees,
-      onLeave: onLeaveEmployees > 0 ? onLeaveEmployees : 0,
-      pendingLeaves: leaves.filter((leave) => leave.status === "pending")
+      onLeave: onLeaveEmployees,
+      pendingLeaves: leaves.filter((leave) => leave.status?.toLowerCase() === "pending")
         .length,
     };
   }, [employees, attendance, leaves]);

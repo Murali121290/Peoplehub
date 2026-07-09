@@ -19,7 +19,7 @@ import ChatPanel from "./components/ChatPanel";
 import { useNavigation } from "./hooks/useNavigation";
 import { useIsDesktop } from "./hooks/useIsDesktop";
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = "http://localhost:5001/api";
 
 const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -135,21 +135,17 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     fetchTodayBirthdays();
   }, []);
 
-  useEffect(() => {
-    if (
-      birthdayEmployees.length > 0 &&
-      !sessionStorage.getItem("birthday_popup_shown")
-    ) {
-      setBirthdayModal(true);
-      sessionStorage.setItem("birthday_popup_shown", "true");
-      setTimeout(() => {
-        setBirthdayModal(false);
-        setShowPopup(true);
-      }, 5000);
-    } else {
-      setShowPopup(true);
-    }
-  }, [birthdayEmployees]);
+useEffect(() => {
+  if (
+    birthdayEmployees.length > 0 &&
+    !sessionStorage.getItem("birthday_popup_shown")
+  ) {
+    setBirthdayModal(true);
+    sessionStorage.setItem("birthday_popup_shown", "true");
+  } else {
+    setShowPopup(true);
+  }
+}, [birthdayEmployees]);
 
   const sendBirthdayWish = async (emp: any) => {
     const senderName = localStorage.getItem("full_name");
@@ -488,13 +484,16 @@ const rejectAttendance = async (empId: number) => {
       {/* Birthday Modal */}
       {birthdayModal && birthdayEmployees.length > 0 && (
         <BirthdayModal
-          birthdayEmployees={birthdayEmployees}
-          isMyBirthday={isMyBirthday}
-          currentEmployee={currentEmployee}
-          user={user}
-          onClose={() => setBirthdayModal(false)}
-          onSendWish={sendBirthdayWish}
-        />
+  birthdayEmployees={birthdayEmployees}
+  isMyBirthday={isMyBirthday}
+  currentEmployee={currentEmployee}
+  user={user}
+  onClose={() => {
+    setBirthdayModal(false);
+    setShowPopup(true);
+  }}
+  onSendWish={sendBirthdayWish}
+/>
       )}
 
       {/* Attendance Summary Popup */}

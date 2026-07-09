@@ -13,6 +13,11 @@ import {
   FunnelIcon,
   MagnifyingGlassIcon,
   InboxArrowDownIcon,
+  XCircleIcon,
+  ArrowRightOnRectangleIcon,
+  CalendarDaysIcon,
+  BuildingOfficeIcon,
+  BriefcaseIcon,
 } from "@heroicons/react/24/outline";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -22,6 +27,32 @@ import { Tabs } from "../components/ui/Tabs";
 import { Input, Select } from "../components/ui/Form";
 import type { StatCardColor } from "../components/ui/StatCard";
 import type { BadgeVariant } from "../components/ui/Badge";
+
+const BASE_URL = "http://localhost:5001/api";
+
+// ==========================
+// THEME - professional enterprise palette
+// ==========================
+const THEME = {
+  primary: "#0f766e",
+  primaryDark: "#115e59",
+  primarySoft: "#ecfdf5",
+  navy: "#0f172a",
+  text: "#111827",
+  textSoft: "#6b7280",
+  textLight: "#94a3b8",
+  border: "#e5e7eb",
+  surface: "#ffffff",
+  surfaceSoft: "#f8fafc",
+  surfaceMuted: "#f1f5f9",
+  success: "#166534",
+  successBg: "#dcfce7",
+  warning: "#a16207",
+  warningBg: "#fef3c7",
+  danger: "#b91c1c",
+  dangerBg: "#fee2e2",
+  shadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+};
 
 const initialTeamMembers = [
   {
@@ -131,37 +162,6 @@ const initialLeaveRequests = [
   },
 ];
 
-const managerNotifications = [
-  {
-    id: 1,
-    type: "alert",
-    title: "High workload",
-    message: "QA team workload is critically high.",
-    time: "2 hours ago",
-  },
-  {
-    id: 2,
-    type: "info",
-    title: "Leave request pending",
-    message: "2 new leave requests need review.",
-    time: "4 hours ago",
-  },
-  {
-    id: 3,
-    type: "success",
-    title: "Tasks completed",
-    message: "Copywriting team completed 12 tasks today.",
-    time: "6 hours ago",
-  },
-  {
-    id: 4,
-    type: "warning",
-    title: "Pending assignments",
-    message: "Pre-Editing team has 3 pending assignments.",
-    time: "1 day ago",
-  },
-];
-
 const STATUS_BADGE_VARIANT: Record<string, BadgeVariant> = {
   Active: "success",
   Leave: "danger",
@@ -171,41 +171,50 @@ const STATUS_BADGE_VARIANT: Record<string, BadgeVariant> = {
 };
 
 const NOTIFICATION_STYLES: Record<string, string> = {
-  alert: "border-l-danger-300 bg-danger-50",
-  success: "border-l-success-300 bg-success-50",
-  warning: "border-l-warning-300 bg-warning-50",
-  info: "border-l-info-300 bg-info-50",
+  alert: "border-l-neutral-800 bg-neutral-50",
+  success: "border-l-primary-600 bg-primary-50",
+  warning: "border-l-neutral-400 bg-neutral-50",
+  info: "border-l-primary-300 bg-primary-50",
 };
 
 const ManagerDashboardPage = () => {
-  const [activeTab, setActiveTab] = useState("overview");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
 
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [teamAttendance, setTeamAttendance] = useState<any[]>([]);
+  const [attendanceSearch, setAttendanceSearch] = useState("");
+  const [attendanceFilter, setAttendanceFilter] = useState("All");
   const [leaveRequests, setLeaveRequests] = useState(initialLeaveRequests);
+  const [managerName, setManagerName] = useState("");
 
   const userId = localStorage.getItem("user_id");
 
   // ==========================
-  // LOAD TEAM MEMBERS
+  // LOAD TEAM MEMBERS & ATTENDANCE
   // ==========================
-
   useEffect(() => {
     loadTeamMembers();
+    loadTeamAttendance();
+    loadManagerInfo();
   }, []);
+
+  const loadManagerInfo = async () => {
+    try {
+      const userStr = localStorage.getItem("user");
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        setManagerName(user.full_name || user.name || "Manager");
+      }
+    } catch {}
+  };
 
   const loadTeamMembers = async () => {
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/employees/my-team/${userId}`,
-      );
-
+      const response = await fetch(`${BASE_URL}/employees/my-team/${userId}`);
       const data = await response.json();
-
       const formattedMembers = data.map((emp: any) => ({
         id: emp.id,
-
         avatar: emp.name
           ? emp.name
               .split(" ")
@@ -214,90 +223,125 @@ const ManagerDashboardPage = () => {
               .substring(0, 2)
               .toUpperCase()
           : "EM",
-
         name: emp.name || "",
-
         email: emp.email || "",
-
         role: emp.role || emp.designation || "Employee",
-
         tasksCompleted: emp.tasks_completed || 0,
-
         efficiency: emp.efficiency || 0,
-
         hoursThisWeek: emp.hours_this_week || 0,
-
         status: emp.status || "Active",
       }));
-
       setTeamMembers(formattedMembers);
     } catch (error) {
       console.error("Failed to load team members", error);
     }
   };
 
+  const loadTeamAttendance = async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/employees/team-attendance/${userId}`);
+      const data = await response.json();
+      setTeamAttendance(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to load team attendance", error);
+    }
+  };
+
+  // ==========================
+  // SCOPED TEAM MEMBERS
+  // ==========================
+  const scopedTeamMembers = useMemo(() => {
+    if (teamAttendance.length === 0) {
+      return teamMembers;
+    }
+
+    return teamAttendance.map((att: any) => {
+      const match = teamMembers.find(
+        (m) =>
+          (att.id != null && m.id === att.id) ||
+          (att.email && m.email && m.email.toLowerCase() === att.email.toLowerCase()),
+      );
+
+      const isOnLeave = att.attendance_status === "On Leave";
+
+      return {
+        id: att.id ?? match?.id,
+        name: att.name || match?.name || "",
+        email: match?.email || att.email || "",
+        role: att.designation || match?.role || "Employee",
+        department: att.department || "",
+        avatar:
+          match?.avatar ||
+          (att.name
+            ? att.name
+                .split(" ")
+                .map((n: string) => n[0])
+                .join("")
+                .substring(0, 2)
+                .toUpperCase()
+            : "EM"),
+        tasksCompleted: match?.tasksCompleted ?? 0,
+        efficiency: match?.efficiency ?? 0,
+        hoursThisWeek: match?.hoursThisWeek ?? att.working_hours ?? 0,
+        status: isOnLeave ? "Leave" : match?.status || "Active",
+      };
+    });
+  }, [teamAttendance, teamMembers]);
+
   // ==========================
   // TEAM STATS
   // ==========================
-
   const activeCount = useMemo(
-    () => teamMembers.filter((member) => member.status === "Active").length,
-    [teamMembers],
+    () => scopedTeamMembers.filter((member) => member.status === "Active").length,
+    [scopedTeamMembers],
   );
 
   const leaveCount = useMemo(
-    () => teamMembers.filter((member) => member.status === "Leave").length,
-    [teamMembers],
+    () => scopedTeamMembers.filter((member) => member.status === "Leave").length,
+    [scopedTeamMembers],
   );
 
   const totalTasks = useMemo(
-    () => teamMembers.reduce((sum, member) => sum + member.tasksCompleted, 0),
-    [teamMembers],
+    () => scopedTeamMembers.reduce((sum, member) => sum + (member.tasksCompleted || 0), 0),
+    [scopedTeamMembers],
   );
 
   const avgEfficiency = useMemo(
     () =>
-      teamMembers.length > 0
+      scopedTeamMembers.length > 0
         ? Math.round(
-            teamMembers.reduce((sum, member) => sum + member.efficiency, 0) /
-              teamMembers.length,
+            scopedTeamMembers.reduce((sum, member) => sum + (member.efficiency || 0), 0) /
+              scopedTeamMembers.length,
           )
         : 0,
-    [teamMembers],
+    [scopedTeamMembers],
   );
 
-  const pendingLeaveCount = leaveRequests.filter(
-    (req) => req.status === "Pending",
-  ).length;
+  const pendingLeaveCount = leaveRequests.filter((req) => req.status === "Pending").length;
 
   // ==========================
   // FILTER MEMBERS
   // ==========================
-
-  const filteredMembers = teamMembers.filter((member) => {
+  const filteredMembers = scopedTeamMembers.filter((member) => {
     const matchesSearch =
       member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       member.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
       member.email.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesFilter =
-      filterStatus === "All" || member.status === filterStatus;
+    const matchesFilter = filterStatus === "All" || member.status === filterStatus;
 
     return matchesSearch && matchesFilter;
   });
 
   const getEfficiencyColor = (efficiency: number) => {
-    if (efficiency >= 85) return "bg-success-400";
-
-    if (efficiency >= 70) return "bg-warning-400";
-
-    return "bg-danger-400";
+    if (efficiency >= 85) return THEME.success;
+    if (efficiency >= 70) return THEME.warning;
+    return THEME.danger;
   };
 
   // ==========================
   // LEAVE ACTION
   // ==========================
-
   const handleLeaveAction = (requestId: number, action: string) => {
     const request = leaveRequests.find((req) => req.id === requestId);
 
@@ -320,7 +364,6 @@ const ManagerDashboardPage = () => {
           ? {
               ...member,
               status: action === "approve" ? "Leave" : "Active",
-
               hoursThisWeek: action === "approve" ? 0 : member.hoursThisWeek,
             }
           : member,
@@ -328,473 +371,813 @@ const ManagerDashboardPage = () => {
     );
   };
 
-  // ==========================
-  // TABS
-  // ==========================
-
-  const tabs = [
+  const statCards = [
     {
-      id: "overview",
-      label: "Overview",
-      icon: ChartBarIcon,
+      label: "Team Members",
+      value: teamAttendance.length,
+      sub: "Direct reports",
+      icon: UsersIcon,
+      tone: "default",
     },
     {
-      id: "team",
-      label: "Team",
-      icon: UsersIcon,
+      label: "Present Today",
+      value: teamAttendance.filter(
+        (m) => m.attendance_status === "Present" || m.attendance_status === "Checked Out",
+      ).length,
+      sub: "Available now",
+      icon: CheckCircleIcon,
+      tone: "success",
+    },
+    {
+      label: "On Leave",
+      value: teamAttendance.filter((m) => m.attendance_status === "On Leave").length,
+      sub: "Approved leave",
+      icon: CalendarDaysIcon,
+      tone: "warning",
+    },
+    {
+      label: "Pending Leaves",
+      value: pendingLeaveCount,
+      sub: "Need action",
+      icon: InboxArrowDownIcon,
+      tone: "danger",
+    },
+    {
+      label: "Avg Efficiency",
+      value: `${avgEfficiency}%`,
+      sub: "Team average",
+      icon: ChartBarIcon,
+      tone: "primary",
+    },
+    {
+      label: "Tasks Completed",
+      value: totalTasks,
+      sub: "Current total",
+      icon: ClockIcon,
+      tone: "default",
     },
   ];
 
-  // YOUR RETURN STARTS BELOW
+  const getStatTone = (tone: string) => {
+    switch (tone) {
+      case "success":
+        return {
+          iconBg: THEME.successBg,
+          iconColor: THEME.success,
+        };
+      case "warning":
+        return {
+          iconBg: THEME.warningBg,
+          iconColor: THEME.warning,
+        };
+      case "danger":
+        return {
+          iconBg: THEME.dangerBg,
+          iconColor: THEME.danger,
+        };
+      case "primary":
+        return {
+          iconBg: THEME.primarySoft,
+          iconColor: THEME.primary,
+        };
+      default:
+        return {
+          iconBg: THEME.surfaceMuted,
+          iconColor: THEME.navy,
+        };
+    }
+  };
+
+  const getAttendanceStatusStyle = (status: string) => {
+    switch (status) {
+      case "Present":
+        return {
+          bg: "#ecfdf5",
+          border: "#bbf7d0",
+          text: "#166534",
+          dot: "#16a34a",
+          pillBg: "#dcfce7",
+        };
+      case "Checked Out":
+        return {
+          bg: "#eff6ff",
+          border: "#bfdbfe",
+          text: "#1d4ed8",
+          dot: "#2563eb",
+          pillBg: "#dbeafe",
+        };
+      case "On Leave":
+        return {
+          bg: "#fff7ed",
+          border: "#fed7aa",
+          text: "#c2410c",
+          dot: "#ea580c",
+          pillBg: "#ffedd5",
+        };
+      default:
+        return {
+          bg: "#fef2f2",
+          border: "#fecaca",
+          text: "#b91c1c",
+          dot: "#dc2626",
+          pillBg: "#fee2e2",
+        };
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-700">
-      <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/90 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-primary-50 p-2.5">
-              <Cog6ToothIcon className="h-5 w-5 text-primary-600" />
+    <div
+      className="min-h-screen"
+      style={{
+        background:
+          "linear-gradient(180deg, #f8fafc 0%, #f8fafc 55%, #f1f5f9 100%)",
+        color: THEME.text,
+      }}
+    >
+      <header
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 30,
+          background: "rgba(255,255,255,0.92)",
+          backdropFilter: "blur(14px)",
+          borderBottom: `1px solid ${THEME.border}`,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: "1400px",
+            margin: "0 auto",
+            padding: "16px 24px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "16px",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+            <div
+              style={{
+                width: "46px",
+                height: "46px",
+                borderRadius: "14px",
+                background: `linear-gradient(135deg, ${THEME.primary} 0%, ${THEME.primaryDark} 100%)`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 10px 20px rgba(15, 118, 110, 0.22)",
+              }}
+            >
+              <Cog6ToothIcon style={{ width: "22px", height: "22px", color: "#fff" }} />
             </div>
+
             <div>
-              <h1 className="text-lg font-semibold text-neutral-800">
+              <div
+                style={{
+                  fontSize: "20px",
+                  fontWeight: 800,
+                  color: THEME.navy,
+                  lineHeight: 1.2,
+                }}
+              >
                 Manager Dashboard
-              </h1>
-              <p className="text-xs text-neutral-500">
-                Team control, leave approvals, and performance tracking
-              </p>
+              </div>
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: THEME.textSoft,
+                  marginTop: "4px",
+                }}
+              >
+                Professional team operations, attendance monitoring, and leave control
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2.5 rounded-xl border border-neutral-200 bg-white px-3 py-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-600">
-                PM
-              </div>
-              <div className="leading-tight">
-                <p className="text-sm font-medium text-neutral-700">Manager</p>
-                <p className="text-[11px] text-neutral-500">Admin access</p>
-              </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <div
+              style={{
+                padding: "10px 14px",
+                borderRadius: "12px",
+                background: THEME.surface,
+                border: `1px solid ${THEME.border}`,
+                color: THEME.textSoft,
+                fontSize: "13px",
+                fontWeight: 600,
+              }}
+            >
+              {new Date().toLocaleDateString("en-IN", {
+                weekday: "short",
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })}
+            </div>
+
+            <div
+              style={{
+                padding: "10px 14px",
+                borderRadius: "12px",
+                background: THEME.primarySoft,
+                border: `1px solid #c7f9e9`,
+                color: THEME.primaryDark,
+                fontSize: "13px",
+                fontWeight: 700,
+              }}
+            >
+              {managerName ? `Welcome, ${managerName}` : "Welcome, Manager"}
             </div>
           </div>
         </div>
-
-        <nav className="mx-auto max-w-7xl px-5 pb-3">
-          <Tabs items={tabs} activeId={activeTab} onChange={setActiveTab} variant="pill" />
-        </nav>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 py-7">
-        {activeTab === "overview" && (
-          <div className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <StatCard
-                icon={UsersIcon}
-                title="Total Team Members"
-                value={teamMembers.length}
-                subtitle={`${activeCount} active • ${leaveCount} on leave`}
-                color="info"
-              />
-              <StatCard
-                icon={CheckCircleIcon}
-                title="Active Today"
-                value={activeCount}
-                subtitle={`${Math.round(
-                  (activeCount / teamMembers.length) * 100,
-                )}% of team`}
-                color="success"
-              />
-              <StatCard
-                icon={InboxArrowDownIcon}
-                title="Pending Leave Requests"
-                value={pendingLeaveCount}
-                subtitle="Awaiting review"
-                color="warning"
-              />
-              <StatCard
-                icon={ChartBarIcon}
-                title="Avg Efficiency"
-                value={`${avgEfficiency}%`}
-                subtitle={`${totalTasks} tasks completed this week`}
-                color="primary"
-              />
-            </div>
+      <main style={{ maxWidth: "1400px", margin: "0 auto", padding: "28px 24px 40px" }}>
+        <div style={{ display: "grid", gap: "24px" }}>
+          {/* Hero summary */}
+          
 
-            <div className="grid gap-6 xl:grid-cols-3">
-              <Card className="xl:col-span-2">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-base font-semibold text-neutral-800">
-                      Team Summary
-                    </h2>
-                    <p className="text-xs text-neutral-500">
-                      Quick view of current member status.
-                    </p>
+          {/* Summary cards */}
+          <section
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+              gap: "18px",
+            }}
+          >
+            {statCards.map((card) => {
+              const tone = getStatTone(card.tone);
+              const Icon = card.icon;
+
+              return (
+                <div
+                  key={card.label}
+                  style={{
+                    background: THEME.surface,
+                    borderRadius: "20px",
+                    border: `1px solid ${THEME.border}`,
+                    boxShadow: "0 4px 20px rgba(15, 23, 42, 0.04)",
+                    padding: "20px",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: THEME.textLight,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        {card.label}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: "12px",
+                          fontSize: "34px",
+                          fontWeight: 800,
+                          lineHeight: 1,
+                          color: THEME.navy,
+                        }}
+                      >
+                        {card.value}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: "8px",
+                          fontSize: "13px",
+                          color: THEME.textSoft,
+                        }}
+                      >
+                        {card.sub}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        width: "46px",
+                        height: "46px",
+                        borderRadius: "14px",
+                        background: tone.iconBg,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Icon style={{ width: "22px", height: "22px", color: tone.iconColor }} />
+                    </div>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => setActiveTab("team")}>
-                    Manage Team
-                  </Button>
+                </div>
+              );
+            })}
+          </section>
+
+          {/* Team attendance section */}
+          <section
+            style={{
+              background: THEME.surface,
+              borderRadius: "24px",
+              border: `1px solid ${THEME.border}`,
+              boxShadow: THEME.shadow,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "24px 24px 18px",
+                borderBottom: `1px solid ${THEME.border}`,
+                background: "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "16px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                  <div
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "16px",
+                      background: THEME.primarySoft,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <UsersIcon style={{ width: "24px", height: "24px", color: THEME.primary }} />
+                  </div>
+
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "20px",
+                        fontWeight: 800,
+                        color: THEME.navy,
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      Team Attendance
+                    </div>
+                    <div
+                      style={{
+                        marginTop: "4px",
+                        fontSize: "13px",
+                        color: THEME.textSoft,
+                      }}
+                    >
+                      Daily attendance records for your direct reporting team
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {teamMembers.slice(0, 6).map((member) => (
-                    <div
-                      key={member.id}
-                      className="rounded-xl border border-neutral-200 p-4"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-600">
-                          {member.avatar}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-neutral-700">
-                            {member.name}
-                          </p>
-                          <p className="text-[11px] text-neutral-500">
-                            {member.role}
-                          </p>
-                        </div>
-                      </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ position: "relative" }}>
+                    <MagnifyingGlassIcon
+                      style={{
+                        width: "16px",
+                        height: "16px",
+                        position: "absolute",
+                        left: "12px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: THEME.textLight,
+                      }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Search employee"
+                      value={attendanceSearch}
+                      onChange={(e) => setAttendanceSearch(e.target.value)}
+                      style={{
+                        width: "220px",
+                        height: "42px",
+                        paddingLeft: "38px",
+                        paddingRight: "14px",
+                        borderRadius: "12px",
+                        border: `1px solid ${THEME.border}`,
+                        background: THEME.surface,
+                        outline: "none",
+                        fontSize: "14px",
+                        color: THEME.text,
+                      }}
+                    />
+                  </div>
 
-                      <div className="mt-3 flex items-center justify-between">
-                        <Badge variant={STATUS_BADGE_VARIANT[member.status] ?? "neutral"} size="sm">
-                          {member.status}
-                        </Badge>
-                        <span className="text-sm font-medium text-neutral-600">
-                          {member.efficiency}%
-                        </span>
-                      </div>
+                  <select
+                    value={attendanceFilter}
+                    onChange={(e) => setAttendanceFilter(e.target.value)}
+                    style={{
+                      height: "42px",
+                      padding: "0 14px",
+                      borderRadius: "12px",
+                      border: `1px solid ${THEME.border}`,
+                      background: THEME.surface,
+                      outline: "none",
+                      fontSize: "14px",
+                      color: THEME.text,
+                      minWidth: "150px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <option value="All">All Status</option>
+                    <option value="Present">Present</option>
+                    <option value="Checked Out">Checked Out</option>
+                    <option value="Absent">Absent</option>
+                    <option value="On Leave">On Leave</option>
+                  </select>
+                </div>
+              </div>
+            </div>
 
-                      <div className="mt-2 h-1.5 rounded-full bg-neutral-100">
+            <div style={{ padding: "24px" }}>
+              {teamAttendance.length === 0 ? (
+                <div
+                  style={{
+                    border: `1px dashed ${THEME.border}`,
+                    borderRadius: "20px",
+                    padding: "60px 20px",
+                    textAlign: "center",
+                    background: THEME.surfaceSoft,
+                  }}
+                >
+                  <UsersIcon
+                    style={{
+                      width: "40px",
+                      height: "40px",
+                      margin: "0 auto 14px",
+                      color: THEME.textLight,
+                    }}
+                  />
+                  <div
+                    style={{
+                      fontSize: "18px",
+                      fontWeight: 700,
+                      color: THEME.navy,
+                    }}
+                  >
+                    No team members found
+                  </div>
+                  <div
+                    style={{
+                      marginTop: "6px",
+                      fontSize: "14px",
+                      color: THEME.textSoft,
+                    }}
+                  >
+                    No team members are currently mapped under your reporting line.
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+                    gap: "18px",
+                  }}
+                >
+                  {teamAttendance
+                    .filter((m) => {
+                      const matchSearch =
+                        m.name.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
+                        (m.designation || "")
+                          .toLowerCase()
+                          .includes(attendanceSearch.toLowerCase());
+
+                      const matchFilter =
+                        attendanceFilter === "All" || m.attendance_status === attendanceFilter;
+
+                      return matchSearch && matchFilter;
+                    })
+                    .map((member) => {
+                      const status = member.attendance_status;
+                      const statusStyle = getAttendanceStatusStyle(status);
+                      const isPresent = status === "Present";
+                      const isCheckedOut = status === "Checked Out";
+
+                      const initials = member.name
+                        .split(" ")
+                        .map((n: string) => n[0])
+                        .join("")
+                        .substring(0, 2)
+                        .toUpperCase();
+
+                      return (
                         <div
-                          className={`h-1.5 rounded-full ${getEfficiencyColor(
-                            member.efficiency,
-                          )}`}
-                          style={{ width: `${member.efficiency}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-
-              <Card>
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-base font-semibold text-neutral-800">
-                      Notifications
-                    </h2>
-                    <p className="text-xs text-neutral-500">
-                      Latest team updates.
-                    </p>
-                  </div>
-                  <BellIcon className="h-4 w-4 text-neutral-400" />
-                </div>
-
-                <div className="space-y-3">
-                  {managerNotifications.map((notification) => (
-                    <div
-                      key={notification.id}
-                      className={`rounded-xl border-l-2 p-3 ${
-                        NOTIFICATION_STYLES[notification.type] ?? NOTIFICATION_STYLES.info
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-medium text-neutral-700">
-                          {notification.title}
-                        </p>
-                        <span className="text-[11px] text-neutral-400">
-                          {notification.time}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-neutral-500">
-                        {notification.message}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </div>
-          </div>
-        )}
-
-        {activeTab === "team" && (
-          <div className="space-y-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-neutral-800">
-                  Team Management
-                </h2>
-                <p className="text-xs text-neutral-500">
-                  View employees, efficiency, and availability.
-                </p>
-              </div>
-              <Button variant="outline" size="sm" icon={UserPlusIcon}>
-                Add Member
-              </Button>
-            </div>
-
-            <Card>
-              <div className="grid gap-3 md:grid-cols-[1fr_180px]">
-                <div className="relative">
-                  <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 z-10" />
-                  <Input
-                    type="text"
-                    placeholder="Search employee, role, or email"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-
-                <div className="relative">
-                  <FunnelIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 z-10" />
-                  <Select
-                    value={filterStatus}
-                    onChange={setFilterStatus}
-                    className="pl-9"
-                    options={[
-                      { label: "All Status", value: "All" },
-                      { label: "Active", value: "Active" },
-                      { label: "On Leave", value: "Leave" },
-                    ]}
-                  />
-                </div>
-              </div>
-            </Card>
-
-            <Card padding="none" className="overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="bg-neutral-50 text-neutral-500">
-                    <tr>
-                      <th className="px-5 py-3.5 font-medium">Employee</th>
-                      <th className="px-5 py-3.5 font-medium">Role</th>
-                      <th className="px-5 py-3.5 font-medium">Tasks</th>
-                      <th className="px-5 py-3.5 font-medium">Efficiency</th>
-                      <th className="px-5 py-3.5 font-medium">Status</th>
-                      <th className="px-5 py-3.5 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100">
-                    {filteredMembers.length > 0 ? (
-                      filteredMembers.map((member: any) => (
-                        <tr
                           key={member.id}
-                          className="hover:bg-neutral-50 transition"
+                          style={{
+                            background: statusStyle.bg,
+                            border: `1px solid ${statusStyle.border}`,
+                            borderRadius: "22px",
+                            padding: "18px",
+                            boxShadow: "0 2px 10px rgba(15,23,42,0.03)",
+                          }}
                         >
-                          {/* Employee */}
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700">
-                                {member.name?.charAt(0)?.toUpperCase() || "E"}
-                              </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "flex-start",
+                              gap: "14px",
+                              marginBottom: "16px",
+                            }}
+                          >
+                            <div style={{ display: "flex", gap: "12px", minWidth: 0 }}>
+                              <div style={{ position: "relative", flexShrink: 0 }}>
+                                {member.profile_image ? (
+                                  <img
+                                    src={`data:image/jpeg;base64,${member.profile_image}`}
+                                    alt={member.name}
+                                    style={{
+                                      width: "52px",
+                                      height: "52px",
+                                      borderRadius: "16px",
+                                      objectFit: "cover",
+                                      border: "2px solid #fff",
+                                    }}
+                                  />
+                                ) : (
+                                  <div
+                                    style={{
+                                      width: "52px",
+                                      height: "52px",
+                                      borderRadius: "16px",
+                                      background: `linear-gradient(135deg, ${THEME.primary} 0%, ${THEME.primaryDark} 100%)`,
+                                      color: "#fff",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontSize: "15px",
+                                      fontWeight: 800,
+                                      border: "2px solid #fff",
+                                    }}
+                                  >
+                                    {initials}
+                                  </div>
+                                )}
 
-                              <div>
-                                <p className="font-medium text-neutral-700">
-                                  {member.name}
-                                </p>
-
-                                <p className="text-xs text-neutral-500">
-                                  {member.email || "-"}
-                                </p>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Role */}
-                          <td className="px-5 py-4 text-neutral-600">
-                            {member.role || member.designation || "-"}
-                          </td>
-
-                          {/* Tasks */}
-                          <td className="px-5 py-4 text-neutral-600">
-                            {member.tasks_completed || 0}
-                          </td>
-
-                          {/* Efficiency */}
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="h-1.5 w-24 rounded-full bg-neutral-100">
                                 <div
-                                  className="h-1.5 rounded-full bg-success-500"
                                   style={{
-                                    width: `${member.efficiency || 0}%`,
+                                    position: "absolute",
+                                    right: "-2px",
+                                    bottom: "-2px",
+                                    width: "14px",
+                                    height: "14px",
+                                    borderRadius: "999px",
+                                    background: statusStyle.dot,
+                                    border: "2px solid #fff",
                                   }}
                                 />
                               </div>
 
-                              <span className="text-sm text-neutral-600">
-                                {member.efficiency || 0}%
-                              </span>
-                            </div>
-                          </td>
+                              <div style={{ minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    fontSize: "15px",
+                                    fontWeight: 800,
+                                    color: THEME.navy,
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                  }}
+                                >
+                                  {member.name}
+                                </div>
 
-                          {/* Status */}
-                          <td className="px-5 py-4">
-                            <Badge
-                              variant={member.status === "Active" ? "success" : "danger"}
-                              size="sm"
+                                <div
+                                  style={{
+                                    marginTop: "3px",
+                                    fontSize: "12px",
+                                    color: THEME.textSoft,
+                                  }}
+                                >
+                                  {member.employee_id || "Employee ID not available"}
+                                </div>
+
+                                <div
+                                  style={{
+                                    marginTop: "8px",
+                                    display: "flex",
+                                    gap: "8px",
+                                    flexWrap: "wrap",
+                                  }}
+                                >
+                                  {member.designation && (
+                                    <span
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "5px",
+                                        padding: "5px 9px",
+                                        borderRadius: "999px",
+                                        background: "#fff",
+                                        border: `1px solid ${THEME.border}`,
+                                        fontSize: "11px",
+                                        color: THEME.textSoft,
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      <BriefcaseIcon style={{ width: "12px", height: "12px" }} />
+                                      {member.designation}
+                                    </span>
+                                  )}
+
+                                  {member.department && (
+                                    <span
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "5px",
+                                        padding: "5px 9px",
+                                        borderRadius: "999px",
+                                        background: "#fff",
+                                        border: `1px solid ${THEME.border}`,
+                                        fontSize: "11px",
+                                        color: THEME.textSoft,
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      <BuildingOfficeIcon
+                                        style={{ width: "12px", height: "12px" }}
+                                      />
+                                      {member.department}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div
+                              style={{
+                                padding: "7px 10px",
+                                borderRadius: "999px",
+                                background: statusStyle.pillBg,
+                                color: statusStyle.text,
+                                fontSize: "11px",
+                                fontWeight: 800,
+                                whiteSpace: "nowrap",
+                                flexShrink: 0,
+                              }}
                             >
-                              {member.status || "Active"}
-                            </Badge>
-                          </td>
-
-                          {/* Actions */}
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-2">
-                              <button
-                                className="rounded-md p-2 hover:bg-neutral-100"
-                                title="View"
-                              >
-                                <EyeIcon className="h-4 w-4 text-neutral-500" />
-                              </button>
-
-                              <button
-                                className="rounded-md p-2 hover:bg-neutral-100"
-                                title="Edit"
-                              >
-                                <PencilIcon className="h-4 w-4 text-neutral-500" />
-                              </button>
-
-                              <button
-                                className="rounded-md p-2 hover:bg-neutral-100"
-                                title="Delete"
-                              >
-                                <TrashIcon className="h-4 w-4 text-danger-500" />
-                              </button>
+                              {status}
                             </div>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="py-8 text-center text-neutral-500"
-                        >
-                          No Team Members Found
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          </div>
-        )}
+                          </div>
 
-        {activeTab === "performance" && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-lg font-semibold text-neutral-800">
-                Performance Analytics
-              </h2>
-              <p className="text-xs text-neutral-500">
-                Weekly productivity and efficiency breakdown.
-              </p>
-            </div>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "1fr 1fr",
+                              gap: "10px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                background: "#fff",
+                                borderRadius: "14px",
+                                border: `1px solid ${THEME.border}`,
+                                padding: "12px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  color: THEME.textLight,
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.06em",
+                                  marginBottom: "6px",
+                                }}
+                              >
+                                Check In
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: "15px",
+                                  fontWeight: 800,
+                                  color: THEME.navy,
+                                }}
+                              >
+                                {member.check_in || "—"}
+                              </div>
+                            </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              <StatCard title="Tasks Completed" value={totalTasks} icon={CheckCircleIcon} color="success" />
-              <StatCard title="Hours Logged" value="204" icon={ClockIcon} color="info" />
-              <StatCard title="Average Efficiency" value={`${avgEfficiency}%`} icon={ChartBarIcon} color="primary" />
-            </div>
+                            <div
+                              style={{
+                                background: "#fff",
+                                borderRadius: "14px",
+                                border: `1px solid ${THEME.border}`,
+                                padding: "12px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  color: THEME.textLight,
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.06em",
+                                  marginBottom: "6px",
+                                }}
+                              >
+                                Check Out
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: "15px",
+                                  fontWeight: 800,
+                                  color: THEME.navy,
+                                }}
+                              >
+                                {member.check_out || "—"}
+                              </div>
+                            </div>
+                          </div>
 
-            <Card>
-              <h3 className="mb-4 text-sm font-semibold text-neutral-700">
-                Role Performance
-              </h3>
-              <div className="space-y-4">
-                {["Pre-Editing", "Copywriting", "QA"].map((role, index) => {
-                  const members = teamMembers.filter((m) => m.role === role);
-                  const average = Math.round(
-                    members.reduce((sum, m) => sum + m.efficiency, 0) /
-                      members.length,
-                  );
-                  const colors: StatCardColor[] = ["info", "success", "primary"];
+                          {(isPresent || isCheckedOut) && (
+                            <div style={{ marginTop: "14px" }}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  marginBottom: "8px",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    fontSize: "11px",
+                                    color: THEME.textLight,
+                                    fontWeight: 700,
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.06em",
+                                  }}
+                                >
+                                  Working Hours
+                                </span>
 
-                  return (
-                    <div key={role}>
-                      <div className="mb-2 flex items-center justify-between">
-                        <p className="text-sm text-neutral-600">{role}</p>
-                        <p className="text-xs font-medium text-neutral-500">
-                          {average}%
-                        </p>
-                      </div>
-                      <div className="h-2 rounded-full bg-neutral-100">
-                        <div
-                          className={`h-2 rounded-full bg-${colors[index]}-300`}
-                          style={{ width: `${average}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          </div>
-        )}
+                                <span
+                                  style={{
+                                    fontSize: "12px",
+                                    fontWeight: 800,
+                                    color: statusStyle.text,
+                                  }}
+                                >
+                                  {member.working_hours || 0} hrs
+                                </span>
+                              </div>
 
-        {activeTab === "settings" && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-lg font-semibold text-neutral-800">
-                Manager Settings
-              </h2>
-              <p className="text-xs text-neutral-500">
-                Configure profile and dashboard access.
-              </p>
-            </div>
-
-            <div className="grid gap-5 lg:grid-cols-2">
-              <Card>
-                <h3 className="mb-4 text-sm font-semibold text-neutral-700">
-                  Profile
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-neutral-500">
-                      Manager Name
-                    </label>
-                    <Input type="text" defaultValue="Manager" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-neutral-500">
-                      Email
-                    </label>
-                    <Input type="email" defaultValue="manager@company.com" />
-                  </div>
+                              <div
+                                style={{
+                                  height: "8px",
+                                  borderRadius: "999px",
+                                  background: "#ffffff",
+                                  border: `1px solid ${THEME.border}`,
+                                  overflow: "hidden",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: `${Math.min(((member.working_hours || 0) / 9) * 100, 100)}%`,
+                                    height: "100%",
+                                    borderRadius: "999px",
+                                    background: `linear-gradient(90deg, ${statusStyle.dot} 0%, ${THEME.primary} 100%)`,
+                                    transition: "width 0.4s ease",
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
-              </Card>
-
-              <Card>
-                <h3 className="mb-4 text-sm font-semibold text-neutral-700">
-                  Permissions
-                </h3>
-                <div className="space-y-3">
-                  {[
-                    "View and edit team member information",
-                    "Approve or reject leave requests",
-                    "Access performance analytics",
-                    "Manage team schedules",
-                    "Send notifications to team members",
-                    "Export reports",
-                  ].map((permission) => (
-                    <div
-                      key={permission}
-                      className="flex items-center justify-between rounded-xl bg-neutral-50 px-3 py-2.5"
-                    >
-                      <p className="text-xs text-neutral-600">{permission}</p>
-                      <div className="relative h-5 w-9 rounded-full bg-success-300">
-                        <div className="absolute right-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
+              )}
             </div>
-          </div>
-        )}
+          </section>
+
+        </div>
       </main>
     </div>
   );

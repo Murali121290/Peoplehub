@@ -11,13 +11,13 @@ def check_missed_checkins():
 
     print("\n========== CHECK-IN MONITOR RUNNING ==========")
 
-    one_minute_ago = (
-    datetime.now() -
-    timedelta(minutes=1)
-    )
+    now = datetime.utcnow()
+    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    one_minute_ago = now - timedelta(minutes=1)
 
     users = User.query.filter(
         User.last_login.isnot(None),
+        User.last_login >= start_of_today,
         User.last_login <= one_minute_ago
     ).all()
 

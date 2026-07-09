@@ -20,7 +20,7 @@ import { Spinner } from "../../../components/ui/Spinner";
 import { EmptyState } from "../../../components/ui/EmptyState";
 
 // Constants
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = "http://localhost:5001/api";
 
 // TypeScript Interfaces
 interface Employee {
@@ -127,25 +127,7 @@ const PayrollPage: React.FC = () => {
   const renderActions = (emp: Employee): React.JSX.Element => {
     return (
       <div className="flex gap-1.5">
-        {emp.payment_status === "Paid" ? (
-          <Button
-            onClick={() => downloadPayslip(emp.id)}
-            variant="primary"
-            size="sm"
-            aria-label={`Download payslip for ${emp.employee_name}`}
-          >
-            Payslip
-          </Button>
-        ) : (
-          <Button
-            disabled
-            variant="outline"
-            size="sm"
-            aria-label="Payslip available after payment"
-          >
-            Payslip
-          </Button>
-        )}
+
 
         {emp.payment_status === "Paid" ? (
           <Button
@@ -166,6 +148,27 @@ const PayrollPage: React.FC = () => {
             Pay
           </Button>
         )}
+        {emp.payment_status === "Paid" ? (
+          <Button
+            onClick={() => downloadPayslip(emp.id)}
+            variant="primary"
+            size="sm"
+            aria-label={`Download payslip for ${emp.employee_name}`}
+          >
+            Payslip
+          </Button>
+        ) : (
+          <Button
+            disabled
+            variant="outline"
+            size="sm"
+            aria-label="Payslip available after payment"
+          >
+            Payslip
+          </Button>
+        )}
+
+        
       </div>
     );
   };

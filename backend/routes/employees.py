@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 from flask import Blueprint, request, jsonify, Response
 from models.database import db
 from models.employee import Employee
@@ -157,6 +158,10 @@ def get_employees():
             attendance_date=today
         ).first()
 
+        user = User.query.get(emp.user_id) if emp.user_id else None
+        role_id = user.role_id if user else None
+        team_id = emp.team_id or (user.team_id if user else None)
+
         result.append({
 
             "id": emp.id,
@@ -167,11 +172,15 @@ def get_employees():
             "last_name": emp.last_name,
 
             "email": emp.email,
+            "phone": emp.phone,
 
             "department": emp.department,
             "designation": emp.designation,
 
             "role": emp.role,
+            "access_level": user.access_level if user else None,
+            "role_id": role_id,
+            "team_id": team_id,
 
             "reporting_manager":
                 emp.reporting_manager,
@@ -875,6 +884,88 @@ def get_my_team(user_id):
             })
 
     return jsonify(result)
+
+
+@employees_bp.route("/team-attendance/<int:user_id>", methods=["GET"])
+def get_team_attendance(user_id):
+    """Return all employees reporting to this manager with today's attendance status."""
+    try:
+        manager = Employee.query.filter_by(user_id=user_id).first()
+        if not manager:
+            return jsonify([])
+
+        manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
+        today = date.today()
+
+        all_employees = Employee.query.all()
+        result = []
+
+        for emp in all_employees:
+            if not emp.reporting_manager:
+                continue
+            if emp.reporting_manager.strip().lower() != manager_name:
+                continue
+
+            # Today's attendance
+            attendance = Attendance.query.filter_by(
+                user_id=emp.user_id,
+                attendance_date=today
+            ).first()
+
+            # Check leave for today
+            on_leave = LeaveRequest.query.filter(
+                LeaveRequest.employee_id == str(emp.id),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.from_date <= today,
+                LeaveRequest.to_date >= today
+            ).first()
+
+            if attendance and attendance.check_in:
+                if attendance.check_out:
+                    att_status = "Checked Out"
+                else:
+                    att_status = "Present"
+                check_in = attendance.check_in.strftime("%I:%M %p")
+                check_out = attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None
+                working_hours = attendance.total_hours or 0
+                if not attendance.check_out:
+                    elapsed = (datetime.now() - attendance.check_in).total_seconds()
+                    break_secs = (attendance.total_break_minutes or 0) * 60
+                    working_hours = round(max(elapsed - break_secs, 0) / 3600, 2)
+            elif on_leave:
+                att_status = "On Leave"
+                check_in = None
+                check_out = None
+                working_hours = 0
+            else:
+                att_status = "Absent"
+                check_in = None
+                check_out = None
+                working_hours = 0
+
+            result.append({
+                "id": emp.id,
+                "user_id": emp.user_id,
+                "name": f"{emp.first_name} {emp.last_name}",
+                "employee_id": emp.employee_id,
+                "email": emp.email,
+                "role": emp.role,
+                "designation": emp.designation,
+                "department": emp.department,
+                "profile_image": base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None,
+                "attendance_status": att_status,
+                "check_in": check_in,
+                "check_out": check_out,
+                "working_hours": working_hours,
+                "lunch_minutes": attendance.lunch_minutes if attendance else 0,
+                "tea_minutes": attendance.tea_minutes if attendance else 0,
+            })
+
+        return jsonify(result)
+
+    except Exception as e:
+        print("TEAM ATTENDANCE ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500
 
 
 @employees_bp.route(

@@ -28,7 +28,7 @@ services:
       DATABASE_URL: postgresql://postgres:$$vBr%402150@postgres:5432/wms_db
       TZ: Asia/Kolkata
     ports:
-      - "5000:5000"
+      - "5001:5001"
     volumes:
       - ./backend:/app
 

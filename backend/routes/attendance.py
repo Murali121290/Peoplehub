@@ -177,7 +177,7 @@ def check_in():
             return jsonify({
                 "success": False,
                 "message":
-                "You have already checked in today."
+                "You are completed the section."
             }), 400
 
         # =====================================
@@ -488,29 +488,72 @@ def tea_break():
 @attendance_bp.route("/history/<int:user_id>")
 def attendance_history(user_id):
 
-    records = Attendance.query.filter_by(
-        user_id=user_id
-    ).order_by(
-        Attendance.id.desc()
-    ).all()
+    employee = Employee.query.filter_by(user_id=user_id).first()
+    if not employee:
+        return jsonify([])
 
+    today = date.today()
+    joining = employee.joining_date
     result = []
 
-    for record in records:
-        result.append({
-    "id": record.id,
-    "date":
-    record.attendance_date.strftime("%Y-%m-%d")
-    if record.attendance_date
-    else "-",
-    "checkIn": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
-    "checkOut": record.check_out.strftime("%I:%M %p") if record.check_out else "-",
-    "workingHours": record.total_hours,
-    "lunchMinutes": record.lunch_minutes,
-    "teaMinutes": record.tea_minutes,
-    "totalBreak": record.total_break_minutes,
-    "status": record.status
-})
+    for i in range(30):
+        current_date = today - timedelta(days=i)
+        
+        # Do not go before joining date if set
+        if joining and current_date < joining:
+            break
+
+        record = Attendance.query.filter_by(
+            user_id=user_id,
+            attendance_date=current_date
+        ).first()
+
+        if record:
+            if record.check_out:
+                working_hours = record.total_hours
+                check_out_str = record.check_out.strftime("%I:%M %p")
+            else:
+                # Active check-in: compute live working hours
+                now = datetime.now()
+                elapsed_seconds = (now - record.check_in).total_seconds()
+                break_seconds = (record.total_break_minutes or 0) * 60
+                working_hours = round(max(elapsed_seconds - break_seconds, 0) / 3600, 2)
+                check_out_str = "-"
+
+            result.append({
+                "id": record.id,
+                "date": record.attendance_date.strftime("%Y-%m-%d"),
+                "checkIn": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
+                "checkOut": check_out_str,
+                "workingHours": working_hours,
+                "lunchMinutes": record.lunch_minutes,
+                "teaMinutes": record.tea_minutes,
+                "totalBreak": record.total_break_minutes,
+                "status": record.status or "Present"
+            })
+        else:
+            # Check for approved leaves on this day
+            from models.leave import LeaveRequest
+            leave = LeaveRequest.query.filter(
+                LeaveRequest.employee_id == str(employee.id),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.from_date <= current_date,
+                LeaveRequest.to_date >= current_date
+            ).first()
+
+            status = "Leave" if leave else "Absent"
+
+            result.append({
+                "id": f"virtual-{current_date.strftime('%Y-%m-%d')}",
+                "date": current_date.strftime("%Y-%m-%d"),
+                "checkIn": "-",
+                "checkOut": "-",
+                "workingHours": 0.0,
+                "lunchMinutes": 0,
+                "teaMinutes": 0,
+                "totalBreak": 0,
+                "status": status
+            })
 
     return jsonify(result)
 
@@ -1073,10 +1116,15 @@ def export_monthly_attendance():
 
             for col in range(1, 12):
 
-                ws.cell(
+                c = ws.cell(
                     row=row,
                     column=col
-                ).border = thin_border
+                )
+                c.border = thin_border
+                val = c.value
+                if val is not None and val != "":
+                    if isinstance(val, (int, float, date, datetime)) or (isinstance(val, str) and (val.isdigit() or val.startswith("EMP"))):
+                        c.alignment = Alignment(horizontal="center")
 
             row += 1
 
@@ -1553,6 +1601,9 @@ def export_paysheet():
                 )
 
                 cell.border = thin_border
+                if value is not None and value != "":
+                    if isinstance(value, (int, float, date, datetime)) or (isinstance(value, str) and (value.isdigit() or value.startswith("EMP"))):
+                        cell.alignment = Alignment(horizontal="center")
 
             row += 1
 
