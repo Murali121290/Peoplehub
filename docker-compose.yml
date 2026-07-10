@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: wms_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: $$vBr@2150
+      POSTGRES_DB: wms_db
+      TZ: Asia/Kolkata
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
+    container_name: wms_backend
+    restart: always
+    depends_on:
+      - postgres
+    working_dir: /app
+    command: python app.py
+    environment:
+      DATABASE_URL: postgresql://postgres:$$vBr%402150@postgres:5432/wms_db
+      TZ: Asia/Kolkata
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
+    container_name: wms_frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "5555:80"
+
+volumes:
+  postgres_data:

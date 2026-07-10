@@ -1,0 +1,108 @@
+from models.database import db
+from datetime import datetime
+
+
+class Attendance(db.Model):
+
+    __tablename__ = "attendance"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        nullable=False
+    )
+
+    # Check In / Check Out
+
+    check_in = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    check_out = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    # Lunch Break Status
+
+    lunch_break = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    lunch_start = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    lunch_end = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    lunch_minutes = db.Column(
+        db.Integer,
+        default=0
+    )
+
+    # Tea Break Status
+
+    tea_break = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    tea_start = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    tea_end = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    tea_minutes = db.Column(
+        db.Integer,
+        default=0
+    )
+
+    # Total Break Minutes
+
+    total_break_minutes = db.Column(
+        db.Integer,
+        default=0
+    )
+
+    # Total Working Hours
+
+    total_hours = db.Column(
+        db.Float,
+        default=0
+    )
+
+    # Attendance Date
+
+    attendance_date = db.Column(
+        db.Date,
+        default=lambda: datetime.utcnow().date()
+    )
+
+    status = db.Column(
+    db.String(20),
+    default="Absent"
+)
+    shift_timing = db.Column(
+    db.String(50),
+    default="General Shift"
+)
+    
+    manager_status = db.Column(
+    db.String(20),
+    default="Pending"
+)

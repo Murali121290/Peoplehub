@@ -1,0 +1,274 @@
+import { useEffect, useState } from "react";
+import { CalendarDaysIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
+import { cancelBooking } from "../../../services/meetingRoomService";
+import { Card } from "../../../components/ui/Card";
+import { Badge } from "../../../components/ui/Badge";
+import type { BadgeVariant } from "../../../components/ui/Badge";
+import { Button } from "../../../components/ui/Button";
+import { Table } from "../../../components/ui/Table";
+import type { Column } from "../../../components/ui/Table";
+import { EmptyState } from "../../../components/ui/EmptyState";
+import { ConfirmDialog } from "../../../components/ui/Modal";
+
+interface BookingTableProps {
+  bookings: any[];
+  onRefresh: () => void;
+}
+
+const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
+
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+
+    const handleCancel = async (id: number) => {
+  try {
+    await cancelBooking(id);
+
+    alert("Booking Cancelled");
+
+    onRefresh();   // ✅ CORRECT
+  } catch (error) {
+    console.error(error);
+    alert("Failed to cancel booking");
+  }
+};
+  const [selectedBooking, setSelectedBooking] = useState<any | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [toast, setToast] = useState<{
+    show: boolean;
+    type: "success" | "error";
+    message: string;
+  }>({
+    show: false,
+    type: "success",
+    message: "",
+  });
+
+  useEffect(() => {
+    if (toast.show) {
+      const timer = setTimeout(() => {
+        setToast((prev) => ({ ...prev, show: false }));
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [toast.show]);
+
+  const showToast = (message: string, type: "success" | "error") => {
+    setToast({
+      show: true,
+      type,
+      message,
+    });
+  };
+
+
+  const getStatusVariant = (status: string): BadgeVariant => {
+    switch ((status || "").toLowerCase()) {
+      case "approved":
+      case "confirmed":
+      case "completed":
+        return "success";
+      case "pending":
+        return "warning";
+      case "cancelled":
+      case "rejected":
+        return "danger";
+      case "in progress":
+        return "info";
+      default:
+        return "neutral";
+    }
+  };
+
+  const canCancel = (status: string) => {
+    const normalized = (status || "").toLowerCase();
+    return normalized === "confirmed" || normalized === "approved";
+  };
+
+  if (!Array.isArray(bookings) || bookings.length === 0) {
+    return (
+      <Card padding="none">
+        <div className="border-b border-neutral-200 px-6 py-5">
+          <h2 className="text-lg font-semibold text-neutral-800">Bookings</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            Track meeting room reservations and schedule activity.
+          </p>
+        </div>
+
+        <EmptyState
+          icon={CalendarDaysIcon}
+          title="No bookings found"
+          description="New booking entries will appear here once meetings are scheduled."
+        />
+      </Card>
+    );
+  }
+
+  const columns: Column<any>[] = [
+    {
+      key: "meeting",
+      header: "Meeting",
+      render: (booking) => (
+        <div>
+          <p className="font-semibold text-neutral-800">
+            {booking.meeting_title || "-"}
+          </p>
+          <p className="mt-1 text-xs text-neutral-400">
+            Booking ID: {booking.id}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "organizer_name",
+      header: "Organizer",
+      render: (booking) => (
+        <span className="text-sm font-medium text-neutral-700">
+          {booking.organizer_name || "-"}
+        </span>
+      ),
+    },
+    {
+      key: "meeting_date",
+      header: "Date",
+      render: (booking) => (
+        <span className="text-sm text-neutral-600">
+          {booking.meeting_date || "-"}
+        </span>
+      ),
+    },
+    {
+      key: "start_time",
+      header: "Start",
+      render: (booking) => (
+        <span className="text-sm text-neutral-600">
+          {booking.start_time || "-"}
+        </span>
+      ),
+    },
+    {
+      key: "end_time",
+      header: "End",
+      render: (booking) => (
+        <span className="text-sm text-neutral-600">
+          {booking.end_time || "-"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (booking) => (
+        <Badge variant={getStatusVariant(booking.status)} dot>
+          {booking.status || "Unknown"}
+        </Badge>
+      ),
+    },
+  {
+  key: "action",
+  header: "Action",
+  render: (booking) => {
+    const isCreator =
+      booking.organizer_name === user.employee_name;
+
+    if (!canCancel(booking.status)) {
+      return <span className="text-xs text-neutral-400">—</span>;
+    }
+
+    return isCreator ? (
+      <Button
+        variant="danger"
+        size="sm"
+        onClick={() => setSelectedBooking(booking)}
+      >
+        Cancel
+      </Button>
+    ) : (
+      <Badge variant="neutral">
+        Booked
+      </Badge>
+    );
+  },
+},
+  ];
+
+  return (
+    <>
+      {toast.show && (
+        <div className="fixed right-5 top-5 z-toast">
+          <div
+            className={`flex min-w-[320px] items-start gap-3 rounded-2xl border px-4 py-3 shadow-popover ${
+              toast.type === "success"
+                ? "border-success-200 bg-success-50 text-success-800"
+                : "border-danger-200 bg-danger-50 text-danger-800"
+            }`}
+          >
+            <div
+              className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                toast.type === "success" ? "bg-success-100" : "bg-danger-100"
+              }`}
+            >
+              {toast.type === "success" ? (
+                <CheckCircleIcon className="h-5 w-5 text-success-600" />
+              ) : (
+                <XCircleIcon className="h-5 w-5 text-danger-600" />
+              )}
+            </div>
+
+            <div className="flex-1">
+              <p className="text-sm font-semibold">
+                {toast.type === "success" ? "Success" : "Error"}
+              </p>
+              <p className="text-sm opacity-90">{toast.message}</p>
+            </div>
+
+            <button
+              onClick={() => setToast((prev) => ({ ...prev, show: false }))}
+              className="text-lg leading-none opacity-60 hover:opacity-100"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
+      <Card padding="none">
+        <div className="flex flex-col gap-3 border-b border-neutral-200 px-6 py-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-neutral-800">Bookings</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Track meeting room reservations and daily schedule status.
+            </p>
+          </div>
+
+          <div className="inline-flex w-fit items-center rounded-full bg-neutral-100 px-3 py-1 text-sm font-medium text-neutral-600">
+            Total: {bookings.length}
+          </div>
+        </div>
+
+        <div className="p-0">
+          <Table columns={columns} data={bookings} rowKey={(booking) => booking.id} zebra={false} />
+        </div>
+      </Card>
+
+      <ConfirmDialog
+        isOpen={!!selectedBooking}
+        title="Cancel Booking"
+        message="Are you sure you want to cancel this booking?"
+        description={
+          selectedBooking
+            ? `${selectedBooking.meeting_title || "-"} — ${selectedBooking.organizer_name || "-"} on ${selectedBooking.meeting_date || "-"}`
+            : undefined
+        }
+        variant="danger"
+        confirmLabel={isCancelling ? "Cancelling..." : "Yes, Cancel"}
+        cancelLabel="Keep Booking"
+        loading={isCancelling}
+        onCancel={() => setSelectedBooking(null)}
+        onConfirm={() => handleCancel(selectedBooking.id)}
+      />
+    </>
+  );
+};
+
+export default BookingTable;

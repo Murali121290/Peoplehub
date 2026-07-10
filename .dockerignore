@@ -1,0 +1,26 @@
+# Version control
+.git
+.gitignore
+
+# Editors / tooling
+.vscode
+.idea
+
+# Python
+**/__pycache__
+**/*.py[cod]
+**/venv
+**/.venv
+backend/uploads
+
+# Node
+**/node_modules
+frontend/dist
+frontend/.vite
+
+# Env / secrets
+**/.env
+**/.env.*
+
+# Misc
+*.log
