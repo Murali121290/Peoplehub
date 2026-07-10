@@ -72,9 +72,9 @@ def seed_employees():
             profile_completed=False,
             is_first_login=True,
 
-            sick_leave=1.5,
-            casual_leave=1.5,
-            earned_leave=0
+            sick_leave=6.0,
+            casual_leave=6.0,
+            privilege_leave=15.0
         )
 
         db.session.add(employee)

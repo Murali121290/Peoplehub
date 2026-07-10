@@ -6,16 +6,18 @@ import { Button } from "../../../components/ui/Button";
 interface BookingFormProps {
   rooms: any[];
   onSuccess?: () => void;
+  selectedRoomId?: string | number;
 }
 
 const BookingForm: React.FC<BookingFormProps> = ({
   rooms,
   onSuccess,
+  selectedRoomId,
 }) => {
   const today = new Date().toISOString().split("T")[0];
 
   const initialForm = {
-    room_id: "",
+    room_id: selectedRoomId ? selectedRoomId.toString() : "",
     meeting_title: "",
     organizer_name: "",
     department: "",
@@ -29,6 +31,20 @@ const BookingForm: React.FC<BookingFormProps> = ({
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (selectedRoomId != null) {
+      setForm((prev) => ({
+        ...prev,
+        room_id: selectedRoomId.toString(),
+      }));
+    } else {
+      setForm((prev) => ({
+        ...prev,
+        room_id: "",
+      }));
+    }
+  }, [selectedRoomId]);
 
   const [employees, setEmployees] = useState<any[]>([]);
 

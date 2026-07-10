@@ -1,5 +1,7 @@
 from models.database import db
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
 
 
 class Notification(db.Model):
@@ -8,7 +10,7 @@ class Notification(db.Model):
     id = db.Column(
         db.Integer,
         primary_key=True
-    )
+    )   
 
     receiver_name = db.Column(
         db.String(200),
@@ -32,7 +34,43 @@ class Notification(db.Model):
 
     created_at = db.Column(
         db.DateTime,
-        default=datetime.utcnow
+        default=lambda: datetime.now(ZoneInfo("Asia/Kolkata"))
+    )
+
+    related_id = db.Column(
+        db.Integer,
+        nullable=True
+    )
+
+    related_type = db.Column(
+        db.String(50),
+        nullable=True
+    )
+
+    notification_type = db.Column(
+        db.String(50),
+        nullable=True
+    )
+
+    status = db.Column(
+        db.String(50),
+        nullable=True,
+        default="Pending"
+    )
+
+    action_required = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    resolved = db.Column(
+        db.Boolean,
+        default=False
+    )
+
+    resolved_at = db.Column(
+        db.DateTime,
+        nullable=True
     )
 
     def to_dict(self):
@@ -46,5 +84,16 @@ class Notification(db.Model):
                 self.created_at.isoformat()
                 if self.created_at
                 else None
-            )
+            ),
+            "related_id": self.related_id,
+            "related_type": self.related_type,
+            "notification_type": self.notification_type,
+            "status": self.status,
+            "action_required": self.action_required,
+            "resolved": self.resolved,
+            "resolved_at": (
+                self.resolved_at.isoformat()
+                if self.resolved_at
+                else None
+            ),
         }

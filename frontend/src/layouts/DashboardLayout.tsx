@@ -116,7 +116,8 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       }
     };
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 5000);
+    // Socket handles real-time notifications; poll every 30s as a fallback only
+    const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
   }, [user]);
 
@@ -147,20 +148,100 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [birthdayEmployees]);
 
-  const sendBirthdayWish = async (emp: any) => {
-    const senderName = localStorage.getItem("full_name");
-    await fetch(`${BASE_URL}/communications`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        employee_id: emp.id,
-        employee_name: `${emp.first_name} ${emp.last_name}`,
-        receiver_id: emp.user_id,
-        message_type: "employee",
-        created_by: senderName,
-        message: `🎂 Happy Birthday ${emp.first_name}! Wishing you happiness, success and prosperity. 🎉`,
-      }),
-    });
+  // Birthday & Thanks confirmation/view states
+  const [thanksWishId, setThanksWishId] = useState<number | null>(null);
+  const [thanksSenderName, setThanksSenderName] = useState<string>("");
+  const [viewThanksMessage, setViewThanksMessage] = useState<string | null>(null);
+
+  // Missed Check-in states
+  const [remindNotifId, setRemindNotifId] = useState<number | null>(null);
+  const [remindEmployeeName, setRemindEmployeeName] = useState<string>("");
+  const [sendingReminder, setSendingReminder] = useState<boolean>(false);
+
+  const sendCheckinReminder = async () => {
+    if (remindNotifId === null) return;
+    setSendingReminder(true);
+    try {
+      const response = await fetch(`${BASE_URL}/notifications/remind-checkin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          notification_id: remindNotifId
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success("Check-In reminder sent to employee!");
+        setNotifications((prev) =>
+          prev.map((n) => {
+            if (n.id === remindNotifId) {
+              return { ...n, status: "Reminder Sent" };
+            }
+            return n;
+          })
+        );
+      } else {
+        toast.error(data.error || "Failed to send reminder");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to send reminder");
+    } finally {
+      setSendingReminder(false);
+      setRemindNotifId(null);
+    }
+  };
+
+  const sendBirthdayWish = async (emp: any, customMessage: string) => {
+    const senderId = localStorage.getItem("employee_id");
+    if (!senderId) {
+      toast.error("Sender employee details not found.");
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${BASE_URL}/birthday-wishes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sender_id: Number(senderId),
+          receiver_id: emp.id,
+          message: customMessage,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to send wishes.");
+        return;
+      }
+      toast.success("Birthday wishes sent successfully!");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to send wishes.");
+    }
+  };
+
+  const handleSendThanks = async () => {
+    if (!thanksWishId) return;
+    try {
+      const res = await fetch(`${BASE_URL}/birthday-wishes/thank/${thanksWishId}`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to send thanks.");
+        return;
+      }
+      toast.success("Thanks sent successfully!");
+      setNotifications((prev) =>
+        prev.map((n) => (n.related_id === thanksWishId ? { ...n, thanked: true } : n))
+      );
+      setThanksWishId(null);
+      setThanksSenderName("");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to send thanks.");
+    }
   };
 
   // --- Attendance Summary ---
@@ -384,6 +465,56 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
+  useEffect(() => {
+    socket.on("birthday_wish_sent", (newNotification) => {
+      setNotifications((prev) => [newNotification, ...prev]);
+      toast.success(`🎂 New Birthday Wish from ${newNotification.sender_name || "a coworker"}!`);
+    });
+
+    socket.on("birthday_thanks_sent", (newNotification) => {
+      setNotifications((prev) => [newNotification, ...prev]);
+      toast.success(`🎉 ${newNotification.sender_name || "A coworker"} thanked you for your birthday wishes!`);
+    });
+
+    socket.on("missed_checkin_created", (newNotification) => {
+      setNotifications((prev) => [newNotification, ...prev]);
+      toast.error(`⏰ Missed Check-In Alert for ${newNotification.sender_name || "an employee"}!`);
+    });
+
+    socket.on("checkin_reminder_sent", (newNotification) => {
+      setNotifications((prev) => [newNotification, ...prev]);
+      toast.error("🔔 You have a Check-In Reminder from your manager!");
+    });
+
+    socket.on("employee_checked_in", (newNotification) => {
+      setNotifications((prev) => [newNotification, ...prev]);
+      toast.success(`✅ ${newNotification.sender_name || "An employee"} checked in successfully!`);
+    });
+
+    socket.on("manager_notification_resolved", (data) => {
+      setNotifications((prev) => {
+        if (data.status === "Completed" || data.status === "Resolved") {
+          return prev.filter((n) => n.id !== data.notification_id);
+        }
+        return prev.map((n) => {
+          if (n.id === data.notification_id) {
+            return { ...n, status: data.status };
+          }
+          return n;
+        });
+      });
+    });
+
+    return () => {
+      socket.off("birthday_wish_sent");
+      socket.off("birthday_thanks_sent");
+      socket.off("missed_checkin_created");
+      socket.off("checkin_reminder_sent");
+      socket.off("employee_checked_in");
+      socket.off("manager_notification_resolved");
+    };
+  }, []);
+
   // --- Logout ---
   const handleLogout = async () => {
     await logout();
@@ -511,7 +642,112 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         onToggle={() => setShowNotifications(!showNotifications)}
         onClearAll={() => setNotifications([])}
         onDismiss={dismissNotification}
+        onSendThanks={(wishId, senderName) => {
+          setThanksWishId(wishId);
+          setThanksSenderName(senderName);
+        }}
+        onViewThanks={(message) => {
+          setViewThanksMessage(message);
+        }}
+        onRemindCheckIn={(notificationId, employeeName) => {
+          setRemindNotifId(notificationId);
+          setRemindEmployeeName(employeeName);
+        }}
+        onGoToAttendance={() => {
+          localStorage.setItem("highlightCheckIn", "true");
+          navigate("/employee-dashboard");
+        }}
+        onViewAttendance={(employeeId) => {
+          localStorage.setItem("highlightEmployeeId", employeeId.toString());
+          navigate("/manager-dashboard");
+        }}
       />
+
+      {/* Thanks Confirmation Dialog */}
+      {thanksWishId !== null && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-100">
+            <h3 className="text-lg font-bold text-slate-800">Send Thanks</h3>
+            <p className="text-sm text-slate-600 mt-2">
+              Would you like to thank {thanksSenderName} for the birthday wishes?
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setThanksWishId(null);
+                  setThanksSenderName("");
+                }}
+                className="px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendThanks}
+                className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors cursor-pointer"
+              >
+                Send Thanks
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Thanks Appreciation Detail Modal */}
+      {viewThanksMessage !== null && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-100 relative">
+            <button
+              onClick={() => setViewThanksMessage(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-lg cursor-pointer animate-pulse"
+            >
+              ✕
+            </button>
+            <div className="text-center space-y-4">
+              <div className="text-4xl">🎉</div>
+              <h3 className="text-lg font-bold text-slate-800">Appreciation Received</h3>
+              <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-xl italic">
+                {viewThanksMessage}
+              </p>
+              <button
+                onClick={() => setViewThanksMessage(null)}
+                className="mt-2 w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-lg transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Missed Check-In Reminder Confirmation Dialog */}
+      {remindNotifId !== null && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 animate-slide-up">
+            <h3 className="text-lg font-bold text-slate-800">Notify Employee</h3>
+            <p className="text-sm text-slate-600 mt-2 font-medium">
+              {remindEmployeeName} has not completed today's check-in.
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              Would you like to remind the employee to complete the attendance check-in?
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setRemindNotifId(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 transition-colors bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={sendCheckinReminder}
+                disabled={sendingReminder}
+                className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors rounded-xl flex items-center gap-1 shadow-md shadow-blue-100 cursor-pointer"
+              >
+                {sendingReminder ? "Sending..." : "Send Reminder"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Birthday Modal */}
       {birthdayModal && birthdayEmployees.length > 0 && (

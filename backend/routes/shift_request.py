@@ -80,6 +80,13 @@ def apply_shift():
         db.session.add(notification)
         db.session.commit()
 
+        # Emit shift_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("shift_update", shift_request.to_dict())
+        except Exception as socket_err:
+            print("Failed to emit shift socket:", str(socket_err))
+
         return jsonify({
             "success": True,
             "message": "Shift Request Submitted Successfully"
@@ -249,6 +256,13 @@ def approve_shift(id):
         db.session.add(notification)
         db.session.commit()
 
+        # Emit shift_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("shift_update", shift.to_dict())
+        except Exception as socket_err:
+            print("Failed to emit shift socket:", str(socket_err))
+
         return jsonify({
             "success": True,
             "message": "Shift Approved Successfully"
@@ -306,10 +320,16 @@ def reject_shift(id):
         db.session.add(notification)
         db.session.commit()
 
+        # Emit shift_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("shift_update", shift.to_dict())
+        except Exception as socket_err:
+            print("Failed to emit shift socket:", str(socket_err))
+
         return jsonify({
             "success": True,
-            "message":
-            "Shift Rejected Successfully"
+            "message": "Shift Rejected Successfully"
         })
 
     except Exception as e:
@@ -373,10 +393,16 @@ def delete_request(id):
 
         db.session.commit()
 
+        # Emit shift_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("shift_update", {"id": id, "action": "delete"})
+        except Exception as socket_err:
+            print("Failed to emit shift socket:", str(socket_err))
+
         return jsonify({
             "success": True,
-            "message":
-            "Shift Request Deleted Successfully"
+            "message": "Shift Request Deleted Successfully"
         })
 
     except Exception as e:

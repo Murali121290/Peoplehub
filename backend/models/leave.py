@@ -67,17 +67,17 @@ class LeaveLedger(db.Model):
 
     opening_cl = db.Column(db.Float, default=0)
     opening_sl = db.Column(db.Float, default=0)
-    opening_el = db.Column(db.Float, default=0)
+    opening_pl = db.Column(db.Float, default=0)
 
     credit_cl = db.Column(db.Float, default=5)
     credit_sl = db.Column(db.Float, default=5)
-    credit_el = db.Column(db.Float, default=5)
+    credit_pl = db.Column(db.Float, default=5)
 
     taken_cl = db.Column(db.Float, default=0)
     taken_sl = db.Column(db.Float, default=0)
-    taken_el = db.Column(db.Float, default=0)
+    taken_pl = db.Column(db.Float, default=0)
 
     closing_cl = db.Column(db.Float, default=0)
     closing_sl = db.Column(db.Float, default=0)
-    closing_el = db.Column(db.Float, default=0)
+    closing_pl = db.Column(db.Float, default=0)
 

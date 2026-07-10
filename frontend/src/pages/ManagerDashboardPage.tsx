@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { socket } from "../services/socket";
 import {
   UsersIcon,
   CheckCircleIcon,
@@ -18,6 +19,8 @@ import {
   CalendarDaysIcon,
   BuildingOfficeIcon,
   BriefcaseIcon,
+  Squares2X2Icon,
+  ListBulletIcon,
 } from "@heroicons/react/24/outline";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -153,7 +156,7 @@ const initialLeaveRequests = [
     employeeId: 7,
     employeeName: "Anita Roy",
     role: "QA",
-    leaveType: "Earned Leave",
+    leaveType: "Privilege Leave",
     fromDate: "2026-06-10",
     toDate: "2026-06-12",
     reason: "Family function",
@@ -185,8 +188,66 @@ const ManagerDashboardPage = () => {
   const [teamAttendance, setTeamAttendance] = useState<any[]>([]);
   const [attendanceSearch, setAttendanceSearch] = useState("");
   const [attendanceFilter, setAttendanceFilter] = useState("All");
-  const [leaveRequests, setLeaveRequests] = useState(initialLeaveRequests);
+  const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [managerName, setManagerName] = useState("");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [showViewDropdown, setShowViewDropdown] = useState(false);
+
+  // Attendance History States & Callbacks
+  const [historyModalUser, setHistoryModalUser] = useState<any | null>(null);
+  const [historyRecords, setHistoryRecords] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
+  const [hoveredRowId, setHoveredRowId] = useState<number | null>(null);
+  const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
+  const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<number | null>(null);
+
+  const viewEmployeeHistory = async (member: any) => {
+    setHistoryModalUser(member);
+    setLoadingHistory(true);
+    setHistoryRecords([]);
+    try {
+      const response = await fetch(`${BASE_URL}/attendance/history/${member.user_id}`);
+      if (!response.ok) throw new Error("Failed to fetch history");
+      const data = await response.json();
+      setHistoryRecords(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to load attendance history:", error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleApproveToday = async (empUserId: number) => {
+    try {
+      const todayStr = new Date().toISOString().split("T")[0];
+      const response = await fetch(`${BASE_URL}/attendance/approve/${empUserId}?date=${todayStr}`, {
+        method: "PUT",
+      });
+      if (response.ok) {
+        loadTeamAttendance();
+      } else {
+        console.error("Failed to approve today's attendance");
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleRejectToday = async (empUserId: number) => {
+    try {
+      const todayStr = new Date().toISOString().split("T")[0];
+      const response = await fetch(`${BASE_URL}/attendance/reject/${empUserId}?date=${todayStr}`, {
+        method: "PUT",
+      });
+      if (response.ok) {
+        loadTeamAttendance();
+      } else {
+        console.error("Failed to reject today's attendance");
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const userId = localStorage.getItem("user_id");
 
@@ -197,7 +258,125 @@ const ManagerDashboardPage = () => {
     loadTeamMembers();
     loadTeamAttendance();
     loadManagerInfo();
+    loadLeaveRequests();
   }, []);
+
+  useEffect(() => {
+    if (teamAttendance.length > 0) {
+      const highlightIdStr = localStorage.getItem("highlightEmployeeId");
+      if (highlightIdStr) {
+        const targetId = Number(highlightIdStr);
+        setHighlightedEmployeeId(targetId);
+
+        setTimeout(() => {
+          const el = document.getElementById(`employee-row-${targetId}`) || document.getElementById(`employee-card-${targetId}`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 600);
+
+        const timer = setTimeout(() => {
+          setHighlightedEmployeeId(null);
+          localStorage.removeItem("highlightEmployeeId");
+        }, 5000);
+
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [teamAttendance]);
+
+  useEffect(() => {
+    socket.on("attendance_update", (payload: any) => {
+      setTeamAttendance((prev) => {
+        const exists = prev.some((m) => m.id === payload.id);
+        if (exists) {
+          return prev.map((m) => (m.id === payload.id ? { ...m, ...payload } : m));
+        }
+        return prev;
+      });
+    });
+
+    socket.on("attendance_approved_all", () => {
+      loadTeamAttendance();
+    });
+
+    socket.on("leave_update", (payload: any) => {
+      if (
+        payload.reporting_manager?.trim().toLowerCase() ===
+        managerName?.trim().toLowerCase()
+      ) {
+        const mapped = {
+          id: payload.id,
+          employeeId: Number(payload.employee_id),
+          employeeName: payload.employee_name,
+          role: payload.role || "Employee",
+          leaveType: payload.leave_type,
+          fromDate: payload.from_date,
+          toDate: payload.to_date,
+          reason: payload.reason,
+          status: payload.status,
+          submittedAt: "Recently",
+          reporting_manager: payload.reporting_manager,
+        };
+
+        setLeaveRequests((prev) => {
+          const index = prev.findIndex((r) => r.id === payload.id);
+          if (index > -1) {
+            const next = [...prev];
+            next[index] = mapped;
+            return next;
+          }
+          return [mapped, ...prev];
+        });
+
+        // Also update leave status inside teamAttendance
+        if (payload.status === "Approved") {
+          setTeamAttendance((prev) =>
+            prev.map((m) =>
+              m.id === Number(payload.employee_id)
+                ? { ...m, attendance_status: "On Leave" }
+                : m
+            )
+          );
+        }
+      }
+    });
+
+    socket.on("employee_profile_update", (payload: any) => {
+      setTeamMembers((prev) =>
+        prev.map((m) =>
+          m.id === payload.id
+            ? {
+                ...m,
+                role: payload.role || payload.designation || m.role,
+                name: `${payload.first_name} ${payload.last_name}`,
+                email: payload.email,
+              }
+            : m
+        )
+      );
+      setTeamAttendance((prev) =>
+        prev.map((m) =>
+          m.id === payload.id
+            ? {
+                ...m,
+                designation: payload.designation || m.designation,
+                name: `${payload.first_name} ${payload.last_name}`,
+                email: payload.email,
+                shift: payload.shift,
+              }
+            : m
+        )
+      );
+    });
+
+    return () => {
+      socket.off("attendance_update");
+      socket.off("attendance_approved_all");
+      socket.off("leave_update");
+      socket.off("employee_profile_update");
+    };
+  }, [managerName]);
 
   const loadManagerInfo = async () => {
     try {
@@ -244,6 +423,32 @@ const ManagerDashboardPage = () => {
       setTeamAttendance(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Failed to load team attendance", error);
+    }
+  };
+
+  const loadLeaveRequests = async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/leaves/`);
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        // Map backend leaves to match expected format on dashboard
+        const mapped = data.map((l: any) => ({
+          id: l.id,
+          employeeId: Number(l.employee_id),
+          employeeName: l.employee_name,
+          role: l.role || "Employee",
+          leaveType: l.leave_type,
+          fromDate: l.from_date,
+          toDate: l.to_date,
+          reason: l.reason,
+          status: l.status,
+          submittedAt: "Recently",
+          reporting_manager: l.reporting_manager
+        }));
+        setLeaveRequests(mapped);
+      }
+    } catch (error) {
+      console.error("Failed to load leave requests", error);
     }
   };
 
@@ -732,7 +937,7 @@ const ManagerDashboardPage = () => {
                         lineHeight: 1.2,
                       }}
                     >
-                      Team Attendance
+                      Team Members
                     </div>
                     <div
                       style={{
@@ -808,6 +1013,46 @@ const ManagerDashboardPage = () => {
                     <option value="Absent">Absent</option>
                     <option value="On Leave">On Leave</option>
                   </select>
+
+                  <div style={{ display: "flex", background: THEME.surface, border: `1px solid ${THEME.border}`, borderRadius: "12px", overflow: "hidden", height: "42px" }}>
+                    <button
+                      onClick={() => setViewMode("grid")}
+                      style={{
+                        padding: "0 14px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: viewMode === "grid" ? THEME.primary : "transparent",
+                        color: viewMode === "grid" ? "#ffffff" : THEME.textLight,
+                        border: "none",
+                        outline: "none",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                      }}
+                      title="Grid View"
+                    >
+                      <Squares2X2Icon style={{ width: "20px", height: "20px" }} />
+                    </button>
+                    <div style={{ width: "1px", background: THEME.border }} />
+                    <button
+                      onClick={() => setViewMode("list")}
+                      style={{
+                        padding: "0 14px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: viewMode === "list" ? THEME.primary : "transparent",
+                        color: viewMode === "list" ? "#ffffff" : THEME.textLight,
+                        border: "none",
+                        outline: "none",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                      }}
+                      title="List View"
+                    >
+                      <ListBulletIcon style={{ width: "20px", height: "20px" }} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -850,7 +1095,7 @@ const ManagerDashboardPage = () => {
                     No team members are currently mapped under your reporting line.
                   </div>
                 </div>
-              ) : (
+              ) : viewMode === "grid" ? (
                 <div
                   style={{
                     display: "grid",
@@ -886,13 +1131,21 @@ const ManagerDashboardPage = () => {
 
                       return (
                         <div
+                          id={`employee-card-${member.id}`}
                           key={member.id}
+                          onMouseEnter={() => setHoveredCardId(member.id)}
+                          onMouseLeave={() => setHoveredCardId(null)}
+                          onClick={() => viewEmployeeHistory(member)}
                           style={{
                             background: statusStyle.bg,
-                            border: `1px solid ${statusStyle.border}`,
+                            border: highlightedEmployeeId === member.id ? `2px solid #3b82f6` : `1px solid ${statusStyle.border}`,
                             borderRadius: "22px",
                             padding: "18px",
-                            boxShadow: "0 2px 10px rgba(15,23,42,0.03)",
+                            boxShadow: highlightedEmployeeId === member.id ? "0 0 0 4px rgba(59, 130, 246, 0.4), 0 10px 25px rgba(15,23,42,0.08)" : (hoveredCardId === member.id ? "0 10px 25px rgba(15,23,42,0.08)" : "0 2px 10px rgba(15,23,42,0.03)"),
+                            transform: hoveredCardId === member.id ? "translateY(-4px)" : "none",
+                            cursor: "pointer",
+                            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                            animation: highlightedEmployeeId === member.id ? "pulse 1.5s infinite" : "none",
                           }}
                         >
                           <div
@@ -1173,12 +1426,393 @@ const ManagerDashboardPage = () => {
                       );
                     })}
                 </div>
+              ) : (
+                <div style={{ overflowX: "auto", border: `1px solid ${THEME.border}`, borderRadius: "16px" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", background: THEME.surface }}>
+                    <thead>
+                      <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                        <th style={{ padding: "14px 16px" }}>Employee</th>
+                        <th style={{ padding: "14px 16px" }}>Employee ID</th>
+                        <th style={{ padding: "14px 16px" }}>Department</th>
+                        <th style={{ padding: "14px 16px" }}>Designation</th>
+                        <th style={{ padding: "14px 16px" }}>Shift</th>
+                        <th style={{ padding: "14px 16px" }}>Check In</th>
+                        <th style={{ padding: "14px 16px" }}>Check Out</th>
+                        <th style={{ padding: "14px 16px" }}>Working Hours</th>
+                        <th style={{ padding: "14px 16px" }}>Status</th>
+
+                      </tr>
+                    </thead>
+                    <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>
+                      {teamAttendance
+                        .filter((m) => {
+                          const matchSearch =
+                            m.name.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
+                            (m.designation || "")
+                              .toLowerCase()
+                              .includes(attendanceSearch.toLowerCase());
+
+                          const matchFilter =
+                            attendanceFilter === "All" || m.attendance_status === attendanceFilter;
+
+                          return matchSearch && matchFilter;
+                        })
+                        .map((member) => {
+                          const status = member.attendance_status;
+                          const statusStyle = getAttendanceStatusStyle(status);
+
+                          const initials = member.name
+                            .split(" ")
+                            .map((n: string) => n[0])
+                            .join("")
+                            .substring(0, 2)
+                            .toUpperCase();
+
+                          const managerStatus = member.manager_status || "Pending";
+                          const managerStatusStyle =
+                            managerStatus === "Approved"
+                              ? { bg: THEME.successBg, text: THEME.success }
+                              : managerStatus === "Rejected"
+                              ? { bg: THEME.dangerBg, text: THEME.danger }
+                              : { bg: THEME.warningBg, text: THEME.warning };
+
+                          return (
+                            <tr
+                              id={`employee-row-${member.id}`}
+                              key={member.id}
+                              onMouseEnter={() => setHoveredRowId(member.id)}
+                              onMouseLeave={() => setHoveredRowId(null)}
+                              onClick={() => viewEmployeeHistory(member)}
+                              style={{
+                                borderBottom: `1px solid ${THEME.border}`,
+                                background: highlightedEmployeeId === member.id ? "rgba(59, 130, 246, 0.15)" : (hoveredRowId === member.id ? THEME.surfaceSoft : "transparent"),
+                                cursor: "pointer",
+                                transition: "background 0.2s ease",
+                                animation: highlightedEmployeeId === member.id ? "pulse 1.5s infinite" : "none",
+                              }}
+                            >
+                              <td style={{ padding: "12px 16px" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                  {member.profile_image ? (
+                                    <img
+                                      src={`data:image/jpeg;base64,${member.profile_image}`}
+                                      alt={member.name}
+                                      style={{ width: "36px", height: "36px", borderRadius: "10px", objectFit: "cover" }}
+                                    />
+                                  ) : (
+                                    <div
+                                      style={{
+                                        width: "36px",
+                                        height: "36px",
+                                        borderRadius: "10px",
+                                        background: `linear-gradient(135deg, ${THEME.primary} 0%, ${THEME.primaryDark} 100%)`,
+                                        color: "#fff",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        fontSize: "12px",
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      {initials}
+                                    </div>
+                                  )}
+                                  <span style={{ fontWeight: 700, color: THEME.navy }}>{member.name}</span>
+                                </div>
+                              </td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.employee_id || "—"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.department || "—"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.designation || "—"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.shift || "General Shift"}</td>
+                              <td style={{ padding: "12px 16px" }}>{member.check_in || "—"}</td>
+                              <td style={{ padding: "12px 16px" }}>{member.check_out || "—"}</td>
+                              <td style={{ padding: "12px 16px", fontWeight: 700 }}>
+                                {member.working_hours != null ? `${member.working_hours} hrs` : "—"}
+                              </td>
+                              <td style={{ padding: "12px 16px" }}>
+                                <span
+                                  style={{
+                                    display: "inline-flex",
+                                    padding: "4px 8px",
+                                    borderRadius: "999px",
+                                    background: statusStyle.pillBg,
+                                    color: statusStyle.text,
+                                    fontSize: "11px",
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  {status}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </section>
-
         </div>
       </main>
+
+      {/* Attendance History Modal */}
+      {historyModalUser && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(15, 23, 42, 0.4)",
+            backdropFilter: "blur(4px)",
+            padding: "20px",
+            animation: "fadeIn 0.2s ease-out",
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "24px",
+              width: "100%",
+              maxWidth: "800px",
+              maxHeight: "85vh",
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.15)",
+              border: "1px solid #f1f5f9",
+              animation: "slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+              overflow: "hidden",
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: "20px 24px",
+                borderBottom: "1px solid #f1f5f9",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                background: "#f8fafc",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                {historyModalUser.profile_image ? (
+                  <img
+                    src={`data:image/jpeg;base64,${historyModalUser.profile_image}`}
+                    alt={historyModalUser.name}
+                    style={{ width: "48px", height: "48px", borderRadius: "14px", objectFit: "cover" }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "14px",
+                      background: `linear-gradient(135deg, ${THEME.primary} 0%, ${THEME.primaryDark} 100%)`,
+                      color: "#fff",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "14px",
+                      fontWeight: 800,
+                    }}
+                  >
+                    {historyModalUser.name
+                      .split(" ")
+                      .map((n: string) => n[0])
+                      .join("")
+                      .substring(0, 2)
+                      .toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <h3 style={{ fontSize: "16px", fontWeight: 800, color: THEME.navy, margin: 0 }}>
+                    {historyModalUser.name}
+                  </h3>
+                  <p style={{ fontSize: "12px", color: THEME.textSoft, margin: "2px 0 0 0" }}>
+                    {historyModalUser.designation} • {historyModalUser.department} (ID: {historyModalUser.employee_id})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setHistoryModalUser(null)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "20px",
+                  color: "#94a3b8",
+                  cursor: "pointer",
+                  padding: "4px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "50%",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#e2e8f0";
+                  e.currentTarget.style.color = "#475569";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = "#94a3b8";
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
+              <h4 style={{ fontSize: "13px", fontWeight: 700, color: THEME.navy, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "16px" }}>
+                30-Day Attendance History
+              </h4>
+
+              {loadingHistory ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "60px 0", gap: "12px" }}>
+                  <div style={{ width: "32px", height: "32px", border: `3px solid ${THEME.border}`, borderTop: `3px solid ${THEME.primary}`, borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+                  <p style={{ fontSize: "13px", color: THEME.textSoft, fontWeight: 500 }}>Loading attendance records...</p>
+                </div>
+              ) : historyRecords.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "40px 0", color: THEME.textSoft }}>
+                  <span style={{ fontSize: "36px" }}>📅</span>
+                  <p style={{ marginTop: "12px", fontSize: "14px", fontWeight: 600 }}>No attendance history found.</p>
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto", border: "1px solid #f1f5f9", borderRadius: "16px" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc", borderBottom: "1px solid #f1f5f9", fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                        <th style={{ padding: "12px 16px" }}>Date</th>
+                        <th style={{ padding: "12px 16px" }}>Status</th>
+                        <th style={{ padding: "12px 16px" }}>Check In</th>
+                        <th style={{ padding: "12px 16px" }}>Check Out</th>
+                        <th style={{ padding: "12px 16px" }}>Working Hours</th>
+                        <th style={{ padding: "12px 16px" }}>Breaks (L/T)</th>
+                      </tr>
+                    </thead>
+                    <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>
+                      {historyRecords.map((record) => {
+                        let pillBg = "#f1f5f9";
+                        let pillText = "#475569";
+                        const status = record.status || "Absent";
+
+                        if (status === "Present" || status === "Checked Out") {
+                          pillBg = THEME.successBg;
+                          pillText = THEME.success;
+                        } else if (status === "Leave" || status === "On Leave") {
+                          pillBg = THEME.warningBg;
+                          pillText = THEME.warning;
+                        } else if (status === "Absent") {
+                          pillBg = THEME.dangerBg;
+                          pillText = THEME.danger;
+                        }
+
+                        // Format date nicely
+                        const dateObj = new Date(record.date);
+                        const formattedDate = dateObj.toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        });
+
+                        return (
+                          <tr key={record.id} style={{ borderBottom: "1px solid #f8fafc" }}>
+                            <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.navy }}>
+                              {formattedDate}
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <span
+                                style={{
+                                  display: "inline-flex",
+                                  padding: "4px 10px",
+                                  borderRadius: "999px",
+                                  background: pillBg,
+                                  color: pillText,
+                                  fontSize: "11px",
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {status}
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px 16px", color: record.checkIn !== "-" ? THEME.text : THEME.textSoft }}>
+                              {record.checkIn}
+                            </td>
+                            <td style={{ padding: "12px 16px", color: record.checkOut !== "-" ? THEME.text : THEME.textSoft }}>
+                              {record.checkOut}
+                            </td>
+                            <td style={{ padding: "12px 16px", fontWeight: 700, color: record.workingHours > 0 ? THEME.primary : THEME.textSoft }}>
+                              {record.workingHours > 0 ? `${record.workingHours} hrs` : "—"}
+                            </td>
+                            <td style={{ padding: "12px 16px", color: THEME.textSoft }}>
+                              {record.lunchMinutes > 0 || record.teaMinutes > 0 ? (
+                                <span>{record.lunchMinutes}m / {record.teaMinutes}m</span>
+                              ) : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                padding: "16px 24px",
+                borderTop: "1px solid #f1f5f9",
+                display: "flex",
+                justifyContent: "end",
+                background: "#f8fafc",
+              }}
+            >
+              <button
+                onClick={() => setHistoryModalUser(null)}
+                style={{
+                  background: THEME.navy,
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "12px",
+                  padding: "10px 24px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = "0.9";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = "1";
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(20px) scale(0.95); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };

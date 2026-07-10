@@ -51,6 +51,7 @@ from routes.notifications import (
 from routes.appraisal_routes import appraisal_bp
 from routes.meeting_rooms import meeting_rooms_bp
 from routes.telecom import telecom_bp
+from routes.birthday_wishes import birthday_wishes_bp
 from seed.seed_employees import seed_employees
 from seed.seed_telecom import seed_telecom
 from seed.seed_appraisal import seed_appraisal
@@ -99,6 +100,10 @@ def create_app():
     app.register_blueprint(
     telecom_bp,
     url_prefix="/api/telecom"
+)
+    app.register_blueprint(
+    birthday_wishes_bp,
+    url_prefix="/api/birthday-wishes"
 )
     
     app.register_blueprint(
@@ -206,7 +211,8 @@ def create_app():
             'error': 'Internal server error'
         }), 500
         
-    print(app.url_map)
+    # Route map printed in development only
+    # print(app.url_map)
 
     register_socket_events(
     socketio

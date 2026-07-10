@@ -115,66 +115,69 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
 
       {/* Top Details Board */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        {/* Current Shift Card */}
-        <Card className="border border-blue-100 bg-gradient-to-br from-blue-500/5 to-indigo-500/5 p-5 rounded-2xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full translate-x-6 -translate-y-6" />
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-neutral-500 text-xs font-semibold uppercase tracking-wider">Your Assigned Shift</p>
-              <h4 className="text-2xl font-extrabold text-neutral-800 mt-2 select-none tracking-tight">
-                {currentEmployee?.shift_timing || "General Shift"}
-              </h4>
-              <p className="text-xs text-neutral-400 mt-1.5 font-medium flex items-center gap-1">
-                <ClockIcon className="w-3.5 h-3.5" />
-                Standard: 09:00 AM - 06:00 PM
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-blue-500 text-white shadow-sm">
-              <BriefcaseIcon className="w-5 h-5" />
-            </div>
-          </div>
-        </Card>
+  {[
+    {
+      label: "Your Assigned Shift",
+      value: currentEmployee?.shift_timing || "General Shift",
+      subtext: "Standard: 09:00 AM - 06:00 PM",
+      icon: BriefcaseIcon,
+      metaIcon: ClockIcon,
+      iconWrap: "bg-blue-50",
+      iconColor: "text-blue-600",
+    },
+    {
+      label: "Approving Manager",
+      value: currentEmployee?.reporting_manager || "Admin",
+      subtext: "Assigned reporting lead",
+      icon: UserIcon,
+      metaIcon: UserIcon,
+      iconWrap: "bg-emerald-50",
+      iconColor: "text-emerald-600",
+    },
+    {
+      label: "Pending Requests",
+      value: `${activeShiftRequests.length} Requests`,
+      subtext: "Awaiting manager decision",
+      icon: ArrowPathIcon,
+      metaIcon: ArrowPathIcon,
+      iconWrap: "bg-violet-50",
+      iconColor: "text-violet-600",
+    },
+  ].map((item) => {
+    const Icon = item.icon;
+    const MetaIcon = item.metaIcon;
 
-        {/* Manager Card */}
-        <Card className="border border-emerald-100 bg-gradient-to-br from-emerald-500/5 to-teal-500/5 p-5 rounded-2xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full translate-x-6 -translate-y-6" />
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-neutral-500 text-xs font-semibold uppercase tracking-wider">Approving Manager</p>
-              <h4 className="text-2xl font-extrabold text-neutral-800 mt-2 select-none tracking-tight">
-                {currentEmployee?.reporting_manager || "Admin"}
-              </h4>
-              <p className="text-xs text-neutral-400 mt-1.5 font-medium flex items-center gap-1">
-                <UserIcon className="w-3.5 h-3.5" />
-                Assigned reporting lead
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-emerald-500 text-white shadow-sm">
-              <UserIcon className="w-5 h-5" />
-            </div>
-          </div>
-        </Card>
+    return (
+      <Card
+        key={item.label}
+        className="rounded-[18px] border border-slate-200/80 bg-white px-5 py-4 shadow-[0_2px_10px_rgba(15,23,42,0.05)] transition-all duration-300 hover:shadow-[0_6px_18px_rgba(15,23,42,0.08)]"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] uppercase tracking-[0.14em] font-semibold text-slate-400">
+              {item.label}
+            </p>
 
-        {/* Active Requests Summary */}
-        <Card className="border border-purple-100 bg-gradient-to-br from-purple-500/5 to-pink-500/5 p-5 rounded-2xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full translate-x-6 -translate-y-6" />
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-neutral-500 text-xs font-semibold uppercase tracking-wider">Pending Requests</p>
-              <h4 className="text-2xl font-extrabold text-neutral-800 mt-2 select-none tracking-tight">
-                {activeShiftRequests.length} Requests
-              </h4>
-              <p className="text-xs text-neutral-400 mt-1.5 font-medium flex items-center gap-1">
-                <ArrowPathIcon className="w-3.5 h-3.5" />
-                Awaiting manager decision
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-purple-500 text-white shadow-sm">
-              <ArrowPathIcon className="w-5 h-5" />
-            </div>
+            <h4 className="mt-2 text-[26px] leading-tight font-bold tracking-tight text-slate-900 break-words">
+              {item.value}
+            </h4>
+
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-400">
+              <MetaIcon className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{item.subtext}</span>
+            </p>
           </div>
-        </Card>
-      </div>
+
+          <div
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.iconWrap}`}
+          >
+            <Icon className={`h-5 w-5 ${item.iconColor}`} />
+          </div>
+        </div>
+      </Card>
+    );
+  })}
+</div>
 
       {/* Navigation Switch Tabs */}
       <div className="flex gap-3 mb-6 p-1 bg-neutral-100 rounded-xl w-fit border border-neutral-200">

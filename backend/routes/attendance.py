@@ -10,6 +10,7 @@ from datetime import timedelta
 from openpyxl.styles import Font
 from openpyxl.styles import PatternFill
 from flask import send_file
+from zoneinfo import ZoneInfo
 from models.leave import LeaveRequest, LeaveLedger
 from io import BytesIO
 
@@ -84,12 +85,8 @@ def check_in():
                 employee.shift_timing or ""
             ).strip().lower()
 
-        current_time = datetime.now().time()
-        
-        print("================================")
-        print("Employee Shift name resolved:", shift_name)
-        print("Current Time:", current_time)
-        print("================================")
+        # Use IST time for shift validation (not server UTC)
+        current_time = datetime.now(ZoneInfo("Asia/Kolkata")).time()
 
         # First Shift (06:00 AM - 02:00 PM)
         if shift_name == "first shift":
@@ -193,17 +190,118 @@ def check_in():
 
         db.session.add(attendance)
 
-        # Delete any "Missed Check In" notifications for this employee immediately
+        # Update and resolve related notifications
         try:
             from models.notification import Notification
-            Notification.query.filter(
-                Notification.title == "Missed Check In",
-                Notification.message.like(f"%{employee.employee_id}%")
-            ).delete(synchronize_session=False)
+            from extensions import socketio
+
+            # 1. Look up manager's employee details to locate their socket room
+            manager_name = employee.reporting_manager.strip().lower() if employee.reporting_manager else ""
+            manager_emp = None
+            for e in Employee.query.all():
+                full_name = f"{e.first_name} {e.last_name}".strip().lower()
+                if full_name == manager_name:
+                    manager_emp = e
+                    break
+
+            # 2. Automatically remove the Missed Check-In notification from manager's list
+            missed_notifs = Notification.query.filter(
+                Notification.title.in_(["Missed Check In", "⏰ Missed Check In"]),
+                Notification.related_id == employee.id
+            ).all()
+
+            for n in missed_notifs:
+                db.session.delete(n)
+                if manager_emp:
+                    socketio.emit(
+                        "manager_notification_resolved",
+                        {"notification_id": n.id, "status": "Completed"},
+                        to=str(manager_emp.id)
+                    )
+
+            # 3. Mark the reminder notification for employee as completed/resolved
+            reminder_notifs = Notification.query.filter(
+                Notification.title == "🔔 Check-In Reminder",
+                Notification.related_id == employee.id,
+                Notification.resolved == False
+            ).all()
+
+            for r in reminder_notifs:
+                r.resolved = True
+                r.status = "Completed"
+                r.resolved_at = datetime.utcnow()
+                socketio.emit(
+                    "manager_notification_resolved",
+                    {"notification_id": r.id, "status": "Completed"},
+                    to=str(employee.id)
+                )
+
+            # 4. Create a new notification for the manager
+            if employee.reporting_manager:
+                manager_notif = Notification(
+                    receiver_name=employee.reporting_manager,
+                    title="✅ Employee Checked In",
+                    message=f"{employee.first_name} {employee.last_name} has successfully completed today's attendance check-in.",
+                    related_id=employee.id,
+                    related_type="employee_checked_in",
+                    notification_type="employee_checked_in",
+                    status="Completed",
+                    action_required=False,
+                    resolved=True,
+                    resolved_at=datetime.utcnow()
+                )
+                db.session.add(manager_notif)
+                db.session.flush()
+
+                if manager_emp:
+                    notif_dict = {
+                        "id": manager_notif.id,
+                        "title": manager_notif.title,
+                        "message": manager_notif.message,
+                        "is_read": False,
+                        "created_at": manager_notif.created_at.isoformat() if manager_notif.created_at else None,
+                        "related_id": manager_notif.related_id,
+                        "related_type": manager_notif.related_type,
+                        "thanked": False,
+                        "sender_employee_id": employee.id,
+                        "sender_name": f"{employee.first_name} {employee.last_name}",
+                        "notification_type": manager_notif.notification_type,
+                        "status": manager_notif.status,
+                        "action_required": manager_notif.action_required,
+                        "resolved": manager_notif.resolved,
+                        "resolved_at": manager_notif.resolved_at.isoformat() if manager_notif.resolved_at else None
+                    }
+                    socketio.emit(
+                        "employee_checked_in",
+                        notif_dict,
+                        to=str(manager_emp.id)
+                    )
         except Exception as delete_err:
-            print("Failed to delete missed check-in notification:", str(delete_err))
+            print("Failed to process check-in notifications update:", str(delete_err))
 
         db.session.commit()
+
+        # Emit attendance_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            payload = {
+                "id": employee.id,
+                "user_id": employee.user_id,
+                "attendance_status": "Present",
+                "check_in": attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None,
+                "check_out": None,
+                "working_hours": 0.0,
+                "lunch_minutes": attendance.lunch_minutes or 0,
+                "tea_minutes": attendance.tea_minutes or 0,
+                "shift": employee.shift_timing or "General Shift",
+                "manager_status": attendance.manager_status or "Pending",
+                "checked_in": True,
+                "lunch_break": False,
+                "tea_break": False
+            }
+            socketio.emit("attendance_update", payload)
+        except Exception as socket_err:
+            print("Failed to emit check-in socket:", str(socket_err))
 
         return jsonify({
             "success": True,
@@ -281,6 +379,31 @@ def check_out():
         attendance.status = "Present"
 
         db.session.commit()
+
+        # Emit attendance_update socket event for real-time dashboard updates
+        try:
+            from models.employee import Employee
+            from extensions import socketio
+            employee = Employee.query.filter_by(user_id=user_id).first()
+            if employee:
+                payload = {
+                    "id": employee.id,
+                    "user_id": employee.user_id,
+                    "attendance_status": "Checked Out",
+                    "check_in": attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None,
+                    "check_out": attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None,
+                    "working_hours": attendance.total_hours or 0.0,
+                    "lunch_minutes": attendance.lunch_minutes or 0,
+                    "tea_minutes": attendance.tea_minutes or 0,
+                    "shift": employee.shift_timing or "General Shift",
+                    "manager_status": attendance.manager_status or "Pending",
+                    "checked_in": False,
+                    "lunch_break": False,
+                    "tea_break": False
+                }
+                socketio.emit("attendance_update", payload)
+        except Exception as socket_err:
+            print("Failed to emit checkout socket:", str(socket_err))
 
         return jsonify({
             "success": True,
@@ -406,6 +529,33 @@ def lunch_break():
 
         db.session.commit()
 
+        # Emit attendance_update socket event for real-time dashboard updates
+        try:
+            from models.employee import Employee
+            from extensions import socketio
+            employee = Employee.query.filter_by(user_id=data["user_id"]).first()
+            if employee:
+                payload = {
+                    "id": employee.id,
+                    "user_id": employee.user_id,
+                    "attendance_status": "Present" if not attendance.check_out else "Checked Out",
+                    "check_in": attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None,
+                    "check_out": attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None,
+                    "working_hours": attendance.total_hours or 0.0,
+                    "lunch_minutes": attendance.lunch_minutes or 0,
+                    "tea_minutes": attendance.tea_minutes or 0,
+                    "shift": employee.shift_timing or "General Shift",
+                    "manager_status": attendance.manager_status or "Pending",
+                    "checked_in": True if not attendance.check_out else False,
+                    "lunch_break": attendance.lunch_break or False,
+                    "tea_break": attendance.tea_break or False,
+                    "lunch_start": attendance.lunch_start.isoformat() if attendance.lunch_start else None,
+                    "lunch_end": attendance.lunch_end.isoformat() if attendance.lunch_end else None
+                }
+                socketio.emit("attendance_update", payload)
+        except Exception as socket_err:
+            print("Failed to emit lunch socket:", str(socket_err))
+
         return jsonify({
             "success": True
         })
@@ -471,6 +621,33 @@ def tea_break():
         )
 
         db.session.commit()
+
+        # Emit attendance_update socket event for real-time dashboard updates
+        try:
+            from models.employee import Employee
+            from extensions import socketio
+            employee = Employee.query.filter_by(user_id=data["user_id"]).first()
+            if employee:
+                payload = {
+                    "id": employee.id,
+                    "user_id": employee.user_id,
+                    "attendance_status": "Present" if not attendance.check_out else "Checked Out",
+                    "check_in": attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None,
+                    "check_out": attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None,
+                    "working_hours": attendance.total_hours or 0.0,
+                    "lunch_minutes": attendance.lunch_minutes or 0,
+                    "tea_minutes": attendance.tea_minutes or 0,
+                    "shift": employee.shift_timing or "General Shift",
+                    "manager_status": attendance.manager_status or "Pending",
+                    "checked_in": True if not attendance.check_out else False,
+                    "lunch_break": attendance.lunch_break or False,
+                    "tea_break": attendance.tea_break or False,
+                    "tea_start": attendance.tea_start.isoformat() if attendance.tea_start else None,
+                    "tea_end": attendance.tea_end.isoformat() if attendance.tea_end else None
+                }
+                socketio.emit("attendance_update", payload)
+        except Exception as socket_err:
+            print("Failed to emit tea socket:", str(socket_err))
 
         return jsonify({
             "success": True
@@ -1245,19 +1422,19 @@ def credit_monthly_leaves():
 
             opening_cl = employee.casual_leave or 0
             opening_sl = employee.sick_leave or 0
-            opening_el = employee.earned_leave or 0
+            opening_pl = employee.privilege_leave or 0
 
-            credit_cl = 5
-            credit_sl = 5
-            credit_el = 5
+            credit_cl = 6
+            credit_sl = 6
+            credit_pl = 15
 
             closing_cl = opening_cl + credit_cl
             closing_sl = opening_sl + credit_sl
-            closing_el = opening_el + credit_el
+            closing_pl = opening_pl + credit_pl
 
             employee.casual_leave = closing_cl
             employee.sick_leave = closing_sl
-            employee.earned_leave = closing_el
+            employee.privilege_leave = closing_pl
 
             ledger = LeaveLedger(
 
@@ -1268,15 +1445,15 @@ def credit_monthly_leaves():
 
                 opening_cl=opening_cl,
                 opening_sl=opening_sl,
-                opening_el=opening_el,
+                opening_pl=opening_pl,
 
                 credit_cl=credit_cl,
                 credit_sl=credit_sl,
-                credit_el=credit_el,
+                credit_pl=credit_pl,
 
                 closing_cl=closing_cl,
                 closing_sl=closing_sl,
-                closing_el=closing_el
+                closing_pl=closing_pl
             )
 
             db.session.add(ledger)
@@ -1691,16 +1868,21 @@ def export_paysheet():
 def approve_attendance(employee_id):
 
     try:
-        yesterday = date.today() - timedelta(days=1)
+        target_date_str = request.args.get("date")
+        if target_date_str:
+            target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+        else:
+            target_date = date.today() - timedelta(days=1)
+
         attendance = Attendance.query.filter_by(
             user_id=employee_id,
-            attendance_date=yesterday
+            attendance_date=target_date
         ).first()
 
         if not attendance:
             attendance = Attendance(
                 user_id=employee_id,
-                attendance_date=yesterday,
+                attendance_date=target_date,
                 status="Present",
                 manager_status="Approved"
             )
@@ -1710,6 +1892,31 @@ def approve_attendance(employee_id):
             attendance.manager_status = "Approved"
 
         db.session.commit()
+
+        # Emit attendance_update socket event for real-time dashboard updates
+        try:
+            from models.employee import Employee
+            from extensions import socketio
+            employee = Employee.query.filter_by(user_id=employee_id).first()
+            if employee:
+                payload = {
+                    "id": employee.id,
+                    "user_id": employee.user_id,
+                    "attendance_status": attendance.status or "Present",
+                    "check_in": attendance.check_in.strftime("%I:%M %p") if (attendance and attendance.check_in) else None,
+                    "check_out": attendance.check_out.strftime("%I:%M %p") if (attendance and attendance.check_out) else None,
+                    "working_hours": attendance.total_hours or 0.0,
+                    "lunch_minutes": attendance.lunch_minutes or 0,
+                    "tea_minutes": attendance.tea_minutes or 0,
+                    "shift": employee.shift_timing or "General Shift",
+                    "manager_status": attendance.manager_status or "Pending",
+                    "checked_in": (attendance and attendance.check_in is not None and attendance.check_out is None),
+                    "lunch_break": attendance.lunch_break or False,
+                    "tea_break": attendance.tea_break or False
+                }
+                socketio.emit("attendance_update", payload)
+        except Exception as socket_err:
+            print("Failed to emit approve socket:", str(socket_err))
 
         return jsonify({
             "success": True,
@@ -1733,16 +1940,21 @@ def approve_attendance(employee_id):
 def reject_attendance(employee_id):
 
     try:
-        yesterday = date.today() - timedelta(days=1)
+        target_date_str = request.args.get("date")
+        if target_date_str:
+            target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+        else:
+            target_date = date.today() - timedelta(days=1)
+
         attendance = Attendance.query.filter_by(
             user_id=employee_id,
-            attendance_date=yesterday
+            attendance_date=target_date
         ).first()
 
         if not attendance:
             attendance = Attendance(
                 user_id=employee_id,
-                attendance_date=yesterday,
+                attendance_date=target_date,
                 status="Absent",
                 manager_status="Rejected"
             )
@@ -1752,6 +1964,31 @@ def reject_attendance(employee_id):
             attendance.manager_status = "Rejected"
 
         db.session.commit()
+
+        # Emit attendance_update socket event for real-time dashboard updates
+        try:
+            from models.employee import Employee
+            from extensions import socketio
+            employee = Employee.query.filter_by(user_id=employee_id).first()
+            if employee:
+                payload = {
+                    "id": employee.id,
+                    "user_id": employee.user_id,
+                    "attendance_status": attendance.status or "Absent",
+                    "check_in": attendance.check_in.strftime("%I:%M %p") if (attendance and attendance.check_in) else None,
+                    "check_out": attendance.check_out.strftime("%I:%M %p") if (attendance and attendance.check_out) else None,
+                    "working_hours": attendance.total_hours or 0.0,
+                    "lunch_minutes": attendance.lunch_minutes or 0,
+                    "tea_minutes": attendance.tea_minutes or 0,
+                    "shift": employee.shift_timing or "General Shift",
+                    "manager_status": attendance.manager_status or "Pending",
+                    "checked_in": (attendance and attendance.check_in is not None and attendance.check_out is None),
+                    "lunch_break": attendance.lunch_break or False,
+                    "tea_break": attendance.tea_break or False
+                }
+                socketio.emit("attendance_update", payload)
+        except Exception as socket_err:
+            print("Failed to emit reject socket:", str(socket_err))
 
         return jsonify({
             "success": True,
@@ -1787,6 +2024,13 @@ def approve_all_attendance():
             attendance.manager_status = "Approved"
 
         db.session.commit()
+
+        # Emit attendance_approved_all socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("attendance_approved_all", {"status": "Approved"})
+        except Exception as socket_err:
+            print("Failed to emit approve-all socket:", str(socket_err))
 
         return jsonify({
             "success": True,

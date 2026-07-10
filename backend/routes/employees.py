@@ -15,13 +15,6 @@ from models.leave import LeaveRequest
 
 employees_bp = Blueprint("employees", __name__)
 
-
-# ======================================
-# HR CREATE EMPLOYEE
-# ======================================
-
-print("Creating employee...")
-
 @employees_bp.route("/", methods=["POST"])
 def create_employee():
     try:
@@ -202,8 +195,8 @@ def get_employees():
             "casual_leave":
                 emp.casual_leave,
 
-            "earned_leave":
-                emp.earned_leave
+            "privilege_leave":
+                emp.privilege_leave
         })
 
     return jsonify(result)
@@ -342,8 +335,8 @@ def get_employee(employee_id):
 
     "user_id": employee.user_id,
     "sick_leave": employee.sick_leave,
-"casual_leave": employee.casual_leave,
-"earned_leave": employee.earned_leave
+    "casual_leave": employee.casual_leave,
+    "privilege_leave": employee.privilege_leave
 })
 
 
@@ -746,6 +739,25 @@ def update_employee_profile(employee_id):
 
         db.session.commit()
 
+        # Emit employee_profile_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("employee_profile_update", {
+                "id": employee.id,
+                "user_id": employee.user_id,
+                "first_name": employee.first_name,
+                "last_name": employee.last_name,
+                "email": employee.email,
+                "phone": employee.phone,
+                "designation": employee.designation,
+                "department": employee.department,
+                "role": employee.role,
+                "shift": employee.shift_timing or "General Shift",
+                "status": employee.status
+            })
+        except Exception as socket_err:
+            print("Failed to emit profile socket:", str(socket_err))
+
         return jsonify({
             "success": True,
             "message": "Profile Updated Successfully"
@@ -880,7 +892,10 @@ def get_my_team(user_id):
                 "designation": employee.designation,
                 "salary": employee.salary,
                 "reporting_manager": employee.reporting_manager,
-                "status": employee.status
+                "status": employee.status,
+                "sick_leave": employee.sick_leave,
+                "casual_leave": employee.casual_leave,
+                "privilege_leave": employee.privilege_leave
             })
 
     return jsonify(result)
@@ -959,6 +974,8 @@ def get_team_attendance(user_id):
                 "working_hours": working_hours,
                 "lunch_minutes": attendance.lunch_minutes if attendance else 0,
                 "tea_minutes": attendance.tea_minutes if attendance else 0,
+                "shift": emp.shift_timing or "General Shift",
+                "manager_status": attendance.manager_status if (attendance and attendance.manager_status) else "Pending",
             })
 
         return jsonify(result)
@@ -1313,8 +1330,8 @@ def get_employee_details(employee_id):
                 "casual_leave":
                     employee.casual_leave,
 
-                "earned_leave":
-                    employee.earned_leave,
+                "privilege_leave":
+                    employee.privilege_leave,
 
                 "attendance_history": [
                     {

@@ -5,13 +5,16 @@ from models.employee import Employee
 from models.attendance import Attendance
 from models.notification import Notification
 from models.database import db
+from extensions import socketio
+from zoneinfo import ZoneInfo
+
 
 
 def check_missed_checkins():
 
     print("\n========== CHECK-IN MONITOR RUNNING ==========")
 
-    now = datetime.utcnow()
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
     start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     one_minute_ago = now - timedelta(minutes=1)
 
@@ -48,7 +51,7 @@ def check_missed_checkins():
         )
 
         # Check today's attendance
-        today = datetime.now().date()
+        today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
         today_attendance = Attendance.query.filter(
         Attendance.user_id == user.id,
@@ -65,95 +68,109 @@ def check_missed_checkins():
                 f"{employee.employee_id} already has attendance today"
             )
 
-            deleted = Notification.query.filter(
-              Notification.title == "Missed Check In",
-              Notification.message.like(
-                f"%{employee.employee_id}%"
-              )
-            ).delete(
-                synchronize_session=False
-            )
+            # Clean up and resolve any active missed check-in notifications
+            manager_name = employee.reporting_manager.strip().lower()
+            manager_emp = None
+            for e in Employee.query.all():
+                full_name = f"{e.first_name} {e.last_name}".strip().lower()
+                if full_name == manager_name:
+                    manager_emp = e
+                    break
+
+            pending_notifs = Notification.query.filter(
+                Notification.title.in_(["Missed Check In", "⏰ Missed Check In"]),
+                Notification.related_id == employee.id
+            ).all()
+
+            for n in pending_notifs:
+                db.session.delete(n)
+                if manager_emp:
+                    socketio.emit(
+                        "manager_notification_resolved",
+                        {"notification_id": n.id, "status": "Resolved"},
+                        to=str(manager_emp.id)
+                    )
 
             db.session.commit()
-
-            print(
-                f"Removed {deleted} notification(s) for "
-                f"{employee.employee_id}"
-            )
-
             continue
 
         # Check duplicate notification
         already_sent = Notification.query.filter(
-            Notification.title ==
-            "Missed Check In",
-
-            Notification.message.like(
-                f"%{employee.employee_id}%"
-            )
+            Notification.title == "⏰ Missed Check In",
+            Notification.related_id == employee.id
         ).first()
 
         if already_sent:
-
             print(
-                f"Notification already sent for "
-                f"{employee.employee_id}"
+                f"Notification already sent for {employee.employee_id}"
             )
-
             continue
 
         # Check reporting manager
         if not employee.reporting_manager:
-
             print(
                 f"{employee.employee_id} has no reporting manager"
             )
-
             continue
 
         # Create notification
         notification = Notification(
-
-            receiver_name=
-                employee.reporting_manager,
-
-            title=
-                "Missed Check In",
-
-            message=
-                f"Employee ID: "
-                f"{employee.employee_id} - "
-                f"{employee.first_name} "
-                f"{employee.last_name} "
-                f"logged in but has not "
-                f"checked in within 1 minute."
+            receiver_name=employee.reporting_manager,
+            title="⏰ Missed Check In",
+            message=f"Employee {employee.employee_id} - {employee.first_name} {employee.last_name} logged into the system but has not checked in within the allowed time.",
+            related_id=employee.id,
+            related_type="missed_checkin",
+            notification_type="missed_checkin",
+            status="Pending",
+            action_required=True,
+            resolved=False
         )
 
-        db.session.add(
-            notification
-        )
+        db.session.add(notification)
+        db.session.flush() # Flush to populate ID before emitting
+
+        # Lookup reporting manager employee ID
+        manager_name = employee.reporting_manager.strip().lower()
+        manager_emp = None
+        for e in Employee.query.all():
+            full_name = f"{e.first_name} {e.last_name}".strip().lower()
+            if full_name == manager_name:
+                manager_emp = e
+                break
+
+        if manager_emp:
+            notif_dict = {
+                "id": notification.id,
+                "title": notification.title,
+                "message": notification.message,
+                "is_read": False,
+                "created_at": notification.created_at.isoformat() if notification.created_at else None,
+                "related_id": notification.related_id,
+                "related_type": notification.related_type,
+                "thanked": False,
+                "sender_employee_id": employee.id,
+                "sender_name": f"{employee.first_name} {employee.last_name}",
+                "notification_type": notification.notification_type,
+                "status": notification.status,
+                "action_required": notification.action_required,
+                "resolved": notification.resolved,
+                "resolved_at": None
+            }
+            socketio.emit(
+                "missed_checkin_created",
+                notif_dict,
+                to=str(manager_emp.id)
+            )
 
         print(
-            f"Notification Created For: "
-            f"{employee.reporting_manager}"
+            f"Notification Created For: {employee.reporting_manager}"
         )
 
     try:
-
         db.session.commit()
-
-        print(
-            "Notifications Saved Successfully"
-        )
-
+        print("Notifications Saved Successfully")
     except Exception as e:
-
         db.session.rollback()
+        print(f"Database Error: {str(e)}")
 
-        print(
-            f"Database Error: {str(e)}"
-        )
-
-    print(
-        "========== CHECK-IN MONITOR COMPLETED ==========\n"
-    )
+    print("========== CHECK-IN MONITOR COMPLETED ==========\n")

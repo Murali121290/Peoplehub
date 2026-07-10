@@ -7,7 +7,7 @@ interface BirthdayModalProps {
   currentEmployee: any;
   user: any;
   onClose: () => void;
-  onSendWish: (emp: any) => void;
+  onSendWish: (emp: any, message: string) => void;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -107,6 +107,15 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
   onClose,
   onSendWish,
 }) => {
+  const [selectedEmpForWish, setSelectedEmpForWish] = React.useState<any | null>(null);
+  const [wishMessage, setWishMessage] = React.useState<string>("");
+
+  const presetMessages = [
+    "Happy Birthday! Wishing you a wonderful year ahead. 🎂🎉",
+    "Wishing you a very Happy Birthday! Hope you have a great day filled with joy. ✨",
+    "Happy Birthday! May your day be as wonderful as you are. Have a blast! 🥳",
+  ];
+
   if (isMyBirthday) {
     return (
       <div className="fixed inset-0 z-[9999] bg-[linear-gradient(135deg,#d3d6ea_0%,#b8bcdb_45%,#9ea5d0_100%)] overflow-y-auto">
@@ -197,10 +206,12 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
   }
 
   return (
-    <div className="fixed top-5 right-5 z-[9999] w-[420px] max-w-[92vw]">
+    <div className="fixed top-5 right-5 z-[9999] w-[440px] max-w-[92vw]">
       <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
         <div className="bg-gradient-to-r from-gray-800 to-gray-600 px-6 py-5 flex justify-between items-center">
-          <h2 className="text-white font-bold text-xl">🎉 Today's Birthdays</h2>
+          <h2 className="text-white font-bold text-xl">
+            {selectedEmpForWish ? "✨ Customize Wishes" : "🎉 Today's Birthdays"}
+          </h2>
           <button
             onClick={onClose}
             className="text-white text-3xl leading-none hover:opacity-80 transition-opacity"
@@ -209,42 +220,133 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
           </button>
         </div>
 
-        <div className="max-h-[420px] overflow-y-auto p-5 space-y-4">
-          {birthdayEmployees.map((emp: any) => (
-            <div
-              key={emp.id}
-              className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors"
-            >
+        {selectedEmpForWish ? (
+          <div className="p-6 space-y-5">
+            <div className="flex items-center gap-4 border-b border-gray-100 pb-4">
               <img
-                src={`${BASE_URL}/employees/image/${emp.id}`}
-                alt={emp.first_name}
-                className="w-16 h-16 rounded-full object-cover border border-gray-300 shadow-sm"
+                src={`${BASE_URL}/employees/image/${selectedEmpForWish.id}`}
+                alt={selectedEmpForWish.first_name}
+                className="w-14 h-14 rounded-full object-cover border border-gray-200"
                 onError={(e) => {
                   e.currentTarget.src =
                     "https://cdn-icons-png.flaticon.com/512/149/149071.png";
                 }}
               />
               <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-gray-800 text-lg truncate">
-                  {emp.first_name} {emp.last_name}
+                <h3 className="font-bold text-gray-800 text-base truncate">
+                  Send Wishes to {selectedEmpForWish.first_name} {selectedEmpForWish.last_name}
                 </h3>
-                <p className="text-sm text-gray-500 truncate">{emp.designation}</p>
-                <p className="text-sm text-gray-700 font-semibold mt-1">
-                  🎂 Birthday Today
+                <p className="text-xs text-gray-500 truncate">
+                  {selectedEmpForWish.designation} &bull; {selectedEmpForWish.department}
                 </p>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
+                Select a Preset Message
+              </label>
+              <div className="flex flex-col gap-2">
+                {presetMessages.map((msg, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setWishMessage(msg)}
+                    className={`text-left text-sm px-4 py-2.5 rounded-lg border transition-all ${
+                      wishMessage === msg
+                        ? "border-emerald-600 bg-emerald-50 text-emerald-800 font-semibold"
+                        : "border-gray-200 hover:bg-gray-50 text-gray-700"
+                    }`}
+                  >
+                    {msg}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
+                Or Customize Your Message
+              </label>
+              <textarea
+                value={wishMessage}
+                onChange={(e) => setWishMessage(e.target.value)}
+                placeholder="Type your birthday wish message..."
+                rows={3}
+                className="w-full text-sm p-3 rounded-lg border border-gray-200 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 focus:outline-none transition-all resize-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => {
+                  setSelectedEmpForWish(null);
+                  setWishMessage("");
+                }}
+                className="px-4 py-2 text-sm font-semibold text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                Back
+              </button>
               <button
                 onClick={async () => {
-                  await onSendWish(emp);
-                  onClose();
-                }}
-                className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap"
+  if (!wishMessage.trim()) return;
+
+  try {
+    await onSendWish(selectedEmpForWish, wishMessage);
+
+    setSelectedEmpForWish(null);
+    setWishMessage("");
+
+    onClose();
+  } catch (error) {
+    console.error(error);
+  }
+}}
+                disabled={!wishMessage.trim()}
+                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors"
               >
-                Wishes
+                Send Wishes
               </button>
             </div>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className="max-h-[420px] overflow-y-auto p-5 space-y-4">
+            {birthdayEmployees.map((emp: any) => (
+              <div
+                key={emp.id}
+                className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors"
+              >
+                <img
+                  src={`${BASE_URL}/employees/image/${emp.id}`}
+                  alt={emp.first_name}
+                  className="w-16 h-16 rounded-full object-cover border border-gray-300 shadow-sm"
+                  onError={(e) => {
+                    e.currentTarget.src =
+                      "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+                  }}
+                />
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-gray-800 text-lg truncate">
+                    {emp.first_name} {emp.last_name}
+                  </h3>
+                  <p className="text-sm text-gray-500 truncate">{emp.designation}</p>
+                  <p className="text-sm text-gray-700 font-semibold mt-1">
+                    🎂 Birthday Today
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedEmpForWish(emp);
+                    setWishMessage(presetMessages[0]);
+                  }}
+                  className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap"
+                >
+                  🎉 Wishes
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="text-center text-sm text-gray-500 py-3.5 border-t border-gray-200 bg-gray-50">
           — S4 Carlisle Publishing Services

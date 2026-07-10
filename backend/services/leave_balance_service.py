@@ -43,44 +43,18 @@ def update_leave_balance(employee):
         return False
 
     today = datetime.today()
-
-    # Run only on or after 25th
-    if today.day < 25:
-        return False
-
-    current_month = today.month
     current_year = today.year
 
-    # Prevent duplicate credit for same month
-    if (
-        employee.last_leave_reset_month == str(current_month)
-        and
-        employee.last_leave_reset_year == current_year
-    ):
-        return False
+    # Reset once per calendar year
+    if employee.last_leave_reset_year != current_year:
+        employee.sick_leave = 6.0
+        employee.casual_leave = 6.0
+        employee.privilege_leave = 15.0
+        employee.last_leave_reset_year = current_year
+        employee.last_leave_reset_month = str(today.month)
+        return True
 
-    # Monthly Leave Credit
-    employee.casual_leave = (
-        employee.casual_leave or 0
-    ) + 1.5
-
-    employee.sick_leave = (
-        employee.sick_leave or 0
-    ) + 1.5
-
-    employee.earned_leave = (
-        employee.earned_leave or 0
-    ) + 2
-
-    employee.last_leave_reset_month = str(
-        current_month
-    )
-
-    employee.last_leave_reset_year = (
-        current_year
-    )
-
-    return True
+    return False
 
 
 def update_all_employee_leave_balances():
@@ -135,12 +109,12 @@ def update_single_employee_leave_balance(
             employee.casual_leave,
             "sick_leave":
             employee.sick_leave,
-            "earned_leave":
-            employee.earned_leave
+            "privilege_leave":
+            employee.privilege_leave
         }
 
     return {
         "success": False,
         "message":
-        "Already credited this month or before 25th"
+        "Already reset for this year"
     }

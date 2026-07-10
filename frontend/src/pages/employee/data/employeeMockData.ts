@@ -24,7 +24,7 @@ export const tasksData: Task[] = [
 export const leaveRequestsData: LeaveRequest[] = [
   { id: 1, leaveType: "Sick Leave", fromDate: "2026-06-04", toDate: "2026-06-06", days: 3, reason: "Medical rest required", emergencyContact: "+1 (555) 987-6543", status: "Pending", submittedAt: "2026-05-28" },
   { id: 2, leaveType: "Casual Leave", fromDate: "2026-06-10", toDate: "2026-06-11", days: 2, reason: "Personal work", emergencyContact: "+1 (555) 987-6543", status: "Approved", managerApproval: "2026-06-01", hrApproval: "2026-06-01", submittedAt: "2026-05-25" },
-  { id: 3, leaveType: "Earned Leave", fromDate: "2026-06-15", toDate: "2026-06-20", days: 6, reason: "Family vacation", emergencyContact: "+1 (555) 987-6543", status: "Approved", managerApproval: "2026-05-20", hrApproval: "2026-05-21", submittedAt: "2026-05-15" },
+  { id: 3, leaveType: "Privilege Leave", fromDate: "2026-06-15", toDate: "2026-06-20", days: 6, reason: "Family vacation", emergencyContact: "+1 (555) 987-6543", status: "Approved", managerApproval: "2026-05-20", hrApproval: "2026-05-21", submittedAt: "2026-05-15" },
   { id: 4, leaveType: "Sick Leave", fromDate: "2026-05-01", toDate: "2026-05-02", days: 2, reason: "Flu symptoms", emergencyContact: "+1 (555) 987-6543", status: "Rejected", managerApproval: "2026-04-28", submittedAt: "2026-04-28" },
 ];
 
@@ -73,6 +73,6 @@ export const teamRanking = [
 export const leaveReasons: Record<string, string[]> = {
   "Sick Leave": ["Fever", "Headache", "Cold", "Food Poisoning", "Medical Checkup", "Hospital Visit"],
   "Casual Leave": ["Personal Work", "Family Function", "Marriage", "Bank Work", "Travel"],
-  "Earned Leave": ["Vacation", "Family Trip", "Festival", "Personal Time"],
+  "Privilege Leave": ["Vacation", "Family Trip", "Festival", "Personal Time"],
   "Unpaid Leave": ["Emergency", "Personal Reasons", "Extended Vacation"],
 };

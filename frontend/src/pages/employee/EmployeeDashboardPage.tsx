@@ -13,6 +13,7 @@ import { motion } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
 import { Attendance } from "../../types/employee.types";
 
+import { socket } from "../../services/socket";
 import ConfirmModal from "./components/ConfirmModal";
 import PopupModal from "./components/PopupModal";
 import BirthdayModal from "../../layouts/components/BirthdayModal";
@@ -112,7 +113,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const totalBalance =
     (currentEmployee?.sick_leave || 0) +
     (currentEmployee?.casual_leave || 0) +
-    (currentEmployee?.earned_leave || 0);
+    (currentEmployee?.privilege_leave || 0);
   const pendingLeaveCount = approvalLeaves.filter(
     (leave: any) => leave.status === "Pending"
   ).length;
@@ -279,7 +280,13 @@ const EmployeeDashboardPage: React.FC = () => {
       localStorage.setItem(`checkInTime_${userId}`, nowIso);
       localStorage.setItem(`checkInDate_${userId}`, nowIso.split("T")[0]);
       clearTodayAttendanceSummary(userId);
-      setTimeout(() => window.location.reload(), 1000);
+      setIsCheckedIn(true);
+      setCheckInTime(new Date());
+      const attendanceResponse = await fetch(
+        `${BASE_URL}/attendance/history/${userId}`,
+      );
+      const attendanceHistory = await attendanceResponse.json();
+      setAttendanceData(attendanceHistory);
     } catch (error) {
       showPopup(
         "error",
@@ -662,20 +669,32 @@ const EmployeeDashboardPage: React.FC = () => {
     }
   };
 
-  const sendBirthdayWish = async (emp: any) => {
-    const senderName = localStorage.getItem("full_name");
-    await fetch(`${BASE_URL}/communications`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        employee_id: emp.id,
-        employee_name: `${emp.first_name} ${emp.last_name}`,
-        receiver_id: emp.user_id,
-        message_type: "employee",
-        created_by: senderName,
-        message: `🎂 Happy Birthday ${emp.first_name}! Wishing you happiness, success and prosperity. 🎉`,
-      }),
-    });
+  const sendBirthdayWish = async (emp: any, customMessage: string) => {
+    const senderId = localStorage.getItem("employee_id");
+    if (!senderId) {
+      toast.error("Sender employee details not found.");
+      return;
+    }
+    try {
+      const res = await fetch(`${BASE_URL}/birthday-wishes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sender_id: Number(senderId),
+          receiver_id: emp.id,
+          message: customMessage,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to send wishes.");
+        return;
+      }
+      toast.success("Birthday wishes sent successfully!");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to send wishes.");
+    }
   };
 
 
@@ -791,6 +810,112 @@ const EmployeeDashboardPage: React.FC = () => {
       })
       .catch((err) => console.log(err));
   }, []);
+
+  useEffect(() => {
+    socket.on("attendance_update", (payload: any) => {
+      if (Number(payload.user_id) === Number(user?.id)) {
+        setIsCheckedIn(payload.checked_in);
+        setIsLunchBreak(payload.lunch_break);
+        setIsTeaBreak(payload.tea_break);
+        if (payload.check_in) {
+          setCheckInTime(new Date(payload.check_in));
+        } else {
+          setCheckInTime(null);
+        }
+        if (payload.lunch_start) setLunchStartTime(new Date(payload.lunch_start));
+        if (payload.tea_start) setTeaStartTime(new Date(payload.tea_start));
+        setTotalLunchSeconds((payload.lunch_minutes || 0) * 60);
+        setTotalTeaSeconds((payload.tea_minutes || 0) * 60);
+
+        const userId = localStorage.getItem("user_id");
+        if (userId) {
+          if (!payload.checked_in && payload.check_out) {
+            const summary = {
+              date: new Date().toISOString().split("T")[0],
+              timer: formatSeconds(Math.floor((payload.working_hours || 0) * 3600)),
+              totalLunchSeconds: (payload.lunch_minutes || 0) * 60,
+              totalTeaSeconds: (payload.tea_minutes || 0) * 60,
+            };
+            saveTodayAttendanceSummary(userId, summary);
+            setTodayAttendanceSummary(summary);
+            setTimer(summary.timer);
+          }
+          fetch(`${BASE_URL}/attendance/history/${userId}`)
+            .then((res) => res.json())
+            .then((data) => setAttendanceData(data));
+        }
+      }
+    });
+
+    socket.on("leave_update", (payload: any) => {
+      // Update leave request list
+      setLeaveRequests((prev) => {
+        const index = prev.findIndex((l) => l.id === payload.id);
+        if (index > -1) {
+          const next = [...prev];
+          next[index] = payload;
+          return next;
+        }
+        return [payload, ...prev];
+      });
+      
+      // If the leave belongs to current user, we should update their leave balance in employees state!
+      if (Number(payload.employee_id) === Number(currentEmployee?.id)) {
+        // Reload employee details from backend to sync balances
+        fetch(`${BASE_URL}/employees/`)
+          .then((res) => res.json())
+          .then((data) => setEmployees(data))
+          .catch((err) => console.error(err));
+      }
+    });
+
+    socket.on("shift_update", (payload: any) => {
+      if (payload.action === "delete") {
+        setShiftRequests((prev) => prev.filter((s) => s.id !== payload.id));
+        setManagerShiftRequests((prev) => prev.filter((s) => s.id !== payload.id));
+        return;
+      }
+      
+      // If it belongs to current employee
+      if (Number(payload.employee_id) === Number(currentEmployee?.user_id)) {
+        setShiftRequests((prev) => {
+          const index = prev.findIndex((s) => s.id === payload.id);
+          if (index > -1) {
+            const next = [...prev];
+            next[index] = payload;
+            return next;
+          }
+          return [payload, ...prev];
+        });
+      }
+
+      // If we are their manager
+      if (payload.reporting_manager?.trim().toLowerCase() === managerName) {
+        setManagerShiftRequests((prev) => {
+          const index = prev.findIndex((s) => s.id === payload.id);
+          if (index > -1) {
+            const next = [...prev];
+            next[index] = payload;
+            return next;
+          }
+          return [payload, ...prev];
+        });
+      }
+    });
+
+    socket.on("employee_profile_update", (payload: any) => {
+      setEmployees((prev) =>
+        prev.map((emp) => (emp.id === payload.id ? { ...emp, ...payload } : emp))
+      );
+    });
+
+    return () => {
+      socket.off("attendance_update");
+      socket.off("leave_update");
+      socket.off("shift_update");
+      socket.off("employee_profile_update");
+    };
+  }, [currentEmployee, managerName]);
 
   useEffect(() => {
     if (

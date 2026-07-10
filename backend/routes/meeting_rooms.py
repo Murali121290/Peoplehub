@@ -37,6 +37,13 @@ def create_room():
     db.session.add(room)
     db.session.commit()
 
+    # Emit room_update socket event for real-time dashboard updates
+    try:
+        from extensions import socketio
+        socketio.emit("room_update", {"action": "create"})
+    except Exception as socket_err:
+        print("Failed to emit room socket:", str(socket_err))
+
     return jsonify({
         "message": "Room created successfully"
     }), 201
@@ -63,9 +70,42 @@ def update_room(room_id):
 
         db.session.commit()
 
+        # Emit room_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("room_update", {"action": "update"})
+        except Exception as socket_err:
+            print("Failed to emit room socket:", str(socket_err))
+
         return jsonify({"message": "Meeting room updated successfully"}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+@meeting_rooms_bp.route("/rooms/<int:room_id>", methods=["DELETE"])
+def delete_room(room_id):
+    try:
+        room = MeetingRoom.query.get(room_id)
+        if not room:
+            return jsonify({"message": "Room not found"}), 404
+
+        # Delete associated bookings first
+        RoomBooking.query.filter_by(room_id=room_id).delete()
+        
+        db.session.delete(room)
+        db.session.commit()
+
+        # Emit room_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("room_update", {"action": "delete", "room_id": room_id})
+        except Exception as socket_err:
+            print("Failed to emit room socket:", str(socket_err))
+
+        return jsonify({"message": "Room deleted successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "message": str(e)}), 500
+
 
 @meeting_rooms_bp.route("/rooms", methods=["GET"])
 def get_rooms():
@@ -199,6 +239,13 @@ def create_booking():
         db.session.add(booking)
         db.session.commit()
 
+        # Emit booking_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("booking_update", {"action": "create"})
+        except Exception as socket_err:
+            print("Failed to emit booking socket:", str(socket_err))
+
         return jsonify({
             "success": True,
             "message": "Booking created successfully"
@@ -257,6 +304,13 @@ def cancel_booking(id):
     booking.status = "Cancelled"
 
     db.session.commit()
+
+    # Emit booking_update socket event for real-time dashboard updates
+    try:
+        from extensions import socketio
+        socketio.emit("booking_update", {"action": "cancel", "booking_id": id})
+    except Exception as socket_err:
+        print("Failed to emit booking socket:", str(socket_err))
 
     return jsonify({
         "message": "Booking cancelled"

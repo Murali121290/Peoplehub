@@ -9,11 +9,14 @@ import BookingForm from "./components/BookingForm";
 import RoomCard from "./components/RoomCard";
 import BookingTable from "./components/BookingTable";
 
+import { socket } from "../../services/socket";
+
 import {
   getRooms,
   getBookings,
   createRoom,
   updateRoom,
+  deleteRoom,
 } from "../../services/meetingRoomService";
 
 import { Card } from "../../components/ui/Card";
@@ -26,10 +29,12 @@ type ToastType = "success" | "error" | "info";
 const MeetingRooms = () => {
   const [rooms, setRooms] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
+  const [selectedRoomForBooking, setSelectedRoomForBooking] = useState<string | number | undefined>(undefined);
 
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null);
 
@@ -55,6 +60,19 @@ const MeetingRooms = () => {
   useEffect(() => {
     fetchRooms();
     fetchBookings();
+  }, []);
+
+  useEffect(() => {
+    socket.on("room_update", () => {
+      fetchRooms();
+    });
+    socket.on("booking_update", () => {
+      fetchBookings();
+    });
+    return () => {
+      socket.off("room_update");
+      socket.off("booking_update");
+    };
   }, []);
 
   useEffect(() => {
@@ -118,6 +136,9 @@ const MeetingRooms = () => {
         room_type: room.room_type || "Conference Room",
       });
       setShowRoomModal(true);
+    } else {
+      setSelectedRoomForBooking(room.id);
+      setShowBookingModal(true);
     }
   };
 
@@ -163,6 +184,29 @@ const MeetingRooms = () => {
       showToast(isEditMode ? "Failed to update room" : "Failed to create room", "error");
     } finally {
       setIsCreatingRoom(false);
+    }
+  };
+
+  const handleDeleteRoom = async () => {
+    if (!editingRoomId) return;
+
+    if (!window.confirm("Are you sure you want to delete this meeting room? This action will remove all associated bookings.")) {
+      return;
+    }
+
+    try {
+      setIsDeletingRoom(true);
+      await deleteRoom(editingRoomId);
+      showToast("Room deleted successfully", "success");
+      setShowRoomModal(false);
+      setEditingRoomId(null);
+      fetchRooms();
+      fetchBookings();
+    } catch (error) {
+      console.error(error);
+      showToast("Failed to delete room", "error");
+    } finally {
+      setIsDeletingRoom(false);
     }
   };
 
@@ -259,7 +303,10 @@ const MeetingRooms = () => {
               </Button>
             )}
 
-            <Button variant="primary" onClick={() => setShowBookingModal(true)}>
+            <Button variant="primary" onClick={() => {
+              setSelectedRoomForBooking(undefined);
+              setShowBookingModal(true);
+            }}>
               + Room Booking
             </Button>
           </div>
@@ -295,20 +342,34 @@ const MeetingRooms = () => {
         title={isEditMode ? "Edit Meeting Room" : "Create Meeting Room"}
         eyebrow={{ label: isEditMode ? "Update the details of your workspace inventory." : "Add a new room to your workspace inventory." }}
         footer={
-          <>
-            <Button variant="outline" onClick={() => setShowRoomModal(false)}>
-              Cancel
-            </Button>
-
-            <Button
-              variant="success"
-              onClick={handleSaveRoom}
-              disabled={isCreatingRoom}
-              loading={isCreatingRoom}
-            >
-              {isCreatingRoom ? "Saving..." : isEditMode ? "Update Room" : "Save Room"}
-            </Button>
-          </>
+          <div className="flex w-full items-center justify-between">
+            <div>
+              {isEditMode && (
+                <Button 
+                  variant="danger" 
+                  onClick={handleDeleteRoom}
+                  disabled={isDeletingRoom || isCreatingRoom}
+                  loading={isDeletingRoom}
+                >
+                  Delete Room
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setShowRoomModal(false)} disabled={isDeletingRoom || isCreatingRoom}>
+                Cancel
+              </Button>
+  
+              <Button
+                variant="success"
+                onClick={handleSaveRoom}
+                disabled={isCreatingRoom || isDeletingRoom}
+                loading={isCreatingRoom}
+              >
+                {isCreatingRoom ? "Saving..." : isEditMode ? "Update" : "Save"}
+              </Button>
+            </div>
+          </div>
         }
       >
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -374,19 +435,24 @@ const MeetingRooms = () => {
       {/* Create Booking Modal */}
       <Modal
         isOpen={showBookingModal}
-        onClose={() => setShowBookingModal(false)}
+        onClose={() => {
+          setShowBookingModal(false);
+          setSelectedRoomForBooking(undefined);
+        }}
         size="xl"
         title="Create Booking"
         eyebrow={{ label: "Schedule and manage a room reservation." }}
       >
         <BookingForm
-    rooms={rooms}
-    onSuccess={() => {
-        fetchBookings();
-        fetchRooms();
-        setShowBookingModal(false);
-    }}
-/>
+          rooms={rooms}
+          selectedRoomId={selectedRoomForBooking}
+          onSuccess={() => {
+            fetchBookings();
+            fetchRooms();
+            setShowBookingModal(false);
+            setSelectedRoomForBooking(undefined);
+          }}
+        />
       </Modal>
     </div>
   );

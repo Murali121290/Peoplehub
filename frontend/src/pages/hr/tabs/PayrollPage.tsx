@@ -416,10 +416,10 @@ const PayrollPage: React.FC = () => {
                 </div>
                 <div className="bg-success-50 border border-success-200 rounded-lg p-3 text-center">
                   <div className="text-xs uppercase tracking-wide opacity-75">
-                    Earned Leave
+                    Privilege Leave
                   </div>
                   <div className="text-xl font-bold mt-1 text-success-700">
-                    {selectedEmployee.earned_leave}
+                    {selectedEmployee.privilege_leave}
                   </div>
                 </div>
               </div>

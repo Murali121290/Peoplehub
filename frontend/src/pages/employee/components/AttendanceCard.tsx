@@ -31,8 +31,25 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
   onLunchBreak,
   onTeaBreak,
 }) => {
+  const cardRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!isCheckedIn && localStorage.getItem("highlightCheckIn") === "true") {
+      setTimeout(() => {
+        cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 500);
+    }
+  }, [isCheckedIn]);
+
+  const shouldHighlight = !isCheckedIn && localStorage.getItem("highlightCheckIn") === "true";
+
+  const profileImageUrl = currentEmployee?.id
+    ? `http://10.1.6.178:5001/api/employees/image/${currentEmployee.id}`
+    : "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+
   return (
-    <Card padding="none" className="w-full max-w-10xl overflow-hidden">
+    <div ref={cardRef} className="w-full">
+      <Card padding="none" className="w-full max-w-10xl overflow-hidden">
       {/* Employee Header */}
       <div className="px-6 py-5 flex items-center justify-between border-b border-neutral-100">
         <div className="flex items-center gap-4 h-[10px]">
@@ -197,7 +214,11 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
           variant={isCheckedIn ? "danger" : "primary"}
           size="lg"
           fullWidth
-          onClick={onCheckInOut}
+          onClick={() => {
+            localStorage.removeItem("highlightCheckIn");
+            onCheckInOut();
+          }}
+          className={shouldHighlight ? "animate-pulse ring-4 ring-blue-500 ring-offset-2 scale-105 shadow-xl transition-all duration-300" : ""}
         >
           {isCheckedIn ? "Check Out" : "Check In"}
         </Button>
@@ -231,6 +252,7 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
         </Button>
       </div>
     </Card>
+    </div>
   );
 };
 

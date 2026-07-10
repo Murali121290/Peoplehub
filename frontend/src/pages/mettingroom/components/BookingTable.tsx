@@ -19,18 +19,20 @@ const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
 
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 
-    const handleCancel = async (id: number) => {
-  try {
-    await cancelBooking(id);
-
-    alert("Booking Cancelled");
-
-    onRefresh();   // ✅ CORRECT
-  } catch (error) {
-    console.error(error);
-    alert("Failed to cancel booking");
-  }
-};
+  const handleCancel = async (id: number) => {
+    try {
+      setIsCancelling(true);
+      await cancelBooking(id);
+      showToast("Booking cancelled successfully", "success");
+      setSelectedBooking(null);
+      onRefresh();
+    } catch (error) {
+      console.error(error);
+      showToast("Failed to cancel booking", "error");
+    } finally {
+      setIsCancelling(false);
+    }
+  };
   const [selectedBooking, setSelectedBooking] = useState<any | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [toast, setToast] = useState<{
@@ -168,14 +170,18 @@ const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
   key: "action",
   header: "Action",
   render: (booking) => {
-    const isCreator =
+    const canCancelBooking =
+      user.access_level === "admin" ||
+      user.access_level === "hr" ||
+      booking.organizer_name === user.full_name ||
+      booking.organizer_name === localStorage.getItem("full_name") ||
       booking.organizer_name === user.employee_name;
 
     if (!canCancel(booking.status)) {
       return <span className="text-xs text-neutral-400">—</span>;
     }
 
-    return isCreator ? (
+    return canCancelBooking ? (
       <Button
         variant="danger"
         size="sm"

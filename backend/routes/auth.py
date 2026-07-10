@@ -91,8 +91,9 @@ def login():
             user_id=user.id
         ).first()
 
-        # Update login time
-        user.last_login = datetime.utcnow()
+        # Update login time (IST, matching checkin_monitor.py)
+        from zoneinfo import ZoneInfo
+        user.last_login = datetime.now(ZoneInfo("Asia/Kolkata"))
         db.session.commit()
 
         # JWT Tokens
