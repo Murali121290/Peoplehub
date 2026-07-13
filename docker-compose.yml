@@ -27,6 +27,13 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:$$vBr%402150@postgres:5432/wms_db
       TZ: Asia/Kolkata
+      MAIL_SERVER: smtp.office365.com
+      MAIL_PORT: 587
+      MAIL_USE_TLS: "True"
+      MAIL_USERNAME: "selvabharathp@s4carlisle.com"
+      MAIL_PASSWORD: "$$vBr@2150" # Configure app password here
+      MAIL_DEFAULT_SENDER: "selvabharathp@s4carlisle.com"
+      PYTHONUNBUFFERED: "1"
     ports:
       - "5001:5001"
     volumes:

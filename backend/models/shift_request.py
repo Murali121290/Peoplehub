@@ -71,6 +71,16 @@ class ShiftRequest(db.Model):
     default="Shift"
     )
 
+    approved_by = db.Column(
+        db.String(200),
+        nullable=True
+    )
+
+    rejected_by = db.Column(
+        db.String(200),
+        nullable=True
+    )
+
     from_date = db.Column(
         db.Date,
         nullable=True
@@ -110,6 +120,8 @@ class ShiftRequest(db.Model):
                 if self.approved_at
                 else None
             ),
+            "approved_by": self.approved_by,
+            "rejected_by": self.rejected_by,
             "shift_date": (
     self.shift_date.isoformat()
     if self.shift_date

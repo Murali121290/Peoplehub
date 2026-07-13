@@ -1,11 +1,21 @@
+# pyrefly: ignore [missing-import]
 from flask import Flask, jsonify
+# pyrefly: ignore [missing-import]
+# pyrefly: ignore [missing-import]
 from flask_cors import CORS
+# pyrefly: ignore [missing-import]
 from flask_jwt_extended import JWTManager
+# pyrefly: ignore [missing-import]
 from sqlalchemy import text
+# pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
+# pyrefly: ignore [missing-import]
 from routes.payroll_routes import payroll_bp
+# pyrefly: ignore [missing-import]
 import os
+# pyrefly: ignore [missing-import]
 from flask import send_from_directory
+# pyrefly: ignore [missing-import]
 from flask_socketio import (
     SocketIO
 )
@@ -14,6 +24,7 @@ from socket_events import (
     register_socket_events
 )
 
+# pyrefly: ignore [missing-import]
 from apscheduler.schedulers.background import (
     BackgroundScheduler
 )
@@ -52,6 +63,7 @@ from routes.appraisal_routes import appraisal_bp
 from routes.meeting_rooms import meeting_rooms_bp
 from routes.telecom import telecom_bp
 from routes.birthday_wishes import birthday_wishes_bp
+from routes.requests import requests_bp
 from seed.seed_employees import seed_employees
 from seed.seed_telecom import seed_telecom
 from seed.seed_appraisal import seed_appraisal
@@ -115,6 +127,10 @@ def create_app():
     url_prefix="/api"
 )
     app.register_blueprint(
+    requests_bp,
+    url_prefix="/api/requests"
+)
+    app.register_blueprint(
     payroll_bp,
     url_prefix="/api/payroll"
 )
@@ -137,6 +153,22 @@ def create_app():
             "ALTER TABLE telecom_directory "
             "ADD COLUMN IF NOT EXISTS designation VARCHAR(150), "
             "ADD COLUMN IF NOT EXISTS location VARCHAR(100)"
+        ))
+        
+        # Add email-approval columns to leave_requests
+        db.session.execute(text(
+            "ALTER TABLE leave_requests "
+            "ADD COLUMN IF NOT EXISTS approved_by VARCHAR(200), "
+            "ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP, "
+            "ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(200), "
+            "ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP"
+        ))
+        
+        # Add email-approval columns to shift_requests
+        db.session.execute(text(
+            "ALTER TABLE shift_requests "
+            "ADD COLUMN IF NOT EXISTS approved_by VARCHAR(200), "
+            "ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(200)"
         ))
         db.session.commit()
 

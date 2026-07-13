@@ -32,6 +32,26 @@ class LeaveRequest(db.Model):
         default="Leave"
     )
 
+    approved_by = db.Column(
+        db.String(200),
+        nullable=True
+    )
+
+    approved_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    rejected_by = db.Column(
+        db.String(200),
+        nullable=True
+    )
+
+    rejected_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
     permission_date = db.Column(
         db.Date,
         nullable=True

@@ -244,7 +244,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
 
             <div className="space-y-2">
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
-                Select a Preset Message
+                Select a Wish
               </label>
               <div className="flex flex-col gap-2">
                 {presetMessages.map((msg, idx) => (
@@ -264,18 +264,20 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
-                Or Customize Your Message
-              </label>
-              <textarea
-                value={wishMessage}
-                onChange={(e) => setWishMessage(e.target.value)}
-                placeholder="Type your birthday wish message..."
-                rows={3}
-                className="w-full text-sm p-3 rounded-lg border border-gray-200 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 focus:outline-none transition-all resize-none"
-              />
-            </div>
+            {/* Read-only selectable text block showing the chosen wish */}
+            {wishMessage ? (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  Selected Wish
+                </label>
+                <div
+                  className="w-full text-sm p-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-900 leading-relaxed"
+                  style={{ userSelect: "text", cursor: "text" }}
+                >
+                  {wishMessage}
+                </div>
+              </div>
+            ) : null}
 
             <div className="flex justify-end gap-3 pt-2">
               <button
@@ -289,19 +291,16 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
               </button>
               <button
                 onClick={async () => {
-  if (!wishMessage.trim()) return;
-
-  try {
-    await onSendWish(selectedEmpForWish, wishMessage);
-
-    setSelectedEmpForWish(null);
-    setWishMessage("");
-
-    onClose();
-  } catch (error) {
-    console.error(error);
-  }
-}}
+                  if (!wishMessage.trim()) return;
+                  try {
+                    await onSendWish(selectedEmpForWish, wishMessage);
+                    setSelectedEmpForWish(null);
+                    setWishMessage("");
+                    onClose();
+                  } catch (error) {
+                    console.error(error);
+                  }
+                }}
                 disabled={!wishMessage.trim()}
                 className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors"
               >

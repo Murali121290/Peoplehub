@@ -190,7 +190,7 @@ const ManagerDashboardPage = () => {
   const [attendanceFilter, setAttendanceFilter] = useState("All");
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [managerName, setManagerName] = useState("");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [showViewDropdown, setShowViewDropdown] = useState(false);
 
   // Attendance History States & Callbacks
@@ -606,13 +606,6 @@ const ManagerDashboardPage = () => {
       sub: "Need action",
       icon: InboxArrowDownIcon,
       tone: "danger",
-    },
-    {
-      label: "Avg Efficiency",
-      value: `${avgEfficiency}%`,
-      sub: "Team average",
-      icon: ChartBarIcon,
-      tone: "primary",
     },
     {
       label: "Tasks Completed",

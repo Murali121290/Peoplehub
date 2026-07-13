@@ -98,6 +98,13 @@ def apply_leave():
         db.session.add(leave)
         db.session.commit()
 
+        # Send manager notification email
+        try:
+            from services.request_email_service import send_manager_request_email
+            send_manager_request_email(leave, request_type)
+        except Exception as email_err:
+            print("Failed to send manager request email:", str(email_err))
+
         # Emit leave_update socket event for real-time dashboard updates
         try:
             from extensions import socketio
@@ -190,16 +197,18 @@ def approve_leave(leave_id):
                 "error": "Leave not found"
             }), 404
 
-        # Prevent double approval
-        if leave.status == "Approved":
+        # Prevent double approval/rejection
+        if leave.status != "Pending":
             return jsonify({
                 "success": False,
-                "error": "Leave already approved"
+                "error": f"Leave already {leave.status.lower()}"
             }), 400
 
         print("Leave Employee ID:", leave.employee_id)
 
-        employee = Employee.query.get(int(leave.employee_id))
+        employee = Employee.query.filter(
+            (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
+        ).first()
 
         print("Employee Found:", employee)
 
@@ -213,8 +222,9 @@ def approve_leave(leave_id):
         # PERMISSION REQUEST
         # ===========================
         if leave.request_type == "Permission":
-
             leave.status = "Approved"
+            leave.approved_by = "Website Manager"
+            leave.approved_at = datetime.utcnow()
 
             db.session.commit()
 
@@ -224,6 +234,13 @@ def approve_leave(leave_id):
                 socketio.emit("leave_update", serialize_leave(leave))
             except Exception as socket_err:
                 print("Failed to emit leave socket:", str(socket_err))
+
+            # Send employee status email
+            try:
+                from services.request_email_service import send_employee_status_email
+                send_employee_status_email(leave, employee, "Approved", leave.request_type)
+            except Exception as email_err:
+                print("Failed to send employee status email:", str(email_err))
 
             return jsonify({
                 "success": True,
@@ -235,6 +252,8 @@ def approve_leave(leave_id):
         # ===========================
 
         leave.status = "Approved"
+        leave.approved_by = "Website Manager"
+        leave.approved_at = datetime.utcnow()
 
         leave_type = (leave.leave_type or "").strip().lower()
 
@@ -306,19 +325,37 @@ def approve_leave(leave_id):
 )
 def reject_leave(leave_id):
 
-    leave = LeaveRequest.query.get(
-        leave_id
-    )
+    leave = LeaveRequest.query.get(leave_id)
 
     if not leave:
-
         return jsonify({
             "error": "Leave not found"
         }), 404
 
+    # Prevent double approval/rejection
+    if leave.status != "Pending":
+        return jsonify({
+            "success": False,
+            "error": f"Leave already {leave.status.lower()}"
+        }), 400
+
+    employee = Employee.query.filter(
+        (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
+    ).first()
+
     leave.status = "Rejected"
+    leave.rejected_by = "Website Manager"
+    leave.rejected_at = datetime.utcnow()
 
     db.session.commit()
+
+    # Send employee status email
+    if employee:
+        try:
+            from services.request_email_service import send_employee_status_email
+            send_employee_status_email(leave, employee, "Rejected", leave.request_type)
+        except Exception as email_err:
+            print("Failed to send employee status email:", str(email_err))
 
     # Emit leave_update socket event for real-time dashboard updates
     try:
