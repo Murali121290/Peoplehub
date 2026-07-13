@@ -19,6 +19,7 @@ import AttendanceDetailModal from "./components/AttendanceDetailModal";
 import ChatPanel from "./components/ChatPanel";
 import { useNavigation } from "./hooks/useNavigation";
 import { useIsDesktop } from "./hooks/useIsDesktop";
+import { API_URL } from "../config/api";
 
 const BASE_URL = `${API_URL}/api`;
 

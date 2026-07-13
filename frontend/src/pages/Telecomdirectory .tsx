@@ -14,6 +14,7 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Modal, ConfirmDialog } from "../components/ui/Modal";
 import { Input, Select, FormField } from "../components/ui/Form";
+import { API_URL } from "../config/api";
 
 interface TelecomEntry {
   id: number;

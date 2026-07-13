@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { createBooking } from "../../../services/meetingRoomService";
 import { FormField, Input, Select, Textarea } from "../../../components/ui/Form";
 import { Button } from "../../../components/ui/Button";
+import { API_URL } from "../../../config/api";
 
 interface BookingFormProps {
   rooms: any[];

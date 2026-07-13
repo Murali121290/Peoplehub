@@ -23,6 +23,7 @@ import LeaveTab from "./tabs/LeaveTab";
 import ShiftTab from "./tabs/ShiftTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import ProfileTab from "./tabs/ProfileTab";
+import { API_URL } from "../../config/api";
 
 const BASE_URL = `${API_URL}/api`;
 

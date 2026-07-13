@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import axios from "axios";
 import logo from "../images/s.png";
+import { API_URL } from "../config/api";
 import { useAuthStore } from "../store/authStore";
 import {
   LockClosedIcon,

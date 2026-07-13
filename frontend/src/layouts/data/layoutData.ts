@@ -1,4 +1,8 @@
 import { API_URL } from "../../config/api";
+<<<<<<< HEAD
+=======
+
+>>>>>>> 881eff2d6d04a138ab2d8951a9dda89c8aee0db9
 export const BASE_URL = `${API_URL}/api`;
 
 export const reportLinks = [

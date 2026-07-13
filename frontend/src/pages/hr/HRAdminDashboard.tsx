@@ -31,6 +31,7 @@ import {
   DEFAULT_NEW_EMP,
   DEFAULT_PROFILE_DATA,
 } from "./data/hrMockData";
+import { API_URL } from "../../config/api";
 
 const NAV_ICONS: Record<string, React.ElementType> = {
   dashboard: HomeIcon,
@@ -52,6 +53,7 @@ export default function HRAdminDashboard() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
+  const [teamOverview, setTeamOverview] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [addEmpOpen, setAddEmpOpen] = useState(false);
   const [profileCompleteOpen, setProfileCompleteOpen] = useState(false);
@@ -127,12 +129,22 @@ export default function HRAdminDashboard() {
     }
   };
 
+  const fetchTeamOverview = async () => {
+    try {
+      const res = await apiService.getTeamOverview();
+      setTeamOverview(res.data || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchEmployees();
     fetchAttendance();
     fetchLeaveRequests();
     fetchTeams();
     fetchRoles();
+    fetchTeamOverview();
   }, []);
 
   // --- Counts ---
@@ -371,7 +383,7 @@ export default function HRAdminDashboard() {
       {/* Main Content */}
       <main className="p-6">
         {nav === "dashboard" && (
-          <DashboardTab counts={counts} employees={employees} />
+          <DashboardTab counts={counts} teamOverview={teamOverview} />
         )}
         {nav === "directory" && (
           <DirectoryTab

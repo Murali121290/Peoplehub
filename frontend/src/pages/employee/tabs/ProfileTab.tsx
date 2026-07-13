@@ -21,6 +21,7 @@ import {
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Form";
+import { API_URL } from "../../../config/api";
 
 const BASE_URL = `${API_URL}/api`;
 
