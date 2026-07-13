@@ -219,7 +219,7 @@ def send_manager_request_email(request_obj, request_type):
     reject_token = generate_request_token(request_obj.id, request_type, "reject")
 
     # Base URL of the backend server
-    api_base = "http://10.1.6.178:5001"
+    api_base = "http://localhost:5001"
     approve_url = f"{api_base}/api/requests/email-action?token={approve_token}"
     reject_url = f"{api_base}/api/requests/email-action?token={reject_token}"
 

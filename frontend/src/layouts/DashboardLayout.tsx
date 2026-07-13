@@ -18,8 +18,9 @@ import AttendanceDetailModal from "./components/AttendanceDetailModal";
 import ChatPanel from "./components/ChatPanel";
 import { useNavigation } from "./hooks/useNavigation";
 import { useIsDesktop } from "./hooks/useIsDesktop";
+import { API_URL } from "../config/api";
 
-const BASE_URL = "http://10.1.6.178:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   children,

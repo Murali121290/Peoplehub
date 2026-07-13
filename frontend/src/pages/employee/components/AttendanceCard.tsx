@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { API_URL } from "../../../config/api";
 
 // ─────────────────────────────────────────────
 // Props
@@ -155,7 +156,7 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
   const teaDone = !isTeaBreak && totalTeaSeconds > 0;
 
   const imgSrc = currentEmployee?.id
-    ? `http://10.1.6.178:5001/api/employees/image/${currentEmployee.id}`
+    ? `${API_URL}/api/employees/image/${currentEmployee.id}`
     : "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
   const fallback = "https://cdn-icons-png.flaticon.com/512/149/149071.png";

@@ -30,8 +30,9 @@ import { Tabs } from "../components/ui/Tabs";
 import { Input, Select } from "../components/ui/Form";
 import type { StatCardColor } from "../components/ui/StatCard";
 import type { BadgeVariant } from "../components/ui/Badge";
+import { API_URL } from "../config/api";
 
-const BASE_URL = "http://10.1.6.178:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 // ==========================
 // THEME - professional enterprise palette

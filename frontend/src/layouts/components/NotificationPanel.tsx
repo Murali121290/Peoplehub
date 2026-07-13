@@ -1,4 +1,5 @@
 import React from 'react';
+import { API_URL } from "../../config/api";
 
 interface NotificationPanelProps {
   notifications: any[];
@@ -13,7 +14,7 @@ interface NotificationPanelProps {
   onViewAttendance?: (employeeId: number) => void;
 }
 
-const BASE_URL = "http://10.1.6.178:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 const NotificationPanel: React.FC<NotificationPanelProps> = ({
   notifications,

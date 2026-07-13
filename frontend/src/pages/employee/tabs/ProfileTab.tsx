@@ -20,8 +20,9 @@ import {
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Form";
+import { API_URL } from "../../../config/api";
 
-const BASE_URL = "http://10.1.6.178:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 const ProfileTab = () => {
   const user = JSON.parse(localStorage.getItem("user") || "{}");

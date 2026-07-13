@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { createBooking } from "../../../services/meetingRoomService";
 import { FormField, Input, Select, Textarea } from "../../../components/ui/Form";
 import { Button } from "../../../components/ui/Button";
+import { API_URL } from "../../../config/api";
 
 interface BookingFormProps {
   rooms: any[];
@@ -51,7 +52,7 @@ const BookingForm: React.FC<BookingFormProps> = ({
   useEffect(() => {
     const fetchEmployees = async () => {
       try {
-        const response = await fetch("http://10.1.6.178:5001/api/employees/");
+        const response = await fetch(`${API_URL}/api/employees/`);
         if (response.ok) {
           const data = await response.json();
           setEmployees(data || []);

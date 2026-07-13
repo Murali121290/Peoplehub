@@ -22,8 +22,9 @@ import LeaveTab from "./tabs/LeaveTab";
 import ShiftTab from "./tabs/ShiftTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import ProfileTab from "./tabs/ProfileTab";
+import { API_URL } from "../../config/api";
 
-const BASE_URL = "http://10.1.6.178:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 const containerVariants = {
   hidden: { opacity: 0 },

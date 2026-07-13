@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { FormField, Input, Select } from "../../../components/ui/Form";
+import { API_URL } from "../../../config/api";
 
 interface AddEmployeeModalProps {
   newEmp: any;
@@ -39,7 +40,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       return;
     }
 
-    fetch(`http://10.1.6.178:5001/api/employees/roles/${newEmp.team_id}`)
+    fetch(`${API_URL}/api/employees/roles/${newEmp.team_id}`)
       .then((res) => res.json())
       .then((data) => {
         setFilteredRoles(data);
