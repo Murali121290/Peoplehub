@@ -3,7 +3,6 @@ import React, { useState, useEffect } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { FormField, Input, Select } from "../../../components/ui/Form";
-import { API_URL } from "../../../config/api";
 
 interface AddEmployeeModalProps {
   newEmp: any;

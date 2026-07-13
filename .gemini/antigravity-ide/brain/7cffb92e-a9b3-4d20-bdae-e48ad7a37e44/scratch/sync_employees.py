@@ -15,17 +15,26 @@ from models.user import User
 app, _ = create_app()
 
 with app.app_context():
-    print("Starting database sync on port 5433...")
+    print("Starting database sync (department & team_id) on port 5433...")
     updated_count = 0
     for emp in Employee.query.all():
         user = User.query.get(emp.user_id) if emp.user_id else None
-        if user and user.team:
-            old_dept = emp.department
-            new_dept = user.team.name
-            if old_dept != new_dept:
-                emp.department = new_dept
+        if user:
+            needs_update = False
+            
+            # Sync department with user's team name
+            if user.team and emp.department != user.team.name:
+                emp.department = user.team.name
+                needs_update = True
+                
+            # Sync team_id with user's team_id
+            if user.team_id and emp.team_id != user.team_id:
+                emp.team_id = user.team_id
+                needs_update = True
+                
+            if needs_update:
                 updated_count += 1
-                print(f"Updated {emp.first_name} {emp.last_name}: '{old_dept}' -> '{new_dept}'")
+                print(f"Updated {emp.first_name} {emp.last_name}: dept='{emp.department}', team_id={emp.team_id}")
                 
     if updated_count > 0:
         db.session.commit()

@@ -31,7 +31,6 @@ import {
   DEFAULT_NEW_EMP,
   DEFAULT_PROFILE_DATA,
 } from "./data/hrMockData";
-import { API_URL } from "../../config/api";
 
 const NAV_ICONS: Record<string, React.ElementType> = {
   dashboard: HomeIcon,

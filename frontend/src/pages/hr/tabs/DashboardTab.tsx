@@ -47,19 +47,11 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview }) => 
           Team Overview
         </div>
 
-<<<<<<< HEAD
-        {[...new Set(employees.map((emp) => emp.department))].filter(Boolean).map((team: any) => {
-          const teamEmployees = employees.filter((emp) => emp.department === team);
-          const empCount = teamEmployees.length;
-          const totalTeamSalary = teamEmployees.reduce((sum, emp) => sum + (Number(emp.salary) || 0), 0);
-          const isActive = selectedTeam === team;
-=======
-        {teamOverview.map((team) => {
+        {teamOverview.map((team: any) => {
           const teamEmployees = team.employees || [];
           const empCount = team.member_count ?? teamEmployees.length;
           const totalTeamSalary = team.total_salary ?? 0;
           const isActive = selectedTeam === team.team_name;
->>>>>>> 881eff2d6d04a138ab2d8951a9dda89c8aee0db9
 
           return (
             <div key={team.team_id}>
@@ -111,13 +103,8 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview }) => 
                       <tbody>
                         {teamEmployees.map((emp: any, idx: number) => (
                           <tr key={emp.id} className={`${idx !== teamEmployees.length - 1 ? "border-b border-neutral-100" : ""} ${idx % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
-<<<<<<< HEAD
-                            <td className="px-3.5 py-3 text-neutral-800">{emp.first_name} {emp.last_name}</td>
+                            <td className="px-3.5 py-3 text-neutral-800">{emp.name || `${emp.first_name} ${emp.last_name}`}</td>
                             <td className="px-3.5 py-3 text-neutral-800">{emp.role || emp.designation}</td>
-=======
-                            <td className="px-3.5 py-3 text-neutral-800">{emp.name}</td>
-                            <td className="px-3.5 py-3 text-neutral-800">{emp.role}</td>
->>>>>>> 881eff2d6d04a138ab2d8951a9dda89c8aee0db9
                             <td className="px-3.5 py-3 text-neutral-800">{emp.reporting_manager}</td>
                             <td className="px-3.5 py-3 text-neutral-800 font-medium">₹{Number(emp.salary || 0).toLocaleString()}</td>
                           </tr>

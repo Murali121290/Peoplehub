@@ -4,7 +4,6 @@ import Panel from "../components/Panel";
 import Avatar from "../components/Avatar";
 import Chip from "../components/Chip";
 import { Button } from "../../../components/ui/Button";
-import { API_URL } from "../../../config/api";
 
 const BASE_URL = `${API_URL}/api`;
 

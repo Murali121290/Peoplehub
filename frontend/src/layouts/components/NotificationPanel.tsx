@@ -1,6 +1,5 @@
 import { API_URL } from "../../config/api";
 import React from 'react';
-import { API_URL } from "../../config/api";
 
 interface NotificationPanelProps {
   notifications: any[];

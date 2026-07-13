@@ -1,7 +1,6 @@
 import { API_URL } from "../config/api";
 import React, { useState, useEffect } from "react";
 import { socket } from "../socket";
-import { API_URL } from "../config/api";
 import { InboxIcon } from "@heroicons/react/24/outline";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";

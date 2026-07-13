@@ -1,7 +1,6 @@
 import { API_URL } from "../../../config/api";
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { API_URL } from "../../../config/api";
 
 // ─────────────────────────────────────────────
 // Props
