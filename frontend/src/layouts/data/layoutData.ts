@@ -1,4 +1,5 @@
-export const BASE_URL = "http://10.1.6.178:5001/api";
+import { API_URL } from "../../config/api";
+export const BASE_URL = `${API_URL}/api`;
 
 export const reportLinks = [
   {

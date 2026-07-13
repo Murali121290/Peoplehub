@@ -1,3 +1,4 @@
+import { API_URL } from "../config/api";
 import React, { useEffect, useMemo, useState } from "react";
 import { socket } from "../services/socket";
 import {
@@ -31,7 +32,7 @@ import { Input, Select } from "../components/ui/Form";
 import type { StatCardColor } from "../components/ui/StatCard";
 import type { BadgeVariant } from "../components/ui/Badge";
 
-const BASE_URL = "http://10.1.6.178:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 // ==========================
 // THEME - professional enterprise palette
@@ -347,11 +348,11 @@ const ManagerDashboardPage = () => {
         prev.map((m) =>
           m.id === payload.id
             ? {
-                ...m,
-                role: payload.role || payload.designation || m.role,
-                name: `${payload.first_name} ${payload.last_name}`,
-                email: payload.email,
-              }
+              ...m,
+              role: payload.role || payload.designation || m.role,
+              name: `${payload.first_name} ${payload.last_name}`,
+              email: payload.email,
+            }
             : m
         )
       );
@@ -359,12 +360,12 @@ const ManagerDashboardPage = () => {
         prev.map((m) =>
           m.id === payload.id
             ? {
-                ...m,
-                designation: payload.designation || m.designation,
-                name: `${payload.first_name} ${payload.last_name}`,
-                email: payload.email,
-                shift: payload.shift,
-              }
+              ...m,
+              designation: payload.designation || m.designation,
+              name: `${payload.first_name} ${payload.last_name}`,
+              email: payload.email,
+              shift: payload.shift,
+            }
             : m
         )
       );
@@ -1466,8 +1467,8 @@ const ManagerDashboardPage = () => {
                             managerStatus === "Approved"
                               ? { bg: THEME.successBg, text: THEME.success }
                               : managerStatus === "Rejected"
-                              ? { bg: THEME.dangerBg, text: THEME.danger }
-                              : { bg: THEME.warningBg, text: THEME.warning };
+                                ? { bg: THEME.dangerBg, text: THEME.danger }
+                                : { bg: THEME.warningBg, text: THEME.warning };
 
                           return (
                             <tr

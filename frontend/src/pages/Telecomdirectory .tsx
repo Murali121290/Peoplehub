@@ -1,3 +1,4 @@
+import { API_URL } from "../config/api";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -99,7 +100,7 @@ export default function TelecomDirectory() {
   const loadTelecoms = async () => {
     try {
       setLoading(true);
-      const response = await fetch("http://10.1.6.178:5001/api/telecom/");
+      const response = await fetch(`${API_URL}/api/telecom/`);
       if (!response.ok) throw new Error("Failed to fetch telecoms");
       const data = await response.json();
       setTelecoms(Array.isArray(data) ? data : []);
@@ -124,7 +125,7 @@ export default function TelecomDirectory() {
 
     setFormLoading(true);
     try {
-      const res = await fetch("http://10.1.6.178:5001/api/telecom/", {
+      const res = await fetch(`${API_URL}/api/telecom/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -159,7 +160,7 @@ export default function TelecomDirectory() {
 
     try {
       const res = await fetch(
-        `http://10.1.6.178:5001/api/telecom/${editingId}`,
+        `${API_URL}/api/telecom/${editingId}`,
         {
           method: "PUT",
           headers: {
@@ -195,7 +196,7 @@ export default function TelecomDirectory() {
 
     setDeleteLoading(true);
     try {
-      const res = await fetch(`http://10.1.6.178:5001/api/telecom/${deleteId}`, {
+      const res = await fetch(`${API_URL}/api/telecom/${deleteId}`, {
         method: "DELETE",
       });
 
@@ -216,7 +217,7 @@ export default function TelecomDirectory() {
     const newStatus = entry.status === "Active" ? "Inactive" : "Active";
 
     try {
-      const res = await fetch(`http://10.1.6.178:5001/api/telecom/${entry.id}`, {
+      const res = await fetch(`${API_URL}/api/telecom/${entry.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

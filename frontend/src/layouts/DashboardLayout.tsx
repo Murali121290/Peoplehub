@@ -1,3 +1,4 @@
+import { API_URL } from "../config/api";
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
@@ -19,7 +20,7 @@ import ChatPanel from "./components/ChatPanel";
 import { useNavigation } from "./hooks/useNavigation";
 import { useIsDesktop } from "./hooks/useIsDesktop";
 
-const BASE_URL = "http://10.1.6.178:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -198,7 +199,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       toast.error("Sender employee details not found.");
       return;
     }
-    
+
     try {
       const res = await fetch(`${BASE_URL}/birthday-wishes`, {
         method: "POST",

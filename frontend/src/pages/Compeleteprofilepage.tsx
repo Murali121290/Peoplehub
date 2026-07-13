@@ -1,3 +1,4 @@
+import { API_URL } from "../config/api";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -136,7 +137,7 @@ const Completeprofilepage = () => {
     const fetchEmployee = async () => {
       try {
         const res = await fetch(
-          `http://10.1.6.178:5001/api/employees/${employeeId}`,
+          `${API_URL}/api/employees/${employeeId}`,
         );
         const data = await res.json();
         setEmployeeInfo(data);
@@ -243,7 +244,7 @@ const Completeprofilepage = () => {
       });
 
       const res = await fetch(
-        `http://10.1.6.178:5001/api/employees/${employeeId}`,
+        `${API_URL}/api/employees/${employeeId}`,
         {
           method: "PATCH",
           body: payload,

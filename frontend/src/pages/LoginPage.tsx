@@ -1,3 +1,4 @@
+import { API_URL } from "../config/api";
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -113,7 +114,7 @@ const LoginPage: React.FC = () => {
       const user = JSON.parse(localStorage.getItem("user") || "{}");
 
       const res = await axios.post(
-        "http://10.1.6.178:5001/api/auth/change-password",
+        `${API_URL}/api/auth/change-password`,
         {
           user_id: user.id,
           current_password: pwData.oldPassword,

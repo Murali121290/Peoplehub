@@ -1,3 +1,4 @@
+import { API_URL } from "../../config/api";
 import React, { useState, useEffect } from "react";
 import { toast } from "react-hot-toast";
 import {
@@ -23,7 +24,7 @@ import ShiftTab from "./tabs/ShiftTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import ProfileTab from "./tabs/ProfileTab";
 
-const BASE_URL = "http://10.1.6.178:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -65,11 +66,18 @@ const EmployeeDashboardPage: React.FC = () => {
     `${currentEmployee?.first_name} ${currentEmployee?.last_name}`
       .trim()
       .toLowerCase();
-  const pendingShiftCount = managerShiftRequests.filter(
-    (shift: any) =>
-      shift.reporting_manager?.trim().toLowerCase() === managerName &&
-      shift.status === "Pending"
-  ).length;
+
+  const canApprove = ["admin", "manager", "hr"].includes(
+    (user?.access_level || user?.role || "").toLowerCase()
+  );
+
+  const pendingShiftCount = canApprove
+    ? managerShiftRequests.filter(
+        (shift: any) =>
+          shift.reporting_manager?.trim().toLowerCase() === managerName &&
+          shift.status === "Pending"
+      ).length
+    : 0;
 
   // Attendance/timer state
   const [isCheckedIn, setIsCheckedIn] = useState(false);
@@ -106,17 +114,21 @@ const EmployeeDashboardPage: React.FC = () => {
   );
 
 
-  const approvalLeaves = leaveRequests.filter(
-    (leave: any) =>
-      leave.reporting_manager?.trim().toLowerCase() === managerName,
-  );
+  const approvalLeaves = canApprove
+    ? leaveRequests.filter(
+        (leave: any) =>
+          leave.reporting_manager?.trim().toLowerCase() === managerName,
+      )
+    : [];
   const totalBalance =
     (currentEmployee?.sick_leave || 0) +
     (currentEmployee?.casual_leave || 0) +
     (currentEmployee?.privilege_leave || 0);
-  const pendingLeaveCount = approvalLeaves.filter(
-    (leave: any) => leave.status === "Pending"
-  ).length;
+  const pendingLeaveCount = canApprove
+    ? approvalLeaves.filter(
+        (leave: any) => leave.status === "Pending"
+      ).length
+    : 0;
 
   const showPopup = (type: string, title: string, message: string) => {
     setPopup({ show: true, type, title, message });
@@ -891,7 +903,7 @@ const EmployeeDashboardPage: React.FC = () => {
         }
         return [payload, ...prev];
       });
-      
+
       // If the leave belongs to current user, we should update their leave balance in employees state!
       if (Number(payload.employee_id) === Number(currentEmployee?.id)) {
         // Reload employee details from backend to sync balances
@@ -908,7 +920,7 @@ const EmployeeDashboardPage: React.FC = () => {
         setManagerShiftRequests((prev) => prev.filter((s) => s.id !== payload.id));
         return;
       }
-      
+
       // If it belongs to current employee
       if (Number(payload.employee_id) === Number(currentEmployee?.user_id)) {
         setShiftRequests((prev) => {
@@ -1117,7 +1129,7 @@ const EmployeeDashboardPage: React.FC = () => {
             className="space-y-6"
           >
             {activeTab === "overview" && (
-            <OverviewTab
+              <OverviewTab
                 isCheckedIn={isCheckedIn}
                 checkInTime={checkInTime}
                 timer={timer}

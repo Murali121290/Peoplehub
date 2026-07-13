@@ -47,8 +47,8 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, employees }) => {
           Team Overview
         </div>
 
-        {[...new Set(employees.map((emp) => emp.designation))].filter(Boolean).map((team: any) => {
-          const teamEmployees = employees.filter((emp) => emp.designation === team);
+        {[...new Set(employees.map((emp) => emp.department))].filter(Boolean).map((team: any) => {
+          const teamEmployees = employees.filter((emp) => emp.department === team);
           const empCount = teamEmployees.length;
           const totalTeamSalary = teamEmployees.reduce((sum, emp) => sum + (Number(emp.salary) || 0), 0);
           const isActive = selectedTeam === team;
@@ -104,7 +104,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, employees }) => {
                         {teamEmployees.map((emp, idx) => (
                           <tr key={emp.id} className={`${idx !== teamEmployees.length - 1 ? "border-b border-neutral-100" : ""} ${idx % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
                             <td className="px-3.5 py-3 text-neutral-800">{emp.first_name} {emp.last_name}</td>
-                            <td className="px-3.5 py-3 text-neutral-800">{emp.role}</td>
+                            <td className="px-3.5 py-3 text-neutral-800">{emp.role || emp.designation}</td>
                             <td className="px-3.5 py-3 text-neutral-800">{emp.reporting_manager}</td>
                             <td className="px-3.5 py-3 text-neutral-800 font-medium">₹{Number(emp.salary || 0).toLocaleString()}</td>
                           </tr>

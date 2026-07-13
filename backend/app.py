@@ -172,12 +172,12 @@ def create_app():
         ))
         db.session.commit()
 
-        seed_teams()
-        seed_roles()
-        seed_users()
-        seed_employees()
-        seed_telecom()
-        seed_appraisal()
+        # seed_teams()
+        # seed_roles()
+        # seed_users()
+        # seed_employees()
+        # seed_telecom()
+        # seed_appraisal()
         
 
     # Check missed check-ins every minute

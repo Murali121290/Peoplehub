@@ -1,3 +1,4 @@
+import { API_URL } from "../../config/api";
 import React, { useState, useEffect, useMemo } from "react";
 import { apiService } from "../../services/api";
 import {
@@ -42,7 +43,7 @@ const NAV_ICONS: Record<string, React.ElementType> = {
   settings: Cog6ToothIcon,
 };
 
-const BASE_URL = "http://10.1.6.178:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 export default function HRAdminDashboard() {
   const [nav, setNav] = useState("dashboard");
@@ -136,11 +137,6 @@ export default function HRAdminDashboard() {
 
   // --- Counts ---
   const counts = useMemo(() => {
-    const employeeUsers = employees.filter((emp) => {
-      const role = emp.role?.toLowerCase() || "";
-      return !["hr", "admin", "manager", "project manager"].includes(role);
-    });
-
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -157,11 +153,11 @@ export default function HRAdminDashboard() {
           .map((att) => att.user_id),
       ),
     ];
-    const activeEmployees = employeeUsers.filter((emp) =>
+    const activeEmployees = employees.filter((emp) =>
       presentEmployeeIds.includes(emp.user_id),
     ).length;
 
-    const onLeaveEmployees = employeeUsers.filter((emp) => {
+    const onLeaveEmployees = employees.filter((emp) => {
       return leaves.some((leave) => {
         const isUserMatch =
           String(leave.employee_id) === String(emp.id) ||
@@ -182,7 +178,7 @@ export default function HRAdminDashboard() {
     }).length;
 
     return {
-      total: employeeUsers.length,
+      total: employees.length,
       active: activeEmployees,
       onLeave: onLeaveEmployees,
       pendingLeaves: leaves.filter((leave) => leave.status?.toLowerCase() === "pending")

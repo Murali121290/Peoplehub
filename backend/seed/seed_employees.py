@@ -20,24 +20,25 @@ def seed_employees():
 
         # Department & Designation
         role_name = user.role.name if user.role else ""
+        user_team_name = user.team.name if user.team else None
 
         if user.access_level == "admin":
-            department = "Administration"
+            department = user_team_name or "Administration"
             designation = role_name
             reporting_manager = ""
 
         elif user.access_level == "hr":
-            department = "Human Resources"
+            department = user_team_name or "Human Resources"
             designation = role_name
             reporting_manager = "Admin"
 
         elif user.access_level == "manager":
-            department = "Production"
+            department = user_team_name or "Editorial Team"
             designation = role_name
             reporting_manager = "Admin"
 
         else:
-            department = "Editorial Team"
+            department = user_team_name or "Editorial Team"
             designation = role_name
             reporting_manager = "Team Lead - Editorial"
 

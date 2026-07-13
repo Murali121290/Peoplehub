@@ -1,3 +1,4 @@
+import { API_URL } from "../../../config/api";
 import React, { useEffect, useState, useCallback } from "react";
 import axios, { AxiosError } from "axios";
 import {
@@ -20,7 +21,7 @@ import { Spinner } from "../../../components/ui/Spinner";
 import { EmptyState } from "../../../components/ui/EmptyState";
 
 // Constants
-const BASE_URL = "http://10.1.6.178:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 // TypeScript Interfaces
 interface Employee {

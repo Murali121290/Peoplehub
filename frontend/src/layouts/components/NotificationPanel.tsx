@@ -1,3 +1,4 @@
+import { API_URL } from "../../config/api";
 import React from 'react';
 
 interface NotificationPanelProps {
@@ -13,7 +14,7 @@ interface NotificationPanelProps {
   onViewAttendance?: (employeeId: number) => void;
 }
 
-const BASE_URL = "http://10.1.6.178:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 const NotificationPanel: React.FC<NotificationPanelProps> = ({
   notifications,
@@ -71,10 +72,10 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                 const isMissedCheckin = item.related_type === "missed_checkin";
                 const isCheckinReminder = item.related_type === "checkin_reminder";
                 const isEmployeeCheckedIn = item.related_type === "employee_checked_in";
-                
+
                 return (
-                  <li 
-                    key={item.id} 
+                  <li
+                    key={item.id}
                     className="p-4 hover:bg-slate-50 transition-all duration-200 flex gap-4 items-start rounded-xl mx-2 my-2 border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 relative bg-white"
                   >
                     {/* Unread indicator dot */}
@@ -114,7 +115,7 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                           {item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
                         </span>
                       </div>
-                      
+
                       <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                         {item.message}
                       </p>
@@ -130,11 +131,10 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                                 }
                               }}
                               disabled={item.thanked}
-                              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border shadow-sm transition-all ${
-                                item.thanked
+                              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border shadow-sm transition-all ${item.thanked
                                   ? "bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed"
                                   : "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 cursor-pointer"
-                              }`}
+                                }`}
                             >
                               {item.thanked ? "✔ Thanked" : "Thanks"}
                             </button>

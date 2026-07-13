@@ -1,3 +1,4 @@
+import { API_URL } from "../../../config/api";
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -155,7 +156,7 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
   const teaDone = !isTeaBreak && totalTeaSeconds > 0;
 
   const imgSrc = currentEmployee?.id
-    ? `http://10.1.6.178:5001/api/employees/image/${currentEmployee.id}`
+    ? `${API_URL}/api/employees/image/${currentEmployee.id}`
     : "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
   const fallback = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
@@ -163,30 +164,30 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
   const statusBadgeCls = isLunchBreak
     ? "bg-amber-50 border-amber-200 text-amber-700"
     : isTeaBreak
-    ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-    : isCheckedIn
-    ? "bg-green-50 border-green-200 text-green-700"
-    : isCheckedOut
-    ? "bg-gray-100 border-gray-200 text-gray-500"
-    : "bg-gray-50 border-gray-200 text-gray-400";
+      ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+      : isCheckedIn
+        ? "bg-green-50 border-green-200 text-green-700"
+        : isCheckedOut
+          ? "bg-gray-100 border-gray-200 text-gray-500"
+          : "bg-gray-50 border-gray-200 text-gray-400";
 
   const dotCls = isLunchBreak
     ? "bg-amber-400 animate-pulse"
     : isTeaBreak
-    ? "bg-emerald-400 animate-pulse"
-    : isCheckedIn
-    ? "bg-green-500 animate-pulse"
-    : "bg-gray-400";
+      ? "bg-emerald-400 animate-pulse"
+      : isCheckedIn
+        ? "bg-green-500 animate-pulse"
+        : "bg-gray-400";
 
   const statusLabel = isLunchBreak
     ? "Lunch Break"
     : isTeaBreak
-    ? "Tea Break"
-    : isCheckedIn
-    ? "On Shift"
-    : isCheckedOut
-    ? "Completed"
-    : "Off Shift";
+      ? "Tea Break"
+      : isCheckedIn
+        ? "On Shift"
+        : isCheckedOut
+          ? "Completed"
+          : "Off Shift";
 
   return (
     <div ref={cardRef} className="w-full">

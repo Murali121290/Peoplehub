@@ -41,6 +41,12 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   const [shiftTab, setShiftTab] = useState("my");
   const [showShiftForm, setShowShiftForm] = useState(false);
   const [activeRequestDetails, setActiveRequestDetails] = useState<number | null>(null);
+
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const canApproveShifts = ["admin", "manager", "hr"].includes(
+    (user?.access_level || "").toLowerCase()
+  );
+
   
   const [shiftForm, setShiftForm] = useState({
     requestedShift: "General Shift",
@@ -191,16 +197,18 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
         >
           My Requests
         </button>
-        <button
-          onClick={() => setShiftTab("approval")}
-          className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
-            shiftTab === "approval" 
-              ? "bg-white text-primary-700 shadow-sm border border-neutral-200/50" 
-              : "text-neutral-500 hover:text-neutral-800"
-          }`}
-        >
-          Approval Requests
-        </button>
+        {canApproveShifts && (
+          <button
+            onClick={() => setShiftTab("approval")}
+            className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+              shiftTab === "approval" 
+                ? "bg-white text-primary-700 shadow-sm border border-neutral-200/50" 
+                : "text-neutral-500 hover:text-neutral-800"
+            }`}
+          >
+            Approval Requests
+          </button>
+        )}
       </div>
 
       {/* Active Shift Request Timeline Widget */}
@@ -422,7 +430,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       )}
 
       {/* Approval Requests history */}
-      {shiftTab === "approval" && (
+      {shiftTab === "approval" && canApproveShifts && (
         <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
           <div className="px-6 py-5 border-b border-neutral-200 bg-neutral-50/50">
             <h3 className="text-lg font-bold text-neutral-850">Shift Approval Requests</h3>

@@ -1,3 +1,4 @@
+import { API_URL } from "../../../config/api";
 import { useState, useEffect } from "react";
 import { createBooking } from "../../../services/meetingRoomService";
 import { FormField, Input, Select, Textarea } from "../../../components/ui/Form";
@@ -51,7 +52,7 @@ const BookingForm: React.FC<BookingFormProps> = ({
   useEffect(() => {
     const fetchEmployees = async () => {
       try {
-        const response = await fetch("http://10.1.6.178:5001/api/employees/");
+        const response = await fetch(`${API_URL}/api/employees/`);
         if (response.ok) {
           const data = await response.json();
           setEmployees(data || []);
@@ -252,8 +253,8 @@ const BookingForm: React.FC<BookingFormProps> = ({
       {message.text && (
         <div
           className={`mb-5 rounded-2xl border px-4 py-3 text-sm ${message.type === "success"
-              ? "border-success-200 bg-success-50 text-success-700"
-              : "border-danger-200 bg-danger-50 text-danger-700"
+            ? "border-success-200 bg-success-50 text-success-700"
+            : "border-danger-200 bg-danger-50 text-danger-700"
             }`}
         >
           {message.text}
