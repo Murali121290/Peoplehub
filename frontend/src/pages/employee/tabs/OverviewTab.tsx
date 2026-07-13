@@ -17,6 +17,8 @@ interface OverviewTabProps {
   totalTeaSeconds: number;
   isLunchBreak: boolean;
   isTeaBreak: boolean;
+  lunchStartTime: Date | null;
+  teaStartTime: Date | null;
   currentEmployee: any;
   user: any;
   onCheckInOut: () => void;
@@ -27,7 +29,7 @@ interface OverviewTabProps {
 
 const OverviewTab: React.FC<OverviewTabProps> = ({
   isCheckedIn, checkInTime, timer, totalLunchSeconds, totalTeaSeconds,
-  isLunchBreak, isTeaBreak, currentEmployee, user,
+  isLunchBreak, isTeaBreak, lunchStartTime, teaStartTime, currentEmployee, user,
   onCheckInOut, onLunchBreak, onTeaBreak, itemVariants,
 }) => {
   return (
@@ -41,6 +43,8 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           totalTeaSeconds={totalTeaSeconds}
           isLunchBreak={isLunchBreak}
           isTeaBreak={isTeaBreak}
+          lunchStartTime={lunchStartTime}
+          teaStartTime={teaStartTime}
           currentEmployee={currentEmployee}
           user={user}
           onCheckInOut={onCheckInOut}

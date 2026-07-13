@@ -131,6 +131,31 @@ const EmployeeDashboardPage: React.FC = () => {
     return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   };
 
+  const parseTimeString = (timeStr: string) => {
+    if (!timeStr) return new Date();
+    if (timeStr.includes("T") || timeStr.includes("-")) {
+      return new Date(timeStr);
+    }
+    const d = new Date();
+    const match = timeStr.match(/^(\d+):(\d+)(?::(\d+))?\s*(AM|PM)?$/i);
+    if (match) {
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const seconds = match[3] ? parseInt(match[3], 10) : 0;
+      const ampm = match[4];
+      if (ampm) {
+        if (ampm.toUpperCase() === "PM" && hours < 12) {
+          hours += 12;
+        } else if (ampm.toUpperCase() === "AM" && hours === 12) {
+          hours = 0;
+        }
+      }
+      d.setHours(hours, minutes, seconds, 0);
+      return d;
+    }
+    return new Date();
+  };
+
   const loadTodayAttendanceSummary = (userId: string) => {
     try {
       const summaryJson = localStorage.getItem(`todayAttendanceSummary_${userId}`);
@@ -818,7 +843,15 @@ const EmployeeDashboardPage: React.FC = () => {
         setIsLunchBreak(payload.lunch_break);
         setIsTeaBreak(payload.tea_break);
         if (payload.check_in) {
-          setCheckInTime(new Date(payload.check_in));
+          const userId = localStorage.getItem("user_id");
+          const localSaved = userId ? localStorage.getItem(`checkInTime_${userId}`) : null;
+          const savedDate = userId ? localStorage.getItem(`checkInDate_${userId}`) : null;
+          const todayKey = new Date().toISOString().split("T")[0];
+          if (localSaved && savedDate === todayKey) {
+            setCheckInTime(new Date(localSaved));
+          } else {
+            setCheckInTime(parseTimeString(payload.check_in));
+          }
         } else {
           setCheckInTime(null);
         }
@@ -942,13 +975,25 @@ const EmployeeDashboardPage: React.FC = () => {
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (isCheckedIn && checkInTime && !isLunchBreak && !isTeaBreak) {
+    if (isCheckedIn && checkInTime) {
       interval = setInterval(() => {
-        const totalWorkedSeconds = Math.floor(
-          (new Date().getTime() - checkInTime.getTime()) / 1000,
+        const now = new Date().getTime();
+        const elapsed = Math.floor((now - checkInTime.getTime()) / 1000);
+
+        // Add currently-running break seconds on top of already-accumulated seconds
+        const runningLunch =
+          isLunchBreak && lunchStartTime
+            ? Math.floor((now - lunchStartTime.getTime()) / 1000)
+            : 0;
+        const runningTea =
+          isTeaBreak && teaStartTime
+            ? Math.floor((now - teaStartTime.getTime()) / 1000)
+            : 0;
+
+        const workingSeconds = Math.max(
+          elapsed - totalLunchSeconds - runningLunch - totalTeaSeconds - runningTea,
+          0,
         );
-        const workingSeconds =
-          totalWorkedSeconds - totalLunchSeconds - totalTeaSeconds;
         const hrs = Math.floor(workingSeconds / 3600);
         const mins = Math.floor((workingSeconds % 3600) / 60);
         const secs = workingSeconds % 60;
@@ -965,6 +1010,8 @@ const EmployeeDashboardPage: React.FC = () => {
     checkInTime,
     isLunchBreak,
     isTeaBreak,
+    lunchStartTime,
+    teaStartTime,
     totalLunchSeconds,
     totalTeaSeconds,
   ]);
@@ -1070,7 +1117,7 @@ const EmployeeDashboardPage: React.FC = () => {
             className="space-y-6"
           >
             {activeTab === "overview" && (
-              <OverviewTab
+            <OverviewTab
                 isCheckedIn={isCheckedIn}
                 checkInTime={checkInTime}
                 timer={timer}
@@ -1078,6 +1125,8 @@ const EmployeeDashboardPage: React.FC = () => {
                 totalTeaSeconds={totalTeaSeconds}
                 isLunchBreak={isLunchBreak}
                 isTeaBreak={isTeaBreak}
+                lunchStartTime={lunchStartTime}
+                teaStartTime={teaStartTime}
                 currentEmployee={currentEmployee}
                 user={user}
                 onCheckInOut={() =>

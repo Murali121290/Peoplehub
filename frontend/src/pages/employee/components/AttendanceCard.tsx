@@ -1,7 +1,9 @@
-import React from "react";
-import { Card } from "../../../components/ui/Card";
-import { Button } from "../../../components/ui/Button";
+import React, { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
+// ─────────────────────────────────────────────
+// Props
+// ─────────────────────────────────────────────
 interface AttendanceCardProps {
   isCheckedIn: boolean;
   checkInTime: Date | null;
@@ -10,6 +12,8 @@ interface AttendanceCardProps {
   totalTeaSeconds: number;
   isLunchBreak: boolean;
   isTeaBreak: boolean;
+  lunchStartTime: Date | null;
+  teaStartTime: Date | null;
   currentEmployee: any;
   user: any;
   onCheckInOut: () => void;
@@ -17,23 +21,105 @@ interface AttendanceCardProps {
   onTeaBreak: () => void;
 }
 
-const AttendanceCard: React.FC<AttendanceCardProps> = ({
-  isCheckedIn,
-  checkInTime,
-  timer,
-  totalLunchSeconds,
-  totalTeaSeconds,
-  isLunchBreak,
-  isTeaBreak,
-  currentEmployee,
-  user,
-  onCheckInOut,
-  onLunchBreak,
-  onTeaBreak,
-}) => {
-  const cardRef = React.useRef<HTMLDivElement>(null);
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+function fmtHMS(s: number): string {
+  if (!Number.isFinite(s) || s < 0) s = 0;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
 
-  React.useEffect(() => {
+function timerToWorked(t: string): string {
+  const [h, m] = t.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return "—";
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ─────────────────────────────────────────────
+// HoverActionButton
+// ─────────────────────────────────────────────
+interface HoverActionButtonProps {
+  idleContent: React.ReactNode;
+  hoverContent: React.ReactNode;
+  idleCls: string;
+  hoverCls: string;
+  onClick: () => void;
+  disabled?: boolean;
+}
+
+const HoverActionButton: React.FC<HoverActionButtonProps> = ({
+  idleContent, hoverContent, idleCls, hoverCls, onClick, disabled = false,
+}) => {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <motion.button
+      onHoverStart={() => { if (!disabled) setHovered(true); }}
+      onHoverEnd={() => setHovered(false)}
+      onClick={() => { if (!disabled) onClick(); }}
+      disabled={disabled}
+      whileTap={disabled ? {} : { scale: 0.96 }}
+      className="relative overflow-hidden w-full rounded-xl shadow-md disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none"
+      style={{ minHeight: "52px" }}
+    >
+      <AnimatePresence mode="wait">
+        {!hovered ? (
+          <motion.div
+            key="idle"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className={`flex items-center justify-center gap-2 px-4 py-3 text-white text-sm font-bold w-full ${idleCls}`}
+          >
+            {idleContent}
+          </motion.div>
+        ) : (
+          <motion.div
+            key="hover"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className={`flex items-center justify-center gap-2 px-4 py-3 text-white text-sm font-bold w-full ${hoverCls}`}
+          >
+            {hoverContent}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.button>
+  );
+};
+
+// ─────────────────────────────────────────────
+// DoneButton
+// ─────────────────────────────────────────────
+const DoneButton: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.9 }}
+    animate={{ opacity: 1, scale: 1 }}
+    transition={{ duration: 0.3, ease: "easeOut" }}
+    className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gray-800 text-white text-sm font-bold shadow-md select-none"
+    style={{ minHeight: "52px" }}
+  >
+    {children}
+  </motion.div>
+);
+
+// ─────────────────────────────────────────────
+// AttendanceCard
+// ─────────────────────────────────────────────
+const AttendanceCard: React.FC<AttendanceCardProps> = ({
+  isCheckedIn, checkInTime, timer, totalLunchSeconds, totalTeaSeconds,
+  isLunchBreak, isTeaBreak, lunchStartTime, teaStartTime,
+  currentEmployee, user, onCheckInOut, onLunchBreak, onTeaBreak,
+}) => {
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Keep existing scroll-to-highlight logic
+  useEffect(() => {
     if (!isCheckedIn && localStorage.getItem("highlightCheckIn") === "true") {
       setTimeout(() => {
         cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -43,215 +129,237 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
 
   const shouldHighlight = !isCheckedIn && localStorage.getItem("highlightCheckIn") === "true";
 
-  const profileImageUrl = currentEmployee?.id
+  // Live lunch break timer
+  const [liveLunchSec, setLiveLunchSec] = useState(0);
+  useEffect(() => {
+    if (!isLunchBreak || !lunchStartTime) { setLiveLunchSec(0); return; }
+    const tick = () => setLiveLunchSec(Math.floor((Date.now() - lunchStartTime.getTime()) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [isLunchBreak, lunchStartTime]);
+
+  // Live tea break timer
+  const [liveTeaSec, setLiveTeaSec] = useState(0);
+  useEffect(() => {
+    if (!isTeaBreak || !teaStartTime) { setLiveTeaSec(0); return; }
+    const tick = () => setLiveTeaSec(Math.floor((Date.now() - teaStartTime.getTime()) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [isTeaBreak, teaStartTime]);
+
+  // Derived states
+  const isCheckedOut = !isCheckedIn && timer !== "00:00:00";
+  const lunchDone = !isLunchBreak && totalLunchSeconds > 0;
+  const teaDone = !isTeaBreak && totalTeaSeconds > 0;
+
+  const imgSrc = currentEmployee?.id
     ? `http://10.1.6.178:5001/api/employees/image/${currentEmployee.id}`
     : "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
+  const fallback = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+
+  const statusBadgeCls = isLunchBreak
+    ? "bg-amber-50 border-amber-200 text-amber-700"
+    : isTeaBreak
+    ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+    : isCheckedIn
+    ? "bg-green-50 border-green-200 text-green-700"
+    : isCheckedOut
+    ? "bg-gray-100 border-gray-200 text-gray-500"
+    : "bg-gray-50 border-gray-200 text-gray-400";
+
+  const dotCls = isLunchBreak
+    ? "bg-amber-400 animate-pulse"
+    : isTeaBreak
+    ? "bg-emerald-400 animate-pulse"
+    : isCheckedIn
+    ? "bg-green-500 animate-pulse"
+    : "bg-gray-400";
+
+  const statusLabel = isLunchBreak
+    ? "Lunch Break"
+    : isTeaBreak
+    ? "Tea Break"
+    : isCheckedIn
+    ? "On Shift"
+    : isCheckedOut
+    ? "Completed"
+    : "Off Shift";
+
   return (
     <div ref={cardRef} className="w-full">
-      <Card padding="none" className="w-full max-w-10xl overflow-hidden">
-      {/* Employee Header */}
-      <div className="px-6 py-5 flex items-center justify-between border-b border-neutral-100">
-        <div className="flex items-center gap-4 h-[10px]">
-          <div className="w-14 h-14 rounded-2xl overflow-hidden border border-neutral-200 flex-shrink-0">
-            <img
-              src={
-                currentEmployee?.id
-                  ? `http://10.1.6.178:5001/api/employees/image/${currentEmployee.id}`
-                  : "https://cdn-icons-png.flaticon.com/512/149/149071.png"
-              }
-              alt="profile"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                e.currentTarget.src =
-                  "https://cdn-icons-png.flaticon.com/512/149/149071.png";
-              }}
+      <div
+        className={
+          "w-full bg-white rounded-2xl border shadow-lg overflow-hidden transition-all duration-300 " +
+          (shouldHighlight
+            ? "ring-4 ring-blue-500 ring-offset-2 border-blue-300"
+            : "border-gray-200")
+        }
+      >
+        {/* ── Employee Header ── */}
+        <div className="px-6 py-5 flex items-center justify-between border-b border-gray-100">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-gray-100 shadow-sm flex-shrink-0">
+              <img
+                src={imgSrc}
+                alt="profile"
+                className="w-full h-full object-cover"
+                onError={(e) => { e.currentTarget.src = fallback; }}
+              />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-gray-900 leading-tight">
+                {user?.full_name || "Employee Name"}
+              </h2>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-full">
+                  {currentEmployee?.role || user?.role || "Employee"}
+                </span>
+                <span className="text-gray-300 text-xs">|</span>
+                <span className="text-xs text-gray-400">{user?.access_level || "Access Level"}</span>
+              </div>
+            </div>
+          </div>
+          <motion.div
+            layout
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold transition-colors duration-300 ${statusBadgeCls}`}
+          >
+            <span className={`w-2 h-2 rounded-full ${dotCls}`} />
+            {statusLabel}
+          </motion.div>
+        </div>
+
+        {/* ── Stats row ── */}
+
+        {/* ── Total break row ── */}
+        <div className="px-6 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Break Time</p>
+          <p className="text-sm font-bold text-gray-700">{Math.floor((totalLunchSeconds + totalTeaSeconds) / 60)} min</p>
+        </div>
+
+        {/* ── Active break alerts ── */}
+        <AnimatePresence>
+          {(isLunchBreak || isTeaBreak) && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25 }}
+              className="overflow-hidden"
+            >
+              <div className="px-6 py-3 border-b border-gray-100 flex flex-col gap-2">
+                {isLunchBreak && (
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                    <span className="text-sm">🍱</span>
+                    <p className="text-xs text-amber-700 flex-1">
+                      Lunch break active — hover the button and click <strong>Stop Lunch</strong> to resume.
+                    </p>
+                  </div>
+                )}
+                {isTeaBreak && (
+                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+                    <span className="text-sm">☕</span>
+                    <p className="text-xs text-emerald-700 flex-1">
+                      Tea break active — hover the button and click <strong>Stop Tea</strong> to resume.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Action Buttons ── */}
+        <div className="px-6 py-5 grid grid-cols-3 gap-3">
+
+          {/* Working Hours / Check-In-Out */}
+          {isCheckedOut ? (
+            <DoneButton>
+              <span className="text-green-400">✅</span>
+              <span>Worked {timerToWorked(timer)}</span>
+            </DoneButton>
+          ) : !isCheckedIn ? (
+            <HoverActionButton
+              idleContent={<span className="tracking-wide">Check In</span>}
+              hoverContent={<span className="tracking-wide">Check In</span>}
+              idleCls="bg-gradient-to-br from-blue-500 to-blue-700"
+              hoverCls="bg-gradient-to-br from-blue-600 to-blue-800"
+              onClick={() => { localStorage.removeItem("highlightCheckIn"); onCheckInOut(); }}
             />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-neutral-800">
-              {user?.full_name || "Employee Name"}
-            </h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-medium text-neutral-500 bg-neutral-100 px-2.5 py-0.5 rounded-full">
-                {currentEmployee?.role || user?.role || "Employee"}
-              </span>
-              <span className="text-neutral-300 text-xs">|</span>
-              <span className="text-xs text-neutral-500">
-                {user?.access_level || "Access Level"}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold ${isCheckedIn
-              ? "bg-success-50 border-success-200 text-success-700"
-              : "bg-neutral-50 border-neutral-200 text-neutral-500"
-            }`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${isCheckedIn ? "bg-success-500" : "bg-neutral-400"}`}
-          />
-          {isCheckedIn ? "On Shift" : "Off Shift"}
-        </div>
-      </div>
-
-      {/* Three Column Stats */}
-      <div className="grid grid-cols-3 divide-x divide-neutral-100 border-b border-neutral-100">
-        <div className="px-6 py-5">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400 mb-3">
-            Working Hours
-          </p>
-          <p className="text-2xl font-bold font-mono text-neutral-800 leading-none tracking-tight">
-            {timer}
-          </p>
-          <p className="text-xs text-neutral-400 mt-2">
-            {isCheckedIn && checkInTime ? (
-              <>Since{' '}
-                <span className="text-neutral-700 font-medium">
-                  {checkInTime.toLocaleTimeString('en-US', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+          ) : (
+            <HoverActionButton
+              idleContent={
+                <span className="flex items-center gap-2 font-mono">
+                  <span className="w-2 h-2 rounded-full bg-green-300 animate-pulse inline-block" />
+                  {timer.includes("NaN") ? "00:00:00" : timer}
                 </span>
-              </>
-            ) : timer !== "00:00:00" ? (
-              'Today’s tracked working hours.'
-            ) : (
-              'Check in today to start tracking hours.'
-            )}
-          </p>
-        </div>
-
-        <div className="px-6 py-5">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400 mb-3">
-            Lunch Break
-          </p>
-          <p className="text-2xl font-bold font-mono text-neutral-800 leading-none">
-            {Math.floor(totalLunchSeconds / 60)}
-            <span className="text-lg font-medium text-neutral-400 ml-1">min</span>
-          </p>
-          <p className="text-xs text-neutral-400 mt-2">
-            {isCheckedIn ? (
-              isLunchBreak ? (
-                <span className="text-warning-600 font-medium">
-                  ● Break running
+              }
+              hoverContent={
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-red-200 inline-block" />
+                  Check Out
                 </span>
-              ) : (
-                'Lunch break duration'
-              )
-            ) : totalLunchSeconds > 0 ? (
-              'Today’s lunch break total.'
-            ) : (
-              'Check in to track lunch duration.'
-            )}
-          </p>
-        </div>
-
-        <div className="px-6 py-5">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400 mb-3">
-            Tea Break
-          </p>
-          <p className="text-2xl font-bold font-mono text-neutral-800 leading-none">
-            {Math.floor(totalTeaSeconds / 60)}
-            <span className="text-lg font-medium text-neutral-400 ml-1">min</span>
-          </p>
-          <p className="text-xs text-neutral-400 mt-2">
-            {isCheckedIn ? (
-              isTeaBreak ? (
-                <span className="text-success-600 font-medium">
-                  ● Break running
-                </span>
-              ) : (
-                'Tea break duration'
-              )
-            ) : totalTeaSeconds > 0 ? (
-              'Today’s tea break total.'
-            ) : (
-              'Check in to track tea duration.'
-            )}
-          </p>
-        </div>
-      </div>
-
-      {/* Total Break Row */}
-      <div className="px-6 py-3 bg-neutral-50 border-b border-neutral-100 flex items-center justify-between">
-        <p className="text-xs font-semibold text-neutral-500 uppercase tracking-widest">
-          Total Break Time
-        </p>
-        <p className="text-sm font-bold text-neutral-800">
-          {Math.floor((totalLunchSeconds + totalTeaSeconds) / 60)} min
-        </p>
-      </div>
-
-      {/* Active Break Alerts */}
-      {(isLunchBreak || isTeaBreak) && (
-        <div className="px-6 py-3 border-b border-neutral-100 flex flex-col gap-2">
-          {isLunchBreak && (
-            <div className="flex items-center gap-2 bg-warning-50 border border-warning-200 rounded-xl px-3 py-2">
-              <span className="text-sm">🍱</span>
-              <p className="text-xs text-warning-700 flex-1">
-                Lunch break is active — click <strong>Stop Lunch</strong> before
-                resuming work.
-              </p>
-            </div>
+              }
+              idleCls="bg-gradient-to-br from-green-500 to-green-700"
+              hoverCls="bg-gradient-to-br from-red-500 to-red-700"
+              onClick={() => { localStorage.removeItem("highlightCheckIn"); onCheckInOut(); }}
+            />
           )}
-          {isTeaBreak && (
-            <div className="flex items-center gap-2 bg-success-50 border border-success-200 rounded-xl px-3 py-2">
-              <span className="text-sm">☕</span>
-              <p className="text-xs text-success-700 flex-1">
-                Tea break is active — click <strong>Stop Tea</strong> before
-                resuming work.
-              </p>
-            </div>
+
+          {/* Lunch Break */}
+          {lunchDone ? (
+            <DoneButton>
+              <span className="text-green-400">✅</span>
+              <span>Lunch {fmtHMS(totalLunchSeconds)}</span>
+            </DoneButton>
+          ) : isLunchBreak ? (
+            <HoverActionButton
+              idleContent={<span className="font-mono">🍱 {fmtHMS(liveLunchSec)}</span>}
+              hoverContent={<span>⏹ Stop Lunch</span>}
+              idleCls="bg-gradient-to-br from-amber-500 to-amber-600"
+              hoverCls="bg-gradient-to-br from-red-500 to-red-700"
+              onClick={onLunchBreak}
+            />
+          ) : (
+            <HoverActionButton
+              idleContent={<span>🍱 Lunch Break</span>}
+              hoverContent={<span>🍱 Lunch Break</span>}
+              idleCls={isCheckedIn ? "bg-gradient-to-br from-amber-400 to-amber-500" : "bg-gray-300"}
+              hoverCls={isCheckedIn ? "bg-gradient-to-br from-amber-500 to-amber-600" : "bg-gray-300"}
+              onClick={onLunchBreak}
+              disabled={!isCheckedIn}
+            />
           )}
+
+          {/* Tea Break */}
+          {teaDone ? (
+            <DoneButton>
+              <span className="text-green-400">✅</span>
+              <span>Tea {fmtHMS(totalTeaSeconds)}</span>
+            </DoneButton>
+          ) : isTeaBreak ? (
+            <HoverActionButton
+              idleContent={<span className="font-mono">☕ {fmtHMS(liveTeaSec)}</span>}
+              hoverContent={<span>⏹ Stop Tea</span>}
+              idleCls="bg-gradient-to-br from-emerald-500 to-emerald-600"
+              hoverCls="bg-gradient-to-br from-red-500 to-red-700"
+              onClick={onTeaBreak}
+            />
+          ) : (
+            <HoverActionButton
+              idleContent={<span>☕ Tea Break</span>}
+              hoverContent={<span>☕ Tea Break</span>}
+              idleCls={isCheckedIn ? "bg-gradient-to-br from-emerald-500 to-emerald-600" : "bg-gray-300"}
+              hoverCls={isCheckedIn ? "bg-gradient-to-br from-emerald-600 to-emerald-700" : "bg-gray-300"}
+              onClick={onTeaBreak}
+              disabled={!isCheckedIn}
+            />
+          )}
+
         </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="px-6 py-4 grid grid-cols-3 gap-3">
-        <Button
-          variant={isCheckedIn ? "danger" : "primary"}
-          size="lg"
-          fullWidth
-          onClick={() => {
-            localStorage.removeItem("highlightCheckIn");
-            onCheckInOut();
-          }}
-          className={shouldHighlight ? "animate-pulse ring-4 ring-blue-500 ring-offset-2 scale-105 shadow-xl transition-all duration-300" : ""}
-        >
-          {isCheckedIn ? "Check Out" : "Check In"}
-        </Button>
-
-        <Button
-          variant={!isCheckedIn ? "outline" : isLunchBreak ? "danger" : "warning"}
-          size="lg"
-          fullWidth
-          disabled={!isCheckedIn}
-          onClick={onLunchBreak}
-        >
-          {!isCheckedIn
-            ? "🔒 Check In Required"
-            : isLunchBreak
-              ? "⏹ Stop Lunch"
-              : "🍱 Lunch Break"}
-        </Button>
-
-        <Button
-          variant={!isCheckedIn ? "outline" : isTeaBreak ? "danger" : "success"}
-          size="lg"
-          fullWidth
-          disabled={!isCheckedIn}
-          onClick={onTeaBreak}
-        >
-          {!isCheckedIn
-            ? "🔒 Check In Required"
-            : isTeaBreak
-              ? "⏹ Stop Tea"
-              : "☕ Tea Break"}
-        </Button>
       </div>
-    </Card>
     </div>
   );
 };
