@@ -1,7 +1,6 @@
 # routes/employee_details.py
 
-from flask import Blueprint
-from flask import jsonify
+from utils.compat import Blueprint, jsonify
 
 from datetime import date
 from calendar import monthrange

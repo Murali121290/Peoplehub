@@ -7,7 +7,7 @@ from datetime import datetime
 from itsdangerous import URLSafeTimedSerializer
 from pathlib import Path
 # pyrefly: ignore [missing-import]
-from flask import current_app
+from utils.compat import current_app
 
 def get_serializer():
     return URLSafeTimedSerializer(current_app.config.get("SECRET_KEY", "wms-enterprise-secret-key-2024"))
@@ -219,7 +219,7 @@ def send_manager_request_email(request_obj, request_type):
     reject_token = generate_request_token(request_obj.id, request_type, "reject")
 
     # Base URL of the backend server
-    api_base = os.environ.get("BACKEND_URL", "http://10.1.6.178:5001")
+    api_base = os.environ.get("BACKEND_URL", "http://localhost:5001")
     approve_url = f"{api_base}/api/requests/email-action?token={approve_token}"
     reject_url = f"{api_base}/api/requests/email-action?token={reject_token}"
 

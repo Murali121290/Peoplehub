@@ -4,12 +4,12 @@ services:
     container_name: wms_postgres
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: $$vBr@2150
-      POSTGRES_DB: wms_db
-      TZ: Asia/Kolkata
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: ${TZ}
     ports:
-      - "5434:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -23,19 +23,14 @@ services:
     depends_on:
       - postgres
     working_dir: /app
-    command: python app.py
+    command: uvicorn app:app --host 0.0.0.0 --port 5001 --reload
     environment:
-      DATABASE_URL: postgresql://postgres:$$vBr%402150@postgres:5432/wms_db
-      TZ: Asia/Kolkata
-      MAIL_SERVER: smtp.office365.com
-      MAIL_PORT: 587
-      MAIL_USE_TLS: "True"
-      MAIL_USERNAME: "selvabharathp@s4carlisle.com"
-      MAIL_PASSWORD: "$$vBr@2150" # Configure app password here
-      MAIL_DEFAULT_SENDER: "selvabharathp@s4carlisle.com"
-      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: ${DATABASE_URL}
+      TZ: ${TZ}
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
     ports:
-      - "5001:5001"
+      - "${BACKEND_PORT}:5001"
     volumes:
       - ./backend:/app
 
@@ -49,7 +44,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "5555:80"
+      - "${FRONTEND_PORT}:80"
 
 volumes:
   postgres_data:

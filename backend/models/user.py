@@ -187,19 +187,7 @@ class User(db.Model):
         db.DateTime
     )
 
-    # Relationships
-    projects_assigned = db.relationship(
-        'ProjectAssignment',
-        foreign_keys='ProjectAssignment.assigned_user_id',
-        backref='assigned_user',
-        lazy=True
-    )
 
-    projects_created = db.relationship(
-        'Project',
-        backref='creator',
-        lazy=True
-    )
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)

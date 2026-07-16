@@ -1,5 +1,5 @@
 # pyrefly: ignore [missing-import]
-from flask import Blueprint, request, jsonify
+from utils.compat import Blueprint, request, jsonify
 from datetime import datetime, date
 from models.database import db
 from models.birthday_wish import BirthdayWish

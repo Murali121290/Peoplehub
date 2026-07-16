@@ -245,30 +245,37 @@ export default function HRAdminDashboard() {
 
       const formData = new FormData();
 
-      formData.append("user_id", newEmp.user_id);
+      
       formData.append("employee_id", newEmp.employee_id);
-      formData.append("first_name", newEmp.first_name);
-      formData.append("last_name", newEmp.last_name);
-      formData.append("email", newEmp.email);
-      formData.append("phone", newEmp.phone);
-      formData.append("joining_date", newEmp.joining_date);
-      formData.append("salary", newEmp.salary);
+formData.append("first_name", newEmp.first_name);
+formData.append("last_name", newEmp.last_name);
+formData.append("email", newEmp.email);
+formData.append("phone", newEmp.phone);
+formData.append("joining_date", newEmp.joining_date);
+formData.append("salary", newEmp.salary);
 
-      formData.append("team_id", newEmp.team_id);
-      formData.append("department", newEmp.department || "");
+formData.append("team_id", newEmp.team_id);
+formData.append("department", newEmp.department || "");
+formData.append("designation", newEmp.designation || "");
 
-      formData.append("designation", newEmp.designation || "");
-      formData.append("role", newEmp.role);
-      formData.append("role_id", String(newEmp.role_id || ""));
-      formData.append("access_level", newEmp.access_level || "");
-      formData.append("company_email", newEmp.email || "");
-      formData.append("reporting_manager", newEmp.reporting_manager);
+formData.append("role", newEmp.role);
+formData.append("role_id", String(newEmp.role_id || ""));
 
-      formData.append("status", newEmp.status);
+formData.append("reporting_manager", newEmp.reporting_manager);
 
-      if (profileImage) {
-        formData.append("profile_image", profileImage);
-      }
+formData.append("company_email", newEmp.company_email);
+formData.append("password", newEmp.password);
+formData.append("access_level", newEmp.access_level);
+
+formData.append("status", newEmp.status);
+formData.append(
+  "shift_timing",
+  newEmp.shift_timing || ""
+);
+
+if (profileImage) {
+    formData.append("profile_image", profileImage);
+}
 
       // Determine method and URL based on edit mode
       const method = isEditMode ? "PATCH" : "POST";

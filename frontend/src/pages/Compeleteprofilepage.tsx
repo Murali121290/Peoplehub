@@ -1,4 +1,3 @@
-import { API_URL } from "../config/api";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -137,7 +136,7 @@ const Completeprofilepage = () => {
     const fetchEmployee = async () => {
       try {
         const res = await fetch(
-          `${API_URL}/api/employees/${employeeId}`,
+          `http://localhost:5001/api/employees/${employeeId}`,
         );
         const data = await res.json();
         setEmployeeInfo(data);
@@ -244,7 +243,7 @@ const Completeprofilepage = () => {
       });
 
       const res = await fetch(
-        `${API_URL}/api/employees/${employeeId}`,
+        `http://localhost:5001/api/employees/${employeeId}`,
         {
           method: "PATCH",
           body: payload,
@@ -253,20 +252,20 @@ const Completeprofilepage = () => {
 
       const data = await res.json();
 
-      if (res.ok) {
-        toast.success("Profile Completed Successfully!");
+    if (res.ok) {
+  toast.success("Profile Completed Successfully!");
 
-        const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
 
-        user.profile_completed = true;
-        user.is_first_login = false;
+  user.profile_completed = true;
+  user.is_first_login = false;
 
-        localStorage.setItem("user", JSON.stringify(user));
+  localStorage.setItem("user", JSON.stringify(user));
 
-        setTimeout(() => {
-          window.location.href = "/employee-dashboard";
-        }, 1200);
-      } else {
+  setTimeout(() => {
+    window.location.href = "/employee-dashboard";
+  }, 1200);
+}else {
         toast.error(data.error || data.message || "Failed to update profile");
       }
     } catch (err) {

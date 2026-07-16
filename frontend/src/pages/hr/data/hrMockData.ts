@@ -41,7 +41,9 @@ export const DEFAULT_NEW_EMP = {
   email: "",
   phone: "",
   role_id: "",          // add
-  access_level: "",     // add
+  access_level: "",  
+  company_email: "",
+  password: "", // add
 
   team_id: "",
   department: "",
@@ -50,6 +52,7 @@ export const DEFAULT_NEW_EMP = {
   reporting_manager: "",
   joining_date: "",
   salary: "",
+  shift_timing: "", 
   status: "Active",
 };
 

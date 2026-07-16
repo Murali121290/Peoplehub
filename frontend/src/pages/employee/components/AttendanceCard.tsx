@@ -73,7 +73,7 @@ const HoverActionButton: React.FC<HoverActionButtonProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className={`flex items-center justify-center gap-2 px-4 py-3 text-white text-sm font-bold w-full ${idleCls}`}
+            className={`flex items-center justify-center gap-2 px-3 py-3 text-white text-xs font-bold w-full ${idleCls}`}
           >
             {idleContent}
           </motion.div>
@@ -84,7 +84,7 @@ const HoverActionButton: React.FC<HoverActionButtonProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className={`flex items-center justify-center gap-2 px-4 py-3 text-white text-sm font-bold w-full ${hoverCls}`}
+            className={`flex items-center justify-center gap-2 px-3 py-3 text-white text-xs font-bold w-full ${hoverCls}`}
           >
             {hoverContent}
           </motion.div>
@@ -102,7 +102,7 @@ const DoneButton: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     initial={{ opacity: 0, scale: 0.9 }}
     animate={{ opacity: 1, scale: 1 }}
     transition={{ duration: 0.3, ease: "easeOut" }}
-    className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gray-800 text-white text-sm font-bold shadow-md select-none"
+    className="flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-gray-800 text-white text-xs font-bold shadow-md select-none"
     style={{ minHeight: "52px" }}
   >
     {children}
@@ -152,8 +152,18 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
 
   // Derived states
   const isCheckedOut = !isCheckedIn && timer !== "00:00:00";
+
+  // Lunch: once a day, so it locks into a "done" state after it's taken once.
   const lunchDone = !isLunchBreak && totalLunchSeconds > 0;
-  const teaDone = !isTeaBreak && totalTeaSeconds > 0;
+
+  // Tea: allowed multiple times a day — there is intentionally NO "teaDone"
+  // lock here. Once a tea break ends, the button goes straight back to a
+  // clickable "start" state so the person can take another one later.
+  // totalTeaSeconds still accumulates across every tea break taken.
+  // The only reasons the button is disabled are: not checked in / already
+  // checked out, or currently on a lunch break (can't run both at once).
+  const teaBreakDisabled = !isCheckedIn || isLunchBreak;
+  const lunchBreakDisabled = !isCheckedIn || isTeaBreak;
 
   const imgSrc = currentEmployee?.id
     ? `${API_URL}/api/employees/image/${currentEmployee.id}`
@@ -190,7 +200,7 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
           : "Off Shift";
 
   return (
-    <div ref={cardRef} className="w-full">
+    <div ref={cardRef} className="w-full max-w-sm">
       <div
         className={
           "w-full bg-white rounded-2xl border shadow-lg overflow-hidden transition-all duration-300 " +
@@ -200,8 +210,8 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
         }
       >
         {/* ── Employee Header ── */}
-        <div className="px-6 py-5 flex items-center justify-between border-b border-gray-100">
-          <div className="flex items-center gap-4">
+        <div className="px-5 py-5 flex items-center justify-between border-b border-gray-100">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-gray-100 shadow-sm flex-shrink-0">
               <img
                 src={imgSrc}
@@ -210,19 +220,22 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
                 onError={(e) => { e.currentTarget.src = fallback; }}
               />
             </div>
-            <div>
-              <h2 className="text-base font-bold text-gray-900 leading-tight">
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-gray-900 leading-tight truncate">
                 {user?.full_name || "Employee Name"}
               </h2>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-full">
                   {currentEmployee?.role || user?.role || "Employee"}
                 </span>
-                <span className="text-gray-300 text-xs">|</span>
-                <span className="text-xs text-gray-400">{user?.access_level || "Access Level"}</span>
               </div>
             </div>
           </div>
+        </div>
+
+        {/* ── Status badge row ── */}
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</p>
           <motion.div
             layout
             className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold transition-colors duration-300 ${statusBadgeCls}`}
@@ -232,10 +245,8 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
           </motion.div>
         </div>
 
-        {/* ── Stats row ── */}
-
         {/* ── Total break row ── */}
-        <div className="px-6 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-5 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Break Time</p>
           <p className="text-sm font-bold text-gray-700">{Math.floor((totalLunchSeconds + totalTeaSeconds) / 60)} min</p>
         </div>
@@ -250,12 +261,12 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
               transition={{ duration: 0.25 }}
               className="overflow-hidden"
             >
-              <div className="px-6 py-3 border-b border-gray-100 flex flex-col gap-2">
+              <div className="px-5 py-3 border-b border-gray-100 flex flex-col gap-2">
                 {isLunchBreak && (
                   <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
                     <span className="text-sm">🍱</span>
                     <p className="text-xs text-amber-700 flex-1">
-                      Lunch break active — hover the button and click <strong>Stop Lunch</strong> to resume.
+                      Lunch break active — hover and click <strong>Stop Lunch</strong> to resume.
                     </p>
                   </div>
                 )}
@@ -263,7 +274,7 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
                   <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
                     <span className="text-sm">☕</span>
                     <p className="text-xs text-emerald-700 flex-1">
-                      Tea break active — hover the button and click <strong>Stop Tea</strong> to resume.
+                      Tea break active — hover and click <strong>Stop Tea</strong> to resume.
                     </p>
                   </div>
                 )}
@@ -273,13 +284,13 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
         </AnimatePresence>
 
         {/* ── Action Buttons ── */}
-        <div className="px-6 py-5 grid grid-cols-3 gap-3">
+        <div className="px-5 py-5 grid grid-cols-3 gap-2">
 
           {/* Working Hours / Check-In-Out */}
           {isCheckedOut ? (
             <DoneButton>
               <span className="text-green-400">✅</span>
-              <span>Worked {timerToWorked(timer)}</span>
+              <span>{timerToWorked(timer)}</span>
             </DoneButton>
           ) : !isCheckedIn ? (
             <HoverActionButton
@@ -292,14 +303,14 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
           ) : (
             <HoverActionButton
               idleContent={
-                <span className="flex items-center gap-2 font-mono">
-                  <span className="w-2 h-2 rounded-full bg-green-300 animate-pulse inline-block" />
+                <span className="flex items-center gap-1.5 font-mono text-[11px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-300 animate-pulse inline-block" />
                   {timer.includes("NaN") ? "00:00:00" : timer}
                 </span>
               }
               hoverContent={
-                <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-red-200 inline-block" />
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-200 inline-block" />
                   Check Out
                 </span>
               }
@@ -309,53 +320,49 @@ const AttendanceCard: React.FC<AttendanceCardProps> = ({
             />
           )}
 
-          {/* Lunch Break */}
+          {/* Lunch Break — once per day, locks into DoneButton after it's taken */}
           {lunchDone ? (
             <DoneButton>
               <span className="text-green-400">✅</span>
-              <span>Lunch {fmtHMS(totalLunchSeconds)}</span>
+              <span>{fmtHMS(totalLunchSeconds)}</span>
             </DoneButton>
           ) : isLunchBreak ? (
             <HoverActionButton
-              idleContent={<span className="font-mono">🍱 {fmtHMS(liveLunchSec)}</span>}
-              hoverContent={<span>⏹ Stop Lunch</span>}
+              idleContent={<span className="font-mono text-[11px]">🍱 {fmtHMS(liveLunchSec)}</span>}
+              hoverContent={<span>⏹ Stop</span>}
               idleCls="bg-gradient-to-br from-amber-500 to-amber-600"
               hoverCls="bg-gradient-to-br from-red-500 to-red-700"
               onClick={onLunchBreak}
             />
           ) : (
             <HoverActionButton
-              idleContent={<span>🍱 Lunch Break</span>}
-              hoverContent={<span>🍱 Lunch Break</span>}
-              idleCls={isCheckedIn ? "bg-gradient-to-br from-amber-400 to-amber-500" : "bg-gray-300"}
-              hoverCls={isCheckedIn ? "bg-gradient-to-br from-amber-500 to-amber-600" : "bg-gray-300"}
+              idleContent={<span>🍱 Lunch</span>}
+              hoverContent={<span>🍱 Lunch</span>}
+              idleCls={!lunchBreakDisabled ? "bg-gradient-to-br from-amber-400 to-amber-500" : "bg-gray-300"}
+              hoverCls={!lunchBreakDisabled ? "bg-gradient-to-br from-amber-500 to-amber-600" : "bg-gray-300"}
               onClick={onLunchBreak}
-              disabled={!isCheckedIn}
+              disabled={lunchBreakDisabled}
             />
           )}
 
-          {/* Tea Break */}
-          {teaDone ? (
-            <DoneButton>
-              <span className="text-green-400">✅</span>
-              <span>Tea {fmtHMS(totalTeaSeconds)}</span>
-            </DoneButton>
-          ) : isTeaBreak ? (
+          {/* Tea Break — repeatable all day. No "done" lock: after Stop,
+              it goes straight back to a clickable start state. */}
+          {isTeaBreak ? (
             <HoverActionButton
-              idleContent={<span className="font-mono">☕ {fmtHMS(liveTeaSec)}</span>}
-              hoverContent={<span>⏹ Stop Tea</span>}
+              idleContent={<span className="font-mono text-[11px]">☕ {fmtHMS(liveTeaSec)}</span>}
+              hoverContent={<span>⏹ Stop</span>}
               idleCls="bg-gradient-to-br from-emerald-500 to-emerald-600"
               hoverCls="bg-gradient-to-br from-red-500 to-red-700"
               onClick={onTeaBreak}
             />
           ) : (
             <HoverActionButton
-              idleContent={<span>☕ Tea Break</span>}
-              hoverContent={<span>☕ Tea Break</span>}
-              idleCls={isCheckedIn ? "bg-gradient-to-br from-emerald-500 to-emerald-600" : "bg-gray-300"}
-              hoverCls={isCheckedIn ? "bg-gradient-to-br from-emerald-600 to-emerald-700" : "bg-gray-300"}
+              idleContent={<span>☕ Tea</span>}
+              hoverContent={<span>☕ Tea</span>}
+              idleCls={!teaBreakDisabled ? "bg-gradient-to-br from-emerald-500 to-emerald-600" : "bg-gray-300"}
+              hoverCls={!teaBreakDisabled ? "bg-gradient-to-br from-emerald-600 to-emerald-700" : "bg-gray-300"}
               onClick={onTeaBreak}
-              disabled={!isCheckedIn}
+              disabled={teaBreakDisabled}
             />
           )}
 

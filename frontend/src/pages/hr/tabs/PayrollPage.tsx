@@ -1,4 +1,3 @@
-import { API_URL } from "../../../config/api";
 import React, { useEffect, useState, useCallback } from "react";
 import axios, { AxiosError } from "axios";
 import {
@@ -21,7 +20,7 @@ import { Spinner } from "../../../components/ui/Spinner";
 import { EmptyState } from "../../../components/ui/EmptyState";
 
 // Constants
-const BASE_URL = `${API_URL}/api`;
+const BASE_URL = "http://localhost:5001/api";
 
 // TypeScript Interfaces
 interface Employee {
@@ -169,7 +168,7 @@ const PayrollPage: React.FC = () => {
           </Button>
         )}
 
-
+        
       </div>
     );
   };
@@ -269,8 +268,8 @@ const PayrollPage: React.FC = () => {
         eyebrow={
           selectedEmployee
             ? {
-              label: `${selectedEmployee.employee_id ?? ""} • ${selectedEmployee.department ?? ""}`,
-            }
+                label: `${selectedEmployee.employee_id ?? ""} • ${selectedEmployee.department ?? ""}`,
+              }
             : undefined
         }
       >
@@ -417,10 +416,10 @@ const PayrollPage: React.FC = () => {
                 </div>
                 <div className="bg-success-50 border border-success-200 rounded-lg p-3 text-center">
                   <div className="text-xs uppercase tracking-wide opacity-75">
-                    Privilege Leave
+                    Earned Leave
                   </div>
                   <div className="text-xl font-bold mt-1 text-success-700">
-                    {selectedEmployee.privilege_leave}
+                    {selectedEmployee.earned_leave}
                   </div>
                 </div>
               </div>

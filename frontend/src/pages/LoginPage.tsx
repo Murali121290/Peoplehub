@@ -1,4 +1,3 @@
-import { API_URL } from "../config/api";
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -68,7 +67,7 @@ const LoginPage: React.FC = () => {
     } catch (error: any) {
       console.error(error);
       toast.error(error.response?.data?.error || "Login failed");
-    } finally {
+    } finally { 
       setLoading(false);
     }
   };
@@ -114,7 +113,7 @@ const LoginPage: React.FC = () => {
       const user = JSON.parse(localStorage.getItem("user") || "{}");
 
       const res = await axios.post(
-        `${API_URL}/api/auth/change-password`,
+        "http://localhost:5001/api/auth/change-password",
         {
           user_id: user.id,
           current_password: pwData.oldPassword,
@@ -128,8 +127,8 @@ const LoginPage: React.FC = () => {
       console.error(error);
       toast.error(
         error.response?.data?.message ||
-        error.response?.data?.error ||
-        "Password update failed"
+          error.response?.data?.error ||
+          "Password update failed"
       );
     } finally {
       setPwLoading(false);

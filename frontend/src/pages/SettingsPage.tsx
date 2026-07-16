@@ -325,7 +325,7 @@ const SettingsPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-neutral-100">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* <div className="mb-8 flex flex-col gap-5 rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm md:flex-row md:items-end md:justify-between">
+        <div className="mb-8 flex flex-col gap-5 rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-sm font-medium text-neutral-500">Workspace settings</p>
             <h1 className="mt-1 text-3xl font-semibold tracking-tight text-neutral-900">
@@ -350,7 +350,7 @@ const SettingsPage: React.FC = () => {
               <p className="mt-1 text-xl font-semibold text-neutral-900">23</p>
             </div>
           </div>
-        </div> */}
+        </div>
 
         <div className="mb-6 overflow-x-auto rounded-2xl border border-neutral-200 bg-white p-2 shadow-sm">
           <Tabs

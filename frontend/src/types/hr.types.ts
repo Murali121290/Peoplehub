@@ -15,7 +15,7 @@ export interface Employee {
   status?: string;
   sick_leave?: number;
   casual_leave?: number;
-  privilege_leave?: number;
+  earned_leave?: number;
   shift_timing?: string;
 }
 

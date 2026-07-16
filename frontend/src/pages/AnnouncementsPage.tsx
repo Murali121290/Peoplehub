@@ -1,4 +1,3 @@
-import { API_URL } from "../config/api";
 import React, { useState, useEffect } from "react";
 import { socket } from "../socket";
 import { InboxIcon } from "@heroicons/react/24/outline";
@@ -53,7 +52,7 @@ const AnnouncementsPage = () => {
   const fetchAnnouncements = async () => {
     try {
       const response = await fetch(
-        `${API_URL}/api/communications/announcements`,
+        "http://localhost:5001/api/communications/announcements",
       );
       const data = await response.json();
       if (data.success && data.announcements) {
@@ -152,10 +151,11 @@ const AnnouncementsPage = () => {
                       key={opt.value}
                       type="button"
                       onClick={() => setTargetRole(opt.value)}
-                      className={`rounded-lg border px-4 py-2 text-[13px] font-semibold transition-colors ${targetRole === opt.value
-                        ? "border-primary-500 bg-primary-500 text-white"
-                        : "border-neutral-200 bg-neutral-50 text-neutral-500 hover:border-primary-300 hover:text-neutral-800"
-                        }`}
+                      className={`rounded-lg border px-4 py-2 text-[13px] font-semibold transition-colors ${
+                        targetRole === opt.value
+                          ? "border-primary-500 bg-primary-500 text-white"
+                          : "border-neutral-200 bg-neutral-50 text-neutral-500 hover:border-primary-300 hover:text-neutral-800"
+                      }`}
                     >
                       {opt.label}
                     </button>

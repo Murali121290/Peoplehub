@@ -1,5 +1,5 @@
 # pyrefly: ignore [missing-import]
-from flask import Blueprint, jsonify
+from utils.compat import Blueprint, jsonify
 
 from models.notification import Notification
 
@@ -127,7 +127,7 @@ def delete_notification(id):
 @notification_bp.route("/remind-checkin", methods=["POST"])
 def remind_checkin():
     try:
-        from flask import request
+        from utils.compat import request
         from models.database import db
         from extensions import socketio
         from models.employee import Employee

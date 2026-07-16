@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from utils.compat import Blueprint, request, jsonify
 from models.user import User, Role, Team
 from middleware.auth import auth_required, access_level_required
 from models.database import db

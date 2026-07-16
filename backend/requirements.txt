@@ -1,17 +1,16 @@
-Flask==3.0.0
-Flask-SQLAlchemy==3.1.1
-Flask-JWT-Extended==4.6.0
-Flask-Mail==0.9.1
-Flask-CORS==5.0.0
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9
+pyjwt==2.8.0
 
 # Socket.IO
-Flask-SocketIO==5.3.6
 python-socketio==5.11.4
 python-engineio==4.9.1
 eventlet==0.36.1
 
 # Database
 psycopg2-binary>=2.9.9
+SQLAlchemy==2.0.29
 
 # Scheduler
 APScheduler==3.10.4
@@ -29,3 +28,4 @@ reportlab==4.2.2
 # gevent (for Windows compatibility on Python 3.14)
 gevent>=24.0.0
 gevent-websocket>=0.10.1
+itsdangerous==2.1.2

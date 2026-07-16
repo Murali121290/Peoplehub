@@ -1,4 +1,3 @@
-import { API_URL } from "../../../config/api";
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "react-hot-toast";
@@ -22,7 +21,7 @@ import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Form";
 
-const BASE_URL = `${API_URL}/api`;
+const BASE_URL = "http://localhost:5001/api";
 
 const ProfileTab = () => {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -80,14 +79,14 @@ const ProfileTab = () => {
       });
 
       toast.success(res.data.message || "Password updated successfully. Logging out...");
-
+      
       // Clear password inputs
       setPasswordData({
         current_password: "",
         new_password: "",
         confirm_password: "",
       });
-
+      
       // Auto logout after 1.5 seconds so they can read the success message
       setTimeout(() => {
         logout();
@@ -107,7 +106,7 @@ const ProfileTab = () => {
       const now = new Date();
       const diffTime = Math.abs(now.getTime() - joinDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
+      
       if (diffDays < 30) {
         return `${diffDays} days`;
       } else {
@@ -134,7 +133,7 @@ const ProfileTab = () => {
 
       {/* Grid Content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
+        
         {/* Profile details */}
         <Card className="lg:col-span-2 shadow-sm rounded-2xl hover:shadow-md transition-shadow duration-300 border border-neutral-200 p-6">
           <div className="flex items-center gap-2 border-b border-neutral-100 pb-4 mb-6">

@@ -1,4 +1,3 @@
-import { API_URL } from "../config/api";
 import React, { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import { apiService } from "../services/api";
@@ -53,7 +52,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, onClose }) => {
 
   const fetchEmployees = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/employees/`);
+      const response = await fetch("http://localhost:5001/api/employees/");
 
       const data = await response.json();
 
