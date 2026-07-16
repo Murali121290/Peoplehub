@@ -1,3 +1,4 @@
+import { API_URL } from "../config/api";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -81,7 +82,7 @@ export default function TelecomDirectory() {
   >("extension_number");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [currentPage, setCurrentPage] = useState(1);
-  const PAGE_SIZE = 5;
+  const PAGE_SIZE = 8;
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -99,7 +100,7 @@ export default function TelecomDirectory() {
   const loadTelecoms = async () => {
     try {
       setLoading(true);
-      const response = await fetch("http://localhost:5001/api/telecom/");
+      const response = await fetch(`${API_URL}/api/telecom/`);
       if (!response.ok) throw new Error("Failed to fetch telecoms");
       const data = await response.json();
       setTelecoms(Array.isArray(data) ? data : []);
@@ -124,7 +125,7 @@ export default function TelecomDirectory() {
 
     setFormLoading(true);
     try {
-      const res = await fetch("http://localhost:5001/api/telecom/", {
+      const res = await fetch(`${API_URL}/api/telecom/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -159,7 +160,7 @@ export default function TelecomDirectory() {
 
     try {
       const res = await fetch(
-        `http://localhost:5001/api/telecom/${editingId}`,
+        `${API_URL}/api/telecom/${editingId}`,
         {
           method: "PUT",
           headers: {
@@ -195,7 +196,7 @@ export default function TelecomDirectory() {
 
     setDeleteLoading(true);
     try {
-      const res = await fetch(`http://localhost:5001/api/telecom/${deleteId}`, {
+      const res = await fetch(`${API_URL}/api/telecom/${deleteId}`, {
         method: "DELETE",
       });
 
@@ -216,7 +217,7 @@ export default function TelecomDirectory() {
     const newStatus = entry.status === "Active" ? "Inactive" : "Active";
 
     try {
-      const res = await fetch(`http://localhost:5001/api/telecom/${entry.id}`, {
+      const res = await fetch(`${API_URL}/api/telecom/${entry.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -331,8 +332,8 @@ export default function TelecomDirectory() {
     <span className="ml-1 inline-flex flex-col" style={{ lineHeight: 0 }}>
       <svg
         className={`w-2.5 h-2.5 ${sortField === field && sortDir === "asc"
-            ? "text-neutral-900"
-            : "text-neutral-300"
+          ? "text-neutral-900"
+          : "text-neutral-300"
           }`}
         viewBox="0 0 10 6"
         fill="currentColor"
@@ -341,8 +342,8 @@ export default function TelecomDirectory() {
       </svg>
       <svg
         className={`w-2.5 h-2.5 mt-0.5 ${sortField === field && sortDir === "desc"
-            ? "text-neutral-900"
-            : "text-neutral-300"
+          ? "text-neutral-900"
+          : "text-neutral-300"
           }`}
         viewBox="0 0 10 6"
         fill="currentColor"
@@ -482,7 +483,7 @@ export default function TelecomDirectory() {
                   Designation
                 </th>
 
-                
+
 
                 <th className="px-4 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">
                   Location
@@ -535,7 +536,7 @@ export default function TelecomDirectory() {
                       </span>
                     </td>
 
-                       <td className="px-4 py-3">
+                    <td className="px-4 py-3">
                       <div
                         className="text-neutral-900 font-medium text-sm truncate max-w-[160px]"
                         title={r.employee_name}
@@ -556,7 +557,7 @@ export default function TelecomDirectory() {
                       {r.team_name}
                     </td>
 
-                 
+
 
 
                     <td className="px-4 py-3 text-neutral-600 text-sm">
@@ -637,8 +638,8 @@ export default function TelecomDirectory() {
                   key={p}
                   onClick={() => setCurrentPage(p)}
                   className={`h-8 min-w-[32px] px-2 text-xs border rounded-md ${currentPage === p
-                      ? "bg-primary-600 text-white border-primary-600 font-semibold"
-                      : "border-neutral-200 text-neutral-500 hover:bg-neutral-50"
+                    ? "bg-primary-600 text-white border-primary-600 font-semibold"
+                    : "border-neutral-200 text-neutral-500 hover:bg-neutral-50"
                     }`}
                 >
                   {p}

@@ -1,13 +1,8 @@
-import React from 'react';
-import { motion } from 'framer-motion';
-import {
-  CheckCircleIcon, ClockIcon, CalendarDaysIcon, ChartBarIcon,
-  CheckBadgeIcon,
-} from '@heroicons/react/24/outline';
-import StatCard from '../components/StatCard';
-import AttendanceCard from '../components/AttendanceCard';
-import { tasksData, notificationsData, activityData, upcomingDeadlines } from '../data/employeeMockData';
-import { getPriorityColor } from '../utils/employeeHelpers';
+import React from "react";
+import { motion } from "framer-motion";
+
+import AttendanceCard from "../components/AttendanceCard";
+import WorkAnniversaryCard from "../components/WorkAnniversaryCard";
 
 interface OverviewTabProps {
   isCheckedIn: boolean;
@@ -17,6 +12,8 @@ interface OverviewTabProps {
   totalTeaSeconds: number;
   isLunchBreak: boolean;
   isTeaBreak: boolean;
+  lunchStartTime: Date | null;
+  teaStartTime: Date | null;
   currentEmployee: any;
   user: any;
   onCheckInOut: () => void;
@@ -26,31 +23,46 @@ interface OverviewTabProps {
 }
 
 const OverviewTab: React.FC<OverviewTabProps> = ({
-  isCheckedIn, checkInTime, timer, totalLunchSeconds, totalTeaSeconds,
-  isLunchBreak, isTeaBreak, currentEmployee, user,
-  onCheckInOut, onLunchBreak, onTeaBreak, itemVariants,
+  isCheckedIn,
+  checkInTime,
+  timer,
+  totalLunchSeconds,
+  totalTeaSeconds,
+  isLunchBreak,
+  isTeaBreak,
+  lunchStartTime,
+  teaStartTime,
+  currentEmployee,
+  user,
+  onCheckInOut,
+  onLunchBreak,
+  onTeaBreak,
+  itemVariants,
 }) => {
   return (
-    <>
-      <motion.div variants={itemVariants}>
-        <AttendanceCard
-          isCheckedIn={isCheckedIn}
-          checkInTime={checkInTime}
-          timer={timer}
-          totalLunchSeconds={totalLunchSeconds}
-          totalTeaSeconds={totalTeaSeconds}
-          isLunchBreak={isLunchBreak}
-          isTeaBreak={isTeaBreak}
-          currentEmployee={currentEmployee}
-          user={user}
-          onCheckInOut={onCheckInOut}
-          onLunchBreak={onLunchBreak}
-          onTeaBreak={onTeaBreak}
-        />
-      </motion.div>
+    <motion.div
+      variants={itemVariants}
+      className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start"
+    >
+      <AttendanceCard
+        isCheckedIn={isCheckedIn}
+        checkInTime={checkInTime}
+        timer={timer}
+        totalLunchSeconds={totalLunchSeconds}
+        totalTeaSeconds={totalTeaSeconds}
+        isLunchBreak={isLunchBreak}
+        isTeaBreak={isTeaBreak}
+        lunchStartTime={lunchStartTime}
+        teaStartTime={teaStartTime}
+        currentEmployee={currentEmployee}
+        user={user}
+        onCheckInOut={onCheckInOut}
+        onLunchBreak={onLunchBreak}
+        onTeaBreak={onTeaBreak}
+      />
 
-
-    </>
+      <WorkAnniversaryCard />
+    </motion.div>
   );
 };
 

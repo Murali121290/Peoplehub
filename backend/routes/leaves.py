@@ -16,6 +16,26 @@ leave_bp = Blueprint(
     __name__
 )
 
+def serialize_leave(leave):
+    return {
+        "id": leave.id,
+        "employee_id": leave.employee_id,
+        "employee_name": leave.employee_name,
+        "leave_type": leave.leave_type,
+        "from_date": str(leave.from_date) if leave.from_date else None,
+        "to_date": str(leave.to_date) if leave.to_date else None,
+        "total_days": leave.total_days,
+        "reporting_manager": leave.reporting_manager,
+        "handover_to": leave.handover_to,
+        "emergency_contact": leave.emergency_contact,
+        "reason": leave.reason,
+        "status": leave.status,
+        "request_type": leave.request_type,
+        "permission_date": str(leave.permission_date) if leave.permission_date else None,
+        "from_time": str(leave.from_time) if leave.from_time else None,
+        "to_time": str(leave.to_time) if leave.to_time else None,
+    }
+
 @leave_bp.route("/", methods=["POST"])
 def apply_leave():
 
@@ -77,6 +97,20 @@ def apply_leave():
 
         db.session.add(leave)
         db.session.commit()
+
+        # Send manager notification email
+        try:
+            from services.request_email_service import send_manager_request_email
+            send_manager_request_email(leave, request_type)
+        except Exception as email_err:
+            print("Failed to send manager request email:", str(email_err))
+
+        # Emit leave_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("leave_update", serialize_leave(leave))
+        except Exception as socket_err:
+            print("Failed to emit leave socket:", str(socket_err))
 
         return jsonify({
             "success": True,
@@ -163,16 +197,18 @@ def approve_leave(leave_id):
                 "error": "Leave not found"
             }), 404
 
-        # Prevent double approval
-        if leave.status == "Approved":
+        # Prevent double approval/rejection
+        if leave.status != "Pending":
             return jsonify({
                 "success": False,
-                "error": "Leave already approved"
+                "error": f"Leave already {leave.status.lower()}"
             }), 400
 
         print("Leave Employee ID:", leave.employee_id)
 
-        employee = Employee.query.get(int(leave.employee_id))
+        employee = Employee.query.filter(
+            (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
+        ).first()
 
         print("Employee Found:", employee)
 
@@ -186,10 +222,25 @@ def approve_leave(leave_id):
         # PERMISSION REQUEST
         # ===========================
         if leave.request_type == "Permission":
-
             leave.status = "Approved"
+            leave.approved_by = "Website Manager"
+            leave.approved_at = datetime.utcnow()
 
             db.session.commit()
+
+            # Emit leave_update socket event for real-time dashboard updates
+            try:
+                from extensions import socketio
+                socketio.emit("leave_update", serialize_leave(leave))
+            except Exception as socket_err:
+                print("Failed to emit leave socket:", str(socket_err))
+
+            # Send employee status email
+            try:
+                from services.request_email_service import send_employee_status_email
+                send_employee_status_email(leave, employee, "Approved", leave.request_type)
+            except Exception as email_err:
+                print("Failed to send employee status email:", str(email_err))
 
             return jsonify({
                 "success": True,
@@ -201,6 +252,8 @@ def approve_leave(leave_id):
         # ===========================
 
         leave.status = "Approved"
+        leave.approved_by = "Website Manager"
+        leave.approved_at = datetime.utcnow()
 
         leave_type = (leave.leave_type or "").strip().lower()
 
@@ -220,11 +273,11 @@ def approve_leave(leave_id):
                 (employee.casual_leave or 0) - leave_days
             )
 
-        elif leave_type == "earned leave":
+        elif leave_type in ["earned leave", "privilege leave"]:
 
-            employee.earned_leave = max(
+            employee.privilege_leave = max(
                 0,
-                (employee.earned_leave or 0) - leave_days
+                (employee.privilege_leave or 0) - leave_days
             )
 
         else:
@@ -236,17 +289,24 @@ def approve_leave(leave_id):
 
         db.session.commit()
 
+        # Emit leave_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("leave_update", serialize_leave(leave))
+        except Exception as socket_err:
+            print("Failed to emit leave socket:", str(socket_err))
+
         return jsonify({
             "success": True,
             "message": "Leave Approved Successfully",
             "leave_balance": {
                 "sick_leave": employee.sick_leave,
                 "casual_leave": employee.casual_leave,
-                "earned_leave": employee.earned_leave,
+                "privilege_leave": employee.privilege_leave,
                 "total_balance":
                     (employee.sick_leave or 0) +
                     (employee.casual_leave or 0) +
-                    (employee.earned_leave or 0)
+                    (employee.privilege_leave or 0)
             }
         }), 200
 
@@ -265,19 +325,44 @@ def approve_leave(leave_id):
 )
 def reject_leave(leave_id):
 
-    leave = LeaveRequest.query.get(
-        leave_id
-    )
+    leave = LeaveRequest.query.get(leave_id)
 
     if not leave:
-
         return jsonify({
             "error": "Leave not found"
         }), 404
 
+    # Prevent double approval/rejection
+    if leave.status != "Pending":
+        return jsonify({
+            "success": False,
+            "error": f"Leave already {leave.status.lower()}"
+        }), 400
+
+    employee = Employee.query.filter(
+        (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
+    ).first()
+
     leave.status = "Rejected"
+    leave.rejected_by = "Website Manager"
+    leave.rejected_at = datetime.utcnow()
 
     db.session.commit()
+
+    # Send employee status email
+    if employee:
+        try:
+            from services.request_email_service import send_employee_status_email
+            send_employee_status_email(leave, employee, "Rejected", leave.request_type)
+        except Exception as email_err:
+            print("Failed to send employee status email:", str(email_err))
+
+    # Emit leave_update socket event for real-time dashboard updates
+    try:
+        from extensions import socketio
+        socketio.emit("leave_update", serialize_leave(leave))
+    except Exception as socket_err:
+        print("Failed to emit leave socket:", str(socket_err))
 
     return jsonify({
         "success": True,
@@ -312,6 +397,13 @@ def cancel_leave(leave_id):
         leave.status = "Cancelled"
 
         db.session.commit()
+
+        # Emit leave_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("leave_update", serialize_leave(leave))
+        except Exception as socket_err:
+            print("Failed to emit leave socket:", str(socket_err))
 
         return jsonify({
             "success": True,
@@ -561,21 +653,21 @@ def export_leave_report():
 
             "Opening CL",
             "Opening SL",
-            "Opening EL",
+            "Opening PL",
 
             "CL Credit",
             "SL Credit",
-            "EL Credit",
+            "PL Credit",
 
             "CL Taken",
             "SL Taken",
-            "EL Taken",
+            "PL Taken",
 
             "Total Deducted",
 
             "Closing CL",
             "Closing SL",
-            "Closing EL",
+            "Closing PL",
 
             "Total Balance",
 
@@ -628,13 +720,13 @@ def export_leave_report():
 
             cl_taken = 0
             sl_taken = 0
-            el_taken = 0
+            pl_taken = 0
 
             approved_leaves = LeaveRequest.query.filter(
                 LeaveRequest.employee_id == employee.employee_id,
                 LeaveRequest.status == "Approved",
                 LeaveRequest.request_type == "Leave"
-).all()
+            ).all()
 
             for leave in approved_leaves:
 
@@ -652,35 +744,35 @@ def export_leave_report():
                 elif leave_type == "sick leave":
                     sl_taken += leave_days
 
-                elif leave_type == "earned leave":
-                    el_taken += leave_days
+                elif leave_type in ["earned leave", "privilege leave"]:
+                    pl_taken += leave_days
 
             current_cl = employee.casual_leave or 0
             current_sl = employee.sick_leave or 0
-            current_el = employee.earned_leave or 0
+            current_pl = employee.privilege_leave or 0
 
-            credit_cl = 1.5
-            credit_sl = 1.5
-            credit_el = 2
+            credit_cl = 6.0
+            credit_sl = 6.0
+            credit_pl = 15.0
 
-            opening_cl = current_cl + credit_cl
-            opening_sl = current_sl + credit_sl
-            opening_el = current_el + credit_el
+            opening_cl = current_cl + cl_taken
+            opening_sl = current_sl + sl_taken
+            opening_pl = current_pl + pl_taken
 
-            closing_cl = opening_cl - cl_taken
-            closing_sl = opening_sl - sl_taken
-            closing_el = opening_el - el_taken
+            closing_cl = current_cl
+            closing_sl = current_sl
+            closing_pl = current_pl
 
             total_deducted = (
                 cl_taken +
                 sl_taken +
-                el_taken
+                pl_taken
             )
 
             total_balance = (
                 closing_cl +
                 closing_sl +
-                closing_el
+                closing_pl
             )
 
             ws.cell(row=row, column=1, value=employee.employee_id)
@@ -691,21 +783,21 @@ def export_leave_report():
 
             ws.cell(row=row, column=6, value=opening_cl)
             ws.cell(row=row, column=7, value=opening_sl)
-            ws.cell(row=row, column=8, value=opening_el)
+            ws.cell(row=row, column=8, value=opening_pl)
 
             ws.cell(row=row, column=9, value=credit_cl)
             ws.cell(row=row, column=10, value=credit_sl)
-            ws.cell(row=row, column=11, value=credit_el)
+            ws.cell(row=row, column=11, value=credit_pl)
 
             ws.cell(row=row, column=12, value=cl_taken)
             ws.cell(row=row, column=13, value=sl_taken)
-            ws.cell(row=row, column=14, value=el_taken)
+            ws.cell(row=row, column=14, value=pl_taken)
 
             ws.cell(row=row, column=15, value=total_deducted)
 
             ws.cell(row=row, column=16, value=closing_cl)
             ws.cell(row=row, column=17, value=closing_sl)
-            ws.cell(row=row, column=18, value=closing_el)
+            ws.cell(row=row, column=18, value=closing_pl)
 
             ws.cell(row=row, column=19, value=total_balance)
 

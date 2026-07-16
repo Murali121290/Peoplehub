@@ -1,3 +1,4 @@
+import { API_URL } from "../../../config/api";
 import React, { useState, useEffect } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
@@ -32,6 +33,8 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 }) => {
   const [filteredRoles, setFilteredRoles] = useState<any[]>([]);
   const [isEmptyField, setIsEmptyField] = useState(false);
+  // NEW: track which specific fields are invalid
+  const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!newEmp.team_id) {
@@ -39,7 +42,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       return;
     }
 
-    fetch(`http://localhost:5001/api/employees/roles/${newEmp.team_id}`)
+    fetch(`${API_URL}/api/employees/roles/${newEmp.team_id}`)
       .then((res) => res.json())
       .then((data) => {
         setFilteredRoles(data);
@@ -64,7 +67,13 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       "reporting_manager",
       "role",
       "status",
+      "company_email",
+      "password",
+      "access_level",
+      "shift_timing",
     ];
+
+    const errors: Record<string, boolean> = {};
 
     for (const field of requiredFields) {
       console.log(field, "=", newEmp[field]);
@@ -74,27 +83,49 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         newEmp[field] === null ||
         newEmp[field] === ""
       ) {
-        setIsEmptyField(true);
-
-        return;
+        errors[field] = true;
       }
     }
 
     console.log("PROFILE IMAGE =", profileImage);
 
+    // Profile image is only required when creating a new employee
     if (!isEdit && !profileImage) {
-    setIsEmptyField(true);
-    return;
-}
+      errors["profile_image"] = true;
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setIsEmptyField(true);
+      return;
+    }
 
     console.log("ALL VALID");
 
+    setFieldErrors({});
     setIsEmptyField(false);
 
     console.log("NEW EMP =", newEmp);
 
     onSubmit(e);
   };
+
+  // Helper: clear the error for a field as soon as the user fixes it
+  const clearError = (key: string) => {
+    if (fieldErrors[key]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
+  // Small reusable error message shown under an invalid field
+  const FieldError = ({ fieldKey }: { fieldKey: string }) =>
+    fieldErrors[fieldKey] ? (
+      <p className="text-danger-600 text-xs mt-1">This field is required.</p>
+    ) : null;
 
   return (
     <Modal
@@ -115,8 +146,8 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     >
       <p className="text-sm text-neutral-500 -mt-3 mb-5">
         {isEdit
-  ? "Update employee information."
-  : "HR can create a new employee record with essential details"}
+          ? "Update employee information."
+          : "HR can create a new employee record with essential details"}
       </p>
 
       <form>
@@ -167,15 +198,18 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 required
                 type={field.type || "text"}
                 value={newEmp[field.key]}
-                onChange={(e) =>
-                  setNewEmp({ ...newEmp, [field.key]: e.target.value })
-                }
+                onChange={(e) => {
+                  setNewEmp({ ...newEmp, [field.key]: e.target.value });
+                  clearError(field.key);
+                }}
                 placeholder={field.placeholder || ""}
+                className={fieldErrors[field.key] ? "border-danger-500" : ""}
               />
+              <FieldError fieldKey={field.key} />
             </FormField>
           ))}
 
-          <FormField label="Designation *">
+          <FormField label="Team *">
             <Select
               value={newEmp.team_id || ""}
               onChange={(value) => {
@@ -184,82 +218,181 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 );
 
                 setNewEmp({
-  ...newEmp,
-
-  team_id: value,
-
-  department: selectedTeam?.name || "",
-  designation: selectedTeam?.name || "",
-
-  role: "",
-  role_id: "",
-});
+                  ...newEmp,
+                  team_id: value,
+                  department: selectedTeam?.name || "",
+                  role: "",
+                  role_id: "",
+                });
+                clearError("team_id");
               }}
               placeholder="Select Team"
               options={(teams || []).map((team) => ({ label: team.name, value: team.id }))}
+              className={fieldErrors["team_id"] ? "border-danger-500" : ""}
             />
+            <FieldError fieldKey="team_id" />
           </FormField>
 
           <FormField label="REPORTING MANAGER *">
             <Select
               value={newEmp.reporting_manager}
-              onChange={(value) =>
-                setNewEmp({ ...newEmp, reporting_manager: value })
-              }
+              onChange={(value) => {
+                setNewEmp({ ...newEmp, reporting_manager: value });
+                clearError("reporting_manager");
+              }}
               placeholder="Select Manager"
-              options={(employees || []).map((emp) => ({
-                label: `${emp.first_name} ${emp.last_name}`,
-                value: `${emp.first_name} ${emp.last_name}`,
-              }))}
+              options={(employees || [])
+                .filter(
+                  (emp) =>
+                    emp.access_level?.toLowerCase() === "manager" ||
+                    emp.access_level?.toLowerCase() === "hr"
+                )
+                .map((emp) => ({
+                  label: `${emp.first_name} ${emp.last_name}`,
+                  value: `${emp.first_name} ${emp.last_name}`,
+                }))}
+              className={fieldErrors["reporting_manager"] ? "border-danger-500" : ""}
             />
+            <FieldError fieldKey="reporting_manager" />
           </FormField>
 
           <FormField label="Role *">
-  <Select
-    value={newEmp.role}
-    onChange={(value) => {
+            <Select
+              value={newEmp.role}
+              onChange={(value) => {
+                const selectedRole = filteredRoles.find(
+                  (r) => r.name === value
+                );
 
-      const selectedRole = filteredRoles.find(
-        (r) => r.name === value
-      );
-
-      setNewEmp({
-        ...newEmp,
-        role: value,
-        role_id: selectedRole?.id || "",
-      });
-    }}
-    placeholder="Select Role"
-    options={(filteredRoles || []).map((role) => ({
-      label: role.name,
-      value: role.name,
-    }))}
-  />
-</FormField>
+                setNewEmp({
+                  ...newEmp,
+                  role: value,
+                  role_id: selectedRole?.id || "",
+                });
+                clearError("role");
+              }}
+              placeholder="Select Role"
+              options={(filteredRoles || []).map((role) => ({
+                label: role.name,
+                value: role.name,
+              }))}
+              className={fieldErrors["role"] ? "border-danger-500" : ""}
+            />
+            <FieldError fieldKey="role" />
+          </FormField>
 
           <FormField label="STATUS *">
             <Select
               value={newEmp.status}
-              onChange={(value) =>
-                setNewEmp({ ...newEmp, status: value })
-              }
+              onChange={(value) => {
+                setNewEmp({ ...newEmp, status: value });
+                clearError("status");
+              }}
               options={[
                 { label: "Active", value: "Active" },
                 { label: "Inactive", value: "Inactive" },
                 { label: "On Leave", value: "On Leave" },
               ]}
+              className={fieldErrors["status"] ? "border-danger-500" : ""}
             />
+            <FieldError fieldKey="status" />
           </FormField>
 
-          <FormField
-    label={isEdit ? "PROFILE IMAGE" : "PROFILE IMAGE *"}
->
+          {/* Profile Image: only shown when adding a NEW employee, hidden on edit */}
+          {!isEdit && (
+            <FormField label="PROFILE IMAGE *">
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={(e: any) => {
+                  setProfileImage(e.target.files[0]);
+                  clearError("profile_image");
+                }}
+                required
+                className={fieldErrors["profile_image"] ? "border-danger-500" : ""}
+              />
+              <FieldError fieldKey="profile_image" />
+            </FormField>
+          )}
+
+          <FormField label="Company Email *">
             <Input
-              type="file"
-              accept="image/*"
-              onChange={(e: any) => setProfileImage(e.target.files[0])}
               required
+              type="email"
+              value={newEmp.company_email || ""}
+              placeholder="employee@s4carlile.com"
+              onChange={(e) => {
+                setNewEmp({
+                  ...newEmp,
+                  company_email: e.target.value,
+                });
+                clearError("company_email");
+              }}
+              className={fieldErrors["company_email"] ? "border-danger-500" : ""}
             />
+            <FieldError fieldKey="company_email" />
+          </FormField>
+
+          <FormField label="Password *">
+            <Input
+              required
+              type="password"
+              value={newEmp.password || ""}
+              placeholder="Enter Password"
+              onChange={(e) => {
+                setNewEmp({
+                  ...newEmp,
+                  password: e.target.value,
+                });
+                clearError("password");
+              }}
+              className={fieldErrors["password"] ? "border-danger-500" : ""}
+            />
+            <FieldError fieldKey="password" />
+          </FormField>
+
+          <FormField label="Access Level *">
+            <Select
+              value={newEmp.access_level || ""}
+              onChange={(value) => {
+                setNewEmp({
+                  ...newEmp,
+                  access_level: value,
+                });
+                clearError("access_level");
+              }}
+              placeholder="Select Access Level"
+              options={[
+                { label: "Admin", value: "admin" },
+                { label: "HR", value: "hr" },
+                { label: "Manager", value: "manager" },
+                { label: "User", value: "user" },
+              ]}
+              className={fieldErrors["access_level"] ? "border-danger-500" : ""}
+            />
+            <FieldError fieldKey="access_level" />
+          </FormField>
+
+          <FormField label="Shift *">
+            <Select
+              value={newEmp.shift_timing || ""}
+              onChange={(value) => {
+                setNewEmp({
+                  ...newEmp,
+                  shift_timing: value,
+                });
+                clearError("shift_timing");
+              }}
+              placeholder="Select Shift"
+              options={[
+                { label: "General Shift", value: "General Shift" },
+                { label: "Morning Shift", value: "Morning Shift" },
+                { label: "Evening Shift", value: "Evening Shift" },
+                { label: "Night Shift", value: "Night Shift" },
+              ]}
+              className={fieldErrors["shift_timing"] ? "border-danger-500" : ""}
+            />
+            <FieldError fieldKey="shift_timing" />
           </FormField>
         </div>
       </form>

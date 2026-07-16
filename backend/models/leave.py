@@ -32,6 +32,26 @@ class LeaveRequest(db.Model):
         default="Leave"
     )
 
+    approved_by = db.Column(
+        db.String(200),
+        nullable=True
+    )
+
+    approved_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    rejected_by = db.Column(
+        db.String(200),
+        nullable=True
+    )
+
+    rejected_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
     permission_date = db.Column(
         db.Date,
         nullable=True
@@ -67,17 +87,17 @@ class LeaveLedger(db.Model):
 
     opening_cl = db.Column(db.Float, default=0)
     opening_sl = db.Column(db.Float, default=0)
-    opening_el = db.Column(db.Float, default=0)
+    opening_pl = db.Column(db.Float, default=0)
 
     credit_cl = db.Column(db.Float, default=5)
     credit_sl = db.Column(db.Float, default=5)
-    credit_el = db.Column(db.Float, default=5)
+    credit_pl = db.Column(db.Float, default=5)
 
     taken_cl = db.Column(db.Float, default=0)
     taken_sl = db.Column(db.Float, default=0)
-    taken_el = db.Column(db.Float, default=0)
+    taken_pl = db.Column(db.Float, default=0)
 
     closing_cl = db.Column(db.Float, default=0)
     closing_sl = db.Column(db.Float, default=0)
-    closing_el = db.Column(db.Float, default=0)
+    closing_pl = db.Column(db.Float, default=0)
 

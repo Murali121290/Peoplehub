@@ -47,9 +47,9 @@ class Employee(db.Model):
     salary = db.Column(db.Float)
 
     # Leave Balance
-    sick_leave = db.Column(db.Float, default=1.5)
-    casual_leave = db.Column(db.Float, default=1.5)
-    earned_leave = db.Column(db.Float, default=0)
+    sick_leave = db.Column(db.Float, default=6.0)
+    casual_leave = db.Column(db.Float, default=6.0)
+    privilege_leave = db.Column(db.Float, default=15.0)
 
     last_leave_reset_month = db.Column(
     db.String(10),

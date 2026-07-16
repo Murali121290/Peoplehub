@@ -80,6 +80,20 @@ def apply_shift():
         db.session.add(notification)
         db.session.commit()
 
+        # Send manager notification email
+        try:
+            from services.request_email_service import send_manager_request_email
+            send_manager_request_email(shift_request, shift_request.request_type)
+        except Exception as email_err:
+            print("Failed to send manager request email:", str(email_err))
+
+        # Emit shift_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("shift_update", shift_request.to_dict())
+        except Exception as socket_err:
+            print("Failed to emit shift socket:", str(socket_err))
+
         return jsonify({
             "success": True,
             "message": "Shift Request Submitted Successfully"
@@ -187,11 +201,19 @@ def approve_shift(id):
                 "message": "Shift Request Not Found"
             }), 404
 
+        # Prevent double approval/rejection
+        if shift.status != "Pending":
+            return jsonify({
+                "success": False,
+                "message": f"Shift Request already {shift.status.lower()}"
+            }), 400
+
         # Resolve user_id dynamically
         employee = Employee.query.get(shift.employee_id)
         resolved_user_id = employee.user_id if employee else shift.employee_id
 
-        from datetime import timedelta, time
+        from datetime import timedelta
+        from models.attendance import Attendance
 
         start_date = shift.from_date or shift.shift_date
         end_date = shift.to_date or start_date
@@ -199,35 +221,21 @@ def approve_shift(id):
         if start_date:
             current_date = start_date
             while current_date <= end_date:
-                check_in_time = datetime.combine(current_date, time(9, 0))
-                check_out_time = datetime.combine(current_date, time(14, 30))
-
                 attendance = Attendance.query.filter_by(
                     user_id=resolved_user_id,
                     attendance_date=current_date
                 ).first()
 
-                if attendance:
+                # Only update shift_timing on records where the employee
+                # actually checked in. Never create phantom attendance rows
+                # with hardcoded times.
+                if attendance and attendance.check_in is not None:
                     attendance.shift_timing = shift.requested_shift
-                    attendance.status = "Present"
-                    attendance.total_hours = 5.5
-                    attendance.check_in = check_in_time
-                    attendance.check_out = check_out_time
-                else:
-                    attendance = Attendance(
-                        user_id=resolved_user_id,
-                        attendance_date=current_date,
-                        shift_timing=shift.requested_shift,
-                        status="Present",
-                        total_hours=5.5,
-                        check_in=check_in_time,
-                        check_out=check_out_time
-                    )
-                    db.session.add(attendance)
-                
+
                 current_date += timedelta(days=1)
 
         shift.status = "Approved"
+        shift.approved_by = "Website Manager"
         shift.approved_at = datetime.utcnow()
 
         # Delete any pending "New Shift Request" notifications for this shift
@@ -241,13 +249,28 @@ def approve_shift(id):
 
         notification = Notification(
             receiver_name=shift.employee_name,
-            title="Shift Request Approved",
+            title=f"Shift Request Approved",
             message="Your shift request has been approved.",
             is_read=False
         )
 
         db.session.add(notification)
         db.session.commit()
+
+        # Send Notification Email to Employee
+        if employee:
+            try:
+                from services.request_email_service import send_employee_status_email
+                send_employee_status_email(shift, employee, "Approved", shift.request_type)
+            except Exception as email_err:
+                print("Failed to send employee status email:", str(email_err))
+
+        # Emit shift_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("shift_update", shift.to_dict())
+        except Exception as socket_err:
+            print("Failed to emit shift socket:", str(socket_err))
 
         return jsonify({
             "success": True,
@@ -277,14 +300,22 @@ def reject_shift(id):
         shift = ShiftRequest.query.get(id)
 
         if not shift:
-
             return jsonify({
                 "success": False,
-                "message":
-                "Shift Request Not Found"
+                "message": "Shift Request Not Found"
             }), 404
 
+        # Prevent double approval/rejection
+        if shift.status != "Pending":
+            return jsonify({
+                "success": False,
+                "message": f"Shift Request already {shift.status.lower()}"
+            }), 400
+
+        employee = Employee.query.get(shift.employee_id)
+
         shift.status = "Rejected"
+        shift.rejected_by = "Website Manager"
         shift.rejected_at = datetime.utcnow()
 
         # Delete any pending "New Shift Request" notifications for this shift
@@ -301,15 +332,29 @@ def reject_shift(id):
             title="Shift Request Rejected",
             message="Your shift request has been rejected.",
             is_read=False
-    )
+        )
 
         db.session.add(notification)
         db.session.commit()
 
+        # Send Notification Email to Employee
+        if employee:
+            try:
+                from services.request_email_service import send_employee_status_email
+                send_employee_status_email(shift, employee, "Rejected", shift.request_type)
+            except Exception as email_err:
+                print("Failed to send employee status email:", str(email_err))
+
+        # Emit shift_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("shift_update", shift.to_dict())
+        except Exception as socket_err:
+            print("Failed to emit shift socket:", str(socket_err))
+
         return jsonify({
             "success": True,
-            "message":
-            "Shift Rejected Successfully"
+            "message": "Shift Rejected Successfully"
         })
 
     except Exception as e:
@@ -373,10 +418,16 @@ def delete_request(id):
 
         db.session.commit()
 
+        # Emit shift_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("shift_update", {"id": id, "action": "delete"})
+        except Exception as socket_err:
+            print("Failed to emit shift socket:", str(socket_err))
+
         return jsonify({
             "success": True,
-            "message":
-            "Shift Request Deleted Successfully"
+            "message": "Shift Request Deleted Successfully"
         })
 
     except Exception as e:

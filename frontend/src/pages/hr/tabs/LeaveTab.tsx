@@ -1,10 +1,11 @@
+import { API_URL } from "../../../config/api";
 import React from "react";
 import Panel from "../components/Panel";
 import Avatar from "../components/Avatar";
 import Chip from "../components/Chip";
 import { Button } from "../../../components/ui/Button";
 
-const BASE_URL = "http://localhost:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 interface LeaveTabProps {
   leaves: any[];

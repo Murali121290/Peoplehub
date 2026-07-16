@@ -1,3 +1,4 @@
+import { API_URL } from "../../config/api";
 import React, { useState, useEffect } from "react";
 import { toast } from "react-hot-toast";
 import {
@@ -13,6 +14,7 @@ import { motion } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
 import { Attendance } from "../../types/employee.types";
 
+import { socket } from "../../services/socket";
 import ConfirmModal from "./components/ConfirmModal";
 import PopupModal from "./components/PopupModal";
 import BirthdayModal from "../../layouts/components/BirthdayModal";
@@ -22,7 +24,7 @@ import ShiftTab from "./tabs/ShiftTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import ProfileTab from "./tabs/ProfileTab";
 
-const BASE_URL = "http://localhost:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -64,11 +66,18 @@ const EmployeeDashboardPage: React.FC = () => {
     `${currentEmployee?.first_name} ${currentEmployee?.last_name}`
       .trim()
       .toLowerCase();
-  const pendingShiftCount = managerShiftRequests.filter(
-    (shift: any) =>
-      shift.reporting_manager?.trim().toLowerCase() === managerName &&
-      shift.status === "Pending"
-  ).length;
+
+  const canApprove = ["admin", "manager", "hr"].includes(
+    (user?.access_level || user?.role || "").toLowerCase()
+  );
+
+  const pendingShiftCount = canApprove
+    ? managerShiftRequests.filter(
+        (shift: any) =>
+          shift.reporting_manager?.trim().toLowerCase() === managerName &&
+          shift.status === "Pending"
+      ).length
+    : 0;
 
   // Attendance/timer state
   const [isCheckedIn, setIsCheckedIn] = useState(false);
@@ -105,17 +114,21 @@ const EmployeeDashboardPage: React.FC = () => {
   );
 
 
-  const approvalLeaves = leaveRequests.filter(
-    (leave: any) =>
-      leave.reporting_manager?.trim().toLowerCase() === managerName,
-  );
+  const approvalLeaves = canApprove
+    ? leaveRequests.filter(
+        (leave: any) =>
+          leave.reporting_manager?.trim().toLowerCase() === managerName,
+      )
+    : [];
   const totalBalance =
     (currentEmployee?.sick_leave || 0) +
     (currentEmployee?.casual_leave || 0) +
-    (currentEmployee?.earned_leave || 0);
-  const pendingLeaveCount = approvalLeaves.filter(
-    (leave: any) => leave.status === "Pending"
-  ).length;
+    (currentEmployee?.privilege_leave || 0);
+  const pendingLeaveCount = canApprove
+    ? approvalLeaves.filter(
+        (leave: any) => leave.status === "Pending"
+      ).length
+    : 0;
 
   const showPopup = (type: string, title: string, message: string) => {
     setPopup({ show: true, type, title, message });
@@ -128,6 +141,31 @@ const EmployeeDashboardPage: React.FC = () => {
     const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
     return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  };
+
+  const parseTimeString = (timeStr: string) => {
+    if (!timeStr) return new Date();
+    if (timeStr.includes("T") || timeStr.includes("-")) {
+      return new Date(timeStr);
+    }
+    const d = new Date();
+    const match = timeStr.match(/^(\d+):(\d+)(?::(\d+))?\s*(AM|PM)?$/i);
+    if (match) {
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const seconds = match[3] ? parseInt(match[3], 10) : 0;
+      const ampm = match[4];
+      if (ampm) {
+        if (ampm.toUpperCase() === "PM" && hours < 12) {
+          hours += 12;
+        } else if (ampm.toUpperCase() === "AM" && hours === 12) {
+          hours = 0;
+        }
+      }
+      d.setHours(hours, minutes, seconds, 0);
+      return d;
+    }
+    return new Date();
   };
 
   const loadTodayAttendanceSummary = (userId: string) => {
@@ -279,7 +317,13 @@ const EmployeeDashboardPage: React.FC = () => {
       localStorage.setItem(`checkInTime_${userId}`, nowIso);
       localStorage.setItem(`checkInDate_${userId}`, nowIso.split("T")[0]);
       clearTodayAttendanceSummary(userId);
-      setTimeout(() => window.location.reload(), 1000);
+      setIsCheckedIn(true);
+      setCheckInTime(new Date());
+      const attendanceResponse = await fetch(
+        `${BASE_URL}/attendance/history/${userId}`,
+      );
+      const attendanceHistory = await attendanceResponse.json();
+      setAttendanceData(attendanceHistory);
     } catch (error) {
       showPopup(
         "error",
@@ -662,20 +706,32 @@ const EmployeeDashboardPage: React.FC = () => {
     }
   };
 
-  const sendBirthdayWish = async (emp: any) => {
-    const senderName = localStorage.getItem("full_name");
-    await fetch(`${BASE_URL}/communications`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        employee_id: emp.id,
-        employee_name: `${emp.first_name} ${emp.last_name}`,
-        receiver_id: emp.user_id,
-        message_type: "employee",
-        created_by: senderName,
-        message: `🎂 Happy Birthday ${emp.first_name}! Wishing you happiness, success and prosperity. 🎉`,
-      }),
-    });
+  const sendBirthdayWish = async (emp: any, customMessage: string) => {
+    const senderId = localStorage.getItem("employee_id");
+    if (!senderId) {
+      toast.error("Sender employee details not found.");
+      return;
+    }
+    try {
+      const res = await fetch(`${BASE_URL}/birthday-wishes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sender_id: Number(senderId),
+          receiver_id: emp.id,
+          message: customMessage,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to send wishes.");
+        return;
+      }
+      toast.success("Birthday wishes sent successfully!");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to send wishes.");
+    }
   };
 
 
@@ -752,45 +808,159 @@ const EmployeeDashboardPage: React.FC = () => {
       .catch((err) => console.error("Attendance Status Error:", err));
   }, []);
 
-useEffect(() => {
-  const userId = localStorage.getItem("user_id");
-  if (!userId) return;
+  useEffect(() => {
+    const userId = localStorage.getItem("user_id");
+    if (!userId) return;
 
-  fetch(`${BASE_URL}/attendance/history/${userId}`)
-    .then((res) => res.json())
-    .then((data) => {
-      setAttendanceData(data);
+    fetch(`${BASE_URL}/attendance/history/${userId}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setAttendanceData(data);
 
-      // Find today's attendance
-      const today = new Date().toISOString().split("T")[0];
+        // Find today's attendance
+        const today = new Date().toISOString().split("T")[0];
 
-      const todayRecord = data.find(
-        (record: any) => record.date === today
-      );
-
-      // If today's attendance is available and employee has checked out
-      if (
-        todayRecord &&
-        todayRecord.checkOut !== "-" &&
-        todayRecord.workingHours
-      ) {
-        const totalSeconds = Math.floor(
-          Number(todayRecord.workingHours) * 3600
+        const todayRecord = data.find(
+          (record: any) => record.date === today
         );
 
-        setTimer(formatSeconds(totalSeconds));
+        // If today's attendance is available and employee has checked out
+        if (
+          todayRecord &&
+          todayRecord.checkOut !== "-" &&
+          todayRecord.workingHours
+        ) {
+          const totalSeconds = Math.floor(
+            Number(todayRecord.workingHours) * 3600
+          );
 
-        setTotalLunchSeconds(
-          (todayRecord.lunchMinutes || 0) * 60
-        );
+          setTimer(formatSeconds(totalSeconds));
 
-        setTotalTeaSeconds(
-          (todayRecord.teaMinutes || 0) * 60
-        );
+          setTotalLunchSeconds(
+            (todayRecord.lunchMinutes || 0) * 60
+          );
+
+          setTotalTeaSeconds(
+            (todayRecord.teaMinutes || 0) * 60
+          );
+        }
+      })
+      .catch((err) => console.log(err));
+  }, []);
+
+  useEffect(() => {
+    socket.on("attendance_update", (payload: any) => {
+      if (Number(payload.user_id) === Number(user?.id)) {
+        setIsCheckedIn(payload.checked_in);
+        setIsLunchBreak(payload.lunch_break);
+        setIsTeaBreak(payload.tea_break);
+        if (payload.check_in) {
+          const userId = localStorage.getItem("user_id");
+          const localSaved = userId ? localStorage.getItem(`checkInTime_${userId}`) : null;
+          const savedDate = userId ? localStorage.getItem(`checkInDate_${userId}`) : null;
+          const todayKey = new Date().toISOString().split("T")[0];
+          if (localSaved && savedDate === todayKey) {
+            setCheckInTime(new Date(localSaved));
+          } else {
+            setCheckInTime(parseTimeString(payload.check_in));
+          }
+        } else {
+          setCheckInTime(null);
+        }
+        if (payload.lunch_start) setLunchStartTime(new Date(payload.lunch_start));
+        if (payload.tea_start) setTeaStartTime(new Date(payload.tea_start));
+        setTotalLunchSeconds((payload.lunch_minutes || 0) * 60);
+        setTotalTeaSeconds((payload.tea_minutes || 0) * 60);
+
+        const userId = localStorage.getItem("user_id");
+        if (userId) {
+          if (!payload.checked_in && payload.check_out) {
+            const summary = {
+              date: new Date().toISOString().split("T")[0],
+              timer: formatSeconds(Math.floor((payload.working_hours || 0) * 3600)),
+              totalLunchSeconds: (payload.lunch_minutes || 0) * 60,
+              totalTeaSeconds: (payload.tea_minutes || 0) * 60,
+            };
+            saveTodayAttendanceSummary(userId, summary);
+            setTodayAttendanceSummary(summary);
+            setTimer(summary.timer);
+          }
+          fetch(`${BASE_URL}/attendance/history/${userId}`)
+            .then((res) => res.json())
+            .then((data) => setAttendanceData(data));
+        }
       }
-    })
-    .catch((err) => console.log(err));
-}, []);
+    });
+
+    socket.on("leave_update", (payload: any) => {
+      // Update leave request list
+      setLeaveRequests((prev) => {
+        const index = prev.findIndex((l) => l.id === payload.id);
+        if (index > -1) {
+          const next = [...prev];
+          next[index] = payload;
+          return next;
+        }
+        return [payload, ...prev];
+      });
+
+      // If the leave belongs to current user, we should update their leave balance in employees state!
+      if (Number(payload.employee_id) === Number(currentEmployee?.id)) {
+        // Reload employee details from backend to sync balances
+        fetch(`${BASE_URL}/employees/`)
+          .then((res) => res.json())
+          .then((data) => setEmployees(data))
+          .catch((err) => console.error(err));
+      }
+    });
+
+    socket.on("shift_update", (payload: any) => {
+      if (payload.action === "delete") {
+        setShiftRequests((prev) => prev.filter((s) => s.id !== payload.id));
+        setManagerShiftRequests((prev) => prev.filter((s) => s.id !== payload.id));
+        return;
+      }
+
+      // If it belongs to current employee
+      if (Number(payload.employee_id) === Number(currentEmployee?.user_id)) {
+        setShiftRequests((prev) => {
+          const index = prev.findIndex((s) => s.id === payload.id);
+          if (index > -1) {
+            const next = [...prev];
+            next[index] = payload;
+            return next;
+          }
+          return [payload, ...prev];
+        });
+      }
+
+      // If we are their manager
+      if (payload.reporting_manager?.trim().toLowerCase() === managerName) {
+        setManagerShiftRequests((prev) => {
+          const index = prev.findIndex((s) => s.id === payload.id);
+          if (index > -1) {
+            const next = [...prev];
+            next[index] = payload;
+            return next;
+          }
+          return [payload, ...prev];
+        });
+      }
+    });
+
+    socket.on("employee_profile_update", (payload: any) => {
+      setEmployees((prev) =>
+        prev.map((emp) => (emp.id === payload.id ? { ...emp, ...payload } : emp))
+      );
+    });
+
+    return () => {
+      socket.off("attendance_update");
+      socket.off("leave_update");
+      socket.off("shift_update");
+      socket.off("employee_profile_update");
+    };
+  }, [currentEmployee, managerName]);
 
   useEffect(() => {
     if (
@@ -817,13 +987,25 @@ useEffect(() => {
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (isCheckedIn && checkInTime && !isLunchBreak && !isTeaBreak) {
+    if (isCheckedIn && checkInTime) {
       interval = setInterval(() => {
-        const totalWorkedSeconds = Math.floor(
-          (new Date().getTime() - checkInTime.getTime()) / 1000,
+        const now = new Date().getTime();
+        const elapsed = Math.floor((now - checkInTime.getTime()) / 1000);
+
+        // Add currently-running break seconds on top of already-accumulated seconds
+        const runningLunch =
+          isLunchBreak && lunchStartTime
+            ? Math.floor((now - lunchStartTime.getTime()) / 1000)
+            : 0;
+        const runningTea =
+          isTeaBreak && teaStartTime
+            ? Math.floor((now - teaStartTime.getTime()) / 1000)
+            : 0;
+
+        const workingSeconds = Math.max(
+          elapsed - totalLunchSeconds - runningLunch - totalTeaSeconds - runningTea,
+          0,
         );
-        const workingSeconds =
-          totalWorkedSeconds - totalLunchSeconds - totalTeaSeconds;
         const hrs = Math.floor(workingSeconds / 3600);
         const mins = Math.floor((workingSeconds % 3600) / 60);
         const secs = workingSeconds % 60;
@@ -840,6 +1022,8 @@ useEffect(() => {
     checkInTime,
     isLunchBreak,
     isTeaBreak,
+    lunchStartTime,
+    teaStartTime,
     totalLunchSeconds,
     totalTeaSeconds,
   ]);
@@ -911,8 +1095,8 @@ useEffect(() => {
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id
-                        ? "bg-primary-50 text-primary-700 border-b-2 border-primary-600"
-                        : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"
+                      ? "bg-primary-50 text-primary-700 border-b-2 border-primary-600"
+                      : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"
                       }`}
                   >
                     <Icon className="w-4 h-4" />
@@ -953,6 +1137,8 @@ useEffect(() => {
                 totalTeaSeconds={totalTeaSeconds}
                 isLunchBreak={isLunchBreak}
                 isTeaBreak={isTeaBreak}
+                lunchStartTime={lunchStartTime}
+                teaStartTime={teaStartTime}
                 currentEmployee={currentEmployee}
                 user={user}
                 onCheckInOut={() =>

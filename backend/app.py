@@ -1,11 +1,21 @@
+# pyrefly: ignore [missing-import]
 from flask import Flask, jsonify
+# pyrefly: ignore [missing-import]
+# pyrefly: ignore [missing-import]
 from flask_cors import CORS
+# pyrefly: ignore [missing-import]
 from flask_jwt_extended import JWTManager
+# pyrefly: ignore [missing-import]
 from sqlalchemy import text
+# pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
+# pyrefly: ignore [missing-import]
 from routes.payroll_routes import payroll_bp
+# pyrefly: ignore [missing-import]
 import os
+# pyrefly: ignore [missing-import]
 from flask import send_from_directory
+# pyrefly: ignore [missing-import]
 from flask_socketio import (
     SocketIO
 )
@@ -14,6 +24,7 @@ from socket_events import (
     register_socket_events
 )
 
+# pyrefly: ignore [missing-import]
 from apscheduler.schedulers.background import (
     BackgroundScheduler
 )
@@ -34,10 +45,10 @@ from models.database import db, init_db
 from middleware.auth import auth_required, role_required
 from routes.auth import auth_bp
 from routes.users import users_bp
-from routes.clients import clients_bp
-from routes.projects import projects_bp
-from routes.workflow import workflow_bp
-from routes.dashboard import dashboard_bp
+# from routes.clients import clients_bp
+# from routes.projects import projects_bp
+# from routes.workflow import workflow_bp
+# from routes.dashboard import dashboard_bp
 from routes.employees import employees_bp
 from routes.attendance import attendance_bp
 from routes.leaves import leave_bp
@@ -49,8 +60,11 @@ from routes.notifications import (
     notification_bp
 )
 from routes.appraisal_routes import appraisal_bp
+from routes.work_anniversary import work_anniversary_bp
 from routes.meeting_rooms import meeting_rooms_bp
 from routes.telecom import telecom_bp
+from routes.birthday_wishes import birthday_wishes_bp
+from routes.requests import requests_bp
 from seed.seed_employees import seed_employees
 from seed.seed_telecom import seed_telecom
 from seed.seed_appraisal import seed_appraisal
@@ -100,6 +114,10 @@ def create_app():
     telecom_bp,
     url_prefix="/api/telecom"
 )
+    app.register_blueprint(
+    birthday_wishes_bp,
+    url_prefix="/api/birthday-wishes"
+)
     
     app.register_blueprint(
     shift_bp,
@@ -110,9 +128,14 @@ def create_app():
     url_prefix="/api"
 )
     app.register_blueprint(
+    requests_bp,
+    url_prefix="/api/requests"
+)
+    app.register_blueprint(
     payroll_bp,
     url_prefix="/api/payroll"
 )
+    app.register_blueprint(work_anniversary_bp)
     
 
 
@@ -133,14 +156,30 @@ def create_app():
             "ADD COLUMN IF NOT EXISTS designation VARCHAR(150), "
             "ADD COLUMN IF NOT EXISTS location VARCHAR(100)"
         ))
+        
+        # Add email-approval columns to leave_requests
+        db.session.execute(text(
+            "ALTER TABLE leave_requests "
+            "ADD COLUMN IF NOT EXISTS approved_by VARCHAR(200), "
+            "ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP, "
+            "ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(200), "
+            "ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP"
+        ))
+        
+        # Add email-approval columns to shift_requests
+        db.session.execute(text(
+            "ALTER TABLE shift_requests "
+            "ADD COLUMN IF NOT EXISTS approved_by VARCHAR(200), "
+            "ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(200)"
+        ))
         db.session.commit()
 
-        seed_teams()
-        seed_roles()
-        seed_users()
-        seed_employees()
-        seed_telecom()
-        seed_appraisal()
+        # seed_teams()
+        # seed_roles()
+        # seed_users()
+        # seed_employees()
+        # seed_telecom()
+        # seed_appraisal()
         
 
     # Check missed check-ins every minute
@@ -163,10 +202,10 @@ def create_app():
     # Register blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(users_bp, url_prefix='/api/users')
-    app.register_blueprint(clients_bp, url_prefix='/api/clients')
-    app.register_blueprint(projects_bp, url_prefix='/api/projects')
-    app.register_blueprint(workflow_bp, url_prefix='/api/workflow')
-    app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
+    # app.register_blueprint(clients_bp, url_prefix='/api/clients')
+    # app.register_blueprint(projects_bp, url_prefix='/api/projects')
+    # app.register_blueprint(workflow_bp, url_prefix='/api/workflow')
+    # app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
     app.register_blueprint(
     communication_bp,
     url_prefix="/api/communications"
@@ -206,6 +245,7 @@ def create_app():
             'error': 'Internal server error'
         }), 500
         
+    # Route map printed in development only
     print(app.url_map)
 
     register_socket_events(

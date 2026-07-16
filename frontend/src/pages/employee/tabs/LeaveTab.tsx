@@ -50,6 +50,11 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const [editingLeave, setEditingLeave] = useState<any>(null);
   const [leaveTab, setLeaveTab] = useState("myRequests");
   const [activeRequestDetails, setActiveRequestDetails] = useState<number | null>(null);
+  const [validationError, setValidationError] = useState<{
+    title: string;
+    message: string;
+    type: "limit" | "insufficient";
+  } | null>(null);
 
   const [leaveForm, setLeaveForm] = useState({
     requestType: "Leave",
@@ -135,9 +140,55 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   };
 
   const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (leaveForm.requestType === "Leave") {
+      const type = (leaveForm.leaveType || "").trim().toLowerCase();
+      const requested = leaveForm.totalDays || 0;
+      
+      let available = 0;
+      let yearlyMax = 0;
+      let displayType = "";
+
+      if (type === "sick leave") {
+        available = currentEmployee?.sick_leave || 0;
+        yearlyMax = 6;
+        displayType = "Sick Leave";
+      } else if (type === "casual leave") {
+        available = currentEmployee?.casual_leave || 0;
+        yearlyMax = 6;
+        displayType = "Casual Leave";
+      } else if (type === "earned leave" || type === "privilege leave") {
+        available = currentEmployee?.privilege_leave || currentEmployee?.earned_leave || 0;
+        yearlyMax = 15;
+        displayType = "Privilege Leave";
+      }
+
+      if (type) {
+        if (available <= 0) {
+          setValidationError({
+            type: "limit",
+            title: "Leave Limit Reached",
+            message: `You have already used all ${yearlyMax} ${displayType} days for this year. Please select another leave type or contact HR.`
+          });
+          return;
+        }
+
+        if (requested > available) {
+          setValidationError({
+            type: "insufficient",
+            title: "Insufficient Leave Balance",
+            message: `Requested: ${requested} Days, Available: ${available} Days. Please reduce the requested leave duration.`
+          });
+          return;
+        }
+      }
+    }
+
     const payload = {
       ...leaveForm,
       request_type: leaveForm.requestType,
+      leave_type: leaveForm.leaveType === "Earned Leave" ? "Privilege Leave" : leaveForm.leaveType,
       permission_date: leaveForm.permissionDate,
       from_time: leaveForm.fromTime,
       to_time: leaveForm.toTime,
@@ -177,85 +228,101 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       </div>
 
       {/* Leave Balance Grid Section */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {[
-          { 
-            label: "Sick Leave", 
-            value: currentEmployee?.sick_leave || 0, 
-            total: 1.5, 
-            bg: "from-blue-500/5 to-indigo-500/5 hover:from-blue-500/10 hover:to-indigo-500/10 border-blue-100", 
-            iconBg: "bg-blue-500 text-white", 
-            textCls: "text-blue-700",
-            icon: ShieldCheckIcon,
-            desc: "For medical recovery"
-          },
-          { 
-            label: "Casual Leave", 
-            value: currentEmployee?.casual_leave || 0, 
-            total: 1.5, 
-            bg: "from-amber-500/5 to-orange-500/5 hover:from-amber-500/10 hover:to-orange-500/10 border-amber-100", 
-            iconBg: "bg-amber-500 text-white", 
-            textCls: "text-amber-700",
-            icon: ClockIcon,
-            desc: "For urgent personal work"
-          },
-          { 
-            label: "Earned Leave", 
-            value: currentEmployee?.earned_leave || 0, 
-            total: 1.5, 
-            bg: "from-emerald-500/5 to-teal-500/5 hover:from-emerald-500/10 hover:to-teal-500/10 border-emerald-100", 
-            iconBg: "bg-emerald-500 text-white", 
-            textCls: "text-emerald-700",
-            icon: CalendarIcon,
-            desc: "Accrued vacation leaves"
-          },
-          { 
-            label: "Total Balance", 
-            value: totalBalance, 
-            total: 45, 
-            bg: "from-purple-500/5 to-pink-500/5 hover:from-purple-500/10 hover:to-pink-500/10 border-purple-100", 
-            iconBg: "bg-purple-500 text-white", 
-            textCls: "text-purple-700",
-            icon: DocumentTextIcon,
-            desc: "Cumulative leave count"
-          },
-        ].map((item) => {
-          const used = Math.max(0, item.total - item.value);
-          const percent = Math.min(100, Math.round((used / item.total) * 100));
+      <motion.div
+  variants={itemVariants}
+  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+>
+  {[
+    {
+      label: "Sick Leave",
+      value: currentEmployee?.sick_leave || 0,
+      total: 6,
+      icon: ShieldCheckIcon,
+      iconWrap: "bg-emerald-50",
+      iconColor: "text-emerald-600",
+      progressColor: "bg-emerald-500",
+      note: "For medical recovery",
+    },
+    {
+      label: "Casual Leave",
+      value: currentEmployee?.casual_leave || 0,
+      total: 6,
+      icon: ClockIcon,
+      iconWrap: "bg-amber-50",
+      iconColor: "text-amber-600",
+      progressColor: "bg-amber-500",
+      note: "For personal work",
+    },
+    {
+      label: "Privilege Leave",
+      value: currentEmployee?.privilege_leave || currentEmployee?.earned_leave || 0,
+      total: 15,
+      icon: CalendarIcon,
+      iconWrap: "bg-blue-50",
+      iconColor: "text-blue-600",
+      progressColor: "bg-blue-500",
+      note: "Accrued vacation leaves",
+    },
+    {
+      label: "Total Balance",
+      value: totalBalance,
+      total: 27,
+      icon: DocumentTextIcon,
+      iconWrap: "bg-slate-100",
+      iconColor: "text-slate-600",
+      progressColor: "bg-slate-700",
+      note: "Cumulative leave count",
+    },
+  ].map((item) => {
+    const used = Math.max(0, item.total - item.value);
+    const percent = Math.min(100, Math.round((item.value / item.total) * 100));
+    const Icon = item.icon;
 
-          return (
-            <Card key={item.label} className={`border border-neutral-200 bg-gradient-to-br ${item.bg} hover:shadow-md transition-all duration-300 rounded-2xl p-5 relative overflow-hidden group`}>
-              <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full translate-x-8 -translate-y-8 group-hover:scale-110 transition-transform duration-500" />
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-neutral-500 text-xs font-semibold uppercase tracking-wider">{item.label}</p>
-                  <h4 className="text-4xl font-extrabold text-neutral-850 mt-2 select-none tracking-tight">
-                    {item.value} <span className="text-xs text-neutral-400 font-medium">/ {item.total} days</span>
-                  </h4>
-                </div>
-                <div className={`p-2.5 rounded-xl ${item.iconBg} shadow-sm`}>
-                  <item.icon className="w-5 h-5" />
-                </div>
-              </div>
+    return (
+      <Card
+        key={item.label}
+        className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm hover:shadow-md transition-all duration-300"
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.14em] font-semibold text-slate-400">
+              {item.label}
+            </p>
 
-              {/* Progress bar */}
-              <div className="mt-5">
-                <div className="flex justify-between items-center text-[10px] font-semibold text-neutral-400 mb-1">
-                  <span>{percent}% CONSUMED</span>
-                  <span>{used} days used</span>
-                </div>
-                <div className="w-full bg-neutral-200/60 h-1.5 rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full rounded-full bg-current ${item.textCls}`} 
-                    style={{ width: `${percent}%` }}
-                  />
-                </div>
-              </div>
-              <p className="text-[11px] text-neutral-400 mt-2.5 font-medium">{item.desc}</p>
-            </Card>
-          );
-        })}
-      </motion.div>
+            <h4 className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
+              {item.value}
+              <span className="ml-1 text-sm font-medium text-slate-400">
+                / {item.total}
+              </span>
+            </h4>
+
+            <p className="mt-1 text-sm text-slate-400">This year</p>
+          </div>
+
+          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${item.iconWrap}`}>
+            <Icon className={`h-5 w-5 ${item.iconColor}`} />
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <div className="mb-1 flex items-center justify-between text-[11px] text-slate-400">
+            <span>{used} used</span>
+            <span>{percent}% left</span>
+          </div>
+
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={`h-full rounded-full ${item.progressColor}`}
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+
+          <p className="mt-2 text-xs font-medium text-slate-500">{item.note}</p>
+        </div>
+      </Card>
+    );
+  })}
+</motion.div>
 
       {/* Navigation Tabs (My Requests / Approval Requests) */}
       <div className="flex gap-3 mb-6 p-1 bg-neutral-100 rounded-xl w-fit border border-neutral-200">
@@ -788,7 +855,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     <option value="">Select Leave Type</option>
                     <option value="Sick Leave">Sick Leave</option>
                     <option value="Casual Leave">Casual Leave</option>
-                    <option value="Earned Leave">Earned Leave</option>
+                    <option value="Privilege Leave">Privilege Leave</option>
                   </select>
                 </div>
               )}
@@ -992,7 +1059,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               </h3>
               <div className="space-y-3.5 text-xs">
                 {[
-                  { label: "Earned Leave", value: currentEmployee?.earned_leave || 0 },
+                  { label: "Privilege Leave", value: currentEmployee?.privilege_leave || currentEmployee?.earned_leave || 0 },
                   { label: "Casual Leave", value: currentEmployee?.casual_leave || 0 },
                   { label: "Sick Leave", value: currentEmployee?.sick_leave || 0 },
                 ].map((item) => (
@@ -1017,7 +1084,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               <ul className="text-[11px] text-neutral-600 space-y-3 font-semibold leading-relaxed">
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-500 mt-0.5">•</span>
-                  <span><strong>Earned Leave:</strong> Planned leaves (vacation, trips) requiring prior scheduling.</span>
+                  <span><strong>Privilege Leave:</strong> Planned leaves (vacation, trips) requiring prior scheduling.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-500 mt-0.5">•</span>
@@ -1044,6 +1111,34 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             </div>
           </div>
         </form>
+      </Modal>
+
+      {/* Leave Balance Validation Modal */}
+      <Modal
+        isOpen={validationError !== null}
+        onClose={() => setValidationError(null)}
+        size="md"
+        title={validationError?.title || ""}
+      >
+        <div className="p-6 text-center space-y-4">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-2 border border-red-200">
+            <XMarkIcon className="w-8 h-8 text-red-600 animate-pulse" />
+          </div>
+          <h3 className="text-lg font-bold text-neutral-800">
+            {validationError?.title}
+          </h3>
+          <p className="text-sm text-neutral-500 font-semibold leading-relaxed">
+            {validationError?.message}
+          </p>
+          <div className="pt-4 border-t border-neutral-100 flex justify-center">
+            <Button
+              onClick={() => setValidationError(null)}
+              className="bg-danger-605 hover:bg-danger-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm shadow-md transition-all duration-200"
+            >
+              Okay, I understand
+            </Button>
+          </div>
+        </div>
       </Modal>
     </>
   );

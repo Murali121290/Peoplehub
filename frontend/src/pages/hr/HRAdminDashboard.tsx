@@ -1,3 +1,4 @@
+import { API_URL } from "../../config/api";
 import React, { useState, useEffect, useMemo } from "react";
 import { apiService } from "../../services/api";
 import {
@@ -42,7 +43,7 @@ const NAV_ICONS: Record<string, React.ElementType> = {
   settings: Cog6ToothIcon,
 };
 
-const BASE_URL = "http://localhost:5001/api";
+const BASE_URL = `${API_URL}/api`;
 
 export default function HRAdminDashboard() {
   const [nav, setNav] = useState("dashboard");
@@ -51,6 +52,7 @@ export default function HRAdminDashboard() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
+  const [teamOverview, setTeamOverview] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [addEmpOpen, setAddEmpOpen] = useState(false);
   const [profileCompleteOpen, setProfileCompleteOpen] = useState(false);
@@ -126,21 +128,26 @@ export default function HRAdminDashboard() {
     }
   };
 
+  const fetchTeamOverview = async () => {
+    try {
+      const res = await apiService.getTeamOverview();
+      setTeamOverview(res.data || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchEmployees();
     fetchAttendance();
     fetchLeaveRequests();
     fetchTeams();
     fetchRoles();
+    fetchTeamOverview();
   }, []);
 
   // --- Counts ---
   const counts = useMemo(() => {
-    const employeeUsers = employees.filter((emp) => {
-      const role = emp.role?.toLowerCase() || "";
-      return !["hr", "admin", "manager", "project manager"].includes(role);
-    });
-
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -157,14 +164,14 @@ export default function HRAdminDashboard() {
           .map((att) => att.user_id),
       ),
     ];
-    const activeEmployees = employeeUsers.filter((emp) =>
+    const activeEmployees = employees.filter((emp) =>
       presentEmployeeIds.includes(emp.user_id),
     ).length;
 
-    const onLeaveEmployees = employeeUsers.filter((emp) => {
+    const onLeaveEmployees = employees.filter((emp) => {
       return leaves.some((leave) => {
-        const isUserMatch = 
-          String(leave.employee_id) === String(emp.id) || 
+        const isUserMatch =
+          String(leave.employee_id) === String(emp.id) ||
           String(leave.employee_id) === String(emp.user_id);
         if (!isUserMatch) return false;
 
@@ -182,7 +189,7 @@ export default function HRAdminDashboard() {
     }).length;
 
     return {
-      total: employeeUsers.length,
+      total: employees.length,
       active: activeEmployees,
       onLeave: onLeaveEmployees,
       pendingLeaves: leaves.filter((leave) => leave.status?.toLowerCase() === "pending")
@@ -238,35 +245,42 @@ export default function HRAdminDashboard() {
 
       const formData = new FormData();
 
-      formData.append("user_id", newEmp.user_id);
+      
       formData.append("employee_id", newEmp.employee_id);
-      formData.append("first_name", newEmp.first_name);
-      formData.append("last_name", newEmp.last_name);
-      formData.append("email", newEmp.email);
-      formData.append("phone", newEmp.phone);
-      formData.append("joining_date", newEmp.joining_date);
-      formData.append("salary", newEmp.salary);
+formData.append("first_name", newEmp.first_name);
+formData.append("last_name", newEmp.last_name);
+formData.append("email", newEmp.email);
+formData.append("phone", newEmp.phone);
+formData.append("joining_date", newEmp.joining_date);
+formData.append("salary", newEmp.salary);
 
-      formData.append("team_id", newEmp.team_id);
-      formData.append("department", newEmp.department || "");
+formData.append("team_id", newEmp.team_id);
+formData.append("department", newEmp.department || "");
+formData.append("designation", newEmp.designation || "");
 
-      formData.append("designation", newEmp.designation || "");
-      formData.append("role", newEmp.role);
-      formData.append("role_id", String(newEmp.role_id || ""));
-      formData.append("access_level", newEmp.access_level || "");
-      formData.append("company_email", newEmp.email || "");
-      formData.append("reporting_manager", newEmp.reporting_manager);
+formData.append("role", newEmp.role);
+formData.append("role_id", String(newEmp.role_id || ""));
 
-      formData.append("status", newEmp.status);
+formData.append("reporting_manager", newEmp.reporting_manager);
 
-      if (profileImage) {
-        formData.append("profile_image", profileImage);
-      }
+formData.append("company_email", newEmp.company_email);
+formData.append("password", newEmp.password);
+formData.append("access_level", newEmp.access_level);
+
+formData.append("status", newEmp.status);
+formData.append(
+  "shift_timing",
+  newEmp.shift_timing || ""
+);
+
+if (profileImage) {
+    formData.append("profile_image", profileImage);
+}
 
       // Determine method and URL based on edit mode
       const method = isEditMode ? "PATCH" : "POST";
-      const url = isEditMode 
-        ? `${BASE_URL}/employees/${newEmp.id}` 
+      const url = isEditMode
+        ? `${BASE_URL}/employees/${newEmp.id}`
         : `${BASE_URL}/employees/`;
 
       const response = await fetch(url, {
@@ -310,14 +324,14 @@ export default function HRAdminDashboard() {
   };
   const handleEditEmployee = (employee: any) => {
 
-  setNewEmp(employee);
+    setNewEmp(employee);
 
-  setProfileImage(null);
+    setProfileImage(null);
 
-  setIsEditMode(true);
+    setIsEditMode(true);
 
-  setAddEmpOpen(true);
-};
+    setAddEmpOpen(true);
+  };
 
   const handleProfileComplete = async () => {
     if (!currentEmployee) return;
@@ -375,27 +389,27 @@ export default function HRAdminDashboard() {
       {/* Main Content */}
       <main className="p-6">
         {nav === "dashboard" && (
-          <DashboardTab counts={counts} employees={employees} />
+          <DashboardTab counts={counts} teamOverview={teamOverview} />
         )}
         {nav === "directory" && (
           <DirectoryTab
-    filteredEmps={filteredEmps}
-    search={search}
-    onSearchChange={setSearch}
-    onAddEmployee={() => {
+            filteredEmps={filteredEmps}
+            search={search}
+            onSearchChange={setSearch}
+            onAddEmployee={() => {
 
-        setIsEditMode(false);
+              setIsEditMode(false);
 
-        setNewEmp(DEFAULT_NEW_EMP);
+              setNewEmp(DEFAULT_NEW_EMP);
 
-        setProfileImage(null);
+              setProfileImage(null);
 
-        setAddEmpOpen(true);
+              setAddEmpOpen(true);
 
-    }}
-    onEditEmployee={handleEditEmployee}
-    BASE_URL={BASE_URL}
-/>
+            }}
+            onEditEmployee={handleEditEmployee}
+            BASE_URL={BASE_URL}
+          />
         )}
         {nav === "attendance" && (
           <AttendanceTab attendance={attendance} BASE_URL={BASE_URL} />

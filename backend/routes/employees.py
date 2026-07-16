@@ -12,15 +12,9 @@ from models.attendance import Attendance
 from models.user import Role, Team
 from services.leave_balance_service import update_leave_balance
 from models.leave import LeaveRequest
+from models.user import User, Role, Team
 
 employees_bp = Blueprint("employees", __name__)
-
-
-# ======================================
-# HR CREATE EMPLOYEE
-# ======================================
-
-print("Creating employee...")
 
 @employees_bp.route("/", methods=["POST"])
 def create_employee():
@@ -31,32 +25,18 @@ def create_employee():
         print("FORM DATA:", request.form)
         print("FILES:", request.files)
 
-        # -----------------------------
+        # ---------------------------------
         # Profile Image
-        # -----------------------------
+        # ---------------------------------
         image = request.files.get("profile_image")
 
         image_data = None
         if image:
             image_data = image.read()
 
-        # -----------------------------
-        # USER ID
-        # -----------------------------
-        user_id = data.get("user_id")
-
-        if user_id == "":
-            user_id = None
-
-        print("USER ID =", repr(user_id))
-        print("TEAM ID =", repr(data.get("team_id")))
-        print("DEPARTMENT =", data.get("department"))
-        print("DESIGNATION =", data.get("designation"))
-        print("ROLE =", data.get("role"))
-
-        # -----------------------------
+        # ---------------------------------
         # Joining Date
-        # -----------------------------
+        # ---------------------------------
         joining_date = None
 
         if data.get("joining_date"):
@@ -65,12 +45,57 @@ def create_employee():
                 "%Y-%m-%d"
             ).date()
 
-        # -----------------------------
+        # ---------------------------------
+        # Create User Automatically
+        # ---------------------------------
+        role_id = data.get("role_id")
+        team_id = data.get("team_id")
+
+        if not role_id:
+            return jsonify({
+                "success": False,
+                "error": "Role is required"
+            }), 400
+
+        if not team_id:
+            return jsonify({
+                "success": False,
+                "error": "Team is required"
+            }), 400
+
+        # Check Company Email
+        existing_user = User.query.filter_by(
+            company_email=data.get("company_email")
+        ).first()
+
+        if existing_user:
+            return jsonify({
+                "success": False,
+                "error": "Company Email already exists."
+            }), 400
+
+        user = User(
+            full_name=f"{data.get('first_name')} {data.get('last_name')}".strip(),
+            email=data.get("email"),
+            company_email=data.get("company_email"),
+            role_id=int(role_id),
+            team_id=int(team_id),
+            access_level=data.get("access_level"),
+            status="active"
+        )
+
+        # Hash Password
+        user.set_password(data.get("password"))
+
+        db.session.add(user)
+        db.session.flush()   # Get user.id without committing
+
+        # ---------------------------------
         # Create Employee
-        # -----------------------------
+        # ---------------------------------
         employee = Employee(
 
-            user_id=user_id,
+            user_id=user.id,
 
             employee_id=data.get("employee_id"),
 
@@ -80,33 +105,24 @@ def create_employee():
             email=data.get("email"),
             phone=data.get("phone"),
 
+            team_id=int(team_id),
+
             department=data.get("department"),
             designation=data.get("designation"),
             role=data.get("role"),
 
             profile_image=image_data,
 
-            reporting_manager=data.get(
-                "reporting_manager"
-            ),
+            reporting_manager=data.get("reporting_manager"),
 
             joining_date=joining_date,
+            shift_timing=data.get("shift_timing"),
 
-            salary=float(
-                data.get("salary", 0)
-            ),
+            salary=float(data.get("salary", 0)),
 
-            pf_number=data.get(
-                "pf_number"
-            ),
-
-            uan_number=data.get(
-                "uan_number"
-            ),
-
-            esi_number=data.get(
-                "esi_number"
-            ),
+            pf_number=data.get("pf_number"),
+            uan_number=data.get("uan_number"),
+            esi_number=data.get("esi_number"),
 
             profile_completed=False,
 
@@ -116,16 +132,18 @@ def create_employee():
         )
 
         db.session.add(employee)
+
         db.session.commit()
 
-        print("Employee saved successfully.")
-        print("Database ID:", employee.id)
+        print("User Created :", user.id)
+        print("Employee Created :", employee.id)
 
         return jsonify({
             "success": True,
-            "message": "Employee Created Successfully",
+            "message": "Employee & User Created Successfully",
             "employee_id": employee.employee_id,
-            "id": employee.id
+            "user_id": user.id,
+            "employee_db_id": employee.id
         }), 201
 
     except Exception as e:
@@ -136,7 +154,6 @@ def create_employee():
             "success": False,
             "error": str(e)
         }), 500
-
 
 # ======================================
 # GET ALL EMPLOYEES
@@ -202,8 +219,8 @@ def get_employees():
             "casual_leave":
                 emp.casual_leave,
 
-            "earned_leave":
-                emp.earned_leave
+            "privilege_leave":
+                emp.privilege_leave
         })
 
     return jsonify(result)
@@ -342,8 +359,8 @@ def get_employee(employee_id):
 
     "user_id": employee.user_id,
     "sick_leave": employee.sick_leave,
-"casual_leave": employee.casual_leave,
-"earned_leave": employee.earned_leave
+    "casual_leave": employee.casual_leave,
+    "privilege_leave": employee.privilege_leave
 })
 
 
@@ -746,6 +763,25 @@ def update_employee_profile(employee_id):
 
         db.session.commit()
 
+        # Emit employee_profile_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("employee_profile_update", {
+                "id": employee.id,
+                "user_id": employee.user_id,
+                "first_name": employee.first_name,
+                "last_name": employee.last_name,
+                "email": employee.email,
+                "phone": employee.phone,
+                "designation": employee.designation,
+                "department": employee.department,
+                "role": employee.role,
+                "shift": employee.shift_timing or "General Shift",
+                "status": employee.status
+            })
+        except Exception as socket_err:
+            print("Failed to emit profile socket:", str(socket_err))
+
         return jsonify({
             "success": True,
             "message": "Profile Updated Successfully"
@@ -818,6 +854,34 @@ def get_team_overview():
             team_id=team.id
         ).all()
 
+        employee_list = []
+
+        for emp in employees:
+
+            # Get User
+            user = User.query.get(emp.user_id)
+
+            # Default Role
+            role_name = ""
+
+            if user:
+                role = Role.query.get(user.role_id)
+
+                if role:
+                    role_name = role.name
+
+            employee_list.append({
+                "id": emp.id,
+                "name": f"{emp.first_name} {emp.last_name or ''}".strip(),
+                "role": role_name,
+                "reporting_manager": emp.reporting_manager,
+                "salary": float(emp.salary or 0),
+                "department": emp.department,
+                "team_id": emp.team_id,
+                "employee_id": emp.employee_id,
+                "profile_image": emp.profile_image is not None
+            })
+
         result.append({
             "team_id": team.id,
             "team_name": team.name,
@@ -826,24 +890,10 @@ def get_team_overview():
                 float(emp.salary or 0)
                 for emp in employees
             ),
-            "employees": [
-                {
-                    "id": emp.id,
-                    "name": f"{emp.first_name} {emp.last_name}",
-                    "role": (
-                        emp.user.role.name
-                        if emp.user and emp.user.role
-                        else ""
-                    ),
-                    "reporting_manager": emp.reporting_manager,
-                    "salary": emp.salary
-                }
-                for emp in employees
-            ]
+            "employees": employee_list
         })
 
     return jsonify(result), 200
-
 
 @employees_bp.route("/my-team/<int:user_id>", methods=["GET"])
 def get_my_team(user_id):
@@ -880,7 +930,10 @@ def get_my_team(user_id):
                 "designation": employee.designation,
                 "salary": employee.salary,
                 "reporting_manager": employee.reporting_manager,
-                "status": employee.status
+                "status": employee.status,
+                "sick_leave": employee.sick_leave,
+                "casual_leave": employee.casual_leave,
+                "privilege_leave": employee.privilege_leave
             })
 
     return jsonify(result)
@@ -959,6 +1012,8 @@ def get_team_attendance(user_id):
                 "working_hours": working_hours,
                 "lunch_minutes": attendance.lunch_minutes if attendance else 0,
                 "tea_minutes": attendance.tea_minutes if attendance else 0,
+                "shift": emp.shift_timing or "General Shift",
+                "manager_status": attendance.manager_status if (attendance and attendance.manager_status) else "Pending",
             })
 
         return jsonify(result)
@@ -1313,8 +1368,8 @@ def get_employee_details(employee_id):
                 "casual_leave":
                     employee.casual_leave,
 
-                "earned_leave":
-                    employee.earned_leave,
+                "privilege_leave":
+                    employee.privilege_leave,
 
                 "attendance_history": [
                     {

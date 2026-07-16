@@ -80,8 +80,10 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
                   <span className="text-[13px] text-neutral-500">{emp.reporting_manager || "—"}</span>
                 </td>
                 <td className="px-4 py-3.5">
-                  <span className="text-[13px] font-medium text-neutral-800">{emp.designation || "N/A"}</span>
-                </td>
+  <span className="text-[13px] font-medium text-neutral-800">
+    {emp.department || "N/A"}
+  </span>
+</td>
                 <td className="px-4 py-3.5">
                   {emp.shift_timing || "-"}
                 </td>

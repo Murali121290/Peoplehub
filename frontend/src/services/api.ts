@@ -140,6 +140,10 @@ class ApiService {
     return this.api.get("/users/teams");
   }
 
+  async getTeamOverview() {
+    return this.api.get("/employees/team-overview");
+  }
+
   // ================= CLIENTS =================
 
   async getClients(params?: QueryParams) {
@@ -304,6 +308,8 @@ export const userService = {
   getRolesByTeam: (teamId: number) => apiService.getRolesByTeam(teamId),
 
   getTeams: () => apiService.getTeams(),
+
+  getTeamOverview: () => apiService.getTeamOverview(),
 };
 
 // ================= CLIENT SERVICE =================

@@ -1,21 +1,24 @@
+import { API_URL } from "../../../config/api";
 import { useState, useEffect } from "react";
 import { createBooking } from "../../../services/meetingRoomService";
 import { FormField, Input, Select, Textarea } from "../../../components/ui/Form";
 import { Button } from "../../../components/ui/Button";
 
 interface BookingFormProps {
-    rooms: any[];
-    onSuccess?: () => void;
+  rooms: any[];
+  onSuccess?: () => void;
+  selectedRoomId?: string | number;
 }
 
 const BookingForm: React.FC<BookingFormProps> = ({
-    rooms,
-    onSuccess,
+  rooms,
+  onSuccess,
+  selectedRoomId,
 }) => {
   const today = new Date().toISOString().split("T")[0];
 
   const initialForm = {
-    room_id: "",
+    room_id: selectedRoomId ? selectedRoomId.toString() : "",
     meeting_title: "",
     organizer_name: "",
     department: "",
@@ -30,12 +33,26 @@ const BookingForm: React.FC<BookingFormProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (selectedRoomId != null) {
+      setForm((prev) => ({
+        ...prev,
+        room_id: selectedRoomId.toString(),
+      }));
+    } else {
+      setForm((prev) => ({
+        ...prev,
+        room_id: "",
+      }));
+    }
+  }, [selectedRoomId]);
+
   const [employees, setEmployees] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchEmployees = async () => {
       try {
-        const response = await fetch("http://localhost:5001/api/employees/");
+        const response = await fetch(`${API_URL}/api/employees/`);
         if (response.ok) {
           const data = await response.json();
           setEmployees(data || []);
@@ -48,16 +65,16 @@ const BookingForm: React.FC<BookingFormProps> = ({
   }, []);
 
   const organizerOptions = employees
-  .filter((emp) =>
-    ["manager", "admin", "hr"].includes(
-      (emp.access_level || emp.role || "").toLowerCase()
+    .filter((emp) =>
+      ["manager", "admin", "hr"].includes(
+        (emp.access_level || emp.role || "").toLowerCase()
+      )
     )
-  )
-  .map((emp) => ({
-    label: `${emp.first_name} ${emp.last_name}`,
-    value: `${emp.first_name} ${emp.last_name}`,
-    department: emp.department || "",
-  }));
+    .map((emp) => ({
+      label: `${emp.first_name} ${emp.last_name}`,
+      value: `${emp.first_name} ${emp.last_name}`,
+      department: emp.department || "",
+    }));
 
   const handleOrganizerChange = (value: string) => {
     const selectedOrg = organizerOptions.find((opt) => opt.value === value);
@@ -203,8 +220,8 @@ const BookingForm: React.FC<BookingFormProps> = ({
       setForm(initialForm);
       setErrors({});
       if (onSuccess) {
-    onSuccess();
-}
+        onSuccess();
+      }
     } catch (error: any) {
       console.error("BOOKING ERROR:", error);
 
@@ -218,10 +235,10 @@ const BookingForm: React.FC<BookingFormProps> = ({
     }
   };
 
-const roomOptions = rooms.map((room) => ({
-  label: room.room_name,
-  value: String(room.id),
-}));
+  const roomOptions = rooms.map((room) => ({
+    label: room.room_name,
+    value: String(room.id),
+  }));
   return (
     <div className="rounded-3xl bg-white">
       <div className="mb-6">
@@ -235,11 +252,10 @@ const roomOptions = rooms.map((room) => ({
 
       {message.text && (
         <div
-          className={`mb-5 rounded-2xl border px-4 py-3 text-sm ${
-            message.type === "success"
-              ? "border-success-200 bg-success-50 text-success-700"
-              : "border-danger-200 bg-danger-50 text-danger-700"
-          }`}
+          className={`mb-5 rounded-2xl border px-4 py-3 text-sm ${message.type === "success"
+            ? "border-success-200 bg-success-50 text-success-700"
+            : "border-danger-200 bg-danger-50 text-danger-700"
+            }`}
         >
           {message.text}
         </div>
