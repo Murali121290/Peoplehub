@@ -174,3 +174,157 @@ def check_missed_checkins():
         print(f"Database Error: {str(e)}")
 
     print("========== CHECK-IN MONITOR COMPLETED ==========\n")
+
+
+def generate_daily_notifications():
+    print("\n========== DAILY NOTIFICATIONS GENERATOR RUNNING ==========")
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    today = now.date()
+
+    try:
+        # 1. Fetch all active employees
+        employees = Employee.query.all()
+        print(f"Checking birthdays and anniversaries for {len(employees)} employees...")
+
+        for emp in employees:
+            # 2. Check Birthday
+            if emp.dob:
+                if emp.dob.month == today.month and emp.dob.day == today.day:
+                    celebrator_name = f"{emp.first_name} {emp.last_name or ''}".strip()
+                    print(f"🎂 Today is {celebrator_name}'s Birthday!")
+
+                    # Check if notification already exists to avoid duplication
+                    existing = Notification.query.filter_by(
+                        receiver_name=celebrator_name,
+                        title="🎂 Happy Birthday!",
+                        related_id=emp.id,
+                        related_type="birthday_self"
+                    ).first()
+
+                    if not existing:
+                        # A. Congratulatory notification to the celebrating employee
+                        notif_self = Notification(
+                            receiver_name=celebrator_name,
+                            title="🎂 Happy Birthday!",
+                            message=f"Happy Birthday, {celebrator_name}! Have a wonderful day ahead.",
+                            is_read=False,
+                            related_id=emp.id,
+                            related_type="birthday_self"
+                        )
+                        db.session.add(notif_self)
+                        db.session.flush()
+
+                        # Emit real-time socket event to celebrating employee
+                        socketio.emit("general_notification_created", {
+                            "id": notif_self.id,
+                            "title": notif_self.title,
+                            "message": notif_self.message,
+                            "is_read": False,
+                            "created_at": notif_self.created_at.isoformat() if notif_self.created_at else datetime.utcnow().isoformat(),
+                            "related_id": emp.id,
+                            "related_type": "birthday_self",
+                            "celebrator_name": celebrator_name
+                        }, to=str(emp.id))
+
+                        # B. Notification to all other employees
+                        for other_emp in employees:
+                            if other_emp.id != emp.id:
+                                other_name = f"{other_emp.first_name} {other_emp.last_name or ''}".strip()
+                                notif_other = Notification(
+                                    receiver_name=other_name,
+                                    title="🎂 Birthday Reminder",
+                                    message=f"Today is {celebrator_name}'s birthday. Wish them!",
+                                    is_read=False,
+                                    related_id=emp.id,
+                                    related_type="birthday_reminder"
+                                )
+                                db.session.add(notif_other)
+                                db.session.flush()
+
+                                # Emit real-time socket event to other employees
+                                socketio.emit("general_notification_created", {
+                                    "id": notif_other.id,
+                                    "title": notif_other.title,
+                                    "message": notif_other.message,
+                                    "is_read": False,
+                                    "created_at": notif_other.created_at.isoformat() if notif_other.created_at else datetime.utcnow().isoformat(),
+                                    "related_id": emp.id,
+                                    "related_type": "birthday_reminder",
+                                    "celebrator_name": celebrator_name
+                                }, to=str(other_emp.id))
+
+            # 3. Check Work Anniversary
+            if emp.joining_date:
+                if emp.joining_date.month == today.month and emp.joining_date.day == today.day:
+                    years = today.year - emp.joining_date.year
+                    if years > 0:
+                        celebrator_name = f"{emp.first_name} {emp.last_name or ''}".strip()
+                        print(f"🎉 Today is {celebrator_name}'s {years}-year Work Anniversary!")
+
+                        # Check if notification already exists to avoid duplication
+                        existing = Notification.query.filter_by(
+                            receiver_name=celebrator_name,
+                            title="🎉 Work Anniversary!",
+                            related_id=emp.id,
+                            related_type="anniversary_self"
+                        ).first()
+
+                        if not existing:
+                            # A. Congratulatory notification to the celebrating employee
+                            notif_self = Notification(
+                                receiver_name=celebrator_name,
+                                title="🎉 Work Anniversary!",
+                                message=f"Congratulations on completing {years} year{'s' if years > 1 else ''} with us, {celebrator_name}!",
+                                is_read=False,
+                                related_id=emp.id,
+                                related_type="anniversary_self"
+                            )
+                            db.session.add(notif_self)
+                            db.session.flush()
+
+                            # Emit real-time socket event to celebrating employee
+                            socketio.emit("general_notification_created", {
+                                "id": notif_self.id,
+                                "title": notif_self.title,
+                                "message": notif_self.message,
+                                "is_read": False,
+                                "created_at": notif_self.created_at.isoformat() if notif_self.created_at else datetime.utcnow().isoformat(),
+                                "related_id": emp.id,
+                                "related_type": "anniversary_self",
+                                "celebrator_name": celebrator_name
+                            }, to=str(emp.id))
+
+                            # B. Notification to all other employees
+                            for other_emp in employees:
+                                if other_emp.id != emp.id:
+                                    other_name = f"{other_emp.first_name} {other_emp.last_name or ''}".strip()
+                                    notif_other = Notification(
+                                        receiver_name=other_name,
+                                        title="🎉 Anniversary Reminder",
+                                        message=f"Today is {celebrator_name}'s {years}-year work anniversary. Congratulate them!",
+                                        is_read=False,
+                                        related_id=emp.id,
+                                        related_type="anniversary_reminder"
+                                    )
+                                    db.session.add(notif_other)
+                                    db.session.flush()
+
+                                    # Emit real-time socket event to other employees
+                                    socketio.emit("general_notification_created", {
+                                        "id": notif_other.id,
+                                        "title": notif_other.title,
+                                        "message": notif_other.message,
+                                        "is_read": False,
+                                        "created_at": notif_other.created_at.isoformat() if notif_other.created_at else datetime.utcnow().isoformat(),
+                                        "related_id": emp.id,
+                                        "related_type": "anniversary_reminder",
+                                        "celebrator_name": celebrator_name
+                                    }, to=str(other_emp.id))
+
+        db.session.commit()
+        print("========== DAILY NOTIFICATIONS GENERATOR COMPLETED ==========\n")
+    except Exception as e:
+        db.session.rollback()
+        print("Failed to generate daily notifications:", str(e))
+        import traceback
+        traceback.print_exc()

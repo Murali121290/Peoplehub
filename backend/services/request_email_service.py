@@ -7,7 +7,7 @@ from datetime import datetime
 from itsdangerous import URLSafeTimedSerializer
 from pathlib import Path
 # pyrefly: ignore [missing-import]
-from flask import current_app
+from utils.compat import current_app
 
 def get_serializer():
     return URLSafeTimedSerializer(current_app.config.get("SECRET_KEY", "wms-enterprise-secret-key-2024"))

@@ -1,11 +1,7 @@
 # routes/shift_request.py
 
 # pyrefly: ignore [missing-import]
-from flask import Blueprint
-# pyrefly: ignore [missing-import]
-from flask import request
-# pyrefly: ignore [missing-import]
-from flask import jsonify
+from utils.compat import Blueprint, request, jsonify
 
 from datetime import datetime
 # pyrefly: ignore [missing-import]

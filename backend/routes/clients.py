@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from utils.compat import Blueprint, request, jsonify
 from models.client import Client
 from models.user import User
 from middleware.auth import auth_required, access_level_required

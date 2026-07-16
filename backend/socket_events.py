@@ -1,6 +1,6 @@
-from flask_socketio import (
-emit,
-join_room
+from extensions import (
+    emit,
+    join_room
 )
 
 from models.database import db

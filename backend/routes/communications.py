@@ -1,6 +1,4 @@
-from flask import Blueprint
-from flask import request
-from flask import jsonify
+from utils.compat import Blueprint, request, jsonify
 
 from sqlalchemy import or_
 from extensions import socketio

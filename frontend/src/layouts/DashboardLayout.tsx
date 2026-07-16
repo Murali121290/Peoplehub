@@ -492,6 +492,11 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       toast.success(`✅ ${newNotification.sender_name || "An employee"} checked in successfully!`);
     });
 
+    socket.on("general_notification_created", (newNotification) => {
+      setNotifications((prev) => [newNotification, ...prev]);
+      toast(`🔔 ${newNotification.title}: ${newNotification.message}`);
+    });
+
     socket.on("manager_notification_resolved", (data) => {
       setNotifications((prev) => {
         if (data.status === "Completed" || data.status === "Resolved") {
@@ -512,6 +517,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       socket.off("missed_checkin_created");
       socket.off("checkin_reminder_sent");
       socket.off("employee_checked_in");
+      socket.off("general_notification_created");
       socket.off("manager_notification_resolved");
     };
   }, []);
@@ -559,7 +565,8 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
 
   const handleApproveAll = async () => {
     try {
-      await fetch(`${BASE_URL}/attendance/approve-all`, {
+      const uid = localStorage.getItem("user_id");
+      await fetch(`${BASE_URL}/attendance/approve-all?manager_id=${uid}`, {
         method: "PUT",
       });
       // Remove all employees from the popup

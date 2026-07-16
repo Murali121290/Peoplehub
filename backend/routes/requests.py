@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, current_app
+from utils.compat import Blueprint, request, jsonify, current_app
 from models.database import db
 from models.leave import LeaveRequest
 from models.shift_request import ShiftRequest

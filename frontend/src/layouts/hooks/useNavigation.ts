@@ -20,12 +20,13 @@ export const useNavigation = (user: any) => {
 
     if (isAdmin) {
       return [
-        ...commonItems.slice(0, 1),
+        { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
+        { name: "HR Management", icon: UserGroupIcon, path: "/hrms" },
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
+        { name: "Announcements", icon: BellIcon, path: "/announcements" },
         { name: "Appraisal", icon: ClipboardDocumentCheckIcon, path: "/appraisal" },
         { name: "Settings", icon: Cog6ToothIcon, path: "/settings" },
-        { name: "Announcements", icon: BellIcon, path: "/announcements" },
       ];
     }
 

@@ -10,7 +10,7 @@ COPY backend/ .
 
 EXPOSE 5001
 
-CMD ["python", "app.py"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5001"]
 
 # ---------- Frontend build ----------
 FROM node:20-alpine AS frontend-build

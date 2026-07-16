@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from utils.compat import Blueprint, request, jsonify
 from models.database import db
 from models.attendance import Attendance
 from datetime import datetime
@@ -9,7 +9,7 @@ from sqlalchemy import extract
 from datetime import timedelta
 from openpyxl.styles import Font
 from openpyxl.styles import PatternFill
-from flask import send_file
+from utils.compat import send_file
 from zoneinfo import ZoneInfo
 from models.leave import LeaveRequest, LeaveLedger
 from io import BytesIO
@@ -1874,14 +1874,20 @@ def approve_attendance(employee_id):
         else:
             target_date = date.today() - timedelta(days=1)
 
+        from models.employee import Employee
+        emp = Employee.query.get(employee_id)
+        if not emp:
+            return jsonify({"success": False, "error": "Employee not found"}), 404
+        target_user_id = emp.user_id
+
         attendance = Attendance.query.filter_by(
-            user_id=employee_id,
+            user_id=target_user_id,
             attendance_date=target_date
         ).first()
 
         if not attendance:
             attendance = Attendance(
-                user_id=employee_id,
+                user_id=target_user_id,
                 attendance_date=target_date,
                 status="Present",
                 manager_status="Approved"
@@ -1895,20 +1901,18 @@ def approve_attendance(employee_id):
 
         # Emit attendance_update socket event for real-time dashboard updates
         try:
-            from models.employee import Employee
             from extensions import socketio
-            employee = Employee.query.filter_by(user_id=employee_id).first()
-            if employee:
+            if emp:
                 payload = {
-                    "id": employee.id,
-                    "user_id": employee.user_id,
+                    "id": emp.id,
+                    "user_id": emp.user_id,
                     "attendance_status": attendance.status or "Present",
                     "check_in": attendance.check_in.strftime("%I:%M %p") if (attendance and attendance.check_in) else None,
                     "check_out": attendance.check_out.strftime("%I:%M %p") if (attendance and attendance.check_out) else None,
                     "working_hours": attendance.total_hours or 0.0,
                     "lunch_minutes": attendance.lunch_minutes or 0,
                     "tea_minutes": attendance.tea_minutes or 0,
-                    "shift": employee.shift_timing or "General Shift",
+                    "shift": emp.shift_timing or "General Shift",
                     "manager_status": attendance.manager_status or "Pending",
                     "checked_in": (attendance and attendance.check_in is not None and attendance.check_out is None),
                     "lunch_break": attendance.lunch_break or False,
@@ -1946,14 +1950,20 @@ def reject_attendance(employee_id):
         else:
             target_date = date.today() - timedelta(days=1)
 
+        from models.employee import Employee
+        emp = Employee.query.get(employee_id)
+        if not emp:
+            return jsonify({"success": False, "error": "Employee not found"}), 404
+        target_user_id = emp.user_id
+
         attendance = Attendance.query.filter_by(
-            user_id=employee_id,
+            user_id=target_user_id,
             attendance_date=target_date
         ).first()
 
         if not attendance:
             attendance = Attendance(
-                user_id=employee_id,
+                user_id=target_user_id,
                 attendance_date=target_date,
                 status="Absent",
                 manager_status="Rejected"
@@ -1967,20 +1977,18 @@ def reject_attendance(employee_id):
 
         # Emit attendance_update socket event for real-time dashboard updates
         try:
-            from models.employee import Employee
             from extensions import socketio
-            employee = Employee.query.filter_by(user_id=employee_id).first()
-            if employee:
+            if emp:
                 payload = {
-                    "id": employee.id,
-                    "user_id": employee.user_id,
+                    "id": emp.id,
+                    "user_id": emp.user_id,
                     "attendance_status": attendance.status or "Absent",
                     "check_in": attendance.check_in.strftime("%I:%M %p") if (attendance and attendance.check_in) else None,
                     "check_out": attendance.check_out.strftime("%I:%M %p") if (attendance and attendance.check_out) else None,
                     "working_hours": attendance.total_hours or 0.0,
                     "lunch_minutes": attendance.lunch_minutes or 0,
                     "tea_minutes": attendance.tea_minutes or 0,
-                    "shift": employee.shift_timing or "General Shift",
+                    "shift": emp.shift_timing or "General Shift",
                     "manager_status": attendance.manager_status or "Pending",
                     "checked_in": (attendance and attendance.check_in is not None and attendance.check_out is None),
                     "lunch_break": attendance.lunch_break or False,
@@ -2012,16 +2020,41 @@ def reject_attendance(employee_id):
 def approve_all_attendance():
 
     try:
-
+        manager_id = request.args.get("manager_id")
         yesterday = date.today() - timedelta(days=1)
 
-        attendances = Attendance.query.filter_by(
-            attendance_date=yesterday
-        ).all()
-
-        for attendance in attendances:
-            attendance.status = "Present"
-            attendance.manager_status = "Approved"
+        if manager_id:
+            from models.employee import Employee
+            manager = Employee.query.filter_by(user_id=int(manager_id)).first()
+            if manager:
+                manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
+                reporting_employees = Employee.query.all()
+                for employee in reporting_employees:
+                    if not employee.reporting_manager:
+                        continue
+                    if employee.reporting_manager.strip().lower() == manager_name:
+                        attendance = Attendance.query.filter_by(
+                            user_id=employee.user_id,
+                            attendance_date=yesterday
+                        ).first()
+                        if not attendance:
+                            attendance = Attendance(
+                                user_id=employee.user_id,
+                                attendance_date=yesterday,
+                                status="Present",
+                                manager_status="Approved"
+                            )
+                            db.session.add(attendance)
+                        else:
+                            attendance.status = "Present"
+                            attendance.manager_status = "Approved"
+        else:
+            attendances = Attendance.query.filter_by(
+                attendance_date=yesterday
+            ).all()
+            for attendance in attendances:
+                attendance.status = "Present"
+                attendance.manager_status = "Approved"
 
         db.session.commit()
 

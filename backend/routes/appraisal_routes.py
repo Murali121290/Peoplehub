@@ -1,7 +1,7 @@
 """
 appraisal_routes.py
 
-Flask Blueprint for the Employee Appraisal Module.
+FastAPI APIRouter for the Employee Appraisal Module.
 Handles appraisal cycles, question fetching, employee answer submission,
 manager review, and appraisal reporting.
 
@@ -13,11 +13,11 @@ Follows the same coding conventions as attendance_routes.py:
 - Proper HTTP status codes
 """
 
-from flask import Blueprint, request, jsonify
+from utils.compat import Blueprint, request, jsonify
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
 
-from extensions import db
+from models.database import db
 from models.appraisal import (
     AppraisalCycle,
     AppraisalQuestion,
@@ -142,10 +142,10 @@ def submit_appraisal():
         answers = data.get("answers")
 
         # Validate required fields
-        if not user_id:
+        if not employee_id:
             return jsonify({
                 "success": False,
-                "message": "user_id is required"
+                "message": "employee_id is required"
             }), 400
 
         if not cycle_id:
@@ -166,21 +166,13 @@ def submit_appraisal():
                 "message": "Minimum 5 answers are required"
             }), 400
 
-        # Validate user exists
+        # Validate employee exists
         employee = Employee.query.get(employee_id)
 
-        if not user:
-            return jsonify({
-                "success": False,
-                "message": "User not found"
-            }), 404
-
-        # Validate employee record linked to user
-        employee = Employee.query.filter_by(user_id=user_id).first()
         if not employee:
             return jsonify({
                 "success": False,
-                "message": "Employee record not found for this user"
+                "message": "Employee not found"
             }), 404
 
         # Validate appraisal cycle exists

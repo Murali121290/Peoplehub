@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify
+from utils.compat import Blueprint, jsonify
 from models.workflow import Workflow, WorkflowStage
 
 workflow_bp = Blueprint('workflow', __name__)

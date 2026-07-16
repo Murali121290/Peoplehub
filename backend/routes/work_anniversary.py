@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify
+from utils.compat import Blueprint, jsonify
 from datetime import date
 from models.employee import Employee
 from sqlalchemy import extract

@@ -1,5 +1,5 @@
 # pyrefly: ignore [missing-import]
-from flask import Blueprint, request, jsonify, Response
+from utils.compat import Blueprint, request, jsonify, Response
 from models.database import db
 from models.employee import Employee
 from datetime import datetime
@@ -1066,16 +1066,30 @@ def get_reporting_employees(user_id):
             if employee_manager != manager_name:
                 continue
 
+            if employee.user_id == user_id:
+                continue
+
             attendance = Attendance.query.filter_by(
                 user_id=employee.user_id,
                 attendance_date=yesterday
             ).first()
 
-            if not attendance:
+            if attendance and attendance.manager_status in ["Approved", "Rejected"]:
                 continue
 
-            if attendance.manager_status == "Approved":
-                continue
+            from models.leave import LeaveRequest
+            leave = LeaveRequest.query.filter(
+                LeaveRequest.employee_id == str(employee.id),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.from_date <= yesterday,
+                LeaveRequest.to_date >= yesterday
+            ).first()
+
+            status = "Absent"
+            if attendance:
+                status = attendance.status
+            elif leave:
+                status = "Leave"
 
             result.append({
 
@@ -1096,9 +1110,7 @@ def get_reporting_employees(user_id):
                     else None,
 
                 "status":
-                    attendance.status
-                    if attendance
-                    else "Absent",
+                    status,
 
                 "check_in":
                     attendance.check_in.strftime("%I:%M %p")

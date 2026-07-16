@@ -1,10 +1,10 @@
-from flask import Blueprint, request, jsonify
+from utils.compat import Blueprint, request, jsonify
 from models.project import Project, ProjectChapter, ProjectAssignment
 from models.workflow import WorkflowStage, WorkflowHistory
 from models.user import User, Role
 from models.tracking import SLATracking
 from middleware.auth import auth_required, role_required
-from flask_jwt_extended import get_jwt_identity
+from utils.jwt_helper import get_jwt_identity
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 import os
@@ -385,7 +385,7 @@ def parse_zip():
         'error': str(e)
     }), 422
 import json
-from flask import request, jsonify
+from utils.compat import request, jsonify
 from middleware.auth import auth_required
 from models.database import db
 from models.project import Project

@@ -1,6 +1,6 @@
 # routes/telecom.py
 
-from flask import Blueprint, request, jsonify
+from utils.compat import Blueprint, request, jsonify
 
 from models.database import db
 from models.telecom import TelecomDirectory

@@ -1,10 +1,10 @@
-from flask import Blueprint, request, jsonify
+from utils.compat import Blueprint, request, jsonify
 from models.database import db
 from models.leave import LeaveRequest
 from datetime import datetime
 from models.employee import Employee
 from openpyxl import Workbook
-from flask import send_file
+from utils.compat import send_file
 from io import BytesIO
 
 from services.leave_balance_service import (

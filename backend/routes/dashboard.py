@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify
+from utils.compat import Blueprint, jsonify
 from models.project import Project
 from models.client import Client
 from models.user import User

@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, send_file
+from utils.compat import Blueprint, jsonify, send_file
 from datetime import date, datetime
 from io import BytesIO
 
