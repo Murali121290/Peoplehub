@@ -23,6 +23,8 @@ import LeaveTab from "./tabs/LeaveTab";
 import ShiftTab from "./tabs/ShiftTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import ProfileTab from "./tabs/ProfileTab";
+import DashboardHeaderActions from "./components/DashboardHeaderActions";
+import NotificationsPanel from "./components/NotificationsPanel";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -83,6 +85,8 @@ const EmployeeDashboardPage: React.FC = () => {
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [checkInTime, setCheckInTime] = useState<Date | null>(null);
   const [timer, setTimer] = useState("00:00:00");
+  const [lunchTimer, setLunchTimer] = useState("");
+  const [teaTimer, setTeaTimer] = useState("");
   const [isLunchBreak, setIsLunchBreak] = useState(false);
   const [isTeaBreak, setIsTeaBreak] = useState(false);
   const [lunchStartTime, setLunchStartTime] = useState<Date | null>(null);
@@ -98,7 +102,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const [shiftDate, setShiftDate] = useState("");
   // Modal state
   const [confirmModal, setConfirmModal] = useState(false);
-  const [birthdayModal, setBirthdayModal] = useState(false);
+  const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [birthdayEmployees, setBirthdayEmployees] = useState<any[]>([]);
   const [popup, setPopup] = useState({
     show: false,
@@ -972,27 +976,19 @@ const EmployeeDashboardPage: React.FC = () => {
   }, [currentEmployee, managerName]);
 
   useEffect(() => {
-    if (
-      birthdayEmployees.length > 0 &&
-      !sessionStorage.getItem("birthday_popup_shown")
-    ) {
-      setBirthdayModal(true);
-      sessionStorage.setItem("birthday_popup_shown", "true");
-    }
+    // Don't auto-open birthday modal anymore
+    // if (bdays.length > 0) {
+    //   setBirthdayModal(true);
+    // }
   }, [birthdayEmployees]);
 
   useEffect(() => {
-    if (!birthdayModal && !sessionStorage.getItem("attendance_popup_shown")) {
+    if (!showNotificationsPanel && !sessionStorage.getItem("attendance_popup_shown")) {
       sessionStorage.setItem("attendance_popup_shown", "true");
     }
-  }, [birthdayModal]);
+  }, [showNotificationsPanel]);
 
-  useEffect(() => {
-    if (birthdayModal && isMyBirthday) {
-      const t = setTimeout(() => setBirthdayModal(false), 5000);
-      return () => clearTimeout(t);
-    }
-  }, [birthdayModal, isMyBirthday]);
+  // Remove auto-close logic for birthday modal as we use a persistent side panel now
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -1021,6 +1017,25 @@ const EmployeeDashboardPage: React.FC = () => {
         setTimer(
           `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`,
         );
+
+        if (isLunchBreak && lunchStartTime) {
+            const lHrs = Math.floor(runningLunch / 3600);
+            const lMins = Math.floor((runningLunch % 3600) / 60);
+            const lSecs = runningLunch % 60;
+            setLunchTimer(`${lHrs > 0 ? String(lHrs).padStart(2, "0") + ":" : ""}${String(lMins).padStart(2, "0")}:${String(lSecs).padStart(2, "0")}`);
+        } else {
+            setLunchTimer("");
+        }
+
+        if (isTeaBreak && teaStartTime) {
+            const tHrs = Math.floor(runningTea / 3600);
+            const tMins = Math.floor((runningTea % 3600) / 60);
+            const tSecs = runningTea % 60;
+            setTeaTimer(`${tHrs > 0 ? String(tHrs).padStart(2, "0") + ":" : ""}${String(tMins).padStart(2, "0")}:${String(tSecs).padStart(2, "0")}`);
+        } else {
+            setTeaTimer("");
+        }
+
       }, 1000);
     }
     return () => {
@@ -1061,16 +1076,12 @@ const EmployeeDashboardPage: React.FC = () => {
       />
 
       <div className="min-h-screen bg-neutral-50">
-        {birthdayModal && birthdayEmployees.length > 0 && (
-          <BirthdayModal
-            birthdayEmployees={birthdayEmployees}
-            isMyBirthday={isMyBirthday}
-            currentEmployee={currentEmployee}
-            user={user}
-            onClose={() => setBirthdayModal(false)}
-            onSendWish={sendBirthdayWish}
-          />
-        )}
+        <NotificationsPanel
+          isOpen={showNotificationsPanel}
+          onClose={() => setShowNotificationsPanel(false)}
+          birthdayEmployees={birthdayEmployees}
+          isMyBirthday={isMyBirthday}
+        />
 
         {/* Header */}
         <header className="bg-white shadow-sm border-b border-neutral-200 sticky top-0 z-50">
@@ -1089,12 +1100,30 @@ const EmployeeDashboardPage: React.FC = () => {
                   </p>
                 </div>
               </div>
+              
+              {/* Check-In & Break Actions */}
+              <div>
+                <DashboardHeaderActions 
+                  isCheckedIn={isCheckedIn}
+                  timer={timer}
+                  totalLunchSeconds={totalLunchSeconds}
+                  totalTeaSeconds={totalTeaSeconds}
+                  isLunchBreak={isLunchBreak}
+                  isTeaBreak={isTeaBreak}
+                  lunchTimer={lunchTimer}
+                  teaTimer={teaTimer}
+                  onCheckInOut={() => isCheckedIn ? setConfirmModal(true) : handleCheckIn()}
+                  onLunchBreak={handleLunchBreak}
+                  onTeaBreak={handleTeaBreak}
+                  onOpenNotifications={() => setShowNotificationsPanel(true)}
+                />
+              </div>
             </div>
           </div>
         </header>
 
         {/* Navigation */}
-        <nav className="bg-white border-b border-neutral-200">
+        <nav className="bg-white border-b border-neutral-200 sticky top-16 z-40">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex space-x-1 overflow-x-auto py-2">
               {tabs.map((tab) => {
@@ -1139,22 +1168,8 @@ const EmployeeDashboardPage: React.FC = () => {
           >
             {activeTab === "overview" && (
               <OverviewTab
-                isCheckedIn={isCheckedIn}
-                checkInTime={checkInTime}
-                timer={timer}
-                totalLunchSeconds={totalLunchSeconds}
-                totalTeaSeconds={totalTeaSeconds}
-                isLunchBreak={isLunchBreak}
-                isTeaBreak={isTeaBreak}
-                lunchStartTime={lunchStartTime}
-                teaStartTime={teaStartTime}
                 currentEmployee={currentEmployee}
                 user={user}
-                onCheckInOut={() =>
-                  isCheckedIn ? setConfirmModal(true) : handleCheckIn()
-                }
-                onLunchBreak={handleLunchBreak}
-                onTeaBreak={handleTeaBreak}
                 itemVariants={itemVariants}
               />
             )}

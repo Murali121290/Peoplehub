@@ -30,18 +30,7 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
 }) => {
   return (
     <div className="fixed top-5 right-5 z-[9998]">
-      <button
-        onClick={onToggle}
-        className="relative bg-white rounded-full p-3 shadow-xl border border-gray-200 hover:shadow-2xl hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        aria-label="Notifications"
-      >
-        <span className="text-xl">🔔</span>
-        {notifications.length > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-semibold shadow">
-            {notifications.length}
-          </span>
-        )}
-      </button>
+        {/* Floating Bell Button Removed per user request */}
 
       {showNotifications && (
         <div

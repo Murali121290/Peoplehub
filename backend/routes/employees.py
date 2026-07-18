@@ -1163,6 +1163,130 @@ def get_reporting_employees(user_id):
         }), 500
     
 @employees_bp.route(
+    "/peers-attendance/<int:user_id>",
+    methods=["GET"]
+)
+def get_peers_attendance(user_id):
+    """Return all employees reporting to the same manager as this user with today's attendance status."""
+    try:
+        user_emp = Employee.query.filter_by(user_id=user_id).first()
+        if not user_emp or not user_emp.reporting_manager:
+            return jsonify([])
+
+        manager_name = user_emp.reporting_manager.strip().lower()
+        today = date.today()
+        
+        # Get all employees with same reporting manager
+        peers = Employee.query.filter(
+            Employee.user_id != user_id
+        ).all()
+        
+        peers = [p for p in peers if p.reporting_manager and p.reporting_manager.strip().lower() == manager_name]
+
+        result = []
+        for peer in peers:
+            attendance = Attendance.query.filter_by(
+                user_id=peer.user_id,
+                attendance_date=today
+            ).first()
+
+            from models.leave import LeaveRequest
+            leave = LeaveRequest.query.filter(
+                LeaveRequest.employee_id == str(peer.id),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.from_date <= today,
+                LeaveRequest.to_date >= today
+            ).first()
+
+            status = "Absent"
+            if attendance:
+                # Based on the user's logic, "Checked In" / "Checked Out" is preferred for peers if present
+                if attendance.check_out:
+                    status = "Checked Out"
+                else:
+                    status = "Checked In"
+            elif leave:
+                status = "Leave"
+
+            result.append({
+                "employee_id": peer.id,
+                "user_id": peer.user_id,
+                "first_name": peer.first_name,
+                "last_name": peer.last_name,
+                "role": peer.role,
+                "profile_image": base64.b64encode(peer.profile_image).decode("utf-8") if peer.profile_image else None,
+                "status": status,
+                "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
+                "check_out": attendance.check_out.strftime("%I:%M %p") if attendance and attendance.check_out else "-"
+            })
+
+        return jsonify(result)
+    except Exception as e:
+        print("PEERS ATTENDANCE ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+@employees_bp.route(
+    "/by-team/<int:team_id>",
+    methods=["GET"]
+)
+def get_team_attendance_by_id(team_id):
+    """Return all employees belonging to a specific team_id with today's attendance status."""
+    try:
+        from models.user import User
+        # Find all users in this team
+        users_in_team = User.query.filter_by(team_id=team_id).all()
+        user_ids = [u.id for u in users_in_team]
+        
+        if not user_ids:
+            return jsonify([])
+
+        today = date.today()
+        
+        # Get all employee records for these users
+        team_employees = Employee.query.filter(Employee.user_id.in_(user_ids)).all()
+
+        result = []
+        for emp in team_employees:
+            attendance = Attendance.query.filter_by(
+                user_id=emp.user_id,
+                attendance_date=today
+            ).first()
+
+            from models.leave import LeaveRequest
+            leave = LeaveRequest.query.filter(
+                LeaveRequest.employee_id == str(emp.id),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.from_date <= today,
+                LeaveRequest.to_date >= today
+            ).first()
+
+            status = "Absent"
+            if attendance:
+                if attendance.check_out:
+                    status = "Checked Out"
+                else:
+                    status = "Checked In"
+            elif leave:
+                status = "Leave"
+
+            result.append({
+                "employee_id": emp.id,
+                "user_id": emp.user_id,
+                "first_name": emp.first_name,
+                "last_name": emp.last_name,
+                "role": emp.role,
+                "profile_image": base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None,
+                "status": status,
+                "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
+                "check_out": attendance.check_out.strftime("%I:%M %p") if attendance and attendance.check_out else "-"
+            })
+
+        return jsonify(result)
+    except Exception as e:
+        print("TEAM ATTENDANCE BY ID ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+@employees_bp.route(
     "/roles/<int:team_id>",
     methods=["GET"]
 )
