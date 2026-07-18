@@ -39,6 +39,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL}
     container_name: wms_frontend
     restart: always
     depends_on:

@@ -6,9 +6,9 @@ import axios, {
 } from "axios";
 import { useAuthStore } from "../store/authStore";
 import toast from "react-hot-toast";
-import { API_URL as CONFIG_API_URL } from "../config/api";
 
-const API_URL = import.meta.env.VITE_API_URL || (CONFIG_API_URL ? `${CONFIG_API_URL}/api` : "/api");
+// Use environment variable with /api suffix, or fallback to relative path
+const API_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
 
 type ApiErrorResponse = {
   message?: string;

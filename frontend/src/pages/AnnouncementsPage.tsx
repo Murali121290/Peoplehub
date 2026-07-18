@@ -51,8 +51,9 @@ const AnnouncementsPage = () => {
 
   const fetchAnnouncements = async () => {
     try {
+      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
       const response = await fetch(
-        "http://localhost:5001/api/communications/announcements",
+        `${apiUrl}/communications/announcements`,
       );
       const data = await response.json();
       if (data.success && data.announcements) {

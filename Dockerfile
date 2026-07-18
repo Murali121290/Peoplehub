@@ -21,6 +21,10 @@ COPY frontend/package*.json ./
 RUN npm ci
 
 COPY frontend/ .
+
+ARG VITE_API_URL=http://localhost:5000/api
+ENV VITE_API_URL=${VITE_API_URL}
+
 RUN npm run build
 
 # ---------- Frontend runtime (nginx) ----------

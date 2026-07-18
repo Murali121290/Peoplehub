@@ -111,9 +111,10 @@ const LoginPage: React.FC = () => {
 
     try {
       const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
 
       const res = await axios.post(
-        "http://localhost:5001/api/auth/change-password",
+        `${apiUrl}/auth/change-password`,
         {
           user_id: user.id,
           current_password: pwData.oldPassword,

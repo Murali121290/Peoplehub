@@ -11,6 +11,29 @@ from utils.jwt_helper import _jwt_identity_var, decode_and_set_jwt_context
 # Contextvar to hold the current request object
 _request_var = contextvars.ContextVar("current_request", default=None)
 
+class FilesWrapper:
+    """Wrapper for files dictionary to support .get() method"""
+    def __init__(self, files_dict):
+        self._files = files_dict or {}
+
+    def get(self, key, default=None):
+        return self._files.get(key, default)
+
+    def __getitem__(self, key):
+        return self._files[key]
+
+    def __contains__(self, key):
+        return key in self._files
+
+    def items(self):
+        return self._files.items()
+
+    def keys(self):
+        return self._files.keys()
+
+    def values(self):
+        return self._files.values()
+
 class RequestProxy:
     def __getattr__(self, name):
         req = _request_var.get()
@@ -33,6 +56,20 @@ class RequestProxy:
             return ArgsWrapper({})
         return ArgsWrapper(req.query_params)
 
+    @property
+    def form(self):
+        req = _request_var.get()
+        return getattr(req, "_cached_form", {})
+
+    @property
+    def files(self):
+        req = _request_var.get()
+        if req is None:
+            return FilesWrapper({})
+        files_dict = getattr(req, "_cached_files", {})
+        return FilesWrapper(files_dict)
+
+
 class ArgsWrapper:
     def __init__(self, query_params):
         self.query_params = query_params
@@ -53,17 +90,6 @@ class ArgsWrapper:
 
     def __contains__(self, key):
         return key in self.query_params
-
-
-    @property
-    def form(self):
-        req = _request_var.get()
-        return getattr(req, "_cached_form", {})
-
-    @property
-    def files(self):
-        req = _request_var.get()
-        return getattr(req, "_cached_files", {})
 
 # Global proxy variable mimicking request context
 request = RequestProxy()
@@ -118,9 +144,15 @@ def make_compat_wrapper(func):
         if "multipart/form-data" in req.headers.get("content-type", "") or "application/x-www-form-urlencoded" in req.headers.get("content-type", ""):
             try:
                 form_data = await req.form()
-                req._cached_form = form_data
-                req._cached_files = {k: v for k, v in form_data.items() if hasattr(v, "filename")}
-            except Exception:
+                req._cached_form = dict(form_data)
+                # Extract files (UploadFile objects have 'filename' attribute)
+                files_dict = {}
+                for key, value in form_data.items():
+                    if hasattr(value, "filename") and value.filename:
+                        files_dict[key] = value
+                req._cached_files = files_dict
+            except Exception as e:
+                print(f"Error caching form/files: {e}")
                 req._cached_form = {}
                 req._cached_files = {}
 
@@ -231,4 +263,29 @@ class CurrentAppMock:
         return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 current_app = CurrentAppMock()
+
+
+# Monkey-patch starlette.datastructures.UploadFile to support Flask-like synchronous read() and save() methods
+from starlette.datastructures import UploadFile
+
+def upload_file_read_sync(self, size: int = -1) -> bytes:
+    try:
+        self.file.seek(0)
+    except Exception:
+        pass
+    return self.file.read(size)
+
+def upload_file_save_sync(self, destination) -> None:
+    try:
+        self.file.seek(0)
+    except Exception:
+        pass
+    if isinstance(destination, str):
+        with open(destination, "wb") as f:
+            f.write(self.file.read())
+    else:
+        destination.write(self.file.read())
+
+UploadFile.read = upload_file_read_sync
+UploadFile.save = upload_file_save_sync
 

@@ -21,7 +21,7 @@ import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Form";
 
-const BASE_URL = "http://localhost:5001/api";
+const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
 
 const ProfileTab = () => {
   const user = JSON.parse(localStorage.getItem("user") || "{}");

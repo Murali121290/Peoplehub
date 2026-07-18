@@ -298,8 +298,11 @@ def get_bookings():
     methods=["PUT"]
 )
 def cancel_booking(id):
+    from fastapi import HTTPException
 
-    booking = RoomBooking.query.get_or_404(id)
+    booking = RoomBooking.query.filter(RoomBooking.id == id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
 
     booking.status = "Cancelled"
 

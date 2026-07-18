@@ -52,7 +52,8 @@ const UserModal: React.FC<UserModalProps> = ({ user, onClose }) => {
 
   const fetchEmployees = async () => {
     try {
-      const response = await fetch("http://localhost:5001/api/employees/");
+      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const response = await fetch(`${apiUrl}/employees/`);
 
       const data = await response.json();
 

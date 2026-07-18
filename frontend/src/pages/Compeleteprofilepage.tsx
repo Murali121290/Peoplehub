@@ -135,8 +135,9 @@ const Completeprofilepage = () => {
     if (!employeeId) return;
     const fetchEmployee = async () => {
       try {
+        const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
         const res = await fetch(
-          `http://localhost:5001/api/employees/${employeeId}`,
+          `${apiUrl}/employees/${employeeId}`,
         );
         const data = await res.json();
         setEmployeeInfo(data);
@@ -242,8 +243,9 @@ const Completeprofilepage = () => {
         }
       });
 
+      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
       const res = await fetch(
-        `http://localhost:5001/api/employees/${employeeId}`,
+        `${apiUrl}/employees/${employeeId}`,
         {
           method: "PATCH",
           body: payload,

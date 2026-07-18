@@ -20,7 +20,7 @@ import { Spinner } from "../../../components/ui/Spinner";
 import { EmptyState } from "../../../components/ui/EmptyState";
 
 // Constants
-const BASE_URL = "http://localhost:5001/api";
+const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
 
 // TypeScript Interfaces
 interface Employee {
