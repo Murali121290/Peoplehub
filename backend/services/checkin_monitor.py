@@ -137,6 +137,56 @@ def check_missed_checkins():
 
         db.session.commit()
         print("Notifications Saved Successfully")
+
+        # ========================================================
+        # AUTO CHECK-OUT LOGIC: Check out if working hours >= 9
+        # ========================================================
+        active_attendances = Attendance.query.filter(
+            Attendance.check_out.is_(None),
+            Attendance.check_in.isnot(None)
+        ).all()
+
+        for attendance in active_attendances:
+            now_utc = datetime.now()
+            gap_minutes = attendance.total_gap_minutes or 0
+            break_minutes = attendance.total_break_minutes or 0
+            
+            total_seconds = (now_utc - attendance.check_in).total_seconds()
+            total_seconds -= gap_minutes * 60
+            total_seconds -= break_minutes * 60
+            
+            working_hours = total_seconds / 3600
+            
+            if working_hours >= 9.0:
+                print(f"Auto-checking out user {attendance.user_id} (Hours: {working_hours:.2f})")
+                attendance.check_out = now_utc
+                attendance.total_hours = round(working_hours, 2)
+                attendance.status = "Present"
+                
+                # Emit update
+                employee = Employee.query.filter_by(user_id=attendance.user_id).first()
+                if employee:
+                    try:
+                        payload = {
+                            "id": employee.id,
+                            "user_id": employee.user_id,
+                            "attendance_status": "Checked Out",
+                            "check_in": attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None,
+                            "check_out": attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None,
+                            "working_hours": attendance.total_hours or 0.0,
+                            "lunch_minutes": attendance.lunch_minutes or 0,
+                            "tea_minutes": attendance.tea_minutes or 0,
+                            "shift": employee.shift_timing or "General Shift",
+                            "manager_status": attendance.manager_status or "Pending",
+                            "checked_in": False,
+                            "lunch_break": False,
+                            "tea_break": False
+                        }
+                        socketio.emit("attendance_update", payload)
+                    except Exception as e:
+                        print(f"Failed to emit auto-checkout socket: {str(e)}")
+
+        db.session.commit()
         print("========== CHECK-IN MONITOR COMPLETED ==========\n")
 
     except Exception as e:

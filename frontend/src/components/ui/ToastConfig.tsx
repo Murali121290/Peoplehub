@@ -16,11 +16,28 @@ export const AppToaster: React.FC = () => (
         fontWeight: 500,
       },
       success: {
+        style: {
+          background: '#ECFDF5', // light green fill
+          border: '1px solid #10B981', // green outline
+          color: '#065F46', // dark green text
+        },
         iconTheme: { primary: '#10B981', secondary: '#FFFFFF' },
       },
       error: {
+        style: {
+          background: '#FEF2F2', // light red fill
+          border: '1px solid #EF4444', // red outline
+          color: '#991B1B', // dark red text
+        },
         iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
       },
+      blank: { // In case we use toast("...") directly (often used for warnings/orange)
+        style: {
+          background: '#FFF7ED', // light orange fill
+          border: '1px solid #F97316', // orange outline
+          color: '#9A3412', // dark orange text
+        }
+      }
     }}
   />
 );

@@ -134,10 +134,6 @@ const EmployeeDashboardPage: React.FC = () => {
       ).length
     : 0;
 
-  const showPopup = (type: string, title: string, message: string) => {
-    setPopup({ show: true, type, title, message });
-  };
-
   const getTodayKey = () => new Date().toISOString().split("T")[0];
 
   const formatSeconds = (seconds: number) => {
@@ -291,11 +287,7 @@ const EmployeeDashboardPage: React.FC = () => {
     try {
       const userId = localStorage.getItem("user_id");
       if (!userId) {
-        showPopup(
-          "error",
-          "User Not Found",
-          "Unable to identify current user.",
-        );
+        toast.error("Unable to identify current user.");
         return;
       }
       const response = await fetch(`${BASE_URL}/attendance/checkin`, {
@@ -304,19 +296,11 @@ const EmployeeDashboardPage: React.FC = () => {
         body: JSON.stringify({ user_id: Number(userId) }),
       });
       const data = await response.json();
-      if (!response.ok) {
-        showPopup(
-          "error",
-          "Check In Failed",
-          data.message || data.error || "Check In Failed",
-        );
+      if (!data.success) {
+        toast.error(data.message || data.error || "Check In Failed");
         return;
       }
-      showPopup(
-        "success",
-        "Check In Successful",
-        data.message || "You have checked in successfully.",
-      );
+      toast.success(data.message || "You have checked in successfully.");
       const nowIso = new Date().toISOString();
       localStorage.setItem(`checkInTime_${userId}`, nowIso);
       localStorage.setItem(`checkInDate_${userId}`, nowIso.split("T")[0]);
@@ -329,30 +313,18 @@ const EmployeeDashboardPage: React.FC = () => {
       const attendanceHistory = await attendanceResponse.json();
       setAttendanceData(attendanceHistory);
     } catch (error) {
-      showPopup(
-        "error",
-        "Check In Error",
-        "Something went wrong while checking in.",
-      );
+      toast.error("Something went wrong while checking in.");
     }
   };
 
   const handleCheckOut = async () => {
     try {
       if (isLunchBreak) {
-        showPopup(
-          "warning",
-          "Lunch Break Active",
-          "Please stop lunch break before checkout.",
-        );
+        toast.error("Lunch Break Active. Please stop lunch break before checkout.");
         return;
       }
       if (isTeaBreak) {
-        showPopup(
-          "warning",
-          "Tea Break Active",
-          "Please stop tea break before checkout.",
-        );
+        toast.error("Tea Break Active. Please stop tea break before checkout.");
         return;
       }
       const userId = localStorage.getItem("user_id");
@@ -397,11 +369,7 @@ const EmployeeDashboardPage: React.FC = () => {
       setCheckInTime(null);
       setTimer(formattedTimer);
       localStorage.removeItem(`checkInTime_${userId}`);
-      showPopup(
-        "success",
-        "Check Out Successful",
-        "You have checked out successfully.",
-      );
+      toast.success("You have checked out successfully.");
     } catch (error) {
       alert("Something went wrong while checking out.");
     }
@@ -409,11 +377,7 @@ const EmployeeDashboardPage: React.FC = () => {
 
   const handleLunchBreak = async () => {
     if (!isCheckedIn) {
-      showPopup(
-        "error",
-        "Check-In Required",
-        "Please check in before starting Lunch Break.",
-      );
+      toast.error("Check-In Required. Please check in before starting Lunch Break.");
       return;
     }
     try {
@@ -447,54 +411,45 @@ const EmployeeDashboardPage: React.FC = () => {
         }
       }
     } catch (error) {
-      showPopup("error", "Error", "Something went wrong.");
+      toast.error("Something went wrong.");
     }
   };
 
   const handleTeaBreak = async () => {
-    if (!isCheckedIn) {
-      showPopup(
-        "error",
-        "Check-In Required",
-        "Please check in before starting Tea Break.",
-      );
+    const currentUserId = localStorage.getItem("user_id");
+    if (!currentUserId) return;
+    
+    if (!isTeaBreak && !isCheckedIn) {
+      toast.error("Check-In Required. Please check in before starting Tea Break.");
       return;
     }
+
     try {
-      const userId = localStorage.getItem("user_id");
-      if (!userId) return;
-      if (!isTeaBreak) {
-        setTeaStartTime(new Date());
-        setIsTeaBreak(true);
-        await fetch(`${BASE_URL}/attendance/tea-break`, {
-          method: "POST",
+      if (isTeaBreak) {
+        const response = await fetch(`${API_URL}/api/attendance/tea-break`, {
+          method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: Number(userId), action: "start" }),
+          body: JSON.stringify({ user_id: currentUserId, action: "stop" }),
         });
+        const data = await response.json();
+        if (!data.success) {
+          toast.error(data.error || "Failed to stop tea break");
+          return;
+        }
       } else {
-        if (!teaStartTime) return;
-        const seconds = Math.floor(
-          (new Date().getTime() - teaStartTime.getTime()) / 1000,
-        );
-        setTotalTeaSeconds((prev) => prev + seconds);
-        setIsTeaBreak(false);
-        setTeaStartTime(null);
-        await fetch(`${BASE_URL}/attendance/tea-break`, {
+        const response = await fetch(`${API_URL}/api/attendance/tea-break`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: Number(userId),
-            action: "stop",
-            break_seconds: seconds,
-          }),
+          body: JSON.stringify({ user_id: Number(currentUserId), action: "start" }),
         });
+        const data = await response.json();
+        if (!data.success) {
+          toast.error(data.error || "Failed to start tea break");
+          return;
+        }
       }
     } catch (error) {
-      showPopup(
-        "error",
-        "Error",
-        "Something went wrong while handling Tea Break.",
-      );
+      toast.error("Something went wrong while handling Tea Break.");
     }
   };
 

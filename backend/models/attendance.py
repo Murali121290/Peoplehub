@@ -79,6 +79,13 @@ class Attendance(db.Model):
         default=0
     )
 
+    # Total Gap Minutes
+
+    total_gap_minutes = db.Column(
+        db.Integer,
+        default=0
+    )
+
     # Total Working Hours
 
     total_hours = db.Column(

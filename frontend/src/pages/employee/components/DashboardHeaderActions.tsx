@@ -107,13 +107,13 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
       <motion.button
         onHoverStart={() => setIsHoveringCheck(true)}
         onHoverEnd={() => setIsHoveringCheck(false)}
-        whileHover={!isCheckedOut ? { scale: 1.02 } : {}}
-        whileTap={!isCheckedOut ? { scale: 0.98 } : {}}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
         onClick={handleCheckAction}
-        disabled={isLoading || isCheckedOut}
+        disabled={isLoading}
         className={`flex items-center gap-3 px-4 h-[36px] rounded-full border transition-colors duration-200 whitespace-nowrap ml-2 bg-white
           ${isCheckedOut
-            ? "border-gray-200 text-gray-400 cursor-not-allowed"
+            ? "border-emerald-400 text-emerald-500 hover:bg-emerald-50"
             : isCheckedIn
               ? "border-rose-400 text-rose-500 hover:bg-rose-50"
               : "border-emerald-400 text-emerald-500 hover:bg-emerald-50"
@@ -123,9 +123,9 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
           <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
         ) : isCheckedOut ? (
           <>
-            <span className="text-[13px] font-semibold">Completed</span>
+            <span className="text-[13px] font-semibold text-emerald-500">Check In</span>
             <div className="w-[1px] h-4 bg-gray-200"></div>
-            <span className="font-mono text-[13px]">{timer.includes("NaN") ? "00:00:00" : timer}</span>
+            <span className="font-mono text-[13px] text-gray-500">{timer.includes("NaN") ? "00:00:00" : timer}</span>
           </>
         ) : isCheckedIn ? (
           <>

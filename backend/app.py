@@ -93,6 +93,10 @@ def create_app():
             "ADD COLUMN IF NOT EXISTS approved_by VARCHAR(200), "
             "ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(200)"
         ))
+        connection.execute(text(
+            "ALTER TABLE attendance "
+            "ADD COLUMN IF NOT EXISTS total_gap_minutes INTEGER DEFAULT 0"
+        ))
         connection.commit()
 
     # Scheduler configuration

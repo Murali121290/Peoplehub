@@ -170,23 +170,29 @@ def check_in():
         ).first()
 
         if attendance:
+            if not attendance.check_out:
+                return jsonify({
+                    "success": False,
+                    "message": "You are already checked in."
+                }), 400
 
-            return jsonify({
-                "success": False,
-                "message":
-                "You are completed the section."
-            }), 400
-
-        # =====================================
-        # CREATE ATTENDANCE
-        # =====================================
-
-        attendance = Attendance(
-            user_id=user_id,
-            attendance_date=today,
-            check_in=datetime.now(),
-            status="Present"
-        )
+            # Re-checkin logic
+            now = datetime.now()
+            gap_seconds = (now - attendance.check_out).total_seconds()
+            attendance.total_gap_minutes = (attendance.total_gap_minutes or 0) + int(gap_seconds / 60)
+            attendance.check_out = None
+            attendance.status = "Present"
+        else:
+            # =====================================
+            # CREATE ATTENDANCE
+            # =====================================
+            attendance = Attendance(
+                user_id=user_id,
+                attendance_date=today,
+                check_in=datetime.now(),
+                status="Present"
+            )
+            db.session.add(attendance)
 
         db.session.add(attendance)
 
@@ -284,11 +290,20 @@ def check_in():
         # Emit attendance_update socket event for real-time dashboard updates
         try:
             from extensions import socketio
+            from datetime import timedelta
+            
+            # Calculate virtual check_in time for frontend timer to ignore gaps
+            if attendance.check_in:
+                virtual_check_in = attendance.check_in + timedelta(minutes=(attendance.total_gap_minutes or 0))
+                check_in_str = virtual_check_in.strftime("%I:%M %p")
+            else:
+                check_in_str = None
+                
             payload = {
                 "id": employee.id,
                 "user_id": employee.user_id,
                 "attendance_status": "Present",
-                "check_in": attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None,
+                "check_in": check_in_str,
                 "check_out": None,
                 "working_hours": 0.0,
                 "lunch_minutes": attendance.lunch_minutes or 0,
@@ -368,8 +383,13 @@ def check_out():
         break_minutes = (
             attendance.total_break_minutes or 0
         )
+        
+        gap_minutes = (
+            attendance.total_gap_minutes or 0
+        )
 
         total_seconds -= break_minutes * 60
+        total_seconds -= gap_minutes * 60
 
         attendance.total_hours = round(
             total_seconds / 3600,
