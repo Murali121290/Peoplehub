@@ -3,25 +3,21 @@ from datetime import timedelta
 
 class Config:
     # Flask Secret Key
-    SECRET_KEY = os.environ.get(
-        'SECRET_KEY',
-        'wms-enterprise-secret-key-2024'
-    )
+    SECRET_KEY = os.environ.get('SECRET_KEY')
+    if not SECRET_KEY:
+        raise ValueError("SECRET_KEY environment variable is required")
 
     # Database Configuration
-    # Password: $vBr@2150
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        'DATABASE_URL',
-        'postgresql://postgres:$vBr%402150@localhost:5432/wms_db'
-    )
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    if not SQLALCHEMY_DATABASE_URI:
+        raise ValueError("DATABASE_URL environment variable is required")
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # JWT Configuration
-    JWT_SECRET_KEY = os.environ.get(
-    'JWT_SECRET_KEY',
-    'wms-enterprise-super-secret-jwt-key-2026-secure'
-)
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
+    if not JWT_SECRET_KEY:
+        raise ValueError("JWT_SECRET_KEY environment variable is required")
 
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
@@ -65,20 +61,9 @@ class Config:
     }
 
     # EmailJS Configuration
-    EMAILJS_SERVICE_ID = os.environ.get(
-        'EMAILJS_SERVICE_ID',
-        'your_service_id'
-    )
-
-    EMAILJS_TEMPLATE_ID = os.environ.get(
-        'EMAILJS_TEMPLATE_ID',
-        'your_template_id'
-    )
-
-    EMAILJS_PUBLIC_KEY = os.environ.get(
-        'EMAILJS_PUBLIC_KEY',
-        'your_public_key'
-    )
+    EMAILJS_SERVICE_ID = os.environ.get('EMAILJS_SERVICE_ID')
+    EMAILJS_TEMPLATE_ID = os.environ.get('EMAILJS_TEMPLATE_ID')
+    EMAILJS_PUBLIC_KEY = os.environ.get('EMAILJS_PUBLIC_KEY')
 
     # SLA Configuration
     SLA_PRE_EDITING = 48

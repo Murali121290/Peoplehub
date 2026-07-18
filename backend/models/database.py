@@ -3,14 +3,9 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, scoped_session, backref
 
-# Retrieve from environment, fallback to config
-DATABASE_URL = os.environ.get(
-    'DATABASE_URL',
-    'postgresql://postgres:$vBr%402150@postgres:5432/wms_db'
-)
-# Ensure password escaping
-if '$vBr@2150' in DATABASE_URL:
-    DATABASE_URL = DATABASE_URL.replace('$vBr@2150', '$vBr%402150')
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is required")
 
 engine = create_engine(DATABASE_URL)
 db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))

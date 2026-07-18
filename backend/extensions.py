@@ -2,6 +2,7 @@ import socketio as socketio_module
 import contextvars
 import inspect
 import asyncio
+import os
 
 # Contextvar to store active socket session ID
 _socket_sid_var = contextvars.ContextVar("socket_sid", default=None)
@@ -9,7 +10,8 @@ _socket_sid_var = contextvars.ContextVar("socket_sid", default=None)
 class SocketIOCompat:
     def __init__(self):
         # python-socketio Server in ASGI mode
-        self.server = socketio_module.AsyncServer(cors_allowed_origins="*", async_mode="asgi")
+        cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+        self.server = socketio_module.AsyncServer(cors_allowed_origins=cors_origins, async_mode="asgi")
         self.asgi_app = None
 
     def init_app(self, app):

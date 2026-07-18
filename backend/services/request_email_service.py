@@ -10,7 +10,7 @@ from pathlib import Path
 from utils.compat import current_app
 
 def get_serializer():
-    return URLSafeTimedSerializer(current_app.config.get("SECRET_KEY", "wms-enterprise-secret-key-2024"))
+    return URLSafeTimedSerializer(current_app.config.get("SECRET_KEY"))
 
 def generate_request_token(req_id, req_type, action):
     serializer = get_serializer()
