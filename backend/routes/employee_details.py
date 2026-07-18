@@ -63,9 +63,26 @@ def get_employee_details(user_id):
             attendance_records
         )
 
+        # Leave Summary
+        leave_requests = LeaveRequest.query.filter(
+            LeaveRequest.employee_id == employee.employee_id
+        ).all()
+        
+        # Calculate approved leave days in the current month up to today
+        approved_leave_days_this_month = 0
+        from datetime import timedelta
+        for leave in leave_requests:
+            if leave.status == "Approved" and leave.from_date and leave.to_date:
+                # Count days that fall within this month up to today
+                current_d = leave.from_date
+                while current_d <= leave.to_date and current_d <= today:
+                    if current_d.month == today.month and current_d.year == today.year:
+                        approved_leave_days_this_month += 1
+                    current_d += timedelta(days=1)
+
         absent_days = max(
             0,
-            today.day - present_days
+            today.day - present_days - approved_leave_days_this_month
         )
 
         total_hours = sum(
@@ -74,11 +91,6 @@ def get_employee_details(user_id):
                 for a in attendance_records
             ]
         )
-
-        # Leave Summary
-        leave_requests = LeaveRequest.query.filter(
-            LeaveRequest.employee_id == employee.employee_id
-        ).all() or []
 
         approved_leaves = len([
             l for l in leave_requests

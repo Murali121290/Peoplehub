@@ -208,7 +208,12 @@ def get_employees():
             "status":
                 attendance.status
                 if attendance
-                else "Absent",
+                else ("Leave" if LeaveRequest.query.filter(
+                    LeaveRequest.employee_id == str(emp.id),
+                    LeaveRequest.status == "Approved",
+                    LeaveRequest.from_date <= today,
+                    LeaveRequest.to_date >= today
+                ).first() else "Absent"),
 
             "salary":
                 emp.salary,
@@ -1244,21 +1249,29 @@ def get_team_attendance_by_id(team_id):
         
         # Get all employee records for these users
         team_employees = Employee.query.filter(Employee.user_id.in_(user_ids)).all()
+        employee_ids = [str(emp.id) for emp in team_employees]
+
+        # Batch fetch attendance for all team users today
+        attendances = Attendance.query.filter(
+            Attendance.user_id.in_(user_ids),
+            Attendance.attendance_date == today
+        ).all()
+        attendance_by_user = {a.user_id: a for a in attendances}
+
+        # Batch fetch approved leaves for all team employees today
+        from models.leave import LeaveRequest
+        leaves = LeaveRequest.query.filter(
+            LeaveRequest.employee_id.in_(employee_ids),
+            LeaveRequest.status == "Approved",
+            LeaveRequest.from_date <= today,
+            LeaveRequest.to_date >= today
+        ).all()
+        leave_by_employee = {str(l.employee_id): l for l in leaves}
 
         result = []
         for emp in team_employees:
-            attendance = Attendance.query.filter_by(
-                user_id=emp.user_id,
-                attendance_date=today
-            ).first()
-
-            from models.leave import LeaveRequest
-            leave = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == str(emp.id),
-                LeaveRequest.status == "Approved",
-                LeaveRequest.from_date <= today,
-                LeaveRequest.to_date >= today
-            ).first()
+            attendance = attendance_by_user.get(emp.user_id)
+            leave = leave_by_employee.get(str(emp.id))
 
             status = "Absent"
             if attendance:

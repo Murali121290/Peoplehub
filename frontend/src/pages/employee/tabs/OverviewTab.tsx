@@ -8,15 +8,26 @@ interface OverviewTabProps {
   itemVariants: any;
 }
 
+// Module-level cache to persist data across tab switches (unmounts)
+const overviewCache = {
+  teams: [] as any[],
+  teamMembers: {} as Record<string, any[]>,
+  selectedTeam: "",
+};
+
 const OverviewTab: React.FC<OverviewTabProps> = ({
   currentEmployee,
   user,
   itemVariants,
 }) => {
-  const [teams, setTeams] = useState<any[]>([]);
-  const [selectedTeam, setSelectedTeam] = useState<string>("");
-  const [teamMembers, setTeamMembers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [teams, setTeams] = useState<any[]>(overviewCache.teams);
+  const [selectedTeam, setSelectedTeam] = useState<string>(overviewCache.selectedTeam);
+  const [teamMembers, setTeamMembers] = useState<any[]>(
+    overviewCache.selectedTeam ? (overviewCache.teamMembers[overviewCache.selectedTeam] || []) : []
+  );
+  const [loading, setLoading] = useState(
+    !overviewCache.selectedTeam || !overviewCache.teamMembers[overviewCache.selectedTeam]
+  );
 
   // Fetch teams on mount
   useEffect(() => {
@@ -30,12 +41,17 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
         if (response.ok) {
           const data = await response.json();
           setTeams(data.teams || []);
+          overviewCache.teams = data.teams || [];
           
           // Default to the user's team if available
-          if (user?.team_id) {
-            setSelectedTeam(user.team_id.toString());
-          } else if (data.teams && data.teams.length > 0) {
-            setSelectedTeam(data.teams[0].id.toString());
+          if (!overviewCache.selectedTeam) {
+            if (user?.team_id) {
+              setSelectedTeam(user.team_id.toString());
+              overviewCache.selectedTeam = user.team_id.toString();
+            } else if (data.teams && data.teams.length > 0) {
+              setSelectedTeam(data.teams[0].id.toString());
+              overviewCache.selectedTeam = data.teams[0].id.toString();
+            }
           }
         }
       } catch (error) {
@@ -49,7 +65,14 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   useEffect(() => {
     const fetchTeamAttendance = async () => {
       if (!selectedTeam) return;
-      setLoading(true);
+      
+      overviewCache.selectedTeam = selectedTeam;
+      
+      // Only show loading spinner if we don't have cached data for this team
+      if (!overviewCache.teamMembers[selectedTeam]) {
+        setLoading(true);
+      }
+      
       try {
         const response = await fetch(`${API_URL}/api/employees/by-team/${selectedTeam}`, {
           headers: {
@@ -59,6 +82,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
         if (response.ok) {
           const data = await response.json();
           setTeamMembers(data);
+          overviewCache.teamMembers[selectedTeam] = data;
         }
       } catch (error) {
         console.error("Failed to fetch team attendance:", error);
@@ -74,24 +98,24 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
 
   // Group members into columns
   const checkedIn = teamMembers.filter(m => m.status === "Checked In");
-  const notCheckedIn = teamMembers.filter(m => m.status === "Checked Out" || m.status === "Not Checked In");
-  const absent = teamMembers.filter(m => m.status === "Absent" || m.status === "Leave");
+  const notCheckedIn = teamMembers.filter(m => m.status === "Checked Out" || m.status === "Not Checked In" || m.status === "Absent");
+  const onLeave = teamMembers.filter(m => m.status === "Leave");
 
   const MemberCard = ({ member }: { member: any }) => (
     <div className="flex items-center gap-3 p-3 bg-white hover:bg-gray-50 rounded-xl border border-gray-100 transition-colors shadow-sm">
       <div className="w-10 h-10 rounded-full overflow-hidden border border-gray-200 bg-gray-50 flex-shrink-0">
         {member.profile_image ? (
-            <img 
-              src={`data:image/jpeg;base64,${member.profile_image}`} 
-              alt={member.first_name}
-              className="w-full h-full object-cover"
-            />
+          <img
+            src={`data:image/jpeg;base64,${member.profile_image}`}
+            alt={member.first_name}
+            className="w-full h-full object-cover"
+          />
         ) : (
-            <img 
-              src="https://cdn-icons-png.flaticon.com/512/149/149071.png"
-              alt={member.first_name}
-              className="w-full h-full object-cover"
-            />
+          <img
+            src="https://cdn-icons-png.flaticon.com/512/149/149071.png"
+            alt={member.first_name}
+            className="w-full h-full object-cover"
+          />
         )}
       </div>
       <div className="min-w-0 flex-1">
@@ -109,14 +133,14 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
       className="max-w-7xl mx-auto"
     >
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col min-h-[500px] font-['Inter']">
-        
+
         {/* Header with Team Dropdown */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-gray-100">
           <div className="flex flex-col">
             <h3 className="text-lg font-bold text-gray-900">Team Status Overview</h3>
             <p className="text-sm text-gray-500">Real-time attendance of team members</p>
           </div>
-          
+
           <div className="flex items-center gap-3">
             <label htmlFor="team-select" className="text-sm font-medium text-gray-700 whitespace-nowrap">
               Select Team:
@@ -134,7 +158,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             </select>
           </div>
         </div>
-        
+
         {loading ? (
           <div className="flex-1 flex items-center justify-center py-12">
             <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
@@ -151,7 +175,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
-            
+
             {/* Not Checked In Column */}
             <div className="flex flex-col bg-gray-50/50 rounded-xl p-4 border border-gray-100 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
               <div className="flex items-center justify-between mb-4">
@@ -192,22 +216,22 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
               </div>
             </div>
 
-            {/* Absent Column */}
+            {/* Leave Column */}
             <div className="flex flex-col bg-gray-50/50 rounded-xl p-4 border border-gray-100 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
-                  <h4 className="font-semibold text-gray-800">Absent / Leave</h4>
+                  <h4 className="font-semibold text-gray-800">On Leave</h4>
                 </div>
                 <span className="text-xs font-medium bg-white text-gray-600 px-2.5 py-1 rounded-full shadow-sm border border-gray-100">
-                  {absent.length}
+                  {onLeave.length}
                 </span>
               </div>
               <div className="flex-1 space-y-3 overflow-y-auto pr-1 custom-scrollbar">
-                {absent.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-4">No absent members</p>
+                {onLeave.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">No members on leave</p>
                 ) : (
-                  absent.map(member => <MemberCard key={member.employee_id} member={member} />)
+                  onLeave.map(member => <MemberCard key={member.employee_id} member={member} />)
                 )}
               </div>
             </div>
