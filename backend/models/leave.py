@@ -67,6 +67,21 @@ class LeaveRequest(db.Model):
         nullable=True
     )
 
+    cancelled_by = db.Column(
+        db.String(200),
+        nullable=True
+    )
+
+    cancelled_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    cancellation_reason = db.Column(
+        db.Text,
+        nullable=True
+    )
+
 
 
 # =====================================
@@ -100,4 +115,17 @@ class LeaveLedger(db.Model):
     closing_cl = db.Column(db.Float, default=0)
     closing_sl = db.Column(db.Float, default=0)
     closing_pl = db.Column(db.Float, default=0)
+
+
+class LeaveAuditLog(db.Model):
+    __tablename__ = "leave_audit_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    leave_id = db.Column(db.Integer, nullable=False)
+    employee_name = db.Column(db.String(200), nullable=False)
+    action = db.Column(db.String(250), nullable=False)
+    previous_status = db.Column(db.String(50))
+    new_status = db.Column(db.String(50))
+    cancelled_at = db.Column(db.DateTime, default=datetime.utcnow)
+    cancelled_by = db.Column(db.String(100))
 

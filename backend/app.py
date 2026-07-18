@@ -82,7 +82,10 @@ def create_app():
             "ADD COLUMN IF NOT EXISTS approved_by VARCHAR(200), "
             "ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP, "
             "ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(200), "
-            "ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP"
+            "ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP, "
+            "ADD COLUMN IF NOT EXISTS cancelled_by VARCHAR(200), "
+            "ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP, "
+            "ADD COLUMN IF NOT EXISTS cancellation_reason TEXT"
         ))
         connection.execute(text(
             "ALTER TABLE shift_requests "

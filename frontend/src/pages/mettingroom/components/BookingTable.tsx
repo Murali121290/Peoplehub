@@ -82,6 +82,27 @@ const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
     }
   };
 
+  const isBookingFinished = (booking: any) => {
+    if (!booking.meeting_date || !booking.end_time) return false;
+    try {
+      const dateParts = booking.meeting_date.split("-");
+      const timeParts = booking.end_time.split(":");
+      if (dateParts.length < 3 || timeParts.length < 2) return false;
+      
+      const year = parseInt(dateParts[0], 10);
+      const month = parseInt(dateParts[1], 10) - 1;
+      const day = parseInt(dateParts[2], 10);
+      const hours = parseInt(timeParts[0], 10);
+      const minutes = parseInt(timeParts[1], 10);
+      const seconds = timeParts.length > 2 ? parseInt(timeParts[2], 10) : 0;
+      
+      const endDate = new Date(year, month, day, hours, minutes, seconds);
+      return endDate < new Date();
+    } catch (e) {
+      return false;
+    }
+  };
+
   const canCancel = (status: string) => {
     const normalized = (status || "").toLowerCase();
     return normalized === "confirmed" || normalized === "approved";
@@ -160,42 +181,53 @@ const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
     {
       key: "status",
       header: "Status",
-      render: (booking) => (
-        <Badge variant={getStatusVariant(booking.status)} dot>
-          {booking.status || "Unknown"}
-        </Badge>
-      ),
+      render: (booking) => {
+        const displayStatus = (isBookingFinished(booking) && booking.status !== "Cancelled") ? "Completed" : (booking.status || "Unknown");
+        return (
+          <Badge variant={getStatusVariant(displayStatus)} dot>
+            {displayStatus}
+          </Badge>
+        );
+      },
     },
-  {
-  key: "action",
-  header: "Action",
-  render: (booking) => {
-    const canCancelBooking =
-      user.access_level === "admin" ||
-      user.access_level === "hr" ||
-      booking.organizer_name === user.full_name ||
-      booking.organizer_name === localStorage.getItem("full_name") ||
-      booking.organizer_name === user.employee_name;
+    {
+      key: "action",
+      header: "Action",
+      render: (booking) => {
+        const canCancelBooking =
+          user.access_level === "admin" ||
+          user.access_level === "hr" ||
+          booking.organizer_name === user.full_name ||
+          booking.organizer_name === localStorage.getItem("full_name") ||
+          booking.organizer_name === user.employee_name;
 
-    if (!canCancel(booking.status)) {
-      return <span className="text-xs text-neutral-400">—</span>;
-    }
+        if (isBookingFinished(booking) && booking.status !== "Cancelled") {
+          return (
+            <Badge variant="success">
+              Completed
+            </Badge>
+          );
+        }
 
-    return canCancelBooking ? (
-      <Button
-        variant="danger"
-        size="sm"
-        onClick={() => setSelectedBooking(booking)}
-      >
-        Cancel
-      </Button>
-    ) : (
-      <Badge variant="neutral">
-        Booked
-      </Badge>
-    );
-  },
-},
+        if (!canCancel(booking.status)) {
+          return <span className="text-xs text-neutral-400">—</span>;
+        }
+
+        return canCancelBooking ? (
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => setSelectedBooking(booking)}
+          >
+            Cancel
+          </Button>
+        ) : (
+          <Badge variant="neutral">
+            Booked
+          </Badge>
+        );
+      },
+    },
   ];
 
   return (

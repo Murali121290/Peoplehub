@@ -34,6 +34,9 @@ def serialize_leave(leave):
         "permission_date": str(leave.permission_date) if leave.permission_date else None,
         "from_time": str(leave.from_time) if leave.from_time else None,
         "to_time": str(leave.to_time) if leave.to_time else None,
+        "cancelled_at": leave.cancelled_at.isoformat() if hasattr(leave, "cancelled_at") and leave.cancelled_at else None,
+        "cancelled_by": leave.cancelled_by if hasattr(leave, "cancelled_by") else None,
+        "cancellation_reason": leave.cancellation_reason if hasattr(leave, "cancellation_reason") else None,
     }
 
 @leave_bp.route("/", methods=["POST"])
@@ -506,17 +509,165 @@ def update_leave(leave_id):
             "success": True,
             "message": f"{leave.request_type} Updated Successfully"
         }), 200
-
     except Exception as e:
-
         db.session.rollback()
-
         return jsonify({
             "success": False,
             "error": str(e)
         }), 500
-    
-     
+@leave_bp.route(
+    "/<int:leave_id>/cancel",
+    methods=["POST"]
+)
+def cancel_approved_leave(leave_id):
+    try:
+        from zoneinfo import ZoneInfo
+        from models.notification import Notification
+        from models.leave import LeaveAuditLog
+
+        leave = LeaveRequest.query.get(leave_id)
+        if not leave:
+            return jsonify({
+                "success": False,
+                "message": "Leave request not found"
+            }), 404
+
+        data = request.get_json() or {}
+        employee_id = data.get("employee_id")
+
+        # 1. Validate employee ownership
+        if not employee_id:
+            return jsonify({
+                "success": False,
+                "message": "employee_id is required to validate ownership"
+            }), 400
+
+        if str(leave.employee_id) != str(employee_id):
+            return jsonify({
+                "success": False,
+                "message": "You do not own this leave request."
+            }), 403
+
+        # 2. Validate leave status is Approved
+        if leave.status != "Approved":
+            return jsonify({
+                "success": False,
+                "message": "Only approved leave requests can be cancelled."
+            }), 400
+
+        # 3. Validate current date is before leave start date
+        today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+        start_date = leave.permission_date if leave.request_type == "Permission" else leave.from_date
+
+        if not start_date:
+            return jsonify({
+                "success": False,
+                "message": "Leave start date is missing."
+            }), 400
+
+        if today >= start_date:
+            return jsonify({
+                "success": False,
+                "message": "Leave cannot be cancelled once the leave start date has begun."
+            }), 400
+
+        # 4. Start database transaction (SQLAlchemy transaction auto-managed, committed below)
+        previous_status = leave.status
+        leave.status = "Cancelled"
+        leave.cancelled_by = "Employee"
+        leave.cancelled_at = datetime.now(ZoneInfo("Asia/Kolkata"))
+        leave.cancellation_reason = data.get("cancellation_reason", "")
+
+        # 5. Restore leave balance
+        if leave.request_type == "Leave":
+            if leave.employee_id and str(leave.employee_id).isdigit():
+                employee = Employee.query.filter(
+                    (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
+                ).first()
+            else:
+                employee = Employee.query.filter(
+                    Employee.employee_id == str(leave.employee_id)
+                ).first()
+
+            if not employee:
+                return jsonify({
+                    "success": False,
+                    "message": "Employee record not found to restore leave balance."
+                }), 404
+
+            leave_type = (leave.leave_type or "").strip().lower()
+            leave_days = leave.total_days or 0
+
+            if leave_type == "sick leave":
+                employee.sick_leave = (employee.sick_leave or 0) + leave_days
+            elif leave_type == "casual leave":
+                employee.casual_leave = (employee.casual_leave or 0) + leave_days
+            elif leave_type in ["earned leave", "privilege leave"]:
+                employee.privilege_leave = (employee.privilege_leave or 0) + leave_days
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": f"Invalid leave type for balance restoration: {leave.leave_type}"
+                }), 400
+
+        # 6. Create manager notification
+        if leave.request_type == "Permission":
+            date_str = str(leave.permission_date)
+            msg = f"{leave.employee_name} has cancelled the approved permission scheduled for {date_str}."
+        else:
+            from_date_str = str(leave.from_date)
+            to_date_str = str(leave.to_date)
+            msg = f"{leave.employee_name} has cancelled the approved leave scheduled from {from_date_str} to {to_date_str}."
+
+        notification = Notification(
+            receiver_name=leave.reporting_manager,
+            title="Leave Cancelled",
+            message=msg,
+            related_id=leave.id,
+            related_type="Leave",
+            notification_type="Leave Cancellation",
+            status="Pending",
+            action_required=False
+        )
+        db.session.add(notification)
+
+        # 7. Create audit log
+        audit_msg = f"Employee {leave.employee_name} cancelled Leave Request #{leave.id}."
+        audit_log = LeaveAuditLog(
+            leave_id=leave.id,
+            employee_name=leave.employee_name,
+            action=audit_msg,
+            previous_status=previous_status,
+            new_status="Cancelled",
+            cancelled_at=datetime.now(ZoneInfo("Asia/Kolkata")),
+            cancelled_by="Employee"
+        )
+        db.session.add(audit_log)
+
+        db.session.commit()
+
+        # Emit leave_update socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("leave_update", serialize_leave(leave))
+        except Exception as socket_err:
+            print("Failed to emit leave socket:", str(socket_err))
+
+        return jsonify({
+            "success": True,
+            "message": "Your leave has been cancelled successfully."
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
 @leave_bp.route(
     "/export-leave-report",
     methods=["GET"]

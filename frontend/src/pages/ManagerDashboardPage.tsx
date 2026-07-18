@@ -306,14 +306,29 @@ const ManagerDashboardPage = () => {
         payload.reporting_manager?.trim().toLowerCase() ===
         managerName?.trim().toLowerCase()
       ) {
+        const isPermission = payload.request_type === "Permission";
+        
+        const formatTime = (timeStr: string) => {
+          if (!timeStr) return "";
+          const parts = timeStr.split(":");
+          if (parts.length >= 2) {
+            return `${parts[0]}:${parts[1]}`;
+          }
+          return timeStr;
+        };
+
+        const timeRange = (payload.from_time && payload.to_time)
+          ? `${formatTime(payload.from_time)} - ${formatTime(payload.to_time)}`
+          : "";
+
         const mapped = {
           id: payload.id,
           employeeId: Number(payload.employee_id),
           employeeName: payload.employee_name,
           role: payload.role || "Employee",
-          leaveType: payload.leave_type,
-          fromDate: payload.from_date,
-          toDate: payload.to_date,
+          leaveType: isPermission ? "Permission" : payload.leave_type,
+          fromDate: isPermission ? payload.permission_date : payload.from_date,
+          toDate: isPermission ? timeRange : payload.to_date,
           reason: payload.reason,
           status: payload.status,
           submittedAt: "Recently",
@@ -433,19 +448,36 @@ const ManagerDashboardPage = () => {
       const data = await response.json();
       if (Array.isArray(data)) {
         // Map backend leaves to match expected format on dashboard
-        const mapped = data.map((l: any) => ({
-          id: l.id,
-          employeeId: Number(l.employee_id),
-          employeeName: l.employee_name,
-          role: l.role || "Employee",
-          leaveType: l.leave_type,
-          fromDate: l.from_date,
-          toDate: l.to_date,
-          reason: l.reason,
-          status: l.status,
-          submittedAt: "Recently",
-          reporting_manager: l.reporting_manager
-        }));
+        const mapped = data.map((l: any) => {
+          const isPermission = l.request_type === "Permission";
+          
+          const formatTime = (timeStr: string) => {
+            if (!timeStr) return "";
+            const parts = timeStr.split(":");
+            if (parts.length >= 2) {
+              return `${parts[0]}:${parts[1]}`;
+            }
+            return timeStr;
+          };
+
+          const timeRange = (l.from_time && l.to_time)
+            ? `${formatTime(l.from_time)} - ${formatTime(l.to_time)}`
+            : "";
+
+          return {
+            id: l.id,
+            employeeId: Number(l.employee_id),
+            employeeName: l.employee_name,
+            role: l.role || "Employee",
+            leaveType: isPermission ? "Permission" : l.leave_type,
+            fromDate: isPermission ? l.permission_date : l.from_date,
+            toDate: isPermission ? timeRange : l.to_date,
+            reason: l.reason,
+            status: l.status,
+            submittedAt: "Recently",
+            reporting_manager: l.reporting_manager
+          };
+        });
         setLeaveRequests(mapped);
       }
     } catch (error) {

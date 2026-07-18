@@ -621,16 +621,25 @@ const EmployeeDashboardPage: React.FC = () => {
 
   const cancelLeave = async (id: number) => {
     try {
-      const res = await fetch(`${BASE_URL}/leaves/cancel/${id}`, {
-        method: "PUT",
+      const res = await fetch(`${BASE_URL}/leaves/${id}/cancel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          employee_id: currentEmployee?.id
+        })
       });
       const data = await res.json();
-      if (data.success) {
-        toast.success("Leave Cancelled");
+      if (res.ok && data.success) {
+        toast.success("Your leave has been cancelled successfully.");
         loadLeaves();
+      } else {
+        toast.error(data.message || "Failed to cancel leave");
       }
     } catch (err) {
       console.log(err);
+      toast.error("Error cancelling leave");
     }
   };
 

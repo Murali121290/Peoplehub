@@ -87,23 +87,44 @@ export default function HRAdminDashboard() {
     try {
       const response = await fetch(`${BASE_URL}/leaves/`);
       const data = await response.json();
-      const formatted = data.map((leave: any) => ({
-        id: leave.id,
-        empId: leave.employee_id,
-        empName: leave.employee_name,
-        av: leave.employee_name
-          ?.split(" ")
-          ?.map((n: string) => n[0])
-          ?.join("")
-          ?.toUpperCase(),
-        type: leave.leave_type,
-        from: leave.from_date,
-        to: leave.to_date,
-        days: leave.total_days,
-        reason: leave.reason,
-        status: leave.status?.toLowerCase(),
-        reporting_manager: leave.reporting_manager,
-      }));
+      const formatted = data.map((leave: any) => {
+        const isPermission = leave.request_type === "Permission";
+        
+        const formatTime = (timeStr: string) => {
+          if (!timeStr) return "";
+          const parts = timeStr.split(":");
+          if (parts.length >= 2) {
+            return `${parts[0]}:${parts[1]}`;
+          }
+          return timeStr;
+        };
+
+        const timeRange = (leave.from_time && leave.to_time)
+          ? `${formatTime(leave.from_time)} - ${formatTime(leave.to_time)}`
+          : "";
+
+        return {
+          id: leave.id,
+          empId: leave.employee_id,
+          empName: leave.employee_name,
+          av: leave.employee_name
+            ?.split(" ")
+            ?.map((n: string) => n[0])
+            ?.join("")
+            ?.toUpperCase(),
+          type: isPermission ? "Permission" : leave.leave_type,
+          from: isPermission ? leave.permission_date : leave.from_date,
+          to: isPermission ? timeRange : leave.to_date,
+          days: leave.total_days,
+          reason: leave.reason,
+          status: leave.status?.toLowerCase(),
+          reporting_manager: leave.reporting_manager,
+          // Keep raw fields for calculations like counts
+          employee_id: leave.employee_id,
+          from_date: leave.from_date,
+          to_date: leave.to_date,
+        };
+      });
       setLeaves(formatted);
     } catch (error) {
       console.error("Leave Fetch Error:", error);

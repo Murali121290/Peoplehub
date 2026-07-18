@@ -9,6 +9,7 @@ export const getStatusColor = (status: string): string => {
     'Present': 'bg-success-50 text-success-700 border-success-200',
     'Absent': 'bg-danger-50 text-danger-700 border-danger-200',
     'Leave': 'bg-purple-50 text-purple-700 border-purple-200',
+    'Cancelled': 'bg-neutral-50 text-neutral-600 border-neutral-200',
   };
   return colors[status] || 'bg-neutral-100 text-neutral-600 border-neutral-200';
 };

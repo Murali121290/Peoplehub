@@ -645,16 +645,29 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                                     </button>
                                   </>
                                 )}
-                                {isApproved && (
-                                  <Button 
-                                    size="sm" 
-                                    variant="danger" 
-                                    onClick={() => onCancel(request.id)}
-                                    className="bg-danger-50 hover:bg-danger-100 text-danger-700 text-xs font-semibold px-3 py-1.5 border border-danger-200 rounded-lg flex items-center gap-1"
-                                  >
-                                    Cancel Leave
-                                  </Button>
-                                )}
+                                {isApproved && (() => {
+                                  const startDate = request.request_type === "Permission" ? request.permission_date : request.from_date;
+                                  if (!startDate) return null;
+                                  const today = new Date();
+                                  const yyyy = today.getFullYear();
+                                  const mm = String(today.getMonth() + 1).padStart(2, '0');
+                                  const dd = String(today.getDate()).padStart(2, '0');
+                                  const todayStr = `${yyyy}-${mm}-${dd}`;
+                                  
+                                  if (todayStr < startDate) {
+                                    return (
+                                      <Button 
+                                        size="sm" 
+                                        variant="danger" 
+                                        onClick={() => onCancel(request.id)}
+                                        className="bg-danger-50 hover:bg-danger-100 text-danger-700 text-xs font-semibold px-3 py-1.5 border border-danger-200 rounded-lg flex items-center gap-1"
+                                      >
+                                        Cancel Leave
+                                      </Button>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                                 {isRejected && (
                                   <button 
                                     onClick={() => editLeave(request)}
