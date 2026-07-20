@@ -29,17 +29,16 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Stats Cards */}
-      <div className="grid gap-5 mb-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+      {/* Stats Cards - Compact */}
+      <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
         {statCards.map((card) => (
-          <Card key={card.label} variant="accent-left" accentColor="#46494C" padding="lg" className="shadow-md">
-            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
+          <Card key={card.label} variant="accent-left" accentColor="#46494C" padding="md" className="shadow-sm">
+            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
               {card.label}
             </div>
-            <div className="text-4xl font-extrabold text-neutral-800 mt-3">
+            <div className="text-2xl font-bold text-neutral-800 mt-2">
               {card.value}
             </div>
-            <div className="mt-2 text-sm text-neutral-400">{card.sub}</div>
           </Card>
         ))}
       </div>
