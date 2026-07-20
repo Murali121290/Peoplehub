@@ -191,11 +191,21 @@ export const userService = {
 };
 
 
+export const employeeService = {
+  getDetails: (userId: number) => apiService.get(`/employee-details/${userId}`),
+};
+
 export const appraisalService = {
   getAppraisalHistory: (employeeId: string) =>
     apiService.get(`/appraisal/history/${employeeId}`),
   getEmployeeAppraisal: (employeeId: string) =>
     apiService.get(`/appraisal/employee/${employeeId}`),
+  getActiveCycle: () => apiService.get(`/appraisal/cycle/active`),
+  getDashboardStats: () => apiService.get(`/appraisal/stats`),
+  getQuestions: (role: string) => apiService.get(`/appraisal/questions/${role}`),
+  submitAnswers: (data: any) => apiService.post(`/appraisal/submit`, data),
+  getPendingAppraisals: () => apiService.get(`/appraisal/pending`),
+  submitReview: (data: any) => apiService.post(`/appraisal/review`, data),
 };
 
 export default apiService;

@@ -121,6 +121,72 @@ def get_appraisal_questions(role):
 
 
 # --------------------------------------------------------------------------
+# ROUTE: GET /appraisal/cycle/active
+# Description: Returns the currently open appraisal cycle.
+# --------------------------------------------------------------------------
+@appraisal_bp.route("/appraisal/cycle/active", methods=["GET"])
+def get_active_cycle():
+    try:
+        current_cycle = AppraisalCycle.query.filter_by(status="Open").first()
+        if not current_cycle:
+            return jsonify({
+                "success": False,
+                "message": "No active appraisal cycle found"
+            }), 200
+
+        return jsonify({
+            "success": True,
+            "cycle": {
+                "id": current_cycle.id,
+                "title": current_cycle.title,
+                "appraisalYear": current_cycle.appraisal_year,
+                "startDate": current_cycle.start_date.strftime("%Y-%m-%d"),
+                "endDate": current_cycle.end_date.strftime("%Y-%m-%d"),
+                "status": current_cycle.status
+            }
+        }), 200
+    except Exception as error:
+        return jsonify({"success": False, "message": str(error)}), 500
+
+
+# --------------------------------------------------------------------------
+# ROUTE: GET /appraisal/stats
+# Description: Returns dashboard statistics for appraisals.
+# --------------------------------------------------------------------------
+@appraisal_bp.route("/appraisal/stats", methods=["GET"])
+def get_appraisal_stats():
+    try:
+        total_employees = Employee.query.count()
+        current_cycle = AppraisalCycle.query.filter_by(status="Open").first()
+        pending_reviews = 0
+        completed_reviews = 0
+        average_score = 0.0
+
+        if current_cycle:
+            # All requests for current cycle
+            requests = AppraisalRequest.query.filter_by(cycle_id=current_cycle.id).all()
+            pending_reviews = sum(1 for req in requests if req.status == "Pending" or req.status == "In Progress")
+            completed_reviews = sum(1 for req in requests if req.status == "Reviewed" or req.status == "Completed")
+            
+            # Calculate average score of reviewed
+            scored_requests = [req.score for req in requests if req.score is not None]
+            if scored_requests:
+                average_score = round(sum(scored_requests) / len(scored_requests), 1)
+
+        return jsonify({
+            "success": True,
+            "stats": {
+                "totalEmployees": total_employees,
+                "pendingReviews": pending_reviews,
+                "completedReviews": completed_reviews,
+                "averageScore": average_score
+            }
+        }), 200
+    except Exception as error:
+        return jsonify({"success": False, "message": str(error)}), 500
+
+
+# --------------------------------------------------------------------------
 # ROUTE: POST /appraisal/submit
 # Description: Allows an employee to submit answers for an appraisal cycle.
 #              Prevents duplicate submissions and enforces minimum answers.

@@ -1,17 +1,45 @@
-import React, { useMemo, useState } from "react";
+import React, { useState, useEffect } from "react";
 
-import { employee } from "../data/mockData";
-import { getQuestionsByRole } from "../utils/appraisalUtils";
+import { appraisalService, employeeService } from "../../../services/api";
 
 const EmployeeAppraisalTab: React.FC = () => {
-  const questions = useMemo(
-    () => getQuestionsByRole(employee.department),
-    []
-  );
-
+  const [employeeDetails, setEmployeeDetails] = useState<any>(null);
+  const [questions, setQuestions] = useState<any[]>([]);
   const [answers, setAnswers] = useState<Record<number, string>>({});
-
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const userId = localStorage.getItem("user_id");
+        if (!userId) {
+          setError("User ID not found");
+          setLoading(false);
+          return;
+        }
+
+        const empResponse = await employeeService.getDetails(parseInt(userId, 10));
+        if (empResponse.data.success && empResponse.data.employee) {
+          const emp = empResponse.data.employee;
+          setEmployeeDetails(emp);
+          
+          const role = emp.role;
+          const questionsResponse = await appraisalService.getQuestions(role);
+          if (questionsResponse.data.success) {
+            setQuestions(questionsResponse.data.questions || []);
+          }
+        }
+      } catch (err: any) {
+        console.error("Failed to load appraisal data", err);
+        setError("Failed to load appraisal data");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   const handleChange = (
     questionId: number,
@@ -23,14 +51,14 @@ const EmployeeAppraisalTab: React.FC = () => {
     }));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (questions.length === 0) {
       alert("No appraisal questions found.");
       return;
     }
 
     const unanswered = questions.filter(
-      (q) => !answers[q.id] || answers[q.id].trim() === ""
+      (q) => !answers[q.question_id] || answers[q.question_id].trim() === ""
     );
 
     if (unanswered.length > 0) {
@@ -38,14 +66,33 @@ const EmployeeAppraisalTab: React.FC = () => {
       return;
     }
 
-    console.log({
-      employeeId: employee.id,
-      answers,
-    });
-
-    setSubmitted(true);
-
-    alert("Appraisal submitted successfully.");
+    try {
+      const cycleResponse = await appraisalService.getActiveCycle();
+      if (!cycleResponse.data.success || !cycleResponse.data.cycle) {
+        alert("No active appraisal cycle found.");
+        return;
+      }
+      
+      // Need a submit endpoint in appraisalService
+      const payload = {
+        cycle_id: cycleResponse.data.cycle.id,
+        answers: Object.entries(answers).map(([qId, ans]) => ({
+          question_id: parseInt(qId, 10),
+          answer: ans
+        }))
+      };
+      
+      const submitResponse = await appraisalService.submitAnswers(payload);
+      if (submitResponse.data.success) {
+        setSubmitted(true);
+        alert("Appraisal submitted successfully.");
+      } else {
+        alert("Failed to submit: " + submitResponse.data.message);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert("Error submitting appraisal: " + (err.response?.data?.message || err.message));
+    }
   };
 
   return (
@@ -59,15 +106,16 @@ const EmployeeAppraisalTab: React.FC = () => {
           Employee Information
         </h2>
 
+        {employeeDetails ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
           <div>
             <p className="text-gray-500 text-sm">
-              Employee
+              Employee Name
             </p>
 
             <p className="font-medium">
-              {employee.fullName}
+              {employeeDetails.first_name} {employeeDetails.last_name}
             </p>
           </div>
 
@@ -77,7 +125,7 @@ const EmployeeAppraisalTab: React.FC = () => {
             </p>
 
             <p className="font-medium">
-              {employee.employeeId}
+              EMP-{employeeDetails.id}
             </p>
           </div>
 
@@ -87,7 +135,7 @@ const EmployeeAppraisalTab: React.FC = () => {
             </p>
 
             <p className="font-medium">
-              {employee.department}
+              {employeeDetails.department}
             </p>
           </div>
 
@@ -97,11 +145,14 @@ const EmployeeAppraisalTab: React.FC = () => {
             </p>
 
             <p className="font-medium">
-              {employee.role}
+              {employeeDetails.role}
             </p>
           </div>
 
         </div>
+        ) : (
+          <p className="text-gray-500">Loading employee details...</p>
+        )}
 
       </div>
 
@@ -118,13 +169,13 @@ const EmployeeAppraisalTab: React.FC = () => {
           {questions.map((question, index) => (
 
             <div
-              key={question.id}
+              key={question.question_id}
               className="border rounded-lg p-4"
             >
 
               <label className="font-medium block mb-3">
 
-                {index + 1}. {question.question}
+                {index + 1}. {question.question_text}
 
               </label>
 
@@ -132,10 +183,10 @@ const EmployeeAppraisalTab: React.FC = () => {
                 rows={4}
                 className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-black"
                 placeholder="Enter your answer..."
-                value={answers[question.id] || ""}
+                value={answers[question.question_id] || ""}
                 onChange={(e) =>
                   handleChange(
-                    question.id,
+                    question.question_id,
                     e.target.value
                   )
                 }
