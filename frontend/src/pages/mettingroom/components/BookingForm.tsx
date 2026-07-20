@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { createBooking } from "../../../services/meetingRoomService";
 import { FormField, Input, Select, Textarea } from "../../../components/ui/Form";
 import { Button } from "../../../components/ui/Button";
+import { TimePicker } from "../../../components/ui/TimePicker";
+import { DatePicker } from "../../../components/ui/DatePicker";
 
 interface BookingFormProps {
   rooms: any[];
@@ -310,12 +312,10 @@ const BookingForm: React.FC<BookingFormProps> = ({
         </FormField>
 
         <FormField label="Meeting Date" required error={errors.meeting_date}>
-          <Input
-            type="date"
+          <DatePicker
             name="meeting_date"
             value={form.meeting_date}
-            min={today}
-            onChange={handleChange}
+            onChange={(val) => setForm((prev) => ({ ...prev, meeting_date: val }))}
             error={!!errors.meeting_date}
           />
         </FormField>
@@ -332,21 +332,19 @@ const BookingForm: React.FC<BookingFormProps> = ({
         </FormField>
 
         <FormField label="Start Time" required error={errors.start_time}>
-          <Input
-            type="time"
+          <TimePicker
             name="start_time"
             value={form.start_time}
-            onChange={handleChange}
+            onChange={(val) => setForm((prev) => ({ ...prev, start_time: val }))}
             error={!!errors.start_time}
           />
         </FormField>
 
         <FormField label="End Time" required error={errors.end_time}>
-          <Input
-            type="time"
+          <TimePicker
             name="end_time"
             value={form.end_time}
-            onChange={handleChange}
+            onChange={(val) => setForm((prev) => ({ ...prev, end_time: val }))}
             error={!!errors.end_time}
           />
         </FormField>

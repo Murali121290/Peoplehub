@@ -1,4 +1,4 @@
-from utils.compat import Blueprint, jsonify, send_file
+from utils.compat import Blueprint, jsonify, send_file, request
 from datetime import date, datetime
 from io import BytesIO
 
@@ -6,6 +6,7 @@ from models.database import db
 from models.employee import Employee
 from models.attendance import Attendance
 from models.leave import LeaveRequest
+from middleware.auth import auth_required
 
 payroll_bp = Blueprint(
     "payroll",
@@ -174,10 +175,65 @@ def mark_salary_paid(employee_id):
             "error": str(e)
         }), 500
     
+# =========================================================================
+# EMPLOYEE ROUTE: CHECK PAYROLL STATUS BEFORE DOWNLOAD
+# =========================================================================
+@payroll_bp.route(
+    "/status/<int:employee_id>",
+    methods=["GET"]
+)
+@auth_required
+def get_payroll_status(employee_id):
+    try:
+        month = request.args.get("month", type=int, default=date.today().month)
+        year = request.args.get("year", type=int, default=date.today().year)
+
+        import calendar
+        month_name = calendar.month_name[month]
+        month_label = f"{month_name} {year}"
+
+        employee = Employee.query.get(employee_id)
+
+        if not employee:
+            return jsonify({
+                "success": False,
+                "status": "Not Found",
+                "message": f"Payroll has not been generated for {month_label}. Please contact the HR department."
+            }), 404
+
+        # For the current payroll model, salary_paid is the source of truth
+        if employee.salary_paid:
+            paid_date = (
+                employee.salary_paid_date.strftime("%d-%m-%Y %I:%M %p")
+                if employee.salary_paid_date else None
+            )
+            return jsonify({
+                "success": True,
+                "status": "Paid",
+                "month": month_label,
+                "paid_date": paid_date
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "status": "Pending",
+                "month": month_label,
+                "message": (
+                    f"Your salary for {month_label} has not been processed yet. "
+                    f"Please wait until the payroll is completed by HR. "
+                    f"Once your salary has been marked as Paid, you will be able to download your payslip."
+                )
+            }), 200
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @payroll_bp.route(
     "/payslip/<int:employee_id>",
     methods=["GET"]
 )
+@auth_required
 def download_payslip(employee_id):
 
     try:
@@ -197,11 +253,21 @@ def download_payslip(employee_id):
         employee = Employee.query.get(employee_id)
 
         if not employee:
-
             return jsonify({
                 "success": False,
                 "error": "Employee not found"
             }), 404
+
+        # Guard: only allow download if salary is marked Paid
+        if not employee.salary_paid:
+            import calendar
+            today = date.today()
+            month_label = today.strftime("%B %Y")
+            return jsonify({
+                "success": False,
+                "status": "Pending",
+                "message": f"Payroll is still being processed for {month_label}. Payslip cannot be downloaded yet."
+            }), 403
 
         import calendar
 

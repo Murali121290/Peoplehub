@@ -65,7 +65,6 @@ class Team(db.Model):
         db.Text
     )
 
-
     created_at = db.Column(
         db.DateTime,
         default=datetime.utcnow
@@ -203,7 +202,6 @@ class User(db.Model):
 
             "team_id": self.team_id,
             "team_name": self.team.name if self.team else None,
-            "workflow_stage": self.team.workflow_stage if self.team else None,
 
             "access_level": self.access_level,
             "status": self.status,

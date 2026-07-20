@@ -20,6 +20,8 @@ import { getStatusColor } from '../utils/employeeHelpers';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { Modal } from '../../../components/ui/Modal';
+import { TimePicker } from '../../../components/ui/TimePicker';
+import { DatePicker } from '../../../components/ui/DatePicker';
 
 const leaveReasons: Record<string, string[]> = {
   "Sick Leave": ["Fever", "Headache", "Cold", "Food Poisoning", "Medical Checkup", "Hospital Visit"],
@@ -235,7 +237,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       {/* Title Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900 tracking-tight flex items-center gap-2">
+          <h1 className="text-xl font-bold text-neutral-800 tracking-tight flex items-center gap-2">
             Leave & Permission Management
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
@@ -908,27 +910,19 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">From Date <span className="text-danger-500">*</span></label>
-                  <div className="relative">
-                    <input 
-                      type="date" 
-                      required 
-                      value={leaveForm.fromDate}
-                      onChange={(e) => setLeaveForm({ ...leaveForm, fromDate: e.target.value })}
-                      className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 text-sm text-neutral-600 focus:ring-2 focus:ring-primary-100 focus:border-primary-400 focus:outline-none font-medium" 
-                    />
-                  </div>
+                  <DatePicker
+                    required
+                    value={leaveForm.fromDate}
+                    onChange={(val) => setLeaveForm({ ...leaveForm, fromDate: val })}
+                  />
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">To Date <span className="text-danger-500">*</span></label>
-                  <div className="relative">
-                    <input 
-                      type="date" 
-                      required 
-                      value={leaveForm.toDate}
-                      onChange={(e) => setLeaveForm({ ...leaveForm, toDate: e.target.value })}
-                      className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 text-sm text-neutral-600 focus:ring-2 focus:ring-primary-100 focus:border-primary-400 focus:outline-none font-medium" 
-                    />
-                  </div>
+                  <DatePicker
+                    required
+                    value={leaveForm.toDate}
+                    onChange={(val) => setLeaveForm({ ...leaveForm, toDate: val })}
+                  />
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Total Estimated Days</label>
@@ -946,32 +940,26 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-neutral-50/50 p-5 border border-neutral-200 rounded-xl">
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Permission Date <span className="text-danger-500">*</span></label>
-                  <input
-                    type="date"
+                  <DatePicker
                     required
                     value={leaveForm.permissionDate}
-                    onChange={(e) => setLeaveForm({ ...leaveForm, permissionDate: e.target.value })}
-                    className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 text-sm text-neutral-600 focus:ring-2 focus:ring-primary-100 focus:border-primary-400 focus:outline-none font-medium"
+                    onChange={(val) => setLeaveForm({ ...leaveForm, permissionDate: val })}
                   />
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">From Time <span className="text-danger-500">*</span></label>
-                  <input
-                    type="time"
+                  <TimePicker
                     required
                     value={leaveForm.fromTime}
-                    onChange={(e) => setLeaveForm({ ...leaveForm, fromTime: e.target.value })}
-                    className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 text-sm text-neutral-600 focus:ring-2 focus:ring-primary-100 focus:border-primary-400 focus:outline-none font-medium"
+                    onChange={(val) => setLeaveForm({ ...leaveForm, fromTime: val })}
                   />
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">To Time <span className="text-danger-500">*</span></label>
-                  <input
-                    type="time"
+                  <TimePicker
                     required
                     value={leaveForm.toTime}
-                    onChange={(e) => setLeaveForm({ ...leaveForm, toTime: e.target.value })}
-                    className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 text-sm text-neutral-600 focus:ring-2 focus:ring-primary-100 focus:border-primary-400 focus:outline-none font-medium"
+                    onChange={(val) => setLeaveForm({ ...leaveForm, toTime: val })}
                   />
                 </div>
               </div>

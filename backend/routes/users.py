@@ -302,7 +302,8 @@ def get_teams():
             'teams': [
                 {
                     'id': team.id,
-                    'name': team.name
+                    'name': team.name,
+                    'description': team.description
                 }
                 for team in teams
             ]
@@ -324,7 +325,8 @@ def get_roles_by_team(team_id):
             "roles": [
                 {
                     "id": role.id,
-                    "name": role.name
+                    "name": role.name,
+                    "description": role.description
                 }
                 for role in roles
             ]
@@ -334,6 +336,125 @@ def get_roles_by_team(team_id):
         return jsonify({
             "error": str(e)
         }), 500
+
+@users_bp.route('/teams', methods=['POST'])
+@auth_required
+@access_level_required('admin')
+def create_team():
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        description = data.get('description')
+        roles_data = data.get('roles', [])
+
+        if not name:
+            return jsonify({'error': 'Team name is required'}), 400
+
+        # Check if team already exists
+        existing_team = Team.query.filter_by(name=name).first()
+        if existing_team:
+            return jsonify({'error': 'Team name already exists'}), 400
+
+        team = Team(
+            name=name,
+            description=description
+        )
+        db.session.add(team)
+        db.session.commit()
+
+        # Add roles
+        for role_item in roles_data:
+            role_name = role_item.get('name')
+            role_desc = role_item.get('description')
+            if role_name:
+                role = Role(
+                    name=role_name,
+                    description=role_desc,
+                    team_id=team.id
+                )
+                db.session.add(role)
+
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Team and roles created successfully',
+            'team': team.to_dict()
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@users_bp.route('/teams/<int:team_id>', methods=['PUT'])
+@auth_required
+@access_level_required('admin')
+def update_team(team_id):
+    try:
+        data = request.get_json()
+        team = Team.query.get(team_id)
+
+        if not team:
+            return jsonify({'error': 'Team not found'}), 404
+
+        name = data.get('name')
+        description = data.get('description')
+        roles_data = data.get('roles', [])
+
+        if not name:
+            return jsonify({'error': 'Team name is required'}), 400
+
+        # Check if team name exists for another team
+        existing_team = Team.query.filter(Team.name == name, Team.id != team_id).first()
+        if existing_team:
+            return jsonify({'error': 'Team name already exists'}), 400
+
+        team.name = name
+        team.description = description
+
+        # Update roles
+        existing_roles = {r.id: r for r in Role.query.filter_by(team_id=team_id).all()}
+        incoming_role_ids = {r.get('id') for r in roles_data if r.get('id')}
+
+        # Delete roles not present in incoming list
+        for role_id, role in list(existing_roles.items()):
+            if role_id not in incoming_role_ids:
+                # Prevent deleting a role that is assigned to a user
+                user_using_role = User.query.filter_by(role_id=role_id).first()
+                if user_using_role:
+                    return jsonify({'error': f'Cannot delete role "{role.name}" because it is assigned to user "{user_using_role.full_name}"'}), 400
+                db.session.delete(role)
+
+        # Add or update roles
+        for role_item in roles_data:
+            role_id = role_item.get('id')
+            role_name = role_item.get('name')
+            role_desc = role_item.get('description')
+
+            if not role_name:
+                continue
+
+            if role_id and role_id in existing_roles:
+                existing_role = existing_roles[role_id]
+                existing_role.name = role_name
+                existing_role.description = role_desc
+            else:
+                new_role = Role(
+                    name=role_name,
+                    description=role_desc,
+                    team_id=team_id
+                )
+                db.session.add(new_role)
+
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Team and roles updated successfully',
+            'team': team.to_dict()
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
     
 @users_bp.route(
     "/search",

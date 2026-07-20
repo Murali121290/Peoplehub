@@ -142,7 +142,29 @@ class ApiService {
     return this.api.get("/employees/team-overview");
   }
 
+  async createTeam(data: any) {
+    return this.api.post("/users/teams", data, {
+      headers: this.jsonHeaders(),
+    });
+  }
 
+  async updateTeam(id: number, data: any) {
+    return this.api.put(`/users/teams/${id}`, data, {
+      headers: this.jsonHeaders(),
+    });
+  }
+
+  async getShiftRequests() {
+    return this.api.get("/shifts/");
+  }
+
+  async approveShift(id: number) {
+    return this.api.put(`/shifts/approve/${id}`);
+  }
+
+  async rejectShift(id: number) {
+    return this.api.put(`/shifts/reject/${id}`);
+  }
 
   // ================= COMMON METHODS =================
 
@@ -188,6 +210,10 @@ export const userService = {
   getTeams: () => apiService.getTeams(),
 
   getTeamOverview: () => apiService.getTeamOverview(),
+
+  createTeam: (data: any) => apiService.createTeam(data),
+
+  updateTeam: (id: number, data: any) => apiService.updateTeam(id, data),
 };
 
 
@@ -206,6 +232,12 @@ export const appraisalService = {
   submitAnswers: (data: any) => apiService.post(`/appraisal/submit`, data),
   getPendingAppraisals: () => apiService.get(`/appraisal/pending`),
   submitReview: (data: any) => apiService.post(`/appraisal/review`, data),
+};
+
+export const shiftService = {
+  getShiftRequests: () => apiService.getShiftRequests(),
+  approveShift: (id: number) => apiService.approveShift(id),
+  rejectShift: (id: number) => apiService.rejectShift(id),
 };
 
 export default apiService;
