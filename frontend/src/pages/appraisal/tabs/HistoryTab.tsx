@@ -1,39 +1,36 @@
-import React from "react";
-
-const appraisalHistory = [
-  {
-    id: 1,
-    year: 2026,
-    cycle: "2026 Annual Appraisal",
-    rating: "Excellent",
-    score: 10,
-    status: "Completed",
-    reviewedBy: "John Manager",
-    reviewedDate: "08 Jul 2026",
-  },
-  {
-    id: 2,
-    year: 2025,
-    cycle: "2025 Annual Appraisal",
-    rating: "Good",
-    score: 8,
-    status: "Completed",
-    reviewedBy: "John Manager",
-    reviewedDate: "10 Jul 2025",
-  },
-  {
-    id: 3,
-    year: 2024,
-    cycle: "2024 Annual Appraisal",
-    rating: "Average",
-    score: 6,
-    status: "Completed",
-    reviewedBy: "John Manager",
-    reviewedDate: "15 Jul 2024",
-  },
-];
+import React, { useState, useEffect } from "react";
+import { appraisalService } from "../../../services/api";
 
 const HistoryTab: React.FC = () => {
+  const [appraisalHistory, setAppraisalHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const employeeId = localStorage.getItem("employee_id");
+        if (!employeeId) {
+          setError("No employee ID found.");
+          setLoading(false);
+          return;
+        }
+        const response = await appraisalService.getAppraisalHistory(employeeId);
+        if (response.data.success) {
+          setAppraisalHistory(response.data.history || []);
+        } else {
+          setError(response.data.message || "Failed to fetch history");
+        }
+      } catch (err: any) {
+        console.error("Error fetching appraisal history:", err);
+        setError(err.response?.data?.message || "Something went wrong.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchHistory();
+  }, []);
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
 
@@ -98,8 +95,25 @@ const HistoryTab: React.FC = () => {
           </thead>
 
           <tbody>
-
-            {appraisalHistory.map((item) => (
+            {loading ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                  Loading appraisal history...
+                </td>
+              </tr>
+            ) : error ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-red-500">
+                  {error}
+                </td>
+              </tr>
+            ) : appraisalHistory.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                  No appraisal history found.
+                </td>
+              </tr>
+            ) : appraisalHistory.map((item: any) => (
 
               <tr
                 key={item.id}
@@ -168,7 +182,6 @@ const HistoryTab: React.FC = () => {
               </tr>
 
             ))}
-
           </tbody>
 
         </table>

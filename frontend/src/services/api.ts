@@ -115,9 +115,7 @@ class ApiService {
     });
   }
 
-  async deactivateProject(projectId: number) {
-    return this.api.post(`/projects/${projectId}/deactivate`);
-  }
+
 
   async updateUser(id: number, data: any) {
     return this.api.put(`/users/${id}`, data, {
@@ -144,127 +142,7 @@ class ApiService {
     return this.api.get("/employees/team-overview");
   }
 
-  // ================= CLIENTS =================
 
-  async getClients(params?: QueryParams) {
-    return this.api.get("/clients", { params });
-  }
-
-  async createClient(data: any) {
-    return this.api.post("/clients", data, {
-      headers: this.jsonHeaders(),
-    });
-  }
-
-  async updateClient(id: number, data: any) {
-    return this.api.put(`/clients/${id}`, data, {
-      headers: this.jsonHeaders(),
-    });
-  }
-
-  async deleteClient(id: number) {
-    return this.api.delete(`/clients/${id}`);
-  }
-
-  async getClient(id: number) {
-    return this.api.get(`/clients/${id}`);
-  }
-
-  // ================= PROJECTS =================
-
-  async getProjects(params?: QueryParams) {
-    return this.api.get("/projects", { params });
-  }
-
-  async createProject(data: any) {
-    return this.api.post("/projects", data, {
-      headers: this.jsonHeaders(),
-    });
-  }
-
-  async getProject(id: number) {
-    return this.api.get(`/projects/${id}`);
-  }
-
-  async activateProject(projectId: number, workflowId: string) {
-    return this.api.post(`/projects/${projectId}/activate`, {
-      workflow_id: workflowId,
-    });
-  }
-
-  async uploadChapters(projectId: number, file: File) {
-    const formData = new FormData();
-    formData.append("zip_file", file);
-
-    return this.api.post(`/projects/${projectId}/chapters/upload`, formData, {
-      headers: this.multipartHeaders(),
-    });
-  }
-
-  async parseChapterZip(file: File) {
-    const formData = new FormData();
-    formData.append("zip_file", file);
-
-    return this.api.post("/projects/parse-zip", formData, {
-      headers: this.multipartHeaders(),
-    });
-  }
-
-  async createProjectWithChapters(payload: any, zipFile: File) {
-    const formData = new FormData();
-    formData.append("zip_file", zipFile);
-    formData.append("payload", JSON.stringify(payload));
-
-    return this.api.post("/projects/create-with-chapters", formData, {
-      headers: this.multipartHeaders(),
-    });
-  }
-
-  async updateProject(id: number, data: any) {
-    return this.api.put(`/projects/${id}`, data, {
-      headers: this.jsonHeaders(),
-    });
-  }
-
-  async deleteProject(id: number) {
-    return this.api.delete(`/projects/${id}`);
-  }
-
-  async completeStage(projectId: number, data: any) {
-    return this.api.post(`/projects/${projectId}/complete-stage`, data, {
-      headers: this.jsonHeaders(),
-    });
-  }
-
-  async getProjectChapters(projectId: number) {
-    return this.api.get(`/projects/${projectId}/chapters`);
-  }
-
-  async updateProjectChapter(projectId: number, chapterId: number, data: any) {
-    return this.api.put(`/projects/${projectId}/chapters/${chapterId}`, data, {
-      headers: this.jsonHeaders(),
-    });
-  }
-
-  async deleteProjectChapter(projectId: number, chapterId: number) {
-    return this.api.delete(`/projects/${projectId}/chapters/${chapterId}`);
-  }
-
-  // ================= DASHBOARD =================
-
-  async getDashboardStats() {
-    return this.api.get("/dashboard/stats");
-  }
-
-  async getWorkflowStats() {
-    return this.api.get("/dashboard/workflow-stats");
-  }
-
-  // ================= WORKFLOWS =================
-
-  async getWorkflows() {
-    return this.api.get("/workflow");
-  }
 
   // ================= COMMON METHODS =================
 
@@ -312,62 +190,12 @@ export const userService = {
   getTeamOverview: () => apiService.getTeamOverview(),
 };
 
-// ================= CLIENT SERVICE =================
 
-export const clientService = {
-  getClients: (params?: QueryParams) => apiService.getClients(params),
-  createClient: (data: any) => apiService.createClient(data),
-  updateClient: (id: number, data: any) => apiService.updateClient(id, data),
-  deleteClient: (id: number) => apiService.deleteClient(id),
-  getClient: (id: number) => apiService.getClient(id),
-};
-
-// ================= PROJECT SERVICE =================
-
-export const projectService = {
-  getProjects: (params?: QueryParams) => apiService.getProjects(params),
-
-  createProject: (data: any) => apiService.createProject(data),
-
-  getProject: (id: number) => apiService.getProject(id),
-
-  activateProject: (projectId: number, workflowId: string) =>
-    apiService.activateProject(projectId, workflowId),
-
-  uploadChapters: (projectId: number, file: File) =>
-    apiService.uploadChapters(projectId, file),
-
-  parseChapterZip: (file: File) => apiService.parseChapterZip(file),
-
-  createProjectWithChapters: (payload: any, zipFile: File) =>
-    apiService.createProjectWithChapters(payload, zipFile),
-
-  updateProject: (id: number, data: any) => apiService.updateProject(id, data),
-
-  deleteProject: (id: number) => apiService.deleteProject(id),
-
-  completeStage: (projectId: number, data: any) =>
-    apiService.completeStage(projectId, data),
-
-  getProjectChapters: (projectId: number) =>
-    apiService.getProjectChapters(projectId),
-
-  updateProjectChapter: (projectId: number, chapterId: number, data: any) =>
-    apiService.updateProjectChapter(projectId, chapterId, data),
-
-  deleteProjectChapter: (projectId: number, chapterId: number) =>
-    apiService.deleteProjectChapter(projectId, chapterId),
-};
-
-// ================= DASHBOARD SERVICE =================
-
-export const dashboardService = {
-  getDashboardStats: () => apiService.getDashboardStats(),
-  getWorkflowStats: () => apiService.getWorkflowStats(),
-};
-
-export const workflowService = {
-  getWorkflows: () => apiService.getWorkflows(),
+export const appraisalService = {
+  getAppraisalHistory: (employeeId: string) =>
+    apiService.get(`/appraisal/history/${employeeId}`),
+  getEmployeeAppraisal: (employeeId: string) =>
+    apiService.get(`/appraisal/employee/${employeeId}`),
 };
 
 export default apiService;

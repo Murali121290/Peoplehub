@@ -65,9 +65,6 @@ class Team(db.Model):
         db.Text
     )
 
-    workflow_stage = db.Column(
-        db.String(50)
-    )
 
     created_at = db.Column(
         db.DateTime,
@@ -92,7 +89,6 @@ class Team(db.Model):
             "id": self.id,
             "name": self.name,
             "description": self.description,
-            "workflow_stage": self.workflow_stage,
 
             "created_at": (
                 self.created_at.isoformat()

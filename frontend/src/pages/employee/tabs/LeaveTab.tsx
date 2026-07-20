@@ -16,10 +16,17 @@ import {
   DocumentTextIcon
 } from '@heroicons/react/24/outline';
 import { getStatusColor } from '../utils/employeeHelpers';
-import { leaveReasons } from '../data/employeeMockData';
+
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { Modal } from '../../../components/ui/Modal';
+
+const leaveReasons: Record<string, string[]> = {
+  "Sick Leave": ["Fever", "Headache", "Cold", "Food Poisoning", "Medical Checkup", "Hospital Visit"],
+  "Casual Leave": ["Personal Work", "Family Function", "Marriage", "Bank Work", "Travel"],
+  "Earned Leave": ["Vacation", "Family Trip", "Festival", "Personal Time"],
+  "Unpaid Leave": ["Emergency", "Personal Reasons", "Extended Vacation"],
+};
 
 const permissionReasons = [
   "Personal Emergency",
@@ -139,6 +146,23 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     setShowLeaveForm(true);
   };
 
+  // Calculate Pending leaves to accurately reflect real-time available balance
+  const pendingSickLeaves = leaveRequests
+    .filter((req: any) => Number(req.employee_id) === Number(currentEmployee?.id) && req.status === "Pending" && (req.leave_type || "").toLowerCase() === "sick leave")
+    .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+
+  const pendingCasualLeaves = leaveRequests
+    .filter((req: any) => Number(req.employee_id) === Number(currentEmployee?.id) && req.status === "Pending" && (req.leave_type || "").toLowerCase() === "casual leave")
+    .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+
+  const pendingPrivilegeLeaves = leaveRequests
+    .filter((req: any) => Number(req.employee_id) === Number(currentEmployee?.id) && req.status === "Pending" && ["earned leave", "privilege leave"].includes((req.leave_type || "").toLowerCase()))
+    .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+
+  const realSickLeave = Math.max(0, (currentEmployee?.sick_leave || 0) - pendingSickLeaves);
+  const realCasualLeave = Math.max(0, (currentEmployee?.casual_leave || 0) - pendingCasualLeaves);
+  const realPrivilegeLeave = Math.max(0, (currentEmployee?.privilege_leave || currentEmployee?.earned_leave || 0) - pendingPrivilegeLeaves);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -151,15 +175,15 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       let displayType = "";
 
       if (type === "sick leave") {
-        available = currentEmployee?.sick_leave || 0;
+        available = realSickLeave;
         yearlyMax = 6;
         displayType = "Sick Leave";
       } else if (type === "casual leave") {
-        available = currentEmployee?.casual_leave || 0;
+        available = realCasualLeave;
         yearlyMax = 6;
         displayType = "Casual Leave";
       } else if (type === "earned leave" || type === "privilege leave") {
-        available = currentEmployee?.privilege_leave || currentEmployee?.earned_leave || 0;
+        available = realPrivilegeLeave;
         yearlyMax = 15;
         displayType = "Privilege Leave";
       }
@@ -235,7 +259,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   {[
     {
       label: "Sick Leave",
-      value: currentEmployee?.sick_leave || 0,
+      value: realSickLeave,
       total: 6,
       icon: ShieldCheckIcon,
       iconWrap: "bg-emerald-50",
@@ -245,7 +269,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     },
     {
       label: "Casual Leave",
-      value: currentEmployee?.casual_leave || 0,
+      value: realCasualLeave,
       total: 6,
       icon: ClockIcon,
       iconWrap: "bg-amber-50",
@@ -255,7 +279,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     },
     {
       label: "Privilege Leave",
-      value: currentEmployee?.privilege_leave || currentEmployee?.earned_leave || 0,
+      value: realPrivilegeLeave,
       total: 15,
       icon: CalendarIcon,
       iconWrap: "bg-blue-50",
@@ -265,7 +289,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     },
     {
       label: "Total Balance",
-      value: totalBalance,
+      value: realSickLeave + realCasualLeave + realPrivilegeLeave,
       total: 27,
       icon: DocumentTextIcon,
       iconWrap: "bg-slate-100",
@@ -281,43 +305,26 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     return (
       <Card
         key={item.label}
-        className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm hover:shadow-md transition-all duration-300"
+        className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col items-center"
       >
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.14em] font-semibold text-slate-400">
-              {item.label}
-            </p>
+        <h4 className="text-[14px] font-semibold text-slate-800 mb-4 tracking-wide">{item.label}</h4>
 
-            <h4 className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
-              {item.value}
-              <span className="ml-1 text-sm font-medium text-slate-400">
-                / {item.total}
-              </span>
-            </h4>
-
-            <p className="mt-1 text-sm text-slate-400">This year</p>
-          </div>
-
-          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${item.iconWrap}`}>
-            <Icon className={`h-5 w-5 ${item.iconColor}`} />
-          </div>
+        <div className={`flex h-[3rem] w-[3rem] items-center justify-center rounded-[14px] ${item.iconWrap} mb-5`}>
+          <Icon className={`h-5 w-5 ${item.iconColor}`} />
         </div>
 
-        <div className="mt-4">
-          <div className="mb-1 flex items-center justify-between text-[11px] text-slate-400">
-            <span>{used} used</span>
-            <span>{percent}% left</span>
+        <div className="w-full space-y-2.5 mt-auto px-1">
+          <div className="flex justify-between items-center text-[14px]">
+            <span className="text-slate-600 font-medium">Available</span>
+            <span className="font-semibold text-emerald-600">{item.value}</span>
           </div>
-
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-            <div
-              className={`h-full rounded-full ${item.progressColor}`}
-              style={{ width: `${percent}%` }}
-            />
+          <div className="flex justify-between items-center text-[14px]">
+            <span className="text-slate-600 font-medium">Booked</span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-slate-900">{used}</span>
+              <InformationCircleIcon className="w-4 h-4 text-slate-400 cursor-pointer hover:text-slate-600 transition-colors" />
+            </div>
           </div>
-
-          <p className="mt-2 text-xs font-medium text-slate-500">{item.note}</p>
         </div>
       </Card>
     );

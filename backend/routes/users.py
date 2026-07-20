@@ -302,8 +302,7 @@ def get_teams():
             'teams': [
                 {
                     'id': team.id,
-                    'name': team.name,
-                    'workflow_stage': team.workflow_stage
+                    'name': team.name
                 }
                 for team in teams
             ]

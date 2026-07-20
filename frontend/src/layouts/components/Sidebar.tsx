@@ -22,7 +22,6 @@ interface SidebarProps {
 const reportLinks = [
   { name: "Schedule Report", icon: DocumentChartBarIcon, path: "/reports/schedule", state: { tab: "schedule" } },
   { name: "Team Schedule", icon: ClockIcon, path: "/reports/today-schedule", state: { tab: "today" } },
-  { name: "Project Info", icon: PresentationChartLineIcon, path: "/reports/project-schedule", state: { tab: "project" } },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -45,7 +44,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     accessLevel === 'user' || 
     accessLevel === 'manager' || 
     accessLevel === 'standard' ||
-    ['copyeditor', 'project manager', 'editorial manager'].includes(user?.role?.toLowerCase() || '');
+    ['copyeditor', 'editorial manager'].includes(user?.role?.toLowerCase() || '');
 
   const showUpdateProfile = isEmployeeOrManager;
 

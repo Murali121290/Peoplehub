@@ -184,8 +184,8 @@ def submit_appraisal():
             }), 404
 
         # Prevent duplicate submission for the same cycle
-        existing_submission = AppraisalAnswer.query.filter_by(
-            employee_id=employee_id,
+        existing_submission = AppraisalRequest.query.filter_by(
+            employee_id=str(employee_id),
             cycle_id=cycle_id
         ).first()
 
@@ -213,15 +213,27 @@ def submit_appraisal():
                     "message": f"Invalid question_id: {question_id}"
                 }), 404
 
-        # Save all answers
+        # Create Appraisal Request
+        role_name = employee.user.role.name if employee.user and employee.user.role else employee.role if hasattr(employee, 'role') else "Unknown"
+
+        new_request = AppraisalRequest(
+            cycle_id=cycle_id,
+            employee_id=str(employee_id),
+            employee_name=f"{employee.first_name} {employee.last_name}",
+            role=role_name,
+            reporting_manager=employee.reporting_manager if employee.reporting_manager else "Unknown Manager",
+            status="Pending",
+            submitted_at=datetime.utcnow()
+        )
+        db.session.add(new_request)
+        db.session.flush() # To get the new_request.id
+
+        # Save all answers linked to the request
         for answer_item in answers:
             new_answer = AppraisalAnswer(
-                employee_id=employee_id,
-                cycle_id=cycle_id,
+                request_id=new_request.id,
                 question_id=answer_item.get("question_id"),
-                answer=answer_item.get("answer"),
-                status="Pending Review",
-                submitted_at=datetime.utcnow()
+                answer=answer_item.get("answer")
             )
             db.session.add(new_answer)
 
@@ -350,19 +362,22 @@ def get_employee_appraisal(employee_id):
                 "message": "Employee not found"
             }), 404
 
-        # Fetch all answers submitted by the employee
-        answers = AppraisalAnswer.query.filter_by(
-            employee_id=employee_id
-        ).all()
+        # Fetch the most recent appraisal request for the employee
+        request = AppraisalRequest.query.filter_by(
+            employee_id=str(employee_id)
+        ).order_by(AppraisalRequest.submitted_at.desc()).first()
 
-        if not answers:
+        if not request:
             return jsonify({
                 "success": False,
                 "message": "No appraisal submission found for this employee"
-            }), 404
+            }), 200
 
-        # Assume all fetched answers belong to the same active cycle
-        cycle = AppraisalCycle.query.get(answers[0].cycle_id)
+        answers = AppraisalAnswer.query.filter_by(
+            request_id=request.id
+        ).all()
+
+        cycle = AppraisalCycle.query.get(request.cycle_id)
 
         answer_list = []
         for answer in answers:
@@ -381,15 +396,34 @@ def get_employee_appraisal(employee_id):
                 else "-"
     )
 
+        # Fetch manager review if it exists
+        review = AppraisalRequest.query.filter_by(
+            employee_id=str(employee_id),
+            cycle_id=cycle.id if cycle else None
+        ).first()
+        
+        manager_review = None
+        if review and review.status == "Reviewed":
+            manager_review = {
+                "rating": review.rating,
+                "score": review.score,
+                "managerComment": review.manager_comment,
+                "reviewedBy": review.reporting_manager,
+                "reviewedDate": review.reviewed_at.strftime("%d %b %Y") if review.reviewed_at else None,
+            }
+
         return jsonify({
             "success": True,
             "message": "Employee appraisal fetched successfully",
             "employee_id": employee.id,
             "employee_name": f"{employee.first_name} {employee.last_name}",
             "role": role_name,
+            "department": employee.department,
             "cycle_id": cycle.id if cycle else None,
             "cycle_name": cycle.title if cycle else None,
-            "answers": answer_list
+            "cycle_year": cycle.appraisal_year if cycle else None,
+            "answers": answer_list,
+            "manager_review": manager_review
         }), 200
 
     except SQLAlchemyError as db_error:
@@ -636,6 +670,48 @@ def get_appraisal_report(employee_id):
 
     except Exception as error:
         db.session.rollback()
+        return jsonify({
+            "success": False,
+            "message": f"Something went wrong: {str(error)}"
+        }), 500
+# --------------------------------------------------------------------------
+# ROUTE: GET /appraisal/history/<employee_id>
+# Description: Returns the completed/reviewed appraisal history for an employee.
+# --------------------------------------------------------------------------
+@appraisal_bp.route("/appraisal/history/<int:employee_id>", methods=["GET"])
+def get_appraisal_history(employee_id):
+    try:
+        # Fetch all Reviewed appraisal requests for this employee
+        requests = AppraisalRequest.query.filter_by(
+            employee_id=str(employee_id)
+        ).order_by(AppraisalRequest.reviewed_at.desc()).all()
+
+        history_list = []
+        for req in requests:
+            cycle = AppraisalCycle.query.get(req.cycle_id)
+            history_list.append({
+                "id": req.id,
+                "year": cycle.appraisal_year if cycle else None,
+                "cycle": cycle.title if cycle else "Unknown",
+                "rating": req.rating,
+                "score": req.score,
+                "status": req.status,
+                "reviewedBy": req.reporting_manager,
+                "reviewedDate": req.reviewed_at.strftime("%d %b %Y") if req.reviewed_at else None,
+            })
+
+        return jsonify({
+            "success": True,
+            "message": "Appraisal history fetched successfully",
+            "history": history_list
+        }), 200
+
+    except SQLAlchemyError as db_error:
+        return jsonify({
+            "success": False,
+            "message": f"Database error occurred: {str(db_error)}"
+        }), 500
+    except Exception as error:
         return jsonify({
             "success": False,
             "message": f"Something went wrong: {str(error)}"
