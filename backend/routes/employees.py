@@ -13,6 +13,7 @@ from models.user import Role, Team
 from services.leave_balance_service import update_leave_balance
 from models.leave import LeaveRequest
 from models.user import User, Role, Team
+from sqlalchemy import extract
 
 employees_bp = Blueprint("employees", __name__)
 
@@ -825,25 +826,30 @@ print("Employees Blueprint Loaded")
 
 @employees_bp.route("/birthdays/today", methods=["GET"])
 def today_birthdays():
+    try:
+        today = date.today()
 
-    today = date.today()
+        employees = Employee.query.filter(
+            Employee.dob.isnot(None),
+            extract("month", Employee.dob) == today.month,
+            extract("day", Employee.dob) == today.day
+        ).all()
 
-    employees = Employee.query.filter(
-        db.extract("month", Employee.dob) == today.month,
-        db.extract("day", Employee.dob) == today.day
-    ).all()
-
-    return jsonify([
-        {
-    "id": e.id,
-    "first_name": e.first_name,
-    "last_name": e.last_name,
-    "user_id": e.user_id,
-    "department": e.department,
-    "designation": e.designation
-}
-        for e in employees
-    ])
+        return jsonify([
+            {
+                "id": e.id,
+                "first_name": e.first_name,
+                "last_name": e.last_name,
+                "user_id": e.user_id,
+                "department": e.department,
+                "designation": e.designation,
+                "profile_image": base64.b64encode(e.profile_image).decode("utf-8") if e.profile_image else None
+            }
+            for e in employees
+        ])
+    except Exception as err:
+        print("ERROR IN TODAY BIRTHDAYS:", str(err))
+        return jsonify([]), 500
 
 @employees_bp.route("/team-overview", methods=["GET"])
 @auth_required
