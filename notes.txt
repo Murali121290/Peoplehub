@@ -1,1 +1,0 @@
-cat /Users/hemamalinik/Hema/git/Peoplehub/backup.sql | docker exec -i wms_postgres psql -U postgres -d wms_db
