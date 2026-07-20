@@ -6,7 +6,8 @@ import {
   ClockIcon,
   SparklesIcon,
   ChevronLeftIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  XMarkIcon
 } from "@heroicons/react/24/outline";
 import apiService from "../../../services/api";
 
@@ -16,6 +17,7 @@ const MONTH_NAMES = [
 ];
 
 const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const FULL_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export const HolidayCalendarWidget: React.FC = () => {
   const today = new Date();
@@ -25,6 +27,8 @@ export const HolidayCalendarWidget: React.FC = () => {
 
   const [schedule, setSchedule] = useState<any[]>([]);
   const [upcomingHolidays, setUpcomingHolidays] = useState<any[]>([]);
+  const [employeeLeaves, setEmployeeLeaves] = useState<any[]>([]);
+  const [selectedDateEventsModal, setSelectedDateEventsModal] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -34,16 +38,28 @@ export const HolidayCalendarWidget: React.FC = () => {
   const fetchHolidayCalendar = async () => {
     setIsLoading(true);
     try {
-      const res = await apiService.get(`/employee/holidays`, {
-        params: {
-          month: selectedMonth,
-          year: selectedYear
-        }
-      });
-      setSchedule(res.data.current_month_schedule || []);
-      setUpcomingHolidays(res.data.upcoming_holidays || []);
+      const userStr = localStorage.getItem("user");
+      const user = userStr ? JSON.parse(userStr) : {};
+
+      const [holidaysRes, leavesRes] = await Promise.all([
+        apiService.get(`/employee/holidays`, {
+          params: { month: selectedMonth, year: selectedYear }
+        }),
+        apiService.get(`/leaves/`).catch(() => ({ data: [] }))
+      ]);
+
+      setSchedule(holidaysRes.data.current_month_schedule || []);
+      setUpcomingHolidays(holidaysRes.data.upcoming_holidays || []);
+
+      const myEmpId = user.employee_id || user.id;
+      const allLeaves = Array.isArray(leavesRes.data) ? leavesRes.data : [];
+      const myLeaves = allLeaves.filter((l: any) => 
+        String(l.employee_id) === String(myEmpId) || 
+        String(l.employee_id) === String(user.id)
+      );
+      setEmployeeLeaves(myLeaves);
     } catch (err) {
-      console.error("Error fetching holidays:", err);
+      console.error("Error fetching holidays/leaves for profile widget:", err);
     } finally {
       setIsLoading(false);
     }
@@ -109,8 +125,8 @@ export const HolidayCalendarWidget: React.FC = () => {
               <CalendarIcon className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-md font-bold text-neutral-850">Holiday & Weekly Off Calendar</h3>
-              <p className="text-xs text-neutral-400 font-medium mt-0.5">Check upcoming company schedules and holidays</p>
+              <h3 className="text-md font-bold text-neutral-850">Leave &amp; Holiday Timeline</h3>
+              <p className="text-xs text-neutral-400 font-medium mt-0.5">Interactive calendar of your leave requests and company holiday schedule</p>
             </div>
           </div>
 
@@ -162,6 +178,19 @@ export const HolidayCalendarWidget: React.FC = () => {
           </div>
         </div>
 
+        {/* Legend */}
+        {viewMode === "calendar" && !isLoading && (
+          <div className="flex flex-wrap gap-4 text-[11px] font-semibold text-neutral-500 mb-4 px-2">
+            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#16A34A]"></div> Approved</span>
+            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#E11D48]"></div> Rejected</span>
+            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#F59E0B]"></div> Pending</span>
+            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#94A3B8]"></div> Cancelled</span>
+            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#EA580C]"></div> Half-Day</span>
+            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#7C3AED]"></div> Holiday</span>
+            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#CBD5E1]"></div> Weekly Off</span>
+          </div>
+        )}
+
         {/* Calendar layout */}
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center py-20 text-neutral-400">
@@ -183,46 +212,83 @@ export const HolidayCalendarWidget: React.FC = () => {
             <div className="grid grid-cols-7 flex-1 border-t border-l border-neutral-100 rounded-b-xl overflow-hidden">
               {calendarDays.map((day, idx) => {
                 if (!day) {
-                  return <div key={`empty-${idx}`} className="bg-neutral-50/30 border-r border-b border-neutral-100 min-h-[56px]" />;
+                  return <div key={`empty-${idx}`} className="bg-neutral-50/30 border-r border-b border-neutral-100 min-h-[64px]" />;
                 }
 
                 const isTodayDate = day.date === todayStr;
                 const isHoliday = day.is_holiday;
+                const isWeeklyOff = isHoliday && day.holiday_type?.toLowerCase().includes("weekly off");
                 const parsedDate = new Date(day.date);
                 const dayNum = parsedDate.getDate();
+
+                // Leaves on this date
+                const leavesOnDate = employeeLeaves.filter((l: any) => {
+                  if (l.request_type === "Permission") return l.permission_date === day.date;
+                  return l.from_date <= day.date && l.to_date >= day.date;
+                });
 
                 return (
                   <div
                     key={day.date}
-                    className={`border-r border-b border-neutral-100 p-2 min-h-[64px] flex flex-col justify-between transition-colors relative group hover:bg-neutral-50/50 ${
-                      isHoliday 
-                        ? day.holiday_type?.toLowerCase().includes("weekly off")
-                          ? "bg-slate-50/40"
-                          : "bg-violet-50/20"
-                        : ""
-                    } ${isTodayDate ? "ring-2 ring-indigo-500 ring-inset" : ""}`}
+                    onClick={() => {
+                      setSelectedDateEventsModal({
+                        dateStr: day.date,
+                        formattedDate: `${dayNum} ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`,
+                        leaves: leavesOnDate,
+                        holiday: isHoliday ? day : null,
+                      });
+                    }}
+                    className={`border-r border-b border-neutral-100 p-1.5 min-h-[85px] flex flex-col justify-between transition-all cursor-pointer relative group hover:bg-neutral-50/80 ${isTodayDate ? "ring-2 ring-indigo-500 ring-inset" : ""}`}
                   >
-                    <div className="flex justify-between items-start">
-                      <span className={`text-xs font-bold ${
+                    <div className="flex justify-between items-start mb-1">
+                      <span className={`text-[11px] font-bold ${
                         isTodayDate 
-                          ? "bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center shadow-xs" 
-                          : isHoliday 
-                          ? day.holiday_type?.toLowerCase().includes("weekly off")
-                            ? "text-slate-400"
-                            : "text-violet-600"
+                          ? "bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center shadow-xs font-extrabold" 
                           : "text-neutral-700"
                       }`}>
                         {dayNum}
                       </span>
-                      {isHoliday && (
-                        <span className={`w-1.5 h-1.5 rounded-full ${getHolidayDotColor(day.holiday_type)}`} />
+                      {isWeeklyOff && (
+                        <span className="text-[9px] uppercase font-bold text-neutral-400 mt-0.5 tracking-wider">{day.holiday_type}</span>
                       )}
                     </div>
-                    {isHoliday && (
-                      <div className="mt-1 text-[9px] font-bold text-neutral-600 truncate max-w-full" title={`${day.name} (${day.holiday_type})`}>
-                        {day.name}
-                      </div>
-                    )}
+
+                    {/* Events list: Leaves & Holidays */}
+                    <div className="space-y-1 mt-auto pb-0.5 w-full">
+                      {isHoliday && !isWeeklyOff && (
+                        <div className="text-[9px] font-bold px-1.5 py-1 rounded-[4px] truncate flex items-center gap-1.5 bg-[#F3E8FF] text-[#9333EA] fill-[#9333EA]">
+                          <div className="w-1.5 h-1.5 rounded-full bg-current shrink-0"></div>
+                          <span className="truncate">{day.name}</span>
+                        </div>
+                      )}
+
+                      {leavesOnDate.slice(0, 2).map((l: any) => {
+                        const isApproved = l.status === "Approved";
+                        const isRejected = l.status === "Rejected";
+                        const isPending = l.status === "Pending";
+                        const isHalfDay = l.leave_duration === "First Half" || l.leave_duration === "Second Half";
+
+                        const badgeClass = isHalfDay
+                          ? "bg-[#FFEDD5] text-[#EA580C] fill-[#EA580C]"
+                          : isApproved
+                          ? "bg-[#DCFCE7] text-[#16A34A] fill-[#16A34A]"
+                          : isRejected
+                          ? "bg-[#FFE4E6] text-[#E11D48] fill-[#E11D48]"
+                          : isPending
+                          ? "bg-[#FEF9C3] text-[#CA8A04] fill-[#CA8A04]"
+                          : "bg-[#F1F5F9] text-[#64748B] fill-[#64748B]";
+
+                        return (
+                          <div
+                            key={l.id}
+                            className={`text-[9px] font-bold px-1.5 py-1 rounded-[4px] truncate flex items-center gap-1.5 ${badgeClass}`}
+                          >
+                            <div className="w-1.5 h-1.5 rounded-full bg-current shrink-0"></div>
+                            <span className="truncate">{l.leave_type || "Leave"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })}
@@ -230,47 +296,122 @@ export const HolidayCalendarWidget: React.FC = () => {
           </div>
         ) : (
           /* List Mode */
-          <div className="flex-1 overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-neutral-100 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Day</th>
-                  <th className="py-3 px-4">Holiday Name</th>
-                  <th className="py-3 px-4">Holiday Type</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100/50">
-                {schedule.filter(day => day.is_holiday).length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-12 text-center text-xs text-neutral-400 font-medium">
-                      No holidays or weekly offs scheduled for this month.
-                    </td>
-                  </tr>
-                ) : (
-                  schedule.filter(day => day.is_holiday).map(day => {
-                    const isTodayDate = day.date === todayStr;
-                    return (
-                      <tr key={day.date} className={`hover:bg-neutral-50/50 text-xs transition-colors ${isTodayDate ? "bg-indigo-50/20 font-semibold" : ""}`}>
-                        <td className="py-3.5 px-4 text-neutral-700 font-medium">
-                          {day.date}
-                          {isTodayDate && (
-                            <span className="ml-2 bg-indigo-100 text-indigo-700 text-[9px] px-1.5 py-0.5 rounded-md font-bold">Today</span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 text-neutral-500">{day.day}</td>
-                        <td className="py-3.5 px-4 text-neutral-800 font-bold">{day.name}</td>
-                        <td className="py-3.5 px-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getHolidayTypeBadge(day.holiday_type)}`}>
-                            {day.holiday_type}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+          <div className="flex-1 overflow-y-auto space-y-6 max-h-[600px] pr-2">
+            {/* Section 1: Employee Leave History */}
+            <div className="border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
+              <div className="bg-white px-5 py-3.5 border-b border-neutral-200 flex justify-between items-center">
+                <div className="flex items-center gap-2.5">
+                  <CalendarIcon className="w-4 h-4 text-neutral-500" />
+                  <h4 className="text-sm font-bold text-neutral-800">Employee Leave History</h4>
+                </div>
+                <span className="text-xs font-bold text-neutral-600 bg-neutral-100 border border-neutral-200 px-2.5 py-0.5 rounded-full">{employeeLeaves.length} records</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs whitespace-nowrap">
+                  <thead className="bg-neutral-50 text-neutral-500 border-b border-neutral-100">
+                    <tr>
+                      <th className="py-3 px-5 font-bold uppercase tracking-wider text-[10px]">Date</th>
+                      <th className="py-3 px-5 font-bold uppercase tracking-wider text-[10px]">Day</th>
+                      <th className="py-3 px-5 font-bold uppercase tracking-wider text-[10px]">Leave Type</th>
+                      <th className="py-3 px-5 font-bold uppercase tracking-wider text-[10px]">Status</th>
+                      <th className="py-3 px-5 font-bold uppercase tracking-wider text-[10px]">Duration</th>
+                      <th className="py-3 px-5 font-bold uppercase tracking-wider text-[10px]">Manager Review</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100 bg-white">
+                    {employeeLeaves.length === 0 ? (
+                      <tr><td colSpan={6} className="py-8 text-center text-neutral-400">No leave history available.</td></tr>
+                    ) : (
+                      employeeLeaves.map((l: any) => {
+                        const d = new Date(l.from_date);
+                        const dayName = FULL_WEEKDAYS[d.getDay()];
+                        const isApproved = l.status === "Approved";
+                        const isRejected = l.status === "Rejected";
+                        const isPending = l.status === "Pending";
+                        const isHalfDay = l.leave_duration === "First Half" || l.leave_duration === "Second Half";
+
+                        const badgeClass = isHalfDay
+                          ? "bg-[#FFEDD5] text-[#EA580C] border-[#FDBA74]"
+                          : isApproved
+                          ? "bg-[#DCFCE7] text-[#16A34A] border-[#86EFAC]"
+                          : isRejected
+                          ? "bg-[#FFE4E6] text-[#E11D48] border-[#FDA4AF]"
+                          : isPending
+                          ? "bg-[#FEF9C3] text-[#CA8A04] border-[#FDE047]"
+                          : "bg-[#F1F5F9] text-[#64748B] border-[#CBD5E1]";
+
+                        return (
+                          <tr key={l.id} className="hover:bg-neutral-50/50 transition-colors">
+                            <td className="py-3.5 px-5 font-bold text-neutral-800">{l.from_date}</td>
+                            <td className="py-3.5 px-5 font-medium text-neutral-500">{dayName}</td>
+                            <td className="py-3.5 px-5 font-medium text-neutral-800">{l.leave_type}</td>
+                            <td className="py-3.5 px-5">
+                              <span className={`px-2.5 py-1 rounded-[6px] border text-[10px] font-bold flex items-center w-fit gap-1.5 ${badgeClass}`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                                {isHalfDay ? "Half-Day" : l.status}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-5 font-medium text-neutral-700">{l.total_days} {l.total_days === 1 ? "Day" : "Days"}</td>
+                            <td className="py-3.5 px-5 font-medium text-neutral-500">{l.reporting_manager || "HR Manager"}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Section 2: Upcoming Holidays */}
+            <div className="border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
+              <div className="bg-white px-5 py-3.5 border-b border-neutral-200 flex justify-between items-center">
+                <div className="flex items-center gap-2.5">
+                  <SparklesIcon className="w-4 h-4 text-purple-600" />
+                  <h4 className="text-sm font-bold text-neutral-800">Upcoming Holidays</h4>
+                </div>
+                <span className="text-[10px] font-bold text-neutral-500 border border-neutral-200 bg-neutral-50 px-2 py-0.5 rounded-md">Read-only</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs whitespace-nowrap">
+                  <thead className="bg-neutral-50 text-neutral-500 border-b border-neutral-100">
+                    <tr>
+                      <th className="py-3 px-5 font-bold uppercase tracking-wider text-[10px]">Date</th>
+                      <th className="py-3 px-5 font-bold uppercase tracking-wider text-[10px]">Day</th>
+                      <th className="py-3 px-5 font-bold uppercase tracking-wider text-[10px]">Holiday Name</th>
+                      <th className="py-3 px-5 font-bold uppercase tracking-wider text-[10px]">Holiday Type</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100 bg-white">
+                    {schedule.filter(d => d.is_holiday).length === 0 ? (
+                      <tr><td colSpan={4} className="py-8 text-center text-neutral-400">No holidays scheduled for this month.</td></tr>
+                    ) : (
+                      schedule.filter(d => d.is_holiday && !d.holiday_type?.toLowerCase().includes("weekly off")).map((h: any) => {
+                        const d = new Date(h.date);
+                        const dayName = FULL_WEEKDAYS[d.getDay()];
+                        return (
+                          <tr key={h.date} className="hover:bg-purple-50/20 transition-colors">
+                            <td className="py-3.5 px-5 font-bold text-neutral-800">{h.date}</td>
+                            <td className="py-3.5 px-5 font-medium text-neutral-500">{dayName}</td>
+                            <td className="py-3.5 px-5 font-medium text-neutral-800 flex items-center gap-2">
+                              {h.name}
+                            </td>
+                            <td className="py-3.5 px-5">
+                              <span className={`px-2.5 py-1 rounded-[6px] border text-[10px] font-bold ${
+                                h.holiday_type?.toLowerCase().includes("national") ? "bg-[#F3E8FF] text-[#9333EA] border-[#E9D5FF]" :
+                                h.holiday_type?.toLowerCase().includes("festival") ? "bg-[#FAE8FF] text-[#C026D3] border-[#F5D0FE]" :
+                                "bg-neutral-100 text-neutral-600 border-neutral-200"
+                              }`}>
+                                {h.holiday_type}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
       </Card>
@@ -328,6 +469,94 @@ export const HolidayCalendarWidget: React.FC = () => {
           )}
         </div>
       </Card>
+
+      {/* Selected Date Events Modal */}
+      {selectedDateEventsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-md mx-4 overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-gradient-to-r from-indigo-50 to-purple-50">
+              <div className="flex items-center gap-2">
+                <CalendarIcon className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-base font-extrabold text-neutral-800">{selectedDateEventsModal.formattedDate}</h3>
+              </div>
+              <button
+                onClick={() => setSelectedDateEventsModal(null)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-5">
+              {/* Employee Leave Section */}
+              <div>
+                <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2">Employee Leave Details</h4>
+                {selectedDateEventsModal.leaves.length === 0 ? (
+                  <p className="text-xs text-neutral-500 italic bg-neutral-50 p-3 rounded-xl border border-neutral-100">
+                    No leave requests on this date.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {selectedDateEventsModal.leaves.map((l: any) => (
+                      <div key={l.id} className="bg-neutral-50 p-3.5 rounded-xl border border-neutral-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-extrabold text-neutral-800">{l.leave_type}</span>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border bg-indigo-100 text-indigo-800 border-indigo-200">
+                            {l.status}
+                          </span>
+                        </div>
+                        <div className="text-xs text-neutral-600 space-y-1 font-medium">
+                          <p><strong>Duration:</strong> {l.total_days} day(s) ({l.leave_duration || "Full Day"})</p>
+                          <p><strong>Manager:</strong> {l.reporting_manager || "Manager"}</p>
+                          <p><strong>Reason:</strong> {l.reason || "N/A"}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <hr className="border-neutral-100" />
+
+              {/* Company Holiday Section */}
+              <div>
+                <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2">Company Holiday</h4>
+                {selectedDateEventsModal.holiday ? (
+                  <div className="bg-purple-50 p-3.5 rounded-xl border border-purple-200 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-extrabold text-purple-900 flex items-center gap-1.5">
+                        🎉 {selectedDateEventsModal.holiday.name}
+                      </p>
+                      <p className="text-xs text-purple-700 font-semibold mt-0.5">
+                        {selectedDateEventsModal.holiday.holiday_type || "Company Holiday"}
+                      </p>
+                    </div>
+                    <span className="px-2 py-1 rounded-lg bg-purple-200 text-purple-800 text-[10px] font-extrabold">
+                      Published
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-neutral-500 italic bg-neutral-50 p-3 rounded-xl border border-neutral-100">
+                    None
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 pb-5 flex justify-end">
+              <button
+                onClick={() => setSelectedDateEventsModal(null)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-xs shadow-xs transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

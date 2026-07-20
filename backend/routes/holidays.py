@@ -215,11 +215,14 @@ def get_employee_holidays():
             HolidayOverride.date <= end_date
         ).all()
         
+        all_published = Holiday.query.filter_by(is_published=True).order_by(Holiday.date.asc()).all()
+
         return jsonify({
             "current_month_schedule": schedule,
             "current_month_holidays": current_month_holidays,
             "weekly_offs": standard_weekly_offs,
             "upcoming_holidays": upcoming_holidays,
+            "published_holidays": [h.to_dict() for h in all_published],
             "overrides": [o.to_dict() for o in overrides]
         }), 200
         
