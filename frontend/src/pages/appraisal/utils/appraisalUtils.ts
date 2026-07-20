@@ -1,36 +1,7 @@
 import {
-  AppraisalQuestion,
   Rating,
   DashboardStats,
 } from "../models/appraisal";
-
-import {
-  productionQuestions,
-  editorQuestions,
-  copywriterQuestions,
-} from "../data/mockData";
-
-/* ==========================================
-   Get Questions by Role
-========================================== */
-
-export const getQuestionsByRole = (
-  role: string
-): AppraisalQuestion[] => {
-  switch (role.toLowerCase()) {
-    case "production":
-      return productionQuestions;
-
-    case "editor":
-      return editorQuestions;
-
-    case "copywriter":
-      return copywriterQuestions;
-
-    default:
-      return [];
-  }
-};
 
 /* ==========================================
    Rating Badge Color
