@@ -606,44 +606,41 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           )}
 
           {/* ── Leave Timeline Section (Calendar View & Grid View) ── */}
-          <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white mb-6">
-            {/* Header & Filter Controls */}
-            <div className="p-6 border-b border-neutral-200 bg-gradient-to-r from-neutral-50/80 to-indigo-50/20 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-indigo-100 rounded-xl text-indigo-700">
-                    <CalendarIcon className="w-5 h-5" />
-                  </div>
-                  <h3 className="text-lg font-bold text-neutral-850">Leave &amp; Holiday Timeline</h3>
+          <div className="bg-white border border-[#E5E7EB] shadow-sm rounded-xl overflow-hidden mb-6">
+            {/* Header & Filter Controls (Sticky) */}
+            <div className="sticky top-0 z-30 bg-white p-5 border-b border-[#E5E7EB] flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
+                  <CalendarIcon className="w-5 h-5" />
                 </div>
-                <p className="text-xs text-neutral-500 font-medium mt-1">Interactive overview of your leave history and company holiday calendar</p>
+                <div>
+                  <h3 className="text-[18px] font-bold text-neutral-850">Leave &amp; Holiday Timeline</h3>
+                </div>
               </div>
 
               {/* Controls: Mode Switcher & Filters */}
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-3">
                 {/* View Switcher */}
-                <div className="flex items-center bg-neutral-200/60 p-1 rounded-xl text-xs font-bold border border-neutral-200">
+                <div className="flex bg-neutral-100 border border-neutral-200/50 p-1 rounded-xl text-[13px] font-semibold">
                   <button
                     onClick={() => setTimelineViewMode("calendar")}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
                       timelineViewMode === "calendar"
-                        ? "bg-white text-indigo-700 shadow-sm font-extrabold"
-                        : "text-neutral-600 hover:text-neutral-900"
+                        ? "bg-white text-indigo-700 shadow-sm border border-neutral-200 font-bold"
+                        : "text-neutral-500 hover:text-neutral-900"
                     }`}
                   >
-                    <Squares2X2Icon className="w-4 h-4" />
-                    Calendar View
+                    <CalendarIcon className="w-4 h-4" /> Calendar View
                   </button>
                   <button
                     onClick={() => setTimelineViewMode("grid")}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
                       timelineViewMode === "grid"
-                        ? "bg-white text-indigo-700 shadow-sm font-extrabold"
-                        : "text-neutral-600 hover:text-neutral-900"
+                        ? "bg-white text-indigo-700 shadow-sm border border-neutral-200 font-bold"
+                        : "text-neutral-500 hover:text-neutral-900"
                     }`}
                   >
-                    <ListBulletIcon className="w-4 h-4" />
-                    Grid View
+                    <ListBulletIcon className="w-4 h-4" /> Grid View
                   </button>
                 </div>
 
@@ -651,7 +648,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-indigo-100 shadow-sm"
+                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
                 >
                   {[todayObj.getFullYear() - 1, todayObj.getFullYear(), todayObj.getFullYear() + 1].map((y) => (
                     <option key={y} value={y}>{y}</option>
@@ -662,7 +659,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 <select
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-indigo-100 shadow-sm"
+                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
                 >
                   {MONTH_NAMES.map((mName, idx) => (
                     <option key={idx + 1} value={idx + 1}>{mName}</option>
@@ -673,20 +670,20 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-indigo-100 shadow-sm"
+                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
                 >
                   <option value="All">All Statuses</option>
-                  <option value="Approved">Approved 🟢</option>
-                  <option value="Pending">Pending 🟡</option>
-                  <option value="Rejected">Rejected 🔴</option>
-                  <option value="Cancelled">Cancelled ⚪</option>
+                  <option value="Approved">Approved</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Rejected">Rejected</option>
+                  <option value="Cancelled">Cancelled</option>
                 </select>
 
                 {/* Leave Type Filter */}
                 <select
                   value={typeFilter}
                   onChange={(e) => setTypeFilter(e.target.value)}
-                  className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-indigo-100 shadow-sm"
+                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
                 >
                   <option value="All">All Leave Types</option>
                   <option value="Casual Leave">Casual Leave</option>
@@ -702,69 +699,84 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             {timelineViewMode === "calendar" ? (
               <div className="p-6">
                 {/* Navigation Controls */}
-                <div className="flex items-center justify-between mb-5">
-                  <div className="flex items-center gap-3">
-                    <h4 className="text-base font-extrabold text-neutral-850">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
+                  <div>
+                    <h4 className="text-xl font-bold text-neutral-900">
                       {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
                     </h4>
-                    <span className="text-xs font-semibold text-neutral-400">
-                      ({filteredTimelineRequests.length} leave requests found)
-                    </span>
+                    <p className="text-xs text-neutral-500 font-medium mt-1">Click any date to view leave and holiday details.</p>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => {
-                        if (selectedMonth === 1) {
-                          setSelectedMonth(12);
-                          setSelectedYear(prev => prev - 1);
-                        } else {
-                          setSelectedMonth(prev => prev - 1);
-                        }
-                      }}
-                      className="p-2 rounded-xl border border-neutral-200 hover:bg-neutral-100 text-neutral-600 transition-colors"
-                    >
-                      <ChevronLeftIcon className="w-4 h-4" />
-                    </button>
-
+                  <div className="flex items-center gap-3">
                     <button
                       onClick={() => {
                         setSelectedMonth(todayObj.getMonth() + 1);
                         setSelectedYear(todayObj.getFullYear());
                       }}
-                      className="px-3 py-1.5 text-xs font-bold rounded-xl border border-neutral-200 hover:bg-neutral-100 text-neutral-700 transition-colors"
+                      className="px-4 py-1.5 text-sm font-medium rounded-lg border border-neutral-200 hover:bg-neutral-50 text-neutral-700 transition-colors"
                     >
                       Today
                     </button>
 
-                    <button
-                      onClick={() => {
-                        if (selectedMonth === 12) {
-                          setSelectedMonth(1);
-                          setSelectedYear(prev => prev + 1);
-                        } else {
-                          setSelectedMonth(prev => prev + 1);
-                        }
-                      }}
-                      className="p-2 rounded-xl border border-neutral-200 hover:bg-neutral-100 text-neutral-600 transition-colors"
-                    >
-                      <ChevronRightIcon className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          if (selectedMonth === 1) {
+                            setSelectedMonth(12);
+                            setSelectedYear(prev => prev - 1);
+                          } else {
+                            setSelectedMonth(prev => prev - 1);
+                          }
+                        }}
+                        className="p-1.5 rounded-lg text-neutral-600 hover:bg-neutral-100 transition-colors"
+                      >
+                        <ChevronLeftIcon className="w-5 h-5" />
+                      </button>
+
+                      <span className="text-sm font-semibold w-28 text-center text-neutral-800">
+                        {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+                      </span>
+
+                      <button
+                        onClick={() => {
+                          if (selectedMonth === 12) {
+                            setSelectedMonth(1);
+                            setSelectedYear(prev => prev + 1);
+                          } else {
+                            setSelectedMonth(prev => prev + 1);
+                          }
+                        }}
+                        className="p-1.5 rounded-lg text-neutral-600 hover:bg-neutral-100 transition-colors"
+                      >
+                        <ChevronRightIcon className="w-5 h-5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
+                {/* Legend */}
+                <div className="flex flex-wrap gap-5 text-xs font-semibold text-neutral-600 mb-6 px-1">
+                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#16A34A]"></div> Approved</span>
+                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#E11D48]"></div> Rejected</span>
+                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#EAB308]"></div> Pending</span>
+                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#94A3B8]"></div> Cancelled</span>
+                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#F97316]"></div> Half Day</span>
+                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#A855F7]"></div> Holiday</span>
+                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#111827]"></div> Weekly Off</span>
+                </div>
+
                 {/* 7-column Calendar Header */}
-                <div className="grid grid-cols-7 gap-2 mb-2 text-center">
-                  {WEEKDAYS.map((wd, i) => (
-                    <div key={wd} className={`py-2 text-xs font-bold uppercase tracking-wider ${i === 0 || i === 6 ? "text-rose-500" : "text-neutral-500"}`}>
+                <div className="grid grid-cols-7 border-t border-l border-neutral-200">
+                  {WEEKDAYS.map((wd) => (
+                    <div key={wd} className="py-2.5 text-[11px] font-bold text-neutral-500 text-center uppercase tracking-wider border-b border-r border-neutral-200 bg-white">
                       {wd}
                     </div>
                   ))}
                 </div>
 
                 {/* Calendar Grid Cells */}
-                <div className="grid grid-cols-7 gap-2">
-                  {calendarGridDays.map((cell) => {
+                <div className="grid grid-cols-7 border-l border-neutral-200 bg-neutral-200 gap-px">
+                  {calendarGridDays.map((cell, idx) => {
                     const dateStr = cell.dateStr;
                     const isTodayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
                     const isToday = dateStr === isTodayStr;
@@ -782,8 +794,9 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
                     return (
                       <div
-                        key={dateStr}
+                        key={dateStr || `empty-${idx}`}
                         onClick={() => {
+                          if (!dateStr) return;
                           setSelectedDateEventsModal({
                             dateStr,
                             formattedDate: `${cell.day} ${MONTH_NAMES[cell.month - 1]} ${cell.year}`,
@@ -792,89 +805,67 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                             scheduleDay,
                           });
                         }}
-                        className={`min-h-[105px] p-2.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+                        className={`min-h-[85px] p-2 transition-colors flex flex-col justify-start relative group ${
                           !cell.isCurrentMonth
-                            ? "bg-neutral-50/40 border-neutral-100 text-neutral-300 opacity-60"
+                            ? "bg-neutral-50/50 text-neutral-400"
                             : isToday
-                            ? "bg-indigo-50/40 border-indigo-400 ring-2 ring-indigo-200/50 shadow-sm"
-                            : isWeeklyOff
-                            ? "bg-slate-50/60 border-neutral-200 hover:border-indigo-300"
-                            : "bg-white border-neutral-200 hover:border-indigo-300 hover:shadow-md"
-                        }`}
+                            ? "bg-indigo-50/30 ring-1 ring-inset ring-indigo-500 z-10"
+                            : "bg-white"
+                        } ${dateStr ? "cursor-pointer hover:bg-neutral-50 hover:ring-1 hover:ring-inset hover:ring-blue-300 hover:z-20" : ""}`}
                       >
-                        <div className="flex items-center justify-between">
-                          <span className={`text-xs font-bold ${
-                            isToday 
-                              ? "w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-extrabold shadow-sm"
-                              : cell.isCurrentMonth
-                              ? isWeeklyOff ? "text-rose-500 font-extrabold" : "text-neutral-800"
-                              : "text-neutral-400"
+                        {/* Day Header */}
+                        <div className="flex justify-between items-start mb-1">
+                          <span className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${
+                            isToday ? "bg-indigo-600 text-white font-bold" : "text-neutral-700"
                           }`}>
                             {cell.day}
                           </span>
-
-                          {/* Holiday Badge icon */}
-                          {holidayOnDate && (
-                            <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 border border-purple-200 flex items-center gap-0.5" title={holidayOnDate.name}>
-                              🎉 Holiday
-                            </span>
+                          
+                          {isWeeklyOff && (
+                            <span className="text-[10px] text-neutral-400 font-bold uppercase mt-1 mr-1">{scheduleDay?.holiday_type || "SUN"}</span>
                           )}
                         </div>
 
-                        {/* Day Events Pills */}
-                        <div className="space-y-1 my-1">
+                        {/* Events list */}
+                        <div className="flex flex-col gap-1 w-full flex-1">
                           {/* Leaves */}
-                          {leavesOnDate.slice(0, 2).map((l: any) => {
+                          {leavesOnDate.slice(0, 1).map((l: any) => {
                             const isApproved = l.status === "Approved";
                             const isRejected = l.status === "Rejected";
                             const isPending = l.status === "Pending";
-                            const isCancelled = l.status === "Cancelled";
                             const isHalfDay = l.leave_duration === "First Half" || l.leave_duration === "Second Half";
 
-                            const badgeClass = isHalfDay
-                              ? "bg-orange-100 text-orange-800 border-orange-200"
-                              : isApproved
-                              ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                              : isRejected
-                              ? "bg-rose-100 text-rose-800 border-rose-200"
-                              : isPending
-                              ? "bg-amber-100 text-amber-800 border-amber-200"
-                              : "bg-slate-100 text-slate-700 border-slate-200";
+                            const dotColor = isHalfDay ? "bg-[#F97316]" : isApproved ? "bg-[#16A34A]" : isRejected ? "bg-[#E11D48]" : isPending ? "bg-[#EAB308]" : "bg-[#94A3B8]";
 
                             return (
                               <div
                                 key={l.id}
-                                className={`text-[10px] font-extrabold px-1.5 py-1 rounded-lg border truncate flex items-center justify-between ${badgeClass}`}
+                                className="flex items-center gap-1.5 px-1.5 py-1 rounded text-[11px] font-semibold text-neutral-700 truncate w-full"
                               >
+                                <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`}></div>
                                 <span className="truncate">{l.leave_type || "Leave"}</span>
-                                <span className="text-[9px] opacity-80 uppercase ml-1 font-bold">{isHalfDay ? "Half" : l.status}</span>
                               </div>
                             );
                           })}
 
-                          {leavesOnDate.length > 2 && (
-                            <div className="text-[9px] font-bold text-indigo-600 text-right">
-                              +{leavesOnDate.length - 2} more
-                            </div>
-                          )}
-
-                          {/* Holiday Name */}
+                          {/* Holiday */}
                           {holidayOnDate && leavesOnDate.length === 0 && (
-                            <div className="text-[10px] font-extrabold text-purple-800 bg-purple-50 p-1 rounded-lg border border-purple-200 truncate">
-                              {holidayOnDate.name || "Company Holiday"}
+                            <div className="flex items-center gap-1.5 px-1.5 py-1 rounded text-[11px] font-semibold text-neutral-700 truncate w-full">
+                              <div className={`w-2 h-2 rounded-full shrink-0 ${
+                                holidayOnDate.holiday_type?.toLowerCase().includes("national") ? "bg-blue-500" :
+                                holidayOnDate.holiday_type?.toLowerCase().includes("company") ? "bg-emerald-500" :
+                                "bg-purple-500"
+                              }`}></div>
+                              <span className="truncate">{holidayOnDate.name}</span>
                             </div>
                           )}
 
-                          {/* Weekly Off */}
-                          {isWeeklyOff && !holidayOnDate && leavesOnDate.length === 0 && (
-                            <div className="text-[9px] font-bold text-slate-400 italic">
-                              Weekly Off
+                          {/* More indicator */}
+                          {leavesOnDate.length > 1 && (
+                            <div className="text-[10px] font-bold text-neutral-500 pl-2 mt-0.5">
+                              +{leavesOnDate.length - 1} More
                             </div>
                           )}
-                        </div>
-
-                        <div className="text-[9px] text-neutral-400 text-right font-medium">
-                          {leavesOnDate.length > 0 ? `${leavesOnDate.length} event` : ""}
                         </div>
                       </div>
                     );
@@ -883,37 +874,38 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               </div>
             ) : (
               /* ── Mode 2: Grid View ── */
-              <div className="p-6 space-y-8">
+              <div className="bg-white">
                 {/* Section 1: Employee Leave History */}
-                <div>
+                <div className="pt-6 px-6 pb-2">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <CalendarIcon className="w-5 h-5 text-indigo-600" />
-                      <h4 className="text-base font-extrabold text-neutral-850">Section 1 – Employee Leave History</h4>
-                    </div>
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200">
-                      {filteredTimelineRequests.length} record{filteredTimelineRequests.length === 1 ? "" : "s"}
+                    <h4 className="text-[16px] font-semibold text-neutral-900">📋 Employee Leave History</h4>
+                    <span className="text-[13px] font-medium text-neutral-500">
+                      {filteredTimelineRequests.length} Record{filteredTimelineRequests.length === 1 ? "" : "s"}
                     </span>
                   </div>
 
-                  <div className="overflow-x-auto rounded-2xl border border-neutral-200">
+                  <div className="w-full">
                     <table className="w-full border-collapse text-left">
                       <thead>
-                        <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 text-xs font-bold uppercase tracking-wider">
-                          <th className="p-3.5 pl-5">Date</th>
-                          <th className="p-3.5">Day</th>
-                          <th className="p-3.5">Leave Type</th>
-                          <th className="p-3.5 text-center">Status</th>
-                          <th className="p-3.5 text-center">Duration</th>
-                          <th className="p-3.5">Manager Review</th>
-                          <th className="p-3.5 text-right pr-5">Actions</th>
+                        <tr className="border-b border-[#E5E7EB] text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
+                          <th className="py-3 px-4 font-semibold">Date</th>
+                          <th className="py-3 px-4 font-semibold">Day</th>
+                          <th className="py-3 px-4 font-semibold">Leave Type</th>
+                          <th className="py-3 px-4 font-semibold text-center">Status</th>
+                          <th className="py-3 px-4 font-semibold text-center">Duration</th>
+                          <th className="py-3 px-4 font-semibold">Manager Review</th>
+                          <th className="py-3 px-4 font-semibold text-right">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-neutral-100 text-xs">
+                      <tbody className="text-[14px]">
                         {filteredTimelineRequests.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="p-8 text-center text-neutral-400 font-medium bg-neutral-50/30">
-                              No leave records found matching your filters.
+                            <td colSpan={7} className="py-12">
+                              <div className="flex flex-col items-center justify-center text-center">
+                                <span className="text-3xl mb-2">📅</span>
+                                <p className="text-[14px] font-semibold text-neutral-700">No leave records found.</p>
+                                <p className="text-[13px] text-neutral-500 mt-1">Apply a leave request to see your history here.</p>
+                              </div>
                             </td>
                           </tr>
                         ) : (
@@ -928,39 +920,45 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                             const isPending = req.status === "Pending";
                             const isCancelled = req.status === "Cancelled";
 
+                            // Dot style badge
+                            const badgeColor = isApproved ? "bg-green-100 text-green-700" :
+                                               isRejected ? "bg-red-100 text-red-700" :
+                                               isCancelled ? "bg-gray-100 text-gray-700" :
+                                               "bg-amber-100 text-amber-700";
+                            const dotColor = isApproved ? "bg-green-500" :
+                                             isRejected ? "bg-red-500" :
+                                             isCancelled ? "bg-gray-500" :
+                                             "bg-amber-500";
+
                             return (
-                              <tr key={req.id} className="hover:bg-neutral-50/50 transition-colors">
-                                <td className="p-3.5 pl-5 font-bold text-neutral-800">
+                              <tr key={req.id} className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB] transition-colors cursor-pointer">
+                                <td className="py-3 px-4 font-medium text-neutral-900">
                                   {isPermission ? req.permission_date : `${req.from_date} to ${req.to_date}`}
                                 </td>
-                                <td className="p-3.5 font-semibold text-neutral-500">{dayName}</td>
-                                <td className="p-3.5 font-bold text-indigo-700">
+                                <td className="py-3 px-4 text-neutral-500">{dayName}</td>
+                                <td className="py-3 px-4 font-medium text-neutral-900">
                                   {isPermission ? "Permission Request" : req.leave_type}
                                 </td>
-                                <td className="p-3.5 text-center">
-                                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(req.status)}`}>
-                                    <span className={`h-1.5 w-1.5 rounded-full ${
-                                      isApproved ? "bg-emerald-600" :
-                                      isRejected ? "bg-rose-600" :
-                                      isCancelled ? "bg-slate-600" : "bg-amber-500 animate-pulse"
-                                    }`} />
+                                <td className="py-3 px-4 text-center">
+                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${badgeColor}`}>
+                                    <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></div>
                                     {req.status}
                                   </span>
                                 </td>
-                                <td className="p-3.5 text-center font-bold text-neutral-700">
+                                <td className="py-3 px-4 text-center text-neutral-700">
                                   {isPermission ? "Permission" : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
                                 </td>
-                                <td className="p-3.5 text-neutral-600 font-medium">
-                                  <div>
-                                    <p className="font-bold text-neutral-800 text-xs">{req.reporting_manager || "Manager"}</p>
-                                    <p className="text-[11px] text-neutral-400 truncate max-w-xs">{req.reason || "No reason specified"}</p>
+                                <td className="py-3 px-4">
+                                  <div className="flex flex-col">
+                                    <span className="text-neutral-900 font-medium">{req.reporting_manager || "Manager"}</span>
+                                    <span className="text-[13px] text-neutral-500 truncate max-w-[200px]">{req.reason || "No reason"}</span>
                                   </div>
                                 </td>
-                                <td className="p-3.5 text-right pr-5">
+                                <td className="py-3 px-4 text-right">
                                   {isPending && (
                                     <button
-                                      onClick={() => onCancel(req.id)}
-                                      className="text-xs text-rose-600 font-bold hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 transition-all"
+                                      onClick={(e) => { e.stopPropagation(); onCancel(req.id); }}
+                                      className="text-[13px] text-red-600 font-medium hover:underline"
                                     >
                                       Cancel
                                     </button>
@@ -975,33 +973,35 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   </div>
                 </div>
 
+                <hr className="border-[#E5E7EB] my-2 mx-6" />
+
                 {/* Section 2: Upcoming & Published Holidays Schedule (Read-Only) */}
-                <div>
+                <div className="pt-4 px-6 pb-6">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <SparklesIcon className="w-5 h-5 text-purple-600" />
-                      <h4 className="text-base font-extrabold text-neutral-850">Section 2 – Company Holiday Schedule</h4>
-                    </div>
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                      Read-Only HR Published Schedule
+                    <h4 className="text-[16px] font-semibold text-neutral-900">✨ Upcoming Holidays</h4>
+                    <span className="text-[12px] font-medium px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 border border-gray-200">
+                      Read Only
                     </span>
                   </div>
 
-                  <div className="overflow-x-auto rounded-2xl border border-neutral-200">
+                  <div className="w-full">
                     <table className="w-full border-collapse text-left">
                       <thead>
-                        <tr className="bg-purple-50/50 border-b border-neutral-200 text-purple-900 text-xs font-bold uppercase tracking-wider">
-                          <th className="p-3.5 pl-5">Date</th>
-                          <th className="p-3.5">Day</th>
-                          <th className="p-3.5">Holiday Name</th>
-                          <th className="p-3.5">Holiday Type</th>
+                        <tr className="border-b border-[#E5E7EB] text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
+                          <th className="py-3 px-4 font-semibold">Date</th>
+                          <th className="py-3 px-4 font-semibold">Day</th>
+                          <th className="py-3 px-4 font-semibold">Holiday Name</th>
+                          <th className="py-3 px-4 font-semibold">Holiday Type</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-neutral-100 text-xs">
+                      <tbody className="text-[14px]">
                         {allYearHolidays.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="p-8 text-center text-neutral-400 font-medium bg-neutral-50/30">
-                              No published company holidays available.
+                            <td colSpan={4} className="py-12">
+                               <div className="flex flex-col items-center justify-center text-center">
+                                <span className="text-3xl mb-2">🏝️</span>
+                                <p className="text-[14px] font-semibold text-neutral-700">No holidays published.</p>
+                              </div>
                             </td>
                           </tr>
                         ) : (
@@ -1009,15 +1009,26 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                             const hDate = new Date(h.date);
                             const dayName = WEEKDAYS[hDate.getDay()] || h.day || "—";
 
+                            const typeLower = (h.holiday_type || "").toLowerCase();
+                            const badgeColor = typeLower.includes("national") ? "bg-blue-100 text-blue-700" :
+                                               typeLower.includes("festival") ? "bg-purple-100 text-purple-700" :
+                                               typeLower.includes("weekly off") ? "bg-gray-100 text-gray-700" :
+                                               "bg-green-100 text-green-700";
+                            const dotColor = typeLower.includes("national") ? "bg-blue-500" :
+                                             typeLower.includes("festival") ? "bg-purple-500" :
+                                             typeLower.includes("weekly off") ? "bg-gray-500" :
+                                             "bg-green-500";
+
                             return (
-                              <tr key={h.id} className="hover:bg-purple-50/20 transition-colors">
-                                <td className="p-3.5 pl-5 font-bold text-neutral-800">{h.date}</td>
-                                <td className="p-3.5 font-semibold text-neutral-500">{dayName}</td>
-                                <td className="p-3.5 font-extrabold text-purple-900 flex items-center gap-2">
-                                  <span>🎉</span> {h.name}
+                              <tr key={h.id} className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB] transition-colors cursor-pointer">
+                                <td className="py-3 px-4 font-medium text-neutral-900">{h.date}</td>
+                                <td className="py-3 px-4 text-neutral-500">{dayName}</td>
+                                <td className="py-3 px-4 font-medium text-neutral-900">
+                                  {h.name}
                                 </td>
-                                <td className="p-3.5">
-                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                                <td className="py-3 px-4">
+                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${badgeColor}`}>
+                                    <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></div>
                                     {h.holiday_type || "Company Holiday"}
                                   </span>
                                 </td>
@@ -1031,95 +1042,102 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 </div>
               </div>
             )}
-          </Card>
+          </div>
 
-          {/* Date Click Events Popup Modal */}
-          {selectedDateEventsModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-md mx-4 overflow-hidden">
-                {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-gradient-to-r from-indigo-50 to-purple-50">
-                  <div className="flex items-center gap-2">
-                    <CalendarIcon className="w-5 h-5 text-indigo-600" />
-                    <h3 className="text-base font-extrabold text-neutral-800">{selectedDateEventsModal.formattedDate}</h3>
+          {/* Side Drawer for Date Events */}
+          <AnimatePresence>
+            {selectedDateEventsModal && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setSelectedDateEventsModal(null)}
+                  className="fixed inset-0 z-40 bg-neutral-900/20 backdrop-blur-[2px]"
+                />
+                <motion.div
+                  initial={{ x: "100%" }}
+                  animate={{ x: 0 }}
+                  exit={{ x: "100%" }}
+                  transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                  className="fixed inset-y-0 right-0 z-50 w-full md:w-[400px] bg-white shadow-2xl border-l border-neutral-200 flex flex-col"
+                >
+                  <div className="flex items-center justify-between px-6 py-5 border-b border-neutral-100">
+                    <h3 className="text-xl font-bold text-neutral-800">{selectedDateEventsModal.formattedDate}</h3>
+                    <button
+                      onClick={() => setSelectedDateEventsModal(null)}
+                      className="p-1.5 rounded-full text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
+                    >
+                      <XMarkIcon className="w-5 h-5" />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => setSelectedDateEventsModal(null)}
-                    className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
-                  >
-                    <XMarkIcon className="w-5 h-5" />
-                  </button>
-                </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                    {/* Employee Leave Section */}
+                    <div>
+                      <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-4 border-b border-neutral-100 pb-2">Employee Leave</h4>
+                      {selectedDateEventsModal.leaves.length === 0 ? (
+                        <p className="text-sm text-neutral-500">None</p>
+                      ) : (
+                        <div className="space-y-6">
+                          {selectedDateEventsModal.leaves.map((l: any) => {
+                            const isApproved = l.status === "Approved";
+                            const isRejected = l.status === "Rejected";
+                            const isPending = l.status === "Pending";
+                            
+                            const textColor = isApproved ? "text-emerald-600" : isRejected ? "text-rose-600" : isPending ? "text-amber-600" : "text-neutral-500";
 
-                {/* Body */}
-                <div className="p-6 space-y-5">
-                  {/* Employee Leave Section */}
-                  <div>
-                    <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2">Employee Leave Details</h4>
-                    {selectedDateEventsModal.leaves.length === 0 ? (
-                      <p className="text-xs text-neutral-500 italic bg-neutral-50 p-3 rounded-xl border border-neutral-100">
-                        No leave requests on this date.
-                      </p>
-                    ) : (
-                      <div className="space-y-3">
-                        {selectedDateEventsModal.leaves.map((l: any) => (
-                          <div key={l.id} className="bg-neutral-50 p-3.5 rounded-xl border border-neutral-200 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-extrabold text-neutral-800">{l.leave_type}</span>
-                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${getStatusColor(l.status)}`}>
-                                {l.status}
-                              </span>
-                            </div>
-                            <div className="text-xs text-neutral-600 space-y-1 font-medium">
-                              <p><strong>Duration:</strong> {l.total_days} day(s) ({l.leave_duration || "Full Day"})</p>
-                              <p><strong>Manager:</strong> {l.reporting_manager || "Manager"}</p>
-                              <p><strong>Reason:</strong> {l.reason || "N/A"}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <hr className="border-neutral-100" />
-
-                  {/* Company Holiday Section */}
-                  <div>
-                    <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2">Company Holiday</h4>
-                    {selectedDateEventsModal.holiday ? (
-                      <div className="bg-purple-50 p-3.5 rounded-xl border border-purple-200 flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-extrabold text-purple-900 flex items-center gap-1.5">
-                            🎉 {selectedDateEventsModal.holiday.name}
-                          </p>
-                          <p className="text-xs text-purple-700 font-semibold mt-0.5">
-                            {selectedDateEventsModal.holiday.holiday_type || "Company Holiday"}
-                          </p>
+                            return (
+                              <div key={l.id} className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm font-bold text-neutral-800">{l.leave_type}</span>
+                                  <span className={`text-xs font-bold ${textColor}`}>{l.status}</span>
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-neutral-500">Duration</span>
+                                    <span className="text-neutral-800 font-medium">{l.total_days} Day{l.total_days > 1 ? "s" : ""}</span>
+                                  </div>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-neutral-500">Manager</span>
+                                    <span className="text-neutral-800 font-medium">{l.reporting_manager || "HR Manager"}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                        <span className="px-2 py-1 rounded-lg bg-purple-200 text-purple-800 text-[10px] font-extrabold">
-                          Published
-                        </span>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-neutral-500 italic bg-neutral-50 p-3 rounded-xl border border-neutral-100">
-                        None
-                      </p>
-                    )}
-                  </div>
-                </div>
+                      )}
+                    </div>
 
-                {/* Footer */}
-                <div className="px-6 pb-5 flex justify-end">
-                  <Button
-                    onClick={() => setSelectedDateEventsModal(null)}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-xs shadow-sm transition-all"
-                  >
-                    Close
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
+                    {/* Company Holiday Section */}
+                    <div>
+                      <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-4 border-b border-neutral-100 pb-2">Holiday</h4>
+                      {selectedDateEventsModal.holiday ? (
+                        <div className="space-y-3">
+                          <p className="text-sm font-bold text-neutral-800">{selectedDateEventsModal.holiday.name}</p>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-neutral-500">Type</span>
+                            <span className="text-neutral-800 font-medium">{selectedDateEventsModal.holiday.holiday_type || "Company Holiday"}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-neutral-500">None</p>
+                      )}
+                    </div>
+
+                    {/* Weekly Off Section */}
+                    <div>
+                      <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-4 border-b border-neutral-100 pb-2">Weekly Off</h4>
+                      <p className="text-sm font-medium text-neutral-800">
+                        {selectedDateEventsModal.scheduleDay?.is_weekend ? selectedDateEventsModal.scheduleDay.holiday_type || "Yes" : "No"}
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
         </>
       )}
 

@@ -104,6 +104,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const [confirmModal, setConfirmModal] = useState(false);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [birthdayEmployees, setBirthdayEmployees] = useState<any[]>([]);
+  const [birthdayModal, setBirthdayModal] = useState<boolean>(false);
   const [popup, setPopup] = useState({
     show: false,
     type: "success",
@@ -936,10 +937,13 @@ const EmployeeDashboardPage: React.FC = () => {
   }, [currentEmployee, managerName]);
 
   useEffect(() => {
-    // Don't auto-open birthday modal anymore
-    // if (bdays.length > 0) {
-    //   setBirthdayModal(true);
-    // }
+    if (
+      birthdayEmployees.length > 0 &&
+      !sessionStorage.getItem("birthday_popup_shown")
+    ) {
+      setBirthdayModal(true);
+      sessionStorage.setItem("birthday_popup_shown", "true");
+    }
   }, [birthdayEmployees]);
 
   useEffect(() => {
@@ -1034,6 +1038,17 @@ const EmployeeDashboardPage: React.FC = () => {
         popup={popup}
         onClose={() => setPopup({ ...popup, show: false })}
       />
+
+      {birthdayModal && birthdayEmployees.length > 0 && (
+        <BirthdayModal
+          birthdayEmployees={birthdayEmployees}
+          isMyBirthday={isMyBirthday}
+          currentEmployee={currentEmployee}
+          user={user}
+          onClose={() => setBirthdayModal(false)}
+          onSendWish={sendBirthdayWish}
+        />
+      )}
 
       <div className="min-h-screen bg-neutral-50">
         <NotificationsPanel
