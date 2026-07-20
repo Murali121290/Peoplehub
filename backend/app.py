@@ -99,10 +99,6 @@ def create_app():
             "ALTER TABLE attendance "
             "ADD COLUMN IF NOT EXISTS total_gap_minutes INTEGER DEFAULT 0"
         ))
-        connection.execute(text(
-            "ALTER TABLE teams "
-            "ADD COLUMN IF NOT EXISTS workflow_stage VARCHAR(100)"
-        ))
         connection.commit()
 
     # Scheduler configuration

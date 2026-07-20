@@ -65,11 +65,6 @@ class Team(db.Model):
         db.Text
     )
 
-    workflow_stage = db.Column(
-        db.String(100),
-        nullable=True
-    )
-
     created_at = db.Column(
         db.DateTime,
         default=datetime.utcnow
@@ -93,7 +88,6 @@ class Team(db.Model):
             "id": self.id,
             "name": self.name,
             "description": self.description,
-            "workflow_stage": self.workflow_stage,
 
             "created_at": (
                 self.created_at.isoformat()
@@ -208,7 +202,6 @@ class User(db.Model):
 
             "team_id": self.team_id,
             "team_name": self.team.name if self.team else None,
-            "workflow_stage": self.team.workflow_stage if self.team else None,
 
             "access_level": self.access_level,
             "status": self.status,

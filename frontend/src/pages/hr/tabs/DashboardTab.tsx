@@ -105,7 +105,6 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams
                         id: team.team_id,
                         name: team.team_name,
                         description: "",
-                        workflow_stage: "Project Management"
                       };
                       onEditTeam(fullTeam);
                     }}

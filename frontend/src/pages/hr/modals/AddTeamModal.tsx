@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
-import { FormField, Input, Textarea, Select } from "../../../components/ui/Form";
+import { FormField, Input, Textarea } from "../../../components/ui/Form";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { apiService } from "../../../services/api";
 import { toast } from "react-hot-toast";
@@ -29,7 +29,6 @@ export const AddTeamModal: React.FC<AddTeamModalProps> = ({
 }) => {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [workflowStage, setWorkflowStage] = useState("Project Management");
   const [roles, setRoles] = useState<RoleInput[]>([{ name: "", description: "" }]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -38,7 +37,6 @@ export const AddTeamModal: React.FC<AddTeamModalProps> = ({
     if (isEdit && teamData) {
       setName(teamData.name || "");
       setDescription(teamData.description || "");
-      setWorkflowStage(teamData.workflow_stage || "Project Management");
 
       // Fetch all roles for this team
       apiService
@@ -64,7 +62,6 @@ export const AddTeamModal: React.FC<AddTeamModalProps> = ({
     } else {
       setName("");
       setDescription("");
-      setWorkflowStage("Project Management");
       setRoles([{ name: "", description: "" }]);
     }
   }, [isOpen, isEdit, teamData]);
@@ -98,7 +95,6 @@ export const AddTeamModal: React.FC<AddTeamModalProps> = ({
       const payload = {
         name,
         description,
-        workflow_stage: workflowStage,
         roles: filteredRoles,
       };
 
@@ -113,7 +109,6 @@ export const AddTeamModal: React.FC<AddTeamModalProps> = ({
       // Reset form fields
       setName("");
       setDescription("");
-      setWorkflowStage("Project Management");
       setRoles([{ name: "", description: "" }]);
 
       onSuccess();
@@ -164,25 +159,6 @@ export const AddTeamModal: React.FC<AddTeamModalProps> = ({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Describe the team's primary function (optional)"
-          />
-        </FormField>
-
-        <FormField label="WORKFLOW STAGE">
-          <Select
-            value={workflowStage}
-            onChange={(val) => setWorkflowStage(val)}
-            options={[
-              { label: "Project Management", value: "Project Management" },
-              { label: "Editorial", value: "Editorial" },
-              { label: "Production", value: "Production" },
-              { label: "Template", value: "Template" },
-              { label: "Graphics", value: "Graphics" },
-              { label: "XML Conversion", value: "XML Conversion" },
-              { label: "Non-XML Conversion", value: "Non-XML Conversion" },
-              { label: "Accessibility", value: "Accessibility" },
-              { label: "Index", value: "Index" },
-              { label: "Design", value: "Design" },
-            ]}
           />
         </FormField>
 

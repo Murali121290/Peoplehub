@@ -303,8 +303,7 @@ def get_teams():
                 {
                     'id': team.id,
                     'name': team.name,
-                    'description': team.description,
-                    'workflow_stage': team.workflow_stage
+                    'description': team.description
                 }
                 for team in teams
             ]
@@ -346,7 +345,6 @@ def create_team():
         data = request.get_json()
         name = data.get('name')
         description = data.get('description')
-        workflow_stage = data.get('workflow_stage')
         roles_data = data.get('roles', [])
 
         if not name:
@@ -359,8 +357,7 @@ def create_team():
 
         team = Team(
             name=name,
-            description=description,
-            workflow_stage=workflow_stage
+            description=description
         )
         db.session.add(team)
         db.session.commit()
@@ -401,7 +398,6 @@ def update_team(team_id):
 
         name = data.get('name')
         description = data.get('description')
-        workflow_stage = data.get('workflow_stage')
         roles_data = data.get('roles', [])
 
         if not name:
@@ -414,7 +410,6 @@ def update_team(team_id):
 
         team.name = name
         team.description = description
-        team.workflow_stage = workflow_stage
 
         # Update roles
         existing_roles = {r.id: r for r in Role.query.filter_by(team_id=team_id).all()}
