@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
 import { Card } from "../../../components/ui/Card";
-import { 
-  CalendarIcon, 
-  ListBulletIcon, 
-  ClockIcon, 
-  SparklesIcon, 
-  ChevronLeftIcon, 
-  ChevronRightIcon 
+import {
+  CalendarIcon,
+  ListBulletIcon,
+  ClockIcon,
+  SparklesIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon
 } from "@heroicons/react/24/outline";
-
-const API_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
+import apiService from "../../../services/api";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -36,14 +34,10 @@ export const HolidayCalendarWidget: React.FC = () => {
   const fetchHolidayCalendar = async () => {
     setIsLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await axios.get(`${API_URL}/employee/holidays`, {
+      const res = await apiService.get(`/employee/holidays`, {
         params: {
           month: selectedMonth,
           year: selectedYear
-        },
-        headers: {
-          Authorization: `Bearer ${token}`
         }
       });
       setSchedule(res.data.current_month_schedule || []);

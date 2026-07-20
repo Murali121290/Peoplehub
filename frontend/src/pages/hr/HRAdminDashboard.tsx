@@ -30,11 +30,63 @@ import AddEmployeeModal from "./modals/AddEmployeeModal";
 import ProfileCompleteModal from "./modals/ProfileCompleteModal";
 import AddTeamModal from "./modals/AddTeamModal";
 import { Tabs } from "../../components/ui/Tabs";
-import {
-  NAV,
-  DEFAULT_NEW_EMP,
-  DEFAULT_PROFILE_DATA,
-} from "./data/hrMockData";
+const NAV = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "directory", label: "Staff Directory" },
+  { id: "attendance", label: "Attendance" },
+  { id: "shift", label: "Shift Requests" },
+  { id: "holiday", label: "Holiday Calendar" },
+  { id: "payroll", label: "Payroll" },
+  { id: "performance", label: "Performance" },
+  { id: "documents", label: "Documents" },
+  { id: "settings", label: "Settings" },
+];
+
+const DEFAULT_NEW_EMP = {
+  id: "",
+  user_id: "",
+  employee_id: "",
+  first_name: "",
+  last_name: "",
+  email: "",
+  phone: "",
+  role_id: "",
+  access_level: "",
+  company_email: "",
+  password: "",
+  team_id: "",
+  department: "",
+  designation: "",
+  role: "",
+  reporting_manager: "",
+  joining_date: "",
+  salary: "",
+  shift_timing: "",
+  status: "Active",
+};
+
+const DEFAULT_PROFILE_DATA = {
+  dob: "",
+  gender: "",
+  marital_status: "",
+  blood_group: "",
+  address: "",
+  city: "",
+  state: "",
+  country: "",
+  pincode: "",
+  pan_number: "",
+  aadhaar_number: "",
+  bank_name: "",
+  account_number: "",
+  ifsc_code: "",
+  qualification: "",
+  college: "",
+  passing_year: "",
+  skills: "",
+  emergency_contact_name: "",
+  emergency_contact_number: "",
+};
 
 const NAV_ICONS: Record<string, React.ElementType> = {
   dashboard: HomeIcon,
@@ -97,7 +149,7 @@ export default function HRAdminDashboard() {
       const data = await response.json();
       const formatted = data.map((leave: any) => {
         const isPermission = leave.request_type === "Permission";
-        
+
         const formatTime = (timeStr: string) => {
           if (!timeStr) return "";
           const parts = timeStr.split(":");
@@ -322,37 +374,37 @@ export default function HRAdminDashboard() {
 
       const formData = new FormData();
 
-      
+
       formData.append("employee_id", newEmp.employee_id);
-formData.append("first_name", newEmp.first_name);
-formData.append("last_name", newEmp.last_name);
-formData.append("email", newEmp.email);
-formData.append("phone", newEmp.phone);
-formData.append("joining_date", newEmp.joining_date);
-formData.append("salary", newEmp.salary);
+      formData.append("first_name", newEmp.first_name);
+      formData.append("last_name", newEmp.last_name);
+      formData.append("email", newEmp.email);
+      formData.append("phone", newEmp.phone);
+      formData.append("joining_date", newEmp.joining_date);
+      formData.append("salary", newEmp.salary);
 
-formData.append("team_id", newEmp.team_id);
-formData.append("department", newEmp.department || "");
-formData.append("designation", newEmp.designation || "");
+      formData.append("team_id", newEmp.team_id);
+      formData.append("department", newEmp.department || "");
+      formData.append("designation", newEmp.designation || "");
 
-formData.append("role", newEmp.role);
-formData.append("role_id", String(newEmp.role_id || ""));
+      formData.append("role", newEmp.role);
+      formData.append("role_id", String(newEmp.role_id || ""));
 
-formData.append("reporting_manager", newEmp.reporting_manager);
+      formData.append("reporting_manager", newEmp.reporting_manager);
 
-formData.append("company_email", newEmp.company_email);
-formData.append("password", newEmp.password);
-formData.append("access_level", newEmp.access_level);
+      formData.append("company_email", newEmp.company_email);
+      formData.append("password", newEmp.password);
+      formData.append("access_level", newEmp.access_level);
 
-formData.append("status", newEmp.status);
-formData.append(
-  "shift_timing",
-  newEmp.shift_timing || ""
-);
+      formData.append("status", newEmp.status);
+      formData.append(
+        "shift_timing",
+        newEmp.shift_timing || ""
+      );
 
-if (profileImage) {
-    formData.append("profile_image", profileImage);
-}
+      if (profileImage) {
+        formData.append("profile_image", profileImage);
+      }
 
       // Determine method and URL based on edit mode
       const method = isEditMode ? "PATCH" : "POST";
@@ -449,9 +501,6 @@ if (profileImage) {
             <div>
               <div className="text-base font-extrabold text-neutral-800">
                 HR Admin Dashboard
-              </div>
-              <div className="text-[11px] text-neutral-500">
-                Full Access • All Features • Manage Everything
               </div>
             </div>
           </div>

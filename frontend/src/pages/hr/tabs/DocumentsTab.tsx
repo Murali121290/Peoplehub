@@ -2,8 +2,14 @@ import React from 'react';
 import { DocumentTextIcon } from '@heroicons/react/24/outline';
 import Panel from '../components/Panel';
 import { Button } from '../../../components/ui/Button';
-import { HR_LETTERS } from '../data/hrMockData';
-
+const HR_LETTERS = [
+  "Experience Letter",
+  "Bonafide Certificate",
+  "NOC",
+  "Employment Contract",
+  "Salary Certificate",
+  "Relieving Letter",
+];
 const DOCS = [
   "Corporate Policy Handbook v2026.pdf",
   "Employee Onboarding Pack.zip",

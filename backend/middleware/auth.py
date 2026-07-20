@@ -39,7 +39,7 @@ def auth_required(f):
 
             return jsonify({
                 'error': str(e)
-            }), 422
+            }), 401
 
     return wrapper
 
@@ -90,7 +90,7 @@ def role_required(*allowed_roles):
 
                 return jsonify({
                     'error': str(e)
-                }), 422
+                }), 401
 
         return wrapper
 
@@ -141,7 +141,7 @@ def access_level_required(*allowed_levels):
 
                 return jsonify({
                     "error": str(e)
-                }), 422
+                }), 401
 
         return wrapper
 
