@@ -127,7 +127,8 @@ const TeamOverviewTab: React.FC<TeamOverviewTabProps> = ({
                     {Object.entries(rolesGroup).length === 0 ? (
                       <p className="text-center py-6 text-neutral-500">No employees in this team</p>
                     ) : (
-                      Object.entries(rolesGroup).map(([roleName, emps]: [string, any[]]) => {
+                      Object.entries(rolesGroup).map(([roleName, emps]) => {
+                        const employees = emps as any[];
                         const roleKey = `${team.team_id}-${roleName}`;
                         const isRoleExpanded = expandedRole === roleKey;
 
@@ -144,7 +145,7 @@ const TeamOverviewTab: React.FC<TeamOverviewTabProps> = ({
                                 </div>
                                 <div>
                                   <p className="font-semibold text-neutral-900">{roleName}</p>
-                                  <p className="text-xs text-neutral-500 mt-0.5">{emps.length} {emps.length === 1 ? 'employee' : 'employees'}</p>
+                                  <p className="text-xs text-neutral-500 mt-0.5">{employees.length} {employees.length === 1 ? 'employee' : 'employees'}</p>
                                 </div>
                               </div>
                               <ChevronDownIcon
@@ -156,7 +157,7 @@ const TeamOverviewTab: React.FC<TeamOverviewTabProps> = ({
                             {isRoleExpanded && (
                               <div className="border-t border-neutral-100 bg-neutral-50/50 p-4">
                                 <div className="space-y-2">
-                                  {emps.map((emp: any, empIdx: number) => (
+                                  {employees.map((emp: any, empIdx: number) => (
                                     <div key={emp.id} className="flex items-center gap-3 p-3 rounded-lg hover:bg-white transition-colors">
                                       <div className={`w-8 h-8 rounded-full ${getAvatarBg(empIdx)} text-white flex items-center justify-center text-xs font-semibold flex-shrink-0`}>
                                         {getInitials(emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`)}
