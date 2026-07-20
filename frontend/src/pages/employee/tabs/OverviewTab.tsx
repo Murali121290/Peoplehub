@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { Coffee, UtensilsCrossed } from "lucide-react";
 import { API_URL } from "../../../config/api";
 
 interface OverviewTabProps {
@@ -93,7 +94,15 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
 
     fetchTeamAttendance();
     const interval = setInterval(fetchTeamAttendance, 60000);
-    return () => clearInterval(interval);
+    
+    // Listen for custom event to instantly refresh
+    const handleRefresh = () => fetchTeamAttendance();
+    window.addEventListener('refreshTeamStatus', handleRefresh);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('refreshTeamStatus', handleRefresh);
+    };
   }, [selectedTeam]);
 
   // Group members into columns
@@ -102,7 +111,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   const onLeave = teamMembers.filter(m => m.status === "Leave");
 
   const MemberCard = ({ member }: { member: any }) => (
-    <div className="flex items-center gap-3 p-3 bg-white hover:bg-gray-50 rounded-xl border border-gray-100 transition-colors shadow-sm">
+    <div className="flex items-center gap-3 p-3 bg-white/80 hover:bg-white backdrop-blur-sm rounded-xl border border-white/50 shadow-sm transition-all hover:shadow-md">
       <div className="w-10 h-10 rounded-full overflow-hidden border border-gray-200 bg-gray-50 flex-shrink-0">
         {member.profile_image ? (
           <img
@@ -119,9 +128,21 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <h4 className="text-[14px] font-semibold text-gray-900 truncate">
-          {member.first_name} {member.last_name}
-        </h4>
+        <div className="flex items-center gap-2">
+          <h4 className="text-[14px] font-semibold text-gray-900 truncate">
+            {member.first_name} {member.last_name}
+          </h4>
+          {member.lunch_break && (
+            <span title="On Lunch Break" className="flex items-center justify-center bg-orange-100 text-orange-600 rounded-full p-1 shadow-sm border border-orange-200">
+              <UtensilsCrossed className="w-3.5 h-3.5" />
+            </span>
+          )}
+          {member.tea_break && (
+            <span title="On Tea Break" className="flex items-center justify-center bg-amber-100 text-amber-700 rounded-full p-1 shadow-sm border border-amber-200">
+              <Coffee className="w-3.5 h-3.5" />
+            </span>
+          )}
+        </div>
         <p className="text-[12px] text-gray-500 truncate">{member.role}</p>
       </div>
     </div>
@@ -177,13 +198,13 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
 
             {/* Not Checked In Column */}
-            <div className="flex flex-col bg-gray-50/50 rounded-xl p-4 border border-gray-100 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
+            <div className="flex flex-col bg-slate-50/80 rounded-xl p-4 border border-slate-200 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-gray-400"></div>
-                  <h4 className="font-semibold text-gray-800">Not Checked In</h4>
+                  <div className="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
+                  <h4 className="font-semibold text-slate-800">Not Checked In</h4>
                 </div>
-                <span className="text-xs font-medium bg-white text-gray-600 px-2.5 py-1 rounded-full shadow-sm border border-gray-100">
+                <span className="text-xs font-medium bg-white text-slate-600 px-2.5 py-1 rounded-full shadow-sm border border-slate-100">
                   {notCheckedIn.length}
                 </span>
               </div>
@@ -197,13 +218,13 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
 
             {/* Checked In Column */}
-            <div className="flex flex-col bg-gray-50/50 rounded-xl p-4 border border-gray-100 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
+            <div className="flex flex-col bg-emerald-50/80 rounded-xl p-4 border border-emerald-200 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div>
-                  <h4 className="font-semibold text-gray-800">Checked In</h4>
+                  <h4 className="font-semibold text-emerald-800">Checked In</h4>
                 </div>
-                <span className="text-xs font-medium bg-white text-gray-600 px-2.5 py-1 rounded-full shadow-sm border border-gray-100">
+                <span className="text-xs font-medium bg-white text-emerald-700 px-2.5 py-1 rounded-full shadow-sm border border-emerald-100">
                   {checkedIn.length}
                 </span>
               </div>
@@ -217,13 +238,13 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
 
             {/* Leave Column */}
-            <div className="flex flex-col bg-gray-50/50 rounded-xl p-4 border border-gray-100 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
+            <div className="flex flex-col bg-rose-50/80 rounded-xl p-4 border border-rose-200 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
-                  <h4 className="font-semibold text-gray-800">On Leave</h4>
+                  <h4 className="font-semibold text-rose-800">On Leave</h4>
                 </div>
-                <span className="text-xs font-medium bg-white text-gray-600 px-2.5 py-1 rounded-full shadow-sm border border-gray-100">
+                <span className="text-xs font-medium bg-white text-rose-700 px-2.5 py-1 rounded-full shadow-sm border border-rose-100">
                   {onLeave.length}
                 </span>
               </div>

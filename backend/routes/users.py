@@ -294,7 +294,6 @@ def get_roles():
 # GET TEAMS
 # =========================================
 @users_bp.route('/teams', methods=['GET'])
-@auth_required
 def get_teams():
     try:
         teams = Team.query.all()

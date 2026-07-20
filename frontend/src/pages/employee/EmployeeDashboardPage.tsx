@@ -370,6 +370,7 @@ const EmployeeDashboardPage: React.FC = () => {
       setTimer(formattedTimer);
       localStorage.removeItem(`checkInTime_${userId}`);
       toast.success("You have checked out successfully.");
+      window.dispatchEvent(new Event('refreshTeamStatus'));
     } catch (error) {
       alert("Something went wrong while checking out.");
     }
@@ -391,6 +392,7 @@ const EmployeeDashboardPage: React.FC = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ user_id: Number(userId), action: "start" }),
         });
+        window.dispatchEvent(new Event('refreshTeamStatus'));
       } else {
         if (lunchStartTime) {
           const seconds = Math.floor(
@@ -408,6 +410,7 @@ const EmployeeDashboardPage: React.FC = () => {
               break_seconds: seconds,
             }),
           });
+          window.dispatchEvent(new Event('refreshTeamStatus'));
         }
       }
     } catch (error) {
@@ -436,6 +439,7 @@ const EmployeeDashboardPage: React.FC = () => {
           toast.error(data.error || "Failed to stop tea break");
           return;
         }
+        window.dispatchEvent(new Event('refreshTeamStatus'));
       } else {
         const response = await fetch(`${API_URL}/api/attendance/tea-break`, {
           method: "POST",
@@ -447,6 +451,7 @@ const EmployeeDashboardPage: React.FC = () => {
           toast.error(data.error || "Failed to start tea break");
           return;
         }
+        window.dispatchEvent(new Event('refreshTeamStatus'));
       }
     } catch (error) {
       toast.error("Something went wrong while handling Tea Break.");

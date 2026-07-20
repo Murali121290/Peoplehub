@@ -1262,7 +1262,7 @@ def get_team_attendance_by_id(team_id):
         from models.leave import LeaveRequest
         leaves = LeaveRequest.query.filter(
             LeaveRequest.employee_id.in_(employee_ids),
-            LeaveRequest.status == "Approved",
+            LeaveRequest.status.in_(["Approved", "Pending"]),
             LeaveRequest.from_date <= today,
             LeaveRequest.to_date >= today
         ).all()
@@ -1291,7 +1291,9 @@ def get_team_attendance_by_id(team_id):
                 "profile_image": base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None,
                 "status": status,
                 "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
-                "check_out": attendance.check_out.strftime("%I:%M %p") if attendance and attendance.check_out else "-"
+                "check_out": attendance.check_out.strftime("%I:%M %p") if attendance and attendance.check_out else "-",
+                "lunch_break": attendance.lunch_break if attendance else False,
+                "tea_break": attendance.tea_break if attendance else False,
             })
 
         return jsonify(result)

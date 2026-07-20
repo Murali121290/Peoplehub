@@ -118,13 +118,13 @@ def check_in():
                 "%H:%M"
             ).time()
 
-            if current_time < allowed_time:
+            # if current_time < allowed_time:
 
-                return jsonify({
-                    "success": False,
-                    "message":
-                    "General Shift check-in allowed only after 09:00 AM"
-                }), 400
+            #     return jsonify({
+            #         "success": False,
+            #         "message":
+            #         "General Shift check-in allowed only after 09:00 AM"
+            #     }), 400
 
         # Second Shift (02:00 PM - 10:00 PM)
         elif shift_name == "second shift":
@@ -496,7 +496,7 @@ def attendance_status(user_id):
 
 @attendance_bp.route(
     "/lunch-break",
-    methods=["POST"]
+    methods=["POST", "PUT"]
 )
 def lunch_break():
 
@@ -591,7 +591,7 @@ def lunch_break():
 
 @attendance_bp.route(
     "/tea-break",
-    methods=["POST"]
+    methods=["POST", "PUT"]
 )
 def tea_break():
 

@@ -177,9 +177,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         <>
   {showUpdateProfile && (
     <Button
-      variant="secondary"
+      variant="outline"
       fullWidth
-      className="mb-3"
+      className="mb-3 bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100 hover:text-indigo-700 hover:border-indigo-300 transition-colors shadow-sm"
       onClick={() => navigate("/complete-profile")}
     >
       Update Profile
@@ -187,9 +187,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   )}
 
   <Button
-    variant="danger"
+    variant="outline"
     fullWidth
     icon={ArrowRightOnRectangleIcon}
+    className="bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-colors shadow-sm"
     onClick={onLogout}
   >
     Logout
