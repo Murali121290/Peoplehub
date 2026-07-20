@@ -491,6 +491,7 @@ export default function HRAdminDashboard() {
 
   return (
     <div className="min-h-screen bg-neutral-50 font-sans">
+
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-neutral-200">
         <div className="flex items-center justify-between px-6 py-4">
@@ -502,14 +503,38 @@ export default function HRAdminDashboard() {
               <div className="text-base font-extrabold text-neutral-800">
                 HR Admin Dashboard
               </div>
+              <div className="text-xs text-neutral-400 mt-0.5">
+                {navTabs.find((n) => n.id === nav)?.label}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Navigation */}
-        <div className="px-6 pb-2.5 overflow-x-auto">
-          <Tabs items={navTabs} activeId={nav} onChange={setNav} variant="pill" />
-        </div>
+        {/* Navigation — Employee Dashboard style */}
+        <nav className="bg-white border-t border-neutral-100">
+          <div className="px-4">
+            <div className="flex space-x-1 overflow-x-auto py-2">
+              {navTabs.map((item) => {
+                const Icon = item.icon;
+                const isActive = nav === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setNav(item.id)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                      isActive
+                        ? "bg-primary-50 text-primary-700 border-b-2 border-primary-600"
+                        : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </nav>
       </header>
 
       {/* Main Content */}
@@ -535,15 +560,10 @@ export default function HRAdminDashboard() {
             search={search}
             onSearchChange={setSearch}
             onAddEmployee={() => {
-
               setIsEditMode(false);
-
               setNewEmp(DEFAULT_NEW_EMP);
-
               setProfileImage(null);
-
               setAddEmpOpen(true);
-
             }}
             onEditEmployee={handleEditEmployee}
             BASE_URL={BASE_URL}
@@ -559,9 +579,7 @@ export default function HRAdminDashboard() {
             onReject={handleRejectShift}
           />
         )}
-        {nav === "holiday" && (
-          <HolidayTab />
-        )}
+        {nav === "holiday" && <HolidayTab />}
         {nav === "payroll" && <PayrollPage />}
         {nav === "performance" && <PerformanceTab />}
         {nav === "documents" && <DocumentsTab />}
