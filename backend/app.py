@@ -29,6 +29,7 @@ from routes.work_anniversary import work_anniversary_bp
 from routes.communications import communication_bp
 from routes.appraisal_routes import appraisal_bp
 from routes.meeting_rooms import meeting_rooms_bp
+from routes.holidays import holidays_bp
 
 # Import Socket.IO and register events
 from extensions import socketio
@@ -58,6 +59,7 @@ def create_app():
     fastapi_app.include_router(birthday_wishes_bp, prefix="/api/birthday-wishes")
     fastapi_app.include_router(shift_bp, prefix="/api/shifts")
     fastapi_app.include_router(employee_details_bp, prefix="/api")
+    fastapi_app.include_router(holidays_bp, prefix="/api")
     fastapi_app.include_router(requests_bp, prefix="/api/requests")
     fastapi_app.include_router(payroll_bp, prefix="/api/payroll")
     fastapi_app.include_router(work_anniversary_bp)
@@ -96,6 +98,10 @@ def create_app():
         connection.execute(text(
             "ALTER TABLE attendance "
             "ADD COLUMN IF NOT EXISTS total_gap_minutes INTEGER DEFAULT 0"
+        ))
+        connection.execute(text(
+            "ALTER TABLE teams "
+            "ADD COLUMN IF NOT EXISTS workflow_stage VARCHAR(100)"
         ))
         connection.commit()
 

@@ -506,7 +506,8 @@ const ManagerDashboardPage = () => {
         id: att.id ?? match?.id,
         name: att.name || match?.name || "",
         email: match?.email || att.email || "",
-        role: att.designation || match?.role || "Employee",
+        role: att.role || att.designation || match?.role || "Employee",
+        designation: att.designation || att.role || match?.role || "Employee",
         department: att.department || "",
         avatar:
           match?.avatar ||
@@ -1474,7 +1475,7 @@ const ManagerDashboardPage = () => {
                         .filter((m) => {
                           const matchSearch =
                             m.name.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
-                            (m.designation || "")
+                            (m.designation || m.role || "")
                               .toLowerCase()
                               .includes(attendanceSearch.toLowerCase());
 
@@ -1548,7 +1549,7 @@ const ManagerDashboardPage = () => {
                               </td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.employee_id || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.department || "—"}</td>
-                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.designation || "—"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.designation || member.role || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.shift || "General Shift"}</td>
                               <td style={{ padding: "12px 16px" }}>{member.check_in || "—"}</td>
                               <td style={{ padding: "12px 16px" }}>{member.check_out || "—"}</td>

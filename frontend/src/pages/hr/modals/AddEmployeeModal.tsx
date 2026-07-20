@@ -223,6 +223,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   department: selectedTeam?.name || "",
                   role: "",
                   role_id: "",
+                  designation: "",   // clear designation when team changes
                 });
                 clearError("team_id");
               }}
@@ -268,6 +269,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   ...newEmp,
                   role: value,
                   role_id: selectedRole?.id || "",
+                  designation: value,   // auto-set designation = role name
                 });
                 clearError("role");
               }}

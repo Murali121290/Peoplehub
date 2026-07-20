@@ -12,6 +12,7 @@ import {
   Cog6ToothIcon,
   PlusIcon,
   CurrencyDollarIcon,
+  ArrowPathIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "react-hot-toast";
 
@@ -19,12 +20,15 @@ import DashboardTab from "./tabs/DashboardTab";
 import DirectoryTab from "./tabs/DirectoryTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import LeaveTab from "./tabs/LeaveTab";
+import ShiftTab from "./tabs/ShiftTab";
+import HolidayTab from "./tabs/HolidayTab";
 import PayrollPage from "./tabs/PayrollPage";
 import PerformanceTab from "./tabs/PerformanceTab";
 import DocumentsTab from "./tabs/DocumentsTab";
 import SettingsTab from "./tabs/SettingsTab";
 import AddEmployeeModal from "./modals/AddEmployeeModal";
 import ProfileCompleteModal from "./modals/ProfileCompleteModal";
+import AddTeamModal from "./modals/AddTeamModal";
 import { Tabs } from "../../components/ui/Tabs";
 import {
   NAV,
@@ -36,7 +40,8 @@ const NAV_ICONS: Record<string, React.ElementType> = {
   dashboard: HomeIcon,
   directory: UserGroupIcon,
   attendance: ClockIcon,
-  leave: CalendarDaysIcon,
+  shift: ArrowPathIcon,
+  holiday: CalendarDaysIcon,
   payroll: CurrencyDollarIcon,
   performance: ChartBarIcon,
   documents: DocumentTextIcon,
@@ -49,12 +54,15 @@ export default function HRAdminDashboard() {
   const [nav, setNav] = useState("dashboard");
   const [search, setSearch] = useState("");
   const [leaves, setLeaves] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [teamOverview, setTeamOverview] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [addEmpOpen, setAddEmpOpen] = useState(false);
+  const [addTeamOpen, setAddTeamOpen] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<any>(null);
   const [profileCompleteOpen, setProfileCompleteOpen] = useState(false);
   const [currentEmployee, setCurrentEmployee] = useState<any>(null);
   const [profileImage, setProfileImage] = useState<any>(null);
@@ -131,6 +139,16 @@ export default function HRAdminDashboard() {
     }
   };
 
+  const fetchShiftRequests = async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/shifts/`);
+      const data = await response.json();
+      setShifts(data || []);
+    } catch (error) {
+      console.error("Shift Fetch Error:", error);
+    }
+  };
+
   const fetchTeams = async () => {
     try {
       const res = await apiService.getTeams();
@@ -162,6 +180,7 @@ export default function HRAdminDashboard() {
     fetchEmployees();
     fetchAttendance();
     fetchLeaveRequests();
+    fetchShiftRequests();
     fetchTeams();
     fetchRoles();
     fetchTeamOverview();
@@ -253,6 +272,43 @@ export default function HRAdminDashboard() {
       if (data.success) fetchLeaveRequests();
     } catch (error) {
       console.error(error);
+    }
+  };
+
+  const handleApproveShift = async (id: number) => {
+    try {
+      const response = await fetch(`${BASE_URL}/shifts/approve/${id}`, {
+        method: "PUT",
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success("Shift request approved successfully");
+        fetchShiftRequests();
+        fetchAttendance();
+      } else {
+        toast.error(data.message || "Failed to approve shift request");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Error approving shift request");
+    }
+  };
+
+  const handleRejectShift = async (id: number) => {
+    try {
+      const response = await fetch(`${BASE_URL}/shifts/reject/${id}`, {
+        method: "PUT",
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success("Shift request rejected successfully");
+        fetchShiftRequests();
+      } else {
+        toast.error(data.message || "Failed to reject shift request");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Error rejecting shift request");
     }
   };
 
@@ -410,7 +466,19 @@ if (profileImage) {
       {/* Main Content */}
       <main className="p-6">
         {nav === "dashboard" && (
-          <DashboardTab counts={counts} teamOverview={teamOverview} />
+          <DashboardTab
+            counts={counts}
+            teamOverview={teamOverview}
+            teams={teams}
+            onEditTeam={(team) => {
+              setEditingTeam(team);
+              setAddTeamOpen(true);
+            }}
+            onCreateTeam={() => {
+              setEditingTeam(null);
+              setAddTeamOpen(true);
+            }}
+          />
         )}
         {nav === "directory" && (
           <DirectoryTab
@@ -435,12 +503,15 @@ if (profileImage) {
         {nav === "attendance" && (
           <AttendanceTab attendance={attendance} BASE_URL={BASE_URL} />
         )}
-        {nav === "leave" && (
-          <LeaveTab
-            leaves={leaves}
-            onApprove={handleApproveLeave}
-            onReject={handleRejectLeave}
+        {nav === "shift" && (
+          <ShiftTab
+            shifts={shifts}
+            onApprove={handleApproveShift}
+            onReject={handleRejectShift}
           />
+        )}
+        {nav === "holiday" && (
+          <HolidayTab />
         )}
         {nav === "payroll" && <PayrollPage />}
         {nav === "performance" && <PerformanceTab />}
@@ -470,6 +541,22 @@ if (profileImage) {
           setProfileData={setProfileData}
           onSubmit={handleProfileComplete}
           onClose={() => setProfileCompleteOpen(false)}
+        />
+      )}
+      {addTeamOpen && (
+        <AddTeamModal
+          isOpen={addTeamOpen}
+          onClose={() => {
+            setAddTeamOpen(false);
+            setEditingTeam(null);
+          }}
+          onSuccess={() => {
+            fetchTeams();
+            fetchTeamOverview();
+            fetchRoles();
+          }}
+          isEdit={!!editingTeam}
+          teamData={editingTeam}
         />
       )}
     </div>

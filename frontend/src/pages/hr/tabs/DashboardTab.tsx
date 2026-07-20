@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDownIcon, Squares2X2Icon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, Squares2X2Icon, PencilIcon, PlusIcon } from '@heroicons/react/24/outline';
 import Panel from '../components/Panel';
 import { Card } from '../../../components/ui/Card';
 
@@ -11,9 +11,12 @@ interface DashboardTabProps {
     pendingLeaves: number;
   };
   teamOverview: any[];
+  teams: any[];
+  onEditTeam: (team: any) => void;
+  onCreateTeam: () => void;
 }
 
-const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview }) => {
+const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams, onEditTeam, onCreateTeam }) => {
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
 
@@ -43,9 +46,18 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview }) => 
 
       {/* Team Overview */}
       <Panel>
-        <div className="text-lg font-bold text-neutral-800 mb-5 flex items-center gap-2.5">
-          <Squares2X2Icon className="w-5 h-5" />
-          Team Overview
+        <div className="text-lg font-bold text-neutral-800 mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <Squares2X2Icon className="w-5 h-5" />
+            Team Overview
+          </div>
+          <button
+            onClick={onCreateTeam}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold shadow-sm hover:shadow transition-all duration-150"
+          >
+            <PlusIcon className="w-4 h-4" />
+            Create Team
+          </button>
         </div>
 
         {teamOverview.map((team: any) => {
@@ -86,6 +98,22 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview }) => 
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const fullTeam = teams.find((t) => t.id === team.team_id) || {
+                        id: team.team_id,
+                        name: team.team_name,
+                        description: "",
+                        workflow_stage: "Project Management"
+                      };
+                      onEditTeam(fullTeam);
+                    }}
+                    className="p-1.5 rounded-lg text-neutral-400 hover:text-primary-600 hover:bg-primary-50 border border-transparent hover:border-primary-100 transition-all mr-1.5"
+                    title="Edit Team"
+                  >
+                    <PencilIcon className="w-4 h-4" />
+                  </button>
                   <div className="bg-primary-100 text-primary-700 px-3 py-1.5 rounded-lg text-sm font-semibold">
                     {empCount}
                   </div>
