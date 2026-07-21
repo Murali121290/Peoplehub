@@ -1,6 +1,6 @@
 import {
   HomeIcon, UserGroupIcon, FolderIcon, CalendarIcon, ChartBarIcon,
-  Cog6ToothIcon, BanknotesIcon, BellIcon,PhoneIcon,BuildingOffice2Icon,ClipboardDocumentCheckIcon
+  Cog6ToothIcon, BanknotesIcon, BellIcon, PhoneIcon, BuildingOffice2Icon, ClipboardDocumentCheckIcon
 } from "@heroicons/react/24/outline";
 
 export const useNavigation = (user: any) => {
@@ -26,7 +26,7 @@ export const useNavigation = (user: any) => {
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
         { name: "Appraisal", icon: ClipboardDocumentCheckIcon, path: "/appraisal" },
-        { name: "Settings", icon: Cog6ToothIcon, path: "/settings" },
+        // { name: "Settings", icon: Cog6ToothIcon, path: "/settings" },
       ];
     }
 
