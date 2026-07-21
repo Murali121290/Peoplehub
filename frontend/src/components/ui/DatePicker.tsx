@@ -180,7 +180,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div ref={containerRef} className="relative w-full overflow-visible">
       {/* Input Trigger */}
       <div className="relative">
         <input
@@ -215,7 +215,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
 
       {/* Inline Dropdown Popover (Under Date Field) */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1.5 z-[100] bg-white rounded-2xl shadow-xl w-[290px] overflow-hidden border border-neutral-200 flex flex-col">
+        <div className="absolute top-full left-0 mt-1.5 z-[9999] bg-white rounded-2xl shadow-xl w-[290px] overflow-hidden border border-neutral-200 flex flex-col">
           {/* Header: SELECT DATE */}
           <div className="bg-[#1F7A8C] p-4 flex items-center justify-between text-white">
             <div>
