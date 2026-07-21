@@ -307,6 +307,9 @@ export default function HRAdminDashboard() {
     try {
       const response = await fetch(`${BASE_URL}/leaves/approve/${id}`, {
         method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${localStorage.getItem("token")}`
+        }
       });
       const data = await response.json();
       if (data.success) fetchLeaveRequests();
@@ -319,6 +322,9 @@ export default function HRAdminDashboard() {
     try {
       const response = await fetch(`${BASE_URL}/leaves/reject/${id}`, {
         method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${localStorage.getItem("token")}`
+        }
       });
       const data = await response.json();
       if (data.success) fetchLeaveRequests();

@@ -274,8 +274,8 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                     emp.access_level?.toLowerCase() === "hr"
                 )
                 .map((emp) => ({
-                  label: `${emp.first_name} ${emp.last_name}`,
-                  value: `${emp.first_name} ${emp.last_name}`,
+                  label: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(),
+                  value: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(),
                 }))}
               className={fieldErrors["reporting_manager"] ? "border-danger-500" : ""}
             />

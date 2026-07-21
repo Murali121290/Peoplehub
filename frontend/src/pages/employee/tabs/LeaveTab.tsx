@@ -168,12 +168,46 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   }, [leaveRequests, currentEmployee]);
 
   const filteredTimelineRequests = React.useMemo(() => {
-    return myRequests.filter((req: any) => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    
+    // Convert past holidays into the format of leave requests so they show in history
+    const pastHolidays = allYearHolidays.filter((h: any) => h.date < todayStr).map((h: any) => ({
+      ...h,
+      id: `hol-${h.id}`,
+      request_type: "Holiday",
+      from_date: h.date,
+      to_date: h.date,
+      leave_type: h.holiday_type || "Holiday",
+      reason: h.name,
+      status: "Approved",
+      total_days: 1,
+      reporting_manager: "Company",
+    }));
+
+    const requests = myRequests.filter((req: any) => {
       const matchStatus = statusFilter === "All" || req.status === statusFilter;
       const matchType = typeFilter === "All" || req.leave_type === typeFilter;
       return matchStatus && matchType;
     });
-  }, [myRequests, statusFilter, typeFilter]);
+
+    // Also apply filters to past holidays if applicable
+    const filteredPastHolidays = pastHolidays.filter((h: any) => {
+      const matchStatus = statusFilter === "All" || h.status === statusFilter;
+      const matchType = typeFilter === "All" || h.leave_type === typeFilter;
+      return matchStatus && matchType;
+    });
+
+    const combined = [...requests, ...filteredPastHolidays];
+    return combined.sort((a: any, b: any) => 
+      new Date(a.from_date || a.permission_date || a.date).getTime() - 
+      new Date(b.from_date || b.permission_date || b.date).getTime()
+    );
+  }, [myRequests, statusFilter, typeFilter, allYearHolidays]);
+
+  const upcomingHolidays = React.useMemo(() => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    return allYearHolidays.filter((h: any) => h.date >= todayStr);
+  }, [allYearHolidays]);
 
   // Generate 35-42 days grid for monthly calendar
   const calendarGridDays = React.useMemo(() => {
@@ -1029,17 +1063,17 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         </tr>
                       </thead>
                       <tbody className="text-[14px]">
-                        {allYearHolidays.length === 0 ? (
+                        {upcomingHolidays.length === 0 ? (
                           <tr>
                             <td colSpan={4} className="py-12">
                                <div className="flex flex-col items-center justify-center text-center">
                                 <span className="text-3xl mb-2">🏝️</span>
-                                <p className="text-[14px] font-semibold text-neutral-700">No holidays published.</p>
+                                <p className="text-[14px] font-semibold text-neutral-700">No upcoming holidays.</p>
                               </div>
                             </td>
                           </tr>
                         ) : (
-                          allYearHolidays.map((h: any) => {
+                          upcomingHolidays.map((h: any) => {
                             const hDate = new Date(h.date);
                             const dayName = WEEKDAYS[hDate.getDay()] || h.day || "—";
 
@@ -1465,8 +1499,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   >
                     <option value="">Select Employee</option>
                     {employees?.map((emp) => (
-                      <option key={emp.id} value={`${emp.first_name} ${emp.last_name}`}>
-                        {emp.first_name} {emp.last_name}
+                      <option key={emp.id} value={`${emp.first_name || ""} ${emp.last_name || ""}`.trim()}>
+                        {`${emp.first_name || ""} ${emp.last_name || ""}`.trim()}
                       </option>
                     ))}
                   </select>

@@ -6,6 +6,8 @@ from models.employee import Employee
 from openpyxl import Workbook
 from utils.compat import send_file
 from io import BytesIO
+from utils.jwt_helper import jwt_required, get_jwt_identity
+from models.user import User
 
 from services.leave_balance_service import (
     update_all_employee_leave_balances
@@ -187,6 +189,7 @@ def get_leaves():
     "/approve/<int:leave_id>",
     methods=["PUT"]
 )
+@jwt_required()
 def approve_leave(leave_id):
 
     try:
@@ -223,9 +226,14 @@ def approve_leave(leave_id):
         # ===========================
         # PERMISSION REQUEST
         # ===========================
+        
+        user_id = get_jwt_identity()
+        approver = User.query.get(int(user_id)) if user_id else None
+        approver_name = approver.full_name if approver else "Manager"
+        
         if leave.request_type == "Permission":
             leave.status = "Approved"
-            leave.approved_by = "Website Manager"
+            leave.approved_by = approver_name
             leave.approved_at = datetime.utcnow()
 
             db.session.commit()
@@ -254,7 +262,7 @@ def approve_leave(leave_id):
         # ===========================
 
         leave.status = "Approved"
-        leave.approved_by = "Website Manager"
+        leave.approved_by = approver_name
         leave.approved_at = datetime.utcnow()
 
         leave_type = (leave.leave_type or "").strip().lower()
@@ -329,6 +337,7 @@ def approve_leave(leave_id):
     "/reject/<int:leave_id>",
     methods=["PUT"]
 )
+@jwt_required()
 def reject_leave(leave_id):
 
     leave = LeaveRequest.query.get(leave_id)
@@ -350,7 +359,11 @@ def reject_leave(leave_id):
     ).first()
 
     leave.status = "Rejected"
-    leave.rejected_by = "Website Manager"
+    
+    user_id = get_jwt_identity()
+    rejecter = User.query.get(int(user_id)) if user_id else None
+    
+    leave.rejected_by = rejecter.full_name if rejecter else "Manager"
     leave.rejected_at = datetime.utcnow()
 
     db.session.commit()

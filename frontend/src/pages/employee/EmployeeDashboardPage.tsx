@@ -65,7 +65,7 @@ const EmployeeDashboardPage: React.FC = () => {
   console.log("Access Level:", user?.access_level);
   console.log("Role:", user?.role);
   const managerName =
-    `${currentEmployee?.first_name} ${currentEmployee?.last_name}`
+    `${currentEmployee?.first_name || ""} ${currentEmployee?.last_name || ""}`
       .trim()
       .toLowerCase();
 
@@ -559,6 +559,9 @@ const EmployeeDashboardPage: React.FC = () => {
     try {
       const res = await fetch(`${BASE_URL}/leaves/approve/${id}`, {
         method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${localStorage.getItem("token")}`
+        }
       });
       const data = await res.json();
       if (data.success) {
@@ -574,6 +577,9 @@ const EmployeeDashboardPage: React.FC = () => {
     try {
       const res = await fetch(`${BASE_URL}/leaves/reject/${id}`, {
         method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${localStorage.getItem("token")}`
+        }
       });
       const data = await res.json();
       if (data.success) {
