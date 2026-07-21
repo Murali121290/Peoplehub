@@ -38,7 +38,7 @@ def send_email_via_smtp(to_email, subject, html_content):
     mail_use_tls = current_app.config.get("MAIL_USE_TLS", True)
     mail_username = current_app.config.get("MAIL_USERNAME")
     mail_password = current_app.config.get("MAIL_PASSWORD")
-    mail_sender = current_app.config.get("MAIL_DEFAULT_SENDER", "wms@publishing.com")
+    mail_sender = current_app.config.get("MAIL_DEFAULT_SENDER", "peoplehub@s4carlisle.com")
 
     print("========== SMTP DEBUGGING ==========")
     print(f"SMTP Configured values:")

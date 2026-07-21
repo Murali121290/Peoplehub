@@ -1,1 +1,1 @@
-CREATE DATABASE wms_db;
+CREATE DATABASE peoplehub_db;

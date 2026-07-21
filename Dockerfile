@@ -11,28 +11,3 @@ COPY backend/ .
 EXPOSE 5001
 
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5001"]
-
-# ---------- Frontend build ----------
-FROM node:20-alpine AS frontend-build
-
-WORKDIR /app
-
-COPY frontend/package*.json ./
-RUN npm ci
-
-COPY frontend/ .
-
-ARG VITE_API_URL=http://localhost:5000/api
-ENV VITE_API_URL=${VITE_API_URL}
-
-RUN npm run build
-
-# ---------- Frontend runtime (nginx) ----------
-FROM nginx:alpine AS frontend
-
-COPY --from=frontend-build /app/dist /usr/share/nginx/html
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]

@@ -37,7 +37,7 @@ from socket_events import register_socket_events
 from services.checkin_monitor import check_missed_checkins, generate_daily_notifications
 
 def create_app():
-    fastapi_app = FastAPI(title="WMS API", version="1.0.0")
+    fastapi_app = FastAPI(title="Peoplehub API", version="1.0.0")
 
     # Configure CORS
     allowed_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
@@ -124,7 +124,7 @@ def create_app():
     def health_check():
         return {
             'status': 'healthy',
-            'message': 'WMS API is running'
+            'message': 'Peoplehub API is running'
         }
 
     # Initialize Socket.IO connection

@@ -39,7 +39,7 @@ class Config:
 
     MAIL_DEFAULT_SENDER = os.environ.get(
         'MAIL_DEFAULT_SENDER',
-        'wms@publishing.com'
+        'peoplehub@s4carlisle.com'
     )
 
     # Upload Configuration

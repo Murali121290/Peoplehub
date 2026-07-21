@@ -799,7 +799,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
             <Bars3Icon className="h-6 w-6" />
           )}
         </button>
-        <h1 className="text-lg font-bold text-neutral-800">WMS</h1>
+        <h1 className="text-lg font-bold text-neutral-800">Peoplehub</h1>
         <div className="w-10" />
       </div>
 

@@ -8,7 +8,7 @@ from fastapi import HTTPException, Request
 
 JWT_SECRET_KEY = os.environ.get(
     'JWT_SECRET_KEY',
-    'wms-enterprise-super-secret-jwt-key-2026-secure'
+    'peoplehub-enterprise-super-secret-jwt-key-2026-secure'
 )
 
 _jwt_identity_var = contextvars.ContextVar("jwt_identity", default=None)
