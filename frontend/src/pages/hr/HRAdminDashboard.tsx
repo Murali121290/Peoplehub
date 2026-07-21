@@ -32,7 +32,7 @@ import AddTeamModal from "./modals/AddTeamModal";
 import { Tabs } from "../../components/ui/Tabs";
 const NAV = [
   { id: "dashboard", label: "Dashboard" },
-  { id: "directory", label: "Staff Directory" },
+  { id: "directory", label: "Employee Directory" },
   { id: "attendance", label: "Attendance" },
   { id: "shift", label: "Shift Requests" },
   { id: "holiday", label: "Holiday Calendar" },
