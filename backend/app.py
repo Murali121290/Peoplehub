@@ -3,13 +3,21 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+# pyrefly: ignore [missing-import]
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Alembic Configuration
+# pyrefly: ignore [missing-import]
+from alembic.config import Config as AlembicConfig
+# pyrefly: ignore [missing-import]
+from alembic import command as alembic_command
+
 # Import models & database
 from models.database import init_db, engine
+# pyrefly: ignore [missing-import]
 from sqlalchemy import text
 
 # Import routers
@@ -74,6 +82,15 @@ def create_app():
 
     # Initialize database and execute schema migrations
     init_db()
+
+    # Run Alembic migrations programmatically
+    try:
+        alembic_cfg = AlembicConfig("alembic.ini")
+        alembic_command.upgrade(alembic_cfg, "head")
+        print("Alembic database migrations successfully applied.")
+    except Exception as e:
+        print(f"Error running Alembic migrations: {e}")
+
     with engine.connect() as connection:
         connection.execute(text(
             "ALTER TABLE telecom_directory "

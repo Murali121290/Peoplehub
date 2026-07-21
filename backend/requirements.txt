@@ -11,6 +11,7 @@ eventlet==0.36.1
 # Database
 psycopg2-binary>=2.9.9
 SQLAlchemy==2.0.29
+alembic==1.13.1
 
 # Scheduler
 APScheduler==3.10.4
