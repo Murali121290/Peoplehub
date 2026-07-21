@@ -361,8 +361,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         <StatCard icon={UserMinusIcon} title="Absent Days" value={absentCount} subtitle={`${MONTH_NAMES[selectedMonth - 1]}`} trend="negative" color="red" />
         <StatCard icon={CalendarDaysIcon} title="Leave Days" value={leaveCount} subtitle={`${MONTH_NAMES[selectedMonth - 1]}`} trend="normal" color="purple" />
         <StatCard icon={ClockIcon} title="Half Days" value={halfDayCount} subtitle={`${MONTH_NAMES[selectedMonth - 1]}`} trend="warning" color="yellow" />
-        <StatCard icon={CalendarIcon} title="Weekly Offs" value={weeklyOffCount} subtitle={`${MONTH_NAMES[selectedMonth - 1]}`} trend="normal" color="blue" />
-        <StatCard icon={ChartBarIcon} title="Attendance %" value={`${attendancePercentage}%`} subtitle={`${MONTH_NAMES[selectedMonth - 1]}`} trend="positive" color="blue" />
       </div>
 
       {/* Main Content Card */}

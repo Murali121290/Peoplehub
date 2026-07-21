@@ -1,5 +1,14 @@
 from models.database import db
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+
+def get_ist_now():
+    return datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
+
+
+def get_ist_today():
+    return datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
 
 class Attendance(db.Model):
@@ -20,7 +29,7 @@ class Attendance(db.Model):
 
     check_in = db.Column(
         db.DateTime,
-        default=datetime.utcnow
+        default=get_ist_now
     )
 
     check_out = db.Column(
@@ -97,7 +106,7 @@ class Attendance(db.Model):
 
     attendance_date = db.Column(
         db.Date,
-        default=lambda: datetime.utcnow().date()
+        default=get_ist_today
     )
 
     status = db.Column(

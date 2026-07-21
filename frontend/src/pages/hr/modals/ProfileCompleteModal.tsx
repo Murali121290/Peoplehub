@@ -38,6 +38,9 @@ const ProfileCompleteModal: React.FC<ProfileCompleteModalProps> = ({
         {/* Personal Information */}
         <div className={sectionTitleClass}>PERSONAL INFORMATION</div>
         <div className="grid grid-cols-2 gap-3.5">
+          <FormField label="PHONE NUMBER *">
+            <Input value={profileData.phone} onChange={(e) => upd("phone", e.target.value)} placeholder="e.g., +91 9876543210" />
+          </FormField>
           <FormField label="DATE OF BIRTH *">
             <Input type="date" value={profileData.dob} onChange={(e) => upd("dob", e.target.value)} />
           </FormField>

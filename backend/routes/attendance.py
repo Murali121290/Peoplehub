@@ -32,6 +32,14 @@ attendance_bp = Blueprint(
 )
 
 
+def get_ist_now():
+    return datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
+
+
+def get_ist_today():
+    return datetime.now(ZoneInfo("Asia/Kolkata")).date()
+
+
 @attendance_bp.route("/checkin", methods=["POST"])
 def check_in():
 
@@ -62,7 +70,7 @@ def check_in():
         # =====================================
         from models.shift_request import ShiftRequest
         from sqlalchemy import or_
-        today_date = datetime.now().date()
+        today_date = get_ist_today()
 
         # Check if there is an approved shift request for today
         approved_request = ShiftRequest.query.filter(
@@ -162,7 +170,7 @@ def check_in():
         # CHECK ALREADY CHECKED IN
         # =====================================
 
-        today = datetime.now().date()
+        today = get_ist_today()
 
         attendance = Attendance.query.filter_by(
             user_id=user_id,
@@ -177,7 +185,7 @@ def check_in():
                 }), 400
 
             # Re-checkin logic
-            now = datetime.now()
+            now = get_ist_now()
             gap_seconds = (now - attendance.check_out).total_seconds()
             attendance.total_gap_minutes = (attendance.total_gap_minutes or 0) + int(gap_seconds / 60)
             attendance.check_out = None
@@ -189,7 +197,7 @@ def check_in():
             attendance = Attendance(
                 user_id=user_id,
                 attendance_date=today,
-                check_in=datetime.now(),
+                check_in=get_ist_now(),
                 status="Present"
             )
             db.session.add(attendance)
@@ -373,7 +381,7 @@ def check_out():
                 "error": "Check-in time missing"
             }), 400
 
-        attendance.check_out = datetime.now()
+        attendance.check_out = get_ist_now()
 
         total_seconds = (
             attendance.check_out -
@@ -523,13 +531,13 @@ def lunch_break():
 
             attendance.lunch_break = True
 
-            attendance.lunch_start = datetime.now()
+            attendance.lunch_start = get_ist_now()
 
         elif action == "stop":
 
             attendance.lunch_break = False
 
-            attendance.lunch_end = datetime.now()
+            attendance.lunch_end = get_ist_now()
 
         if (
              attendance.lunch_start and
@@ -618,12 +626,12 @@ def tea_break():
 
             attendance.tea_break = True
 
-            attendance.tea_start = datetime.now()
+            attendance.tea_start = get_ist_now()
 
         elif action == "stop":
             attendance.tea_break = False
 
-            attendance.tea_end = datetime.now()
+            attendance.tea_end = get_ist_now()
         if (
             attendance.tea_start and
             attendance.tea_end
@@ -689,7 +697,7 @@ def attendance_history(user_id):
     if not employee:
         return jsonify([])
 
-    today = date.today()
+    today = get_ist_today()
     joining = employee.joining_date
     result = []
 
@@ -711,7 +719,7 @@ def attendance_history(user_id):
                 check_out_str = record.check_out.strftime("%I:%M %p")
             else:
                 # Active check-in: compute live working hours
-                now = datetime.now()
+                now = get_ist_now()
                 elapsed_seconds = (now - record.check_in).total_seconds()
                 break_seconds = (record.total_break_minutes or 0) * 60
                 working_hours = round(max(elapsed_seconds - break_seconds, 0) / 3600, 2)
@@ -758,7 +766,7 @@ def attendance_history(user_id):
 @attendance_bp.route("/", methods=["GET"])
 def get_attendance():
 
-    today = datetime.now().date()
+    today = get_ist_today()
 
     employees = Employee.query.all()
 

@@ -29,8 +29,11 @@ const Completeprofilepage = () => {
 
   const employeeId = localStorage.getItem("employee_id");
 
+  const [profilePreview, setProfilePreview] = useState<string>("");
+
   const [formData, setFormData] = useState({
     // Personal
+    phone: "",
     dob: "",
     gender: "",
     marital_status: "",
@@ -86,10 +89,11 @@ const Completeprofilepage = () => {
     emergency_contact_number: "",
     emergency_contact_relation: "",
     // Files
-    resume_file: null,
-    aadhaar_file: null,
-    pan_file: null,
-    degree_certificate: null,
+    profile_image: null as any,
+    resume_file: null as any,
+    aadhaar_file: null as any,
+    pan_file: null as any,
+    degree_certificate: null as any,
   });
 
   // ─── Skill helpers ────────────────────────────────────────
@@ -130,6 +134,32 @@ const Completeprofilepage = () => {
     setFormData((p) => ({ ...p, [name]: files ? files[0] : null }));
   };
 
+  const handleProfilePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFormData((prev) => ({ ...prev, profile_image: file }));
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProfilePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const [shiftOptions, setShiftOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+    fetch(`${apiUrl}/shifts/options`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setShiftOptions(data);
+        }
+      })
+      .catch((err) => console.error("Fetch shift options error:", err));
+  }, []);
+
   // ─── Fetch existing employee data ─────────────────────────
   useEffect(() => {
     if (!employeeId) return;
@@ -141,6 +171,13 @@ const Completeprofilepage = () => {
         );
         const data = await res.json();
         setEmployeeInfo(data);
+        if (data.profile_image) {
+          setProfilePreview(
+            data.profile_image.startsWith("data:")
+              ? data.profile_image
+              : `data:image/jpeg;base64,${data.profile_image}`
+          );
+        }
         setFormData((prev) => ({
           ...prev,
           ...Object.fromEntries(
@@ -148,6 +185,7 @@ const Completeprofilepage = () => {
               .filter(([, v]) => v !== null && v !== undefined && v !== false)
               .map(([k, v]) => [k, String(v)]),
           ),
+          profile_image: null,
           resume_file: null,
           aadhaar_file: null,
           pan_file: null,
@@ -255,19 +293,25 @@ const Completeprofilepage = () => {
       const data = await res.json();
 
     if (res.ok) {
-  toast.success("Profile Completed Successfully!");
+      toast.success("Profile Completed Successfully!");
 
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
 
-  user.profile_completed = true;
-  user.is_first_login = false;
+      user.profile_completed = true;
+      user.is_first_login = false;
+      if (profilePreview) {
+        user.profile_image = profilePreview;
+      }
+      if (formData.phone) {
+        user.phone = formData.phone;
+      }
 
-  localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("user", JSON.stringify(user));
 
-  setTimeout(() => {
-    window.location.href = "/employee-dashboard";
-  }, 1200);
-}else {
+      setTimeout(() => {
+        window.location.href = "/employee-dashboard";
+      }, 1200);
+    }else {
         toast.error(data.error || data.message || "Failed to update profile");
       }
     } catch (err) {
@@ -297,6 +341,25 @@ const Completeprofilepage = () => {
       ),
       fields: (
         <>
+          <Field label="Phone Number *">
+            <input
+              type="tel"
+              name="phone"
+              value={formData.phone}
+              onChange={handleChange}
+              placeholder="e.g. +91 9876543210"
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Profile Photo">
+            <input
+              type="file"
+              name="profile_image"
+              accept="image/*"
+              onChange={handleProfilePhotoChange}
+              className={`${inputCls} py-2 file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 cursor-pointer`}
+            />
+          </Field>
           <Field label="Date of Birth">
             <input
               type="date"
@@ -867,21 +930,14 @@ const Completeprofilepage = () => {
               className={selectCls}
             >
               <option value="">Select Shift</option>
-              <option value="First Shift">
-                First Shift (06:00 AM - 02:00 PM)
-              </option>
-
-              <option value="General Shift">
-                General Shift (09:00 AM - 06:00 PM)
-              </option>
-
-              <option value="Second Shift">
-                Second Shift (02:00 PM - 10:00 PM)
-              </option>
-
-              <option value="Night Shift">
-                Night Shift (10:00 PM - 06:00 AM)
-              </option>
+              {(shiftOptions.length > 0
+                ? shiftOptions
+                : ["General Shift", "First Shift", "Second Shift", "Night Shift"]
+              ).map((shift) => (
+                <option key={shift} value={shift}>
+                  {shift}
+                </option>
+              ))}
             </select>
           </Field>
         </>
@@ -1038,26 +1094,60 @@ const Completeprofilepage = () => {
     <div className="min-h-screen bg-gradient-to-br from-neutral-50 via-primary-50/30 to-neutral-100 p-4 py-8">
       <div className="mx-auto max-w-7xl">
         {/* Page Header */}
-        <div className="mb-8 text-center">
-          <div className="mb-4 inline-flex items-center justify-center rounded-2xl bg-primary-500 p-4 shadow-lg">
-            <svg
-              className="h-8 w-8 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
+        <div className="relative mb-8 text-center bg-white/60 backdrop-blur-xl p-6 md:p-8 rounded-3xl border border-white/80 shadow-sm">
+          {/* Close Button */}
+          <button
+            type="button"
+            onClick={() => navigate("/employee-dashboard")}
+            className="absolute top-4 right-4 md:top-6 md:right-6 p-2 px-3 rounded-xl bg-white hover:bg-neutral-50 text-neutral-600 hover:text-neutral-900 shadow-sm border border-neutral-200 transition-all duration-200 flex items-center gap-1.5 text-xs font-semibold"
+            title="Close & Return to Dashboard"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
+            <span>Close</span>
+          </button>
+
+          {/* Profile Photo Avatar Badge */}
+          <div className="mb-4 inline-flex items-center gap-4 bg-white p-3 px-6 rounded-2xl shadow-md border border-neutral-100">
+            <div className="relative group cursor-pointer">
+              <img
+                src={profilePreview || "/default-avatar.png"}
+                alt="Profile Avatar"
+                className="w-16 h-16 rounded-full object-cover border-2 border-primary-500 shadow-sm bg-neutral-100"
+              />
+              <label
+                htmlFor="header_photo_input"
+                className="absolute -bottom-1 -right-1 bg-primary-600 hover:bg-primary-700 text-white p-1.5 rounded-full shadow-md cursor-pointer transition-all hover:scale-105"
+                title="Change Profile Photo"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <input
+                  id="header_photo_input"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleProfilePhotoChange}
+                />
+              </label>
+            </div>
+            <div className="text-left">
+              <h2 className="text-base font-bold text-neutral-800">
+                {employeeInfo?.first_name ? `${employeeInfo.first_name} ${employeeInfo.last_name || ""}` : "Employee Profile"}
+              </h2>
+              <p className="text-xs text-neutral-500 font-medium">
+                {employeeInfo?.email || "Update your details below"}
+              </p>
+            </div>
           </div>
-          <h1 className="text-4xl font-bold text-neutral-800">
+
+          <h1 className="text-3xl md:text-4xl font-extrabold text-neutral-800 tracking-tight">
             Complete Your Profile
           </h1>
-          <p className="mx-auto mt-3 max-w-2xl text-lg text-neutral-600">
+          <p className="mx-auto mt-2 max-w-2xl text-sm md:text-base text-neutral-600 font-medium">
             Fill in all the details below to unlock your dashboard.
           </p>
         </div>

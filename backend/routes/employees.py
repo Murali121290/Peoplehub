@@ -2,12 +2,12 @@
 from utils.compat import Blueprint, request, jsonify, Response
 from models.database import db
 from models.employee import Employee
-from datetime import datetime
+from datetime import date, timedelta, datetime
+from zoneinfo import ZoneInfo
 import traceback
 import base64
 from models.user import User
 from middleware.auth import auth_required
-from datetime import date, timedelta
 from models.attendance import Attendance
 from models.user import Role, Team
 from services.leave_balance_service import update_leave_balance
@@ -260,10 +260,10 @@ def get_employee(employee_id):
     "role": employee.role,
 
     "profile_image": (
-    True
-    if employee.profile_image
-    else False
-),
+        base64.b64encode(employee.profile_image).decode("utf-8")
+        if employee.profile_image
+        else None
+    ),
 
     "joining_date": (
         employee.joining_date.isoformat()
@@ -993,7 +993,8 @@ def get_team_attendance(user_id):
                 check_out = attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None
                 working_hours = attendance.total_hours or 0
                 if not attendance.check_out:
-                    elapsed = (datetime.now() - attendance.check_in).total_seconds()
+                    now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
+                    elapsed = (now_ist - attendance.check_in).total_seconds()
                     break_secs = (attendance.total_break_minutes or 0) * 60
                     working_hours = round(max(elapsed - break_secs, 0) / 3600, 2)
             elif on_leave:

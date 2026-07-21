@@ -434,3 +434,30 @@ def delete_request(id):
             "success": False,
             "message": str(e)
         }), 500
+
+
+# ==========================================
+# GET SHIFT OPTIONS
+# ==========================================
+@shift_bp.route("/options", methods=["GET"])
+def get_shift_options():
+    try:
+        # Standard shifts
+        default_shifts = ["General Shift", "First Shift", "Second Shift", "Night Shift"]
+        shifts_set = set(default_shifts)
+
+        # Pull distinct shift_timing from Employee table
+        emp_shifts = db.session.query(Employee.shift_timing).distinct().all()
+        for s in emp_shifts:
+            if s[0] and s[0].strip():
+                shifts_set.add(s[0].strip())
+
+        # Pull distinct requested_shift from ShiftRequest table
+        req_shifts = db.session.query(ShiftRequest.requested_shift).distinct().all()
+        for s in req_shifts:
+            if s[0] and s[0].strip():
+                shifts_set.add(s[0].strip())
+
+        return jsonify(sorted(list(shifts_set)))
+    except Exception as e:
+        return jsonify(["General Shift", "First Shift", "Second Shift", "Night Shift"])

@@ -33,8 +33,19 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 }) => {
   const [filteredRoles, setFilteredRoles] = useState<any[]>([]);
   const [isEmptyField, setIsEmptyField] = useState(false);
-  // NEW: track which specific fields are invalid
   const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
+  const [shiftOptions, setShiftOptions] = useState<{ label: string; value: string }[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/shifts/options`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setShiftOptions(data.map((s: string) => ({ label: s, value: s })));
+        }
+      })
+      .catch((err) => console.error(err));
+  }, []);
 
   useEffect(() => {
     if (!newEmp.team_id) {
@@ -386,12 +397,16 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 clearError("shift_timing");
               }}
               placeholder="Select Shift"
-              options={[
-                { label: "General Shift", value: "General Shift" },
-                { label: "Morning Shift", value: "Morning Shift" },
-                { label: "Evening Shift", value: "Evening Shift" },
-                { label: "Night Shift", value: "Night Shift" },
-              ]}
+              options={
+                shiftOptions.length > 0
+                  ? shiftOptions
+                  : [
+                      { label: "General Shift", value: "General Shift" },
+                      { label: "Morning Shift", value: "Morning Shift" },
+                      { label: "Evening Shift", value: "Evening Shift" },
+                      { label: "Night Shift", value: "Night Shift" },
+                    ]
+              }
               className={fieldErrors["shift_timing"] ? "border-danger-500" : ""}
             />
             <FieldError fieldKey="shift_timing" />

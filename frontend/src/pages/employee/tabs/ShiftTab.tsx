@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { API_URL } from "../../../config/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   PlusIcon, 
@@ -42,6 +43,18 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   const [shiftTab, setShiftTab] = useState("my");
   const [showShiftForm, setShowShiftForm] = useState(false);
   const [activeRequestDetails, setActiveRequestDetails] = useState<number | null>(null);
+  const [shiftOptions, setShiftOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/shifts/options`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setShiftOptions(data);
+        }
+      })
+      .catch((err) => console.error("Failed to load shift options", err));
+  }, []);
 
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const canApproveShifts = ["admin", "manager", "hr"].includes(
@@ -119,60 +132,6 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
           Request Shift / WFH
         </Button>
       </div>
-
-      {/* Top Details Board */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-  {[
-    {
-      label: "Your Assigned Shift",
-      value: currentEmployee?.shift_timing || "General Shift",
-      subtext: "Standard: 09:00 AM - 06:00 PM",
-      icon: BriefcaseIcon,
-      iconWrap: "bg-blue-50",
-      iconColor: "text-blue-600",
-    },
-    {
-      label: "Approving Manager",
-      value: currentEmployee?.reporting_manager || "Admin",
-      subtext: "Assigned reporting lead",
-      icon: UserIcon,
-      iconWrap: "bg-emerald-50",
-      iconColor: "text-emerald-600",
-    },
-    {
-      label: "Pending Requests",
-      value: `${activeShiftRequests.length} Requests`,
-      subtext: "Awaiting manager decision",
-      icon: ArrowPathIcon,
-      iconWrap: "bg-violet-50",
-      iconColor: "text-violet-600",
-    },
-  ].map((item) => {
-    const Icon = item.icon;
-
-    return (
-      <Card
-        key={item.label}
-        className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col items-center"
-      >
-        <h4 className="text-[14px] font-semibold text-slate-800 mb-4 tracking-wide">{item.label}</h4>
-
-        <div className={`flex h-[3rem] w-[3rem] items-center justify-center rounded-[14px] ${item.iconWrap} mb-5`}>
-          <Icon className={`h-5 w-5 ${item.iconColor}`} />
-        </div>
-
-        <div className="w-full space-y-2 text-center mt-auto">
-          <p className="text-[15px] font-bold text-slate-900 leading-tight">
-            {item.value}
-          </p>
-          <p className="text-[12px] text-slate-400 font-medium leading-normal">
-            {item.subtext}
-          </p>
-        </div>
-      </Card>
-    );
-  })}
-</div>
 
       {/* Navigation Switch Tabs */}
       <div className="flex gap-3 mb-6 p-1 bg-neutral-100 rounded-xl w-fit border border-neutral-200">
@@ -556,10 +515,14 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                     }
                     className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 cursor-pointer font-medium"
                   >
-                    <option value="First Shift">First Shift (06:00 AM - 02:00 PM)</option>
-                    <option value="General Shift">General Shift (09:00 AM - 06:00 PM)</option>
-                    <option value="Second Shift">Second Shift (02:00 PM - 10:00 PM)</option>
-                    <option value="Night Shift">Night Shift (10:00 PM - 06:00 AM)</option>
+                    {(shiftOptions.length > 0
+                      ? shiftOptions
+                      : ["General Shift", "First Shift", "Second Shift", "Night Shift"]
+                    ).map((shift) => (
+                      <option key={shift} value={shift}>
+                        {shift}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}
