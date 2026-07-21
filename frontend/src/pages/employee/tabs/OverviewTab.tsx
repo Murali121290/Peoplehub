@@ -22,16 +22,25 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   itemVariants,
 }) => {
   const [teams, setTeams] = useState<any[]>(overviewCache.teams);
-  const [selectedTeam, setSelectedTeam] = useState<string>(overviewCache.selectedTeam);
+  
+  // Initialize with user's team if available, otherwise fallback to cache
+  const initialTeam = user?.team_id ? user.team_id.toString() : overviewCache.selectedTeam;
+  const [selectedTeam, setSelectedTeam] = useState<string>(initialTeam);
+  
   const [teamMembers, setTeamMembers] = useState<any[]>(
-    overviewCache.selectedTeam ? (overviewCache.teamMembers[overviewCache.selectedTeam] || []) : []
+    initialTeam ? (overviewCache.teamMembers[initialTeam] || []) : []
   );
   const [loading, setLoading] = useState(
-    !overviewCache.selectedTeam || !overviewCache.teamMembers[overviewCache.selectedTeam]
+    !initialTeam || !overviewCache.teamMembers[initialTeam]
   );
 
   // Fetch teams on mount
   useEffect(() => {
+    // If we initialized from user.team_id, update the cache
+    if (user?.team_id) {
+      overviewCache.selectedTeam = user.team_id.toString();
+    }
+    
     const fetchTeams = async () => {
       try {
         const response = await fetch(`${API_URL}/api/users/teams`, {
@@ -44,8 +53,8 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           setTeams(data.teams || []);
           overviewCache.teams = data.teams || [];
 
-          // Default to the user's team if available
-          if (!overviewCache.selectedTeam) {
+          // Default to the user's team if available, else first team
+          if (!selectedTeam) {
             if (user?.team_id) {
               setSelectedTeam(user.team_id.toString());
               overviewCache.selectedTeam = user.team_id.toString();
