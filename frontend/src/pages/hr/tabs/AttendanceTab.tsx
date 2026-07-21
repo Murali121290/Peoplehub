@@ -257,7 +257,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   // Render a mini square tracker for each of the last 30 days
   const renderMonthlyGrid = (row: any) => {
     return (
-      <div className="flex gap-[3px] items-center py-1 flex-wrap">
+      <div className="flex gap-[2px] items-center py-1 flex-wrap">
         {row.sortedDates.map((dateStr: string) => {
           const record = row.daysMap[dateStr];
           const status = record
@@ -289,7 +289,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             <div
               key={dateStr}
               title={tooltipTitle}
-              className={`w-3 h-3 rounded-[2px] cursor-pointer transition-all ${colorClass}`}
+              className={`w-2.5 h-2.5 rounded-[1px] cursor-pointer transition-transform hover:scale-125 opacity-80 hover:opacity-100 ${colorClass}`}
             />
           );
         })}
@@ -377,8 +377,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
     attendanceView === "weekly"
       ? getGroupedWeeklyData(filteredAttendance)
       : attendanceView === "monthly"
-      ? getGroupedMonthlyData(filteredAttendance)
-      : filteredAttendance;
+        ? getGroupedMonthlyData(filteredAttendance)
+        : filteredAttendance;
 
   useEffect(() => {
     const loadAttendance = async () => {
@@ -553,18 +553,18 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       key: "summary",
       header: "Summary (P/A/L/LV)",
       render: (row: any) => (
-        <div className="flex items-center gap-1 text-[10px] font-semibold">
-          <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-            {row.presentCount}P
+        <div className="flex items-center gap-3 text-[11px] font-bold tracking-wide">
+          <span className="text-emerald-600">
+            {row.presentCount} P
           </span>
-          <span className="text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-            {row.absentCount}A
+          <span className="text-rose-500">
+            {row.absentCount} A
           </span>
-          <span className="text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-            {row.lateCount}L
+          <span className="text-amber-500">
+            {row.lateCount} L
           </span>
-          <span className="text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-            {row.leaveCount}LV
+          <span className="text-blue-500">
+            {row.leaveCount} LV
           </span>
         </div>
       ),
@@ -578,11 +578,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         </span>
       ),
     },
-    {
-      key: "history_grid",
-      header: "Last 30 Days Attendance Tracker",
-      render: (row: any) => renderMonthlyGrid(row),
-    },
+
   ];
 
   const clearFilters = () => {
@@ -594,7 +590,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   return (
     <Panel>
       {/* Header */}
-      <div className="flex justify-between items-center mb-5">
+      <div className="flex justify-between items-start mb-5">
         <div>
           <div className="text-lg font-bold text-neutral-800">
             Attendance Management
@@ -613,33 +609,35 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             {dateRange}
           </div>
         </div>
-        <Button
-          onClick={downloadAttendance}
-          variant="success"
-          className="ml-[600px]"
-        >
-          Download Excel
-        </Button>
 
-        {/* Tabs */}
-        <div className="flex gap-2">
-          {["today", "weekly", "monthly"].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => {
-                setAttendanceView(tab);
-                clearFilters(); // Clear active filters when switching views to ensure clean state
-              }}
-              className={
-                "px-3.5 py-1.5 rounded-md font-semibold text-xs transition-all " +
-                (attendanceView === tab
-                  ? "border-2 border-info-600 bg-info-50 text-info-600"
-                  : "border border-neutral-200 bg-white text-neutral-500")
-              }
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
+        <div className="flex items-center gap-4">
+          <Button
+            onClick={downloadAttendance}
+            variant="success"
+          >
+            Download Excel
+          </Button>
+
+          {/* Tabs */}
+          <div className="flex gap-2">
+            {["today", "weekly", "monthly"].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => {
+                  setAttendanceView(tab);
+                  clearFilters(); // Clear active filters when switching views to ensure clean state
+                }}
+                className={
+                  "px-3.5 py-1.5 rounded-md font-semibold text-xs transition-all " +
+                  (attendanceView === tab
+                    ? "border-2 border-info-600 bg-info-50 text-info-600"
+                    : "border border-neutral-200 bg-white text-neutral-500")
+                }
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -814,7 +812,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       {(selectedShift !== "All" || statusFilter !== "All" || searchQuery !== "") && (
         <div className="mb-4 flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-200 w-fit">
           <span className="text-xs text-neutral-600 font-semibold">
-            Active Filters: 
+            Active Filters:
             {selectedShift !== "All" && ` [Shift: ${selectedShift}]`}
             {statusFilter !== "All" && ` [Status: ${statusFilter}]`}
             {searchQuery !== "" && ` [Search: "${searchQuery}"]`}
@@ -826,10 +824,13 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       )}
 
       {/* Title */}
-      <div className="mb-4 font-bold text-[15px]">
-        {attendanceView === "today" && "Today's Attendance"}
-        {attendanceView === "weekly" && "Weekly Attendance"}
-        {attendanceView === "monthly" && "Monthly Attendance"}
+      <div className="mb-5 flex items-center gap-3">
+        <h2 className="text-lg font-extrabold text-neutral-800 tracking-tight">
+          {attendanceView === "today" && "Today's Attendance"}
+          {attendanceView === "weekly" && "Weekly Attendance"}
+          {attendanceView === "monthly" && "Monthly Attendance"}
+        </h2>
+        <div className="h-px bg-neutral-200 flex-1"></div>
       </div>
 
       {/* Loading */}
@@ -841,8 +842,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             attendanceView === "weekly"
               ? weeklyColumns
               : attendanceView === "monthly"
-              ? monthlyColumns
-              : todayColumns
+                ? monthlyColumns
+                : todayColumns
           }
           data={displayData}
           rowKey={(_at, i) => i}
