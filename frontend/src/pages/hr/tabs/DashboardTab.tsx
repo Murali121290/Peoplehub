@@ -124,13 +124,13 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams
 
               {isActive && (
                 <div className="mb-5 bg-white rounded-xl border border-neutral-200 animate-fadeIn overflow-hidden shadow-sm">
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-left text-xs">
-                      <thead>
+                  <div className="overflow-x-auto overflow-y-auto max-h-[300px]">
+                    <table className="w-full border-collapse text-left text-xs relative">
+                      <thead className="sticky top-0 z-10 shadow-sm">
                         <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider">
-                          <th className="px-5 py-3 font-semibold">Employee Name</th>
-                          <th className="px-5 py-3 font-semibold">Designation</th>
-                          <th className="px-5 py-3 font-semibold">Reporting Manager</th>
+                          <th className="px-5 py-3 font-semibold bg-neutral-50">Employee Name</th>
+                          <th className="px-5 py-3 font-semibold bg-neutral-50">Designation</th>
+                          <th className="px-5 py-3 font-semibold bg-neutral-50">Reporting Manager</th>
                         </tr>
                       </thead>
                       <tbody>

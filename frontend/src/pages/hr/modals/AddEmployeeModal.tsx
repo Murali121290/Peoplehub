@@ -46,7 +46,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     "designation",
     "status",
     "company_email",
-    "password",
+    ...(!isEdit ? ["password"] : []),
     "access_level",
     "shift_timing",
   ];
@@ -360,23 +360,25 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <FieldError fieldKey="company_email" />
           </FormField>
 
-          <FormField label={getLabel("password", "Password")}>
-            <Input
-              required
-              type="password"
-              value={newEmp.password || ""}
-              placeholder="Enter Password"
-              onChange={(e) => {
-                setNewEmp({
-                  ...newEmp,
-                  password: e.target.value,
-                });
-                clearError("password");
-              }}
-              className={fieldErrors["password"] ? "border-danger-500" : ""}
-            />
-            <FieldError fieldKey="password" />
-          </FormField>
+          {!isEdit && (
+            <FormField label={getLabel("password", "Password")}>
+              <Input
+                required={!isEdit}
+                type="password"
+                value={newEmp.password || ""}
+                placeholder="Enter Password"
+                onChange={(e) => {
+                  setNewEmp({
+                    ...newEmp,
+                    password: e.target.value,
+                  });
+                  clearError("password");
+                }}
+                className={fieldErrors["password"] ? "border-danger-500" : ""}
+              />
+              <FieldError fieldKey="password" />
+            </FormField>
+          )}
 
           <FormField label={getLabel("access_level", "Access Level")}>
             <Select
