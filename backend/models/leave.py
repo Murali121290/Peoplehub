@@ -129,3 +129,19 @@ class LeaveAuditLog(db.Model):
     cancelled_at = db.Column(db.DateTime, default=datetime.utcnow)
     cancelled_by = db.Column(db.String(100))
 
+
+class LeavePolicy(db.Model):
+    __tablename__ = "leave_policies"
+    id = db.Column(db.Integer, primary_key=True)
+    leave_type = db.Column(db.String(100), unique=True, nullable=False)
+    yearly_limit = db.Column(db.Float, nullable=False, default=0.0)
+    applicable_gender = db.Column(db.String(20), nullable=False, default="All")
+
+
+class EmployeeLeaveBalance(db.Model):
+    __tablename__ = "employee_leave_balances"
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey("employees.id"), nullable=False)
+    leave_type = db.Column(db.String(100), nullable=False)
+    available = db.Column(db.Float, nullable=False, default=0.0)
+

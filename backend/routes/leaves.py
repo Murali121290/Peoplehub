@@ -259,36 +259,40 @@ def approve_leave(leave_id):
         leave.approved_at = datetime.utcnow()
 
         leave_type = (leave.leave_type or "").strip().lower()
-
         leave_days = leave.total_days or 0
 
-        if leave_type == "sick leave":
+        # Try to find corresponding EmployeeLeaveBalance
+        from models.leave import EmployeeLeaveBalance
+        balance = EmployeeLeaveBalance.query.filter(
+            EmployeeLeaveBalance.employee_id == employee.id,
+            db.func.lower(EmployeeLeaveBalance.leave_type) == leave_type
+        ).first()
 
+        if balance:
+            balance.available = max(0.0, (balance.available or 0) - leave_days)
+
+        if leave_type == "sick leave":
             employee.sick_leave = max(
                 0,
                 (employee.sick_leave or 0) - leave_days
             )
-
         elif leave_type == "casual leave":
-
             employee.casual_leave = max(
                 0,
                 (employee.casual_leave or 0) - leave_days
             )
-
         elif leave_type in ["earned leave", "privilege leave"]:
-
             employee.privilege_leave = max(
                 0,
                 (employee.privilege_leave or 0) - leave_days
             )
-
         else:
-
-            return jsonify({
-                "success": False,
-                "error": f"Invalid leave type: {leave.leave_type}"
-            }), 400
+            # For dynamic custom leave categories, check if we found a balance record
+            if not balance:
+                return jsonify({
+                    "success": False,
+                    "error": f"Invalid leave type or no balance record found: {leave.leave_type}"
+                }), 400
 
         db.session.commit()
 
@@ -1039,3 +1043,158 @@ def credit_monthly_leaves():
             "success": False,
             "error": str(e)
         }), 500
+
+@leave_bp.route("/policies", methods=["GET"])
+def get_leave_policies():
+    try:
+        from models.leave import LeavePolicy
+        policies = LeavePolicy.query.all()
+        return jsonify([
+            {
+                "id": p.id,
+                "leave_type": p.leave_type,
+                "yearly_limit": p.yearly_limit,
+                "applicable_gender": p.applicable_gender
+            }
+            for p in policies
+        ]), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@leave_bp.route("/policies", methods=["POST"])
+def create_leave_policy():
+    try:
+        data = request.get_json() or {}
+        leave_type = data.get("leave_type")
+        yearly_limit = float(data.get("yearly_limit", 0.0))
+        applicable_gender = data.get("applicable_gender", "All")
+
+        if not leave_type:
+            return jsonify({"success": False, "error": "Leave type is required"}), 400
+
+        from models.leave import LeavePolicy, EmployeeLeaveBalance
+        from models.employee import Employee
+
+        exists = LeavePolicy.query.filter_by(leave_type=leave_type).first()
+        if exists:
+            return jsonify({"success": False, "error": "Leave policy already exists"}), 400
+
+        policy = LeavePolicy(leave_type=leave_type, yearly_limit=yearly_limit, applicable_gender=applicable_gender)
+        db.session.add(policy)
+        db.session.commit()
+
+        employees = Employee.query.all()
+        for emp in employees:
+            emp_gender = (emp.gender or "").strip().lower()
+            pol_gender = applicable_gender.strip().lower()
+            is_applicable = (pol_gender == "all") or (emp_gender == pol_gender)
+
+            if is_applicable:
+                balance = EmployeeLeaveBalance(
+                    employee_id=emp.id,
+                    leave_type=leave_type,
+                    available=yearly_limit
+                )
+                db.session.add(balance)
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Leave category created successfully",
+            "policy": {
+                "id": policy.id,
+                "leave_type": policy.leave_type,
+                "yearly_limit": policy.yearly_limit,
+                "applicable_gender": policy.applicable_gender
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@leave_bp.route("/policies", methods=["PUT"])
+def update_leave_policies():
+    try:
+        data = request.get_json() or {}
+        if not isinstance(data, list):
+            return jsonify({"success": False, "error": "Invalid format, list of policies expected"}), 400
+
+        from models.leave import LeavePolicy, EmployeeLeaveBalance
+        for item in data:
+            policy_id = item.get("id")
+            new_limit = float(item.get("yearly_limit", 0.0))
+            policy = LeavePolicy.query.get(policy_id)
+            if policy:
+                old_limit = policy.yearly_limit
+                diff = new_limit - old_limit
+                policy.yearly_limit = new_limit
+
+                # Adjust each employee's available balance by the difference
+                if diff != 0:
+                    balances = EmployeeLeaveBalance.query.filter_by(leave_type=policy.leave_type).all()
+                    for bal in balances:
+                        bal.available = max(0.0, (bal.available or 0.0) + diff)
+
+        db.session.commit()
+        return jsonify({"success": True, "message": "Leave policies updated successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@leave_bp.route("/policies/<int:policy_id>", methods=["DELETE"])
+def delete_leave_policy(policy_id):
+    try:
+        from models.leave import LeavePolicy, EmployeeLeaveBalance
+        policy = LeavePolicy.query.get(policy_id)
+        if not policy:
+            return jsonify({"success": False, "error": "Policy not found"}), 404
+
+        db.session.delete(policy)
+        EmployeeLeaveBalance.query.filter_by(leave_type=policy.leave_type).delete()
+        db.session.commit()
+
+        return jsonify({"success": True, "message": "Leave category deleted successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@leave_bp.route("/balances/<int:employee_id>", methods=["GET"])
+def get_employee_balances(employee_id):
+    try:
+        from models.leave import EmployeeLeaveBalance
+        balances = EmployeeLeaveBalance.query.filter_by(employee_id=employee_id).all()
+        
+        if not balances:
+            from models.leave import LeavePolicy
+            from models.employee import Employee
+            emp = Employee.query.get(employee_id)
+            if emp:
+                policies = LeavePolicy.query.all()
+                for pol in policies:
+                    avail = pol.yearly_limit
+                    if pol.leave_type == "Sick Leave" and emp.sick_leave is not None:
+                        avail = emp.sick_leave
+                    elif pol.leave_type == "Casual Leave" and emp.casual_leave is not None:
+                        avail = emp.casual_leave
+                    elif pol.leave_type == "Privilege Leave" and emp.privilege_leave is not None:
+                        avail = emp.privilege_leave
+                    
+                    bal = EmployeeLeaveBalance(
+                        employee_id=emp.id,
+                        leave_type=pol.leave_type,
+                        available=avail
+                    )
+                    db.session.add(bal)
+                db.session.commit()
+                balances = EmployeeLeaveBalance.query.filter_by(employee_id=employee_id).all()
+
+        return jsonify([
+            {
+                "id": b.id,
+                "leave_type": b.leave_type,
+                "available": b.available
+            }
+            for b in balances
+        ]), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500

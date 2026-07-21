@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import axios from 'axios';
 import { 
   PlusIcon, 
   CalendarIcon, 
@@ -68,6 +69,28 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const [editingLeave, setEditingLeave] = useState<any>(null);
   const [leaveTab, setLeaveTab] = useState("myRequests");
   const [activeRequestDetails, setActiveRequestDetails] = useState<number | null>(null);
+
+  const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
+
+  const [leavePolicies, setLeavePolicies] = useState<any[]>([]);
+  const [employeeBalances, setEmployeeBalances] = useState<any[]>([]);
+
+  const fetchPoliciesAndBalances = async () => {
+    try {
+      const resPolicies = await axios.get(`${BASE_URL}/leaves/policies`);
+      setLeavePolicies(resPolicies.data);
+      if (currentEmployee?.id) {
+        const resBalances = await axios.get(`${BASE_URL}/leaves/balances/${currentEmployee.id}`);
+        setEmployeeBalances(resBalances.data);
+      }
+    } catch (err) {
+      console.error("Failed to load policies or balances", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchPoliciesAndBalances();
+  }, [currentEmployee, leaveRequests]);
   const [validationError, setValidationError] = useState<{
     title: string;
     message: string;
@@ -98,7 +121,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     (user?.access_level || "").toLowerCase()
   );
 
-  const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
+
 
   // ── Timeline & Calendar View States ─────────────────────────────────────
   const todayObj = new Date();
@@ -250,22 +273,29 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     setShowLeaveForm(true);
   };
 
-  // Calculate Pending leaves to accurately reflect real-time available balance
-  const pendingSickLeaves = leaveRequests
-    .filter((req: any) => Number(req.employee_id) === Number(currentEmployee?.id) && req.status === "Pending" && (req.leave_type || "").toLowerCase() === "sick leave")
-    .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+  // Helper to fetch available balance for a category
+  const getAvailableBalance = (leaveType: string, defaultLimit: number) => {
+    const bal = employeeBalances.find(b => b.leave_type.toLowerCase() === leaveType.toLowerCase());
+    if (bal !== undefined) return bal.available;
+    
+    // Fallback for standard types
+    if (leaveType.toLowerCase() === "sick leave") return currentEmployee?.sick_leave ?? defaultLimit;
+    if (leaveType.toLowerCase() === "casual leave") return currentEmployee?.casual_leave ?? defaultLimit;
+    if (["earned leave", "privilege leave"].includes(leaveType.toLowerCase())) return currentEmployee?.privilege_leave ?? currentEmployee?.earned_leave ?? defaultLimit;
+    
+    return defaultLimit;
+  };
 
-  const pendingCasualLeaves = leaveRequests
-    .filter((req: any) => Number(req.employee_id) === Number(currentEmployee?.id) && req.status === "Pending" && (req.leave_type || "").toLowerCase() === "casual leave")
-    .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
-
-  const pendingPrivilegeLeaves = leaveRequests
-    .filter((req: any) => Number(req.employee_id) === Number(currentEmployee?.id) && req.status === "Pending" && ["earned leave", "privilege leave"].includes((req.leave_type || "").toLowerCase()))
-    .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
-
-  const realSickLeave = Math.max(0, (currentEmployee?.sick_leave || 0) - pendingSickLeaves);
-  const realCasualLeave = Math.max(0, (currentEmployee?.casual_leave || 0) - pendingCasualLeaves);
-  const realPrivilegeLeave = Math.max(0, (currentEmployee?.privilege_leave || currentEmployee?.earned_leave || 0) - pendingPrivilegeLeaves);
+  // Helper to fetch pending days
+  const getPendingDays = (leaveType: string) => {
+    return leaveRequests
+      .filter((req: any) => 
+        Number(req.employee_id) === Number(currentEmployee?.id) && 
+        req.status === "Pending" && 
+        (req.leave_type || "").toLowerCase() === leaveType.toLowerCase()
+      )
+      .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -274,23 +304,10 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       const type = (leaveForm.leaveType || "").trim().toLowerCase();
       const requested = leaveForm.totalDays || 0;
       
-      let available = 0;
-      let yearlyMax = 0;
-      let displayType = "";
-
-      if (type === "sick leave") {
-        available = realSickLeave;
-        yearlyMax = 6;
-        displayType = "Sick Leave";
-      } else if (type === "casual leave") {
-        available = realCasualLeave;
-        yearlyMax = 6;
-        displayType = "Casual Leave";
-      } else if (type === "earned leave" || type === "privilege leave") {
-        available = realPrivilegeLeave;
-        yearlyMax = 15;
-        displayType = "Privilege Leave";
-      }
+      const matchedPolicy = leavePolicies.find(p => p.leave_type.toLowerCase() === type);
+      const yearlyMax = matchedPolicy ? matchedPolicy.yearly_limit : (type === "privilege leave" || type === "earned leave" ? 15 : 6);
+      const available = getAvailableBalance(leaveForm.leaveType, yearlyMax) - getPendingDays(leaveForm.leaveType);
+      const displayType = matchedPolicy ? matchedPolicy.leave_type : leaveForm.leaveType;
 
       if (type) {
         if (available <= 0) {
@@ -356,84 +373,107 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       </div>
 
       {/* Leave Balance Grid Section */}
+      {/* Leave Balance Grid Section */}
       <motion.div
-  variants={itemVariants}
-  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
->
-  {[
-    {
-      label: "Sick Leave",
-      value: realSickLeave,
-      total: 6,
-      icon: ShieldCheckIcon,
-      iconWrap: "bg-emerald-50",
-      iconColor: "text-emerald-600",
-      progressColor: "bg-emerald-500",
-      note: "For medical recovery",
-    },
-    {
-      label: "Casual Leave",
-      value: realCasualLeave,
-      total: 6,
-      icon: ClockIcon,
-      iconWrap: "bg-amber-50",
-      iconColor: "text-amber-600",
-      progressColor: "bg-amber-500",
-      note: "For personal work",
-    },
-    {
-      label: "Privilege Leave",
-      value: realPrivilegeLeave,
-      total: 15,
-      icon: CalendarIcon,
-      iconWrap: "bg-blue-50",
-      iconColor: "text-blue-600",
-      progressColor: "bg-blue-500",
-      note: "Accrued vacation leaves",
-    },
-    {
-      label: "Total Balance",
-      value: realSickLeave + realCasualLeave + realPrivilegeLeave,
-      total: 27,
-      icon: DocumentTextIcon,
-      iconWrap: "bg-slate-100",
-      iconColor: "text-slate-600",
-      progressColor: "bg-slate-700",
-      note: "Cumulative leave count",
-    },
-  ].map((item) => {
-    const used = Math.max(0, item.total - item.value);
-    const percent = Math.min(100, Math.round((item.value / item.total) * 100));
-    const Icon = item.icon;
-
-    return (
-      <Card
-        key={item.label}
-        className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col items-center"
+        variants={itemVariants}
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
       >
-        <h4 className="text-[14px] font-semibold text-slate-800 mb-4 tracking-wide">{item.label}</h4>
+        {(() => {
+          const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
+          const policiesList = leavePolicies.filter(pol => {
+            const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
+            return polGender === "all" || polGender === userGender;
+          });
 
-        <div className={`flex h-[3rem] w-[3rem] items-center justify-center rounded-[14px] ${item.iconWrap} mb-5`}>
-          <Icon className={`h-5 w-5 ${item.iconColor}`} />
-        </div>
+          const dynamicCards = policiesList.map((pol) => {
+            const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+            const pending = getPendingDays(pol.leave_type);
+            const realAvailable = Math.max(0, available - pending);
+            const used = Math.max(0, pol.yearly_limit - available);
+            
+            let icon = CalendarIcon;
+            let iconWrap = "bg-blue-50";
+            let iconColor = "text-blue-600";
+            let note = "Annual leaves";
+            
+            if (pol.leave_type.toLowerCase() === "sick leave") {
+              icon = ShieldCheckIcon;
+              iconWrap = "bg-emerald-50";
+              iconColor = "text-emerald-600";
+              note = "For medical recovery";
+            } else if (pol.leave_type.toLowerCase() === "casual leave") {
+              icon = ClockIcon;
+              iconWrap = "bg-amber-50";
+              iconColor = "text-amber-600";
+              note = "For personal work";
+            } else if (["privilege leave", "earned leave"].includes(pol.leave_type.toLowerCase())) {
+              icon = CalendarIcon;
+              iconWrap = "bg-blue-50";
+              iconColor = "text-blue-600";
+              note = "Accrued vacation leaves";
+            }
+            
+            return {
+              label: pol.leave_type,
+              value: realAvailable,
+              total: pol.yearly_limit,
+              used,
+              icon,
+              iconWrap,
+              iconColor,
+              note
+            };
+          });
 
-        <div className="w-full space-y-2.5 mt-auto px-1">
-          <div className="flex justify-between items-center text-[14px]">
-            <span className="text-slate-600 font-medium">Available</span>
-            <span className="font-semibold text-emerald-600">{item.value}</span>
-          </div>
-          <div className="flex justify-between items-center text-[14px]">
-            <span className="text-slate-600 font-medium">Booked</span>
-            <div className="flex items-center gap-1.5">
-              <span className="font-semibold text-slate-900">{used}</span>
-              <InformationCircleIcon className="w-4 h-4 text-slate-400 cursor-pointer hover:text-slate-600 transition-colors" />
-            </div>
-          </div>
-        </div>
-      </Card>
-    );
-  })}
-</motion.div>
+          const totalAvailable = dynamicCards.reduce((sum, c) => sum + c.value, 0);
+          const totalLimit = dynamicCards.reduce((sum, c) => sum + c.total, 0);
+          const totalUsed = dynamicCards.reduce((sum, c) => sum + c.used, 0);
+
+          const allCards = [
+            ...dynamicCards,
+            {
+              label: "Total Balance",
+              value: totalAvailable,
+              total: totalLimit,
+              used: totalUsed,
+              icon: DocumentTextIcon,
+              iconWrap: "bg-slate-100",
+              iconColor: "text-slate-600",
+              note: "Cumulative leave count"
+            }
+          ];
+
+          return allCards.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Card
+                key={item.label}
+                className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col items-center"
+              >
+                <h4 className="text-[14px] font-semibold text-slate-800 mb-4 tracking-wide">{item.label}</h4>
+
+                <div className={`flex h-[3rem] w-[3rem] items-center justify-center rounded-[14px] ${item.iconWrap} mb-5`}>
+                  <Icon className={`h-5 w-5 ${item.iconColor}`} />
+                </div>
+
+                <div className="w-full space-y-2.5 mt-auto px-1">
+                  <div className="flex justify-between items-center text-[14px]">
+                    <span className="text-slate-600 font-medium">Available</span>
+                    <span className="font-semibold text-emerald-600">{item.value}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[14px]">
+                    <span className="text-slate-600 font-medium">Booked</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-slate-900">{item.used}</span>
+                      <InformationCircleIcon className="w-4 h-4 text-slate-400 cursor-pointer hover:text-slate-600 transition-colors" />
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            );
+          });
+        })()}
+      </motion.div>
 
       {/* Navigation Tabs (My Requests / Approval Requests) */}
       <div className="flex gap-3 mb-6 p-1 bg-neutral-100 rounded-xl w-fit border border-neutral-200">
@@ -686,11 +726,14 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
                 >
                   <option value="All">All Leave Types</option>
-                  <option value="Casual Leave">Casual Leave</option>
-                  <option value="Sick Leave">Sick Leave</option>
-                  <option value="Privilege Leave">Privilege Leave</option>
-                  <option value="Earned Leave">Earned Leave</option>
-                  <option value="Unpaid Leave">Unpaid Leave</option>
+                  {leavePolicies.filter(pol => {
+                    const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
+                    const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
+                    return polGender === "all" || polGender === userGender;
+                  }).map(pol => (
+                    <option key={pol.id} value={pol.leave_type}>{pol.leave_type}</option>
+                  ))}
+                  <option value="Permission">Permission</option>
                 </select>
               </div>
             </div>
@@ -1315,9 +1358,13 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer font-medium"
                   >
                     <option value="">Select Leave Type</option>
-                    <option value="Sick Leave">Sick Leave</option>
-                    <option value="Casual Leave">Casual Leave</option>
-                    <option value="Privilege Leave">Privilege Leave</option>
+                    {leavePolicies.filter(pol => {
+                      const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
+                      const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
+                      return polGender === "all" || polGender === userGender;
+                    }).map(pol => (
+                      <option key={pol.id} value={pol.leave_type}>{pol.leave_type}</option>
+                    ))}
                   </select>
                 </div>
               )}
@@ -1506,19 +1553,28 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 Leave Balance Summary
               </h3>
               <div className="space-y-3.5 text-xs">
-                {[
-                  { label: "Privilege Leave", value: currentEmployee?.privilege_leave || currentEmployee?.earned_leave || 0 },
-                  { label: "Casual Leave", value: currentEmployee?.casual_leave || 0 },
-                  { label: "Sick Leave", value: currentEmployee?.sick_leave || 0 },
-                ].map((item) => (
-                  <div key={item.label} className="flex justify-between items-center py-2 border-b border-primary-100">
-                    <span className="text-neutral-600 font-semibold">{item.label}</span>
-                    <span className="font-extrabold text-primary-700 text-md">{item.value} days</span>
-                  </div>
-                ))}
+                {leavePolicies.filter(pol => {
+                  const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
+                  const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
+                  return polGender === "all" || polGender === userGender;
+                }).map((pol) => {
+                  const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+                  return (
+                    <div key={pol.id} className="flex justify-between items-center py-2 border-b border-primary-100">
+                      <span className="text-neutral-600 font-semibold">{pol.leave_type}</span>
+                      <span className="font-extrabold text-primary-700 text-md">{available} days</span>
+                    </div>
+                  );
+                })}
                 <div className="flex justify-between items-center pt-3 text-sm">
                   <span className="font-bold text-primary-900">Total Balance</span>
-                  <span className="font-extrabold text-primary-800">{totalBalance} days</span>
+                  <span className="font-extrabold text-primary-800">
+                    {leavePolicies.filter(pol => {
+                      const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
+                      const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
+                      return polGender === "all" || polGender === userGender;
+                    }).reduce((sum, pol) => sum + getAvailableBalance(pol.leave_type, pol.yearly_limit), 0)} days
+                  </span>
                 </div>
               </div>
             </div>

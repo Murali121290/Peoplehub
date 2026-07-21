@@ -60,4 +60,47 @@ db = DbMock
 def init_db(app=None):
     """Initialize database and create tables if they do not exist"""
     Base.metadata.create_all(bind=engine)
+
+    # Seed default policies
+    from models.leave import LeavePolicy
+    defaults = [
+        ("Sick Leave", 0.0),
+        ("Casual Leave", 0.0),
+        ("Privilege Leave", 0.0)
+    ]
+    for leave_type, limit in defaults:
+        policy = db_session.query(LeavePolicy).filter_by(leave_type=leave_type).first()
+        if not policy:
+            policy = LeavePolicy(leave_type=leave_type, yearly_limit=limit, applicable_gender="All")
+            db_session.add(policy)
+    db_session.commit()
+
+    # Initialize EmployeeLeaveBalance for all existing employees
+    from models.employee import Employee
+    from models.leave import EmployeeLeaveBalance
+    
+    employees = db_session.query(Employee).all()
+    policies = db_session.query(LeavePolicy).all()
+    
+    for emp in employees:
+        emp.sick_leave = 0.0
+        emp.casual_leave = 0.0
+        emp.privilege_leave = 0.0
+
+        for pol in policies:
+            emp_gender = (emp.gender or "").strip().lower()
+            pol_gender = (pol.applicable_gender or "All").strip().lower()
+            is_applicable = (pol_gender == "all") or (emp_gender == pol_gender)
+
+            if is_applicable:
+                balance = db_session.query(EmployeeLeaveBalance).filter_by(employee_id=emp.id, leave_type=pol.leave_type).first()
+                if not balance:
+                    balance = EmployeeLeaveBalance(
+                        employee_id=emp.id,
+                        leave_type=pol.leave_type,
+                        available=pol.yearly_limit
+                    )
+                    db_session.add(balance)
+    db_session.commit()
+
     return db
