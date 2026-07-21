@@ -160,7 +160,8 @@ def remind_checkin():
         manager_emp = None
         for e in Employee.query.all():
             full_name = f"{e.first_name} {e.last_name}".strip().lower()
-            if full_name == manager_name:
+            is_match = (full_name == manager_name) or (len(manager_name.split()) == 1 and full_name.split()[0] == manager_name) or (len(full_name.split()) == 1 and manager_name.split()[0] == full_name)
+            if is_match:
                 manager_emp = e
                 break
 

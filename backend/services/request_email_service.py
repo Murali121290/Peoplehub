@@ -219,7 +219,8 @@ def send_manager_request_email(request_obj, request_type):
     reject_token = generate_request_token(request_obj.id, request_type, "reject")
 
     # Base URL of the backend server
-    api_base = os.environ.get("BACKEND_URL", "http://localhost:5000")
+    backend_port = os.environ.get("BACKEND_PORT", "8000")
+    api_base = os.environ.get("BACKEND_URL", f"http://localhost:{backend_port}")
     approve_url = f"{api_base}/api/requests/email-action?token={approve_token}"
     reject_url = f"{api_base}/api/requests/email-action?token={reject_token}"
 

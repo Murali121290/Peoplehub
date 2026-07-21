@@ -48,7 +48,7 @@ def create_app():
     fastapi_app = FastAPI(title="Peoplehub API", version="1.0.0")
 
     # Configure CORS
-    allowed_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+    allowed_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5555,http://localhost:3000").split(",")
     fastapi_app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,

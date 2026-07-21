@@ -159,11 +159,20 @@ def get_shift_approvals(manager_name):
     normalized_manager = manager_name.strip().lower()
 
     shifts = ShiftRequest.query.filter(
-        func.lower(func.trim(ShiftRequest.reporting_manager)) == normalized_manager,
         ShiftRequest.status == "Pending"
     ).order_by(
         ShiftRequest.id.desc()
     ).all()
+
+    # Filter by manager match in Python to handle name variations
+    shifts = [
+        s for s in shifts
+        if s.reporting_manager and (
+            (s.reporting_manager.strip().lower() == normalized_manager) or
+            (len(s.reporting_manager.strip().split()) == 1 and normalized_manager.split()[0] == s.reporting_manager.strip().lower()) or
+            (len(normalized_manager.split()) == 1 and s.reporting_manager.strip().lower().split()[0] == normalized_manager)
+        )
+    ]
 
     return jsonify([
     {

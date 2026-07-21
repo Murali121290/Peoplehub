@@ -10,7 +10,7 @@ _socket_sid_var = contextvars.ContextVar("socket_sid", default=None)
 class SocketIOCompat:
     def __init__(self):
         # python-socketio Server in ASGI mode
-        cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+        cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5555,http://localhost:3000").split(",")
         self.server = socketio_module.AsyncServer(cors_allowed_origins=cors_origins, async_mode="asgi")
         self.asgi_app = None
 

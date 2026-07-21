@@ -997,7 +997,8 @@ def get_team_attendance(user_id):
         for emp in all_employees:
             if not emp.reporting_manager:
                 continue
-            if emp.reporting_manager.strip().lower() != manager_name:
+            e_mgr = emp.reporting_manager.strip().lower()
+            if e_mgr != manager_name and not (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr) and not (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name):
                 continue
 
             # Today's attendance
