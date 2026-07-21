@@ -30,16 +30,16 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams
   return (
     <div className="flex flex-col gap-6">
       {/* Stats Cards */}
-      <div className="grid gap-5 mb-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+      <div className="grid gap-5 mb-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
         {statCards.map((card) => (
-          <Card key={card.label} variant="accent-left" accentColor="#46494C" padding="lg" className="shadow-md">
+          <Card key={card.label} variant="default" padding="sm" className="shadow-md">
             <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
               {card.label}
             </div>
-            <div className="text-4xl font-extrabold text-neutral-800 mt-3">
+            <div className="text-3xl font-extrabold text-neutral-800 mt-2">
               {card.value}
             </div>
-            <div className="mt-2 text-sm text-neutral-400">{card.sub}</div>
+            <div className="mt-1 text-xs text-neutral-400">{card.sub}</div>
           </Card>
         ))}
       </div>
@@ -123,79 +123,39 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams
               </div>
 
               {isActive && (
-                <div className="mb-5 px-[18px] py-4 bg-neutral-50 rounded-xl border border-neutral-200 animate-fadeIn">
-                  <div className="flex gap-3 mb-5 flex-wrap">
-                    <span className="bg-primary-500 text-white px-3.5 py-1.5 rounded-lg text-sm font-semibold shadow-sm">
-                      Members: {empCount}
-                    </span>
-                  </div>
-
-                  <div className="text-sm font-bold text-neutral-700 mb-3 uppercase tracking-wider">
-                    Roles Breakdown
-                  </div>
-
-                  <div className="flex flex-col gap-3">
-                    {(Object.entries(rolesGroup) as [string, any[]][]).map(([roleName, emps]) => {
-                      const roleKey = `${team.team_name}-${roleName}`;
-                      const isRoleActive = selectedRole === roleKey;
-                      const roleEmpCount = emps.length;
-                      const totalRoleSalary = emps.reduce((sum, e) => sum + Number(e.salary || 0), 0);
-
-                      return (
-                        <div key={roleName} className="rounded-xl overflow-hidden border border-neutral-200 shadow-sm bg-white">
-                          {/* Role Header Bar */}
-                          <div
-                            onClick={() => setSelectedRole(isRoleActive ? null : roleKey)}
-                            className={`flex justify-between items-center px-4 py-3 cursor-pointer transition-colors ${isRoleActive
-                                ? "bg-primary-50/70 border-b border-neutral-200"
-                                : "hover:bg-neutral-50"
-                              }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-sm">
-                                {roleName.charAt(0)}
-                              </div>
-                              <div>
-                                <div className="text-sm font-semibold text-neutral-800">{roleName}</div>
-                                <div className="text-xs text-neutral-500 mt-0.5">
-                                  {roleEmpCount} {roleEmpCount === 1 ? "Employee" : "Employees"}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <ChevronDownIcon
-                                className={`w-4 h-4 transition-transform ${isRoleActive ? "rotate-180 text-primary-600" : "text-neutral-500"}`}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Role Employees Nested Table */}
-                          {isRoleActive && (
-                            <div className="p-4 bg-neutral-50/50 animate-fadeIn border-t border-neutral-100">
-                              <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-                                <table className="w-full border-collapse text-left text-xs">
-                                  <thead>
-                                    <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider">
-                                      {["Employee Name", "Reporting Manager"].map((h) => (
-                                        <th key={h} className="px-4 py-2.5 text-xs font-semibold">{h}</th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {emps.map((emp: any, idx: number) => (
-                                      <tr key={emp.id} className={`${idx !== emps.length - 1 ? "border-b border-neutral-100" : ""} hover:bg-primary-50/40 transition-colors`}>
-                                        <td className="px-4 py-3 text-neutral-800 font-semibold">{emp.name || `${emp.first_name} ${emp.last_name}`}</td>
-                                        <td className="px-4 py-3 text-neutral-600">{emp.reporting_manager || "—"}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                <div className="mb-5 bg-white rounded-xl border border-neutral-200 animate-fadeIn overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-left text-xs">
+                      <thead>
+                        <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider">
+                          <th className="px-5 py-3 font-semibold">Employee Name</th>
+                          <th className="px-5 py-3 font-semibold">Designation</th>
+                          <th className="px-5 py-3 font-semibold">Reporting Manager</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {teamEmployees.map((emp: any, idx: number) => (
+                          <tr key={emp.id || idx} className={`${idx !== teamEmployees.length - 1 ? "border-b border-neutral-100" : ""} hover:bg-primary-50/40 transition-colors`}>
+                            <td className="px-5 py-3 text-neutral-800 font-semibold">
+                              {emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || "—"}
+                            </td>
+                            <td className="px-5 py-3 text-neutral-600">
+                              {emp.designation || "—"}
+                            </td>
+                            <td className="px-5 py-3 text-neutral-600">
+                              {emp.reporting_manager || "—"}
+                            </td>
+                          </tr>
+                        ))}
+                        {teamEmployees.length === 0 && (
+                          <tr>
+                            <td colSpan={3} className="px-5 py-8 text-center text-neutral-500">
+                              No members found in this team.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}

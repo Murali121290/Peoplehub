@@ -914,6 +914,7 @@ def get_team_overview():
                 "id": emp.id,
                 "name": f"{emp.first_name} {emp.last_name or ''}".strip(),
                 "role": role_name,
+                "designation": emp.designation,
                 "reporting_manager": emp.reporting_manager,
                 "salary": float(emp.salary or 0),
                 "department": emp.department,
