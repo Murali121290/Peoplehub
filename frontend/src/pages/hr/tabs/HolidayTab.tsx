@@ -19,6 +19,7 @@ const API_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
 export const HolidayTab: React.FC = () => {
   const [holidays, setHolidays] = useState<any[]>([]);
   const [overrides, setOverrides] = useState<any[]>([]);
+  const [holidayTypes, setHolidayTypes] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // Holiday Modal state
@@ -48,11 +49,13 @@ export const HolidayTab: React.FC = () => {
     setIsLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get(`${API_URL}/holidays`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setHolidays(res.data.holidays || []);
-      setOverrides(res.data.overrides || []);
+      const [resHolidays, resTypes] = await Promise.all([
+        axios.get(`${API_URL}/holidays`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API_URL}/holidays/types`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ data: { types: ["National Holiday", "Festival Holiday", "Company Holiday", "Weekly Off"] } }))
+      ]);
+      setHolidays(resHolidays.data.holidays || []);
+      setOverrides(resHolidays.data.overrides || []);
+      setHolidayTypes(resTypes.data.types || []);
     } catch (err) {
       console.error(err);
       toast.error("Failed to load holidays calendar");
@@ -376,10 +379,9 @@ export const HolidayTab: React.FC = () => {
                 onChange={e => setHolidayForm({ ...holidayForm, holiday_type: e.target.value })}
                 className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 text-sm text-neutral-600 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 font-medium bg-white"
               >
-                <option value="National Holiday">National Holiday</option>
-                <option value="Festival Holiday">Festival Holiday</option>
-                <option value="Company Holiday">Company Holiday</option>
-                <option value="Weekly Off">Weekly Off</option>
+                {holidayTypes.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
               </select>
             </div>
           </div>

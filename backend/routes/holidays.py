@@ -249,6 +249,27 @@ def get_admin_holidays():
         return jsonify({"error": str(e)}), 500
 
 # =========================================================================
+# ADMIN ROUTE: GET HOLIDAY TYPES
+# =========================================================================
+@holidays_bp.route("/holidays/types", methods=["GET"])
+@auth_required
+@access_level_required("admin", "hr")
+def get_holiday_types():
+    try:
+        types = db.session.query(Holiday.holiday_type).distinct().all()
+        # Handle cases where there might be no holidays yet by providing defaults
+        default_types = ["National Holiday", "Festival Holiday", "Company Holiday", "Weekly Off"]
+        db_types = [t[0] for t in types if t[0]]
+        
+        # Merge and keep unique
+        all_types = list(set(default_types + db_types))
+        all_types.sort()
+        
+        return jsonify({"types": all_types}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# =========================================================================
 # ADMIN ROUTE: CREATE HOLIDAY
 # =========================================================================
 @holidays_bp.route("/holidays", methods=["POST"])

@@ -363,11 +363,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       </div>
 
       {/* Dynamic Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        <StatCard icon={CheckCircleIcon} title="Present Days" value={presentCount} subtitle={`${MONTH_NAMES[selectedMonth - 1]}`} trend="positive" color="green" />
-        <StatCard icon={UserMinusIcon} title="Absent Days" value={absentCount} subtitle={`${MONTH_NAMES[selectedMonth - 1]}`} trend="negative" color="red" />
-        <StatCard icon={CalendarDaysIcon} title="Leave Days" value={leaveCount} subtitle={`${MONTH_NAMES[selectedMonth - 1]}`} trend="normal" color="purple" />
-        <StatCard icon={ClockIcon} title="Half Days" value={halfDayCount} subtitle={`${MONTH_NAMES[selectedMonth - 1]}`} trend="warning" color="yellow" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard icon={CheckCircleIcon} title="Present Days" value={presentCount} subtitle="" trend="normal" color="green" />
+        <StatCard icon={UserMinusIcon} title="Absent Days" value={absentCount} subtitle="" trend="normal" color="red" />
+        <StatCard icon={CalendarDaysIcon} title="Leave Days" value={leaveCount} subtitle="" trend="normal" color="purple" />
+        <StatCard icon={ClockIcon} title="Half Days" value={halfDayCount} subtitle="" trend="normal" color="yellow" />
       </div>
 
       {/* Main Content Card */}
@@ -455,63 +455,71 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
         {/* Mode 1: Calendar View */}
         {viewMode === "calendar" ? (
-          <div className="p-4 max-w-4xl mx-auto space-y-4">
+          <div className="p-5 max-w-[1000px] mx-auto space-y-4">
             {/* 7-Column Weekday Header */}
-            <div className="grid grid-cols-7 border-t border-l border-neutral-200">
+            <div className="grid grid-cols-7 gap-2 mb-2">
               {WEEKDAYS.map((wd) => (
-                <div key={wd} className="py-2 text-center text-[11px] font-bold text-neutral-500 uppercase tracking-wider border-b border-r border-neutral-200 bg-neutral-50/50">
+                <div key={wd} className="py-2 text-center text-[12px] font-bold text-neutral-400 uppercase tracking-widest">
                   {wd}
                 </div>
               ))}
             </div>
 
             {/* Calendar Grid Cells */}
-            <div className="grid grid-cols-7 border-l border-neutral-200 bg-neutral-200 gap-px">
+            <div className="grid grid-cols-7 gap-2">
               {calendarCells.map((cell, idx) => {
                 if (!cell) {
                   return (
-                    <div key={`empty-${idx}`} className="bg-neutral-50/30 h-[64px] p-1.5 border-r border-b border-neutral-200 opacity-40" />
+                    <div key={`empty-${idx}`} className="h-[80px] rounded-xl bg-transparent" />
                   );
                 }
 
                 // Color themes based on status
-                let badgeClass = "bg-neutral-100 text-neutral-700 fill-neutral-700";
+                let badgeClass = "bg-neutral-100 text-neutral-700 border-neutral-200";
 
                 switch (cell.status) {
                   case "Present":
-                    badgeClass = "bg-[#DCFCE7] text-[#16A34A] fill-[#16A34A]";
+                    badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
                     break;
                   case "Absent":
-                    badgeClass = "bg-[#FFE4E6] text-[#E11D48] fill-[#E11D48]";
+                    badgeClass = "bg-rose-50 text-rose-700 border-rose-200";
                     break;
                   case "Half Day":
-                    badgeClass = "bg-[#FFEDD5] text-[#EA580C] fill-[#EA580C]";
+                    badgeClass = "bg-amber-50 text-amber-700 border-amber-200";
                     break;
                   case "Leave":
-                    badgeClass = "bg-[#1F7A8C]/15 text-[#1F7A8C] fill-[#1F7A8C]";
+                    badgeClass = "bg-[#1F7A8C]/10 text-[#1F7A8C] border-[#1F7A8C]/20";
                     break;
                   case "Holiday":
-                    badgeClass = "bg-[#DBEAFE] text-[#2563EB] fill-[#2563EB]";
+                    badgeClass = "bg-blue-50 text-blue-700 border-blue-200";
                     break;
                   case "Weekly Off":
-                    badgeClass = "bg-[#F1F5F9] text-[#64748B] fill-[#64748B]";
+                    badgeClass = "bg-neutral-50 text-neutral-600 border-neutral-200";
                     break;
                   case "Future":
-                    badgeClass = "bg-white text-neutral-300 fill-neutral-300";
+                    badgeClass = "bg-white text-neutral-300 border-neutral-100";
                     break;
                 }
 
                 return (
                   <div
                     key={cell.dateStr}
-                    className={`min-h-[56px] p-1.5 flex flex-col justify-between border-r border-b relative group border-neutral-200 cursor-default transition-colors duration-150 ${
-                      cell.isToday ? "ring-2 ring-[#1F7A8C] ring-inset z-10 bg-[#1F7A8C]/10" : cell.status === "Future" ? "bg-neutral-50/50" : "bg-white hover:bg-neutral-50"
+                    className={`h-[80px] p-2 flex flex-col justify-between rounded-xl border relative group cursor-default transition-all duration-200 ${
+                      cell.isToday 
+                        ? "border-[#1F7A8C] shadow-sm bg-white" 
+                        : cell.status === "Future" 
+                          ? "border-transparent bg-transparent" 
+                          : "border-neutral-100 bg-white hover:border-neutral-200 hover:shadow-sm"
                     }`}
                   >
                     {/* Top Row: Date Number */}
                     <div className="flex justify-between items-start">
-                      <span className={`text-[10px] font-bold ${
-                        cell.isToday ? "bg-[#1F7A8C] text-white w-4 h-4 flex items-center justify-center rounded-full shadow-xs" : cell.status === "Future" ? "text-neutral-400" : "text-neutral-700"
+                      <span className={`text-[12px] font-bold flex items-center justify-center rounded-full ${
+                        cell.isToday 
+                          ? "bg-[#1F7A8C] text-white w-6 h-6 shadow-sm" 
+                          : cell.status === "Future" 
+                            ? "text-neutral-300" 
+                            : "text-neutral-700"
                       }`}>
                         {cell.dayNum}
                       </span>
@@ -519,9 +527,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
                     {/* Status Tag */}
                     {cell.status !== "Future" && (
-                      <div className="mt-1 w-full flex justify-end">
-                        <div className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${badgeClass} max-w-full overflow-hidden`}>
-                          <div className="w-1 h-1 rounded-full bg-current shrink-0"></div>
+                      <div className="mt-1 w-full flex justify-start">
+                        <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 w-full ${badgeClass}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("1F7A8C") ? "bg-[#1F7A8C]" : "bg-neutral-400"}`}></div>
                           <span className="truncate">{cell.badgeLabel || cell.status}</span>
                         </div>
                       </div>
@@ -529,65 +537,65 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
                     {/* Advanced Light Theme Hover Card Tooltip */}
                     {cell.status !== "Future" && (
-                      <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 scale-95 group-hover:scale-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 bg-white text-neutral-800 rounded-2xl p-3 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-neutral-200 z-[100]">
+                      <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 scale-95 group-hover:scale-100 absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 w-64 bg-white text-neutral-800 rounded-2xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-neutral-200 z-[100]">
                         {/* Tooltip Tail */}
-                        <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white rotate-45 border-r border-b border-neutral-200" />
+                        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white rotate-45 border-r border-b border-neutral-200" />
 
                         {/* Header */}
-                        <div className="flex items-center justify-between pb-2 border-b border-neutral-100 mb-2">
+                        <div className="flex items-center justify-between pb-3 border-b border-neutral-100 mb-3">
                           <div>
-                            <h5 className="text-[11px] font-extrabold text-neutral-800">
+                            <h5 className="text-[13px] font-extrabold text-neutral-800">
                               {cell.dayNum} {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
                             </h5>
-                            <p className="text-[9px] text-neutral-500 font-semibold uppercase tracking-wider">{cell.fullDayName}</p>
+                            <p className="text-[10px] text-neutral-500 font-semibold uppercase tracking-wider mt-0.5">{cell.fullDayName}</p>
                           </div>
-                          <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ${badgeClass}`}>
+                          <span className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg ${badgeClass}`}>
                             {cell.badgeLabel || cell.status}
                           </span>
                         </div>
 
                         {/* Details Breakdown */}
                         {cell.status === "Present" || cell.status === "Half Day" ? (
-                          <div className="space-y-2">
-                            <div className="grid grid-cols-2 gap-1.5 bg-neutral-50 p-2 rounded-xl">
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-2.5 rounded-xl border border-neutral-100">
                               <div>
-                                <span className="text-[8.5px] uppercase font-bold text-neutral-400 block">Check-In</span>
-                                <span className="font-extrabold text-emerald-600 text-[11px]">{cell.checkIn}</span>
+                                <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-In</span>
+                                <span className="font-extrabold text-emerald-600 text-[12px]">{cell.checkIn}</span>
                               </div>
                               <div>
-                                <span className="text-[8.5px] uppercase font-bold text-neutral-400 block">Check-Out</span>
-                                <span className="font-extrabold text-[#1F7A8C] text-[11px]">{cell.checkOut}</span>
+                                <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-Out</span>
+                                <span className="font-extrabold text-[#1F7A8C] text-[12px]">{cell.checkOut}</span>
                               </div>
                             </div>
-                            <div className="flex justify-between items-center px-1 pt-0.5">
-                              <span className="text-[10px] text-neutral-500 font-bold">Total Hours</span>
-                              <span className="text-[11px] font-extrabold text-[#1F7A8C]">{cell.workingHoursFormatted}</span>
+                            <div className="flex justify-between items-center px-1">
+                              <span className="text-[11px] text-neutral-500 font-bold">Total Hours</span>
+                              <span className="text-[12px] font-extrabold text-[#1F7A8C] bg-[#1F7A8C]/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
                             </div>
                             {cell.overtime && cell.overtime !== "00:00" && cell.overtime !== "0h" && cell.overtime !== "0.0h" && (
-                              <div className="flex justify-between items-center px-1 text-[9px]">
-                                <span className="text-neutral-500 font-bold">Overtime</span>
-                                <span className="font-bold text-emerald-600">+{cell.overtime}</span>
+                              <div className="flex justify-between items-center px-1">
+                                <span className="text-[11px] text-neutral-500 font-bold">Overtime</span>
+                                <span className="font-bold text-emerald-600 text-[11px]">+{cell.overtime}</span>
                               </div>
                             )}
                           </div>
                         ) : cell.status === "Holiday" ? (
-                          <div className="space-y-0.5 bg-blue-50/50 p-2 rounded-xl border border-blue-50 text-blue-900">
-                            <span className="text-[8.5px] uppercase font-bold text-blue-500 block">Company Holiday</span>
-                            <p className="font-bold text-[11px] text-blue-800">{cell.holidayName}</p>
+                          <div className="space-y-1 bg-blue-50/50 p-3 rounded-xl border border-blue-100 text-blue-900">
+                            <span className="text-[10px] uppercase font-bold text-blue-500 block">Company Holiday</span>
+                            <p className="font-bold text-[13px] text-blue-800">{cell.holidayName}</p>
                           </div>
                         ) : cell.status === "Leave" ? (
-                          <div className="space-y-0.5 bg-[#1F7A8C]/10 p-2 rounded-xl border border-[#1F7A8C]/20 text-[#1F7A8C]">
-                            <span className="text-[8.5px] uppercase font-bold text-[#1F7A8C] block">Approved Leave</span>
-                            <p className="font-bold text-[11px] text-[#1F7A8C]">{cell.leaveType}</p>
+                          <div className="space-y-1 bg-[#1F7A8C]/10 p-3 rounded-xl border border-[#1F7A8C]/20 text-[#1F7A8C]">
+                            <span className="text-[10px] uppercase font-bold text-[#1F7A8C] block">Approved Leave</span>
+                            <p className="font-bold text-[13px] text-[#1F7A8C]">{cell.leaveType}</p>
                           </div>
                         ) : cell.status === "Weekly Off" ? (
-                          <div className="text-[10px] text-neutral-500 text-center py-1.5 bg-neutral-50 rounded-xl font-bold">
+                          <div className="text-[12px] text-neutral-500 text-center py-3 bg-neutral-50 rounded-xl font-bold border border-neutral-100">
                             Week Off ({cell.fullDayName})
                           </div>
                         ) : (
-                          <div className="space-y-0.5 bg-rose-50/50 p-2 rounded-xl border border-rose-50 text-rose-900">
-                            <span className="text-[8.5px] uppercase font-bold text-rose-500 block">Absent</span>
-                            <p className="text-[10px] text-rose-700 font-bold">No Check-In Record • 0h</p>
+                          <div className="space-y-1 bg-rose-50/50 p-3 rounded-xl border border-rose-100 text-rose-900">
+                            <span className="text-[10px] uppercase font-bold text-rose-500 block">Absent</span>
+                            <p className="text-[12px] text-rose-700 font-bold">No Check-In Record • 0h</p>
                           </div>
                         )}
                       </div>
@@ -598,14 +606,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             </div>
 
             {/* Bottom Legend */}
-            <div className="flex flex-wrap items-center justify-center gap-6 text-xs font-semibold text-neutral-600 pt-3 border-t border-neutral-100">
-              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#16A34A]"></div> Present</span>
-              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#E11D48]"></div> Absent</span>
-              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#F59E0B]"></div> Half Day</span>
+            <div className="flex flex-wrap items-center justify-center gap-6 text-[11px] font-bold text-neutral-500 pt-5 mt-2 border-t border-neutral-100">
+              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div> Present</span>
+              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div> Absent</span>
+              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div> Half Day</span>
               <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#1F7A8C]"></div> Leave</span>
-              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#2563EB]"></div> Holiday</span>
-              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#64748B]"></div> Weekly Off</span>
-              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#1F7A8C] ring-2 ring-[#1F7A8C]/30"></div> Today</span>
+              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div> Holiday</span>
+              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-neutral-400"></div> Weekly Off</span>
+              <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-white border-2 border-[#1F7A8C]"></div> Today</span>
             </div>
           </div>
         ) : (

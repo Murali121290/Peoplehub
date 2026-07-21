@@ -365,10 +365,6 @@ export default function TelecomDirectory() {
             Intercom Directory
           </h1>
         </div>
-
-        <div className="w-8 h-8 rounded-full bg-neutral-800 text-white text-xs font-bold flex items-center justify-center">
-          {(user?.name || "AD").slice(0, 2).toUpperCase()}
-        </div>
       </div>
 
 

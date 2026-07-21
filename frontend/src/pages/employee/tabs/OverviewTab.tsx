@@ -43,7 +43,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           const data = await response.json();
           setTeams(data.teams || []);
           overviewCache.teams = data.teams || [];
-          
+
           // Default to the user's team if available
           if (!overviewCache.selectedTeam) {
             if (user?.team_id) {
@@ -66,14 +66,14 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   useEffect(() => {
     const fetchTeamAttendance = async () => {
       if (!selectedTeam) return;
-      
+
       overviewCache.selectedTeam = selectedTeam;
-      
+
       // Only show loading spinner if we don't have cached data for this team
       if (!overviewCache.teamMembers[selectedTeam]) {
         setLoading(true);
       }
-      
+
       try {
         const response = await fetch(`${API_URL}/api/employees/by-team/${selectedTeam}`, {
           headers: {
@@ -94,11 +94,11 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
 
     fetchTeamAttendance();
     const interval = setInterval(fetchTeamAttendance, 60000);
-    
+
     // Listen for custom event to instantly refresh
     const handleRefresh = () => fetchTeamAttendance();
     window.addEventListener('refreshTeamStatus', handleRefresh);
-    
+
     return () => {
       clearInterval(interval);
       window.removeEventListener('refreshTeamStatus', handleRefresh);
@@ -201,7 +201,6 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             <div className="flex flex-col bg-slate-50/80 rounded-xl p-4 border border-slate-200 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
                   <h4 className="font-semibold text-slate-800">Not Checked In</h4>
                 </div>
                 <span className="text-xs font-medium bg-white text-slate-600 px-2.5 py-1 rounded-full shadow-sm border border-slate-100">
@@ -218,10 +217,9 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
 
             {/* Checked In Column */}
-            <div className="flex flex-col bg-emerald-50/80 rounded-xl p-4 border border-emerald-200 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
+            <div className="flex flex-col bg-slate-50/80 rounded-xl p-4 border border-slate-200 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div>
                   <h4 className="font-semibold text-emerald-800">Checked In</h4>
                 </div>
                 <span className="text-xs font-medium bg-white text-emerald-700 px-2.5 py-1 rounded-full shadow-sm border border-emerald-100">
@@ -238,10 +236,9 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
 
             {/* Leave Column */}
-            <div className="flex flex-col bg-rose-50/80 rounded-xl p-4 border border-rose-200 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
+            <div className="flex flex-col bg-slate-50/80 rounded-xl p-4 border border-slate-200 h-[calc(100vh-320px)] min-h-[350px] max-h-[600px]">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
                   <h4 className="font-semibold text-rose-800">On Leave</h4>
                 </div>
                 <span className="text-xs font-medium bg-white text-rose-700 px-2.5 py-1 rounded-full shadow-sm border border-rose-100">
