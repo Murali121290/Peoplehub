@@ -496,8 +496,6 @@ const EmployeeDashboardPage: React.FC = () => {
 
         handover_to: leaveForm.handoverTo,
 
-        emergency_contact: leaveForm.emergencyContact,
-
         reason: leaveForm.reason,
       };
 
@@ -1062,7 +1060,7 @@ const EmployeeDashboardPage: React.FC = () => {
         />
 
         {/* Sticky Header & Navigation Container */}
-        <div className="sticky top-0 z-[100] bg-white shadow-sm border-b border-neutral-200">
+        <div className="sticky top-0 z-20 bg-white shadow-sm border-b border-neutral-200">
           {/* Header */}
           <header className="bg-white">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

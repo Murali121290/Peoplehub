@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import { DatePicker } from "../components/ui/DatePicker";
 
 // ─── Moved OUTSIDE the parent component ───────────────────────────────────────
 
@@ -292,26 +293,20 @@ const Completeprofilepage = () => {
 
       const data = await res.json();
 
-    if (res.ok) {
-      toast.success("Profile Completed Successfully!");
+      if (res.ok) {
+        toast.success("Profile Completed Successfully!");
 
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
 
-      user.profile_completed = true;
-      user.is_first_login = false;
-      if (profilePreview) {
-        user.profile_image = profilePreview;
-      }
-      if (formData.phone) {
-        user.phone = formData.phone;
-      }
+        user.profile_completed = true;
+        user.is_first_login = false;
 
-      localStorage.setItem("user", JSON.stringify(user));
+        localStorage.setItem("user", JSON.stringify(user));
 
-      setTimeout(() => {
-        window.location.href = "/employee-dashboard";
-      }, 1200);
-    }else {
+        setTimeout(() => {
+          window.location.href = "/employee-dashboard";
+        }, 1200);
+      } else {
         toast.error(data.error || data.message || "Failed to update profile");
       }
     } catch (err) {
@@ -361,12 +356,11 @@ const Completeprofilepage = () => {
             />
           </Field>
           <Field label="Date of Birth">
-            <input
-              type="date"
+            <DatePicker
               name="dob"
               value={formData.dob}
-              onChange={handleChange}
-              className={inputCls}
+              onChange={(val) => setFormData((prev) => ({ ...prev, dob: val }))}
+              placeholder="Select Date of Birth"
             />
           </Field>
           <Field label="Gender">
