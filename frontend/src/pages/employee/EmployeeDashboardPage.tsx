@@ -135,7 +135,10 @@ const EmployeeDashboardPage: React.FC = () => {
       ).length
     : 0;
 
-  const getTodayKey = () => new Date().toISOString().split("T")[0];
+  const getTodayKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
 
   const formatSeconds = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -304,7 +307,7 @@ const EmployeeDashboardPage: React.FC = () => {
       toast.success(data.message || "You have checked in successfully.");
       const nowIso = new Date().toISOString();
       localStorage.setItem(`checkInTime_${userId}`, nowIso);
-      localStorage.setItem(`checkInDate_${userId}`, nowIso.split("T")[0]);
+      localStorage.setItem(`checkInDate_${userId}`, getTodayKey());
       clearTodayAttendanceSummary(userId);
       setIsCheckedIn(true);
       setCheckInTime(new Date());
@@ -1058,79 +1061,82 @@ const EmployeeDashboardPage: React.FC = () => {
           isMyBirthday={isMyBirthday}
         />
 
-        {/* Header */}
-        <header className="bg-white shadow-sm border-b border-neutral-200 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center">
-                  <SparklesIcon className="w-6 h-6 text-white" />
+        {/* Sticky Header & Navigation Container */}
+        <div className="sticky top-0 z-[100] bg-white shadow-sm border-b border-neutral-200">
+          {/* Header */}
+          <header className="bg-white">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex items-center justify-between h-16">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center">
+                    <SparklesIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold text-neutral-800">
+                      Employee Dashboard
+                    </h1>
+                    <p className="text-xs text-neutral-500">
+                      Workflow Management System
+                    </p>
+                  </div>
                 </div>
+                
+                {/* Check-In & Break Actions */}
                 <div>
-                  <h1 className="text-xl font-bold text-neutral-800">
-                    Employee Dashboard
-                  </h1>
-                  <p className="text-xs text-neutral-500">
-                    Workflow Management System
-                  </p>
+                  <DashboardHeaderActions 
+                    isCheckedIn={isCheckedIn}
+                    timer={timer}
+                    totalLunchSeconds={totalLunchSeconds}
+                    totalTeaSeconds={totalTeaSeconds}
+                    isLunchBreak={isLunchBreak}
+                    isTeaBreak={isTeaBreak}
+                    lunchTimer={lunchTimer}
+                    teaTimer={teaTimer}
+                    onCheckInOut={() => isCheckedIn ? setConfirmModal(true) : handleCheckIn()}
+                    onLunchBreak={handleLunchBreak}
+                    onTeaBreak={handleTeaBreak}
+                    onOpenNotifications={() => setShowNotificationsPanel(true)}
+                  />
                 </div>
               </div>
-              
-              {/* Check-In & Break Actions */}
-              <div>
-                <DashboardHeaderActions 
-                  isCheckedIn={isCheckedIn}
-                  timer={timer}
-                  totalLunchSeconds={totalLunchSeconds}
-                  totalTeaSeconds={totalTeaSeconds}
-                  isLunchBreak={isLunchBreak}
-                  isTeaBreak={isTeaBreak}
-                  lunchTimer={lunchTimer}
-                  teaTimer={teaTimer}
-                  onCheckInOut={() => isCheckedIn ? setConfirmModal(true) : handleCheckIn()}
-                  onLunchBreak={handleLunchBreak}
-                  onTeaBreak={handleTeaBreak}
-                  onOpenNotifications={() => setShowNotificationsPanel(true)}
-                />
+            </div>
+          </header>
+
+          {/* Navigation */}
+          <nav className="bg-white border-t border-neutral-100">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex space-x-1 overflow-x-auto py-2">
+                {tabs.map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id
+                        ? "bg-primary-50 text-primary-700 border-b-2 border-primary-600"
+                        : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"
+                        }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <div className="relative flex items-center">
+                        <span>{tab.label}</span>
+                        {/* Leave Notification */}
+                        {tab.id === "leave" && pendingLeaveCount > 0 && (
+                          <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
+                        )}
+
+                        {/* Shift Notification */}
+                        {tab.id === "shift" && pendingShiftCount > 0 && (
+                          <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          </div>
-        </header>
-
-        {/* Navigation */}
-        <nav className="bg-white border-b border-neutral-200 sticky top-16 z-40">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex space-x-1 overflow-x-auto py-2">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id
-                      ? "bg-primary-50 text-primary-700 border-b-2 border-primary-600"
-                      : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"
-                      }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <div className="relative flex items-center">
-                      <span>{tab.label}</span>
-                      {/* Leave Notification */}
-                      {tab.id === "leave" && pendingLeaveCount > 0 && (
-                        <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
-                      )}
-
-                      {/* Shift Notification */}
-                      {tab.id === "shift" && pendingShiftCount > 0 && (
-                        <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </nav>
+          </nav>
+        </div>
 
         {/* Main Content */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">

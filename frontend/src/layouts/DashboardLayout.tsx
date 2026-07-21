@@ -246,15 +246,21 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   };
 
   // --- Attendance Summary ---
-  useEffect(() => {
-    const loadReportingEmployees = async () => {
-      const uid = localStorage.getItem("user_id");
+  const loadReportingEmployees = async () => {
+    const uid = localStorage.getItem("user_id");
+    if (!uid) return;
+    try {
       const response = await fetch(
         `${BASE_URL}/employees/reporting-employees/${uid}`,
       );
       const data = await response.json();
-      setReportingEmployees(data);
-    };
+      setReportingEmployees(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load reporting employees", err);
+    }
+  };
+
+  useEffect(() => {
     loadReportingEmployees();
   }, []);
 
@@ -583,19 +589,19 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const handleApproveEmployee = async (employeeId: number) => {
-    await fetch(`${BASE_URL}/attendance/approve/${employeeId}`, {
-      method: "PUT",
-    });
-    const updated = reportingEmployees.filter(
-      (emp) => emp.employee_id !== employeeId,
-    );
-
-    setReportingEmployees(updated);
-
-    setSelectedEmployee(null);
-
-    if (updated.length === 0) {
-      setShowPopup(false);
+    try {
+      await fetch(`${BASE_URL}/attendance/approve/${employeeId}`, {
+        method: "PUT",
+      });
+      setReportingEmployees((prev) =>
+        prev.map((emp) =>
+          emp.employee_id === employeeId || emp.id === employeeId
+            ? { ...emp, status: "Present", manager_status: "Approved", decision: "Approved" }
+            : emp
+        )
+      );
+    } catch (err) {
+      console.error("Approve Employee Error:", err);
     }
   };
 
@@ -604,17 +610,13 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       await fetch(`${BASE_URL}/attendance/reject/${employeeId}`, {
         method: "PUT",
       });
-      const updated = reportingEmployees.filter(
-        (emp) => emp.employee_id !== employeeId,
+      setReportingEmployees((prev) =>
+        prev.map((emp) =>
+          emp.employee_id === employeeId || emp.id === employeeId
+            ? { ...emp, status: "Absent", manager_status: "Rejected", decision: "Rejected" }
+            : emp
+        )
       );
-
-      setReportingEmployees(updated);
-
-      setSelectedEmployee(null);
-
-      if (updated.length === 0) {
-        setShowPopup(false);
-      }
     } catch (error) {
       console.error("Reject Employee Error:", error);
     }
@@ -784,6 +786,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
           onApproveAll={handleApproveAll}
           onApproveEmployee={handleApproveEmployee}
           onRejectEmployee={handleRejectEmployee}
+          onRefresh={loadReportingEmployees}
         />
       )}
 
@@ -820,7 +823,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         </AnimatePresence>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="flex-1 min-w-0">{children}</main>
       </div>
 
       {/* Chat Floating Button */}
