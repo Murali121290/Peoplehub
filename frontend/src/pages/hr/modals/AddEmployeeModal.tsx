@@ -36,6 +36,25 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
   const [shiftOptions, setShiftOptions] = useState<{ label: string; value: string }[]>([]);
 
+  const requiredFields = [
+    "employee_id",
+    "first_name",
+    "email",
+    "joining_date",
+    "team_id",
+    "role",
+    "status",
+    "company_email",
+    "password",
+    "access_level",
+    "shift_timing",
+  ];
+
+  const getLabel = (fieldKey: string, baseLabel: string) => {
+    const isRequired = fieldKey === "profile_image" ? !isEdit : requiredFields.includes(fieldKey);
+    return `${baseLabel.trim()}${isRequired ? " *" : ""}`;
+  };
+
   useEffect(() => {
     fetch(`${API_URL}/api/shifts/options`)
       .then((res) => res.json())
@@ -65,24 +84,6 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
   const validateForm = (e: any) => {
     console.log("VALIDATE FORM CALLED");
-
-    const requiredFields = [
-      "employee_id",
-      "first_name",
-      "last_name",
-      "email",
-      "phone",
-      "joining_date",
-      "salary",
-      "team_id",
-      "reporting_manager",
-      "role",
-      "status",
-      "company_email",
-      "password",
-      "access_level",
-      "shift_timing",
-    ];
 
     const errors: Record<string, boolean> = {};
 
@@ -171,40 +172,40 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
           {[
             {
-              label: "EMPLOYEE ID *",
+              label: "EMPLOYEE ID",
               key: "employee_id",
               placeholder: "e.g., EMP001",
             },
             {
-              label: "FIRST NAME *",
+              label: "FIRST NAME",
               key: "first_name",
               placeholder: "e.g., John",
             },
             {
-              label: "LAST NAME *",
+              label: "LAST NAME",
               key: "last_name",
               placeholder: "e.g., Smith",
             },
             {
-              label: "EMAIL *",
+              label: "EMAIL",
               key: "email",
               placeholder: "e.g., john@company.com",
               type: "email",
             },
             {
-              label: "PHONE *",
+              label: "PHONE",
               key: "phone",
               placeholder: "e.g., +91 9876543210",
             },
-            { label: "JOINING DATE *", key: "joining_date", type: "date" },
+            { label: "JOINING DATE", key: "joining_date", type: "date" },
             {
-              label: "SALARY *",
+              label: "SALARY",
               key: "salary",
               placeholder: "e.g., 150000",
               type: "number",
             },
           ].map((field) => (
-            <FormField key={field.key} label={field.label}>
+            <FormField key={field.key} label={getLabel(field.key, field.label)}>
               <Input
                 required
                 type={field.type || "text"}
@@ -220,7 +221,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             </FormField>
           ))}
 
-          <FormField label="Team *">
+          <FormField label={getLabel("team_id", "Team")}>
             <Select
               value={newEmp.team_id || ""}
               onChange={(value) => {
@@ -245,7 +246,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <FieldError fieldKey="team_id" />
           </FormField>
 
-          <FormField label="REPORTING MANAGER *">
+          <FormField label={getLabel("reporting_manager", "REPORTING MANAGER")}>
             <Select
               value={newEmp.reporting_manager}
               onChange={(value) => {
@@ -268,7 +269,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <FieldError fieldKey="reporting_manager" />
           </FormField>
 
-          <FormField label="Role *">
+          <FormField label={getLabel("role", "Role")}>
             <Select
               value={newEmp.role}
               onChange={(value) => {
@@ -294,7 +295,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <FieldError fieldKey="role" />
           </FormField>
 
-          <FormField label="STATUS *">
+          <FormField label={getLabel("status", "STATUS")}>
             <Select
               value={newEmp.status}
               onChange={(value) => {
@@ -313,7 +314,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
           {/* Profile Image: only shown when adding a NEW employee, hidden on edit */}
           {!isEdit && (
-            <FormField label="PROFILE IMAGE *">
+            <FormField label={getLabel("profile_image", "PROFILE IMAGE")}>
               <Input
                 type="file"
                 accept="image/*"
@@ -328,7 +329,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             </FormField>
           )}
 
-          <FormField label="Company Email *">
+          <FormField label={getLabel("company_email", "Company Email")}>
             <Input
               required
               type="email"
@@ -346,7 +347,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <FieldError fieldKey="company_email" />
           </FormField>
 
-          <FormField label="Password *">
+          <FormField label={getLabel("password", "Password")}>
             <Input
               required
               type="password"
@@ -364,7 +365,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <FieldError fieldKey="password" />
           </FormField>
 
-          <FormField label="Access Level *">
+          <FormField label={getLabel("access_level", "Access Level")}>
             <Select
               value={newEmp.access_level || ""}
               onChange={(value) => {
@@ -386,7 +387,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <FieldError fieldKey="access_level" />
           </FormField>
 
-          <FormField label="Shift *">
+          <FormField label={getLabel("shift_timing", "Shift")}>
             <Select
               value={newEmp.shift_timing || ""}
               onChange={(value) => {
@@ -401,11 +402,11 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 shiftOptions.length > 0
                   ? shiftOptions
                   : [
-                      { label: "General Shift", value: "General Shift" },
-                      { label: "Morning Shift", value: "Morning Shift" },
-                      { label: "Evening Shift", value: "Evening Shift" },
-                      { label: "Night Shift", value: "Night Shift" },
-                    ]
+                    { label: "General Shift", value: "General Shift" },
+                    { label: "Morning Shift", value: "Morning Shift" },
+                    { label: "Evening Shift", value: "Evening Shift" },
+                    { label: "Night Shift", value: "Night Shift" },
+                  ]
               }
               className={fieldErrors["shift_timing"] ? "border-danger-500" : ""}
             />

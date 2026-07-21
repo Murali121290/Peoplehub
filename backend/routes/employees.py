@@ -119,7 +119,7 @@ def create_employee():
             joining_date=joining_date,
             shift_timing=data.get("shift_timing"),
 
-            salary=float(data.get("salary", 0)),
+            salary=float(data.get("salary") or 0),
 
             pf_number=data.get("pf_number"),
             uan_number=data.get("uan_number"),

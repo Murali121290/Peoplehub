@@ -40,6 +40,20 @@ const ProfileTab = () => {
     confirm_password: "",
   });
 
+  const isHrOrAdmin = user.access_level?.toLowerCase() === "hr" || user.access_level?.toLowerCase() === "admin";
+  const [teams, setTeams] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
+
+  // Editing states
+  const [isEditingPhone, setIsEditingPhone] = useState(false);
+  const [editedPhone, setEditedPhone] = useState("");
+
+  const [isEditingDept, setIsEditingDept] = useState(false);
+  const [editedDept, setEditedDept] = useState("");
+
+  const [isEditingManager, setIsEditingManager] = useState(false);
+  const [editedManager, setEditedManager] = useState("");
+
   // Password visibility states
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -64,7 +78,35 @@ const ProfileTab = () => {
 
   useEffect(() => {
     fetchProfile();
+    if (isHrOrAdmin) {
+      fetchTeams();
+      fetchEmployees();
+    }
   }, []);
+
+  const fetchTeams = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.get(`${BASE_URL}/users/teams`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setTeams(res.data.teams || []);
+    } catch (err) {
+      console.error("Failed to fetch teams:", err);
+    }
+  };
+
+  const fetchEmployees = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.get(`${BASE_URL}/employees/`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setEmployees(res.data || []);
+    } catch (err) {
+      console.error("Failed to fetch employees:", err);
+    }
+  };
 
   const fetchProfile = async () => {
     try {
@@ -72,6 +114,82 @@ const ProfileTab = () => {
       setProfile(res.data.data);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleStartEditPhone = () => {
+    setEditedPhone(profile.phone || "");
+    setIsEditingPhone(true);
+  };
+
+  const handleSavePhone = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const formData = new FormData();
+      formData.append("phone", editedPhone);
+      await axios.patch(`${BASE_URL}/employees/${profile.id}`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      setProfile({ ...profile, phone: editedPhone });
+      setIsEditingPhone(false);
+      toast.success("Phone number updated successfully.");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.response?.data?.error || err?.response?.data?.message || "Failed to update phone number");
+    }
+  };
+
+  const handleStartEditDept = () => {
+    setEditedDept(profile.department || "");
+    setIsEditingDept(true);
+  };
+
+  const handleSaveDept = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const formData = new FormData();
+      formData.append("department", editedDept);
+      const matchedTeam = teams.find(t => t.name === editedDept);
+      if (matchedTeam) {
+        formData.append("team_id", matchedTeam.id);
+      }
+      await axios.patch(`${BASE_URL}/employees/${profile.id}`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      setProfile({ ...profile, department: editedDept, team_id: matchedTeam ? matchedTeam.id : profile.team_id });
+      setIsEditingDept(false);
+      toast.success("Department updated successfully.");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.response?.data?.error || err?.response?.data?.message || "Failed to update department");
+    }
+  };
+
+  const handleStartEditManager = () => {
+    setEditedManager(profile.reporting_manager || "");
+    setIsEditingManager(true);
+  };
+
+  const handleSaveManager = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const formData = new FormData();
+      formData.append("reporting_manager", editedManager);
+      await axios.patch(`${BASE_URL}/employees/${profile.id}`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      setProfile({ ...profile, reporting_manager: editedManager });
+      setIsEditingManager(false);
+      toast.success("Reporting manager updated successfully.");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.response?.data?.error || err?.response?.data?.message || "Failed to update reporting manager");
     }
   };
 
@@ -241,11 +359,51 @@ const ProfileTab = () => {
             </div>
 
             <div className="group p-3 rounded-lg hover:bg-neutral-50 transition-colors duration-200">
-              <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-1.5 mb-1">
-                <BuildingOfficeIcon className="w-3.5 h-3.5 text-neutral-400 group-hover:text-indigo-500 transition-colors" />
-                Department
+              <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider flex items-center justify-between gap-1.5 mb-1">
+                <span className="flex items-center gap-1.5">
+                  <BuildingOfficeIcon className="w-3.5 h-3.5 text-neutral-400 group-hover:text-indigo-500 transition-colors" />
+                  Department
+                </span>
+                {isHrOrAdmin && !isEditingDept && (
+                  <button
+                    onClick={handleStartEditDept}
+                    className="p-1 text-neutral-400 hover:text-indigo-600 hover:bg-neutral-200/50 rounded transition-colors"
+                    title="Edit Department"
+                  >
+                    <PencilIcon className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </span>
-              <p className="text-neutral-800 font-semibold text-sm">{profile.department || "N/A"}</p>
+              {isEditingDept ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <select
+                    value={editedDept}
+                    onChange={(e) => setEditedDept(e.target.value)}
+                    className="border border-neutral-300 rounded-lg px-2 py-1 text-sm text-neutral-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 w-full"
+                  >
+                    <option value="">Select Department</option>
+                    {teams.map((t) => (
+                      <option key={t.id} value={t.name}>{t.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleSaveDept}
+                    className="p-1 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded transition-colors"
+                    title="Save"
+                  >
+                    <CheckCircleIcon className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => setIsEditingDept(false)}
+                    className="p-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded transition-colors"
+                    title="Cancel"
+                  >
+                    <XMarkIcon className="w-5 h-5" />
+                  </button>
+                </div>
+              ) : (
+                <p className="text-neutral-800 font-semibold text-sm">{profile.department || "N/A"}</p>
+              )}
             </div>
 
             <div className="group p-3 rounded-lg hover:bg-neutral-50 transition-colors duration-200">
@@ -257,19 +415,107 @@ const ProfileTab = () => {
             </div>
 
             <div className="group p-3 rounded-lg hover:bg-neutral-50 transition-colors duration-200">
-              <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-1.5 mb-1">
-                <PhoneIcon className="w-3.5 h-3.5 text-neutral-400 group-hover:text-indigo-500 transition-colors" />
-                Phone Number
+              <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider flex items-center justify-between gap-1.5 mb-1">
+                <span className="flex items-center gap-1.5">
+                  <PhoneIcon className="w-3.5 h-3.5 text-neutral-400 group-hover:text-indigo-500 transition-colors" />
+                  Phone Number
+                </span>
+                {!isEditingPhone && (
+                  <button
+                    onClick={handleStartEditPhone}
+                    className="p-1 text-neutral-400 hover:text-indigo-600 hover:bg-neutral-200/50 rounded transition-colors"
+                    title="Edit Phone Number"
+                  >
+                    <PencilIcon className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </span>
-              <p className="text-neutral-800 font-semibold text-sm select-all">{profile.phone || "N/A"}</p>
+              {isEditingPhone ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="text"
+                    value={editedPhone}
+                    onChange={(e) => setEditedPhone(e.target.value)}
+                    className="border border-neutral-300 rounded-lg px-2 py-1 text-sm text-neutral-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 w-full"
+                    placeholder="Enter phone number"
+                  />
+                  <button
+                    onClick={handleSavePhone}
+                    className="p-1 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded transition-colors"
+                    title="Save"
+                  >
+                    <CheckCircleIcon className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => setIsEditingPhone(false)}
+                    className="p-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded transition-colors"
+                    title="Cancel"
+                  >
+                    <XMarkIcon className="w-5 h-5" />
+                  </button>
+                </div>
+              ) : (
+                <p className="text-neutral-800 font-semibold text-sm select-all">{profile.phone || "N/A"}</p>
+              )}
             </div>
 
             <div className="group p-3 rounded-lg hover:bg-neutral-50 transition-colors duration-200">
-              <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-1.5 mb-1">
-                <UserGroupIcon className="w-3.5 h-3.5 text-neutral-400 group-hover:text-indigo-500 transition-colors" />
-                Reporting Manager
+              <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider flex items-center justify-between gap-1.5 mb-1">
+                <span className="flex items-center gap-1.5">
+                  <UserGroupIcon className="w-3.5 h-3.5 text-neutral-400 group-hover:text-indigo-500 transition-colors" />
+                  Reporting Manager
+                </span>
+                {isHrOrAdmin && !isEditingManager && (
+                  <button
+                    onClick={handleStartEditManager}
+                    className="p-1 text-neutral-400 hover:text-indigo-600 hover:bg-neutral-200/50 rounded transition-colors"
+                    title="Edit Reporting Manager"
+                  >
+                    <PencilIcon className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </span>
-              <p className="text-neutral-800 font-semibold text-sm">{profile.reporting_manager || "N/A"}</p>
+              {isEditingManager ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <select
+                    value={editedManager}
+                    onChange={(e) => setEditedManager(e.target.value)}
+                    className="border border-neutral-300 rounded-lg px-2 py-1 text-sm text-neutral-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 w-full"
+                  >
+                    <option value="">Select Manager</option>
+                    {employees
+                      .filter(
+                        (emp) =>
+                          emp.access_level?.toLowerCase() === "manager" ||
+                          emp.access_level?.toLowerCase() === "hr"
+                      )
+                      .map((emp) => {
+                        const fullName = `${emp.first_name} ${emp.last_name}`.trim();
+                        return (
+                          <option key={emp.id} value={fullName}>
+                            {fullName}
+                          </option>
+                        );
+                      })}
+                  </select>
+                  <button
+                    onClick={handleSaveManager}
+                    className="p-1 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded transition-colors"
+                    title="Save"
+                  >
+                    <CheckCircleIcon className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => setIsEditingManager(false)}
+                    className="p-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded transition-colors"
+                    title="Cancel"
+                  >
+                    <XMarkIcon className="w-5 h-5" />
+                  </button>
+                </div>
+              ) : (
+                <p className="text-neutral-800 font-semibold text-sm">{profile.reporting_manager || "N/A"}</p>
+              )}
             </div>
 
             <div className="group p-3 rounded-lg hover:bg-neutral-50 transition-colors duration-200">

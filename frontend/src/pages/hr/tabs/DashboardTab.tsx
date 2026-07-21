@@ -128,9 +128,6 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams
                     <span className="bg-primary-500 text-white px-3.5 py-1.5 rounded-lg text-sm font-semibold shadow-sm">
                       Members: {empCount}
                     </span>
-                    <span className="bg-success-600 text-white px-3.5 py-1.5 rounded-lg text-sm font-semibold shadow-sm">
-                      Total Salary: ₹{totalTeamSalary.toLocaleString()}
-                    </span>
                   </div>
 
                   <div className="text-sm font-bold text-neutral-700 mb-3 uppercase tracking-wider">
@@ -166,9 +163,6 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams
                               </div>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className="text-xs font-semibold bg-neutral-100 text-neutral-700 px-2.5 py-1.5 rounded-md border border-neutral-200">
-                                ₹{totalRoleSalary.toLocaleString()}
-                              </span>
                               <ChevronDownIcon
                                 className={`w-4 h-4 transition-transform ${isRoleActive ? "rotate-180 text-primary-600" : "text-neutral-500"}`}
                               />
@@ -182,7 +176,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams
                                 <table className="w-full border-collapse text-left text-xs">
                                   <thead>
                                     <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider">
-                                      {["Employee Name", "Reporting Manager", "Salary"].map((h) => (
+                                      {["Employee Name", "Reporting Manager"].map((h) => (
                                         <th key={h} className="px-4 py-2.5 text-xs font-semibold">{h}</th>
                                       ))}
                                     </tr>
@@ -192,7 +186,6 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams
                                       <tr key={emp.id} className={`${idx !== emps.length - 1 ? "border-b border-neutral-100" : ""} hover:bg-primary-50/40 transition-colors`}>
                                         <td className="px-4 py-3 text-neutral-800 font-semibold">{emp.name || `${emp.first_name} ${emp.last_name}`}</td>
                                         <td className="px-4 py-3 text-neutral-600">{emp.reporting_manager || "—"}</td>
-                                        <td className="px-4 py-3 text-neutral-800 font-bold">₹{Number(emp.salary || 0).toLocaleString()}</td>
                                       </tr>
                                     ))}
                                   </tbody>

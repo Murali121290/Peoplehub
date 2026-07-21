@@ -412,9 +412,11 @@ export default function HRAdminDashboard() {
         ? `${BASE_URL}/employees/${newEmp.id}`
         : `${BASE_URL}/employees/`;
 
+      const token = localStorage.getItem("token");
       const response = await fetch(url, {
         method,
         body: formData,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
       console.log("STATUS:", response.status);
