@@ -38,7 +38,6 @@ class Employee(db.Model):
 
     department = db.Column(db.String(100))
     designation = db.Column(db.String(100))
-    role = db.Column(db.String(100))
 
     joining_date = db.Column(db.Date)
 

@@ -108,7 +108,7 @@ const ManagerReviewTab: React.FC = () => {
               <div key={`${review.employee_id}-${review.cycle_id}`} className="bg-white rounded-xl border shadow-sm p-6 flex justify-between items-center">
                 <div>
                   <h3 className="font-semibold text-lg">{review.employee_name}</h3>
-                  <p className="text-gray-500 text-sm">Role: {review.role}</p>
+                  <p className="text-gray-500 text-sm">Designation: {review.role}</p>
                   <p className="text-gray-500 text-sm">Cycle: {review.cycle_name}</p>
                   <p className="text-gray-500 text-sm">Submitted: {review.submission_date}</p>
                 </div>
@@ -150,7 +150,7 @@ const ManagerReviewTab: React.FC = () => {
             <p className="font-medium">EMP-{selectedReview.employee_id}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Role</p>
+            <p className="text-sm text-gray-500">Designation</p>
             <p className="font-medium">{selectedReview.role}</p>
           </div>
           <div>

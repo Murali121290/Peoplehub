@@ -170,7 +170,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <div className="ml-3 flex-1 overflow-hidden">
             <p className="truncate text-sm font-medium text-neutral-800">{user?.full_name}</p>
-            <p className="text-xs text-neutral-400">{user?.role}</p>
+            <p className="text-xs text-neutral-400">{user?.designation}</p>
           </div>
         </div>
         <>

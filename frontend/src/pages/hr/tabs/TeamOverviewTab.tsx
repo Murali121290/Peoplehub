@@ -70,7 +70,7 @@ const TeamOverviewTab: React.FC<TeamOverviewTabProps> = ({
             const isTeamExpanded = expandedTeam === team.team_id;
 
             const rolesGroup = teamEmployees.reduce((acc: Record<string, any[]>, emp: any) => {
-              const roleName = emp.role || 'Unassigned';
+              const roleName = emp.designation || 'Unassigned';
               if (!acc[roleName]) {
                 acc[roleName] = [];
               }

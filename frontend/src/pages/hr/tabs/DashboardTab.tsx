@@ -66,9 +66,9 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams
           const totalTeamSalary = team.total_salary ?? 0;
           const isActive = selectedTeam === team.team_name;
 
-          // Group employees in this team by role
+          // Group employees in this team by designation
           const rolesGroup = teamEmployees.reduce((acc: Record<string, any[]>, emp: any) => {
-            const roleName = emp.role || "N/A";
+            const roleName = emp.designation || "N/A";
             if (!acc[roleName]) {
               acc[roleName] = [];
             }

@@ -42,7 +42,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     "email",
     "joining_date",
     "team_id",
-    "role",
+    "designation",
     "status",
     "company_email",
     "password",
@@ -269,7 +269,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <FieldError fieldKey="reporting_manager" />
           </FormField>
 
-          <FormField label={getLabel("role", "Role")}>
+          <FormField label={getLabel("designation", "Designation")}>
             <Select
               value={newEmp.role}
               onChange={(value) => {
@@ -283,16 +283,16 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   role_id: selectedRole?.id || "",
                   designation: value,   // auto-set designation = role name
                 });
-                clearError("role");
+                clearError("designation");
               }}
-              placeholder="Select Role"
+              placeholder="Select Designation"
               options={(filteredRoles || []).map((role) => ({
                 label: role.name,
                 value: role.name,
               }))}
-              className={fieldErrors["role"] ? "border-danger-500" : ""}
+              className={fieldErrors["designation"] ? "border-danger-500" : ""}
             />
-            <FieldError fieldKey="role" />
+            <FieldError fieldKey="designation" />
           </FormField>
 
           <FormField label={getLabel("status", "STATUS")}>

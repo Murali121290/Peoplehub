@@ -143,7 +143,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             </span>
           )}
         </div>
-        <p className="text-[12px] text-gray-500 truncate">{member.role}</p>
+        <p className="text-[12px] text-gray-500 truncate">{member.designation}</p>
       </div>
     </div>
   );

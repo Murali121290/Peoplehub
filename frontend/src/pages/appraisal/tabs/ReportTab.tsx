@@ -103,7 +103,7 @@ const ReportTab: React.FC = () => {
 
           <div>
             <p className="text-gray-500 text-sm">
-              Role
+              Designation
             </p>
 
             <p className="font-medium">

@@ -25,8 +25,8 @@ const EmployeeAppraisalTab: React.FC = () => {
           const emp = empResponse.data.employee;
           setEmployeeDetails(emp);
           
-          const role = emp.role;
-          const questionsResponse = await appraisalService.getQuestions(role);
+          const designation = emp.designation;
+          const questionsResponse = await appraisalService.getQuestions(designation);
           if (questionsResponse.data.success) {
             setQuestions(questionsResponse.data.questions || []);
           }
@@ -141,11 +141,11 @@ const EmployeeAppraisalTab: React.FC = () => {
 
           <div>
             <p className="text-gray-500 text-sm">
-              Role
+              Designation
             </p>
 
             <p className="font-medium">
-              {employeeDetails.role}
+              {employeeDetails.designation}
             </p>
           </div>
 

@@ -325,7 +325,7 @@ const ManagerDashboardPage = () => {
           id: payload.id,
           employeeId: Number(payload.employee_id),
           employeeName: payload.employee_name,
-          role: payload.role || "Employee",
+          role: payload.designation || "Employee",
           leaveType: isPermission ? "Permission" : payload.leave_type,
           fromDate: isPermission ? payload.permission_date : payload.from_date,
           toDate: isPermission ? timeRange : payload.to_date,
@@ -364,7 +364,7 @@ const ManagerDashboardPage = () => {
           m.id === payload.id
             ? {
               ...m,
-              role: payload.role || payload.designation || m.role,
+              role: payload.designation || m.role,
               name: `${payload.first_name} ${payload.last_name}`,
               email: payload.email,
             }
@@ -420,7 +420,7 @@ const ManagerDashboardPage = () => {
           : "EM",
         name: emp.name || "",
         email: emp.email || "",
-        role: emp.role || emp.designation || "Employee",
+        role: emp.designation || "Employee",
         tasksCompleted: emp.tasks_completed || 0,
         efficiency: emp.efficiency || 0,
         hoursThisWeek: emp.hours_this_week || 0,
@@ -468,7 +468,7 @@ const ManagerDashboardPage = () => {
             id: l.id,
             employeeId: Number(l.employee_id),
             employeeName: l.employee_name,
-            role: l.role || "Employee",
+            role: l.designation || "Employee",
             leaveType: isPermission ? "Permission" : l.leave_type,
             fromDate: isPermission ? l.permission_date : l.from_date,
             toDate: isPermission ? timeRange : l.to_date,
@@ -506,8 +506,8 @@ const ManagerDashboardPage = () => {
         id: att.id ?? match?.id,
         name: att.name || match?.name || "",
         email: match?.email || att.email || "",
-        role: att.role || att.designation || match?.role || "Employee",
-        designation: att.designation || att.role || match?.role || "Employee",
+        role: att.designation || match?.role || "Employee",
+        designation: att.designation || match?.role || "Employee",
         department: att.department || "",
         avatar:
           match?.avatar ||
@@ -564,7 +564,7 @@ const ManagerDashboardPage = () => {
   const filteredMembers = scopedTeamMembers.filter((member) => {
     const matchesSearch =
       member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      member.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      member.designation.toLowerCase().includes(searchQuery.toLowerCase()) ||
       member.email.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesFilter = filterStatus === "All" || member.status === filterStatus;
@@ -1475,7 +1475,7 @@ const ManagerDashboardPage = () => {
                         .filter((m) => {
                           const matchSearch =
                             m.name.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
-                            (m.designation || m.role || "")
+                            (m.designation || "")
                               .toLowerCase()
                               .includes(attendanceSearch.toLowerCase());
 
@@ -1549,7 +1549,7 @@ const ManagerDashboardPage = () => {
                               </td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.employee_id || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.department || "—"}</td>
-                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.designation || member.role || "—"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.designation || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.shift || "General Shift"}</td>
                               <td style={{ padding: "12px 16px" }}>{member.check_in || "—"}</td>
                               <td style={{ padding: "12px 16px" }}>{member.check_out || "—"}</td>

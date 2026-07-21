@@ -280,7 +280,7 @@ def submit_appraisal():
                 }), 404
 
         # Create Appraisal Request
-        role_name = employee.user.role.name if employee.user and employee.user.role else employee.role if hasattr(employee, 'role') else "Unknown"
+        role_name = employee.user.role.name if employee.user and employee.user.role else employee.designation or "Unknown"
 
         new_request = AppraisalRequest(
             cycle_id=cycle_id,

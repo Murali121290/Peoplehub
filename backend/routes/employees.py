@@ -109,8 +109,7 @@ def create_employee():
             team_id=int(team_id),
 
             department=data.get("department"),
-            designation=data.get("designation"),
-            role=data.get("role"),
+            designation=data.get("designation") or data.get("role"),
 
             profile_image=image_data,
 
@@ -194,8 +193,6 @@ def get_employees():
 
             "department": emp.department,
             "designation": emp.designation,
-
-            "role": emp.role,
             "access_level": user.access_level if user else None,
             "role_id": role_id,
             "team_id": team_id,
@@ -257,7 +254,7 @@ def get_employee(employee_id):
 
     "department": employee.department,
     "designation": employee.designation,
-    "role": employee.role,
+    "role": employee.designation,
 
     "profile_image": (
         base64.b64encode(employee.profile_image).decode("utf-8")
@@ -366,7 +363,22 @@ def get_employee(employee_id):
     "user_id": employee.user_id,
     "sick_leave": employee.sick_leave,
     "casual_leave": employee.casual_leave,
-    "privilege_leave": employee.privilege_leave
+    "privilege_leave": employee.privilege_leave,
+
+    # User account fields needed for edit modal
+    "company_email": (
+        User.query.get(employee.user_id).company_email
+        if employee.user_id else employee.email
+    ),
+    "access_level": (
+        User.query.get(employee.user_id).access_level
+        if employee.user_id else None
+    ),
+    "team_id": employee.team_id,
+    "role_id": (
+        User.query.get(employee.user_id).role_id
+        if employee.user_id else None
+    ),
 })
 
 
@@ -465,7 +477,7 @@ def update_employee_profile(employee_id):
             employee.designation = data.get("designation")
 
         if data.get("role") and is_hr_or_admin:
-            employee.role = data.get("role")
+            employee.designation = data.get("role")
 
         if data.get("reporting_manager") and is_hr_or_admin:
             employee.reporting_manager = data.get("reporting_manager")
@@ -799,7 +811,6 @@ def update_employee_profile(employee_id):
                 "phone": employee.phone,
                 "designation": employee.designation,
                 "department": employee.department,
-                "role": employee.role,
                 "shift": employee.shift_timing or "General Shift",
                 "status": employee.status
             })
@@ -830,7 +841,7 @@ def get_employees_list():
             "name": f"{emp.first_name} {emp.last_name}",
             "department": emp.department,
             "designation": emp.designation,
-            "role": emp.role
+            "role": emp.designation
         }
         for emp in employees
     ])
@@ -954,9 +965,9 @@ def get_my_team(user_id):
                 "id": employee.id,
                 "name": f"{employee.first_name} {employee.last_name}",
                 "email": employee.email,
-                "role": employee.role or employee.designation or "Employee",
+                "role": employee.designation or "Employee",
                 "department": employee.department,
-                "designation": employee.designation or employee.role or "Employee",
+                "designation": employee.designation or "Employee",
                 "salary": employee.salary,
                 "reporting_manager": employee.reporting_manager,
                 "status": employee.status,
@@ -1032,8 +1043,8 @@ def get_team_attendance(user_id):
                 "name": f"{emp.first_name} {emp.last_name}",
                 "employee_id": emp.employee_id,
                 "email": emp.email,
-                "role": emp.role or emp.designation or "Employee",
-                "designation": emp.designation or emp.role or "Employee",
+                "role": emp.designation or "Employee",
+                "designation": emp.designation or "Employee",
                 "department": emp.department,
                 "profile_image": base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None,
                 "attendance_status": att_status,
@@ -1243,7 +1254,7 @@ def get_peers_attendance(user_id):
                 "user_id": peer.user_id,
                 "first_name": peer.first_name,
                 "last_name": peer.last_name,
-                "role": peer.role,
+                "role": peer.designation,
                 "profile_image": base64.b64encode(peer.profile_image).decode("utf-8") if peer.profile_image else None,
                 "status": status,
                 "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
@@ -1312,7 +1323,7 @@ def get_team_attendance_by_id(team_id):
                 "user_id": emp.user_id,
                 "first_name": emp.first_name,
                 "last_name": emp.last_name,
-                "role": emp.role,
+                "role": emp.designation,
                 "profile_image": base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None,
                 "status": status,
                 "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",

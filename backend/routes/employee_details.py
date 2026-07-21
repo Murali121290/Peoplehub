@@ -152,7 +152,7 @@ def get_employee_details(user_id):
                 f"{employee.last_name}",
 
                 "role":
-                employee.role,
+                employee.designation,
 
                 "designation":
                 employee.designation,

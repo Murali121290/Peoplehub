@@ -295,7 +295,7 @@ export default function HRAdminDashboard() {
         .toLowerCase()
         .includes(search.toLowerCase()) ||
       (e.department || "").toLowerCase().includes(search.toLowerCase()) ||
-      (e.role || "").toLowerCase().includes(search.toLowerCase()) ||
+      (e.designation || "").toLowerCase().includes(search.toLowerCase()) ||
       (e.reporting_manager || "")
         .toLowerCase()
         .includes(search.toLowerCase()) ||
@@ -387,7 +387,6 @@ export default function HRAdminDashboard() {
       formData.append("department", newEmp.department || "");
       formData.append("designation", newEmp.designation || "");
 
-      formData.append("role", newEmp.role);
       formData.append("role_id", String(newEmp.role_id || ""));
 
       formData.append("reporting_manager", newEmp.reporting_manager);
@@ -453,15 +452,69 @@ export default function HRAdminDashboard() {
       toast.error(error.message || "Error saving employee");
     }
   };
-  const handleEditEmployee = (employee: any) => {
+  const handleEditEmployee = async (employee: any) => {
+    try {
+      // Fetch full employee details so all fields (joining_date, designation,
+      // reporting_manager, company_email, team_id, etc.) are pre-populated
+      const response = await fetch(`${BASE_URL}/employees/${employee.id}`);
+      const fullEmployee = await response.json();
 
-    setNewEmp(employee);
+      // The DB stores partial reporting manager names (e.g. "Muthukumar").
+      // The Select dropdown expects the full "FirstName LastName" format.
+      // Resolve by finding the manager whose full name starts with the stored value.
+      const storedManager = (fullEmployee.reporting_manager ?? "").trim();
+      const resolvedManager = (() => {
+        if (!storedManager) return "";
+        // Exact match first
+        const exact = employees.find(
+          (e) => `${e.first_name} ${e.last_name}`.trim() === storedManager
+        );
+        if (exact) return `${exact.first_name} ${exact.last_name}`.trim();
+        // Starts-with match (handles "Muthukumar" → "Muthukumar S")
+        const partial = employees.find((e) =>
+          `${e.first_name} ${e.last_name}`
+            .trim()
+            .toLowerCase()
+            .startsWith(storedManager.toLowerCase())
+        );
+        if (partial) return `${partial.first_name} ${partial.last_name}`.trim();
+        // Fall back to stored value so we at least show something
+        return storedManager;
+      })();
 
-    setProfileImage(null);
+      setNewEmp({
+        ...DEFAULT_NEW_EMP,
+        id: fullEmployee.id ?? employee.id,
+        user_id: fullEmployee.user_id ?? "",
+        employee_id: fullEmployee.employee_id ?? "",
+        first_name: fullEmployee.first_name ?? "",
+        last_name: fullEmployee.last_name ?? "",
+        email: fullEmployee.email ?? "",
+        company_email: fullEmployee.company_email ?? fullEmployee.email ?? "",
+        phone: fullEmployee.phone ?? "",
+        joining_date: fullEmployee.joining_date
+          ? fullEmployee.joining_date.substring(0, 10)
+          : "",
+        salary: fullEmployee.salary ?? "",
+        team_id: fullEmployee.team_id ?? "",
+        department: fullEmployee.department ?? "",
+        designation: fullEmployee.designation ?? "",
+        role: fullEmployee.designation ?? "",
+        role_id: fullEmployee.role_id ?? "",
+        reporting_manager: resolvedManager,
+        access_level: fullEmployee.access_level ?? "",
+        shift_timing: fullEmployee.shift_timing ?? "",
+        status: fullEmployee.status ?? "active",
+        password: "",   // never pre-fill password
+      });
 
-    setIsEditMode(true);
-
-    setAddEmpOpen(true);
+      setProfileImage(null);
+      setIsEditMode(true);
+      setAddEmpOpen(true);
+    } catch (error) {
+      console.error("Failed to fetch employee details for edit:", error);
+      toast.error("Could not load employee details. Please try again.");
+    }
   };
 
   const handleProfileComplete = async () => {

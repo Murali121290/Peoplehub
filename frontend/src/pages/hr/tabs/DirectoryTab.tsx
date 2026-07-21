@@ -51,7 +51,7 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
         <table className="w-full border-collapse text-left text-[13px]">
           <thead>
             <tr className="border-b-2 border-neutral-200 bg-white text-neutral-500">
-              {["Employee", "Role", "Reporting Manager", "Team/Designation","Shift", "Status"].map((h) => (
+              {["Employee", "Designation", "Reporting Manager", "Team", "Shift", "Status"].map((h) => (
                 <th key={h} className="px-4 py-4 text-xs font-semibold uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -74,7 +74,7 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
                   </div>
                 </td>
                 <td className="px-4 py-3.5">
-                  <span className="text-[13px] font-medium text-neutral-800">{emp.role || "N/A"}</span>
+                  <span className="text-[13px] font-medium text-neutral-800">{emp.designation || "N/A"}</span>
                 </td>
                 <td className="px-4 py-3.5">
                   <span className="text-[13px] text-neutral-500">{emp.reporting_manager || "—"}</span>
