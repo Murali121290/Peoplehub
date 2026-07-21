@@ -28,6 +28,7 @@ from routes.attendance import attendance_bp
 from routes.leaves import leave_bp
 from routes.notifications import notification_bp
 from routes.telecom import telecom_bp
+from routes.performance import performance_bp
 from routes.birthday_wishes import birthday_wishes_bp
 from routes.shift_request import shift_bp
 from routes.employee_details import employee_details_bp
@@ -64,6 +65,7 @@ def create_app():
     fastapi_app.include_router(leave_bp, prefix="/api/leaves")
     fastapi_app.include_router(notification_bp, prefix="/api/notifications")
     fastapi_app.include_router(telecom_bp, prefix="/api/telecom")
+    fastapi_app.include_router(performance_bp, prefix="/api/performance")
     fastapi_app.include_router(birthday_wishes_bp, prefix="/api/birthday-wishes")
     fastapi_app.include_router(shift_bp, prefix="/api/shifts")
     fastapi_app.include_router(employee_details_bp, prefix="/api")

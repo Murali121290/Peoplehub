@@ -6,6 +6,10 @@ import { Modal } from "../../../components/ui/Modal";
 import { Input, Select, Textarea } from "../../../components/ui/Form";
 import { StatCard } from "../../../components/ui/StatCard";
 import type { BadgeVariant } from "../../../components/ui/Badge";
+import axios from "axios";
+import { toast } from "react-hot-toast";
+import { API_URL } from "../../../config/api";
+import { useAuthStore } from "../../../store/authStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,72 +34,7 @@ interface EmployeePerformance {
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
-const initialRecords: EmployeePerformance[] = [
-  {
-    id: 1,
-    name: "Arun Kumar",
-    department: "Engineering",
-    designation: "Software Developer",
-    reviewPeriod: "Q1 2025",
-    efficiency: 87,
-    quality: 92,
-    productivity: 94,
-    attendance: 96,
-    rating: "Excellent",
-    goals: "Complete module delivery before deadline",
-    feedback: "Consistently delivers quality work and leads team discussions effectively.",
-    reviewer: "Priya Menon",
-    reviewDate: "2025-04-01",
-  },
-  {
-    id: 2,
-    name: "Divya Nair",
-    department: "HR",
-    designation: "HR Executive",
-    reviewPeriod: "Q1 2025",
-    efficiency: 78,
-    quality: 85,
-    productivity: 80,
-    attendance: 90,
-    rating: "Good",
-    goals: "Reduce onboarding time by 20%",
-    feedback: "Good communicator, needs to improve documentation turnaround.",
-    reviewer: "Suresh Babu",
-    reviewDate: "2025-04-02",
-  },
-  {
-    id: 3,
-    name: "Karthik Raj",
-    department: "Finance",
-    designation: "Accounts Manager",
-    reviewPeriod: "Q1 2025",
-    efficiency: 65,
-    quality: 70,
-    productivity: 68,
-    attendance: 82,
-    rating: "Average",
-    goals: "Improve monthly report accuracy",
-    feedback: "Needs more attention to detail in audit preparation.",
-    reviewer: "Meena Krishnan",
-    reviewDate: "2025-04-03",
-  },
-  {
-    id: 4,
-    name: "Shalini Venkatesan",
-    department: "Operations",
-    designation: "Operations Lead",
-    reviewPeriod: "Q1 2025",
-    efficiency: 91,
-    quality: 89,
-    productivity: 93,
-    attendance: 98,
-    rating: "Excellent",
-    goals: "Streamline vendor coordination workflow",
-    feedback: "Outstanding leadership and proactive problem-solving across departments.",
-    reviewer: "Ramesh Iyer",
-    reviewDate: "2025-04-04",
-  },
-];
+const initialRecords: EmployeePerformance[] = [];
 
 // Rating → design-system badge variant + bar/text color classes
 const ratingVariant: Record<Rating, BadgeVariant> = {
@@ -226,12 +165,74 @@ const FormModal: React.FC<{
   onSave: (data: Omit<EmployeePerformance, "id"> | EmployeePerformance) => void;
   onClose: () => void;
 }> = ({ initial, title, onSave, onClose }) => {
+  const { user } = useAuthStore();
   const [form, setForm] = useState({ ...initial });
+  const [employees, setEmployees] = useState<any[]>([]);
+
+  // Split review period into start and end for UI
+  const splitPeriod = form.reviewPeriod ? form.reviewPeriod.split(" to ") : ["", ""];
+  const [reviewStart, setReviewStart] = useState(splitPeriod[0]);
+  const [reviewEnd, setReviewEnd] = useState(splitPeriod[1] || "");
 
   const set = (field: string, value: string | number) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
+  React.useEffect(() => {
+    // Pre-fill if it's a new record
+    if (!("id" in initial)) {
+      set("reviewer", user?.full_name || "");
+      set("reviewDate", new Date().toISOString().split("T")[0]);
+    }
+
+    const fetchEmployees = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await axios.get(`${API_URL}/api/employees/`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        // Filter for current user's team, or show all if user has no team
+        const userAny = user as any;
+        const teamEmployees = userAny?.team_id 
+          ? res.data.filter((e: any) => e.team_id === userAny.team_id)
+          : res.data;
+          
+        setEmployees(teamEmployees);
+      } catch (err) {
+        console.error("Failed to load employees for dropdown", err);
+      }
+    };
+    fetchEmployees();
+  }, [initial, user]);
+
+  const handleEmployeeChange = (empName: string) => {
+    const emp = employees.find((e) => `${e.first_name} ${e.last_name}` === empName);
+    if (emp) {
+      setForm((prev) => ({
+        ...prev,
+        name: `${emp.first_name} ${emp.last_name}`,
+        department: emp.department || "",
+        designation: emp.designation || "",
+      }));
+    } else {
+      set("name", empName);
+    }
+  };
+
+  const handleSave = () => {
+    const period = reviewStart && reviewEnd ? `${reviewStart} to ${reviewEnd}` : form.reviewPeriod;
+    onSave({ ...form, reviewPeriod: period });
+  };
+
   const labelClass = "text-[11px] font-bold text-neutral-500 uppercase mb-1 block";
+  
+  const empOptions = [
+    { label: "Select Employee", value: "" },
+    ...employees.map(e => ({
+      label: `${e.first_name} ${e.last_name}`,
+      value: `${e.first_name} ${e.last_name}`
+    }))
+  ];
 
   return (
     <Modal
@@ -244,7 +245,7 @@ const FormModal: React.FC<{
           <Button variant="outline" fullWidth onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" fullWidth onClick={() => onSave(form)}>
+          <Button variant="primary" fullWidth onClick={handleSave}>
             Save
           </Button>
         </>
@@ -252,23 +253,40 @@ const FormModal: React.FC<{
     >
       {/* Two-column grid */}
       <div className="grid grid-cols-2 gap-3.5">
-        {[
-          { field: "name", label: "Employee Name" },
-          { field: "department", label: "Department" },
-          { field: "designation", label: "Designation" },
-          { field: "reviewPeriod", label: "Review Period" },
-          { field: "reviewer", label: "Reviewer" },
-          { field: "reviewDate", label: "Review Date", type: "date" },
-        ].map(({ field, label, type }) => (
-          <div key={field}>
-            <label className={labelClass}>{label}</label>
-            <Input
-              type={type || "text"}
-              value={(form as Record<string, unknown>)[field] as string}
-              onChange={(e) => set(field, e.target.value)}
-            />
+        <div>
+          <label className={labelClass}>Employee Name</label>
+          <Select
+            options={empOptions.length > 1 ? empOptions : [{ label: form.name || "Select Employee", value: form.name }]}
+            value={form.name}
+            onChange={handleEmployeeChange}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Department</label>
+          <Input value={form.department} onChange={(e) => set("department", e.target.value)} />
+        </div>
+        <div>
+          <label className={labelClass}>Designation</label>
+          <Input value={form.designation} onChange={(e) => set("designation", e.target.value)} />
+        </div>
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className={labelClass}>Review Start</label>
+            <Input type="date" value={reviewStart} onChange={(e) => setReviewStart(e.target.value)} />
           </div>
-        ))}
+          <div className="flex-1">
+            <label className={labelClass}>Review End</label>
+            <Input type="date" value={reviewEnd} onChange={(e) => setReviewEnd(e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <label className={labelClass}>Reviewer</label>
+          <Input value={form.reviewer} onChange={(e) => set("reviewer", e.target.value)} />
+        </div>
+        <div>
+          <label className={labelClass}>Review Date</label>
+          <Input type="date" value={form.reviewDate} onChange={(e) => set("reviewDate", e.target.value)} />
+        </div>
       </div>
 
       {/* Score sliders */}
@@ -339,6 +357,22 @@ const PerformanceTab: React.FC = () => {
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
+  React.useEffect(() => {
+    fetchRecords();
+  }, []);
+
+  const fetchRecords = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.get(`${API_URL}/api/performance`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setRecords(res.data.records || []);
+    } catch (err) {
+      toast.error("Failed to load performance records");
+    }
+  };
+
   const filtered = records.filter((r) => {
     const matchSearch =
       r.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -357,22 +391,49 @@ const PerformanceTab: React.FC = () => {
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
-  const handleAdd = (data: Omit<EmployeePerformance, "id"> | EmployeePerformance) => {
-    const newId = Math.max(0, ...records.map((r) => r.id)) + 1;
-    setRecords((prev) => [...prev, { ...(data as Omit<EmployeePerformance, "id">), id: newId }]);
-    setShowAdd(false);
+  const handleAdd = async (data: Omit<EmployeePerformance, "id"> | EmployeePerformance) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.post(`${API_URL}/api/performance`, data, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setRecords((prev) => [res.data.record, ...prev]);
+      setShowAdd(false);
+      toast.success("Review added successfully");
+    } catch (err) {
+      toast.error("Failed to add review");
+    }
   };
 
-  const handleEdit = (data: Omit<EmployeePerformance, "id"> | EmployeePerformance) => {
-    setRecords((prev) =>
-      prev.map((r) => (r.id === (data as EmployeePerformance).id ? (data as EmployeePerformance) : r))
-    );
-    setEditRecord(null);
+  const handleEdit = async (data: Omit<EmployeePerformance, "id"> | EmployeePerformance) => {
+    try {
+      const token = localStorage.getItem("token");
+      const recordData = data as EmployeePerformance;
+      const res = await axios.put(`${API_URL}/api/performance/${recordData.id}`, recordData, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setRecords((prev) =>
+        prev.map((r) => (r.id === recordData.id ? res.data.record : r))
+      );
+      setEditRecord(null);
+      toast.success("Review updated successfully");
+    } catch (err) {
+      toast.error("Failed to update review");
+    }
   };
 
-  const handleDelete = (id: number) => {
-    setRecords((prev) => prev.filter((r) => r.id !== id));
-    setDeleteId(null);
+  const handleDelete = async (id: number) => {
+    try {
+      const token = localStorage.getItem("token");
+      await axios.delete(`${API_URL}/api/performance/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setRecords((prev) => prev.filter((r) => r.id !== id));
+      setDeleteId(null);
+      toast.success("Review deleted successfully");
+    } catch (err) {
+      toast.error("Failed to delete review");
+    }
   };
 
   // ── Summary Cards ─────────────────────────────────────────────────────────────
