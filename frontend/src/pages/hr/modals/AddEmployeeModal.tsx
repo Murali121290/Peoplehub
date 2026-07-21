@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { FormField, Input, Select } from "../../../components/ui/Form";
+import { DatePicker } from "../../../components/ui/DatePicker";
 
 interface AddEmployeeModalProps {
   newEmp: any;
@@ -206,17 +207,29 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             },
           ].map((field) => (
             <FormField key={field.key} label={getLabel(field.key, field.label)}>
-              <Input
-                required
-                type={field.type || "text"}
-                value={newEmp[field.key]}
-                onChange={(e) => {
-                  setNewEmp({ ...newEmp, [field.key]: e.target.value });
-                  clearError(field.key);
-                }}
-                placeholder={field.placeholder || ""}
-                className={fieldErrors[field.key] ? "border-danger-500" : ""}
-              />
+              {field.type === "date" ? (
+                <DatePicker
+                  value={newEmp[field.key] || ""}
+                  onChange={(val) => {
+                    setNewEmp({ ...newEmp, [field.key]: val });
+                    clearError(field.key);
+                  }}
+                  error={fieldErrors[field.key]}
+                  placeholder="YYYY-MM-DD"
+                />
+              ) : (
+                <Input
+                  required
+                  type={field.type || "text"}
+                  value={newEmp[field.key]}
+                  onChange={(e) => {
+                    setNewEmp({ ...newEmp, [field.key]: e.target.value });
+                    clearError(field.key);
+                  }}
+                  placeholder={field.placeholder || ""}
+                  className={fieldErrors[field.key] ? "border-danger-500" : ""}
+                />
+              )}
               <FieldError fieldKey={field.key} />
             </FormField>
           ))}
