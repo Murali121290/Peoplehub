@@ -55,7 +55,6 @@ def apply_leave():
             leave_type=data.get("leave_type"),
             reporting_manager=data.get("reporting_manager"),
             handover_to=data.get("handover_to"),
-            emergency_contact=data.get("emergency_contact"),
             reason=data.get("reason")
         )
 
@@ -446,10 +445,6 @@ def update_leave(leave_id):
 
         # Common fields
         leave.reason = data.get("reason", leave.reason)
-        leave.emergency_contact = data.get(
-            "emergency_contact",
-            leave.emergency_contact
-        )
         leave.handover_to = data.get(
             "handover_to",
             leave.handover_to

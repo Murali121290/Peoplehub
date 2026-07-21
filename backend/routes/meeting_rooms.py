@@ -298,14 +298,26 @@ def get_bookings():
     methods=["PUT"]
 )
 def cancel_booking(id):
-    from fastapi import HTTPException
-
     booking = RoomBooking.query.filter(RoomBooking.id == id).first()
     if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
+        return jsonify({"success": False, "message": "Booking not found"}), 404
+
+    if booking.status == "Cancelled":
+        return jsonify({"success": False, "message": "Booking is already cancelled"}), 400
+
+    # Block cancellation if meeting has already started
+    try:
+        from datetime import date as dt_date, time as dt_time
+        meeting_start = datetime.combine(booking.meeting_date, booking.start_time)
+        if datetime.now() >= meeting_start:
+            return jsonify({
+                "success": False,
+                "message": "Cannot cancel a meeting that has already started."
+            }), 400
+    except Exception as time_err:
+        print("Time check error:", str(time_err))
 
     booking.status = "Cancelled"
-
     db.session.commit()
 
     # Emit booking_update socket event for real-time dashboard updates
@@ -316,6 +328,7 @@ def cancel_booking(id):
         print("Failed to emit booking socket:", str(socket_err))
 
     return jsonify({
+        "success": True,
         "message": "Booking cancelled"
     })
 

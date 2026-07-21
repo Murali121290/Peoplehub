@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { FormField, Input, Select, Textarea } from '../../../components/ui/Form';
+import DatePicker from '../../../components/ui/DatePicker';
 
 interface ProfileCompleteModalProps {
   currentEmployee: any;
@@ -42,7 +43,7 @@ const ProfileCompleteModal: React.FC<ProfileCompleteModalProps> = ({
             <Input value={profileData.phone} onChange={(e) => upd("phone", e.target.value)} placeholder="e.g., +91 9876543210" />
           </FormField>
           <FormField label="DATE OF BIRTH *">
-            <Input type="date" value={profileData.dob} onChange={(e) => upd("dob", e.target.value)} />
+            <DatePicker value={profileData.dob} onChange={(val) => upd("dob", val)} placeholder="Select Date of Birth" />
           </FormField>
           <FormField label="GENDER *">
             <Select

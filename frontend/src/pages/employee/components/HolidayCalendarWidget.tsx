@@ -121,7 +121,7 @@ export const HolidayCalendarWidget: React.FC = () => {
         {/* Header toolbar */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-neutral-100 pb-5 mb-5">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
+            <div className="p-2 bg-[#1F7A8C]/10 rounded-xl text-[#1F7A8C]">
               <CalendarIcon className="w-5 h-5" />
             </div>
             <div>
@@ -156,7 +156,7 @@ export const HolidayCalendarWidget: React.FC = () => {
                 onClick={() => setViewMode("calendar")}
                 className={`p-1.5 rounded-lg transition-all ${
                   viewMode === "calendar" 
-                    ? "bg-white text-indigo-600 shadow-xs" 
+                    ? "bg-white text-[#1F7A8C] shadow-xs" 
                     : "text-neutral-500 hover:text-neutral-800"
                 }`}
                 title="Calendar view"
@@ -167,7 +167,7 @@ export const HolidayCalendarWidget: React.FC = () => {
                 onClick={() => setViewMode("list")}
                 className={`p-1.5 rounded-lg transition-all ${
                   viewMode === "list" 
-                    ? "bg-white text-indigo-600 shadow-xs" 
+                    ? "bg-white text-[#1F7A8C] shadow-xs" 
                     : "text-neutral-500 hover:text-neutral-800"
                 }`}
                 title="List view"
@@ -186,7 +186,7 @@ export const HolidayCalendarWidget: React.FC = () => {
             <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#F59E0B]"></div> Pending</span>
             <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#94A3B8]"></div> Cancelled</span>
             <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#EA580C]"></div> Half-Day</span>
-            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#7C3AED]"></div> Holiday</span>
+            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#1F7A8C]"></div> Holiday</span>
             <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#CBD5E1]"></div> Weekly Off</span>
           </div>
         )}
@@ -194,7 +194,7 @@ export const HolidayCalendarWidget: React.FC = () => {
         {/* Calendar layout */}
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center py-20 text-neutral-400">
-            <svg className="animate-spin h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24">
+            <svg className="animate-spin h-6 w-6 text-[#1F7A8C]" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
@@ -238,12 +238,12 @@ export const HolidayCalendarWidget: React.FC = () => {
                         holiday: isHoliday ? day : null,
                       });
                     }}
-                    className={`border-r border-b border-neutral-100 p-1.5 min-h-[85px] flex flex-col justify-between transition-all cursor-pointer relative group hover:bg-neutral-50/80 ${isTodayDate ? "ring-2 ring-indigo-500 ring-inset" : ""}`}
+                    className={`border-r border-b border-neutral-100 p-1.5 min-h-[85px] flex flex-col justify-between transition-all cursor-pointer relative group hover:bg-neutral-50/80 ${isTodayDate ? "ring-2 ring-[#1F7A8C] ring-inset" : ""}`}
                   >
                     <div className="flex justify-between items-start mb-1">
                       <span className={`text-[11px] font-bold ${
                         isTodayDate 
-                          ? "bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center shadow-xs font-extrabold" 
+                          ? "bg-[#1F7A8C] text-white w-5 h-5 rounded-full flex items-center justify-center shadow-xs font-extrabold" 
                           : "text-neutral-700"
                       }`}>
                         {dayNum}
@@ -256,7 +256,7 @@ export const HolidayCalendarWidget: React.FC = () => {
                     {/* Events list: Leaves & Holidays */}
                     <div className="space-y-1 mt-auto pb-0.5 w-full">
                       {isHoliday && !isWeeklyOff && (
-                        <div className="text-[9px] font-bold px-1.5 py-1 rounded-[4px] truncate flex items-center gap-1.5 bg-[#F3E8FF] text-[#9333EA] fill-[#9333EA]">
+                        <div className="text-[9px] font-bold px-1.5 py-1 rounded-[4px] truncate flex items-center gap-1.5 bg-[#1F7A8C]/15 text-[#1F7A8C] fill-[#1F7A8C]">
                           <div className="w-1.5 h-1.5 rounded-full bg-current shrink-0"></div>
                           <span className="truncate">{day.name}</span>
                         </div>
@@ -419,7 +419,7 @@ export const HolidayCalendarWidget: React.FC = () => {
       {/* Sidebar upcoming holidays stack card */}
       <Card className="shadow-sm rounded-2xl border border-neutral-200 p-6 bg-gradient-to-br from-white to-neutral-50/30 flex flex-col">
         <div className="flex items-center gap-2 border-b border-neutral-100 pb-4 mb-4">
-          <ClockIcon className="w-5 h-5 text-indigo-600" />
+          <ClockIcon className="w-5 h-5 text-[#1F7A8C]" />
           <h3 className="text-md font-bold text-neutral-850">Upcoming Holidays</h3>
         </div>
 
