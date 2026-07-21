@@ -88,16 +88,34 @@ const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
       const dateParts = booking.meeting_date.split("-");
       const timeParts = booking.end_time.split(":");
       if (dateParts.length < 3 || timeParts.length < 2) return false;
-      
       const year = parseInt(dateParts[0], 10);
       const month = parseInt(dateParts[1], 10) - 1;
       const day = parseInt(dateParts[2], 10);
       const hours = parseInt(timeParts[0], 10);
       const minutes = parseInt(timeParts[1], 10);
       const seconds = timeParts.length > 2 ? parseInt(timeParts[2], 10) : 0;
-      
       const endDate = new Date(year, month, day, hours, minutes, seconds);
       return endDate < new Date();
+    } catch (e) {
+      return false;
+    }
+  };
+
+  // Returns true if the meeting start time is still in the future (cancellable)
+  const isBeforeStartTime = (booking: any) => {
+    if (!booking.meeting_date || !booking.start_time) return false;
+    try {
+      const dateParts = booking.meeting_date.split("-");
+      const timeParts = booking.start_time.split(":");
+      if (dateParts.length < 3 || timeParts.length < 2) return false;
+      const year = parseInt(dateParts[0], 10);
+      const month = parseInt(dateParts[1], 10) - 1;
+      const day = parseInt(dateParts[2], 10);
+      const hours = parseInt(timeParts[0], 10);
+      const minutes = parseInt(timeParts[1], 10);
+      const seconds = timeParts.length > 2 ? parseInt(timeParts[2], 10) : 0;
+      const startDate = new Date(year, month, day, hours, minutes, seconds);
+      return startDate > new Date();
     } catch (e) {
       return false;
     }
@@ -194,25 +212,42 @@ const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
       key: "action",
       header: "Action",
       render: (booking) => {
-        const canCancelBooking =
-          user.access_level === "admin" ||
-          user.access_level === "hr" ||
-          booking.organizer_name === user.full_name ||
-          booking.organizer_name === localStorage.getItem("full_name") ||
-          booking.organizer_name === user.employee_name;
+        // Who can cancel: the person who booked, or admin/hr
+        const currentUserId = user?.id || user?.user_id;
+        const isOwner =
+          (booking.organizer_id && currentUserId && String(booking.organizer_id) === String(currentUserId)) ||
+          booking.organizer_name === user?.full_name ||
+          booking.organizer_name === user?.employee_name ||
+          booking.organizer_name === localStorage.getItem("full_name");
 
+        const isHrOrAdmin =
+          user?.access_level === "admin" || user?.access_level === "hr";
+
+        const canCancelBooking = isOwner || isHrOrAdmin;
+
+        // Meeting is finished (past end time)
         if (isBookingFinished(booking) && booking.status !== "Cancelled") {
-          return (
-            <Badge variant="success">
-              Completed
-            </Badge>
-          );
+          return <Badge variant="success">Completed</Badge>;
         }
 
+        // Already cancelled
+        if (booking.status === "Cancelled") {
+          return <span className="text-xs text-neutral-400">—</span>;
+        }
+
+        // Only show cancel if status is cancellable
         if (!canCancel(booking.status)) {
           return <span className="text-xs text-neutral-400">—</span>;
         }
 
+        // Meeting has already started — no cancel allowed
+        if (!isBeforeStartTime(booking)) {
+          return (
+            <Badge variant="warning">In Progress</Badge>
+          );
+        }
+
+        // Show cancel button only to owner or HR/Admin
         return canCancelBooking ? (
           <Button
             variant="danger"
@@ -222,9 +257,7 @@ const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
             Cancel
           </Button>
         ) : (
-          <Badge variant="neutral">
-            Booked
-          </Badge>
+          <Badge variant="neutral">Booked</Badge>
         );
       },
     },

@@ -108,7 +108,6 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     toTime: "",
     totalDays: 0,
     reason: "",
-    emergencyContact: "",
     reportingManager: "",
     handoverTo: "",
     attachment: null,
@@ -245,7 +244,6 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       toTime: "",
       totalDays: 0,
       reason: "",
-      emergencyContact: "",
       reportingManager: "",
       handoverTo: "",
       attachment: null,
@@ -264,7 +262,6 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       toTime: leave.to_time || "",
       totalDays: leave.total_days || 0,
       reason: leave.reason || "",
-      emergencyContact: leave.emergency_contact || "",
       reportingManager: leave.reporting_manager || "",
       handoverTo: leave.handover_to || "",
       attachment: null,
@@ -626,12 +623,6 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                                       <span className="text-neutral-800 font-bold">{leave.handover_to}</span>
                                     </div>
                                   )}
-                                  {leave.emergency_contact && (
-                                    <div className="flex justify-between py-1 border-b border-neutral-200">
-                                      <span className="text-neutral-500 font-medium">Emergency Contact:</span>
-                                      <span className="text-neutral-800 font-bold">{leave.emergency_contact}</span>
-                                    </div>
-                                  )}
                                 </div>
                               </div>
                             </motion.div>
@@ -650,7 +641,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             {/* Header & Filter Controls (Sticky) */}
             <div className="sticky top-0 z-30 bg-white p-5 border-b border-[#E5E7EB] flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
+                <div className="p-2 bg-[#1F7A8C]/10 rounded-xl text-[#1F7A8C]">
                   <CalendarIcon className="w-5 h-5" />
                 </div>
                 <div>
@@ -666,7 +657,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     onClick={() => setTimelineViewMode("calendar")}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
                       timelineViewMode === "calendar"
-                        ? "bg-white text-indigo-700 shadow-sm border border-neutral-200 font-bold"
+                        ? "bg-white text-[#1F7A8C] shadow-sm border border-neutral-200 font-bold"
                         : "text-neutral-500 hover:text-neutral-900"
                     }`}
                   >
@@ -676,7 +667,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     onClick={() => setTimelineViewMode("grid")}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
                       timelineViewMode === "grid"
-                        ? "bg-white text-indigo-700 shadow-sm border border-neutral-200 font-bold"
+                        ? "bg-white text-[#1F7A8C] shadow-sm border border-neutral-200 font-bold"
                         : "text-neutral-500 hover:text-neutral-900"
                     }`}
                   >
@@ -688,7 +679,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
+                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-[#1F7A8C] shadow-sm"
                 >
                   {[todayObj.getFullYear() - 1, todayObj.getFullYear(), todayObj.getFullYear() + 1].map((y) => (
                     <option key={y} value={y}>{y}</option>
@@ -699,7 +690,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 <select
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
+                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-[#1F7A8C] shadow-sm"
                 >
                   {MONTH_NAMES.map((mName, idx) => (
                     <option key={idx + 1} value={idx + 1}>{mName}</option>
@@ -710,7 +701,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
+                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-[#1F7A8C] shadow-sm"
                 >
                   <option value="All">All Statuses</option>
                   <option value="Approved">Approved</option>
@@ -723,7 +714,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 <select
                   value={typeFilter}
                   onChange={(e) => setTypeFilter(e.target.value)}
-                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
+                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-[#1F7A8C] shadow-sm"
                 >
                   <option value="All">All Leave Types</option>
                   {leavePolicies.filter(pol => {
@@ -852,14 +843,14 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                           !cell.isCurrentMonth
                             ? "bg-neutral-50/50 text-neutral-400"
                             : isToday
-                            ? "bg-indigo-50/30 ring-1 ring-inset ring-indigo-500 z-10"
+                            ? "bg-[#1F7A8C]/10 ring-1 ring-inset ring-[#1F7A8C] z-10"
                             : "bg-white"
-                        } ${dateStr ? "cursor-pointer hover:bg-neutral-50 hover:ring-1 hover:ring-inset hover:ring-blue-300 hover:z-20" : ""}`}
+                        } ${dateStr ? "cursor-pointer hover:bg-neutral-50 hover:ring-1 hover:ring-inset hover:ring-[#1F7A8C]/30 hover:z-20" : ""}`}
                       >
                         {/* Day Header */}
                         <div className="flex justify-between items-start mb-1">
                           <span className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${
-                            isToday ? "bg-indigo-600 text-white font-bold" : "text-neutral-700"
+                            isToday ? "bg-[#1F7A8C] text-white font-bold" : "text-neutral-700"
                           }`}>
                             {cell.day}
                           </span>
@@ -1481,19 +1472,6 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   </select>
                 </div>
               )}
-            </div>
-
-            {/* Emergency Contact */}
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Emergency Contact Number <span className="text-danger-500">*</span></label>
-              <input 
-                type="text" 
-                required 
-                value={leaveForm.emergencyContact}
-                onChange={(e) => setLeaveForm({ ...leaveForm, emergencyContact: e.target.value })}
-                className="w-full border border-neutral-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary-100 focus:border-primary-400 focus:outline-none placeholder-neutral-400 font-medium"
-                placeholder="Enter telephone or mobile number" 
-              />
             </div>
 
             {/* Reason selection */}
