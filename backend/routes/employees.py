@@ -399,8 +399,13 @@ def get_employee_image(employee_id):
 # EMPLOYEE PROFILE UPDATE
 # ======================================
 @employees_bp.route("/<int:employee_id>", methods=["PATCH"])
+@auth_required
 def update_employee_profile(employee_id):
     try:
+        from utils.jwt_helper import get_jwt_identity
+        current_user_id = get_jwt_identity()
+        current_user = User.query.get(int(current_user_id))
+
         employee = Employee.query.get(employee_id)
 
         if not employee:
@@ -408,51 +413,64 @@ def update_employee_profile(employee_id):
                 "error": "Employee not found"
             }), 404
 
+        if not current_user:
+            return jsonify({
+                "error": "Current user not found"
+            }), 404
+
+        is_hr_or_admin = current_user.access_level.lower() in ["admin", "hr"]
+        is_self = current_user.id == employee.user_id
+
+        if not (is_hr_or_admin or is_self):
+            return jsonify({
+                "error": "Insufficient permissions to update this profile"
+            }), 403
+
         user = User.query.get(employee.user_id)
 
         data = request.form
 
         # Basic Employee Information (from directory edit)
-        if data.get("employee_id"):
+        if data.get("employee_id") and is_hr_or_admin:
             employee.employee_id = data.get("employee_id")
 
-        if data.get("first_name"):
+        if data.get("first_name") and is_hr_or_admin:
             employee.first_name = data.get("first_name")
 
-        if data.get("last_name"):
+        if data.get("last_name") and is_hr_or_admin:
             employee.last_name = data.get("last_name")
 
-        if data.get("email"):
+        if data.get("email") and is_hr_or_admin:
             employee.email = data.get("email")
 
         if data.get("phone"):
             employee.phone = data.get("phone")
 
-        if data.get("joining_date"):
+        if data.get("joining_date") and is_hr_or_admin:
             employee.joining_date = datetime.strptime(
                 data["joining_date"],
                 "%Y-%m-%d"
             ).date()
 
-        if data.get("salary"):
-            employee.salary = float(data.get("salary"))
+        if data.get("salary") and is_hr_or_admin:
+            employee.salary = float(data.get("salary") or 0)
 
-        if data.get("team_id"):
+        if data.get("team_id") and is_hr_or_admin:
             employee.team_id = data.get("team_id")
 
-        if data.get("department"):
+        if data.get("department") and is_hr_or_admin:
             employee.department = data.get("department")
 
-        if data.get("designation"):
+        if data.get("designation") and is_hr_or_admin:
             employee.designation = data.get("designation")
 
-        if data.get("role"):
+        if data.get("role") and is_hr_or_admin:
             employee.role = data.get("role")
 
-        if data.get("reporting_manager"):
+        if data.get("reporting_manager") and is_hr_or_admin:
             employee.reporting_manager = data.get("reporting_manager")
 
-        if data.get("status"):
+        if data.get("status") and is_hr_or_admin:
             employee.status = data.get("status")
 
         # Profile image
@@ -744,7 +762,7 @@ def update_employee_profile(employee_id):
         employee.is_first_login = False
 
         # Sync corresponding User record
-        if user:
+        if user and is_hr_or_admin:
             first = data.get("first_name", employee.first_name)
             last = data.get("last_name", employee.last_name)
 
