@@ -388,3 +388,41 @@ def get_chat_messages(
             "success": False,
             "error": str(e)
         }), 500
+
+# ==========================================
+# TOGGLE LIKE
+# ==========================================
+
+@communication_bp.route(
+    "/<int:message_id>/like",
+    methods=["POST"]
+)
+def toggle_like(message_id):
+    try:
+        data = request.json
+        employee_id = data.get("employee_id")
+        if not employee_id:
+            return jsonify({"success": False, "error": "employee_id required"}), 400
+
+        message = Communication.query.get(message_id)
+        if not message:
+            return jsonify({"success": False, "error": "Message Not Found"}), 404
+
+        likes = list(message.likes) if message.likes else []
+        if employee_id in likes:
+            likes.remove(employee_id)
+        else:
+            likes.append(employee_id)
+
+        message.likes = likes
+        
+        # This tells SQLAlchemy that the JSON column changed
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(message, "likes")
+        
+        db.session.commit()
+
+        return jsonify({"success": True, "likes": likes})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500

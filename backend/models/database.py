@@ -1,7 +1,7 @@
 import os
 import urllib.parse
 # pyrefly: ignore [missing-import]
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Date, Float, LargeBinary, extract, Time, Numeric, text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Date, Float, LargeBinary, extract, Time, Numeric, text, JSON
 # pyrefly: ignore [missing-import]
 from sqlalchemy.ext.declarative import declarative_base
 # pyrefly: ignore [missing-import]
@@ -52,6 +52,7 @@ class DbMock:
     backref = backref
     Time = Time
     Numeric = Numeric
+    JSON = JSON
     session = db_session
     extract = extract
 

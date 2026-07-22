@@ -28,6 +28,11 @@ class Communication(db.Model):
     # employee
     # announcement
     # birthday
+    likes = db.Column(
+        db.JSON,
+        default=list
+    )
+
     message_type = db.Column(
         db.String(50),
         nullable=False
@@ -70,6 +75,7 @@ class Communication(db.Model):
             "receiver_id": self.receiver_id,
             "employee_name": self.employee_name,
             "message_type": self.message_type,
+            "likes": self.likes or [],
             "title": self.title,
             "target_role": self.target_role,
             "message": self.message,
