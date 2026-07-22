@@ -304,6 +304,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const leaveCount = daysDataList.filter(d => d.status === "Leave").length;
   const halfDayCount = daysDataList.filter(d => d.status === "Half Day").length;
   const weeklyOffCount = daysDataList.filter(d => d.status === "Weekly Off").length;
+  const holidayCount = daysDataList.filter(d => d.status === "Holiday").length;
   const totalWorkedAndAbsent = presentCount + halfDayCount + absentCount;
   const attendancePercentage = totalWorkedAndAbsent > 0
     ? Math.round(((presentCount + (halfDayCount * 0.5)) / totalWorkedAndAbsent) * 100)
@@ -363,11 +364,13 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       </div>
 
       {/* Dynamic Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard icon={CheckCircleIcon} title="Present Days" value={presentCount} subtitle="" trend="normal" color="green" />
-        <StatCard icon={UserMinusIcon} title="Absent Days" value={absentCount} subtitle="" trend="normal" color="red" />
+        <StatCard icon={UserMinusIcon} title="Absent Days (LOP)" value={absentCount} subtitle="" trend="normal" color="red" />
         <StatCard icon={CalendarDaysIcon} title="Leave Days" value={leaveCount} subtitle="" trend="normal" color="purple" />
         <StatCard icon={ClockIcon} title="Half Days" value={halfDayCount} subtitle="" trend="normal" color="yellow" />
+        <StatCard icon={CheckCircleIcon} title="Paid Leaves (Holidays)" value={holidayCount} subtitle="" trend="normal" color="blue" />
+        <StatCard icon={CalendarDaysIcon} title="Weekends" value={weeklyOffCount} subtitle="" trend="normal" color="gray" />
       </div>
 
       {/* Main Content Card */}
@@ -618,10 +621,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
           </div>
         ) : (
           /* Mode 2: Grid View */
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
             <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-neutral-50/80 border-b border-neutral-200 text-neutral-500 text-xs font-bold uppercase tracking-wider">
+              <thead className="sticky top-0 z-10 bg-white shadow-sm">
+                <tr className="border-b border-neutral-200 text-neutral-500 text-xs font-bold uppercase tracking-wider">
                   <th className="p-3.5 pl-6">Date</th>
                   <th className="p-3.5">Day</th>
                   <th className="p-3.5">Check-In</th>

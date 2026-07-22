@@ -124,8 +124,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
   // ── Timeline & Calendar View States ─────────────────────────────────────
   const todayObj = new Date();
-  const [timelineViewMode, setTimelineViewMode] = useState<"calendar" | "grid">("calendar");
-  const [selectedMonth, setSelectedMonth] = useState<number>(todayObj.getMonth() + 1);
+    const [selectedMonth, setSelectedMonth] = useState<number>(todayObj.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(todayObj.getFullYear());
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [typeFilter, setTypeFilter] = useState<string>("All");
@@ -133,8 +132,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const [monthlyHolidaysData, setMonthlyHolidaysData] = useState<any[]>([]);
   const [monthlyScheduleData, setMonthlyScheduleData] = useState<any[]>([]);
   const [allYearHolidays, setAllYearHolidays] = useState<any[]>([]);
-  const [selectedDateEventsModal, setSelectedDateEventsModal] = useState<any | null>(null);
-
+  
   const MONTH_NAMES = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
@@ -407,7 +405,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       {/* Leave Balance Grid Section */}
       <motion.div
         variants={itemVariants}
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4"
       >
         {(() => {
           const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
@@ -479,15 +477,16 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             return (
               <Card
                 key={item.label}
-                className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col items-center"
+                className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col"
               >
-                <h4 className="text-[14px] font-semibold text-slate-800 mb-4 tracking-wide">{item.label}</h4>
-
-                <div className={`flex h-[3rem] w-[3rem] items-center justify-center rounded-[14px] ${item.iconWrap} mb-5`}>
-                  <Icon className={`h-5 w-5 ${item.iconColor}`} />
+                <div className="flex items-center gap-3 mb-4 w-full">
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.iconWrap}`}>
+                    <Icon className={`h-5 w-5 ${item.iconColor}`} />
+                  </div>
+                  <h4 className="text-[14px] font-semibold text-slate-800 tracking-wide leading-tight">{item.label}</h4>
                 </div>
 
-                <div className="w-full space-y-2.5 mt-auto px-1">
+                <div className="w-full space-y-1.5 mt-auto px-1">
                   <div className="flex justify-between items-center text-[14px]">
                     <span className="text-slate-600 font-medium">Available</span>
                     <span className="font-semibold text-emerald-600">{item.value}</span>
@@ -683,266 +682,12 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 </div>
               </div>
 
-              {/* Controls: Mode Switcher & Filters */}
-              <div className="flex flex-wrap items-center gap-3">
-                {/* View Switcher */}
-                <div className="flex bg-neutral-100 border border-neutral-200/50 p-1 rounded-xl text-[13px] font-semibold">
-                  <button
-                    onClick={() => setTimelineViewMode("calendar")}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                      timelineViewMode === "calendar"
-                        ? "bg-white text-[#1F7A8C] shadow-sm border border-neutral-200 font-bold"
-                        : "text-neutral-500 hover:text-neutral-900"
-                    }`}
-                  >
-                    <CalendarIcon className="w-4 h-4" /> Calendar View
-                  </button>
-                  <button
-                    onClick={() => setTimelineViewMode("grid")}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                      timelineViewMode === "grid"
-                        ? "bg-white text-[#1F7A8C] shadow-sm border border-neutral-200 font-bold"
-                        : "text-neutral-500 hover:text-neutral-900"
-                    }`}
-                  >
-                    <ListBulletIcon className="w-4 h-4" /> Grid View
-                  </button>
-                </div>
-
-                {/* Year Selector */}
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-[#1F7A8C] shadow-sm"
-                >
-                  {[todayObj.getFullYear() - 1, todayObj.getFullYear(), todayObj.getFullYear() + 1].map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-
-                {/* Month Selector */}
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-[#1F7A8C] shadow-sm"
-                >
-                  {MONTH_NAMES.map((mName, idx) => (
-                    <option key={idx + 1} value={idx + 1}>{mName}</option>
-                  ))}
-                </select>
-
-                {/* Status Filter */}
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-[#1F7A8C] shadow-sm"
-                >
-                  <option value="All">All Statuses</option>
-                  <option value="Approved">Approved</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Rejected">Rejected</option>
-                  <option value="Cancelled">Cancelled</option>
-                </select>
-
-                {/* Leave Type Filter */}
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-1.5 text-[13px] font-medium text-neutral-700 focus:outline-none focus:ring-1 focus:ring-[#1F7A8C] shadow-sm"
-                >
-                  <option value="All">All Leave Types</option>
-                  {leavePolicies.filter(pol => {
-                    const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
-                    const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
-                    return polGender === "all" || polGender === userGender;
-                  }).map(pol => (
-                    <option key={pol.id} value={pol.leave_type}>{pol.leave_type}</option>
-                  ))}
-                  <option value="Permission">Permission</option>
-                </select>
-              </div>
+              {/* Removed Filters per user request */}
             </div>
 
-            {/* ── Mode 1: Calendar View ── */}
-            {timelineViewMode === "calendar" ? (
-              <div className="p-6">
-                {/* Navigation Controls */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
-                  <div>
-                    <h4 className="text-xl font-bold text-neutral-900">
-                      {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
-                    </h4>
-                    <p className="text-xs text-neutral-500 font-medium mt-1">Click any date to view leave and holiday details.</p>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => {
-                        setSelectedMonth(todayObj.getMonth() + 1);
-                        setSelectedYear(todayObj.getFullYear());
-                      }}
-                      className="px-4 py-1.5 text-sm font-medium rounded-lg border border-neutral-200 hover:bg-neutral-50 text-neutral-700 transition-colors"
-                    >
-                      Today
-                    </button>
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          if (selectedMonth === 1) {
-                            setSelectedMonth(12);
-                            setSelectedYear(prev => prev - 1);
-                          } else {
-                            setSelectedMonth(prev => prev - 1);
-                          }
-                        }}
-                        className="p-1.5 rounded-lg text-neutral-600 hover:bg-neutral-100 transition-colors"
-                      >
-                        <ChevronLeftIcon className="w-5 h-5" />
-                      </button>
-
-                      <span className="text-sm font-semibold w-28 text-center text-neutral-800">
-                        {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
-                      </span>
-
-                      <button
-                        onClick={() => {
-                          if (selectedMonth === 12) {
-                            setSelectedMonth(1);
-                            setSelectedYear(prev => prev + 1);
-                          } else {
-                            setSelectedMonth(prev => prev + 1);
-                          }
-                        }}
-                        className="p-1.5 rounded-lg text-neutral-600 hover:bg-neutral-100 transition-colors"
-                      >
-                        <ChevronRightIcon className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Legend */}
-                <div className="flex flex-wrap gap-5 text-xs font-semibold text-neutral-600 mb-6 px-1">
-                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#16A34A]"></div> Approved</span>
-                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#E11D48]"></div> Rejected</span>
-                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#EAB308]"></div> Pending</span>
-                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#94A3B8]"></div> Cancelled</span>
-                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#F97316]"></div> Half Day</span>
-                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#A855F7]"></div> Holiday</span>
-                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-[#111827]"></div> Weekly Off</span>
-                </div>
-
-                {/* 7-column Calendar Header */}
-                <div className="grid grid-cols-7 border-t border-l border-neutral-200">
-                  {WEEKDAYS.map((wd) => (
-                    <div key={wd} className="py-2.5 text-[11px] font-bold text-neutral-500 text-center uppercase tracking-wider border-b border-r border-neutral-200 bg-white">
-                      {wd}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Calendar Grid Cells */}
-                <div className="grid grid-cols-7 border-l border-neutral-200 bg-neutral-200 gap-px">
-                  {calendarGridDays.map((cell, idx) => {
-                    const dateStr = cell.dateStr;
-                    const isTodayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-                    const isToday = dateStr === isTodayStr;
-
-                    // Matched Leaves
-                    const leavesOnDate = filteredTimelineRequests.filter((req: any) => {
-                      if (req.request_type === "Permission") return req.permission_date === dateStr;
-                      return req.from_date <= dateStr && req.to_date >= dateStr;
-                    });
-
-                    // Matched Holiday & Weekly Off
-                    const scheduleDay = monthlyScheduleData.find((s: any) => s.date === dateStr);
-                    const holidayOnDate = monthlyHolidaysData.find((h: any) => h.date === dateStr) || (scheduleDay?.is_holiday ? { name: scheduleDay.holiday_name, holiday_type: scheduleDay.holiday_type } : null);
-                    const isWeeklyOff = scheduleDay?.is_weekend;
-
-                    return (
-                      <div
-                        key={dateStr || `empty-${idx}`}
-                        onClick={() => {
-                          if (!dateStr) return;
-                          setSelectedDateEventsModal({
-                            dateStr,
-                            formattedDate: `${cell.day} ${MONTH_NAMES[cell.month - 1]} ${cell.year}`,
-                            leaves: leavesOnDate,
-                            holiday: holidayOnDate,
-                            scheduleDay,
-                          });
-                        }}
-                        className={`min-h-[85px] p-2 transition-colors flex flex-col justify-start relative group ${
-                          !cell.isCurrentMonth
-                            ? "bg-neutral-50/50 text-neutral-400"
-                            : isToday
-                            ? "bg-[#1F7A8C]/10 ring-1 ring-inset ring-[#1F7A8C] z-10"
-                            : "bg-white"
-                        } ${dateStr ? "cursor-pointer hover:bg-neutral-50 hover:ring-1 hover:ring-inset hover:ring-[#1F7A8C]/30 hover:z-20" : ""}`}
-                      >
-                        {/* Day Header */}
-                        <div className="flex justify-between items-start mb-1">
-                          <span className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${
-                            isToday ? "bg-[#1F7A8C] text-white font-bold" : "text-neutral-700"
-                          }`}>
-                            {cell.day}
-                          </span>
-                          
-                          {isWeeklyOff && (
-                            <span className="text-[10px] text-neutral-400 font-bold uppercase mt-1 mr-1">{scheduleDay?.holiday_type || "SUN"}</span>
-                          )}
-                        </div>
-
-                        {/* Events list */}
-                        <div className="flex flex-col gap-1 w-full flex-1">
-                          {/* Leaves */}
-                          {leavesOnDate.slice(0, 1).map((l: any) => {
-                            const isApproved = l.status === "Approved";
-                            const isRejected = l.status === "Rejected";
-                            const isPending = l.status === "Pending";
-                            const isHalfDay = l.leave_duration === "First Half" || l.leave_duration === "Second Half";
-
-                            const dotColor = isHalfDay ? "bg-[#F97316]" : isApproved ? "bg-[#16A34A]" : isRejected ? "bg-[#E11D48]" : isPending ? "bg-[#EAB308]" : "bg-[#94A3B8]";
-
-                            return (
-                              <div
-                                key={l.id}
-                                className="flex items-center gap-1.5 px-1.5 py-1 rounded text-[11px] font-semibold text-neutral-700 truncate w-full"
-                              >
-                                <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`}></div>
-                                <span className="truncate">{l.leave_type || "Leave"}</span>
-                              </div>
-                            );
-                          })}
-
-                          {/* Holiday */}
-                          {holidayOnDate && leavesOnDate.length === 0 && (
-                            <div className="flex items-center gap-1.5 px-1.5 py-1 rounded text-[11px] font-semibold text-neutral-700 truncate w-full">
-                              <div className={`w-2 h-2 rounded-full shrink-0 ${
-                                holidayOnDate.holiday_type?.toLowerCase().includes("national") ? "bg-blue-500" :
-                                holidayOnDate.holiday_type?.toLowerCase().includes("company") ? "bg-emerald-500" :
-                                "bg-purple-500"
-                              }`}></div>
-                              <span className="truncate">{holidayOnDate.name}</span>
-                            </div>
-                          )}
-
-                          {/* More indicator */}
-                          {leavesOnDate.length > 1 && (
-                            <div className="text-[10px] font-bold text-neutral-500 pl-2 mt-0.5">
-                              +{leavesOnDate.length - 1} More
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              /* ── Mode 2: Grid View ── */
-              <div className="bg-white">
+            
+            {/* ── Mode 2: Grid View ── */}
+            <div className="bg-white">
                 {/* Section 1: Employee Leave History */}
                 <div className="pt-6 px-6 pb-2">
                   <div className="flex items-center justify-between mb-4">
@@ -952,9 +697,9 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     </span>
                   </div>
 
-                  <div className="w-full">
-                    <table className="w-full border-collapse text-left">
-                      <thead>
+                  <div className="w-full overflow-x-auto overflow-y-auto max-h-[400px] border border-neutral-200 rounded-lg mb-4">
+                    <table className="w-full border-collapse text-left min-w-[800px]">
+                      <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
                         <tr className="border-b border-[#E5E7EB] text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
                           <th className="py-3 px-4 font-semibold">Date</th>
                           <th className="py-3 px-4 font-semibold">Day</th>
@@ -1052,9 +797,9 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     </span>
                   </div>
 
-                  <div className="w-full">
-                    <table className="w-full border-collapse text-left">
-                      <thead>
+                  <div className="w-full overflow-x-auto overflow-y-auto max-h-[350px] border border-neutral-200 rounded-lg">
+                    <table className="w-full border-collapse text-left min-w-[600px]">
+                      <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
                         <tr className="border-b border-[#E5E7EB] text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
                           <th className="py-3 px-4 font-semibold">Date</th>
                           <th className="py-3 px-4 font-semibold">Day</th>
@@ -1109,103 +854,9 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   </div>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
 
-          {/* Side Drawer for Date Events */}
-          <AnimatePresence>
-            {selectedDateEventsModal && (
-              <>
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setSelectedDateEventsModal(null)}
-                  className="fixed inset-0 z-40 bg-neutral-900/20 backdrop-blur-[2px]"
-                />
-                <motion.div
-                  initial={{ x: "100%" }}
-                  animate={{ x: 0 }}
-                  exit={{ x: "100%" }}
-                  transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                  className="fixed inset-y-0 right-0 z-50 w-full md:w-[400px] bg-white shadow-2xl border-l border-neutral-200 flex flex-col"
-                >
-                  <div className="flex items-center justify-between px-6 py-5 border-b border-neutral-100">
-                    <h3 className="text-xl font-bold text-neutral-800">{selectedDateEventsModal.formattedDate}</h3>
-                    <button
-                      onClick={() => setSelectedDateEventsModal(null)}
-                      className="p-1.5 rounded-full text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
-                    >
-                      <XMarkIcon className="w-5 h-5" />
-                    </button>
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                    {/* Employee Leave Section */}
-                    <div>
-                      <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-4 border-b border-neutral-100 pb-2">Employee Leave</h4>
-                      {selectedDateEventsModal.leaves.length === 0 ? (
-                        <p className="text-sm text-neutral-500">None</p>
-                      ) : (
-                        <div className="space-y-6">
-                          {selectedDateEventsModal.leaves.map((l: any) => {
-                            const isApproved = l.status === "Approved";
-                            const isRejected = l.status === "Rejected";
-                            const isPending = l.status === "Pending";
-                            
-                            const textColor = isApproved ? "text-emerald-600" : isRejected ? "text-rose-600" : isPending ? "text-amber-600" : "text-neutral-500";
-
-                            return (
-                              <div key={l.id} className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-sm font-bold text-neutral-800">{l.leave_type}</span>
-                                  <span className={`text-xs font-bold ${textColor}`}>{l.status}</span>
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="flex justify-between text-sm">
-                                    <span className="text-neutral-500">Duration</span>
-                                    <span className="text-neutral-800 font-medium">{l.total_days} Day{l.total_days > 1 ? "s" : ""}</span>
-                                  </div>
-                                  <div className="flex justify-between text-sm">
-                                    <span className="text-neutral-500">Manager</span>
-                                    <span className="text-neutral-800 font-medium">{l.reporting_manager || "HR Manager"}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Company Holiday Section */}
-                    <div>
-                      <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-4 border-b border-neutral-100 pb-2">Holiday</h4>
-                      {selectedDateEventsModal.holiday ? (
-                        <div className="space-y-3">
-                          <p className="text-sm font-bold text-neutral-800">{selectedDateEventsModal.holiday.name}</p>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-neutral-500">Type</span>
-                            <span className="text-neutral-800 font-medium">{selectedDateEventsModal.holiday.holiday_type || "Company Holiday"}</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-neutral-500">None</p>
-                      )}
-                    </div>
-
-                    {/* Weekly Off Section */}
-                    <div>
-                      <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-4 border-b border-neutral-100 pb-2">Weekly Off</h4>
-                      <p className="text-sm font-medium text-neutral-800">
-                        {selectedDateEventsModal.scheduleDay?.is_weekend ? selectedDateEventsModal.scheduleDay.holiday_type || "Yes" : "No"}
-                      </p>
-                    </div>
-                  </div>
-                </motion.div>
-              </>
-            )}
-          </AnimatePresence>
+          
         </>
       )}
 

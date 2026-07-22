@@ -57,18 +57,18 @@ export const StatCard: React.FC<StatCardProps> = ({
         className
       )}
     >
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex items-start gap-4">
+        {variant === 'icon' && Icon && (
+          <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', c.bg)}>
+            <Icon className={cn('h-5 w-5', c.text)} />
+          </div>
+        )}
+        <div className="flex-1">
           <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">{title}</p>
           <p className="mt-1 text-2xl font-semibold text-neutral-800">{value}</p>
           {subtitle && <p className="mt-0.5 text-xs text-neutral-400">{subtitle}</p>}
           {trend && <p className={cn('mt-1 text-xs font-medium', trendClasses[trend.direction])}>{trend.label}</p>}
         </div>
-        {variant === 'icon' && Icon && (
-          <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', c.bg)}>
-            <Icon className={cn('h-5 w-5', c.text)} />
-          </div>
-        )}
       </div>
     </div>
   );
