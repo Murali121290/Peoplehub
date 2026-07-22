@@ -38,23 +38,23 @@ const BASE_URL = `${API_URL}/api`;
 // THEME - professional enterprise palette
 // ==========================
 const THEME = {
-  primary: "#0f766e",
-  primaryDark: "#115e59",
-  primarySoft: "#ecfdf5",
-  navy: "#0f172a",
-  text: "#111827",
-  textSoft: "#6b7280",
-  textLight: "#94a3b8",
-  border: "#e5e7eb",
-  surface: "#ffffff",
-  surfaceSoft: "#f8fafc",
-  surfaceMuted: "#f1f5f9",
-  success: "#166534",
-  successBg: "#dcfce7",
-  warning: "#a16207",
-  warningBg: "#fef3c7",
-  danger: "#b91c1c",
-  dangerBg: "#fee2e2",
+  primary: "#186370", // primary-600
+  primaryDark: "#144F5A", // primary-700
+  primarySoft: "#EFF7F8", // primary-50
+  navy: "#0F172A", // neutral-900
+  text: "#1E293B", // neutral-800
+  textSoft: "#475569", // neutral-600
+  textLight: "#94A3B8", // neutral-400
+  border: "#DCDEF5", // neutral-200
+  surface: "#FFFFFF",
+  surfaceSoft: "#F8FAFF", // neutral-50
+  surfaceMuted: "#F0F4FF", // neutral-100
+  success: "#059669",
+  successBg: "#D1FAE5",
+  warning: "#D97706",
+  warningBg: "#FEF3C7",
+  danger: "#DC2626",
+  dangerBg: "#FEE2E2",
   shadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
 };
 

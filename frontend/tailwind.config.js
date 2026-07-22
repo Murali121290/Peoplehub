@@ -53,7 +53,8 @@ export default {
         surface: '#FFFFFF',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ["'Spectral'", "serif"],
+        serif: ["'Spectral'", "serif"],
       },
       fontSize: {
         xs: ['0.75rem', { lineHeight: '1rem' }],
@@ -81,6 +82,11 @@ export default {
         lg: '0 12px 32px rgba(15,23,42,0.10)',
         card: '0 1px 3px rgba(15,23,42,0.06)',
         popover: '0 10px 40px rgba(15,23,42,0.16)',
+      },
+      backgroundImage: {
+        'login-blue-glow': 'radial-gradient(1200px 600px at 15% 10%, #1e3a8a 0%, #17255a 45%, #0b1330 100%)',
+        'login-amber-glow': 'radial-gradient(500px 380px at 82% 78%, rgba(245,158,11,0.28), transparent 70%)',
+        'login-grid': 'linear-gradient(rgba(255,255,255,0.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.05) 1px,transparent 1px)',
       },
       spacing: {
         '4.5': '1.125rem',

@@ -212,7 +212,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
           onClick={handleOpen}
           value={getDisplayTime()}
           placeholder={placeholder}
-          className={`w-full border rounded-xl px-4 py-2.5 pr-10 text-sm text-neutral-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#1F7A8C]/20 focus:border-[#1F7A8C] bg-white font-medium transition-all ${
+          className={`w-full border rounded-xl px-4 py-2.5 pr-10 text-sm text-neutral-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white font-medium transition-all ${
             error ? "border-red-400" : "border-neutral-200"
           } ${className}`}
         />
@@ -254,7 +254,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                 }}
                 className={`w-16 h-14 rounded-xl flex items-center justify-center text-3xl font-bold transition-all ${
                   mode === "hour" && inputMode === "dial"
-                    ? "bg-[#1F7A8C]/15 text-[#1F7A8C] ring-2 ring-[#1F7A8C]"
+                    ? "bg-primary-500/15 text-primary-500 ring-2 ring-primary-500"
                     : "bg-slate-100 text-slate-800 hover:bg-slate-200"
                 }`}
               >
@@ -273,7 +273,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                 }}
                 className={`w-16 h-14 rounded-xl flex items-center justify-center text-3xl font-bold transition-all ${
                   mode === "minute" && inputMode === "dial"
-                    ? "bg-[#1F7A8C]/15 text-[#1F7A8C] ring-2 ring-[#1F7A8C]"
+                    ? "bg-primary-500/15 text-primary-500 ring-2 ring-primary-500"
                     : "bg-slate-100 text-slate-800 hover:bg-slate-200"
                 }`}
               >
@@ -288,7 +288,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                 onClick={() => setPeriod("AM")}
                 className={`flex-1 flex items-center justify-center transition-all ${
                   period === "AM"
-                    ? "bg-[#1F7A8C] text-white"
+                    ? "bg-primary-500 text-white"
                     : "bg-white text-slate-500 hover:bg-slate-50"
                 }`}
               >
@@ -300,7 +300,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                 onClick={() => setPeriod("PM")}
                 className={`flex-1 flex items-center justify-center transition-all ${
                   period === "PM"
-                    ? "bg-[#1F7A8C] text-white"
+                    ? "bg-primary-500 text-white"
                     : "bg-white text-slate-500 hover:bg-slate-50"
                 }`}
               >
@@ -320,7 +320,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                 className="w-[210px] h-[210px] rounded-full bg-slate-100 relative cursor-pointer select-none"
               >
                 {/* Center Dot */}
-                <div className="absolute top-[101px] left-[101px] w-2 h-2 rounded-full bg-[#1F7A8C] z-20" />
+                <div className="absolute top-[101px] left-[101px] w-2 h-2 rounded-full bg-primary-500 z-20" />
 
                 {/* Clock Hand Line */}
                 <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
@@ -401,7 +401,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                     setTypedHour(String(numeric).padStart(2, "0"));
                     setHour(numeric);
                   }}
-                  className="w-14 h-14 border border-slate-300 rounded-xl text-2xl text-center focus:border-[#1F7A8C] focus:outline-none font-semibold text-slate-800 shadow-xs"
+                  className="w-14 h-14 border border-slate-300 rounded-xl text-2xl text-center focus:border-primary-500 focus:outline-none font-semibold text-slate-800 shadow-xs"
                 />
                 <span className="text-2xl font-bold text-slate-800">:</span>
                 <input
@@ -421,7 +421,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                     setTypedMinute(String(numeric).padStart(2, "0"));
                     setMinute(numeric);
                   }}
-                  className="w-14 h-14 border border-slate-300 rounded-xl text-2xl text-center focus:border-[#1F7A8C] focus:outline-none font-semibold text-slate-800 shadow-xs"
+                  className="w-14 h-14 border border-slate-300 rounded-xl text-2xl text-center focus:border-primary-500 focus:outline-none font-semibold text-slate-800 shadow-xs"
                 />
               </div>
               <p className="text-[10px] text-slate-400 mt-2 font-medium">
@@ -477,14 +477,14 @@ export const TimePicker: React.FC<TimePickerProps> = ({
               <button
                 type="button"
                 onClick={handleClose}
-                className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-[#1F7A8C] hover:bg-[#1F7A8C]/10 rounded-lg transition-colors"
+                className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleOk}
-                className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-[#1F7A8C] hover:bg-[#1F7A8C]/10 rounded-lg transition-colors"
+                className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors"
               >
                 OK
               </button>
@@ -639,7 +639,7 @@ export const TimePickerModal: React.FC<TimePickerProps> = ({
           onClick={handleOpen}
           value={getDisplayTime()}
           placeholder={placeholder}
-          className={`w-full border rounded-xl px-4 py-2.5 pr-10 text-sm text-neutral-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#1F7A8C]/20 focus:border-[#1F7A8C] bg-white font-medium transition-all ${
+          className={`w-full border rounded-xl px-4 py-2.5 pr-10 text-sm text-neutral-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white font-medium transition-all ${
             error ? "border-red-400" : "border-neutral-200"
           } ${className}`}
         />
@@ -665,7 +665,7 @@ export const TimePickerModal: React.FC<TimePickerProps> = ({
                   onClick={() => { setMode("hour"); setInputMode("dial"); }}
                   className={`w-20 h-16 rounded-xl flex items-center justify-center text-4xl font-bold transition-all ${
                     mode === "hour" && inputMode === "dial"
-                      ? "bg-[#1F7A8C]/15 text-[#1F7A8C] ring-2 ring-[#1F7A8C]"
+                      ? "bg-primary-500/15 text-primary-500 ring-2 ring-primary-500"
                       : "bg-slate-100 text-slate-800 hover:bg-slate-200"
                   }`}
                 >
@@ -677,7 +677,7 @@ export const TimePickerModal: React.FC<TimePickerProps> = ({
                   onClick={() => { setMode("minute"); setInputMode("dial"); }}
                   className={`w-20 h-16 rounded-xl flex items-center justify-center text-4xl font-bold transition-all ${
                     mode === "minute" && inputMode === "dial"
-                      ? "bg-[#1F7A8C]/15 text-[#1F7A8C] ring-2 ring-[#1F7A8C]"
+                      ? "bg-primary-500/15 text-primary-500 ring-2 ring-primary-500"
                       : "bg-slate-100 text-slate-800 hover:bg-slate-200"
                   }`}
                 >
@@ -691,7 +691,7 @@ export const TimePickerModal: React.FC<TimePickerProps> = ({
                   type="button"
                   onClick={() => setPeriod("AM")}
                   className={`flex-1 flex items-center justify-center transition-all ${
-                    period === "AM" ? "bg-[#1F7A8C] text-white" : "bg-white text-slate-500 hover:bg-slate-50"
+                    period === "AM" ? "bg-primary-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
                   }`}
                 >AM</button>
                 <div className="h-[1px] bg-slate-200" />
@@ -699,7 +699,7 @@ export const TimePickerModal: React.FC<TimePickerProps> = ({
                   type="button"
                   onClick={() => setPeriod("PM")}
                   className={`flex-1 flex items-center justify-center transition-all ${
-                    period === "PM" ? "bg-[#1F7A8C] text-white" : "bg-white text-slate-500 hover:bg-slate-50"
+                    period === "PM" ? "bg-primary-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
                   }`}
                 >PM</button>
               </div>
@@ -714,7 +714,7 @@ export const TimePickerModal: React.FC<TimePickerProps> = ({
                   onTouchStart={handleDialStart}
                   className="w-[224px] h-[224px] rounded-full bg-slate-100 relative cursor-pointer select-none"
                 >
-                  <div className="absolute top-[108px] left-[108px] w-2 h-2 rounded-full bg-[#1F7A8C] z-20" />
+                  <div className="absolute top-[108px] left-[108px] w-2 h-2 rounded-full bg-primary-500 z-20" />
                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
                     <line x1="112" y1="112" x2={endX} y2={endY} stroke="#1F7A8C" strokeWidth="2" />
                     <circle cx={endX} cy={endY} r="16" fill="#1F7A8C" />
@@ -748,13 +748,13 @@ export const TimePickerModal: React.FC<TimePickerProps> = ({
                   <input type="text" maxLength={2} value={typedHour}
                     onChange={(e) => { const v = e.target.value.replace(/\D/g, ""); setTypedHour(v); const n = parseInt(v); if (n >= 1 && n <= 12) setHour(n); }}
                     onBlur={() => { const n = Math.min(12, Math.max(1, parseInt(typedHour) || 12)); setTypedHour(String(n).padStart(2, "0")); setHour(n); }}
-                    className="w-16 h-16 border border-slate-300 rounded-xl text-3xl text-center focus:border-[#1F7A8C] focus:outline-none font-semibold text-slate-800"
+                    className="w-16 h-16 border border-slate-300 rounded-xl text-3xl text-center focus:border-primary-500 focus:outline-none font-semibold text-slate-800"
                   />
                   <span className="text-3xl font-bold text-slate-800">:</span>
                   <input type="text" maxLength={2} value={typedMinute}
                     onChange={(e) => { const v = e.target.value.replace(/\D/g, ""); setTypedMinute(v); const n = parseInt(v); if (n >= 0 && n <= 59) setMinute(n); }}
                     onBlur={() => { const n = Math.min(59, Math.max(0, parseInt(typedMinute) || 0)); setTypedMinute(String(n).padStart(2, "0")); setMinute(n); }}
-                    className="w-16 h-16 border border-slate-300 rounded-xl text-3xl text-center focus:border-[#1F7A8C] focus:outline-none font-semibold text-slate-800"
+                    className="w-16 h-16 border border-slate-300 rounded-xl text-3xl text-center focus:border-primary-500 focus:outline-none font-semibold text-slate-800"
                   />
                 </div>
                 <p className="text-[10px] text-slate-400 mt-2 font-medium">Enter hours (1-12) and minutes (00-59)</p>
@@ -778,8 +778,8 @@ export const TimePickerModal: React.FC<TimePickerProps> = ({
                 )}
               </button>
               <div className="flex gap-2">
-                <button type="button" onClick={handleClose} className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#1F7A8C] hover:bg-[#1F7A8C]/10 rounded-lg transition-colors">Cancel</button>
-                <button type="button" onClick={handleOk} className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#1F7A8C] hover:bg-[#1F7A8C]/10 rounded-lg transition-colors">OK</button>
+                <button type="button" onClick={handleClose} className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors">Cancel</button>
+                <button type="button" onClick={handleOk} className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors">OK</button>
               </div>
             </div>
           </div>
