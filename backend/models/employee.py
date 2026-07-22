@@ -118,6 +118,7 @@ class Employee(db.Model):
 
     # Skills
     skills = db.Column(db.Text)
+    additional_education = db.Column(db.Text)
 
     # Work Details
     employee_type = db.Column(db.String(50))

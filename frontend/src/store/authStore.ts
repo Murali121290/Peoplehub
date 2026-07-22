@@ -12,6 +12,7 @@ interface User {
   profile_completed?: boolean
   is_first_login?: boolean
   employee_id?: number
+  image_version?: number
 }
 
 interface AuthState {
@@ -23,6 +24,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<User>
   logout: () => void
   checkAuth: () => void
+  updateUser: (userData: Partial<User>) => void
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -160,6 +162,15 @@ localStorage.setItem(
         user: null,
         isAuthenticated: false,
       })
+    }
+  },
+  updateUser: (userData: Partial<User>) => {
+    const userStr = localStorage.getItem('user')
+    if (userStr) {
+      const currentUser = JSON.parse(userStr)
+      const updatedUser = { ...currentUser, ...userData }
+      localStorage.setItem('user', JSON.stringify(updatedUser))
+      set({ user: updatedUser })
     }
   },
 }))
