@@ -162,7 +162,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
       variants={itemVariants}
       className="max-w-7xl mx-auto"
     >
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col min-h-[500px] font-['Inter']">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col min-h-[500px]">
 
         {/* Header with Team Dropdown */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-gray-100">

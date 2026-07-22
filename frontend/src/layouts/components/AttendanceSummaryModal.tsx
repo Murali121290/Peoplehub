@@ -327,7 +327,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                               onClick={() => handleApproveSingle(emp.employee_id || emp.id)}
                               className={`h-9 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-1.5 ${
                                 isApproved
-                                  ? "bg-[#F8FAFC] text-[#94A3B8] border border-[#E2E8F0] cursor-not-allowed opacity-70"
+                                  ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
                                   : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 active:translate-y-0 shadow-xs"
                               }`}
                             >
@@ -341,7 +341,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                               onClick={() => handleRejectSingle(emp.employee_id || emp.id)}
                               className={`h-9 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-1.5 ${
                                 isRejected
-                                  ? "bg-[#F8FAFC] text-[#94A3B8] border border-[#E2E8F0] cursor-not-allowed opacity-70"
+                                  ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
                                   : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 hover:-translate-y-0.5 active:bg-rose-200 active:translate-y-0 shadow-xs"
                               }`}
                             >
@@ -395,7 +395,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
               onClick={() => setConfirmDialog("reject")}
               className={`h-10 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${
                 pendingCount === 0
-                  ? "bg-[#F8FAFC] text-[#94A3B8] border border-[#E2E8F0] cursor-not-allowed opacity-70"
+                  ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
                   : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 hover:-translate-y-0.5 active:bg-rose-200 active:translate-y-0 shadow-xs"
               }`}
             >
@@ -409,7 +409,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
               onClick={() => setConfirmDialog("approve")}
               className={`h-10 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${
                 pendingCount === 0
-                  ? "bg-[#F8FAFC] text-[#94A3B8] border border-[#E2E8F0] cursor-not-allowed opacity-70"
+                  ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
                   : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 active:translate-y-0 shadow-xs"
               }`}
             >

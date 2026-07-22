@@ -58,7 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     >
       {/* Logo */}
       <div className="flex justify-center items-center mb-10 mt-2 flex-shrink-0">
-        <div className="relative w-[180px] h-[95px] bg-gradient-to-br from-[#ffffff] to-[#f8fafc] rounded-3xl border border-white/40 shadow-[0_8px_30px_rgba(0,0,0,0.12)] flex items-center justify-center overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-[0_10px_40px_rgba(59,130,246,0.25)]">
+        <div className="relative w-[180px] h-[95px] bg-gradient-to-br from-white to-slate-50 rounded-3xl border border-white/40 shadow-[0_8px_30px_rgba(0,0,0,0.12)] flex items-center justify-center overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-[0_10px_40px_rgba(59,130,246,0.25)]">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-orange-500/5" />
           <img src={logo} alt="S4 Carlisle" className="relative z-10 w-[150px] h-auto object-contain drop-shadow-sm select-none pointer-events-none" draggable="false" />
         </div>

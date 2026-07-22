@@ -331,7 +331,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       {/* Page Header & View Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-neutral-200 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-[#1F7A8C]/10 rounded-xl text-[#1F7A8C]">
+          <div className="p-2.5 bg-primary-500/10 rounded-xl text-primary-500">
             <CalendarIcon className="w-6 h-6" />
           </div>
           <div>
@@ -345,7 +345,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
           <button
             onClick={() => setViewMode("calendar")}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all ${viewMode === "calendar"
-                ? "bg-white text-[#1F7A8C] shadow-sm border border-neutral-200 font-extrabold"
+                ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
                 : "text-neutral-600 hover:text-neutral-900"
               }`}
           >
@@ -354,7 +354,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
           <button
             onClick={() => setViewMode("grid")}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all ${viewMode === "grid"
-                ? "bg-white text-[#1F7A8C] shadow-sm border border-neutral-200 font-extrabold"
+                ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
                 : "text-neutral-600 hover:text-neutral-900"
               }`}
           >
@@ -421,7 +421,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#1F7A8C]/20 focus:border-[#1F7A8C] shadow-xs"
+              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
             >
               {[today.getFullYear() - 1, today.getFullYear(), today.getFullYear() + 1].map((y) => (
                 <option key={y} value={y}>{y}</option>
@@ -432,7 +432,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#1F7A8C]/20 focus:border-[#1F7A8C] shadow-xs"
+              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
             >
               {MONTH_NAMES.map((mName, idx) => (
                 <option key={idx + 1} value={idx + 1}>{mName}</option>
@@ -443,7 +443,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#1F7A8C]/20 focus:border-[#1F7A8C] shadow-xs"
+              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
             >
               <option value="All">All Statuses</option>
               <option value="Present">🟢 Present</option>
@@ -491,7 +491,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     badgeClass = "bg-amber-50 text-amber-700 border-amber-200";
                     break;
                   case "Leave":
-                    badgeClass = "bg-[#1F7A8C]/10 text-[#1F7A8C] border-[#1F7A8C]/20";
+                    badgeClass = "bg-primary-500/10 text-primary-500 border-primary-500/20";
                     break;
                   case "Holiday":
                     badgeClass = "bg-blue-50 text-blue-700 border-blue-200";
@@ -509,7 +509,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     key={cell.dateStr}
                     className={`h-[80px] p-2 flex flex-col justify-between rounded-xl border relative group cursor-default transition-all duration-200 ${
                       cell.isToday 
-                        ? "border-[#1F7A8C] shadow-sm bg-white" 
+                        ? "border-primary-500 shadow-sm bg-white" 
                         : cell.status === "Future" 
                           ? "border-transparent bg-transparent" 
                           : "border-neutral-100 bg-white hover:border-neutral-200 hover:shadow-sm"
@@ -519,7 +519,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     <div className="flex justify-between items-start">
                       <span className={`text-[12px] font-bold flex items-center justify-center rounded-full ${
                         cell.isToday 
-                          ? "bg-[#1F7A8C] text-white w-6 h-6 shadow-sm" 
+                          ? "bg-primary-500 text-white w-6 h-6 shadow-sm" 
                           : cell.status === "Future" 
                             ? "text-neutral-300" 
                             : "text-neutral-700"
@@ -532,7 +532,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     {cell.status !== "Future" && (
                       <div className="mt-1 w-full flex justify-start">
                         <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 w-full ${badgeClass}`}>
-                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("1F7A8C") ? "bg-[#1F7A8C]" : "bg-neutral-400"}`}></div>
+                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("1F7A8C") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
                           <span className="truncate">{cell.badgeLabel || cell.status}</span>
                         </div>
                       </div>
@@ -567,12 +567,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               </div>
                               <div>
                                 <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-Out</span>
-                                <span className="font-extrabold text-[#1F7A8C] text-[12px]">{cell.checkOut}</span>
+                                <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
                               </div>
                             </div>
                             <div className="flex justify-between items-center px-1">
                               <span className="text-[11px] text-neutral-500 font-bold">Total Hours</span>
-                              <span className="text-[12px] font-extrabold text-[#1F7A8C] bg-[#1F7A8C]/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
+                              <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
                             </div>
                             {cell.overtime && cell.overtime !== "00:00" && cell.overtime !== "0h" && cell.overtime !== "0.0h" && (
                               <div className="flex justify-between items-center px-1">
@@ -587,9 +587,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             <p className="font-bold text-[13px] text-blue-800">{cell.holidayName}</p>
                           </div>
                         ) : cell.status === "Leave" ? (
-                          <div className="space-y-1 bg-[#1F7A8C]/10 p-3 rounded-xl border border-[#1F7A8C]/20 text-[#1F7A8C]">
-                            <span className="text-[10px] uppercase font-bold text-[#1F7A8C] block">Approved Leave</span>
-                            <p className="font-bold text-[13px] text-[#1F7A8C]">{cell.leaveType}</p>
+                          <div className="space-y-1 bg-primary-500/10 p-3 rounded-xl border border-primary-500/20 text-primary-500">
+                            <span className="text-[10px] uppercase font-bold text-primary-500 block">Approved Leave</span>
+                            <p className="font-bold text-[13px] text-primary-500">{cell.leaveType}</p>
                           </div>
                         ) : cell.status === "Weekly Off" ? (
                           <div className="text-[12px] text-neutral-500 text-center py-3 bg-neutral-50 rounded-xl font-bold border border-neutral-100">
@@ -613,10 +613,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div> Present</span>
               <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div> Absent</span>
               <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div> Half Day</span>
-              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#1F7A8C]"></div> Leave</span>
+              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-primary-500"></div> Leave</span>
               <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div> Holiday</span>
               <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-neutral-400"></div> Weekly Off</span>
-              <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-white border-2 border-[#1F7A8C]"></div> Today</span>
+              <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-white border-2 border-primary-500"></div> Today</span>
             </div>
           </div>
         ) : (
@@ -648,20 +648,20 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                   filteredGridDays.map((dayObj) => (
                     <tr
                       key={dayObj.dateStr}
-                      className="hover:bg-[#1F7A8C]/5 transition-colors"
+                      className="hover:bg-primary-500/5 transition-colors"
                     >
                       <td className="p-3.5 pl-6 font-bold text-neutral-900">{dayObj.dateStr}</td>
                       <td className="p-3.5 text-neutral-500">{dayObj.dayName}</td>
                       <td className="p-3.5 font-semibold text-neutral-800">{dayObj.checkIn}</td>
                       <td className="p-3.5 font-semibold text-neutral-800">{dayObj.checkOut}</td>
-                      <td className="p-3.5 text-center font-bold text-[#1F7A8C]">
+                      <td className="p-3.5 text-center font-bold text-primary-500">
                         {dayObj.workingHoursFormatted}
                       </td>
                       <td className="p-3.5 text-center">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${dayObj.status === "Present" ? "bg-emerald-100 text-emerald-800 border-emerald-300" :
                             dayObj.status === "Absent" ? "bg-rose-100 text-rose-800 border-rose-300" :
                               dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
-                                dayObj.status === "Leave" ? "bg-[#1F7A8C]/15 text-[#1F7A8C] border-[#1F7A8C]/30" :
+                                dayObj.status === "Leave" ? "bg-primary-500/15 text-primary-500 border-primary-500/30" :
                                   dayObj.status === "Holiday" ? "bg-blue-100 text-blue-800 border-blue-300" :
                                     "bg-neutral-200 text-neutral-700 border-neutral-300"
                           }`}>

@@ -191,7 +191,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           onClick={handleOpen}
           value={getDisplayValue()}
           placeholder={placeholder}
-          className={`w-full border rounded-xl px-4 py-2.5 pr-10 text-sm text-neutral-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#1F7A8C]/20 focus:border-[#1F7A8C] bg-white font-medium transition-all ${
+          className={`w-full border rounded-xl px-4 py-2.5 pr-10 text-sm text-neutral-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white font-medium transition-all ${
             error ? "border-red-400" : "border-neutral-200"
           } ${className}`}
         />
@@ -217,7 +217,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       {isOpen && (
         <div className="absolute top-full left-0 mt-1.5 z-[9999] bg-white rounded-2xl shadow-xl w-[290px] overflow-hidden border border-neutral-200 flex flex-col">
           {/* Header: SELECT DATE */}
-          <div className="bg-[#1F7A8C] p-4 flex items-center justify-between text-white">
+          <div className="bg-primary-500 p-4 flex items-center justify-between text-white">
             <div>
               <p className="text-[10px] font-bold tracking-wider uppercase opacity-80">Select Date</p>
               <h3 className="text-xl font-bold mt-0.5 tracking-tight">{getHeaderString()}</h3>
@@ -332,9 +332,9 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                       onClick={() => setSelectedDate(new Date(viewYear, viewMonth, dayNum))}
                       className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
                         selected
-                          ? "bg-[#1F7A8C] text-white shadow-xs font-bold"
+                          ? "bg-primary-500 text-white shadow-xs font-bold"
                           : today
-                          ? "border border-[#1F7A8C] text-[#1F7A8C] font-bold"
+                          ? "border border-primary-500 text-primary-500 font-bold"
                           : "hover:bg-neutral-100 text-neutral-700"
                       }`}
                     >
@@ -356,7 +356,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                   placeholder="YYYY-MM-DD"
                   value={typedDate}
                   onChange={(e) => setTypedDate(e.target.value)}
-                  className="w-full border border-slate-300 rounded-xl px-4 py-2 text-sm text-slate-700 focus:border-[#1F7A8C] focus:outline-none font-medium shadow-xs"
+                  className="w-full border border-slate-300 rounded-xl px-4 py-2 text-sm text-slate-700 focus:border-primary-500 focus:outline-none font-medium shadow-xs"
                 />
               </div>
               <p className="text-[10px] text-slate-400 mt-2 font-medium">
@@ -370,14 +370,14 @@ export const DatePicker: React.FC<DatePickerProps> = ({
             <button
               type="button"
               onClick={handleClose}
-              className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-[#1F7A8C] hover:bg-[#1F7A8C]/10 rounded-lg transition-colors"
+              className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleOk}
-              className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-[#1F7A8C] hover:bg-[#1F7A8C]/10 rounded-lg transition-colors"
+              className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors"
             >
               OK
             </button>
