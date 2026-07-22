@@ -176,20 +176,20 @@ const LoginPage: React.FC = () => {
 
           {/* Feature Badges */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-w-[480px]">
-            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-clock-rotate-left text-[#fbbf24] text-[17px]"></i>
+            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition-all duration-200 transform hover:-translate-y-0.5 hover:bg-white/10 hover:border-white/20">
+              <i className="fa-solid fa-clock-rotate-left" style={{ color: "#fbbf24", fontSize: "17px" }}></i>
               <span className="text-[14px] font-medium text-white/90">Attendance &amp; leave</span>
             </div>
-            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-receipt text-[#fbbf24] text-[17px]"></i>
+            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition-all duration-200 transform hover:-translate-y-0.5 hover:bg-white/10 hover:border-white/20">
+              <i className="fa-solid fa-receipt" style={{ color: "#fbbf24", fontSize: "17px" }}></i>
               <span className="text-[14px] font-medium text-white/90">Payroll &amp; benefits</span>
             </div>
-            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-chart-line text-[#fbbf24] text-[17px]"></i>
+            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition-all duration-200 transform hover:-translate-y-0.5 hover:bg-white/10 hover:border-white/20">
+              <i className="fa-solid fa-chart-line" style={{ color: "#fbbf24", fontSize: "17px" }}></i>
               <span className="text-[14px] font-medium text-white/90">Performance reviews</span>
             </div>
-            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-graduation-cap text-[#fbbf24] text-[17px]"></i>
+            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition-all duration-200 transform hover:-translate-y-0.5 hover:bg-white/10 hover:border-white/20">
+              <i className="fa-solid fa-graduation-cap" style={{ color: "#fbbf24", fontSize: "17px" }}></i>
               <span className="text-[14px] font-medium text-white/90">Learning &amp; development</span>
             </div>
           </div>
