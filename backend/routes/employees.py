@@ -229,6 +229,60 @@ def get_employees():
     return jsonify(result)
 
 # ======================================
+# DOWNLOAD EMPLOYEE DOCUMENT
+# ======================================
+@employees_bp.route("/<int:employee_id>/document/<string:doc_type>", methods=["GET"])
+def download_employee_document(employee_id, doc_type):
+    try:
+        employee = Employee.query.get(employee_id)
+        if not employee:
+            return jsonify({"error": "Employee not found"}), 404
+            
+        file_data = None
+        file_name = None
+        
+        if doc_type == "resume_file":
+            file_data = employee.resume_file
+            file_name = f"Resume_{employee.first_name}_{employee.last_name}.pdf"
+        elif doc_type == "aadhaar_file":
+            file_data = employee.aadhaar_file
+            file_name = f"Aadhaar_{employee.first_name}_{employee.last_name}.pdf"
+        elif doc_type == "pan_file":
+            file_data = employee.pan_file
+            file_name = f"PAN_{employee.first_name}_{employee.last_name}.pdf"
+        elif doc_type == "degree_certificate":
+            file_data = employee.degree_certificate
+            file_name = f"Degree_{employee.first_name}_{employee.last_name}.pdf"
+            
+        if not file_data:
+            return jsonify({"error": f"{doc_type} not found or not uploaded"}), 404
+            
+        mimetype = "application/octet-stream"
+        if file_data.startswith(b"%PDF"):
+            mimetype = "application/pdf"
+            if not file_name.endswith(".pdf"):
+                file_name += ".pdf"
+        elif file_data.startswith(b"\x89PNG"):
+            mimetype = "image/png"
+            if not (file_name.endswith(".png") or file_name.endswith(".pdf")):
+                file_name = file_name.rsplit(".", 1)[0] + ".png"
+        elif file_data.startswith(b"\xff\xd8"):
+            mimetype = "image/jpeg"
+            if not (file_name.endswith(".jpg") or file_name.endswith(".jpeg") or file_name.endswith(".pdf")):
+                file_name = file_name.rsplit(".", 1)[0] + ".jpg"
+        
+        return Response(
+            file_data,
+            mimetype=mimetype,
+            headers={
+                "Content-Disposition": f"attachment; filename={file_name}"
+            }
+        )
+    except Exception as e:
+        print("Download error:", traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+# ======================================
 # GET SINGLE EMPLOYEE
 # ======================================
 @employees_bp.route("/<int:employee_id>", methods=["GET"])
@@ -325,6 +379,7 @@ def get_employee(employee_id):
 "pg_degree": employee.pg_degree,
 "pg_college": employee.pg_college,
 "pg_percentage": employee.pg_percentage,
+"additional_education": employee.additional_education,
 
 # Experience
 "previous_company": employee.previous_company,
@@ -364,6 +419,11 @@ def get_employee(employee_id):
     "sick_leave": employee.sick_leave,
     "casual_leave": employee.casual_leave,
     "privilege_leave": employee.privilege_leave,
+
+    "has_resume": employee.resume_file is not None,
+    "has_aadhaar": employee.aadhaar_file is not None,
+    "has_pan": employee.pan_file is not None,
+    "has_degree": employee.degree_certificate is not None,
 
     # User account fields needed for edit modal
     "company_email": (
@@ -681,6 +741,11 @@ def update_employee_profile(employee_id):
         employee.pg_percentage = data.get(
             "pg_percentage",
             employee.pg_percentage
+        )
+
+        employee.additional_education = data.get(
+            "additional_education",
+            employee.additional_education
         )
 
         # Experience

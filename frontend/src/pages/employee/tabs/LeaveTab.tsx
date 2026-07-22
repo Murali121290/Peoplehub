@@ -707,13 +707,12 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                           <th className="py-3 px-4 font-semibold text-center">Status</th>
                           <th className="py-3 px-4 font-semibold text-center">Duration</th>
                           <th className="py-3 px-4 font-semibold">Manager Review</th>
-                          <th className="py-3 px-4 font-semibold text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="text-[14px]">
                         {filteredTimelineRequests.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="py-12">
+                            <td colSpan={6} className="py-12">
                               <div className="flex flex-col items-center justify-center text-center">
                                 <span className="text-3xl mb-2">📅</span>
                                 <p className="text-[14px] font-semibold text-neutral-700">No leave records found.</p>
@@ -766,16 +765,6 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                                     <span className="text-neutral-900 font-medium">{req.reporting_manager || "Manager"}</span>
                                     <span className="text-[13px] text-neutral-500 truncate max-w-[200px]">{req.reason || "No reason"}</span>
                                   </div>
-                                </td>
-                                <td className="py-3 px-4 text-right">
-                                  {isPending && (
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); onCancel(req.id); }}
-                                      className="text-[13px] text-red-600 font-medium hover:underline"
-                                    >
-                                      Cancel
-                                    </button>
-                                  )}
                                 </td>
                               </tr>
                             );
@@ -875,13 +864,12 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   <th className="text-left p-4">Request Type</th>
                   <th className="text-left p-4">Date Range / Details</th>
                   <th className="text-center p-4">Status</th>
-                  <th className="text-right p-4 pr-6">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200/80">
                 {approvalLeaves.filter((leave: any) => leave.status !== "Cancelled").length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
+                    <td colSpan={4} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
                       <div className="flex flex-col items-center justify-center gap-2 py-4">
                         <CheckIcon className="w-12 h-12 text-success-400" />
                         <p className="text-sm font-bold text-neutral-500">All caught up!</p>
@@ -946,34 +934,6 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                               }`} />
                               {leave.status}
                             </span>
-                          </td>
-
-                          {/* Actions */}
-                          <td className="p-4 text-right pr-6">
-                            <div className="flex justify-end gap-2">
-                              {leave.status === "Pending" ? (
-                                <>
-                                  <Button 
-                                    size="sm" 
-                                    variant="success" 
-                                    onClick={() => onApprove(leave.id)}
-                                    className="bg-success-600 hover:bg-success-700 text-white font-semibold text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1"
-                                  >
-                                    <CheckIcon className="w-3.5 h-3.5" /> Approve
-                                  </Button>
-                                  <Button 
-                                    size="sm" 
-                                    variant="danger" 
-                                    onClick={() => onReject(leave.id)}
-                                    className="bg-danger-600 hover:bg-danger-700 text-white font-semibold text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1"
-                                  >
-                                    <XMarkIcon className="w-3.5 h-3.5" /> Reject
-                                  </Button>
-                                </>
-                              ) : (
-                                <span className="text-xs text-neutral-400 font-medium italic">No action</span>
-                              )}
-                            </div>
                           </td>
                         </tr>
                       );

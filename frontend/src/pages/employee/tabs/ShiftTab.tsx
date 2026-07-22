@@ -394,13 +394,12 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                   <th className="text-left p-4">Date Range</th>
                   <th className="text-left p-4">Reason</th>
                   <th className="text-center p-4">Status</th>
-                  <th className="text-right p-4 pr-6">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200/80">
                 {safeManagerShiftRequests.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
+                    <td colSpan={6} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
                       <div className="flex flex-col items-center justify-center gap-2 py-4">
                         <CheckIcon className="w-12 h-12 text-success-400" />
                         <p className="text-xs font-bold text-neutral-500">All caught up!</p>
@@ -443,32 +442,6 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                             }`} />
                             {item.status}
                           </span>
-                        </td>
-                        <td className="p-4 text-right pr-6">
-                          <div className="flex justify-end gap-2">
-                            {item.status === "Pending" ? (
-                              <>
-                                <Button 
-                                  size="sm" 
-                                  variant="success" 
-                                  onClick={() => onApprove(item.id)}
-                                  className="bg-success-600 hover:bg-success-700 text-white font-semibold text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1"
-                                >
-                                  <CheckIcon className="w-3.5 h-3.5" /> Approve
-                                </Button>
-                                <Button 
-                                  size="sm" 
-                                  variant="danger" 
-                                  onClick={() => onReject(item.id)}
-                                  className="bg-danger-600 hover:bg-danger-700 text-white font-semibold text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1"
-                                >
-                                  <XMarkIcon className="w-3.5 h-3.5" /> Reject
-                                </Button>
-                              </>
-                            ) : (
-                              <span className="text-[11px] text-neutral-400 font-medium italic">No action</span>
-                            )}
-                          </div>
                         </td>
                       </tr>
                     );
