@@ -75,10 +75,10 @@ const EmployeeDashboardPage: React.FC = () => {
 
   const pendingShiftCount = canApprove
     ? managerShiftRequests.filter(
-        (shift: any) =>
-          shift.reporting_manager?.trim().toLowerCase() === managerName &&
-          shift.status === "Pending"
-      ).length
+      (shift: any) =>
+        shift.reporting_manager?.trim().toLowerCase() === managerName &&
+        shift.status === "Pending"
+    ).length
     : 0;
 
   // Attendance/timer state
@@ -126,9 +126,9 @@ const EmployeeDashboardPage: React.FC = () => {
 
   const approvalLeaves = canApprove
     ? leaveRequests.filter(
-        (leave: any) =>
-          leave.reporting_manager?.trim().toLowerCase() === managerName,
-      )
+      (leave: any) =>
+        leave.reporting_manager?.trim().toLowerCase() === managerName,
+    )
     : [];
   const totalBalance =
     (currentEmployee?.sick_leave || 0) +
@@ -136,8 +136,8 @@ const EmployeeDashboardPage: React.FC = () => {
     (currentEmployee?.privilege_leave || 0);
   const pendingLeaveCount = canApprove
     ? approvalLeaves.filter(
-        (leave: any) => leave.status === "Pending"
-      ).length
+      (leave: any) => leave.status === "Pending"
+    ).length
     : 0;
 
   const getTodayKey = () => {
@@ -443,7 +443,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const handleTeaBreak = async () => {
     const currentUserId = localStorage.getItem("user_id");
     if (!currentUserId) return;
-    
+
     if (!isTeaBreak && !isCheckedIn) {
       toast.error("Check-In Required. Please check in before starting Tea Break.");
       return;
@@ -1011,21 +1011,21 @@ const EmployeeDashboardPage: React.FC = () => {
         );
 
         if (isLunchBreak && lunchStartTime) {
-            const lHrs = Math.floor(runningLunch / 3600);
-            const lMins = Math.floor((runningLunch % 3600) / 60);
-            const lSecs = runningLunch % 60;
-            setLunchTimer(`${lHrs > 0 ? String(lHrs).padStart(2, "0") + ":" : ""}${String(lMins).padStart(2, "0")}:${String(lSecs).padStart(2, "0")}`);
+          const lHrs = Math.floor(runningLunch / 3600);
+          const lMins = Math.floor((runningLunch % 3600) / 60);
+          const lSecs = runningLunch % 60;
+          setLunchTimer(`${lHrs > 0 ? String(lHrs).padStart(2, "0") + ":" : ""}${String(lMins).padStart(2, "0")}:${String(lSecs).padStart(2, "0")}`);
         } else {
-            setLunchTimer("");
+          setLunchTimer("");
         }
 
         if (isTeaBreak && teaStartTime) {
-            const tHrs = Math.floor(runningTea / 3600);
-            const tMins = Math.floor((runningTea % 3600) / 60);
-            const tSecs = runningTea % 60;
-            setTeaTimer(`${tHrs > 0 ? String(tHrs).padStart(2, "0") + ":" : ""}${String(tMins).padStart(2, "0")}:${String(tSecs).padStart(2, "0")}`);
+          const tHrs = Math.floor(runningTea / 3600);
+          const tMins = Math.floor((runningTea % 3600) / 60);
+          const tSecs = runningTea % 60;
+          setTeaTimer(`${tHrs > 0 ? String(tHrs).padStart(2, "0") + ":" : ""}${String(tMins).padStart(2, "0")}:${String(tSecs).padStart(2, "0")}`);
         } else {
-            setTeaTimer("");
+          setTeaTimer("");
         }
 
       }, 1000);
@@ -1103,14 +1103,14 @@ const EmployeeDashboardPage: React.FC = () => {
                       Employee Dashboard
                     </h1>
                     <p className="text-xs text-neutral-500">
-                      Workflow Management System
+                      People Management System
                     </p>
                   </div>
                 </div>
-                
+
                 {/* Check-In & Break Actions */}
                 <div>
-                  <DashboardHeaderActions 
+                  <DashboardHeaderActions
                     isCheckedIn={isCheckedIn}
                     timer={timer}
                     totalLunchSeconds={totalLunchSeconds}
