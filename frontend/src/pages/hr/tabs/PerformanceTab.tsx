@@ -50,7 +50,7 @@ const metricClasses = {
   efficiency: { bar: "bg-primary-500", text: "text-primary-600" },
   quality: { bar: "bg-success-500", text: "text-success-600" },
   productivity: { bar: "bg-secondary-500", text: "text-secondary-600" },
-  attendance: { bar: "bg-[#8B5CF6]", text: "text-[#8B5CF6]" },
+  attendance: { bar: "bg-purple-500", text: "text-purple-500" },
 };
 
 // ─── Score Bar ────────────────────────────────────────────────────────────────

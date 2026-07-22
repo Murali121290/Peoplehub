@@ -158,9 +158,7 @@ def get_shift_approvals(manager_name):
 
     normalized_manager = manager_name.strip().lower()
 
-    shifts = ShiftRequest.query.filter(
-        ShiftRequest.status == "Pending"
-    ).order_by(
+    shifts = ShiftRequest.query.order_by(
         ShiftRequest.id.desc()
     ).all()
 

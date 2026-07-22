@@ -132,9 +132,9 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
           <div className="absolute -top-[120px] -left-[180px] w-[520px] h-[520px] rounded-full border border-white/25 bg-[radial-gradient(circle_at_35%_30%,rgba(178,181,214,0.9),rgba(150,153,196,0.85)_55%,rgba(130,133,182,0.75)_100%)]" />
 
           {/* Floating dots */}
-          <div className="absolute top-[70px] left-[280px] w-[30px] h-[30px] rounded-full shadow-md bg-[#e9b8c4] hidden md:block" />
-          <div className="absolute top-[140px] left-[330px] w-[46px] h-[46px] rounded-full shadow-md bg-[#8fa3d9] hidden md:block" />
-          <div className="absolute top-[220px] left-[250px] w-[20px] h-[20px] rounded-full shadow-md bg-[#c9b8e8] hidden md:block" />
+          <div className="absolute top-[70px] left-[280px] w-[30px] h-[30px] rounded-full shadow-md bg-pink-300 hidden md:block" />
+          <div className="absolute top-[140px] left-[330px] w-[46px] h-[46px] rounded-full shadow-md bg-indigo-300 hidden md:block" />
+          <div className="absolute top-[220px] left-[250px] w-[20px] h-[20px] rounded-full shadow-md bg-purple-300 hidden md:block" />
 
           {/* Confetti sticks */}
           <div className="absolute top-[24px] left-[190px] w-[3px] h-7 rounded-sm rotate-[35deg] bg-[linear-gradient(#f4a37b,#e8895f)] hidden md:block" />
@@ -145,7 +145,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
           <div className="relative z-10 flex flex-col md:flex-row items-center justify-center gap-10 md:gap-16 px-6 md:px-16 pt-28 pb-16 min-h-screen">
             {/* Left: photo + name */}
             <div className="flex flex-col items-center md:items-start text-center md:text-left max-w-md">
-              <div className="text-[#e79bb5] text-xl md:text-2xl font-bold tracking-[6px] mb-2">
+              <div className="text-pink-400 text-xl md:text-2xl font-bold tracking-[6px] mb-2">
                 HAPPY
               </div>
               <div className="text-white text-5xl md:text-7xl font-extrabold leading-none drop-shadow-md">
@@ -154,7 +154,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
               <div className="text-white text-3xl md:text-4xl font-bold mt-4">
                 {user?.full_name}
               </div>
-              <div className="mt-4 text-[#f2eef7] text-sm md:text-base font-semibold tracking-[2px]">
+              <div className="mt-4 text-purple-50 text-sm md:text-base font-semibold tracking-[2px]">
                 YOU ARE THE MOST AMAZING
               </div>
 
@@ -185,10 +185,10 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
                 <Balloon top={-30} left={230} width={40} height={54} base="#5b6394" highlight="#8890c2" shadow="#3a3f60" stringLength={110} stringLeft={19} />
               </div>
 
-              <div className="inline-block px-6 py-2.5 rounded-full bg-[#2b2f52] text-white text-sm md:text-base font-bold tracking-wider">
+              <div className="inline-block px-6 py-2.5 rounded-full bg-slate-800 text-white text-sm md:text-base font-bold tracking-wider">
                 🎂 HAPPY BIRTHDAY
               </div>
-              <div className="mt-6 text-[#3d4162] text-base md:text-lg leading-relaxed text-center md:text-left">
+              <div className="mt-6 text-slate-700 text-base md:text-lg leading-relaxed text-center md:text-left">
                 We hope you always stay happy and all your dreams come true.
                 Wishing you success, prosperity, good health and happiness
                 throughout the year.
@@ -197,7 +197,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
           </div>
 
           {/* Signature */}
-          <div className="absolute bottom-4 right-6 md:right-10 text-[#2b2f52] text-xs md:text-sm font-bold tracking-wide z-10">
+          <div className="absolute bottom-4 right-6 md:right-10 text-slate-800 text-xs md:text-sm font-bold tracking-wide z-10">
             — S4 CARLISLE PUBLISHING SERVICES
           </div>
         </div>

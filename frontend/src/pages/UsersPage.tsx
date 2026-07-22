@@ -157,7 +157,7 @@ const UsersPage: React.FC = () => {
 
             <button
               onClick={handleCreate}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#46494C] px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-neutral-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
               <PlusIcon className="h-5 w-5" />
               Add user
@@ -195,7 +195,7 @@ const UsersPage: React.FC = () => {
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleSearch}
-                className="rounded-2xl bg-[#46494C] px-4 py-3 text-sm font-medium text-white hover:bg-slate-800"
+                className="rounded-2xl bg-neutral-700 px-4 py-3 text-sm font-medium text-white hover:bg-slate-800"
               >
                 Search
               </button>
@@ -339,7 +339,7 @@ const UsersPage: React.FC = () => {
                         >
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-3">
-                              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#1985A1] text-sm font-semibold text-white">
+                              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-500 text-sm font-semibold text-white">
                                 {getInitials(user.full_name)}
                               </div>
                               <div>

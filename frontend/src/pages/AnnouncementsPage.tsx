@@ -149,7 +149,7 @@ const AnnouncementsPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-100 px-4 py-8 md:px-8 font-['Inter']">
+    <div className="min-h-screen bg-neutral-100 px-4 py-8 md:px-8">
       {showSuccess && (
         <div className="fixed top-5 right-6 z-50 flex items-center gap-2.5 rounded-lg bg-neutral-900 px-5 py-3.5 text-sm font-semibold text-white shadow-lg animate-slideInRight">
           <span className="h-2 w-2 flex-shrink-0 rounded-full bg-success-500" />
