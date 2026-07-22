@@ -62,6 +62,16 @@ def init_db(app=None):
     """Initialize database and create tables if they do not exist"""
     Base.metadata.create_all(bind=engine)
 
+    # Apply Alembic migrations before querying tables, so the schema
+    # (e.g. columns added in later migrations) matches the ORM models.
+    try:
+        from alembic.config import Config as AlembicConfig
+        from alembic import command as alembic_command
+        alembic_cfg = AlembicConfig("alembic.ini")
+        alembic_command.upgrade(alembic_cfg, "head")
+    except Exception as e:
+        print(f"Error running Alembic migrations: {e}")
+
     # Seed default policies
     from models.leave import LeavePolicy
     defaults = [

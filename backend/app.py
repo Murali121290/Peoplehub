@@ -9,12 +9,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Alembic Configuration
-# pyrefly: ignore [missing-import]
-from alembic.config import Config as AlembicConfig
-# pyrefly: ignore [missing-import]
-from alembic import command as alembic_command
-
 # Import models & database
 from models.database import init_db, engine
 # pyrefly: ignore [missing-import]
@@ -82,16 +76,8 @@ def create_app():
     os.makedirs("uploads", exist_ok=True)
     fastapi_app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-    # Initialize database and execute schema migrations
+    # Initialize database, apply Alembic migrations, and seed defaults
     init_db()
-
-    # Run Alembic migrations programmatically
-    try:
-        alembic_cfg = AlembicConfig("alembic.ini")
-        alembic_command.upgrade(alembic_cfg, "head")
-        print("Alembic database migrations successfully applied.")
-    except Exception as e:
-        print(f"Error running Alembic migrations: {e}")
 
     with engine.connect() as connection:
         connection.execute(text(
@@ -116,7 +102,10 @@ def create_app():
         ))
         connection.execute(text(
             "ALTER TABLE attendance "
-            "ADD COLUMN IF NOT EXISTS total_gap_minutes INTEGER DEFAULT 0"
+            "ADD COLUMN IF NOT EXISTS total_gap_minutes INTEGER DEFAULT 0, "
+            "ADD COLUMN IF NOT EXISTS card_check_in TIMESTAMP, "
+            "ADD COLUMN IF NOT EXISTS card_check_out TIMESTAMP, "
+            "ADD COLUMN IF NOT EXISTS card_working_hours DOUBLE PRECISION DEFAULT 0.0"
         ))
         connection.commit()
 
