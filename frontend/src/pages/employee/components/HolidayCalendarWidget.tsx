@@ -275,8 +275,8 @@ export const HolidayCalendarWidget: React.FC = () => {
                           : isRejected
                           ? "bg-danger-100 text-danger-600 fill-danger-600"
                           : isPending
-                          ? "bg-warning-100 text-[#CA8A04] fill-[#CA8A04]"
-                          : "bg-neutral-100 text-[#64748B] fill-[#64748B]";
+                          ? "bg-warning-100 text-warning-600 fill-warning-600"
+                          : "bg-neutral-100 text-neutral-500 fill-neutral-500";
 
                         return (
                           <div
@@ -337,8 +337,8 @@ export const HolidayCalendarWidget: React.FC = () => {
                           : isRejected
                           ? "bg-danger-100 text-danger-600 border-danger-300"
                           : isPending
-                          ? "bg-warning-100 text-[#CA8A04] border-warning-300"
-                          : "bg-neutral-100 text-[#64748B] border-neutral-300";
+                          ? "bg-warning-100 text-warning-600 border-warning-300"
+                          : "bg-neutral-100 text-neutral-500 border-neutral-300";
 
                         return (
                           <tr key={l.id} className="hover:bg-neutral-50/50 transition-colors">

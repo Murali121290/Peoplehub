@@ -170,19 +170,19 @@ const LoginPage: React.FC = () => {
           {/* Feature Badges */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-w-[480px]">
             <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-clock-rotate-left text-[#fbbf24] text-[17px]"></i>
+              <i className="fa-solid fa-clock-rotate-left text-warning-400 text-[17px]"></i>
               <span className="text-[14px] font-medium text-white/90">Attendance &amp; leave</span>
             </div>
             <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-receipt text-[#fbbf24] text-[17px]"></i>
+              <i className="fa-solid fa-receipt text-warning-400 text-[17px]"></i>
               <span className="text-[14px] font-medium text-white/90">Payroll &amp; benefits</span>
             </div>
             <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-chart-line text-[#fbbf24] text-[17px]"></i>
+              <i className="fa-solid fa-chart-line text-warning-400 text-[17px]"></i>
               <span className="text-[14px] font-medium text-white/90">Performance reviews</span>
             </div>
             <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-graduation-cap text-[#fbbf24] text-[17px]"></i>
+              <i className="fa-solid fa-graduation-cap text-warning-400 text-[17px]"></i>
               <span className="text-[14px] font-medium text-white/90">Learning &amp; development</span>
             </div>
           </div>
@@ -202,13 +202,13 @@ const LoginPage: React.FC = () => {
                 className="w-full bg-white rounded-[20px] shadow-[0_24px_50px_rgba(0,0,0,0.28)] p-10"
               >
                 <div className="mb-7">
-                  <h2 className="font-bold text-[28px] text-[#0f172a] mb-1.5" >Let's Get Started</h2>
-                  <p className="text-[14px] text-[#6b7280]">Enter your credentials to access the portal.</p>
+                  <h2 className="font-bold text-[28px] text-neutral-900 mb-1.5" >Let's Get Started</h2>
+                  <p className="text-[14px] text-neutral-500">Enter your credentials to access the portal.</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div>
-                    <label className="block text-[13px] font-semibold text-[#374151] mb-2">
+                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
                       Username
                     </label>
                     <div className="relative">
@@ -229,7 +229,7 @@ const LoginPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-[13px] font-semibold text-[#374151] mb-2">
+                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
                       Password
                     </label>
                     <div className="relative">
@@ -276,7 +276,7 @@ const LoginPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-[52px] bg-blue-900 hover:bg-[#1d4ed8] text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full h-[52px] bg-blue-900 hover:bg-blue-700 text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                     
                   >
                     {loading ? (
@@ -318,13 +318,13 @@ const LoginPage: React.FC = () => {
                 </button>
 
                 <div className="mb-7">
-                  <h2 className="font-bold text-[28px] text-[#0f172a] mb-1.5" >Change Password</h2>
-                  <p className="text-[14px] text-[#6b7280]">Enter your old password and choose a new one.</p>
+                  <h2 className="font-bold text-[28px] text-neutral-900 mb-1.5" >Change Password</h2>
+                  <p className="text-[14px] text-neutral-500">Enter your old password and choose a new one.</p>
                 </div>
 
                 <form onSubmit={handleChangePassword} className="space-y-5">
                   <div>
-                    <label className="block text-[13px] font-semibold text-[#374151] mb-2">
+                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
                       Username
                     </label>
                     <div className="relative">
@@ -345,7 +345,7 @@ const LoginPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-[13px] font-semibold text-[#374151] mb-2">
+                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
                       Old Password
                     </label>
                     <div className="relative">
@@ -380,7 +380,7 @@ const LoginPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-[13px] font-semibold text-[#374151] mb-2">
+                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
                       New Password
                     </label>
                     <div className="relative">
@@ -416,7 +416,7 @@ const LoginPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-[13px] font-semibold text-[#374151] mb-2">
+                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
                       Confirm Password
                     </label>
                     <div className="relative">
@@ -456,7 +456,7 @@ const LoginPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={pwLoading}
-                    className="w-full h-[52px] bg-blue-900 hover:bg-[#1d4ed8] text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full h-[52px] bg-blue-900 hover:bg-blue-700 text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                     
                   >
                     {pwLoading ? (
@@ -480,7 +480,7 @@ const LoginPage: React.FC = () => {
 
       {/* Footer */}
       <footer className="relative z-10 w-full flex justify-between items-center px-12 py-4 border-t border-white/10 text-[12.5px] text-white/60">
-        <span>© 2026 <span className="text-[#fbbf24] font-medium">S4Carlisle Publishing Services Pvt Ltd.</span> All rights reserved.</span>
+        <span>© 2026 <span className="text-warning-400 font-medium">S4Carlisle Publishing Services Pvt Ltd.</span> All rights reserved.</span>
       </footer>
     </div>
   );

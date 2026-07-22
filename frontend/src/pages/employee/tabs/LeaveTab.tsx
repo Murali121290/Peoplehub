@@ -477,7 +477,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             return (
               <Card
                 key={item.label}
-                className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col"
+                className="rounded-2xl border border-gray-200 bg-slate-50 p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col"
               >
                 <div className="flex items-center gap-3 mb-4 w-full">
                   <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.iconWrap}`}>
@@ -670,9 +670,9 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           )}
 
           {/* ── Leave Timeline Section (Calendar View & Grid View) ── */}
-          <div className="bg-white border border-[#E5E7EB] shadow-sm rounded-xl overflow-hidden mb-6">
+          <div className="bg-white border border-neutral-200 shadow-sm rounded-xl overflow-hidden mb-6">
             {/* Header & Filter Controls (Sticky) */}
-            <div className="sticky top-0 z-30 bg-white p-5 border-b border-[#E5E7EB] flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+            <div className="sticky top-0 z-30 bg-white p-5 border-b border-neutral-200 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-primary-500/10 rounded-xl text-primary-500">
                   <CalendarIcon className="w-5 h-5" />
@@ -700,7 +700,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   <div className="w-full overflow-x-auto overflow-y-auto max-h-[400px] border border-neutral-200 rounded-lg mb-4">
                     <table className="w-full border-collapse text-left min-w-[800px]">
                       <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                        <tr className="border-b border-[#E5E7EB] text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
+                        <tr className="border-b border-neutral-200 text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
                           <th className="py-3 px-4 font-semibold">Date</th>
                           <th className="py-3 px-4 font-semibold">Day</th>
                           <th className="py-3 px-4 font-semibold">Leave Type</th>
@@ -744,7 +744,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                                              "bg-amber-500";
 
                             return (
-                              <tr key={req.id} className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB] transition-colors cursor-pointer">
+                              <tr key={req.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
                                 <td className="py-3 px-4 font-medium text-neutral-900">
                                   {isPermission ? req.permission_date : `${req.from_date} to ${req.to_date}`}
                                 </td>
@@ -786,7 +786,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   </div>
                 </div>
 
-                <hr className="border-[#E5E7EB] my-2 mx-6" />
+                <hr className="border-neutral-200 my-2 mx-6" />
 
                 {/* Section 2: Upcoming & Published Holidays Schedule (Read-Only) */}
                 <div className="pt-4 px-6 pb-6">
@@ -800,7 +800,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   <div className="w-full overflow-x-auto overflow-y-auto max-h-[350px] border border-neutral-200 rounded-lg">
                     <table className="w-full border-collapse text-left min-w-[600px]">
                       <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                        <tr className="border-b border-[#E5E7EB] text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
+                        <tr className="border-b border-neutral-200 text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
                           <th className="py-3 px-4 font-semibold">Date</th>
                           <th className="py-3 px-4 font-semibold">Day</th>
                           <th className="py-3 px-4 font-semibold">Holiday Name</th>
@@ -833,7 +833,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                                              "bg-green-500";
 
                             return (
-                              <tr key={h.id} className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB] transition-colors cursor-pointer">
+                              <tr key={h.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
                                 <td className="py-3 px-4 font-medium text-neutral-900">{h.date}</td>
                                 <td className="py-3 px-4 text-neutral-500">{dayName}</td>
                                 <td className="py-3 px-4 font-medium text-neutral-900">
