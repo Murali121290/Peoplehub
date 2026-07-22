@@ -1,12 +1,14 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Gift, CalendarHeart } from "lucide-react";
-import WorkAnniversaryCard from "./WorkAnniversaryCard";
+
 
 interface NotificationsPanelProps {
   isOpen: boolean;
   onClose: () => void;
   birthdayEmployees: any[];
+  anniversaryEmployees: any[];
+  isMyAnniversary: boolean;
   isMyBirthday: boolean;
 }
 
@@ -14,6 +16,8 @@ const NotificationsPanel: React.FC<NotificationsPanelProps> = ({
   isOpen,
   onClose,
   birthdayEmployees,
+  anniversaryEmployees,
+  isMyAnniversary,
   isMyBirthday
 }) => {
   return (
@@ -106,9 +110,52 @@ const NotificationsPanel: React.FC<NotificationsPanelProps> = ({
                   <div className="p-1.5 bg-blue-50 rounded-lg text-blue-500">
                     <CalendarHeart className="w-4 h-4" />
                   </div>
-                  <h3 className="font-semibold text-gray-900 text-sm">Work Anniversaries</h3>
+                  <h3 className="font-semibold text-gray-900 text-sm">Today's Work Anniversaries</h3>
                 </div>
-                <WorkAnniversaryCard />
+                
+                {anniversaryEmployees.length === 0 && !isMyAnniversary ? (
+                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 text-center">
+                    <p className="text-sm text-gray-500">No work anniversaries today</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {isMyAnniversary && (
+                      <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+                        <div className="flex items-center gap-3">
+                          <div className="text-2xl">🎉</div>
+                          <div>
+                            <h4 className="font-semibold text-gray-900 text-sm">Happy Work Anniversary!</h4>
+                            <p className="text-xs text-gray-600">Thanks for being with us!</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {anniversaryEmployees.map((emp) => (
+                      <div key={emp.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden flex-shrink-0">
+                            {emp.profile_image ? (
+                              <img src={`data:image/jpeg;base64,${emp.profile_image}`} alt={emp.first_name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                <CalendarHeart className="w-5 h-5" />
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-gray-900 text-sm">{emp.first_name} {emp.last_name}</h4>
+                            <p className="text-xs text-gray-500">{emp.designation}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700">
+                            {emp.years} {emp.years === 1 ? 'Year' : 'Years'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
             </div>

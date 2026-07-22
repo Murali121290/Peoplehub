@@ -104,6 +104,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const [confirmModal, setConfirmModal] = useState(false);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [birthdayEmployees, setBirthdayEmployees] = useState<any[]>([]);
+  const [anniversaryEmployees, setAnniversaryEmployees] = useState<any[]>([]);
   const [birthdayModal, setBirthdayModal] = useState<boolean>(false);
   const [popup, setPopup] = useState({
     show: false,
@@ -114,6 +115,9 @@ const EmployeeDashboardPage: React.FC = () => {
 
 
 
+  const isMyAnniversary = anniversaryEmployees.some(
+    (emp: any) => Number(emp.user_id) === Number(user?.id)
+  );
   const isMyBirthday = birthdayEmployees.some(
     (emp: any) => Number(emp.user_id) === Number(user?.id),
   );
@@ -206,6 +210,18 @@ const EmployeeDashboardPage: React.FC = () => {
   };
 
   // --- API Calls ---
+
+  const fetchTodayAnniversaries = async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/employees/anniversaries/today`);
+      if (!res.ok) throw new Error("Failed to load anniversaries");
+      const data = await res.json();
+      setAnniversaryEmployees(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setAnniversaryEmployees([]);
+    }
+  };
+
   const fetchTodayBirthdays = async () => {
     try {
       const res = await fetch(`${BASE_URL}/employees/birthdays/today`);
@@ -731,6 +747,7 @@ const EmployeeDashboardPage: React.FC = () => {
       .then((data) => setEmployees(data))
       .catch((err) => console.error(err));
     fetchTodayBirthdays();
+    fetchTodayAnniversaries();
     loadLeaves();
   }, []);
 
@@ -1063,6 +1080,8 @@ const EmployeeDashboardPage: React.FC = () => {
           onClose={() => setShowNotificationsPanel(false)}
           birthdayEmployees={birthdayEmployees}
           isMyBirthday={isMyBirthday}
+          anniversaryEmployees={anniversaryEmployees}
+          isMyAnniversary={isMyAnniversary}
         />
 
         {/* Sticky Header & Navigation Container */}

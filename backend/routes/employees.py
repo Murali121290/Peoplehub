@@ -880,6 +880,37 @@ def today_birthdays():
         print("ERROR IN TODAY BIRTHDAYS:", str(err))
         return jsonify([]), 500
 
+
+@employees_bp.route("/anniversaries/today", methods=["GET"])
+def today_anniversaries():
+    try:
+        today = date.today()
+
+        employees = Employee.query.filter(
+            Employee.joining_date.isnot(None),
+            extract("month", Employee.joining_date) == today.month,
+            extract("day", Employee.joining_date) == today.day,
+            extract("year", Employee.joining_date) < today.year
+        ).all()
+
+        return jsonify([
+            {
+                "id": e.id,
+                "first_name": e.first_name,
+                "last_name": e.last_name,
+                "user_id": e.user_id,
+                "department": e.department,
+                "designation": e.designation,
+                "years": today.year - e.joining_date.year,
+                "profile_image": base64.b64encode(e.profile_image).decode("utf-8") if e.profile_image else None
+            }
+            for e in employees
+        ])
+    except Exception as err:
+        print("ERROR IN TODAY ANNIVERSARIES:", str(err))
+        return jsonify([]), 500
+
+
 @employees_bp.route("/team-overview", methods=["GET"])
 @auth_required
 def get_team_overview():
