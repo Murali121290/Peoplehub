@@ -158,7 +158,8 @@ const AnnouncementsPage = () => {
       )}
 
       <div className="mx-auto max-w-2xl">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="sticky top-0 z-10 bg-[#F3F4F6] pt-8 pb-4 -mt-8 mb-4">
+          <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Company Wall</h1>
             <p className="text-sm text-neutral-500 mt-1">Stay updated with the latest announcements</p>
@@ -248,8 +249,9 @@ const AnnouncementsPage = () => {
                 </div>
               </div>
             </div>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
         <div className="space-y-5">
           {filteredAnnouncements.length === 0 ? (
