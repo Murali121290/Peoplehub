@@ -28,6 +28,17 @@ const AnnouncementsPage = () => {
   useEffect(() => {
     fetchAnnouncements();
     socket.on("receive_announcement", (newAnnouncement) => {
+      const userLevel = (user.access_level || "").toLowerCase();
+      const target = (newAnnouncement.target_role || "all").toLowerCase();
+      
+      if (!["admin", "hr"].includes(userLevel)) {
+        if (userLevel === "manager" || userLevel.includes("lead")) {
+          if (target !== "all" && target !== "manager") return;
+        } else {
+          if (target !== "all" && target !== "employee") return;
+        }
+      }
+
       setAnnouncements((prev) => {
         if (prev.find(a => a.id === newAnnouncement.id)) return prev;
         return [newAnnouncement, ...prev];
@@ -175,14 +186,18 @@ const AnnouncementsPage = () => {
                   className="w-48 rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />
              </div>
-             <select
+              <select
                 value={filterRole}
                 onChange={(e) => setFilterRole(e.target.value)}
                 className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               >
                 <option value="all">All Audiences</option>
-                <option value="employee">Employees</option>
-                <option value="manager">Managers</option>
+                {(canSendAnnouncement || !((user.access_level || "").toLowerCase().includes("manager") || (user.access_level || "").toLowerCase().includes("lead"))) && (
+                  <option value="employee">Employees</option>
+                )}
+                {(canSendAnnouncement || (user.access_level || "").toLowerCase().includes("manager") || (user.access_level || "").toLowerCase().includes("lead")) && (
+                  <option value="manager">Managers</option>
+                )}
               </select>
           </div>
         </div>
