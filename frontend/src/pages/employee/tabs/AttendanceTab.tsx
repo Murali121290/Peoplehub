@@ -367,9 +367,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard icon={CheckCircleIcon} title="Present Days" value={presentCount} subtitle="" trend="normal" color="green" />
         <StatCard icon={UserMinusIcon} title="Absent Days (LOP)" value={absentCount} subtitle="" trend="normal" color="red" />
-        <StatCard icon={CalendarDaysIcon} title="Leave Days" value={leaveCount} subtitle="" trend="normal" color="purple" />
+        <StatCard icon={CalendarDaysIcon} title="Paid Leave" value={leaveCount} subtitle="" trend="normal" color="purple" />
         <StatCard icon={ClockIcon} title="Half Days" value={halfDayCount} subtitle="" trend="normal" color="yellow" />
-        <StatCard icon={CheckCircleIcon} title="Paid Leaves (Holidays)" value={holidayCount} subtitle="" trend="normal" color="blue" />
+        <StatCard icon={CheckCircleIcon} title="Holidays" value={holidayCount} subtitle="" trend="normal" color="blue" />
         <StatCard icon={CalendarDaysIcon} title="Weekends" value={weeklyOffCount} subtitle="" trend="normal" color="gray" />
       </div>
 

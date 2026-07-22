@@ -382,7 +382,7 @@ const PayrollPage: React.FC = () => {
                 </div>
                 <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3">
                   <div className="text-xs text-neutral-500 uppercase tracking-wide">
-                    Leave Days
+                    Paid Leave
                   </div>
                   <div className="text-sm mt-1 font-medium text-neutral-800">
                     {selectedEmployee.leave_days}
