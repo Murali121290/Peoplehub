@@ -671,8 +671,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
           {/* ── Leave Timeline Section (Calendar View & Grid View) ── */}
           <div className="bg-white border border-neutral-200 shadow-sm rounded-xl overflow-hidden mb-6">
-            {/* Header & Filter Controls (Sticky) */}
-            <div className="sticky top-0 z-30 bg-white p-5 border-b border-neutral-200 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+            {/* Header & Filter Controls */}
+            <div className="bg-white p-5 border-b border-neutral-200 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-primary-500/10 rounded-xl text-primary-500">
                   <CalendarIcon className="w-5 h-5" />

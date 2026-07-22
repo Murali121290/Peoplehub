@@ -151,7 +151,7 @@ const LoginPage: React.FC = () => {
             <img src={logo} alt="S4 Carlisle" className="h-[105px] w-auto object-contain -mt-[3px] -mb-[3px]" draggable={false} />
           </div>
           <div className="h-[70px] w-[2px] bg-white/25"></div>
-          <span >
+          <span className="text-brandLight text-2xl font-bold tracking-wide">
             S4C PeopleHub
           </span>
         </div>
@@ -277,7 +277,7 @@ const LoginPage: React.FC = () => {
                     type="submit"
                     disabled={loading}
                     className="w-full h-[52px] bg-blue-900 hover:bg-blue-700 text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                    
+
                   >
                     {loading ? (
                       <>
@@ -457,7 +457,7 @@ const LoginPage: React.FC = () => {
                     type="submit"
                     disabled={pwLoading}
                     className="w-full h-[52px] bg-blue-900 hover:bg-blue-700 text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                    
+
                   >
                     {pwLoading ? (
                       <>
@@ -480,7 +480,7 @@ const LoginPage: React.FC = () => {
 
       {/* Footer */}
       <footer className="relative z-10 w-full flex justify-between items-center px-12 py-4 border-t border-white/10 text-[12.5px] text-white/60">
-        <span>© 2026 <span className="text-warning-400 font-medium">S4Carlisle Publishing Services Pvt Ltd.</span> All rights reserved.</span>
+        <span>© 2026 <span className="text-brandYellow font-medium">S4Carlisle Publishing Services Pvt Ltd.</span> All rights reserved.</span>
       </footer>
     </div>
   );
