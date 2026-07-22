@@ -67,7 +67,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
 
   const employeeId = localStorage.getItem("employee_id");
   const userId = localStorage.getItem("user_id");
-  const profileImageUrl = `${BASE_URL}/employees/image/${employeeId}`;
+  const profileImageUrl = `${BASE_URL}/employees/image/${employeeId}?v=${user?.image_version || 0}`;
   const popupKey = `attendance_popup_${userId}`;
 
   const currentEmployee = employees.find(
