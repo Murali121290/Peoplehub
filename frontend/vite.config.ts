@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    envDir: '../',
     server: {
       host: true,
       port: port
