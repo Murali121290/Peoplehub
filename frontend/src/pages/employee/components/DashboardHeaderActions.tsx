@@ -11,6 +11,7 @@ interface DashboardHeaderActionsProps {
   isTeaBreak: boolean;
   lunchTimer?: string;
   teaTimer?: string;
+  hasCheckedOutToday: boolean;
   onCheckInOut: () => void;
   onLunchBreak: () => void;
   onTeaBreak: () => void;
@@ -61,6 +62,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
   isTeaBreak,
   lunchTimer,
   teaTimer,
+  hasCheckedOutToday,
   onCheckInOut,
   onLunchBreak,
   onTeaBreak,
@@ -70,7 +72,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
   const [isLoading, setIsLoading] = useState(false);
 
   // Derived states
-  const isCheckedOut = !isCheckedIn && timer !== "00:00:00";
+  const isCheckedOut = hasCheckedOutToday || (!isCheckedIn && timer !== "00:00:00");
   const lunchDone = !isLunchBreak && totalLunchSeconds > 0;
   const teaBreakDisabled = !isCheckedIn || isLunchBreak;
   const lunchBreakDisabled = !isCheckedIn || isTeaBreak || lunchDone;
@@ -85,7 +87,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
     <div className="flex items-center gap-2">
       <BreakButton
         icon={<UtensilsCrossed className="w-4 h-4" />}
-        durationText={isLunchBreak && lunchTimer ? lunchTimer : "for 60 mins"}
+        durationText={isLunchBreak && lunchTimer ? lunchTimer : "for 30 mins"}
         isActive={isLunchBreak}
         disabled={lunchBreakDisabled}
         onClick={onLunchBreak}
@@ -110,7 +112,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         onClick={handleCheckAction}
-        disabled={isLoading}
+        disabled={isLoading || isCheckedOut}
         className={`flex items-center gap-3 px-4 h-[36px] rounded-full border transition-colors duration-200 whitespace-nowrap ml-2 bg-white
           ${isCheckedOut
             ? "border-emerald-400 text-emerald-500 hover:bg-emerald-50"

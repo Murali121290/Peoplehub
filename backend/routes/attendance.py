@@ -184,12 +184,10 @@ def check_in():
                     "message": "You are already checked in."
                 }), 400
 
-            # Re-checkin logic
-            now = get_ist_now()
-            gap_seconds = (now - attendance.check_out).total_seconds()
-            attendance.total_gap_minutes = (attendance.total_gap_minutes or 0) + int(gap_seconds / 60)
-            attendance.check_out = None
-            attendance.status = "Present"
+            return jsonify({
+                "success": False,
+                "message": "You have already checked out for today. You cannot check in again."
+            }), 400
         else:
             # =====================================
             # CREATE ATTENDANCE
@@ -405,7 +403,12 @@ def check_out():
             2
         )
 
-        attendance.status = "Present"
+        if attendance.total_hours >= 8.0:
+            attendance.status = "Present"
+        elif attendance.total_hours >= 4.0:
+            attendance.status = "Half Day"
+        else:
+            attendance.status = "Absent"
 
         db.session.commit()
 

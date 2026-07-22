@@ -99,6 +99,7 @@ const EmployeeDashboardPage: React.FC = () => {
     totalLunchSeconds: number;
     totalTeaSeconds: number;
   } | null>(null);
+  const [hasCheckedOutToday, setHasCheckedOutToday] = useState(false);
   const [shiftDate, setShiftDate] = useState("");
   // Modal state
   const [confirmModal, setConfirmModal] = useState(false);
@@ -386,6 +387,7 @@ const EmployeeDashboardPage: React.FC = () => {
       saveTodayAttendanceSummary(userId, summary);
       setTodayAttendanceSummary(summary);
       setIsCheckedIn(false);
+      setHasCheckedOutToday(true);
       setCheckInTime(null);
       setTimer(formattedTimer);
       localStorage.removeItem(`checkInTime_${userId}`);
@@ -797,6 +799,7 @@ const EmployeeDashboardPage: React.FC = () => {
           const summary = loadTodayAttendanceSummary(userId);
           if (summary) {
             setTodayAttendanceSummary(summary);
+            setHasCheckedOutToday(true);
             setTimer(summary.timer);
             setTotalLunchSeconds(summary.totalLunchSeconds);
             setTotalTeaSeconds(summary.totalTeaSeconds);
@@ -832,6 +835,7 @@ const EmployeeDashboardPage: React.FC = () => {
             Number(todayRecord.workingHours) * 3600
           );
 
+          setHasCheckedOutToday(true);
           setTimer(formatSeconds(totalSeconds));
 
           setTotalLunchSeconds(
@@ -1115,6 +1119,7 @@ const EmployeeDashboardPage: React.FC = () => {
                     isTeaBreak={isTeaBreak}
                     lunchTimer={lunchTimer}
                     teaTimer={teaTimer}
+                    hasCheckedOutToday={hasCheckedOutToday}
                     onCheckInOut={() => isCheckedIn ? setConfirmModal(true) : handleCheckIn()}
                     onLunchBreak={handleLunchBreak}
                     onTeaBreak={handleTeaBreak}
