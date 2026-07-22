@@ -216,13 +216,44 @@ def get_employee_holidays():
         ).all()
         
         all_published = Holiday.query.filter_by(is_published=True).order_by(Holiday.date.asc()).all()
+        all_overrides = HolidayOverride.query.all()
+        
+        override_dict = {o.date.strftime("%Y-%m-%d"): o for o in all_overrides if o.date}
+        published_list = []
+        
+        for h in all_published:
+            if not h.date:
+                continue
+            h_date_str = h.date.strftime("%Y-%m-%d")
+            
+            if h_date_str in override_dict:
+                ov = override_dict[h_date_str]
+                if ov.override_type == "Working Day":
+                    pass # Cancelled holiday
+                elif ov.override_type == "Holiday":
+                    d = ov.to_dict()
+                    d["is_published"] = True
+                    d["day"] = h.day
+                    published_list.append(d)
+                del override_dict[h_date_str]
+            else:
+                published_list.append(h.to_dict())
+                
+        for date_str, ov in override_dict.items():
+            if ov.override_type == "Holiday":
+                d = ov.to_dict()
+                d["is_published"] = True
+                d["day"] = ov.date.strftime("%A") if ov.date else ""
+                published_list.append(d)
+                
+        published_list.sort(key=lambda x: x.get("date") or "")
 
         return jsonify({
             "current_month_schedule": schedule,
             "current_month_holidays": current_month_holidays,
             "weekly_offs": standard_weekly_offs,
             "upcoming_holidays": upcoming_holidays,
-            "published_holidays": [h.to_dict() for h in all_published],
+            "published_holidays": published_list,
             "overrides": [o.to_dict() for o in overrides]
         }), 200
         

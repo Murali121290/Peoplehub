@@ -25,7 +25,7 @@ import {
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Form";
-import { HolidayCalendarWidget } from "../components/HolidayCalendarWidget";
+
 
 const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
 
@@ -561,8 +561,6 @@ const ProfileTab = () => {
         </div>
       </div>
 
-      {/* Holiday Calendar Widget */}
-      <HolidayCalendarWidget />
 
       {/* ── Payroll & Payslip Card ── */}
       <Card className="shadow-sm rounded-2xl hover:shadow-md transition-shadow duration-300 border border-neutral-200 p-6 bg-gradient-to-br from-white to-indigo-50/10">

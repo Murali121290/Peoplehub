@@ -123,6 +123,8 @@ def apply_leave():
 
     except Exception as e:
 
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
 
         import traceback
@@ -270,9 +272,10 @@ def approve_leave(leave_id):
 
         # Try to find corresponding EmployeeLeaveBalance
         from models.leave import EmployeeLeaveBalance
+        from sqlalchemy import func
         balance = EmployeeLeaveBalance.query.filter(
             EmployeeLeaveBalance.employee_id == employee.id,
-            db.func.lower(EmployeeLeaveBalance.leave_type) == leave_type
+            func.lower(EmployeeLeaveBalance.leave_type) == leave_type
         ).first()
 
         if balance:
@@ -326,6 +329,8 @@ def approve_leave(leave_id):
 
     except Exception as e:
 
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
 
         return jsonify({
@@ -431,6 +436,8 @@ def cancel_leave(leave_id):
 
     except Exception as e:
 
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
 
         return jsonify({
@@ -522,6 +529,8 @@ def update_leave(leave_id):
             "message": f"{leave.request_type} Updated Successfully"
         }), 200
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
         return jsonify({
             "success": False,
@@ -671,6 +680,8 @@ def cancel_approved_leave(leave_id):
         }), 200
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
         import traceback
         traceback.print_exc()
@@ -1045,6 +1056,8 @@ def credit_monthly_leaves():
 
     except Exception as e:
 
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
 
         return jsonify({
@@ -1117,6 +1130,8 @@ def create_leave_policy():
             }
         }), 201
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -1146,6 +1161,8 @@ def update_leave_policies():
         db.session.commit()
         return jsonify({"success": True, "message": "Leave policies updated successfully"}), 200
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -1163,6 +1180,8 @@ def delete_leave_policy(policy_id):
 
         return jsonify({"success": True, "message": "Leave category deleted successfully"}), 200
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
