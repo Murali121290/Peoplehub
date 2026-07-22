@@ -73,68 +73,6 @@ def check_missed_checkins():
                 db.session.commit()
                 continue
 
-            already_sent = Notification.query.filter(
-                Notification.title == "⏰ Missed Check In",
-                Notification.related_id == employee.id
-            ).first()
-
-            if already_sent:
-                print(f"Notification already sent for {employee.employee_id}")
-                continue
-
-            if not employee.reporting_manager:
-                print(f"{employee.employee_id} has no reporting manager")
-                continue
-
-            notification = Notification(
-                receiver_name=employee.reporting_manager,
-                title="⏰ Missed Check In",
-                message=f"Employee {employee.employee_id} - {employee.first_name} {employee.last_name} logged into the system but has not checked in within the allowed time.",
-                related_id=employee.id,
-                related_type="missed_checkin",
-                notification_type="missed_checkin",
-                status="Pending",
-                action_required=True,
-                resolved=False
-            )
-
-            db.session.add(notification)
-            db.session.flush()
-
-            manager_name = employee.reporting_manager.strip().lower()
-            manager_emp = None
-            for e in Employee.query.all():
-                full_name = f"{e.first_name} {e.last_name}".strip().lower()
-                if full_name == manager_name:
-                    manager_emp = e
-                    break
-
-            if manager_emp:
-                notif_dict = {
-                    "id": notification.id,
-                    "title": notification.title,
-                    "message": notification.message,
-                    "is_read": False,
-                    "created_at": notification.created_at.isoformat() if notification.created_at else None,
-                    "related_id": notification.related_id,
-                    "related_type": notification.related_type,
-                    "thanked": False,
-                    "sender_employee_id": employee.id,
-                    "sender_name": f"{employee.first_name} {employee.last_name}",
-                    "notification_type": notification.notification_type,
-                    "status": notification.status,
-                    "action_required": notification.action_required,
-                    "resolved": notification.resolved,
-                    "resolved_at": None
-                }
-                socketio.emit(
-                    "missed_checkin_created",
-                    notif_dict,
-                    to=str(manager_emp.id)
-                )
-
-            print(f"Notification Created For: {employee.reporting_manager}")
-
         db.session.commit()
         print("Notifications Saved Successfully")
 

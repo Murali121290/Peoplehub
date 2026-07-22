@@ -394,12 +394,13 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                   <th className="text-left p-4">Date Range</th>
                   <th className="text-left p-4">Reason</th>
                   <th className="text-center p-4">Status</th>
+                  <th className="text-center p-4">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200/80">
                 {safeManagerShiftRequests.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
+                    <td colSpan={7} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
                       <div className="flex flex-col items-center justify-center gap-2 py-4">
                         <CheckIcon className="w-12 h-12 text-success-400" />
                         <p className="text-xs font-bold text-neutral-500">All caught up!</p>
@@ -442,6 +443,32 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                             }`} />
                             {item.status}
                           </span>
+                        </td>
+                        <td className="p-4 text-center">
+                          {item.status === "Pending" ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => onApprove(item.id)}
+                                className="!py-1.5 !px-3 !text-xs shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
+                              >
+                                <CheckIcon className="w-3.5 h-3.5 mr-1" />
+                                Approve
+                              </Button>
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => onReject(item.id)}
+                                className="!py-1.5 !px-3 !text-xs shadow-sm"
+                              >
+                                <XMarkIcon className="w-3.5 h-3.5 mr-1" />
+                                Reject
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] font-medium text-neutral-400">No actions available</span>
+                          )}
                         </td>
                       </tr>
                     );

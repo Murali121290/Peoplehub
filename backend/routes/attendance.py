@@ -217,21 +217,6 @@ def check_in():
                     manager_emp = e
                     break
 
-            # 2. Automatically remove the Missed Check-In notification from manager's list
-            missed_notifs = Notification.query.filter(
-                Notification.title.in_(["Missed Check In", "⏰ Missed Check In"]),
-                Notification.related_id == employee.id
-            ).all()
-
-            for n in missed_notifs:
-                db.session.delete(n)
-                if manager_emp:
-                    socketio.emit(
-                        "manager_notification_resolved",
-                        {"notification_id": n.id, "status": "Completed"},
-                        to=str(manager_emp.id)
-                    )
-
             # 3. Mark the reminder notification for employee as completed/resolved
             reminder_notifs = Notification.query.filter(
                 Notification.title == "🔔 Check-In Reminder",
@@ -249,46 +234,7 @@ def check_in():
                     to=str(employee.id)
                 )
 
-            # 4. Create a new notification for the manager
-            if employee.reporting_manager:
-                manager_notif = Notification(
-                    receiver_name=employee.reporting_manager,
-                    title="✅ Employee Checked In",
-                    message=f"{employee.first_name} {employee.last_name} has successfully completed today's attendance check-in.",
-                    related_id=employee.id,
-                    related_type="employee_checked_in",
-                    notification_type="employee_checked_in",
-                    status="Completed",
-                    action_required=False,
-                    resolved=True,
-                    resolved_at=datetime.utcnow()
-                )
-                db.session.add(manager_notif)
-                db.session.flush()
 
-                if manager_emp:
-                    notif_dict = {
-                        "id": manager_notif.id,
-                        "title": manager_notif.title,
-                        "message": manager_notif.message,
-                        "is_read": False,
-                        "created_at": manager_notif.created_at.isoformat() if manager_notif.created_at else None,
-                        "related_id": manager_notif.related_id,
-                        "related_type": manager_notif.related_type,
-                        "thanked": False,
-                        "sender_employee_id": employee.id,
-                        "sender_name": f"{employee.first_name} {employee.last_name}",
-                        "notification_type": manager_notif.notification_type,
-                        "status": manager_notif.status,
-                        "action_required": manager_notif.action_required,
-                        "resolved": manager_notif.resolved,
-                        "resolved_at": manager_notif.resolved_at.isoformat() if manager_notif.resolved_at else None
-                    }
-                    socketio.emit(
-                        "employee_checked_in",
-                        notif_dict,
-                        to=str(manager_emp.id)
-                    )
         except Exception as delete_err:
             print("Failed to process check-in notifications update:", str(delete_err))
 

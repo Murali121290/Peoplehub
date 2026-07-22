@@ -733,6 +733,36 @@ const EmployeeDashboardPage: React.FC = () => {
     }
   };
 
+  // --- Auto Check-In Reminder (Every 5 mins) ---
+  useEffect(() => {
+    if (isCheckedIn || hasCheckedOutToday || !currentEmployee) return;
+
+    // Determine if on leave today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const isOnLeaveToday = leaveRequests.some((leave: any) => {
+      if (leave.employee_id !== currentEmployee.id) return false;
+      if (leave.status !== "Approved") return false;
+      const fromDate = new Date(leave.from_date);
+      const toDate = new Date(leave.to_date);
+      fromDate.setHours(0, 0, 0, 0);
+      toDate.setHours(0, 0, 0, 0);
+      return today >= fromDate && today <= toDate;
+    });
+
+    if (isOnLeaveToday) return;
+
+    const intervalId = setInterval(() => {
+      toast("🔔 Reminder: Don't forget to check in for today's attendance!", {
+        duration: 8000,
+        icon: '⏰',
+      });
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(intervalId);
+  }, [isCheckedIn, hasCheckedOutToday, currentEmployee, leaveRequests]);
+
 
 
   useEffect(() => {
