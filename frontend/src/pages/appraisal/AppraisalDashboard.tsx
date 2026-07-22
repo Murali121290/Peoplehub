@@ -12,7 +12,7 @@ const AppraisalDashboard: React.FC = () => {
       <div className="max-w-2xl w-full text-center space-y-6 bg-white border border-neutral-200 p-8 md:p-12 rounded-2xl shadow-xs">
         
         {/* Simple Minimal Icon */}
-        <div className="mx-auto w-14 h-14 rounded-2xl bg-[#1F7A8C]/10 text-[#1F7A8C] flex items-center justify-center border border-[#1F7A8C]/20">
+        <div className="mx-auto w-14 h-14 rounded-2xl bg-primary-500/10 text-primary-500 flex items-center justify-center border border-primary-500/20">
           <ClipboardDocumentCheckIcon className="w-7 h-7" />
         </div>
 

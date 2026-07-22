@@ -137,28 +137,21 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="relative min-h-screen flex flex-col overflow-hidden text-neutral-800" style={{ fontFamily: "'Spectral', serif" }}>
+    <div className="relative min-h-screen flex flex-col overflow-hidden text-neutral-800">
       {/* Background gradients */}
-      <div className="absolute inset-0 z-0 pointer-events-none" style={{
-        background: "radial-gradient(1200px 600px at 15% 10%, #1e3a8a 0%, #17255a 45%, #0b1330 100%)"
-      }} />
-      <div className="absolute inset-0 z-0 pointer-events-none" style={{
-        background: "radial-gradient(500px 380px at 82% 78%, rgba(245,158,11,0.28), transparent 70%)"
-      }} />
-      <div className="absolute inset-0 z-0 pointer-events-none opacity-50" style={{
-        backgroundImage: "linear-gradient(rgba(255,255,255,0.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.05) 1px,transparent 1px)",
-        backgroundSize: "44px 44px"
-      }} />
+      <div className="absolute inset-0 z-0 pointer-events-none bg-login-blue-glow" />
+      <div className="absolute inset-0 z-0 pointer-events-none bg-login-amber-glow" />
+      <div className="absolute inset-0 z-0 pointer-events-none opacity-50 bg-login-grid bg-[length:44px_44px]" />
 
       {/* Header */}
       <header className="relative z-10 w-full flex items-center justify-between px-12 py-6">
         <div className="flex items-center gap-3.5">
           {/* Logo badge */}
-          <div style={{ background: "#ffffff", padding: "0 12px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)", height: "56px", overflow: "hidden" }}>
-            <img src={logo} alt="S4 Carlisle" style={{ height: "105px", width: "auto", objectFit: "contain", marginTop: "-3px", marginBottom: "-3px" }} draggable={false} />
+          <div className="bg-white px-3 rounded-lg flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.08)] h-14 overflow-hidden">
+            <img src={logo} alt="S4 Carlisle" className="h-[105px] w-auto object-contain -mt-[3px] -mb-[3px]" draggable={false} />
           </div>
-          <div style={{ height: "70px", width: "2px", background: "rgba(255,255,255,0.25)" }}></div>
-          <span style={{ fontFamily: "'Spectral', serif", fontWeight: 700, fontSize: "40px", color: "#f5f2f0", letterSpacing: "-0.01em" }}>
+          <div className="h-[70px] w-[2px] bg-white/25"></div>
+          <span >
             S4C PeopleHub
           </span>
         </div>
@@ -167,7 +160,7 @@ const LoginPage: React.FC = () => {
       {/* Main Body */}
       <main className="relative z-10 flex-1 grid grid-cols-1 lg:grid-cols-[1fr_minmax(400px,460px)] gap-14 items-center px-6 lg:px-18 py-6 pb-12 max-w-[1440px] mx-auto w-full">
         <div className="text-white max-w-[560px]">
-          <h1 className="font-extrabold text-[38px] md:text-[56px] leading-[1.08] mb-5 tracking-tight" style={{ fontFamily: "'Spectral', serif" }}>
+          <h1 className="font-extrabold text-[38px] md:text-[56px] leading-[1.08] mb-5 tracking-tight" >
             Your workday,<br />all in one place.
           </h1>
           <p className="text-[18px] leading-relaxed text-white/80 mb-10 max-w-[460px]">
@@ -209,7 +202,7 @@ const LoginPage: React.FC = () => {
                 className="w-full bg-white rounded-[20px] shadow-[0_24px_50px_rgba(0,0,0,0.28)] p-10"
               >
                 <div className="mb-7">
-                  <h2 className="font-bold text-[28px] text-[#0f172a] mb-1.5" style={{ fontFamily: "'Spectral', serif" }}>Let's Get Started</h2>
+                  <h2 className="font-bold text-[28px] text-[#0f172a] mb-1.5" >Let's Get Started</h2>
                   <p className="text-[14px] text-[#6b7280]">Enter your credentials to access the portal.</p>
                 </div>
 
@@ -283,8 +276,8 @@ const LoginPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-[52px] bg-[#1e3a8a] hover:bg-[#1d4ed8] text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                    style={{ fontFamily: "'Spectral', serif" }}
+                    className="w-full h-[52px] bg-blue-900 hover:bg-[#1d4ed8] text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    
                   >
                     {loading ? (
                       <>
@@ -325,7 +318,7 @@ const LoginPage: React.FC = () => {
                 </button>
 
                 <div className="mb-7">
-                  <h2 className="font-bold text-[28px] text-[#0f172a] mb-1.5" style={{ fontFamily: "'Spectral', serif" }}>Change Password</h2>
+                  <h2 className="font-bold text-[28px] text-[#0f172a] mb-1.5" >Change Password</h2>
                   <p className="text-[14px] text-[#6b7280]">Enter your old password and choose a new one.</p>
                 </div>
 
@@ -463,8 +456,8 @@ const LoginPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={pwLoading}
-                    className="w-full h-[52px] bg-[#1e3a8a] hover:bg-[#1d4ed8] text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                    style={{ fontFamily: "'Spectral', serif" }}
+                    className="w-full h-[52px] bg-blue-900 hover:bg-[#1d4ed8] text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    
                   >
                     {pwLoading ? (
                       <>
