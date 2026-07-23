@@ -1,5 +1,5 @@
 import { API_URL } from "../../config/api";
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 
 interface NotificationPanelProps {
   notifications: any[];
@@ -28,8 +28,27 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
   onGoToAttendance,
   onViewAttendance,
 }) => {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showNotifications && panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        const bellButton = document.getElementById('notifications-bell');
+        if (bellButton && bellButton.contains(event.target as Node)) {
+          return;
+        }
+        window.dispatchEvent(new Event("closeSystemNotifications"));
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotifications]);
+
   return (
-    <div className="fixed top-5 right-5 z-[9998]">
+    <div className="fixed top-5 right-5 z-[9998]" ref={panelRef}>
         {/* Floating Bell Button Removed per user request */}
 
       {showNotifications && (

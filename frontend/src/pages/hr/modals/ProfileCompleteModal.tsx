@@ -63,10 +63,8 @@ const ProfileCompleteModal: React.FC<ProfileCompleteModalProps> = ({
               onChange={(value) => upd("marital_status", value)}
               placeholder="Select Status"
               options={[
-                { label: "Single", value: "Single" },
                 { label: "Married", value: "Married" },
-                { label: "Divorced", value: "Divorced" },
-                { label: "Widowed", value: "Widowed" },
+                { label: "Unmarried", value: "Unmarried" },
               ]}
             />
           </FormField>

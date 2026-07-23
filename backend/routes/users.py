@@ -12,7 +12,7 @@ users_bp = Blueprint('users', __name__)
 # =========================================
 @users_bp.route('/', methods=['GET'])
 @auth_required
-@access_level_required('admin')
+@access_level_required("admin", "hr")
 def get_users():
     try:
         page = request.args.get('page', 1, type=int)
@@ -65,7 +65,7 @@ def get_users():
 # =========================================
 @users_bp.route('/', methods=['POST'])
 @auth_required
-@access_level_required('admin')
+@access_level_required("admin", "hr")
 def create_user():
     try:
         data = request.get_json()
@@ -168,7 +168,7 @@ def create_user():
 # =========================================
 @users_bp.route('/<int:user_id>', methods=['PUT'])
 @auth_required
-@access_level_required('admin')
+@access_level_required("admin", "hr")
 def update_user(user_id):
     try:
         user = User.query.get(user_id)
@@ -242,7 +242,7 @@ def update_user(user_id):
 # =========================================
 @users_bp.route('/<int:user_id>', methods=['DELETE'])
 @auth_required
-@access_level_required('admin')
+@access_level_required("admin", "hr")
 def delete_user(user_id):
     try:
         user = User.query.get(user_id)
@@ -339,7 +339,7 @@ def get_roles_by_team(team_id):
 
 @users_bp.route('/teams', methods=['POST'])
 @auth_required
-@access_level_required('admin')
+@access_level_required("admin", "hr")
 def create_team():
     try:
         data = request.get_json()
@@ -387,7 +387,7 @@ def create_team():
 
 @users_bp.route('/teams/<int:team_id>', methods=['PUT'])
 @auth_required
-@access_level_required('admin')
+@access_level_required("admin", "hr")
 def update_team(team_id):
     try:
         data = request.get_json()

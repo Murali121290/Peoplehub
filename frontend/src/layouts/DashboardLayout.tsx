@@ -58,6 +58,18 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   const [messageText, setMessageText] = useState("");
   const [employeeMessages, setEmployeeMessages] = useState<any[]>([]);
   const [officeMessages, setOfficeMessages] = useState<any[]>([]);
+
+  // Listen for the custom event to toggle system notifications
+  useEffect(() => {
+    const handleToggle = () => setShowNotifications(prev => !prev);
+    const handleClose = () => setShowNotifications(false);
+    window.addEventListener("toggleSystemNotifications", handleToggle);
+    window.addEventListener("closeSystemNotifications", handleClose);
+    return () => {
+      window.removeEventListener("toggleSystemNotifications", handleToggle);
+      window.removeEventListener("closeSystemNotifications", handleClose);
+    }
+  }, []);
   const [officeText, setOfficeText] = useState("");
   const [liveAnnouncements, setLiveAnnouncements] = useState<any[]>([]);
   const [realtimeMessages, setRealtimeMessages] = useState<any[]>([]);
@@ -90,7 +102,8 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       notifications.forEach((item: any) => {
         if (!shownSet.has(item.id)) {
           shownSet.add(item.id);
-          toast.error(item.message, { duration: 2000 });
+          // Display a friendly toast instead of an error toast
+          toast(item.message, { icon: "🔔", duration: 3000 });
           updated = true;
         }
         // Also ensure shownNotifications ref is synchronized
@@ -148,6 +161,13 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       setShowPopup(true);
     }
   }, [birthdayEmployees]);
+
+  // Show attendance summary modal when navigating to Team Management
+  useEffect(() => {
+    if (location.pathname === "/manager-dashboard") {
+      setShowPopup(true);
+    }
+  }, [location.pathname]);
 
   // Birthday & Thanks confirmation/view states
   const [thanksWishId, setThanksWishId] = useState<number | null>(null);
@@ -775,7 +795,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       )}
 
       {/* Attendance Summary Popup */}
-      {showPopup && reportingEmployees.length > 0 && (
+      {showPopup && reportingEmployees.length > 0 && location.pathname === "/manager-dashboard" && (
         <AttendanceSummaryModal
           reportingEmployees={reportingEmployees}
           onClose={() => setShowPopup(false)}

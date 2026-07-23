@@ -384,10 +384,8 @@ const Completeprofilepage = () => {
               className={selectCls}
             >
               <option value="">Select Status</option>
-              <option>Single</option>
               <option>Married</option>
-              <option>Divorced</option>
-              <option>Widowed</option>
+              <option>Unmarried</option>
             </select>
           </Field>
           <Field label="Blood Group">
