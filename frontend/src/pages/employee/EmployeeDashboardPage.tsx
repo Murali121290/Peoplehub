@@ -86,22 +86,22 @@ const EmployeeDashboardPage: React.FC = () => {
   const checkManagerMatch = (reportingManager: string | null | undefined) => {
     if (!reportingManager) return false;
     const repManagerClean = reportingManager.trim().toLowerCase();
-    
+
     // Exact match
     if (repManagerClean === managerName) return true;
-    
+
     // Check if reporting manager is just a single name (first name)
     const repManagerParts = repManagerClean.split(/\s+/);
     const loggedManagerParts = managerName.split(/\s+/);
-    
+
     if (repManagerParts.length === 1 && loggedManagerParts.length > 0) {
       if (loggedManagerParts[0] === repManagerParts[0]) return true;
     }
-    
+
     if (loggedManagerParts.length === 1 && repManagerParts.length > 0) {
       if (repManagerParts[0] === loggedManagerParts[0]) return true;
     }
-    
+
     return false;
   };
 
@@ -209,6 +209,21 @@ const EmployeeDashboardPage: React.FC = () => {
 
   const parseTimeString = (timeStr: string) => {
     if (!timeStr) return new Date();
+    if (timeStr.includes("-") && timeStr.includes(":")) {
+      const isoStr = timeStr.replace(" ", "T");
+      const match = isoStr.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)$/);
+      if (match) {
+        return new Date(
+          parseInt(match[1], 10),
+          parseInt(match[2], 10) - 1,
+          parseInt(match[3], 10),
+          parseInt(match[4], 10),
+          parseInt(match[5], 10),
+          parseFloat(match[6])
+        );
+      }
+      return new Date(isoStr);
+    }
     if (timeStr.includes("T") || timeStr.includes("-")) {
       return new Date(timeStr);
     }
@@ -860,15 +875,15 @@ const EmployeeDashboardPage: React.FC = () => {
       .then((res) => res.json())
       .then((data) => {
         if (data.checked_in) {
-          const checkIn = new Date(data.check_in);
+          const checkIn = parseTimeString(data.check_in);
           const lunchSecs = (data.lunch_minutes || 0) * 60;
           const teaSecs = (data.tea_minutes || 0) * 60;
           setIsCheckedIn(true);
           setCheckInTime(checkIn);
           setIsLunchBreak(data.lunch_break || false);
           setIsTeaBreak(data.tea_break || false);
-          if (data.lunch_start) setLunchStartTime(new Date(data.lunch_start));
-          if (data.tea_start) setTeaStartTime(new Date(data.tea_start));
+          if (data.lunch_start) setLunchStartTime(parseTimeString(data.lunch_start));
+          if (data.tea_start) setTeaStartTime(parseTimeString(data.tea_start));
           setTotalLunchSeconds(lunchSecs);
           setTotalTeaSeconds(teaSecs);
           // Immediately show the correct timer on re-login
@@ -954,8 +969,8 @@ const EmployeeDashboardPage: React.FC = () => {
         } else {
           setCheckInTime(null);
         }
-        if (payload.lunch_start) setLunchStartTime(new Date(payload.lunch_start));
-        if (payload.tea_start) setTeaStartTime(new Date(payload.tea_start));
+        if (payload.lunch_start) setLunchStartTime(parseTimeString(payload.lunch_start));
+        if (payload.tea_start) setTeaStartTime(parseTimeString(payload.tea_start));
         setTotalLunchSeconds((payload.lunch_minutes || 0) * 60);
         setTotalTeaSeconds((payload.tea_minutes || 0) * 60);
 
