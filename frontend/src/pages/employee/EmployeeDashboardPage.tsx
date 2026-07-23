@@ -1,5 +1,6 @@
 import { API_URL } from "../../config/api";
 import React, { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import {
   HomeIcon,
@@ -48,7 +49,20 @@ const tabs = [
 
 const EmployeeDashboardPage: React.FC = () => {
   const { user } = useAuthStore();
-  const [activeTab, setActiveTab] = useState("overview");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const queryParams = new URLSearchParams(location.search);
+  const initialTab = queryParams.get("tab") || "overview";
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    const tab = new URLSearchParams(location.search).get("tab");
+    if (tab) {
+      setActiveTab(tab);
+    } else {
+      setActiveTab("overview");
+    }
+  }, [location.search]);
 
   // Employee & data state
   const [employees, setEmployees] = useState<any[]>([]);
@@ -1169,7 +1183,7 @@ const EmployeeDashboardPage: React.FC = () => {
                   return (
                     <button
                       key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
+                      onClick={() => navigate("?tab=" + tab.id)}
                       className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id
                         ? "bg-primary-50 text-primary-700 border-b-2 border-primary-600"
                         : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"
