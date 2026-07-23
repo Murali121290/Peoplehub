@@ -22,6 +22,7 @@ export const useNavigation = (user: any) => {
       return [
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         { name: "HR Management", icon: UserGroupIcon, path: "/hrms" },
+        { name: "Team Management", icon: UserGroupIcon, path: "/manager-dashboard" },
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },

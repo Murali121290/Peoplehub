@@ -130,7 +130,8 @@ export default function HRAdminDashboard() {
     try {
       const response = await fetch(`${BASE_URL}/employees/`);
       const data = await response.json();
-      setEmployees(data || []);
+      const nonAdmins = (data || []).filter((emp: any) => emp.access_level?.toLowerCase() !== 'admin');
+      setEmployees(nonAdmins);
     } catch (error) {
       console.error(error);
     }

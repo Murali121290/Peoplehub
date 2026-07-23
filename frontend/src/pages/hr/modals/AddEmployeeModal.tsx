@@ -271,7 +271,8 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 .filter(
                   (emp) =>
                     emp.access_level?.toLowerCase() === "manager" ||
-                    emp.access_level?.toLowerCase() === "hr"
+                    emp.access_level?.toLowerCase() === "hr" ||
+                    emp.access_level?.toLowerCase() === "admin"
                 )
                 .map((emp) => ({
                   label: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(),

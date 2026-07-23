@@ -1250,7 +1250,7 @@ const ProfileTab = () => {
               >
                 <option value="">Select Manager</option>
                 {employees
-                  .filter((emp) => emp.access_level?.toLowerCase() === "manager" || emp.access_level?.toLowerCase() === "hr")
+                  .filter((emp) => emp.access_level?.toLowerCase() === "manager" || emp.access_level?.toLowerCase() === "hr" || emp.access_level?.toLowerCase() === "admin")
                   .map((emp) => {
                     const fullName = `${emp.first_name} ${emp.last_name}`.trim();
                     return <option key={emp.id} value={fullName}>{fullName}</option>;
