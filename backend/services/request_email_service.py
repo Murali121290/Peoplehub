@@ -12,13 +12,14 @@ from utils.compat import current_app
 def get_serializer():
     return URLSafeTimedSerializer(current_app.config.get("SECRET_KEY"))
 
-def generate_request_token(req_id, req_type, action):
+def generate_request_token(req_id, req_type, action, manager_email=None):
     serializer = get_serializer()
-    # Token contains request ID, request type, and the action to perform
+    # Token contains request ID, request type, action to perform, and manager email
     return serializer.dumps({
         "req_id": req_id,
         "req_type": req_type,
         "action": action,
+        "manager_email": manager_email,
         "created_at": datetime.utcnow().isoformat()
     })
 
@@ -214,9 +215,27 @@ def send_manager_request_email(request_obj, request_type):
         req_label = f"{request_type} Request"
         details_html = ""
 
+    # Determine manager's email (falls back to selvabharath@s4carlisle.com)
+    manager_email = "selvabharath@s4carlisle.com"
+    if employee.reporting_manager:
+        search_name = employee.reporting_manager.strip().lower()
+        all_emps = Employee.query.all()
+        matching_manager = None
+        for emp in all_emps:
+            emp_full_name = f"{emp.first_name or ''} {emp.last_name or ''}".strip().lower()
+            emp_first_name = (emp.first_name or "").strip().lower()
+            if emp_full_name == search_name or emp_first_name == search_name:
+                matching_manager = emp
+                break
+        if matching_manager:
+            if matching_manager.company_email:
+                manager_email = matching_manager.company_email
+            elif matching_manager.email:
+                manager_email = matching_manager.email
+
     # Generate unique, time-limited secure tokens
-    approve_token = generate_request_token(request_obj.id, request_type, "approve")
-    reject_token = generate_request_token(request_obj.id, request_type, "reject")
+    approve_token = generate_request_token(request_obj.id, request_type, "approve", manager_email)
+    reject_token = generate_request_token(request_obj.id, request_type, "reject", manager_email)
 
     # Base URL of the backend server
     backend_port = os.environ.get("BACKEND_PORT", "8000")
@@ -225,9 +244,6 @@ def send_manager_request_email(request_obj, request_type):
     reject_url = f"{api_base}/api/requests/email-action?token={reject_token}"
 
     subject = f"[PENDING] New {req_label} from {emp_name}"
-
-    # Manager's email (currently hardcoded as requested)
-    manager_email = "selvabharath@s4carlisle.com"
 
     html_content = f"""
     <html>

@@ -123,7 +123,7 @@ def email_action():
     req_type = data.get("req_type")
     action = data.get("action")
     
-    manager_email = "selvabharath@s4carlisle.com"
+    manager_email = data.get("manager_email") or "selvabharath@s4carlisle.com"
     
     if req_type in ("Leave", "Permission"):
         req = LeaveRequest.query.get(req_id)

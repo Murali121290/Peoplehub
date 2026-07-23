@@ -302,10 +302,26 @@ const ManagerDashboardPage = () => {
     });
 
     socket.on("leave_update", (payload: any) => {
-      if (
-        payload.reporting_manager?.trim().toLowerCase() ===
-        managerName?.trim().toLowerCase()
-      ) {
+      const checkManagerMatch = (reportingManager: string | null | undefined) => {
+        if (!reportingManager) return false;
+        const repManagerClean = reportingManager.trim().toLowerCase();
+        const managerClean = managerName.trim().toLowerCase();
+        
+        if (repManagerClean === managerClean) return true;
+        
+        const repParts = repManagerClean.split(/\s+/);
+        const managerParts = managerClean.split(/\s+/);
+        
+        if (repParts.length === 1 && managerParts.length > 0) {
+          if (managerParts[0] === repParts[0]) return true;
+        }
+        if (managerParts.length === 1 && repParts.length > 0) {
+          if (repParts[0] === managerParts[0]) return true;
+        }
+        return false;
+      };
+
+      if (checkManagerMatch(payload.reporting_manager)) {
         const isPermission = payload.request_type === "Permission";
         
         const formatTime = (timeStr: string) => {

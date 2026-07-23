@@ -34,11 +34,18 @@ import { TimePicker } from '../../../components/ui/TimePicker';
 import { DatePicker } from '../../../components/ui/DatePicker';
 
 const leaveReasons: Record<string, string[]> = {
-  "Sick Leave": ["Fever", "Headache", "Cold", "Food Poisoning", "Medical Checkup", "Hospital Visit"],
-  "Casual Leave": ["Personal Work", "Family Function", "Marriage", "Bank Work", "Travel"],
-  "Earned Leave": ["Vacation", "Family Trip", "Festival", "Personal Time"],
-  "Unpaid Leave": ["Emergency", "Personal Reasons", "Extended Vacation"],
+  "Sick Leave": ["Fever", "Headache", "Cold", "Food Poisoning", "Medical Checkup", "Hospital Visit", "Others"],
+  "Casual Leave": ["Personal Work", "Family Function", "Marriage", "Bank Work", "Travel", "Others"],
+  "Earned Leave": ["Vacation", "Family Trip", "Festival", "Personal Time", "Others"],
+  "Privilege Leave": ["Vacation", "Family Trip", "Festival", "Personal Time", "Planned Leave", "Others"],
+  "Unpaid Leave": ["Emergency", "Personal Reasons", "Extended Vacation", "Others"],
+  "Comp Off": ["Worked on Holiday", "Worked on Weekend", "Extra Hours Compensation", "Others"],
+  "Maternity Leave": ["Maternity", "Post-natal Care", "Others"],
+  "Paternity Leave": ["Paternity", "Child Care", "Others"],
 };
+
+// Generic fallback reasons shown when a leave type has no specific reason list
+const genericLeaveReasons = ["Emergency", "Personal Reasons", "Family Reasons", "Medical", "Travel", "Others"];
 
 const permissionReasons = [
   "Personal Emergency",
@@ -46,6 +53,7 @@ const permissionReasons = [
   "Accident",
   "Family Emergency",
   "Official Work",
+  "Others",
 ];
 
 interface LeaveTabProps {
@@ -97,7 +105,23 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     type: "limit" | "insufficient";
   } | null>(null);
 
-  const [leaveForm, setLeaveForm] = useState({
+  interface LeaveFormState {
+    requestType: "Leave" | "Permission";
+    leaveType: string;
+    leaveDuration: string;
+    fromDate: string;
+    toDate: string;
+    permissionDate: string;
+    fromTime: string;
+    toTime: string;
+    totalDays: number;
+    reason: string;
+    reportingManager: string;
+    handoverTo: string;
+    attachment: any;
+  }
+
+  const [leaveForm, setLeaveForm] = useState<LeaveFormState>({
     requestType: "Leave",
     leaveType: "",
     leaveDuration: "Full Day",
@@ -164,6 +188,152 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const myRequests = React.useMemo(() => {
     return leaveRequests.filter((req: any) => Number(req.employee_id) === Number(currentEmployee?.id));
   }, [leaveRequests, currentEmployee]);
+
+  // Collect all dates where the employee already has a pending or approved leave request
+  const myAppliedLeaveDates = React.useMemo(() => {
+    const dates = new Set<string>();
+    myRequests.forEach((req: any) => {
+      if (req.status === "Approved" || req.status === "Pending") {
+        if (req.request_type === "Leave" && req.from_date && req.to_date) {
+          let curr = new Date(req.from_date);
+          const end = new Date(req.to_date);
+          while (curr <= end) {
+            const yyyy = curr.getFullYear();
+            const mm = String(curr.getMonth() + 1).padStart(2, "0");
+            const dd = String(curr.getDate()).padStart(2, "0");
+            const dateStr = `${yyyy}-${mm}-${dd}`;
+            dates.add(dateStr);
+            curr.setDate(curr.getDate() + 1);
+          }
+        }
+      }
+    });
+    return Array.from(dates);
+  }, [myRequests]);
+
+  // Calculate active permission cycle and balance
+  const permissionBalanceInfo = React.useMemo(() => {
+    // Helper to parse YYYY-MM-DD safely at local midnight
+    const parseLocalDate = (dateStr: string) => {
+      const parts = dateStr.split("-");
+      if (parts.length === 3) {
+        return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      }
+      return new Date(dateStr);
+    };
+
+    // Helper to compute cycle boundaries for any reference date
+    const getCycleBounds = (refDate: Date) => {
+      const year = refDate.getFullYear();
+      const month = refDate.getMonth();
+      const day = refDate.getDate();
+      let startYear = year, startMonth = month, endYear = year, endMonth = month;
+      if (day >= 25) {
+        startMonth = month;
+        endMonth = month + 1;
+        if (endMonth > 11) { endMonth = 0; endYear = year + 1; }
+      } else {
+        startMonth = month - 1;
+        endMonth = month;
+        if (startMonth < 0) { startMonth = 11; startYear = year - 1; }
+      }
+      return {
+        cycleStart: new Date(startYear, startMonth, 25),
+        cycleEnd: new Date(endYear, endMonth, 24, 23, 59, 59),
+      };
+    };
+
+    const formatCycleDate = (d: Date) =>
+      d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+    const limitMinutes = 120;
+
+    const formatDuration = (totalMins: number) => {
+      const hrs = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      return `${hrs} hr${hrs !== 1 ? "s" : ""} ${String(mins).padStart(2, "0")} min${mins !== 1 ? "s" : ""}`;
+    };
+
+    const calcApprovedMinutes = (cycleStart: Date, cycleEnd: Date) => {
+      let mins = 0;
+      myRequests
+        .filter((req: any) => {
+          if (req.request_type !== "Permission" || req.status !== "Approved") return false;
+          if (!req.permission_date || !req.from_time || !req.to_time) return false;
+          const pd = parseLocalDate(req.permission_date);
+          return pd >= cycleStart && pd <= cycleEnd;
+        })
+        .forEach((req: any) => {
+          const [fh, fm] = req.from_time.split(":").map(Number);
+          const [th, tm] = req.to_time.split(":").map(Number);
+          if (!isNaN(fh) && !isNaN(fm) && !isNaN(th) && !isNaN(tm)) {
+            const diff = (th * 60 + tm) - (fh * 60 + fm);
+            if (diff > 0) mins += diff;
+          }
+        });
+      return mins;
+    };
+
+    // --- Determine which cycle to DISPLAY on the card ---
+    // Strategy: find the cycle that has approved permissions closest to / including the latest approved permission.
+    // If there's an approved permission in a future cycle, show that cycle instead of the current one.
+    const today = new Date();
+    const { cycleStart: todayCycleStart, cycleEnd: todayCycleEnd } = getCycleBounds(today);
+
+    // Find the latest approved permission date
+    let latestPermDate: Date | null = null;
+    myRequests.forEach((req: any) => {
+      if (req.request_type === "Permission" && req.status === "Approved" && req.permission_date) {
+        const pd = parseLocalDate(req.permission_date);
+        if (!latestPermDate || pd > latestPermDate) latestPermDate = pd;
+      }
+    });
+
+    // Use the latest approved permission date's cycle for display if it's different from today's cycle
+    let displayCycleStart = todayCycleStart;
+    let displayCycleEnd = todayCycleEnd;
+    if (latestPermDate) {
+      const { cycleStart: lpCycleStart, cycleEnd: lpCycleEnd } = getCycleBounds(latestPermDate);
+      // Show the latest permission's cycle if it has any approved minutes (even if future)
+      const lpMins = calcApprovedMinutes(lpCycleStart, lpCycleEnd);
+      if (lpMins > 0) {
+        displayCycleStart = lpCycleStart;
+        displayCycleEnd = lpCycleEnd;
+      }
+    }
+
+    // If a permission date is actively selected in the form, show THAT cycle
+    if (leaveForm.requestType === "Permission" && leaveForm.permissionDate) {
+      const parsed = parseLocalDate(leaveForm.permissionDate);
+      if (!isNaN(parsed.getTime())) {
+        const { cycleStart: formCs, cycleEnd: formCe } = getCycleBounds(parsed);
+        displayCycleStart = formCs;
+        displayCycleEnd = formCe;
+      }
+    }
+
+    const cycleStr = `${formatCycleDate(displayCycleStart)} - ${formatCycleDate(displayCycleEnd)}`;
+    const approvedMinutes = calcApprovedMinutes(displayCycleStart, displayCycleEnd);
+    const remainingMinutes = Math.max(0, limitMinutes - approvedMinutes);
+
+    return {
+      cycleStr,
+      limitStr: formatDuration(limitMinutes),
+      approvedStr: formatDuration(approvedMinutes),
+      remainingStr: formatDuration(remainingMinutes),
+      remainingMinutes,
+      approvedMinutes,
+      // Also expose a helper for validation: get remaining for any given permission date
+      getRemainingForDate: (permDateStr: string) => {
+        if (!permDateStr) return remainingMinutes;
+        const parsed = parseLocalDate(permDateStr);
+        if (isNaN(parsed.getTime())) return remainingMinutes;
+        const { cycleStart: cs, cycleEnd: ce } = getCycleBounds(parsed);
+        const used = calcApprovedMinutes(cs, ce);
+        return Math.max(0, limitMinutes - used);
+      },
+    };
+  }, [myRequests, leaveForm.requestType, leaveForm.permissionDate]);
 
   const filteredTimelineRequests = React.useMemo(() => {
     const todayStr = new Date().toISOString().split("T")[0];
@@ -250,11 +420,40 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       const fromDate = new Date(leaveForm.fromDate);
       const toDate = new Date(leaveForm.toDate);
 
-      let totalDays =
-        Math.floor((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      let totalDays = 0;
+      let curr = new Date(fromDate);
+      const holidayDates = new Set(allYearHolidays.map((h: any) => h.date));
+
+      while (curr <= toDate) {
+        const dayOfWeek = curr.getDay(); // 0 = Sunday, 6 = Saturday
+        const yyyy = curr.getFullYear();
+        const mm = curr.getMonth();
+        const dd = curr.getDate();
+        const dateStr = `${yyyy}-${String(mm + 1).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+
+        const isWeekoff = (() => {
+          if (dayOfWeek === 0) return true; // Sunday
+          if (dayOfWeek === 6) { // Saturday
+            let satCount = 0;
+            for (let d = 1; d <= dd; d++) {
+              if (new Date(yyyy, mm, d).getDay() === 6) {
+                satCount++;
+              }
+            }
+            return satCount === 2 || satCount === 4;
+          }
+          return false;
+        })();
+
+        if (!isWeekoff && !holidayDates.has(dateStr)) {
+          totalDays++;
+        }
+
+        curr.setDate(curr.getDate() + 1);
+      }
 
       if (leaveForm.leaveDuration === "First Half" || leaveForm.leaveDuration === "Second Half") {
-        totalDays = 0.5;
+        totalDays = totalDays > 0 ? 0.5 : 0;
       }
 
       setLeaveForm(prev => ({
@@ -262,11 +461,11 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         totalDays: totalDays > 0 ? totalDays : 0
       }));
     }
-  }, [leaveForm.fromDate, leaveForm.toDate, leaveForm.leaveDuration]);
+  }, [leaveForm.fromDate, leaveForm.toDate, leaveForm.leaveDuration, allYearHolidays]);
 
   const resetLeaveForm = () => {
     setLeaveForm({
-      requestType: "Leave",
+      requestType: "Leave" as "Leave" | "Permission",
       leaveType: "",
       leaveDuration: "Full Day",
       fromDate: "",
@@ -284,7 +483,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
   const editLeave = (leave: any) => {
     setLeaveForm({
-      requestType: leave.request_type || "Leave",
+      requestType: (leave.request_type || "Leave") as "Leave" | "Permission",
       leaveType: leave.leave_type || "",
       leaveDuration: leave.leave_duration || "Full Day",
       fromDate: leave.from_date || "",
@@ -356,6 +555,39 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           });
           return;
         }
+      }
+    } else if (leaveForm.requestType === "Permission") {
+      if (!leaveForm.permissionDate || !leaveForm.fromTime || !leaveForm.toTime) {
+        setValidationError({
+          type: "insufficient",
+          title: "Missing Required Fields",
+          message: "Please fill in the permission date, from time, and to time."
+        });
+        return;
+      }
+
+      const [fh, fm] = leaveForm.fromTime.split(":").map(Number);
+      const [th, tm] = leaveForm.toTime.split(":").map(Number);
+      const requestedMinutes = (th * 60 + tm) - (fh * 60 + fm);
+
+      if (requestedMinutes <= 0) {
+        setValidationError({
+          type: "insufficient",
+          title: "Invalid Permission Duration",
+          message: "From time must be earlier than To time."
+        });
+        return;
+      }
+
+      // Use cycle-accurate remaining for the selected permission date
+      const remainingForDate = permissionBalanceInfo.getRemainingForDate(leaveForm.permissionDate);
+      if (requestedMinutes > remainingForDate) {
+        setValidationError({
+          type: "insufficient",
+          title: "Insufficient Permission Balance",
+          message: `Requested permission duration is ${Math.floor(requestedMinutes / 60)} hrs ${requestedMinutes % 60} mins (${requestedMinutes} minutes). Your remaining monthly permission balance is only ${Math.floor(remainingForDate / 60)} hrs ${remainingForDate % 60} mins (${remainingForDate} minutes). Please select a shorter duration.`
+        });
+        return;
       }
     }
 
@@ -992,7 +1224,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   onChange={(e) =>
                     setLeaveForm((prev) => ({
                       ...prev,
-                      requestType: e.target.value,
+                      requestType: e.target.value as "Leave" | "Permission",
                       reason: "",
                       leaveType: e.target.value === "Permission" ? "" : prev.leaveType,
                       leaveDuration: e.target.value === "Permission" ? "Full Day" : prev.leaveDuration,
@@ -1065,6 +1297,10 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     required
                     value={leaveForm.fromDate}
                     onChange={(val) => setLeaveForm({ ...leaveForm, fromDate: val })}
+                    disablePast={true}
+                    disableWeekends={true}
+                    disabledDates={allYearHolidays.map((h: any) => h.date)}
+                    bookedDates={myAppliedLeaveDates}
                   />
                 </div>
                 <div>
@@ -1073,6 +1309,10 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     required
                     value={leaveForm.toDate}
                     onChange={(val) => setLeaveForm({ ...leaveForm, toDate: val })}
+                    disablePast={true}
+                    disableWeekends={true}
+                    disabledDates={allYearHolidays.map((h: any) => h.date)}
+                    bookedDates={myAppliedLeaveDates}
                   />
                 </div>
                 <div>
@@ -1095,6 +1335,10 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     required
                     value={leaveForm.permissionDate}
                     onChange={(val) => setLeaveForm({ ...leaveForm, permissionDate: val })}
+                    disablePast={true}
+                    disableWeekends={true}
+                    disabledDates={allYearHolidays.map((h: any) => h.date)}
+                    bookedDates={myAppliedLeaveDates}
                   />
                 </div>
                 <div>
@@ -1149,11 +1393,20 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
             {/* Reason selection */}
             <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Reason for application <span className="text-danger-500">*</span></label>
-              <select 
-                required 
-                value={leaveForm.reason}
-                onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Reason for Application <span className="text-danger-500">*</span></label>
+              <select
+                required
+                value={leaveForm.reason === "Others" || (leaveForm.reason && ![
+                  ...(leaveForm.requestType === "Permission" ? permissionReasons : (leaveReasons[leaveForm.leaveType] || genericLeaveReasons))
+                ].includes(leaveForm.reason)) ? "Others" : leaveForm.reason}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "Others") {
+                    setLeaveForm({ ...leaveForm, reason: "Others" });
+                  } else {
+                    setLeaveForm({ ...leaveForm, reason: val });
+                  }
+                }}
                 className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer font-medium"
               >
                 <option value="">Select Reason</option>
@@ -1162,13 +1415,37 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     <option key={reason} value={reason}>{reason}</option>
                   ))
                 ) : leaveForm.leaveType ? (
-                  leaveReasons[leaveForm.leaveType]?.map((reason: string) => (
+                  (leaveReasons[leaveForm.leaveType] || genericLeaveReasons).map((reason: string) => (
                     <option key={reason} value={reason}>{reason}</option>
                   ))
                 ) : (
                   <option value="" disabled>Select leave type first</option>
                 )}
               </select>
+
+              {/* Custom reason text input shown when Others is selected */}
+              {(leaveForm.reason === "Others" || (
+                leaveForm.reason &&
+                ![
+                  ...(leaveForm.requestType === "Permission" ? permissionReasons : (leaveReasons[leaveForm.leaveType] || genericLeaveReasons)),
+                  ""
+                ].includes(leaveForm.reason)
+              )) && (
+                <div className="mt-3">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
+                    Please specify your reason <span className="text-danger-500">*</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={2}
+                    autoFocus
+                    placeholder="Type your reason here…"
+                    value={leaveForm.reason === "Others" ? "" : leaveForm.reason}
+                    onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value || "Others" })}
+                    className="w-full border border-primary-300 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-700 placeholder-neutral-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all resize-none font-medium"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Document Upload */}
@@ -1225,6 +1502,33 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                       const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
                       return polGender === "all" || polGender === userGender;
                     }).reduce((sum, pol) => sum + getAvailableBalance(pol.leave_type, pol.yearly_limit), 0)} days
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Permission Balance Summary card */}
+            <div className="bg-violet-50 border border-violet-200 rounded-2xl p-5 shadow-sm">
+              <h3 className="font-extrabold text-sm mb-1 text-violet-900 flex items-center gap-1.5">
+                <ClockIcon className="w-4 h-4 text-violet-700 animate-pulse" />
+                Permission Balance Summary
+              </h3>
+              <p className="text-[10px] text-violet-600 font-bold mb-4">
+                Cycle: {permissionBalanceInfo.cycleStr}
+              </p>
+              <div className="space-y-3 text-xs">
+                <div className="flex justify-between items-center py-1.5 border-b border-violet-100">
+                  <span className="text-neutral-600 font-semibold">Monthly Limit</span>
+                  <span className="font-extrabold text-violet-850 text-neutral-700">{permissionBalanceInfo.limitStr}</span>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-violet-100">
+                  <span className="text-neutral-600 font-semibold">Approved Permission</span>
+                  <span className="font-extrabold text-violet-850 text-neutral-700">{permissionBalanceInfo.approvedStr}</span>
+                </div>
+                <div className="flex justify-between items-center pt-2.5 text-sm">
+                  <span className="font-bold text-violet-950">Remaining Balance</span>
+                  <span className="font-extrabold text-violet-900">
+                    {permissionBalanceInfo.remainingStr}
                   </span>
                 </div>
               </div>
