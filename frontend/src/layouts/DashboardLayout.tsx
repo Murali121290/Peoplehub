@@ -102,7 +102,8 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       notifications.forEach((item: any) => {
         if (!shownSet.has(item.id)) {
           shownSet.add(item.id);
-          toast.error(item.message, { duration: 2000 });
+          // Display a friendly toast instead of an error toast
+          toast(item.message, { icon: "🔔", duration: 3000 });
           updated = true;
         }
         // Also ensure shownNotifications ref is synchronized

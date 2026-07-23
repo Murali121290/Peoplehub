@@ -641,13 +641,6 @@ const ManagerDashboardPage = () => {
       icon: InboxArrowDownIcon,
       tone: "danger",
     },
-    {
-      label: "Tasks Completed",
-      value: totalTasks,
-      sub: "Current total",
-      icon: ClockIcon,
-      tone: "default",
-    },
   ];
 
   const getStatTone = (tone: string) => {
