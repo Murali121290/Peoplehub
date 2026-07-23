@@ -122,3 +122,18 @@ class Attendance(db.Model):
     db.String(20),
     default="Pending"
 )
+
+    card_check_in = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    card_check_out = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    card_working_hours = db.Column(
+        db.Float,
+        default=0.0
+    )
