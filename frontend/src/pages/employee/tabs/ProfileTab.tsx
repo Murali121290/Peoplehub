@@ -29,6 +29,8 @@ import {
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { DatePicker } from "../../../components/ui/DatePicker";
+import Cropper from "react-easy-crop";
+import getCroppedImg from "../../../utils/cropImage";
 
 const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
 
@@ -59,7 +61,15 @@ const ProfileTab = () => {
   const [profile, setProfile] = useState<any>({});
   const [isEditing, setIsEditing] = useState(false);
   const [isSavingAll, setIsSavingAll] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState("personal");
+
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     phone: "",
@@ -554,15 +564,62 @@ const ProfileTab = () => {
     }
   };
 
-  const handleProfilePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProfilePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setSelectedFiles((prev) => ({ ...prev, profile_image: file }));
       const reader = new FileReader();
       reader.onloadend = () => {
-        setProfilePreview(reader.result as string);
+        setImageToCrop(reader.result as string);
+        setCropModalOpen(true);
       };
       reader.readAsDataURL(file);
+      e.target.value = '';
+    }
+  };
+
+  const onCropComplete = (croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  };
+
+  const uploadCroppedImage = async () => {
+    if (!imageToCrop || !croppedAreaPixels) return;
+
+    setIsUploadingPhoto(true);
+    const loadingToastId = toast.loading("Processing and updating profile photo...");
+    
+    try {
+      const croppedFile = await getCroppedImg(imageToCrop, croppedAreaPixels);
+      if (!croppedFile) throw new Error("Could not crop image");
+
+      const previewUrl = URL.createObjectURL(croppedFile);
+      setProfilePreview(previewUrl);
+
+      const token = localStorage.getItem("token");
+      const employeeId = localStorage.getItem("employee_id");
+      const payload = new FormData();
+      payload.append("profile_image", croppedFile);
+
+      await axios.patch(`${BASE_URL}/employees/${employeeId}`, payload, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data"
+        }
+      });
+
+      toast.success("Profile photo updated successfully!", { id: loadingToastId });
+      
+      const updatedUserFields: any = {};
+      updatedUserFields.image_version = Date.now();
+      updateUser(updatedUserFields);
+      
+      setCropModalOpen(false);
+      setImageToCrop(null);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.response?.data?.error || err?.response?.data?.message || "Failed to update profile photo", { id: loadingToastId });
+      fetchProfile();
+    } finally {
+      setIsUploadingPhoto(false);
     }
   };
 
@@ -1627,18 +1684,16 @@ const ProfileTab = () => {
       <div className="relative overflow-hidden bg-white rounded-3xl border border-neutral-200 p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-md transition-shadow duration-300">
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary-50/20 rounded-full blur-3xl -z-10 pointer-events-none" />
         <div className="flex flex-col sm:flex-row items-center gap-5 text-center sm:text-left">
-          <div className="relative w-24 h-24 shrink-0 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-3xl font-extrabold shadow-md border-4 border-white">
+          <div className="relative w-24 h-24 shrink-0 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-3xl font-extrabold shadow-md border-4 border-white cursor-pointer" onClick={() => setIsImageViewerOpen(true)}>
             {profilePreview ? (
               <img src={profilePreview} alt="Avatar" className="w-full h-full rounded-full object-cover" />
             ) : (
               userInitials
             )}
-            {isEditing && (
-              <label htmlFor="tab_photo_input" className="absolute -bottom-1 -right-1 bg-primary-600 hover:bg-primary-700 text-white p-2 rounded-full shadow-lg cursor-pointer transition-all hover:scale-105" title="Change profile photo">
-                <PencilIcon className="w-3.5 h-3.5" />
-                <input id="tab_photo_input" type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoChange} />
-              </label>
-            )}
+            <label htmlFor="tab_photo_input" className={`absolute -bottom-1 -right-1 bg-primary-600 hover:bg-primary-700 text-white p-2 rounded-full shadow-lg cursor-pointer transition-all hover:scale-105 ${isUploadingPhoto ? 'opacity-50 cursor-not-allowed' : ''}`} title="Change profile photo" onClick={(e) => e.stopPropagation()}>
+              <PencilIcon className="w-3.5 h-3.5" />
+              <input id="tab_photo_input" type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoChange} disabled={isUploadingPhoto} />
+            </label>
           </div>
           <div>
             <h2 className="text-2xl font-extrabold text-neutral-800 flex items-center gap-2 justify-center sm:justify-start">
@@ -1840,6 +1895,89 @@ const ProfileTab = () => {
           )}
         </Card>
       </div>
+
+      {/* Image Viewer Modal */}
+      {isImageViewerOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="relative max-w-4xl max-h-screen">
+            <button
+              onClick={() => setIsImageViewerOpen(false)}
+              className="absolute -top-12 right-0 md:-right-12 text-white/80 hover:text-white bg-black/50 hover:bg-black p-2 rounded-full transition-all"
+            >
+              <XMarkIcon className="w-6 h-6" />
+            </button>
+            {profilePreview ? (
+              <img src={profilePreview} alt="Profile" className="max-w-full max-h-[80vh] rounded-xl shadow-2xl object-contain" />
+            ) : (
+              <div className="w-64 h-64 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-7xl font-extrabold shadow-2xl">
+                {userInitials}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Crop Modal */}
+      {cropModalOpen && imageToCrop && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+            <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
+              <h3 className="font-bold text-neutral-800">Crop Profile Photo</h3>
+              <button onClick={() => { setCropModalOpen(false); setImageToCrop(null); }} className="text-neutral-400 hover:text-neutral-600 bg-neutral-100 hover:bg-neutral-200 p-1.5 rounded-full transition-all">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="relative w-full h-80 bg-neutral-900">
+              <Cropper
+                image={imageToCrop}
+                crop={crop}
+                zoom={zoom}
+                aspect={1}
+                cropShape="round"
+                showGrid={false}
+                onCropChange={setCrop}
+                onCropComplete={onCropComplete}
+                onZoomChange={setZoom}
+              />
+            </div>
+            
+            <div className="p-4 md:p-6 bg-white space-y-4">
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-bold text-neutral-500 uppercase tracking-wider shrink-0">Zoom</span>
+                <input
+                  type="range"
+                  value={zoom}
+                  min={1}
+                  max={3}
+                  step={0.1}
+                  aria-labelledby="Zoom"
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                  className="w-full h-2 bg-neutral-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
+                />
+              </div>
+              
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setCropModalOpen(false); setImageToCrop(null); }}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-neutral-600 hover:bg-neutral-100 transition-all border border-transparent hover:border-neutral-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={uploadCroppedImage}
+                  disabled={isUploadingPhoto}
+                  className="px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-primary-500/20 transition-all disabled:opacity-60"
+                >
+                  {isUploadingPhoto ? "Saving..." : "Apply & Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
