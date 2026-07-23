@@ -44,14 +44,13 @@ def login():
                 "error": "Username and Password are required"
             }), 400
 
-        # Find user
-        user = User.query.filter(
-            or_(
-                User.company_email == login_id,
-                User.email == login_id,
-                User.full_name.ilike(f"{login_id}%")
-            )
-        ).first()
+        # Find user strictly by company email or employee ID
+        user = User.query.filter(User.company_email == login_id).first()
+        
+        if not user:
+            employee = Employee.query.filter(Employee.employee_id == login_id).first()
+            if employee:
+                user = User.query.filter(User.id == employee.user_id).first()
 
         print("================================")
         print("LOGIN ID:", login_id)

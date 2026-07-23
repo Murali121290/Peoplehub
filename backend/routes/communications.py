@@ -426,3 +426,72 @@ def toggle_like(message_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ==========================================
+# SEEN ANNOUNCEMENT TRACKING
+# ==========================================
+
+@communication_bp.route(
+    "/seen",
+    methods=["POST"]
+)
+def mark_announcements_seen():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "Request body missing"}), 400
+            
+        user_id = data.get("user_id")
+        announcement_ids = data.get("announcement_ids", [])
+        if not user_id:
+            return jsonify({"success": False, "error": "user_id is required"}), 400
+
+        from models.user import User
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        # Merge new announcement IDs
+        current_seen = list(user.seen_announcement_ids) if getattr(user, 'seen_announcement_ids', None) else []
+        
+        # Ensure unique integer/string values
+        merged = list(set(current_seen + [int(aid) for aid in announcement_ids]))
+        user.seen_announcement_ids = merged
+        
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(user, "seen_announcement_ids")
+        db.session.commit()
+
+        # Emit update to all active socket connections of this user
+        from models.employee import Employee
+        employee = Employee.query.filter_by(user_id=user.id).first()
+        if employee:
+            socketio.emit(
+                "announcements_seen_update",
+                {"seen_announcement_ids": merged},
+                room=str(employee.id)
+            )
+
+        return jsonify({"success": True, "seen_announcement_ids": merged})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@communication_bp.route(
+    "/seen/<int:user_id>",
+    methods=["GET"]
+)
+def get_seen_announcements(user_id):
+    try:
+        from models.user import User
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        seen = list(user.seen_announcement_ids) if getattr(user, 'seen_announcement_ids', None) else []
+        return jsonify({"success": True, "seen_announcement_ids": seen})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
