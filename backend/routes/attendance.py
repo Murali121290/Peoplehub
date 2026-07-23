@@ -456,6 +456,162 @@ def check_out():
             "error": str(e)
         }), 500
 
+@attendance_bp.route("/sync-logs", methods=["POST"])
+def sync_card_logs():
+    try:
+        data = request.json
+        logs = data.get("logs", [])
+        
+        if not logs:
+            return jsonify({
+                "success": True,
+                "message": "No logs provided"
+            }), 200
+
+        print(f"Syncing {len(logs)} card logs...")
+        processed_count = 0
+        batch_attendance = {}
+
+        for log in logs:
+            emp_code = str(log.get("employee_code", "")).strip()
+            log_time_str = log.get("log_time")
+            direction = str(log.get("direction", "")).strip().lower()
+
+            if not emp_code or not log_time_str:
+                continue
+
+            # Parse log time
+            try:
+                # Support various formats, standard is %Y-%m-%d %H:%M:%S
+                if "T" in log_time_str:
+                    log_dt = datetime.fromisoformat(log_time_str.replace("Z", ""))
+                else:
+                    log_dt = datetime.strptime(log_time_str, "%Y-%m-%d %H:%M:%S")
+            except Exception as pe:
+                print(f"Failed to parse log time '{log_time_str}': {pe}")
+                continue
+
+            # Find employee by employee_id (Postgres)
+            employee = Employee.query.filter_by(employee_id=emp_code).first()
+            if not employee:
+                print(f"Sync skip: Employee code '{emp_code}' not found in Peoplehub database")
+                continue
+
+            att_date = log_dt.date()
+            cache_key = (employee.user_id, att_date)
+
+            # Find or create Attendance for that employee and date
+            if cache_key in batch_attendance:
+                attendance = batch_attendance[cache_key]
+            else:
+                attendance = Attendance.query.filter_by(
+                    user_id=employee.user_id,
+                    attendance_date=att_date
+                ).first()
+
+                if not attendance:
+                    attendance = Attendance(
+                        user_id=employee.user_id,
+                        attendance_date=att_date,
+                        status="Present",
+                        shift_timing=employee.shift_timing or "General Shift"
+                    )
+                    db.session.add(attendance)
+                batch_attendance[cache_key] = attendance
+
+            # Update Card Punch times
+            if direction == "in":
+                if not attendance.card_check_in:
+                    attendance.card_check_in = log_dt
+                else:
+                    # Keep earliest punch for check-in
+                    attendance.card_check_in = min(attendance.card_check_in, log_dt)
+            elif direction == "out":
+                if not attendance.card_check_out:
+                    attendance.card_check_out = log_dt
+                else:
+                    # Keep latest punch for check-out
+                    attendance.card_check_out = max(attendance.card_check_out, log_dt)
+            else:
+                # If direction is not specified, auto-determine based on order of punches
+                if not attendance.card_check_in:
+                    attendance.card_check_in = log_dt
+                else:
+                    # Compare and set as check-in or check-out
+                    if log_dt < attendance.card_check_in:
+                        attendance.card_check_out = attendance.card_check_in
+                        attendance.card_check_in = log_dt
+                    else:
+                        if not attendance.card_check_out:
+                            attendance.card_check_out = log_dt
+                        else:
+                            attendance.card_check_out = max(attendance.card_check_out, log_dt)
+
+            # Calculate card working hours
+            if attendance.card_check_in and attendance.card_check_out:
+                total_seconds = (attendance.card_check_out - attendance.card_check_in).total_seconds()
+                attendance.card_working_hours = round(max(total_seconds, 0) / 3600, 2)
+            else:
+                attendance.card_working_hours = 0.0
+
+            # Recalculate status
+            web_hrs = attendance.total_hours or 0.0
+            card_hrs = attendance.card_working_hours or 0.0
+            max_hrs = max(web_hrs, card_hrs)
+
+            if max_hrs >= 8.0:
+                attendance.status = "Present"
+            elif max_hrs >= 4.0:
+                attendance.status = "Half Day"
+            elif attendance.check_in or attendance.card_check_in:
+                attendance.status = "Present"
+            else:
+                attendance.status = "Absent"
+
+            processed_count += 1
+
+            # Emit dashboard update
+            try:
+                from extensions import socketio
+                
+                web_in_str = attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None
+                web_out_str = attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None
+                card_in_str = attendance.card_check_in.strftime("%I:%M %p") if attendance.card_check_in else None
+                card_out_str = attendance.card_check_out.strftime("%I:%M %p") if attendance.card_check_out else None
+
+                payload = {
+                    "id": employee.id,
+                    "user_id": employee.user_id,
+                    "attendance_status": attendance.status,
+                    "check_in": web_in_str,
+                    "check_out": web_out_str,
+                    "working_hours": attendance.total_hours or 0.0,
+                    "card_check_in": card_in_str,
+                    "card_check_out": card_out_str,
+                    "card_working_hours": attendance.card_working_hours or 0.0,
+                    "shift": employee.shift_timing or "General Shift",
+                    "manager_status": attendance.manager_status or "Pending",
+                    "checked_in": (attendance.check_in is not None and attendance.check_out is None),
+                    "card_checked_in": (attendance.card_check_in is not None and attendance.card_check_out is None),
+                }
+                socketio.emit("attendance_update", payload)
+            except Exception as se:
+                print("Socket emit error during card sync:", se)
+
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": f"Successfully processed {processed_count} logs"
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print("SYNC ERROR:", str(e))
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 @attendance_bp.route("/status/<int:user_id>")
 def attendance_status(user_id):
 
