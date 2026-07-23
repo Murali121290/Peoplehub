@@ -1,5 +1,6 @@
 import { API_URL } from "../../config/api";
 import React, { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import {
   HomeIcon,
@@ -48,7 +49,20 @@ const tabs = [
 
 const EmployeeDashboardPage: React.FC = () => {
   const { user } = useAuthStore();
-  const [activeTab, setActiveTab] = useState("overview");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const queryParams = new URLSearchParams(location.search);
+  const initialTab = queryParams.get("tab") || "overview";
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    const tab = new URLSearchParams(location.search).get("tab");
+    if (tab) {
+      setActiveTab(tab);
+    } else {
+      setActiveTab("overview");
+    }
+  }, [location.search]);
 
   // Employee & data state
   const [employees, setEmployees] = useState<any[]>([]);
@@ -69,6 +83,28 @@ const EmployeeDashboardPage: React.FC = () => {
       .trim()
       .toLowerCase();
 
+  const checkManagerMatch = (reportingManager: string | null | undefined) => {
+    if (!reportingManager) return false;
+    const repManagerClean = reportingManager.trim().toLowerCase();
+
+    // Exact match
+    if (repManagerClean === managerName) return true;
+
+    // Check if reporting manager is just a single name (first name)
+    const repManagerParts = repManagerClean.split(/\s+/);
+    const loggedManagerParts = managerName.split(/\s+/);
+
+    if (repManagerParts.length === 1 && loggedManagerParts.length > 0) {
+      if (loggedManagerParts[0] === repManagerParts[0]) return true;
+    }
+
+    if (loggedManagerParts.length === 1 && repManagerParts.length > 0) {
+      if (repManagerParts[0] === loggedManagerParts[0]) return true;
+    }
+
+    return false;
+  };
+
   const canApprove = ["admin", "manager", "hr"].includes(
     (user?.access_level || user?.role || "").toLowerCase()
   );
@@ -76,7 +112,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const pendingShiftCount = canApprove
     ? managerShiftRequests.filter(
       (shift: any) =>
-        shift.reporting_manager?.trim().toLowerCase() === managerName &&
+        checkManagerMatch(shift.reporting_manager) &&
         shift.status === "Pending"
     ).length
     : 0;
@@ -126,8 +162,7 @@ const EmployeeDashboardPage: React.FC = () => {
 
   const approvalLeaves = canApprove
     ? leaveRequests.filter(
-      (leave: any) =>
-        leave.reporting_manager?.trim().toLowerCase() === managerName,
+      (leave: any) => checkManagerMatch(leave.reporting_manager),
     )
     : [];
   const totalBalance =
@@ -139,6 +174,26 @@ const EmployeeDashboardPage: React.FC = () => {
       (leave: any) => leave.status === "Pending"
     ).length
     : 0;
+
+  // Check if today is an approved leave day for the current employee
+  const isOnApprovedLeaveToday = (() => {
+    if (!currentEmployee || !leaveRequests.length) return false;
+    const todayStr = new Date().toISOString().split("T")[0];
+    const todayDate = new Date(todayStr);
+    return leaveRequests.some((leave: any) => {
+      if (leave.status !== "Approved" || leave.request_type !== "Leave") return false;
+      // Match by employee_id (stored as string in DB)
+      const leaveEmpId = String(leave.employee_id || "");
+      if (
+        leaveEmpId !== String(currentEmployee.id) &&
+        leaveEmpId !== String(currentEmployee.user_id)
+      ) return false;
+      if (!leave.from_date || !leave.to_date) return false;
+      const from = new Date(leave.from_date);
+      const to = new Date(leave.to_date);
+      return todayDate >= from && todayDate <= to;
+    });
+  })();
 
   const getTodayKey = () => {
     const d = new Date();
@@ -154,6 +209,21 @@ const EmployeeDashboardPage: React.FC = () => {
 
   const parseTimeString = (timeStr: string) => {
     if (!timeStr) return new Date();
+    if (timeStr.includes("-") && timeStr.includes(":")) {
+      const isoStr = timeStr.replace(" ", "T");
+      const match = isoStr.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)$/);
+      if (match) {
+        return new Date(
+          parseInt(match[1], 10),
+          parseInt(match[2], 10) - 1,
+          parseInt(match[3], 10),
+          parseInt(match[4], 10),
+          parseInt(match[5], 10),
+          parseFloat(match[6])
+        );
+      }
+      return new Date(isoStr);
+    }
     if (timeStr.includes("T") || timeStr.includes("-")) {
       return new Date(timeStr);
     }
@@ -805,15 +875,15 @@ const EmployeeDashboardPage: React.FC = () => {
       .then((res) => res.json())
       .then((data) => {
         if (data.checked_in) {
-          const checkIn = new Date(data.check_in);
+          const checkIn = parseTimeString(data.check_in);
           const lunchSecs = (data.lunch_minutes || 0) * 60;
           const teaSecs = (data.tea_minutes || 0) * 60;
           setIsCheckedIn(true);
           setCheckInTime(checkIn);
           setIsLunchBreak(data.lunch_break || false);
           setIsTeaBreak(data.tea_break || false);
-          if (data.lunch_start) setLunchStartTime(new Date(data.lunch_start));
-          if (data.tea_start) setTeaStartTime(new Date(data.tea_start));
+          if (data.lunch_start) setLunchStartTime(parseTimeString(data.lunch_start));
+          if (data.tea_start) setTeaStartTime(parseTimeString(data.tea_start));
           setTotalLunchSeconds(lunchSecs);
           setTotalTeaSeconds(teaSecs);
           // Immediately show the correct timer on re-login
@@ -899,8 +969,8 @@ const EmployeeDashboardPage: React.FC = () => {
         } else {
           setCheckInTime(null);
         }
-        if (payload.lunch_start) setLunchStartTime(new Date(payload.lunch_start));
-        if (payload.tea_start) setTeaStartTime(new Date(payload.tea_start));
+        if (payload.lunch_start) setLunchStartTime(parseTimeString(payload.lunch_start));
+        if (payload.tea_start) setTeaStartTime(parseTimeString(payload.tea_start));
         setTotalLunchSeconds((payload.lunch_minutes || 0) * 60);
         setTotalTeaSeconds((payload.tea_minutes || 0) * 60);
 
@@ -967,7 +1037,7 @@ const EmployeeDashboardPage: React.FC = () => {
       }
 
       // If we are their manager
-      if (payload.reporting_manager?.trim().toLowerCase() === managerName) {
+      if (checkManagerMatch(payload.reporting_manager)) {
         setManagerShiftRequests((prev) => {
           const index = prev.findIndex((s) => s.id === payload.id);
           if (index > -1) {
@@ -1150,6 +1220,7 @@ const EmployeeDashboardPage: React.FC = () => {
                     lunchTimer={lunchTimer}
                     teaTimer={teaTimer}
                     hasCheckedOutToday={hasCheckedOutToday}
+                    isOnLeave={isOnApprovedLeaveToday}
                     onCheckInOut={() => isCheckedIn ? setConfirmModal(true) : handleCheckIn()}
                     onLunchBreak={handleLunchBreak}
                     onTeaBreak={handleTeaBreak}
@@ -1169,7 +1240,7 @@ const EmployeeDashboardPage: React.FC = () => {
                   return (
                     <button
                       key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
+                      onClick={() => navigate("?tab=" + tab.id)}
                       className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id
                         ? "bg-primary-50 text-primary-700 border-b-2 border-primary-600"
                         : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"

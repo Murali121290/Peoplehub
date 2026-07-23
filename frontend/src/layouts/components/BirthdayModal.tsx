@@ -117,6 +117,9 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
   ];
 
   if (isMyBirthday) {
+    const myEmployeeData = birthdayEmployees.find((emp) => Number(emp.user_id) === Number(user?.id)) || currentEmployee;
+    const imageId = myEmployeeData?.id || localStorage.getItem("employee_id");
+
     return (
       <div className="fixed inset-0 z-[9999] bg-[linear-gradient(135deg,#d3d6ea_0%,#b8bcdb_45%,#9ea5d0_100%)] overflow-y-auto">
         <div className="relative w-full min-h-screen overflow-hidden">
@@ -161,7 +164,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
               {/* Photo */}
               <div className="mt-10 w-48">
                 <img
-                  src={`${BASE_URL}/employees/image/${currentEmployee?.id}`}
+                  src={`${BASE_URL}/employees/image/${imageId}`}
                   alt="Birthday"
                   onError={(e) => {
                     e.currentTarget.src =

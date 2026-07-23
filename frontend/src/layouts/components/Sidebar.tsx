@@ -172,10 +172,10 @@ const Sidebar: React.FC<SidebarProps> = ({
               {user?.full_name?.charAt(0)?.toUpperCase()}
             </div>
           </div>
-          <div className="ml-3 flex-1 overflow-hidden">
+          <Link to="/employee-dashboard?tab=profile" className="ml-3 flex-1 overflow-hidden block hover:opacity-80 transition-opacity cursor-pointer">
             <p className="truncate text-sm font-medium text-neutral-800">{user?.full_name}</p>
-            <p className="text-xs text-neutral-400">{user?.designation}</p>
-          </div>
+            <p className="text-xs text-neutral-400 capitalize">{user?.designation || user?.role_name || user?.role || "Employee"}</p>
+          </Link>
         </div>
         <>
   <Button
