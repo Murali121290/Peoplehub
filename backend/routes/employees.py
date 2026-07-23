@@ -14,6 +14,7 @@ from services.leave_balance_service import update_leave_balance
 from models.leave import LeaveRequest
 from models.user import User, Role, Team
 from sqlalchemy import extract
+from sqlalchemy.exc import IntegrityError
 
 employees_bp = Blueprint("employees", __name__)
 
@@ -146,6 +147,23 @@ def create_employee():
             "employee_db_id": employee.id
         }), 201
 
+    except IntegrityError as e:
+        db.session.rollback()
+        error_msg = str(e.orig)
+        message = "A record with this information already exists."
+        
+        if "users_email_key" in error_msg:
+            message = "This email address is already registered."
+        elif "employee_id" in error_msg:
+            message = "This Employee ID is already in use."
+        elif "company_email" in error_msg:
+            message = "This company email is already registered."
+            
+        return jsonify({
+            "success": False,
+            "message": message,
+            "error": error_msg
+        }), 400
     except Exception as e:
         traceback.print_exc()
         db.session.rollback()

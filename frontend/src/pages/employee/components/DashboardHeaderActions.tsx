@@ -145,10 +145,21 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
         )}
       </motion.button>
 
-      {/* Notifications Bell */}
+      {/* Celebrations Icon */}
       <button
         onClick={onOpenNotifications}
         className="relative flex items-center justify-center w-[36px] h-[36px] bg-white border border-gray-200 rounded-full hover:bg-gray-50 transition-colors ml-2 shadow-sm"
+        title="Celebrations"
+      >
+        <span className="text-rose-500">🎁</span>
+      </button>
+
+      {/* Notifications Bell */}
+      <button
+        id="notifications-bell"
+        onClick={() => window.dispatchEvent(new Event("toggleSystemNotifications"))}
+        className="relative flex items-center justify-center w-[36px] h-[36px] bg-white border border-gray-200 rounded-full hover:bg-gray-50 transition-colors ml-2 shadow-sm"
+        title="System Notifications"
       >
         <span className="text-yellow-500">🔔</span>
         {/* Optional notification dot */}

@@ -58,6 +58,18 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   const [messageText, setMessageText] = useState("");
   const [employeeMessages, setEmployeeMessages] = useState<any[]>([]);
   const [officeMessages, setOfficeMessages] = useState<any[]>([]);
+
+  // Listen for the custom event to toggle system notifications
+  useEffect(() => {
+    const handleToggle = () => setShowNotifications(prev => !prev);
+    const handleClose = () => setShowNotifications(false);
+    window.addEventListener("toggleSystemNotifications", handleToggle);
+    window.addEventListener("closeSystemNotifications", handleClose);
+    return () => {
+      window.removeEventListener("toggleSystemNotifications", handleToggle);
+      window.removeEventListener("closeSystemNotifications", handleClose);
+    }
+  }, []);
   const [officeText, setOfficeText] = useState("");
   const [liveAnnouncements, setLiveAnnouncements] = useState<any[]>([]);
   const [realtimeMessages, setRealtimeMessages] = useState<any[]>([]);
@@ -90,7 +102,8 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       notifications.forEach((item: any) => {
         if (!shownSet.has(item.id)) {
           shownSet.add(item.id);
-          toast.error(item.message, { duration: 2000 });
+          // Display a friendly toast instead of an error toast
+          toast(item.message, { icon: "🔔", duration: 3000 });
           updated = true;
         }
         // Also ensure shownNotifications ref is synchronized
@@ -148,6 +161,13 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       setShowPopup(true);
     }
   }, [birthdayEmployees]);
+
+  // Show attendance summary modal when navigating to Team Management
+  useEffect(() => {
+    if (location.pathname === "/manager-dashboard") {
+      setShowPopup(true);
+    }
+  }, [location.pathname]);
 
   // Birthday & Thanks confirmation/view states
   const [thanksWishId, setThanksWishId] = useState<number | null>(null);
@@ -483,20 +503,14 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       toast.success(`🎉 ${newNotification.sender_name || "A coworker"} thanked you for your birthday wishes!`);
     });
 
-    socket.on("missed_checkin_created", (newNotification) => {
-      setNotifications((prev) => [newNotification, ...prev]);
-      toast.error(`⏰ Missed Check-In Alert for ${newNotification.sender_name || "an employee"}!`);
-    });
+
 
     socket.on("checkin_reminder_sent", (newNotification) => {
       setNotifications((prev) => [newNotification, ...prev]);
       toast.error("🔔 You have a Check-In Reminder from your manager!");
     });
 
-    socket.on("employee_checked_in", (newNotification) => {
-      setNotifications((prev) => [newNotification, ...prev]);
-      toast.success(`✅ ${newNotification.sender_name || "An employee"} checked in successfully!`);
-    });
+
 
     socket.on("general_notification_created", (newNotification) => {
       setNotifications((prev) => [newNotification, ...prev]);
@@ -520,9 +534,9 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     return () => {
       socket.off("birthday_wish_sent");
       socket.off("birthday_thanks_sent");
-      socket.off("missed_checkin_created");
+
       socket.off("checkin_reminder_sent");
-      socket.off("employee_checked_in");
+
       socket.off("general_notification_created");
       socket.off("manager_notification_resolved");
     };
@@ -775,7 +789,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       )}
 
       {/* Attendance Summary Popup */}
-      {showPopup && reportingEmployees.length > 0 && (
+      {showPopup && reportingEmployees.length > 0 && location.pathname === "/manager-dashboard" && (
         <AttendanceSummaryModal
           reportingEmployees={reportingEmployees}
           onClose={() => setShowPopup(false)}

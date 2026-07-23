@@ -1,5 +1,5 @@
 import { API_URL } from "../../config/api";
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 
 interface NotificationPanelProps {
   notifications: any[];
@@ -28,8 +28,27 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
   onGoToAttendance,
   onViewAttendance,
 }) => {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showNotifications && panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        const bellButton = document.getElementById('notifications-bell');
+        if (bellButton && bellButton.contains(event.target as Node)) {
+          return;
+        }
+        window.dispatchEvent(new Event("closeSystemNotifications"));
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotifications]);
+
   return (
-    <div className="fixed top-5 right-5 z-[9998]">
+    <div className="fixed top-5 right-5 z-[9998]" ref={panelRef}>
         {/* Floating Bell Button Removed per user request */}
 
       {showNotifications && (
@@ -58,9 +77,7 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
               {notifications.map((item: any) => {
                 const isBirthdayWish = item.related_type === "birthday_wish";
                 const isBirthdayThanks = item.related_type === "birthday_thanks";
-                const isMissedCheckin = item.related_type === "missed_checkin";
                 const isCheckinReminder = item.related_type === "checkin_reminder";
-                const isEmployeeCheckedIn = item.related_type === "employee_checked_in";
 
                 return (
                   <li
@@ -86,12 +103,8 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                       <span className="text-2xl flex-shrink-0 select-none">
                         {isBirthdayWish && "🎂"}
                         {isBirthdayThanks && "🎉"}
-                        {isMissedCheckin && "⏰"}
                         {isCheckinReminder && "🔔"}
-                        {isEmployeeCheckedIn && "✅"}
-                        {!isBirthdayWish && !isBirthdayThanks && !isMissedCheckin && !isCheckinReminder && !isEmployeeCheckedIn && (
-                          item.title?.includes("Missed") ? "⏰" : "🔔"
-                        )}
+                        {!isBirthdayWish && !isBirthdayThanks && !isCheckinReminder && "🔔"}
                       </span>
                     )}
 
@@ -145,28 +158,6 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                         </div>
                       )}
 
-                      {/* Missed Check In Action */}
-                      {isMissedCheckin && (
-                        <div className="mt-3 flex items-center gap-2">
-                          {item.status === "Pending" ? (
-                            <button
-                              onClick={() => {
-                                if (onRemindCheckIn) {
-                                  onRemindCheckIn(item.id, item.sender_name || "Employee");
-                                }
-                              }}
-                              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white border border-red-600 shadow-sm transition-colors cursor-pointer"
-                            >
-                              Check In First
-                            </button>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                              {item.status || "Reminder Sent"}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
                       {/* Check-In Reminder Action */}
                       {isCheckinReminder && (
                         <div className="mt-3 flex items-center gap-2">
@@ -180,25 +171,6 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                           >
                             Go to Attendance
                           </button>
-                        </div>
-                      )}
-
-                      {/* Employee Checked In Action */}
-                      {isEmployeeCheckedIn && (
-                        <div className="mt-3 flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              if (onViewAttendance) {
-                                onViewAttendance(item.related_id);
-                              }
-                            }}
-                            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 shadow-sm transition-colors cursor-pointer"
-                          >
-                            View Attendance
-                          </button>
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Completed
-                          </span>
                         </div>
                       )}
                     </div>

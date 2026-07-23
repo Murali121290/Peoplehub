@@ -1039,7 +1039,7 @@ const ProfileTab = () => {
             />
           </div>
           {renderEditField("Gender", "gender", "select", "", ["Male", "Female", "Other"])}
-          {renderEditField("Marital Status", "marital_status", "select", "", ["Single", "Married", "Divorced", "Widowed"])}
+          {renderEditField("Marital Status", "marital_status", "select", "", ["Married", "Unmarried"])}
           {renderEditField("Blood Group", "blood_group", "select", "", ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"])}
           
           <div className="col-span-full border-t border-neutral-100 my-4 pt-4">
@@ -1627,7 +1627,7 @@ const ProfileTab = () => {
       <div className="relative overflow-hidden bg-white rounded-3xl border border-neutral-200 p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-md transition-shadow duration-300">
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary-50/20 rounded-full blur-3xl -z-10 pointer-events-none" />
         <div className="flex flex-col sm:flex-row items-center gap-5 text-center sm:text-left">
-          <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-3xl font-extrabold shadow-md border-4 border-white">
+          <div className="relative w-24 h-24 shrink-0 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-3xl font-extrabold shadow-md border-4 border-white">
             {profilePreview ? (
               <img src={profilePreview} alt="Avatar" className="w-full h-full rounded-full object-cover" />
             ) : (
@@ -1689,19 +1689,19 @@ const ProfileTab = () => {
           </div>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           {isEditing ? (
             <>
               <button
                 type="button"
-                className="px-4 py-2 border border-neutral-300 rounded-xl hover:bg-neutral-100 text-sm font-semibold text-neutral-700 transition-all shadow-sm"
+                className="px-4 py-2 border border-neutral-300 rounded-xl hover:bg-neutral-100 text-sm font-semibold text-neutral-700 transition-all shadow-sm whitespace-nowrap shrink-0"
                 onClick={handleCancelEdit}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-primary-500/10 transition-all disabled:opacity-60"
+                className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-primary-500/10 transition-all disabled:opacity-60 whitespace-nowrap shrink-0"
                 onClick={handleSaveAll}
                 disabled={isSavingAll}
               >
@@ -1711,10 +1711,10 @@ const ProfileTab = () => {
           ) : (
             <button
               type="button"
-              className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-primary-500/10 transition-all flex items-center gap-1.5"
+              className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-primary-500/10 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 animate-pulse hover:animate-none"
               onClick={() => setIsEditing(true)}
             >
-              <PencilIcon className="w-4 h-4" />
+              <PencilIcon className="w-4 h-4 shrink-0" />
               Edit Profile
             </button>
           )}
