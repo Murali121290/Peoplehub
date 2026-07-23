@@ -183,6 +183,11 @@ class User(db.Model):
         db.DateTime
     )
 
+    seen_announcement_ids = db.Column(
+        db.JSON,
+        default=list
+    )
+
 
 
     def set_password(self, password):
