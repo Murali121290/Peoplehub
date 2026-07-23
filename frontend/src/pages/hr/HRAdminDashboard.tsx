@@ -13,6 +13,7 @@ import {
   PlusIcon,
   CurrencyDollarIcon,
   ArrowPathIcon,
+  ClipboardDocumentListIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "react-hot-toast";
 
@@ -34,6 +35,7 @@ const NAV = [
   { id: "dashboard", label: "Dashboard" },
   { id: "directory", label: "Employee Directory" },
   { id: "attendance", label: "Attendance" },
+  { id: "leave", label: "Leave Requests" },
   { id: "shift", label: "Shift Requests" },
   { id: "holiday", label: "Holiday Calendar" },
   { id: "payroll", label: "Payroll" },
@@ -92,6 +94,7 @@ const NAV_ICONS: Record<string, React.ElementType> = {
   dashboard: HomeIcon,
   directory: UserGroupIcon,
   attendance: ClockIcon,
+  leave: ClipboardDocumentListIcon,
   shift: ArrowPathIcon,
   holiday: CalendarDaysIcon,
   payroll: CurrencyDollarIcon,
@@ -450,6 +453,8 @@ export default function HRAdminDashboard() {
       toast.success(isEditMode ? "Employee Updated Successfully" : "Employee Added Successfully");
 
       await fetchEmployees();
+      await fetchTeams();
+      await fetchTeamOverview();
 
       setAddEmpOpen(false);
 
@@ -636,6 +641,13 @@ export default function HRAdminDashboard() {
         )}
         {nav === "attendance" && (
           <AttendanceTab attendance={attendance} BASE_URL={BASE_URL} />
+        )}
+        {nav === "leave" && (
+          <LeaveTab
+            leaves={leaves}
+            onApprove={handleApproveLeave}
+            onReject={handleRejectLeave}
+          />
         )}
         {nav === "shift" && (
           <ShiftTab
