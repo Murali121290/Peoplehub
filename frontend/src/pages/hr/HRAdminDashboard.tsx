@@ -300,7 +300,11 @@ export default function HRAdminDashboard() {
         .toLowerCase()
         .includes(search.toLowerCase()) ||
       (e.designation || "").toLowerCase().includes(search.toLowerCase()),
-  );
+  ).sort((a, b) => {
+    const idA = String(a.employee_id || "");
+    const idB = String(b.employee_id || "");
+    return idA.localeCompare(idB, undefined, { numeric: true });
+  });
 
   // --- Handlers ---
   const handleApproveLeave = async (id: number) => {
