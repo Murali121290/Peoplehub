@@ -209,7 +209,7 @@ const LoginPage: React.FC = () => {
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div>
                     <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
-                      Username
+                      Company Email or Employee ID
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -222,7 +222,7 @@ const LoginPage: React.FC = () => {
                         onChange={(e) =>
                           setFormData({ ...formData, email: e.target.value })
                         }
-                        placeholder="username"
+                        placeholder="Company Email or Employee ID"
                         className="w-full h-[52px] pl-11 pr-4 border border-neutral-200 rounded-xl bg-neutral-50 text-[15px] text-neutral-800 placeholder:text-neutral-400 outline-none transition-all duration-200 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/15"
                       />
                     </div>
@@ -325,7 +325,7 @@ const LoginPage: React.FC = () => {
                 <form onSubmit={handleChangePassword} className="space-y-5">
                   <div>
                     <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
-                      Username
+                      Company Email or Employee ID
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -338,7 +338,7 @@ const LoginPage: React.FC = () => {
                         onChange={(e) =>
                           setPwData({ ...pwData, username: e.target.value })
                         }
-                        placeholder="username"
+                        placeholder="Company Email or Employee ID"
                         className="w-full h-[52px] pl-11 pr-4 border border-neutral-200 rounded-xl bg-neutral-50 text-[15px] text-neutral-800 placeholder:text-neutral-400 outline-none transition-all duration-200 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/15"
                       />
                     </div>

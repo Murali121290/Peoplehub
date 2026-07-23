@@ -153,9 +153,15 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="mb-4 flex items-center">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-50 border border-neutral-200">
             <img
+              key={profileImageUrl}
               src={profileImageUrl}
               alt="Profile"
               className="w-10 h-10 rounded-full object-cover"
+              onLoad={(e) => {
+                e.currentTarget.style.display = "block";
+                const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                if (fallback) fallback.style.display = "none";
+              }}
               onError={(e) => {
                 e.currentTarget.style.display = "none";
                 const fallback = e.currentTarget.nextElementSibling as HTMLElement;
