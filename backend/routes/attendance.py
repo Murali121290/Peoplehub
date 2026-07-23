@@ -167,6 +167,31 @@ def check_in():
                 }), 400
 
         # =====================================
+        # APPROVED LEAVE CHECK — block check-in on approved leave days
+        # =====================================
+        from models.leave import LeaveRequest
+        from sqlalchemy import or_ as sql_or
+
+        approved_leave_today = LeaveRequest.query.filter(
+            sql_or(
+                LeaveRequest.employee_id == str(employee.id),
+                LeaveRequest.employee_id == str(user_id)
+            ),
+            LeaveRequest.status == "Approved",
+            LeaveRequest.request_type == "Leave",
+            LeaveRequest.from_date <= today_date,
+            LeaveRequest.to_date >= today_date
+        ).first()
+
+        if approved_leave_today:
+            leave_type = approved_leave_today.leave_type or "Leave"
+            return jsonify({
+                "success": False,
+                "message": f"You are on approved {leave_type} today. Check-in is not allowed on leave days.",
+                "on_leave": True
+            }), 403
+
+        # =====================================
         # CHECK ALREADY CHECKED IN
         # =====================================
 
