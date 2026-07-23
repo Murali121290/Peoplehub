@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import axios from "axios";
-import logo from "../images/s.png";
 import { useAuthStore } from "../store/authStore";
 import {
   LockClosedIcon,
@@ -13,8 +12,8 @@ import {
   ArrowLeftIcon,
   KeyIcon,
 } from "@heroicons/react/24/solid";
-import bg from "../images/login-hero.png";
-// import logo from "../src/images/s4carlisle-logo.png"; // optional
+import bg from "../images/login-hero-new.webp";
+import logo from "../images/s.png";
 
 type ViewMode = "login" | "forgot-password";
 
@@ -32,6 +31,7 @@ const LoginPage: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   // ---- Forgot / change password form state ----
   const [pwData, setPwData] = useState({
@@ -136,60 +136,201 @@ const LoginPage: React.FC = () => {
     }
   };
 
+  const glassInputClass =
+    "w-full h-[52px] pl-11 pr-4 rounded-xl text-[15px] text-white placeholder:text-white/35 outline-none transition-all duration-200 glass-input";
+
   return (
     <div className="relative min-h-screen flex flex-col overflow-hidden text-neutral-800">
-      {/* Background gradients */}
-      <div className="absolute inset-0 z-0 pointer-events-none bg-login-blue-glow" />
-      <div className="absolute inset-0 z-0 pointer-events-none bg-login-amber-glow" />
-      <div className="absolute inset-0 z-0 pointer-events-none opacity-50 bg-login-grid bg-[length:44px_44px]" />
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
+        @keyframes slowZoom { 
+          0% { transform: scale(1); } 
+          100% { transform: scale(1.05); } 
+        }
+        @keyframes floatParticle {
+          0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { transform: translateY(-10vh) rotate(720deg); opacity: 0; }
+        }
+        @keyframes loginSlideUp { 
+          from { opacity: 0; transform: translateY(30px); } 
+          to { opacity: 1; transform: translateY(0); } 
+        }
+
+        .lp-particle { 
+          position: absolute; 
+          background: rgba(251,191,36,0.4); 
+          border-radius: 50%; 
+          animation: floatParticle linear infinite; 
+        }
+        .lp-particle:nth-child(1) { left: 10%; animation-duration: 22s; animation-delay: 0s; width: 6px; height: 6px; }
+        .lp-particle:nth-child(2) { left: 20%; animation-duration: 28s; animation-delay: 3s; width: 3px; height: 3px; }
+        .lp-particle:nth-child(3) { left: 35%; animation-duration: 18s; animation-delay: 5s; width: 8px; height: 8px; opacity: 0.3; }
+        .lp-particle:nth-child(4) { left: 50%; animation-duration: 25s; animation-delay: 2s; width: 4px; height: 4px; }
+        .lp-particle:nth-child(5) { left: 65%; animation-duration: 20s; animation-delay: 7s; width: 5px; height: 5px; }
+        .lp-particle:nth-child(6) { left: 75%; animation-duration: 30s; animation-delay: 1s; width: 3px; height: 3px; }
+        .lp-particle:nth-child(7) { left: 85%; animation-duration: 24s; animation-delay: 4s; width: 7px; height: 7px; opacity: 0.25; }
+        .lp-particle:nth-child(8) { left: 45%; animation-duration: 26s; animation-delay: 6s; width: 4px; height: 4px; }
+
+        .glass-input {
+          background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 12px;
+          color: #fff;
+          font-family: 'Inter', sans-serif;
+          outline: none;
+          transition: all 0.3s;
+        }
+        .glass-input:focus { 
+          border-color: #fbbf24 !important; 
+          background: rgba(255,255,255,0.08) !important; 
+          box-shadow: 0 0 0 4px rgba(251,191,36,0.06) !important; 
+        }
+        .glass-input::placeholder { 
+          color: rgba(255,255,255,0.25); 
+        }
+
+        .feature-pill {
+          background: rgba(0,0,0,0.3); 
+          border: 1px solid rgba(255,255,255,0.08); 
+          padding: 14px 18px; 
+          border-radius: 16px; 
+          transition: all 0.3s;
+        }
+        .feature-pill:hover { 
+          background: rgba(0,0,0,0.4) !important; 
+          border-color: rgba(251,191,36,0.2) !important; 
+          transform: translateY(-2px); 
+        }
+        .remember-checkbox {
+          accent-color: #fbbf24;
+        }
+      `}</style>
+
+      {/* Background photo */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0" style={{ animation: "slowZoom 20s ease-in-out infinite alternate" }}>
+          <img src={bg} alt="background" className="w-full h-full object-cover" />
+        </div>
+        {/* Navy gradient scrim overlay */}
+        <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse at 70% 50%, rgba(10,15,30,0.2) 0%, rgba(10,15,30,0.6) 70%), linear-gradient(135deg, rgba(10,15,30,0.5) 0%, rgba(10,15,30,0.3) 100%)" }} />
+        {/* Grid pattern overlay */}
+        <div className="absolute inset-0 pointer-events-none opacity-50" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)", backgroundSize: "60px 60px" }} />
+        {/* Floating particles */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="lp-particle"></div><div className="lp-particle"></div><div className="lp-particle"></div><div className="lp-particle"></div>
+          <div className="lp-particle"></div><div className="lp-particle"></div><div className="lp-particle"></div><div className="lp-particle"></div>
+        </div>
+      </div>
 
       {/* Header */}
-      <header className="relative z-10 w-full flex items-center justify-between px-12 py-6">
+      <header
+        className="relative z-10 w-full flex items-center justify-between"
+        style={{
+          padding: "20px 48px",
+          background: "rgba(10,15,30,0.3)",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+        }}
+      >
         <div className="flex items-center gap-3.5">
-          {/* Logo badge */}
-          <div className="bg-white px-3 rounded-lg flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.08)] h-14 overflow-hidden">
-            <img src={logo} alt="S4 Carlisle" className="h-[105px] w-auto object-contain -mt-[3px] -mb-[3px]" draggable={false} />
-          </div>
-          <div className="h-[70px] w-[2px] bg-white/25"></div>
-          <span className="text-brandLight text-2xl font-bold tracking-wide">
-            S4C PeopleHub
+          <img
+            src={logo}
+            alt="S4Carlisle"
+            style={{ height: "48px", width: "auto", objectFit: "contain" }}
+          />
+          <span
+            style={{
+              fontFamily: "'Outfit', sans-serif",
+              fontWeight: 700,
+              fontSize: "20px",
+              letterSpacing: "-0.02em",
+              textShadow: "0 2px 20px rgba(0,0,0,0.3)",
+            }}
+          >
+            <span style={{ color: "#fbbf24" }}>S4</span>
+            <span style={{ color: "#fff" }}>C PeopleHub</span>
           </span>
         </div>
       </header>
 
       {/* Main Body */}
-      <main className="relative z-10 flex-1 grid grid-cols-1 lg:grid-cols-[1fr_minmax(400px,460px)] gap-14 items-center px-6 lg:px-18 py-6 pb-12 max-w-[1440px] mx-auto w-full">
-        <div className="text-white max-w-[560px]">
-          <h1 className="font-extrabold text-[38px] md:text-[56px] leading-[1.08] mb-5 tracking-tight" >
-            Your workday,<br />all in one place.
+      <main className="relative z-10 flex-1 grid grid-cols-1 lg:grid-cols-[1fr_minmax(400px,460px)] gap-14 items-center px-6 lg:px-18 py-6 pb-12 max-w-[1200px] mx-auto w-full">
+        {/* Hero section */}
+        <div className="text-white max-w-[560px] flex flex-col justify-start h-full py-12 lg:py-20">
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "6px 16px 6px 10px",
+              width: "fit-content",
+              borderRadius: "50px",
+              border: "1px solid rgba(251,191,36,0.2)",
+              background: "rgba(251,191,36,0.15)",
+              backdropFilter: "blur(8px)",
+              color: "#fbbf24",
+              fontSize: "12px",
+              fontWeight: 500,
+              letterSpacing: "0.3px",
+              marginBottom: "24px",
+            }}
+          >
+            <i className="fa-solid fa-bolt" style={{ fontSize: "10px" }}></i>
+            New ✨ AI-powered insights
+          </div>
+
+          <h1
+            className="font-extrabold text-[40px] md:text-[64px] leading-[1.05] mb-5 tracking-tight"
+            style={{
+              fontFamily: "'Outfit', sans-serif",
+              textShadow: "0 2px 40px rgba(0,0,0,0.5)",
+            }}
+          >
+            Your workday,<br />
+            <span
+              style={{
+                background: "linear-gradient(135deg, #fbbf24, #f59e0b)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+              }}
+            >
+              all in one place.
+            </span>
           </h1>
-          <p className="text-[18px] leading-relaxed text-white/80 mb-10 max-w-[460px]">
+          <p
+            className="text-[17px] leading-[1.7] text-white/75 mb-10 max-w-[480px]"
+            style={{ textShadow: "0 1px 30px rgba(0,0,0,0.4)" }}
+          >
             Empowering people, driving performance. The unified HR &amp; employee self-service portal for S4Carlisle.
           </p>
 
           {/* Feature Badges */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-w-[480px]">
-            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-clock-rotate-left text-brandYellow text-[17px]"></i>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-[500px]">
+            <div className="feature-pill flex gap-3 items-center">
+              <i className="fa-solid fa-clock-rotate-left" style={{ color: "#fbbf24", fontSize: "18px" }}></i>
               <span className="text-[14px] font-medium text-white/90">Attendance &amp; leave</span>
             </div>
-            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-receipt text-brandYellow text-[17px]"></i>
+            <div className="feature-pill flex gap-3 items-center">
+              <i className="fa-solid fa-receipt" style={{ color: "#fbbf24", fontSize: "18px" }}></i>
               <span className="text-[14px] font-medium text-white/90">Payroll &amp; benefits</span>
             </div>
-            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-chart-line text-brandYellow text-[17px]"></i>
+            <div className="feature-pill flex gap-3 items-center">
+              <i className="fa-solid fa-chart-line" style={{ color: "#fbbf24", fontSize: "18px" }}></i>
               <span className="text-[14px] font-medium text-white/90">Performance reviews</span>
             </div>
-            <div className="flex gap-3 items-center bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl transition duration-200 hover:bg-white/10 hover:border-white/20">
-              <i className="fa-solid fa-graduation-cap text-brandYellow text-[17px]"></i>
-              <span className="text-[14px] font-medium text-white/90">Learning &amp; development</span>
+            <div className="feature-pill flex gap-3 items-center">
+              <i className="fa-solid fa-graduation-cap" style={{ color: "#fbbf24", fontSize: "18px" }}></i>
+              <span className="text-[14px] font-medium text-white/90">Learning &amp; dev</span>
             </div>
           </div>
         </div>
 
         {/* Card Column */}
-        <div className="flex justify-center w-full">
+        <div className="flex justify-center lg:justify-end w-full h-full items-center">
           <AnimatePresence mode="wait">
             {view === "login" ? (
               /* ================= LOGIN CARD ================= */
@@ -199,21 +340,32 @@ const LoginPage: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.35 }}
-                className="w-full bg-white rounded-[20px] shadow-[0_24px_50px_rgba(0,0,0,0.28)] p-10"
+                className="w-full max-w-[440px]"
+                style={{
+                  borderRadius: "24px",
+                  padding: "48px 44px",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  backgroundColor: "#00000040",
+                  backdropFilter: "blur(8px)",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "flex-start",
+                }}
               >
-                <div className="mb-7">
-                  <h2 className="font-bold text-[28px] text-neutral-900 mb-1.5" >Let's Get Started</h2>
-                  <p className="text-[14px] text-neutral-500">Enter your credentials to access the portal.</p>
+                <div className="mb-8">
+                  <h2 className="font-bold text-[26px] mb-1" style={{ fontFamily: "'Outfit', sans-serif", color: "#fff", textShadow: "0 2px 20px rgba(0,0,0,0.3)" }}>Welcome back</h2>
+                  <p className="text-[14px] text-white/50">Sign in to your dashboard</p>
+                  <div style={{ width: "40px", height: "3px", background: "linear-gradient(90deg, #fbbf24, #f59e0b)", borderRadius: "2px", marginTop: "12px" }}></div>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div>
-                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
-                      Company Email or Employee ID
+                    <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
+                      Employee ID
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <UserCircleIcon className="h-5 w-5 text-neutral-400" />
+                        <UserCircleIcon className="h-5 w-5 text-white/40" />
                       </div>
                       <input
                         type="text"
@@ -222,19 +374,19 @@ const LoginPage: React.FC = () => {
                         onChange={(e) =>
                           setFormData({ ...formData, email: e.target.value })
                         }
-                        placeholder="Company Email or Employee ID"
-                        className="w-full h-[52px] pl-11 pr-4 border border-neutral-200 rounded-xl bg-neutral-50 text-[15px] text-neutral-800 placeholder:text-neutral-400 outline-none transition-all duration-200 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/15"
+                        placeholder="Enter your Employee ID"
+                        className={glassInputClass}
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
+                    <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
                       Password
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <LockClosedIcon className="h-5 w-5 text-neutral-400" />
+                        <LockClosedIcon className="h-5 w-5 text-white/40" />
                       </div>
                       <input
                         type={showPassword ? "text" : "password"}
@@ -246,13 +398,13 @@ const LoginPage: React.FC = () => {
                             password: e.target.value,
                           })
                         }
-                        placeholder="••••••••"
-                        className="w-full h-[52px] pl-11 pr-12 border border-neutral-200 rounded-xl bg-neutral-50 text-[15px] text-neutral-800 placeholder:text-neutral-400 outline-none transition-all duration-200 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/15"
+                        placeholder="Enter your password"
+                        className={`${glassInputClass} pr-12`}
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-neutral-400 hover:text-neutral-600 transition-colors"
+                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
                       >
                         {showPassword ? (
                           <EyeSlashIcon className="h-5 w-5" />
@@ -262,11 +414,20 @@ const LoginPage: React.FC = () => {
                       </button>
                     </div>
 
-                    <div className="mt-2 text-right">
+                    <div className="mt-4.5 flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-[13px] cursor-pointer text-white/50">
+                        <input
+                          type="checkbox"
+                          checked={rememberMe}
+                          onChange={(e) => setRememberMe(e.target.checked)}
+                          className="remember-checkbox h-4 w-4 cursor-pointer"
+                        />
+                        Remember me
+                      </label>
                       <button
                         type="button"
                         onClick={() => setView("forgot-password")}
-                        className="text-[13px] font-medium text-blue-500 hover:text-blue-600 hover:underline"
+                        className="text-[13px] font-medium hover:underline text-white/40"
                       >
                         Forgot password?
                       </button>
@@ -276,13 +437,17 @@ const LoginPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-[52px] bg-blue-900 hover:bg-blue-700 text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-
+                    className="w-full h-[52px] text-[15px] font-semibold rounded-xl shadow-[0_8px_24px_rgba(251,191,36,0.2)] hover:shadow-[0_12px_32px_rgba(251,191,36,0.35)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      background: "linear-gradient(135deg, #fbbf24, #f59e0b)",
+                      color: "#0a0f1e",
+                    }}
                   >
                     {loading ? (
                       <>
                         <span>Signing in...</span>
-                        <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                        <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -295,8 +460,6 @@ const LoginPage: React.FC = () => {
                     )}
                   </button>
                 </form>
-
-
               </motion.div>
             ) : (
               /* ============ FORGOT / CHANGE PASSWORD CARD ============ */
@@ -306,30 +469,41 @@ const LoginPage: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.35 }}
-                className="w-full bg-white rounded-[20px] shadow-[0_24px_50px_rgba(0,0,0,0.28)] p-10"
+                className="w-full max-w-[440px]"
+                style={{
+                  borderRadius: "24px",
+                  padding: "48px 44px",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  backgroundColor: "#00000040",
+                  backdropFilter: "blur(8px)",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "flex-start",
+                }}
               >
                 <button
                   type="button"
                   onClick={handleBackToLogin}
-                  className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-semibold text-neutral-500 hover:text-blue-500 hover:underline"
+                  className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-semibold text-white/60 hover:text-[#fbbf24] hover:underline"
                 >
                   <ArrowLeftIcon className="h-4 w-4" />
                   Back to Sign In
                 </button>
 
-                <div className="mb-7">
-                  <h2 className="font-bold text-[28px] text-neutral-900 mb-1.5" >Change Password</h2>
-                  <p className="text-[14px] text-neutral-500">Enter your old password and choose a new one.</p>
+                <div className="mb-8">
+                  <h2 className="font-bold text-[26px] mb-1" style={{ fontFamily: "'Outfit', sans-serif", color: "#fff", textShadow: "0 2px 20px rgba(0,0,0,0.3)" }}>Change Password</h2>
+                  <p className="text-[14px] text-white/50">Enter your old password and choose a new one.</p>
+                  <div style={{ width: "40px", height: "3px", background: "linear-gradient(90deg, #fbbf24, #f59e0b)", borderRadius: "2px", marginTop: "12px" }}></div>
                 </div>
 
                 <form onSubmit={handleChangePassword} className="space-y-5">
                   <div>
-                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
-                      Company Email or Employee ID
+                    <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
+                      Employee ID
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <UserCircleIcon className="h-5 w-5 text-neutral-400" />
+                        <UserCircleIcon className="h-5 w-5 text-white/40" />
                       </div>
                       <input
                         type="text"
@@ -338,19 +512,19 @@ const LoginPage: React.FC = () => {
                         onChange={(e) =>
                           setPwData({ ...pwData, username: e.target.value })
                         }
-                        placeholder="Company Email or Employee ID"
-                        className="w-full h-[52px] pl-11 pr-4 border border-neutral-200 rounded-xl bg-neutral-50 text-[15px] text-neutral-800 placeholder:text-neutral-400 outline-none transition-all duration-200 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/15"
+                        placeholder="Enter your Employee ID"
+                        className={glassInputClass}
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
+                    <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
                       Old Password
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <LockClosedIcon className="h-5 w-5 text-neutral-400" />
+                        <LockClosedIcon className="h-5 w-5 text-white/40" />
                       </div>
                       <input
                         type={showOldPassword ? "text" : "password"}
@@ -362,13 +536,13 @@ const LoginPage: React.FC = () => {
                             oldPassword: e.target.value,
                           })
                         }
-                        placeholder="••••••••"
-                        className="w-full h-[52px] pl-11 pr-12 border border-neutral-200 rounded-xl bg-neutral-50 text-[15px] text-neutral-800 placeholder:text-neutral-400 outline-none transition-all duration-200 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/15"
+                        placeholder="Enter your old password"
+                        className={`${glassInputClass} pr-12`}
                       />
                       <button
                         type="button"
                         onClick={() => setShowOldPassword(!showOldPassword)}
-                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-neutral-400 hover:text-neutral-600 transition-colors"
+                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
                       >
                         {showOldPassword ? (
                           <EyeSlashIcon className="h-5 w-5" />
@@ -380,12 +554,12 @@ const LoginPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
+                    <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
                       New Password
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <KeyIcon className="h-5 w-5 text-neutral-400" />
+                        <KeyIcon className="h-5 w-5 text-white/40" />
                       </div>
                       <input
                         type={showNewPassword ? "text" : "password"}
@@ -398,13 +572,13 @@ const LoginPage: React.FC = () => {
                             newPassword: e.target.value,
                           })
                         }
-                        placeholder="••••••••"
-                        className="w-full h-[52px] pl-11 pr-12 border border-neutral-200 rounded-xl bg-neutral-50 text-[15px] text-neutral-800 placeholder:text-neutral-400 outline-none transition-all duration-200 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/15"
+                        placeholder="Enter your new password"
+                        className={`${glassInputClass} pr-12`}
                       />
                       <button
                         type="button"
                         onClick={() => setShowNewPassword(!showNewPassword)}
-                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-neutral-400 hover:text-neutral-600 transition-colors"
+                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
                       >
                         {showNewPassword ? (
                           <EyeSlashIcon className="h-5 w-5" />
@@ -416,12 +590,12 @@ const LoginPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-[13px] font-semibold text-neutral-700 mb-2">
+                    <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
                       Confirm Password
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <KeyIcon className="h-5 w-5 text-neutral-400" />
+                        <KeyIcon className="h-5 w-5 text-white/40" />
                       </div>
                       <input
                         type={showConfirmPassword ? "text" : "password"}
@@ -434,15 +608,15 @@ const LoginPage: React.FC = () => {
                             confirmPassword: e.target.value,
                           })
                         }
-                        placeholder="••••••••"
-                        className="w-full h-[52px] pl-11 pr-12 border border-neutral-200 rounded-xl bg-neutral-50 text-[15px] text-neutral-800 placeholder:text-neutral-400 outline-none transition-all duration-200 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/15"
+                        placeholder="Re-enter your new password"
+                        className={`${glassInputClass} pr-12`}
                       />
                       <button
                         type="button"
                         onClick={() =>
                           setShowConfirmPassword(!showConfirmPassword)
                         }
-                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-neutral-400 hover:text-neutral-600 transition-colors"
+                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
                       >
                         {showConfirmPassword ? (
                           <EyeSlashIcon className="h-5 w-5" />
@@ -456,13 +630,17 @@ const LoginPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={pwLoading}
-                    className="w-full h-[52px] bg-blue-900 hover:bg-blue-700 text-white text-[15px] font-semibold rounded-xl shadow-[0_8px_18px_rgba(30,58,138,0.28)] hover:shadow-[0_10px_22px_rgba(30,58,138,0.4)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-
+                    className="w-full h-[52px] text-[15px] font-semibold rounded-xl shadow-[0_8px_24px_rgba(251,191,36,0.2)] hover:shadow-[0_12px_32px_rgba(251,191,36,0.35)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      background: "linear-gradient(135deg, #fbbf24, #f59e0b)",
+                      color: "#0a0f1e",
+                    }}
                   >
                     {pwLoading ? (
                       <>
                         <span>Updating...</span>
-                        <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                        <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -479,8 +657,24 @@ const LoginPage: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 w-full flex justify-between items-center px-12 py-4 border-t border-white/10 text-[12.5px] text-white/60">
-        <span>© 2026 <span className="text-brandYellow font-medium">S4Carlisle Publishing Services Pvt Ltd.</span> All rights reserved.</span>
+      <footer
+        style={{
+          position: "relative",
+          zIndex: 3,
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: "16px 48px",
+          background: "rgba(10,15,30,0.3)",
+          backdropFilter: "blur(12px)",
+          borderTop: "1px solid rgba(255,255,255,0.04)",
+          fontSize: "12.5px",
+          color: "rgba(255,255,255,0.6)",
+          flexWrap: "wrap",
+          gap: "10px",
+        }}
+      >
+        <span>© 2026 <span style={{ color: "#FBBF24", fontWeight: 500 }}>S4Carlisle Publishing Services Pvt Ltd.</span> All rights reserved.</span>
       </footer>
     </div>
   );
