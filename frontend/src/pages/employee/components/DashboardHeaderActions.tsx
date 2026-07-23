@@ -12,6 +12,7 @@ interface DashboardHeaderActionsProps {
   lunchTimer?: string;
   teaTimer?: string;
   hasCheckedOutToday: boolean;
+  isOnLeave?: boolean;
   onCheckInOut: () => void;
   onLunchBreak: () => void;
   onTeaBreak: () => void;
@@ -63,6 +64,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
   lunchTimer,
   teaTimer,
   hasCheckedOutToday,
+  isOnLeave = false,
   onCheckInOut,
   onLunchBreak,
   onTeaBreak,
@@ -122,12 +124,15 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
       <motion.button
         onHoverStart={() => setIsHoveringCheck(true)}
         onHoverEnd={() => setIsHoveringCheck(false)}
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-        onClick={handleCheckAction}
-        disabled={isLoading || isCheckedOut}
+        whileHover={(!isLoading && !isCheckedOut && !isOnLeave) ? { scale: 1.02 } : {}}
+        whileTap={(!isLoading && !isCheckedOut && !isOnLeave) ? { scale: 0.98 } : {}}
+        onClick={isOnLeave ? undefined : handleCheckAction}
+        disabled={isLoading || isCheckedOut || isOnLeave}
+        title={isOnLeave ? "You are on approved leave today" : undefined}
         className={`flex items-center gap-3 px-4 h-[36px] rounded-full border transition-colors duration-200 whitespace-nowrap ml-2 bg-white
-          ${isCheckedOut
+          ${isOnLeave
+            ? "border-violet-300 text-violet-500 bg-violet-50 cursor-not-allowed opacity-80"
+            : isCheckedOut
             ? "border-emerald-400 text-emerald-500 hover:bg-emerald-50"
             : isCheckedIn
               ? "border-rose-400 text-rose-500 hover:bg-rose-50"
@@ -136,6 +141,11 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
       >
         {isLoading ? (
           <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+        ) : isOnLeave ? (
+          <>
+            <span className="text-base">🌴</span>
+            <span className="text-[13px] font-semibold text-violet-600">On Leave</span>
+          </>
         ) : isCheckedOut ? (
           <>
             <span className="text-[13px] font-semibold text-emerald-500">Check In</span>

@@ -69,6 +69,28 @@ const EmployeeDashboardPage: React.FC = () => {
       .trim()
       .toLowerCase();
 
+  const checkManagerMatch = (reportingManager: string | null | undefined) => {
+    if (!reportingManager) return false;
+    const repManagerClean = reportingManager.trim().toLowerCase();
+    
+    // Exact match
+    if (repManagerClean === managerName) return true;
+    
+    // Check if reporting manager is just a single name (first name)
+    const repManagerParts = repManagerClean.split(/\s+/);
+    const loggedManagerParts = managerName.split(/\s+/);
+    
+    if (repManagerParts.length === 1 && loggedManagerParts.length > 0) {
+      if (loggedManagerParts[0] === repManagerParts[0]) return true;
+    }
+    
+    if (loggedManagerParts.length === 1 && repManagerParts.length > 0) {
+      if (repManagerParts[0] === loggedManagerParts[0]) return true;
+    }
+    
+    return false;
+  };
+
   const canApprove = ["admin", "manager", "hr"].includes(
     (user?.access_level || user?.role || "").toLowerCase()
   );
@@ -76,7 +98,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const pendingShiftCount = canApprove
     ? managerShiftRequests.filter(
       (shift: any) =>
-        shift.reporting_manager?.trim().toLowerCase() === managerName &&
+        checkManagerMatch(shift.reporting_manager) &&
         shift.status === "Pending"
     ).length
     : 0;
@@ -126,8 +148,7 @@ const EmployeeDashboardPage: React.FC = () => {
 
   const approvalLeaves = canApprove
     ? leaveRequests.filter(
-      (leave: any) =>
-        leave.reporting_manager?.trim().toLowerCase() === managerName,
+      (leave: any) => checkManagerMatch(leave.reporting_manager),
     )
     : [];
   const totalBalance =
@@ -139,6 +160,26 @@ const EmployeeDashboardPage: React.FC = () => {
       (leave: any) => leave.status === "Pending"
     ).length
     : 0;
+
+  // Check if today is an approved leave day for the current employee
+  const isOnApprovedLeaveToday = (() => {
+    if (!currentEmployee || !leaveRequests.length) return false;
+    const todayStr = new Date().toISOString().split("T")[0];
+    const todayDate = new Date(todayStr);
+    return leaveRequests.some((leave: any) => {
+      if (leave.status !== "Approved" || leave.request_type !== "Leave") return false;
+      // Match by employee_id (stored as string in DB)
+      const leaveEmpId = String(leave.employee_id || "");
+      if (
+        leaveEmpId !== String(currentEmployee.id) &&
+        leaveEmpId !== String(currentEmployee.user_id)
+      ) return false;
+      if (!leave.from_date || !leave.to_date) return false;
+      const from = new Date(leave.from_date);
+      const to = new Date(leave.to_date);
+      return todayDate >= from && todayDate <= to;
+    });
+  })();
 
   const getTodayKey = () => {
     const d = new Date();
@@ -967,7 +1008,7 @@ const EmployeeDashboardPage: React.FC = () => {
       }
 
       // If we are their manager
-      if (payload.reporting_manager?.trim().toLowerCase() === managerName) {
+      if (checkManagerMatch(payload.reporting_manager)) {
         setManagerShiftRequests((prev) => {
           const index = prev.findIndex((s) => s.id === payload.id);
           if (index > -1) {
@@ -1150,6 +1191,7 @@ const EmployeeDashboardPage: React.FC = () => {
                     lunchTimer={lunchTimer}
                     teaTimer={teaTimer}
                     hasCheckedOutToday={hasCheckedOutToday}
+                    isOnLeave={isOnApprovedLeaveToday}
                     onCheckInOut={() => isCheckedIn ? setConfirmModal(true) : handleCheckIn()}
                     onLunchBreak={handleLunchBreak}
                     onTeaBreak={handleTeaBreak}

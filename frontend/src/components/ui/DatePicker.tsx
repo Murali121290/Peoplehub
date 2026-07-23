@@ -8,6 +8,10 @@ interface DatePickerProps {
   className?: string;
   name?: string;
   error?: boolean;
+  disabledDates?: string[];
+  bookedDates?: string[];
+  disablePast?: boolean;
+  disableWeekends?: boolean;
 }
 
 const MONTH_NAMES = [
@@ -18,6 +22,24 @@ const MONTH_NAMES = [
 const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const WEEKDAYS_SHORT = ["S", "M", "T", "W", "T", "F", "S"];
 
+const isCompanyWeekoff = (year: number, month: number, dayNum: number) => {
+  const d = new Date(year, month, dayNum);
+  const dayOfWeek = d.getDay();
+  if (dayOfWeek === 0) return true; // Sunday
+  if (dayOfWeek === 6) { // Saturday
+    let satCount = 0;
+    for (let day = 1; day <= dayNum; day++) {
+      if (new Date(year, month, day).getDay() === 6) {
+        satCount++;
+      }
+    }
+    return satCount === 2 || satCount === 4;
+  }
+  return false;
+};
+
+type ViewMode = "calendar" | "yearMonth" | "keyboard";
+
 export const DatePicker: React.FC<DatePickerProps> = ({
   value = "",
   onChange,
@@ -26,10 +48,14 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   className = "",
   name,
   error = false,
+  disabledDates = [],
+  bookedDates = [],
+  disablePast = false,
+  disableWeekends = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputVal, setInputVal] = useState(value);
-  const [inputMode, setInputMode] = useState<"calendar" | "keyboard">("calendar");
+  const [viewMode, setViewMode] = useState<ViewMode>("calendar");
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -41,16 +67,23 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   // Keyboard input state
   const [typedDate, setTypedDate] = useState("");
 
+  // Year picker scroll — show a window of years around current viewYear
+  const [yearPageStart, setYearPageStart] = useState<number>(new Date().getFullYear() - 4);
+
   // Sync state when external value changes
   useEffect(() => {
     setInputVal(value);
     if (value) {
-      const parsed = new Date(value);
-      if (!isNaN(parsed.getTime())) {
-        setSelectedDate(parsed);
-        setViewMonth(parsed.getMonth());
-        setViewYear(parsed.getFullYear());
-        setTypedDate(value);
+      const parts = value.split("-");
+      if (parts.length === 3) {
+        const parsed = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        if (!isNaN(parsed.getTime())) {
+          setSelectedDate(parsed);
+          setViewMonth(parsed.getMonth());
+          setViewYear(parsed.getFullYear());
+          setTypedDate(value);
+          setYearPageStart(parsed.getFullYear() - 4);
+        }
       }
     } else {
       const today = new Date();
@@ -58,6 +91,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       setViewMonth(today.getMonth());
       setViewYear(today.getFullYear());
       setTypedDate("");
+      setYearPageStart(today.getFullYear() - 4);
     }
   }, [value, isOpen]);
 
@@ -78,19 +112,72 @@ export const DatePicker: React.FC<DatePickerProps> = ({
 
   const handleOpen = () => {
     setIsOpen(true);
-    setInputMode("calendar");
+    setViewMode("calendar");
   };
 
   const handleClose = () => {
     setIsOpen(false);
+    setViewMode("calendar");
+  };
+
+  const selectDateAndClose = (dayNum: number) => {
+    const finalDate = new Date(viewYear, viewMonth, dayNum);
+    setSelectedDate(finalDate);
+
+    const yyyy = finalDate.getFullYear();
+    const mm = String(finalDate.getMonth() + 1).padStart(2, "0");
+    const dd = String(finalDate.getDate()).padStart(2, "0");
+    const formatted = `${yyyy}-${mm}-${dd}`;
+
+    setInputVal(formatted);
+    if (onChange) {
+      onChange(formatted);
+    }
+    setIsOpen(false);
+    setViewMode("calendar");
   };
 
   const handleOk = () => {
     let finalDate = selectedDate;
 
-    if (inputMode === "keyboard") {
-      const parsed = new Date(typedDate);
+    if (viewMode === "keyboard") {
+      const parts = typedDate.split("-");
+      let parsed: Date;
+      if (parts.length === 3) {
+        parsed = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      } else {
+        parsed = new Date(typedDate);
+      }
       if (!isNaN(parsed.getTime())) {
+        const yyyy = parsed.getFullYear();
+        const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+        const dd = String(parsed.getDate()).padStart(2, "0");
+        const formattedStr = `${yyyy}-${mm}-${dd}`;
+
+        const isWeekoff = isCompanyWeekoff(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const isPast = parsed < today;
+        const isHoliday = disabledDates.includes(formattedStr);
+        const isBooked = bookedDates.includes(formattedStr);
+
+        if (disableWeekends && isWeekoff) {
+          alert("Selected date falls on a company weekly off (Sunday / 2nd or 4th Saturday).");
+          return;
+        }
+        if (disablePast && isPast) {
+          alert("Selected date cannot be in the past.");
+          return;
+        }
+        if (isHoliday) {
+          alert("Selected date is a company holiday.");
+          return;
+        }
+        if (isBooked) {
+          alert("Selected date already has a booked leave.");
+          return;
+        }
+
         finalDate = parsed;
       } else {
         alert("Invalid Date format. Please use YYYY-MM-DD.");
@@ -108,16 +195,33 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       onChange(formatted);
     }
     setIsOpen(false);
+    setViewMode("calendar");
   };
 
   // Month navigation logic
   const handlePrevMonth = () => {
+    const today = new Date();
+    const minMonth = today.getMonth();
+    const minYear = today.getFullYear();
+
+    let targetMonth = viewMonth;
+    let targetYear = viewYear;
+
     if (viewMonth === 0) {
-      setViewMonth(11);
-      setViewYear(viewYear - 1);
+      targetMonth = 11;
+      targetYear = viewYear - 1;
     } else {
-      setViewMonth(viewMonth - 1);
+      targetMonth = viewMonth - 1;
     }
+
+    if (disablePast) {
+      if (targetYear < minYear || (targetYear === minYear && targetMonth < minMonth)) {
+        return;
+      }
+    }
+
+    setViewMonth(targetMonth);
+    setViewYear(targetYear);
   };
 
   const handleNextMonth = () => {
@@ -126,6 +230,16 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       setViewYear(viewYear + 1);
     } else {
       setViewMonth(viewMonth + 1);
+    }
+  };
+
+  // Toggle year/month picker
+  const toggleYearMonthPicker = () => {
+    if (viewMode === "yearMonth") {
+      setViewMode("calendar");
+    } else {
+      setYearPageStart(viewYear - 4);
+      setViewMode("yearMonth");
     }
   };
 
@@ -145,7 +259,9 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   // Display value in input trigger
   const getDisplayValue = () => {
     if (!inputVal) return "";
-    const parsed = new Date(inputVal);
+    const parts = inputVal.split("-");
+    if (parts.length !== 3) return "";
+    const parsed = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
     if (isNaN(parsed.getTime())) return "";
     const dayName = WEEKDAY_NAMES[parsed.getDay()];
     const monthName = MONTH_NAMES[parsed.getMonth()].slice(0, 3);
@@ -162,21 +278,39 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     return `${dayName}, ${monthName} ${dayNum}`;
   };
 
-  const todayStr = (() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-  })();
-
-  const isToday = (dayNum: number) => {
-    return `${viewYear}-${viewMonth}-${dayNum}` === todayStr;
-  };
-
   const isSelected = (dayNum: number) => {
     return (
       selectedDate.getDate() === dayNum &&
       selectedDate.getMonth() === viewMonth &&
       selectedDate.getFullYear() === viewYear
     );
+  };
+
+  const todayObj = new Date();
+  const isAtMinMonth = disablePast && (
+    viewYear < todayObj.getFullYear() ||
+    (viewYear === todayObj.getFullYear() && viewMonth <= todayObj.getMonth())
+  );
+
+  // Year picker grid: show 12 years per page
+  const YEARS_PER_PAGE = 12;
+  const yearPageYears = Array.from({ length: YEARS_PER_PAGE }, (_, i) => yearPageStart + i);
+
+  const handleSelectYear = (year: number) => {
+    setViewYear(year);
+    // Don't go back to calendar yet — show month picker within the same view
+  };
+
+  const handleSelectMonth = (monthIdx: number) => {
+    // If disablePast: prevent going to past month
+    if (disablePast) {
+      if (viewYear < todayObj.getFullYear() ||
+        (viewYear === todayObj.getFullYear() && monthIdx < todayObj.getMonth())) {
+        return;
+      }
+    }
+    setViewMonth(monthIdx);
+    setViewMode("calendar");
   };
 
   return (
@@ -224,9 +358,9 @@ export const DatePicker: React.FC<DatePickerProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => setInputMode(inputMode === "calendar" ? "keyboard" : "calendar")}
+              onClick={() => setViewMode(viewMode === "keyboard" ? "calendar" : viewMode === "calendar" || viewMode === "yearMonth" ? "keyboard" : "calendar")}
               className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
-              title={inputMode === "calendar" ? "Type date in text" : "Select date on calendar"}
+              title={viewMode === "keyboard" ? "Select date on calendar" : "Type date in text"}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -245,13 +379,17 @@ export const DatePicker: React.FC<DatePickerProps> = ({
             </button>
           </div>
 
-          {/* Display Body (Calendar or Keyboard input) */}
-          {inputMode === "calendar" ? (
+          {/* Display Body */}
+          {viewMode === "calendar" && (
             /* Calendar grid */
             <div className="p-3.5 flex flex-col">
-              {/* Month/Year selector header */}
+              {/* Month/Year selector header — clicking opens year/month picker */}
               <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={toggleYearMonthPicker}
+                  className="flex items-center gap-1 hover:bg-neutral-100 rounded-lg px-1.5 py-0.5 transition-colors group"
+                >
                   <span className="text-sm font-bold text-neutral-800">
                     {MONTH_NAMES[viewMonth]} {viewYear}
                   </span>
@@ -259,7 +397,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 20 20"
                     fill="currentColor"
-                    className="w-4 h-4 text-neutral-500"
+                    className="w-4 h-4 text-neutral-500 group-hover:text-primary-500 transition-colors"
                   >
                     <path
                       fillRule="evenodd"
@@ -267,14 +405,17 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                       clipRule="evenodd"
                     />
                   </svg>
-                </div>
-                
+                </button>
+
                 {/* Nav Arrows */}
                 <div className="flex gap-1">
                   <button
                     type="button"
                     onClick={handlePrevMonth}
-                    className="p-1 rounded-full hover:bg-neutral-100 text-neutral-600 transition-colors"
+                    disabled={isAtMinMonth}
+                    className={`p-1 rounded-full hover:bg-neutral-100 text-neutral-600 transition-colors ${
+                      isAtMinMonth ? "opacity-30 cursor-not-allowed" : ""
+                    }`}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -323,18 +464,41 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                   }
 
                   const selected = isSelected(dayNum);
-                  const today = isToday(dayNum);
+                  const todayStrLocal = `${new Date().getFullYear()}-${new Date().getMonth()}-${new Date().getDate()}`;
+                  const isToday = `${viewYear}-${viewMonth}-${dayNum}` === todayStrLocal;
+
+                  const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+
+                  const isWeekoff = isCompanyWeekoff(viewYear, viewMonth, dayNum);
+
+                  const isPast = (() => {
+                    const t = new Date();
+                    t.setHours(0, 0, 0, 0);
+                    const d = new Date(viewYear, viewMonth, dayNum);
+                    return d < t;
+                  })();
+
+                  const isHoliday = disabledDates.includes(dateStr);
+                  const isBooked = bookedDates.includes(dateStr);
+
+                  const disabled = (disableWeekends && isWeekoff) || (disablePast && isPast) || isHoliday || isBooked;
 
                   return (
                     <button
                       type="button"
                       key={idx}
-                      onClick={() => setSelectedDate(new Date(viewYear, viewMonth, dayNum))}
+                      disabled={disabled}
+                      onClick={() => !disabled && selectDateAndClose(dayNum)}
+                      title={isBooked ? "Leave Booked" : isHoliday ? "Holiday" : isWeekoff ? "Weekly Off" : ""}
                       className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
                         selected
                           ? "bg-primary-500 text-white shadow-xs font-bold"
-                          : today
+                          : isToday
                           ? "border border-primary-500 text-primary-500 font-bold"
+                          : isBooked
+                          ? "bg-rose-50 text-rose-600 border border-rose-100 cursor-not-allowed hover:bg-rose-50 font-semibold"
+                          : disabled
+                          ? "text-neutral-300 cursor-not-allowed hover:bg-transparent"
                           : "hover:bg-neutral-100 text-neutral-700"
                       }`}
                     >
@@ -344,7 +508,104 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                 })}
               </div>
             </div>
-          ) : (
+          )}
+
+          {viewMode === "yearMonth" && (
+            /* Year + Month Picker */
+            <div className="p-3.5 flex flex-col">
+              {/* Year navigation row */}
+              <div className="flex items-center justify-between mb-2">
+                <button
+                  type="button"
+                  onClick={() => setYearPageStart(yearPageStart - YEARS_PER_PAGE)}
+                  className="p-1 rounded-full hover:bg-neutral-100 text-neutral-600 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                  </svg>
+                </button>
+                <span className="text-xs font-bold text-neutral-500 uppercase tracking-wider">
+                  {yearPageStart} – {yearPageStart + YEARS_PER_PAGE - 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setYearPageStart(yearPageStart + YEARS_PER_PAGE)}
+                  className="p-1 rounded-full hover:bg-neutral-100 text-neutral-600 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Year grid 4×3 */}
+              <div className="grid grid-cols-4 gap-1 mb-3">
+                {yearPageYears.map((yr) => {
+                  const isCurrentViewYear = yr === viewYear;
+                  const isPastYear = disablePast && yr < todayObj.getFullYear();
+                  return (
+                    <button
+                      key={yr}
+                      type="button"
+                      disabled={isPastYear}
+                      onClick={() => handleSelectYear(yr)}
+                      className={`py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        isCurrentViewYear
+                          ? "bg-primary-500 text-white shadow-xs"
+                          : isPastYear
+                          ? "text-neutral-300 cursor-not-allowed"
+                          : "hover:bg-primary-50 text-neutral-700 hover:text-primary-600"
+                      }`}
+                    >
+                      {yr}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-neutral-100 mb-2.5" />
+
+              {/* Month grid 4×3 */}
+              <div className="grid grid-cols-4 gap-1">
+                {MONTH_NAMES.map((mName, mIdx) => {
+                  const isCurrentViewMonth = mIdx === viewMonth;
+                  const isPastMonth = disablePast && (
+                    viewYear < todayObj.getFullYear() ||
+                    (viewYear === todayObj.getFullYear() && mIdx < todayObj.getMonth())
+                  );
+                  return (
+                    <button
+                      key={mIdx}
+                      type="button"
+                      disabled={isPastMonth}
+                      onClick={() => handleSelectMonth(mIdx)}
+                      className={`py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        isCurrentViewMonth
+                          ? "bg-primary-100 text-primary-700 border border-primary-200"
+                          : isPastMonth
+                          ? "text-neutral-300 cursor-not-allowed"
+                          : "hover:bg-neutral-100 text-neutral-600 hover:text-neutral-800"
+                      }`}
+                    >
+                      {mName.slice(0, 3)}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Done button */}
+              <button
+                type="button"
+                onClick={() => setViewMode("calendar")}
+                className="mt-3 w-full py-1.5 rounded-xl text-xs font-bold text-primary-600 hover:bg-primary-50 border border-primary-100 transition-colors"
+              >
+                Back to Calendar
+              </button>
+            </div>
+          )}
+
+          {viewMode === "keyboard" && (
             /* Keyboard Numeric entry */
             <div className="p-5 flex flex-col justify-center items-center h-[230px]">
               <div className="w-full">
@@ -366,22 +627,24 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           )}
 
           {/* Actions Footer */}
-          <div className="p-3 bg-neutral-50 border-t border-neutral-100 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={handleClose}
-              className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleOk}
-              className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors"
-            >
-              OK
-            </button>
-          </div>
+          {viewMode === "keyboard" && (
+            <div className="p-3 bg-neutral-50 border-t border-neutral-100 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleOk}
+                className="px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors"
+              >
+                OK
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
