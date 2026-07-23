@@ -417,26 +417,25 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
 
   // Track unread announcements count
   useEffect(() => {
-    if (!user) return;
-    const storageKey = `seen_announcement_ids_${user.id}`;
-    const seenIds = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    const lastViewed = localStorage.getItem("last_viewed_announcement_time") || "1970-01-01T00:00:00.000Z";
+    const lastViewedDate = new Date(lastViewed);
 
     const allAnnouncements = [...liveAnnouncements, ...officeMessages];
-    const unread = allAnnouncements.filter((ann: any) => !seenIds.includes(ann.id)).length;
+    const unread = allAnnouncements.filter((ann: any) => {
+      const created = ann.created_at ? new Date(ann.created_at) : new Date();
+      return created > lastViewedDate;
+    }).length;
 
     setUnreadAnnouncements(unread);
-  }, [officeMessages, liveAnnouncements, user]);
+  }, [officeMessages, liveAnnouncements]);
 
   // Clear unread count when visiting the announcements page
   useEffect(() => {
-    if (location.pathname === "/announcements" && user) {
-      const storageKey = `seen_announcement_ids_${user.id}`;
-      const allAnnouncements = [...liveAnnouncements, ...officeMessages];
-      const allIds = allAnnouncements.map((ann: any) => ann.id);
-      localStorage.setItem(storageKey, JSON.stringify(allIds));
+    if (location.pathname === "/announcements") {
+      localStorage.setItem("last_viewed_announcement_time", new Date().toISOString());
       setUnreadAnnouncements(0);
     }
-  }, [location.pathname, officeMessages, liveAnnouncements, user]);
+  }, [location.pathname, officeMessages, liveAnnouncements]);
 
   const sendAnnouncement = async () => {
     if (!officeText.trim()) return;
@@ -504,20 +503,14 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       toast.success(`🎉 ${newNotification.sender_name || "A coworker"} thanked you for your birthday wishes!`);
     });
 
-    socket.on("missed_checkin_created", (newNotification) => {
-      setNotifications((prev) => [newNotification, ...prev]);
-      toast.error(`⏰ Missed Check-In Alert for ${newNotification.sender_name || "an employee"}!`);
-    });
+
 
     socket.on("checkin_reminder_sent", (newNotification) => {
       setNotifications((prev) => [newNotification, ...prev]);
       toast.error("🔔 You have a Check-In Reminder from your manager!");
     });
 
-    socket.on("employee_checked_in", (newNotification) => {
-      setNotifications((prev) => [newNotification, ...prev]);
-      toast.success(`✅ ${newNotification.sender_name || "An employee"} checked in successfully!`);
-    });
+
 
     socket.on("general_notification_created", (newNotification) => {
       setNotifications((prev) => [newNotification, ...prev]);
@@ -553,6 +546,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   const handleLogout = async () => {
     await logout();
     sessionStorage.clear();
+    localStorage.clear();
     toast.success("Logged out successfully");
     navigate("/login");
   };
