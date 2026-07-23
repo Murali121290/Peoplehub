@@ -229,8 +229,6 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                   <th className="text-left py-3.5 px-5">Employee</th>
                   <th className="text-left py-3.5 px-5">Department</th>
                   <th className="text-left py-3.5 px-5">Status</th>
-                  <th className="text-left py-3.5 px-5">Check In</th>
-                  <th className="text-left py-3.5 px-5">Check Out</th>
                   <th className="text-left py-3.5 px-5">Working Hours</th>
                   <th className="text-left py-3.5 px-5">Verification</th>
                   <th className="text-center py-3.5 px-5 w-[260px]">Actions</th>
@@ -239,7 +237,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
               <tbody className="divide-y divide-neutral-100 text-sm font-medium">
                 {employees.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-neutral-400 font-medium">
+                    <td colSpan={6} className="py-12 text-center text-neutral-400 font-medium">
                       No yesterday attendance records found for approval.
                     </td>
                   </tr>
@@ -284,16 +282,6 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         {/* Status */}
                         <td className="py-3.5 px-5">
                           {getStatusBadge(emp.status)}
-                        </td>
-
-                        {/* Check In */}
-                        <td className="py-3.5 px-5 text-neutral-600 text-xs font-mono">
-                          {emp.check_in || "—"}
-                        </td>
-
-                        {/* Check Out */}
-                        <td className="py-3.5 px-5 text-neutral-600 text-xs font-mono">
-                          {emp.check_out || "—"}
                         </td>
 
                         {/* Working Hours */}

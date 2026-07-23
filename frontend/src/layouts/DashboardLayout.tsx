@@ -62,8 +62,13 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   // Listen for the custom event to toggle system notifications
   useEffect(() => {
     const handleToggle = () => setShowNotifications(prev => !prev);
+    const handleClose = () => setShowNotifications(false);
     window.addEventListener("toggleSystemNotifications", handleToggle);
-    return () => window.removeEventListener("toggleSystemNotifications", handleToggle);
+    window.addEventListener("closeSystemNotifications", handleClose);
+    return () => {
+      window.removeEventListener("toggleSystemNotifications", handleToggle);
+      window.removeEventListener("closeSystemNotifications", handleClose);
+    }
   }, []);
   const [officeText, setOfficeText] = useState("");
   const [liveAnnouncements, setLiveAnnouncements] = useState<any[]>([]);
@@ -155,6 +160,13 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       setShowPopup(true);
     }
   }, [birthdayEmployees]);
+
+  // Show attendance summary modal when navigating to Team Management
+  useEffect(() => {
+    if (location.pathname === "/manager-dashboard") {
+      setShowPopup(true);
+    }
+  }, [location.pathname]);
 
   // Birthday & Thanks confirmation/view states
   const [thanksWishId, setThanksWishId] = useState<number | null>(null);
@@ -776,7 +788,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       )}
 
       {/* Attendance Summary Popup */}
-      {showPopup && reportingEmployees.length > 0 && (
+      {showPopup && reportingEmployees.length > 0 && location.pathname === "/manager-dashboard" && (
         <AttendanceSummaryModal
           reportingEmployees={reportingEmployees}
           onClose={() => setShowPopup(false)}

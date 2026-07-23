@@ -156,6 +156,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
 
       {/* Notifications Bell */}
       <button
+        id="notifications-bell"
         onClick={() => window.dispatchEvent(new Event("toggleSystemNotifications"))}
         className="relative flex items-center justify-center w-[36px] h-[36px] bg-white border border-gray-200 rounded-full hover:bg-gray-50 transition-colors ml-2 shadow-sm"
         title="System Notifications"
