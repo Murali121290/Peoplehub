@@ -70,12 +70,28 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       window.removeEventListener("closeSystemNotifications", handleClose);
     }
   }, []);
+
+  // Update system notifications count globally for header bell actions
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("systemNotificationsCount", { detail: notifications.length }));
+  }, [notifications]);
+
+  useEffect(() => {
+    const handleRequest = () => {
+      window.dispatchEvent(new CustomEvent("systemNotificationsCount", { detail: notifications.length }));
+    };
+    window.addEventListener("requestSystemNotificationsCount", handleRequest);
+    return () => {
+      window.removeEventListener("requestSystemNotificationsCount", handleRequest);
+    };
+  }, [notifications]);
   const [officeText, setOfficeText] = useState("");
   const [liveAnnouncements, setLiveAnnouncements] = useState<any[]>([]);
   const [realtimeMessages, setRealtimeMessages] = useState<any[]>([]);
   const [hasNewMessage, setHasNewMessage] = useState(false);
   const [lastMessageCount, setLastMessageCount] = useState(0);
   const [unreadAnnouncements, setUnreadAnnouncements] = useState(0);
+  const [seenAnnouncementIds, setSeenAnnouncementIds] = useState<string[]>([]);
 
   const employeeId = localStorage.getItem("employee_id");
   const userId = localStorage.getItem("user_id");
@@ -415,27 +431,55 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     loadAnnouncements();
   }, [user]);
 
+  const fetchSeenAnnouncements = async () => {
+    const activeUserId = user?.id || localStorage.getItem("user_id");
+    if (!activeUserId) return;
+    try {
+      const response = await fetch(`${BASE_URL}/communications/seen/${activeUserId}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data.success && data.seen_announcement_ids) {
+        setSeenAnnouncementIds(data.seen_announcement_ids.map(String));
+      }
+    } catch (err) {
+      // safe fallback
+    }
+  };
+
+  useEffect(() => {
+    fetchSeenAnnouncements();
+  }, [user]);
+
   // Track unread announcements count
   useEffect(() => {
-    const lastViewed = localStorage.getItem("last_viewed_announcement_time") || "1970-01-01T00:00:00.000Z";
-    const lastViewedDate = new Date(lastViewed);
-
     const allAnnouncements = [...liveAnnouncements, ...officeMessages];
-    const unread = allAnnouncements.filter((ann: any) => {
-      const created = ann.created_at ? new Date(ann.created_at) : new Date();
-      return created > lastViewedDate;
-    }).length;
-
+    const unread = allAnnouncements.filter((ann: any) => !seenAnnouncementIds.includes(String(ann.id))).length;
     setUnreadAnnouncements(unread);
-  }, [officeMessages, liveAnnouncements]);
+  }, [officeMessages, liveAnnouncements, seenAnnouncementIds]);
 
   // Clear unread count when visiting the announcements page
   useEffect(() => {
-    if (location.pathname === "/announcements") {
-      localStorage.setItem("last_viewed_announcement_time", new Date().toISOString());
+    const activeUserId = user?.id || localStorage.getItem("user_id");
+    if (location.pathname === "/announcements" && activeUserId) {
+      const allAnnouncements = [...liveAnnouncements, ...officeMessages];
+      if (allAnnouncements.length === 0) return;
+      const allIds = allAnnouncements.map((ann: any) => String(ann.id));
+      
+      // Update locally
+      setSeenAnnouncementIds(allIds);
       setUnreadAnnouncements(0);
+      
+      // Update on database
+      fetch(`${BASE_URL}/communications/seen`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: Number(activeUserId),
+          announcement_ids: allIds.map(Number)
+        })
+      }).catch((err) => {});
     }
-  }, [location.pathname, officeMessages, liveAnnouncements]);
+  }, [location.pathname, officeMessages, liveAnnouncements, user]);
 
   const sendAnnouncement = async () => {
     if (!officeText.trim()) return;
@@ -487,8 +531,14 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     socket.on("receive_announcement", (data) => {
       setLiveAnnouncements((prev) => [data, ...prev]);
     });
+    socket.on("announcements_seen_update", (data: any) => {
+      if (data.seen_announcement_ids) {
+        setSeenAnnouncementIds(data.seen_announcement_ids.map(String));
+      }
+    });
     return () => {
       socket.off("receive_announcement");
+      socket.off("announcements_seen_update");
     };
   }, []);
 

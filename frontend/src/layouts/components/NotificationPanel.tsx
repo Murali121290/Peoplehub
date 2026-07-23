@@ -59,11 +59,6 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
         >
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
             <h3 className="font-semibold text-gray-800">Notifications</h3>
-            {notifications.length > 0 && (
-              <button onClick={onClearAll} className="text-sm text-gray-600 hover:text-red-600 hover:font-medium transition-colors">
-                Clear all
-              </button>
-            )}
           </div>
 
           {notifications.length === 0 ? (
@@ -99,14 +94,12 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                           e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
                         }}
                       />
-                    ) : (
+                    ) : (isBirthdayWish || isBirthdayThanks) ? (
                       <span className="text-2xl flex-shrink-0 select-none">
                         {isBirthdayWish && "🎂"}
                         {isBirthdayThanks && "🎉"}
-                        {isCheckinReminder && "🔔"}
-                        {!isBirthdayWish && !isBirthdayThanks && !isCheckinReminder && "🔔"}
                       </span>
-                    )}
+                    ) : null}
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">

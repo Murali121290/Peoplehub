@@ -70,6 +70,19 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
 }) => {
   const [isHoveringCheck, setIsHoveringCheck] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
+
+  React.useEffect(() => {
+    const handleCountUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setNotifCount(customEvent.detail || 0);
+    };
+    window.addEventListener("systemNotificationsCount", handleCountUpdate);
+    window.dispatchEvent(new Event("requestSystemNotificationsCount"));
+    return () => {
+      window.removeEventListener("systemNotificationsCount", handleCountUpdate);
+    };
+  }, []);
 
   // Derived states
   const isCheckedOut = hasCheckedOutToday || (!isCheckedIn && timer !== "00:00:00");
@@ -163,7 +176,9 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
       >
         <span className="text-yellow-500">🔔</span>
         {/* Optional notification dot */}
-        <span className="absolute top-0 right-0 block h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+        {notifCount > 0 && (
+          <span className="absolute top-0 right-0 block h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white animate-pulse" />
+        )}
       </button>
     </div>
   );

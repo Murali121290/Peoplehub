@@ -86,6 +86,10 @@ def create_app():
             "ADD COLUMN IF NOT EXISTS location VARCHAR(100)"
         ))
         connection.execute(text(
+            "ALTER TABLE users "
+            "ADD COLUMN IF NOT EXISTS seen_announcement_ids JSONB DEFAULT '[]'::jsonb"
+        ))
+        connection.execute(text(
             "ALTER TABLE leave_requests "
             "ADD COLUMN IF NOT EXISTS approved_by VARCHAR(200), "
             "ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP, "
