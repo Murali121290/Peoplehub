@@ -722,6 +722,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             
             const used = approvedDays + pendingDays;
             const lopForPol = Math.max(0, used - allocatedLimit);
+            const remainingAvailable = Math.max(0, allocatedLimit - used);
             
             let icon = CalendarIcon;
             let iconWrap = "bg-blue-50";
@@ -747,7 +748,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             
             return {
               label: pol.leave_type,
-              value: available,
+              value: remainingAvailable,
               total: allocatedLimit, // Use allocatedLimit instead of yearly_limit to reflect pro-rated
               used,
               lopForPol,
