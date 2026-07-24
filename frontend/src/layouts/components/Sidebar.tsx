@@ -1,5 +1,6 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { API_URL } from '../../config/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDownIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
 import {
@@ -8,6 +9,7 @@ import {
 import logo from '../../images/s.png';
 import { Button } from '../../components/ui/Button';
 import { useIsDesktop } from '../hooks/useIsDesktop';
+import { socket } from "../../services/socket";
 
 interface SidebarProps {
   sidebarItems: any[];
@@ -36,8 +38,52 @@ const Sidebar: React.FC<SidebarProps> = ({
   const location = useLocation();
   const reportMenuRef = useRef<HTMLDivElement | null>(null);
   const isDesktop = useIsDesktop();
+  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
+  const [pendingShiftCount, setPendingShiftCount] = useState(0);
 
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const access = user?.access_level?.toLowerCase() || '';
+    const role = user?.role?.toLowerCase() || '';
+    const isManagerOrAdmin = 
+      access === 'admin' || access === 'manager' || access === 'lead' || 
+      role.includes('manager');
+
+    if (isManagerOrAdmin) {
+      const fetchCounts = async () => {
+        try {
+          const [leaveRes, shiftRes] = await Promise.all([
+             fetch(`${API_URL}/api/leaves/`),
+             fetch(`${API_URL}/api/shifts/`)
+          ]);
+          if (leaveRes.ok) {
+            const leaves = await leaveRes.json();
+            const count = leaves.filter((l: any) => l.status === "Pending" && (l.reporting_manager === user?.full_name || l.handover_to === user?.full_name || access === "admin")).length;
+            setPendingLeaveCount(count);
+          }
+          if (shiftRes.ok) {
+            const shifts = await shiftRes.json();
+            const count = shifts.filter((s: any) => s.status === "Pending" && (s.reporting_manager === user?.full_name || access === "admin")).length;
+            setPendingShiftCount(count);
+          }
+        } catch (e) {
+          console.error("Failed to fetch pending counts", e);
+        }
+      };
+      fetchCounts();
+
+      socket.on("leave_update", fetchCounts);
+      socket.on("shift_update", fetchCounts);
+
+      return () => {
+        socket.off("leave_update", fetchCounts);
+        socket.off("shift_update", fetchCounts);
+      };
+    }
+  }, [user, location.pathname]); // re-fetch when navigating so counts stay fresh
+
 
   const accessLevel = `${user?.access_level || ''}`.toLowerCase();
   const isEmployeeOrManager = 
@@ -66,9 +112,86 @@ const Sidebar: React.FC<SidebarProps> = ({
       <nav className="flex-1 overflow-y-auto mt-4 px-3">
         {sidebarItems.map((item) => {
           const isActive = location.pathname === item.path;
-          const isReportsParent = location.pathname.startsWith("/reports/");
+          
+          if (item.subItems) {
+            const isParentActive = location.pathname.startsWith(item.path) || item.subItems.some((sub: any) => location.pathname === sub.path);
+            const isOpen = openMenus[item.name] || false;
+            
+            return (
+              <div
+                key={item.path}
+                className="mb-2"
+                onMouseEnter={() => isDesktop && setOpenMenus(prev => ({ ...prev, [item.name]: true }))}
+                onMouseLeave={() => isDesktop && setOpenMenus(prev => ({ ...prev, [item.name]: false }))}
+              >
+                <button
+                  onClick={() => setOpenMenus(prev => ({ ...prev, [item.name]: !prev[item.name] }))}
+                  className={`flex w-full items-center justify-between rounded-xl px-4 py-3 transition-all duration-200 ${
+                    isParentActive || isOpen ? "bg-primary-50 text-primary-700" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
+                  }`}
+                >
+                  <div className="flex items-center">
+                    <item.icon className="mr-3 h-5 w-5" />
+                    <span className="font-medium">{item.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {item.name === "Team Management" && (pendingLeaveCount > 0 || pendingShiftCount > 0) && (
+                      <span className="flex h-2 w-2 rounded-full bg-red-500 animate-pulse"></span>
+                    )}
+                    <motion.div animate={{ rotate: isOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                      <ChevronDownIcon className="h-4 w-4" />
+                    </motion.div>
+                  </div>
+                </button>
+
+                <AnimatePresence>
+                  {isOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8, height: 0 }}
+                      animate={{ opacity: 1, y: 0, height: "auto" }}
+                      exit={{ opacity: 0, y: -8, height: 0 }}
+                      transition={{ duration: 0.22, ease: "easeOut" }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-2 space-y-1 rounded-2xl border border-neutral-200 bg-neutral-50 p-2">
+                        {item.subItems.map((subItem: any) => {
+                          const isSubActive = location.pathname === subItem.path;
+                          return (
+                            <Link
+                              key={subItem.path}
+                              to={subItem.path}
+                              state={subItem.state}
+                              className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-all ${
+                                isSubActive ? "bg-primary-50 text-primary-700 font-semibold" : "text-neutral-600 hover:bg-white hover:text-neutral-800"
+                              }`}
+                            >
+                              <subItem.icon className="h-4 w-4" />
+                              <div className="relative flex items-center w-full justify-between pr-2">
+                                <span>{subItem.name}</span>
+                                {subItem.name === "Leave Approval" && pendingLeaveCount > 0 && (
+                                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-pulse">
+                                    {pendingLeaveCount}
+                                  </span>
+                                )}
+                                {subItem.name === "Shift Approval" && pendingShiftCount > 0 && (
+                                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-pulse">
+                                    {pendingShiftCount}
+                                  </span>
+                                )}
+                              </div>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          }
 
           if (item.name === "Reports") {
+            const isReportsParent = location.pathname.startsWith("/reports/");
             return (
               <div
                 key={item.path}
@@ -110,7 +233,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                               to={report.path}
                               state={report.state}
                               className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-all ${
-                                isSubActive ? "bg-primary-500 text-white font-semibold" : "text-neutral-600 hover:bg-white hover:text-neutral-800"
+                                isSubActive ? "bg-primary-50 text-primary-700 font-semibold" : "text-neutral-600 hover:bg-white hover:text-neutral-800"
                               }`}
                             >
                               <report.icon className="h-4 w-4" />

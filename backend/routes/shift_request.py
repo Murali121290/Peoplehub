@@ -395,6 +395,53 @@ def get_single_request(id):
 
 
 # ==========================================
+# CANCEL REQUEST
+# ==========================================
+@shift_bp.route(
+    "/cancel/<int:id>",
+    methods=["PUT"]
+)
+def cancel_request(id):
+    try:
+        shift = ShiftRequest.query.get(id)
+        if not shift:
+            return jsonify({
+                "success": False,
+                "message": "Shift Request Not Found"
+            }), 404
+            
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        
+        today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+        if shift.shift_date and today > shift.shift_date:
+            return jsonify({
+                "success": False,
+                "error": "Cannot cancel a shift request from the past."
+            }), 400
+
+        shift.status = "Cancelled"
+        db.session.commit()
+
+        try:
+            from extensions import socketio
+            socketio.emit("shift_update", shift.to_dict())
+        except Exception as socket_err:
+            print("Failed to emit shift socket:", str(socket_err))
+
+        return jsonify({
+            "success": True,
+            "message": "Shift Cancelled Successfully"
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+# ==========================================
 # DELETE REQUEST
 # ==========================================
 @shift_bp.route(

@@ -78,6 +78,15 @@ def login():
                 "error": "Invalid Email or Password"
             }), 401
 
+        # Check for default password to force change
+        if password == "Welcome_PeopleHub":
+            return jsonify({
+                "success": True,
+                "require_password_change": True,
+                "user_id": user.id,
+                "message": "Please change your default password to continue."
+            }), 200
+
         # Check active
         if not user.is_active:
             return jsonify({
@@ -239,6 +248,50 @@ def change_password():
 
         print("CHANGE PASSWORD ERROR:", str(e))
 
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@auth_bp.route("/reset-password", methods=["POST"])
+def reset_password():
+    try:
+        data = request.json
+        username = data.get("username")
+        new_password = data.get("new_password")
+
+        if not username or not new_password:
+            return jsonify({
+                "success": False,
+                "message": "Username and new password are required"
+            }), 400
+
+        # Find user strictly by company email or employee ID
+        user = User.query.filter(User.company_email == username).first()
+        
+        if not user:
+            employee = Employee.query.filter(Employee.employee_id == username).first()
+            if employee:
+                user = User.query.filter(User.id == employee.user_id).first()
+
+        if not user:
+            return jsonify({
+                "success": False,
+                "message": "User not found"
+            }), 404
+
+        user.password_hash = generate_password_hash(new_password)
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Password reset successfully"
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        print("RESET PASSWORD ERROR:", str(e))
         return jsonify({
             "success": False,
             "error": str(e)

@@ -85,7 +85,7 @@ def update_leave_balance(employee):
 
 def update_all_employee_leave_balances():
 
-    employees = Employee.query.all()
+    employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
     updated_count = 0
 

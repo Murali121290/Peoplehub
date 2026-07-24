@@ -271,7 +271,8 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 .filter(
                   (emp) =>
                     emp.access_level?.toLowerCase() === "manager" ||
-                    emp.access_level?.toLowerCase() === "hr"
+                    emp.access_level?.toLowerCase() === "hr" ||
+                    emp.access_level?.toLowerCase() === "admin"
                 )
                 .map((emp) => ({
                   label: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(),
@@ -361,22 +362,16 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
           </FormField>
 
           {!isEdit && (
-            <FormField label={getLabel("password", "Password")}>
+            <FormField label={getLabel("password", "Default Password")}>
               <Input
                 required={!isEdit}
-                type="password"
-                value={newEmp.password || ""}
-                placeholder="Enter Password"
-                onChange={(e) => {
-                  setNewEmp({
-                    ...newEmp,
-                    password: e.target.value,
-                  });
-                  clearError("password");
-                }}
-                className={fieldErrors["password"] ? "border-danger-500" : ""}
+                type="text"
+                value="Welcome_PeopleHub"
+                disabled={true}
+                className="bg-neutral-100 text-neutral-500 cursor-not-allowed"
+                onChange={() => {}}
               />
-              <FieldError fieldKey="password" />
+              <p className="text-xs text-neutral-400 mt-1">This default password will be assigned to the new user.</p>
             </FormField>
           )}
 

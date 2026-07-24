@@ -22,7 +22,7 @@ def payroll_summary():
 
     try:
 
-        employees = Employee.query.all()
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         payroll_data = []
 

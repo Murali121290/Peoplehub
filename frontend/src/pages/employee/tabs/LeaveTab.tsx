@@ -23,7 +23,8 @@ import {
   SparklesIcon,
   BuildingOfficeIcon,
   CheckCircleIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  UserMinusIcon
 } from '@heroicons/react/24/outline';
 import { getStatusColor } from '../utils/employeeHelpers';
 
@@ -102,7 +103,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const [validationError, setValidationError] = useState<{
     title: string;
     message: string;
-    type: "limit" | "insufficient";
+    type: "limit" | "insufficient" | "confirm";
+    onConfirm?: () => void;
   } | null>(null);
 
   interface LeaveFormState {
@@ -335,9 +337,23 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     };
   }, [myRequests, leaveForm.requestType, leaveForm.permissionDate]);
 
-  const filteredTimelineRequests = React.useMemo(() => {
-    const todayStr = new Date().toISOString().split("T")[0];
-    
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  const upcomingLeaveRequests = React.useMemo(() => {
+    return myRequests.filter((req: any) => {
+      const matchStatus = statusFilter === "All" || req.status === statusFilter;
+      const matchType = typeFilter === "All" || req.leave_type === typeFilter;
+      if (!matchStatus || !matchType) return false;
+
+      const dateStr = req.request_type === "Permission" ? req.permission_date : req.from_date;
+      return (req.status === "Pending" || req.status === "Approved") && dateStr >= todayStr;
+    }).sort((a: any, b: any) => 
+      new Date(a.from_date || a.permission_date).getTime() - 
+      new Date(b.from_date || b.permission_date).getTime()
+    );
+  }, [myRequests, statusFilter, typeFilter, todayStr]);
+
+  const leaveHistoryRequests = React.useMemo(() => {
     // Convert past holidays into the format of leave requests so they show in history
     const pastHolidays = allYearHolidays.filter((h: any) => h.date < todayStr).map((h: any) => ({
       ...h,
@@ -352,30 +368,55 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       reporting_manager: "Company",
     }));
 
-    const requests = myRequests.filter((req: any) => {
-      const matchStatus = statusFilter === "All" || req.status === statusFilter;
-      const matchType = typeFilter === "All" || req.leave_type === typeFilter;
-      return matchStatus && matchType;
-    });
-
-    // Also apply filters to past holidays if applicable
     const filteredPastHolidays = pastHolidays.filter((h: any) => {
       const matchStatus = statusFilter === "All" || h.status === statusFilter;
       const matchType = typeFilter === "All" || h.leave_type === typeFilter;
       return matchStatus && matchType;
     });
 
+    const requests = myRequests.filter((req: any) => {
+      const matchStatus = statusFilter === "All" || req.status === statusFilter;
+      const matchType = typeFilter === "All" || req.leave_type === typeFilter;
+      if (!matchStatus || !matchType) return false;
+
+      const dateStr = req.request_type === "Permission" ? req.permission_date : req.from_date;
+      return (req.status === "Cancelled" || req.status === "Rejected") || dateStr < todayStr;
+    });
+
     const combined = [...requests, ...filteredPastHolidays];
+    // Descending order for history
+    return combined.sort((a: any, b: any) => 
+      new Date(b.from_date || b.permission_date || b.date).getTime() - 
+      new Date(a.from_date || a.permission_date || a.date).getTime()
+    );
+  }, [myRequests, statusFilter, typeFilter, allYearHolidays, todayStr]);
+
+  const upcomingEvents = React.useMemo(() => {
+    const holidays = allYearHolidays.filter((h: any) => h.date >= todayStr).map((h: any) => ({
+      ...h,
+      id: `hol-${h.id}`,
+      request_type: "Holiday",
+      from_date: h.date,
+      to_date: h.date,
+      leave_type: h.holiday_type || "Holiday",
+      reason: h.name,
+      status: "Approved",
+      total_days: 1,
+      reporting_manager: "Company",
+    }));
+
+    const filteredHolidays = holidays.filter((h: any) => {
+      const matchStatus = statusFilter === "All" || h.status === statusFilter;
+      const matchType = typeFilter === "All" || h.leave_type === typeFilter;
+      return matchStatus && matchType;
+    });
+
+    const combined = [...upcomingLeaveRequests, ...filteredHolidays];
     return combined.sort((a: any, b: any) => 
       new Date(a.from_date || a.permission_date || a.date).getTime() - 
       new Date(b.from_date || b.permission_date || b.date).getTime()
     );
-  }, [myRequests, statusFilter, typeFilter, allYearHolidays]);
-
-  const upcomingHolidays = React.useMemo(() => {
-    const todayStr = new Date().toISOString().split("T")[0];
-    return allYearHolidays.filter((h: any) => h.date >= todayStr);
-  }, [allYearHolidays]);
+  }, [allYearHolidays, upcomingLeaveRequests, statusFilter, typeFilter, todayStr]);
 
   // Generate 35-42 days grid for monthly calendar
   const calendarGridDays = React.useMemo(() => {
@@ -528,6 +569,21 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    const submitPayload = () => {
+      const payload = {
+        ...leaveForm,
+        request_type: leaveForm.requestType,
+        leave_type: leaveForm.leaveType === "Earned Leave" ? "Privilege Leave" : leaveForm.leaveType,
+        permission_date: leaveForm.permissionDate,
+        from_time: leaveForm.fromTime,
+        to_time: leaveForm.toTime,
+      };
+      onSubmitLeave(e, payload, editingLeave);
+      setShowLeaveForm(false);
+      setEditingLeave(null);
+      resetLeaveForm();
+    };
+
     if (leaveForm.requestType === "Leave") {
       const type = (leaveForm.leaveType || "").trim().toLowerCase();
       const requested = leaveForm.totalDays || 0;
@@ -548,10 +604,15 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         }
 
         if (requested > available) {
+          const lop = requested - available;
           setValidationError({
-            type: "insufficient",
+            type: "confirm",
             title: "Insufficient Leave Balance",
-            message: `Requested: ${requested} Days, Available: ${available} Days. Please reduce the requested leave duration.`
+            message: `Requested: ${requested} Days, Available: ${available} Days. So ${lop} day${lop > 1 ? "s are" : " is"} LOP. Are you sure you want to apply for leave?`,
+            onConfirm: () => {
+              setValidationError(null);
+              submitPayload();
+            }
           });
           return;
         }
@@ -591,18 +652,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       }
     }
 
-    const payload = {
-      ...leaveForm,
-      request_type: leaveForm.requestType,
-      leave_type: leaveForm.leaveType === "Earned Leave" ? "Privilege Leave" : leaveForm.leaveType,
-      permission_date: leaveForm.permissionDate,
-      from_time: leaveForm.fromTime,
-      to_time: leaveForm.toTime,
-    };
-    onSubmitLeave(e, payload, editingLeave);
-    setShowLeaveForm(false);
-    setEditingLeave(null);
-    resetLeaveForm();
+    submitPayload();
   };
 
   // Find active requests (Pending) for live status tracking
@@ -648,9 +698,31 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
           const dynamicCards = policiesList.map((pol) => {
             const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
-            const pending = getPendingDays(pol.leave_type);
-            const realAvailable = Math.max(0, available - pending);
-            const used = Math.max(0, pol.yearly_limit - available);
+            
+            // Calculate approved days
+            const approvedDays = myRequests
+              .filter((req: any) => 
+                req.status === "Approved" && 
+                req.request_type === "Leave" &&
+                (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
+              )
+              .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+
+            // Calculate pending days
+            const pendingDays = myRequests
+              .filter((req: any) => 
+                req.status === "Pending" && 
+                req.request_type === "Leave" &&
+                (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
+              )
+              .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+
+            // True allocated limit for this employee (handles pro-rated starting balances)
+            const allocatedLimit = available + approvedDays;
+            
+            const used = approvedDays + pendingDays;
+            const lopForPol = Math.max(0, used - allocatedLimit);
+            const remainingAvailable = Math.max(0, allocatedLimit - used);
             
             let icon = CalendarIcon;
             let iconWrap = "bg-blue-50";
@@ -676,9 +748,10 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             
             return {
               label: pol.leave_type,
-              value: realAvailable,
-              total: pol.yearly_limit,
+              value: remainingAvailable,
+              total: allocatedLimit, // Use allocatedLimit instead of yearly_limit to reflect pro-rated
               used,
+              lopForPol,
               icon,
               iconWrap,
               iconColor,
@@ -689,6 +762,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           const totalAvailable = dynamicCards.reduce((sum, c) => sum + c.value, 0);
           const totalLimit = dynamicCards.reduce((sum, c) => sum + c.total, 0);
           const totalUsed = dynamicCards.reduce((sum, c) => sum + c.used, 0);
+          const totalLop = dynamicCards.reduce((sum, c) => sum + c.lopForPol, 0);
 
           const allCards = [
             ...dynamicCards,
@@ -701,6 +775,17 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               iconWrap: "bg-slate-100",
               iconColor: "text-slate-600",
               note: "Cumulative leave count"
+            },
+            {
+              label: "Loss of Pay (LOP)",
+              value: 0,
+              total: 0,
+              used: totalLop,
+              icon: UserMinusIcon,
+              iconWrap: "bg-red-50",
+              iconColor: "text-red-600",
+              note: "Excess leave taken",
+              isLopCard: true
             }
           ];
 
@@ -719,17 +804,26 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 </div>
 
                 <div className="w-full space-y-1.5 mt-auto px-1">
-                  <div className="flex justify-between items-center text-[14px]">
-                    <span className="text-slate-600 font-medium">Available</span>
-                    <span className="font-semibold text-emerald-600">{item.value}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[14px]">
-                    <span className="text-slate-600 font-medium">Booked</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-slate-900">{item.used}</span>
-                      <InformationCircleIcon className="w-4 h-4 text-slate-400 cursor-pointer hover:text-slate-600 transition-colors" />
+                  {(item as any).isLopCard ? (
+                    <div className="flex justify-between items-center text-[14px]">
+                      <span className="text-slate-600 font-medium">Accumulated</span>
+                      <span className="font-semibold text-red-600">{item.used} {item.used === 1 ? "day" : "days"}</span>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center text-[14px]">
+                        <span className="text-slate-600 font-medium">Available</span>
+                        <span className="font-semibold text-emerald-600">{item.value}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[14px]">
+                        <span className="text-slate-600 font-medium">Booked</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-slate-900">{item.used}</span>
+                          <InformationCircleIcon className="w-4 h-4 text-slate-400 cursor-pointer hover:text-slate-600 transition-colors" />
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </Card>
             );
@@ -737,33 +831,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         })()}
       </motion.div>
 
-      {/* Navigation Tabs (My Requests / Approval Requests) */}
-      <div className="flex gap-3 mb-6 p-1 bg-neutral-100 rounded-xl w-fit border border-neutral-200">
-        <button
-          onClick={() => setLeaveTab("myRequests")}
-          className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
-            leaveTab === "myRequests" 
-              ? "bg-white text-primary-700 shadow-sm border border-neutral-200/50" 
-              : "text-neutral-500 hover:text-neutral-800"
-          }`}
-        >
-          Leave Report
-        </button>
-        {canApproveLeaves && (
-  <button
-    onClick={() => setLeaveTab("approvalRequests")}
-    className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
-      leaveTab === "approvalRequests"
-        ? "bg-white text-primary-700 shadow-sm border border-neutral-200/50"
-        : "text-neutral-500 hover:text-neutral-800"
-    }`}
-  >
-    Approval Requests
-  </button>
-)}
-      </div>
-
-      {leaveTab === "myRequests" && (
+      {/* Removed Navigation Tabs (My Requests / Approval Requests) */}
         <>
           {/* Active Leave Request Timeline Widget */}
           {activeRequests.length > 0 && (
@@ -920,12 +988,14 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             
             {/* ── Mode 2: Grid View ── */}
             <div className="bg-white">
+
+
                 {/* Section 1: Employee Leave History */}
                 <div className="pt-6 px-6 pb-2">
                   <div className="flex items-center justify-between mb-4">
                     <h4 className="text-[16px] font-semibold text-neutral-900">📋 Employee Leave History</h4>
                     <span className="text-[13px] font-medium text-neutral-500">
-                      {filteredTimelineRequests.length} Record{filteredTimelineRequests.length === 1 ? "" : "s"}
+                      {leaveHistoryRequests.length} Record{leaveHistoryRequests.length === 1 ? "" : "s"}
                     </span>
                   </div>
 
@@ -942,7 +1012,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         </tr>
                       </thead>
                       <tbody className="text-[14px]">
-                        {filteredTimelineRequests.length === 0 ? (
+                        {leaveHistoryRequests.length === 0 ? (
                           <tr>
                             <td colSpan={6} className="py-12">
                               <div className="flex flex-col items-center justify-center text-center">
@@ -953,7 +1023,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                             </td>
                           </tr>
                         ) : (
-                          filteredTimelineRequests.map((req: any) => {
+                          leaveHistoryRequests.map((req: any) => {
                             const isPermission = req.request_type === "Permission";
                             const startDateStr = isPermission ? req.permission_date : req.from_date;
                             const dateObj = startDateStr ? new Date(startDateStr) : null;
@@ -1012,59 +1082,92 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 {/* Section 2: Upcoming & Published Holidays Schedule (Read-Only) */}
                 <div className="pt-4 px-6 pb-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-[16px] font-semibold text-neutral-900">✨ Upcoming Holidays</h4>
-                    <span className="text-[12px] font-medium px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 border border-gray-200">
-                      Read Only
+                    <h4 className="text-[16px] font-semibold text-neutral-900">✨ Upcoming Leaves & Holidays</h4>
+                    <span className="text-[13px] font-medium text-neutral-500">
+                      {upcomingEvents.length} Record{upcomingEvents.length === 1 ? "" : "s"}
                     </span>
                   </div>
 
-                  <div className="w-full overflow-x-auto overflow-y-auto max-h-[350px] border border-neutral-200 rounded-lg">
-                    <table className="w-full border-collapse text-left min-w-[600px]">
+                  <div className="w-full overflow-x-auto overflow-y-auto max-h-[400px] border border-neutral-200 rounded-lg">
+                    <table className="w-full border-collapse text-left min-w-[800px]">
                       <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
                         <tr className="border-b border-neutral-200 text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
                           <th className="py-3 px-4 font-semibold">Date</th>
                           <th className="py-3 px-4 font-semibold">Day</th>
-                          <th className="py-3 px-4 font-semibold">Holiday Name</th>
-                          <th className="py-3 px-4 font-semibold">Holiday Type</th>
+                          <th className="py-3 px-4 font-semibold">Leave Type</th>
+                          <th className="py-3 px-4 font-semibold text-center">Status</th>
+                          <th className="py-3 px-4 font-semibold text-center">Duration</th>
+                          <th className="py-3 px-4 font-semibold">Manager Review</th>
                         </tr>
                       </thead>
                       <tbody className="text-[14px]">
-                        {upcomingHolidays.length === 0 ? (
+                        {upcomingEvents.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="py-12">
+                            <td colSpan={6} className="py-12">
                                <div className="flex flex-col items-center justify-center text-center">
                                 <span className="text-3xl mb-2">🏝️</span>
-                                <p className="text-[14px] font-semibold text-neutral-700">No upcoming holidays.</p>
+                                <p className="text-[14px] font-semibold text-neutral-700">No upcoming leaves or holidays.</p>
                               </div>
                             </td>
                           </tr>
                         ) : (
-                          upcomingHolidays.map((h: any) => {
-                            const hDate = new Date(h.date);
-                            const dayName = WEEKDAYS[hDate.getDay()] || h.day || "—";
+                          upcomingEvents.map((req: any) => {
+                            const isPermission = req.request_type === "Permission";
+                            const startDateStr = isPermission ? req.permission_date : req.from_date;
+                            const dateObj = startDateStr ? new Date(startDateStr) : null;
+                            const dayName = dateObj ? WEEKDAYS[dateObj.getDay()] : req.day || "—";
 
-                            const typeLower = (h.holiday_type || "").toLowerCase();
-                            const badgeColor = typeLower.includes("national") ? "bg-blue-100 text-blue-700" :
-                                               typeLower.includes("festival") ? "bg-purple-100 text-purple-700" :
-                                               typeLower.includes("weekly off") ? "bg-gray-100 text-gray-700" :
-                                               "bg-green-100 text-green-700";
-                            const dotColor = typeLower.includes("national") ? "bg-blue-500" :
-                                             typeLower.includes("festival") ? "bg-purple-500" :
-                                             typeLower.includes("weekly off") ? "bg-gray-500" :
-                                             "bg-green-500";
+                            const isApproved = req.status === "Approved";
+                            const isPending = req.status === "Pending";
+                            
+                            const isHoliday = req.request_type === "Holiday";
+                            
+                            const typeLower = (req.leave_type || "").toLowerCase();
+                            
+                            // Color logic: if holiday, make it slightly different (e.g. blue for national, purple for festival)
+                            // If leave request, use standard Green/Amber
+                            let badgeColor = "bg-amber-100 text-amber-700";
+                            let dotColor = "bg-amber-500";
+                            
+                            if (isHoliday) {
+                              badgeColor = typeLower.includes("national") ? "bg-blue-100 text-blue-700" :
+                                           typeLower.includes("festival") ? "bg-purple-100 text-purple-700" :
+                                           typeLower.includes("weekly off") ? "bg-gray-100 text-gray-700" :
+                                           "bg-green-100 text-green-700";
+                              dotColor = typeLower.includes("national") ? "bg-blue-500" :
+                                         typeLower.includes("festival") ? "bg-purple-500" :
+                                         typeLower.includes("weekly off") ? "bg-gray-500" :
+                                         "bg-green-500";
+                            } else {
+                              if (isApproved) {
+                                badgeColor = "bg-green-100 text-green-700";
+                                dotColor = "bg-green-500";
+                              }
+                            }
 
                             return (
-                              <tr key={h.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
-                                <td className="py-3 px-4 font-medium text-neutral-900">{h.date}</td>
+                              <tr key={req.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
+                                <td className="py-3 px-4 font-medium text-neutral-900">
+                                  {isPermission ? req.permission_date : isHoliday ? req.from_date : `${req.from_date} to ${req.to_date}`}
+                                </td>
                                 <td className="py-3 px-4 text-neutral-500">{dayName}</td>
                                 <td className="py-3 px-4 font-medium text-neutral-900">
-                                  {h.name}
+                                  {isPermission ? "Permission Request" : req.leave_type}
                                 </td>
-                                <td className="py-3 px-4">
+                                <td className="py-3 px-4 text-center">
                                   <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${badgeColor}`}>
                                     <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></div>
-                                    {h.holiday_type || "Company Holiday"}
+                                    {isHoliday ? "Holiday" : req.status}
                                   </span>
+                                </td>
+                                <td className="py-3 px-4 text-center text-neutral-700">
+                                  {isPermission ? "Permission" : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="flex flex-col">
+                                    <span className="text-neutral-900 font-medium">{req.reporting_manager || "Manager"}</span>
+                                    <span className="text-[13px] text-neutral-500 truncate max-w-[200px]">{req.reason || "No reason"}</span>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1077,133 +1180,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               </div>
             </div>
 
-          
         </>
-      )}
-
-      {leaveTab === "approvalRequests" && canApproveLeaves && (
-        <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
-          <div className="px-6 py-5 border-b border-neutral-200 bg-neutral-50/50">
-            <h3 className="text-lg font-bold text-neutral-850">Leave Approval Requests</h3>
-            <p className="text-xs text-neutral-400 font-medium mt-0.5">Manage and review leaves submitted by your team</p>
-          </div>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-neutral-50/50 border-b border-neutral-200 text-neutral-500 text-xs font-semibold uppercase tracking-wider">
-                  <th className="text-left p-4 pl-6">Employee</th>
-                  <th className="text-left p-4">Request Type</th>
-                  <th className="text-left p-4">Date Range / Details</th>
-                  <th className="text-center p-4">Status</th>
-                  <th className="text-center p-4">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-200/80">
-                {approvalLeaves.filter((leave: any) => leave.status !== "Cancelled").length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
-                      <div className="flex flex-col items-center justify-center gap-2 py-4">
-                        <CheckIcon className="w-12 h-12 text-success-400" />
-                        <p className="text-sm font-bold text-neutral-500">All caught up!</p>
-                        <p className="text-xs text-neutral-400">There are no pending leave approval requests from your team.</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  approvalLeaves
-                    .filter((leave: any) => leave.status !== "Cancelled")
-                    .map((leave: any) => {
-                      const leaveType = leave.request_type === "Permission" ? "Permission" : leave.leave_type;
-                      const isPermission = leave.request_type === "Permission";
-                      
-                      return (
-                        <tr key={leave.id} className="hover:bg-neutral-50/40 transition-colors">
-                          {/* Employee details */}
-                          <td className="p-4 pl-6">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-xs">
-                                {leave.employee_name?.charAt(0).toUpperCase()}
-                              </div>
-                              <span className="text-sm font-bold text-neutral-850">{leave.employee_name}</span>
-                            </div>
-                          </td>
-
-                          {/* Leave Type */}
-                          <td className="p-4 text-sm text-neutral-700 font-semibold">
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${
-                              isPermission 
-                                ? "bg-purple-50 text-purple-700 border-purple-200" 
-                                : "bg-blue-50 text-blue-700 border-blue-200"
-                            }`}>
-                              {leaveType}
-                            </span>
-                          </td>
-
-                          {/* Date Range / Details */}
-                          <td className="p-4 text-sm">
-                            {isPermission ? (
-                              <div>
-                                <p className="font-semibold text-neutral-800">{leave.permission_date || "-"}</p>
-                                <p className="text-xs text-neutral-400 font-semibold mt-0.5">
-                                  {leave.from_time} to {leave.to_time}
-                                </p>
-                              </div>
-                            ) : (
-                              <div>
-                                <p className="font-semibold text-neutral-800">{leave.from_date || "-"} to {leave.to_date || "-"}</p>
-                                <p className="text-xs text-neutral-400 font-semibold mt-0.5">Duration: {leave.total_days || 0} days</p>
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Status */}
-                          <td className="p-4 text-center">
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(leave.status)}`}>
-                              <span className={`h-1.5 w-1.5 rounded-full ${
-                                leave.status === "Approved" ? "bg-success-600" :
-                                leave.status === "Rejected" ? "bg-danger-600" :
-                                "bg-warning-500 animate-pulse"
-                              }`} />
-                              {leave.status}
-                            </span>
-                          </td>
-                          {/* Action */}
-                          <td className="p-4 text-center">
-                            {leave.status === "Pending" ? (
-                              <div className="flex items-center justify-center gap-2">
-                                <Button
-                                  variant="primary"
-                                  size="sm"
-                                  onClick={() => onApprove(leave.id)}
-                                  className="!py-1.5 !px-3 !text-xs shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
-                                >
-                                  <CheckIcon className="w-3.5 h-3.5 mr-1" />
-                                  Approve
-                                </Button>
-                                <Button
-                                  variant="danger"
-                                  size="sm"
-                                  onClick={() => onReject(leave.id)}
-                                  className="!py-1.5 !px-3 !text-xs shadow-sm"
-                                >
-                                  <XMarkIcon className="w-3.5 h-3.5 mr-1" />
-                                  Reject
-                                </Button>
-                              </div>
-                            ) : (
-                              <span className="text-[11px] font-medium text-neutral-400">No actions available</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
 
       {/* Leave Form Modal */}
       <Modal
@@ -1299,6 +1276,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     onChange={(val) => setLeaveForm({ ...leaveForm, fromDate: val })}
                     disablePast={true}
                     disableWeekends={true}
+                    disabled={!leaveForm.leaveType}
                     disabledDates={allYearHolidays.map((h: any) => h.date)}
                     bookedDates={myAppliedLeaveDates}
                   />
@@ -1311,6 +1289,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     onChange={(val) => setLeaveForm({ ...leaveForm, toDate: val })}
                     disablePast={true}
                     disableWeekends={true}
+                    minDate={leaveForm.fromDate}
+                    disabled={!leaveForm.leaveType}
                     disabledDates={allYearHolidays.map((h: any) => h.date)}
                     bookedDates={myAppliedLeaveDates}
                   />
@@ -1481,29 +1461,79 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 Leave Balance Summary
               </h3>
               <div className="space-y-3.5 text-xs">
-                {leavePolicies.filter(pol => {
-                  const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
-                  const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
-                  return polGender === "all" || polGender === userGender;
-                }).map((pol) => {
-                  const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+                {(() => {
+                  const validPolicies = leavePolicies.filter(pol => {
+                    const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
+                    const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
+                    return polGender === "all" || polGender === userGender;
+                  });
+
+                  const totalAvailable = validPolicies.reduce((sum, pol) => sum + getAvailableBalance(pol.leave_type, pol.yearly_limit), 0);
+                  
+                  const isLeaveRequest = leaveForm.requestType === "Leave";
+                  const activeLeaveType = leaveForm.leaveType;
+                  const requestedDays = isLeaveRequest && activeLeaveType ? (leaveForm.totalDays || 0) : 0;
+
+                  let deductionFromTotal = 0;
+                  let lopDays = 0;
+
+                  if (requestedDays > 0 && activeLeaveType) {
+                    const activePol = validPolicies.find(p => p.leave_type === activeLeaveType);
+                    const rawAvail = activePol ? getAvailableBalance(activePol.leave_type, activePol.yearly_limit) : getAvailableBalance(activeLeaveType, 0);
+                    const avail = rawAvail;
+                    
+                    deductionFromTotal = Math.min(avail, requestedDays);
+                    if (requestedDays > avail) {
+                      lopDays = requestedDays - avail;
+                    }
+                  }
+
+                  const projectedTotal = totalAvailable - deductionFromTotal;
+
                   return (
-                    <div key={pol.id} className="flex justify-between items-center py-2 border-b border-primary-100">
-                      <span className="text-neutral-600 font-semibold">{pol.leave_type}</span>
-                      <span className="font-extrabold text-primary-700 text-md">{available} days</span>
-                    </div>
+                    <>
+                      {validPolicies.map((pol) => {
+                        const rawAvail = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+                        const available = rawAvail;
+                        const isActive = isLeaveRequest && pol.leave_type === activeLeaveType;
+                        
+                        return (
+                          <div key={pol.id} className="flex justify-between items-start py-2 border-b border-primary-100">
+                            <span className="text-neutral-600 font-semibold">{pol.leave_type}</span>
+                            <div className="flex flex-col items-end">
+                              <span className="font-extrabold text-primary-700 text-md">{available} days</span>
+                              {isActive && requestedDays > 0 && (
+                                <span className="text-amber-600 font-semibold text-[11px] mt-0.5 whitespace-nowrap">
+                                  Booked {requestedDays} {requestedDays === 1 ? "day" : "days"}{" "}
+                                  <span className="text-primary-700 ml-1">
+                                    {available - requestedDays}
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      
+                      <div className="flex justify-between items-center pt-3 text-sm">
+                        <span className="font-bold text-primary-900">Total Balance</span>
+                        <div className="flex items-center gap-2 font-extrabold text-primary-800">
+                          <span className={requestedDays > 0 ? "line-through opacity-50" : ""}>{totalAvailable} days</span>
+                          {requestedDays > 0 && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-primary-700">{projectedTotal} days</span>
+                              {lopDays > 0 && (
+                                <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded text-[11px]">
+                                  Lop {lopDays}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
                   );
-                })}
-                <div className="flex justify-between items-center pt-3 text-sm">
-                  <span className="font-bold text-primary-900">Total Balance</span>
-                  <span className="font-extrabold text-primary-800">
-                    {leavePolicies.filter(pol => {
-                      const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
-                      const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
-                      return polGender === "all" || polGender === userGender;
-                    }).reduce((sum, pol) => sum + getAvailableBalance(pol.leave_type, pol.yearly_limit), 0)} days
-                  </span>
-                </div>
+                })()}
               </div>
             </div>
 
@@ -1589,13 +1619,33 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           <p className="text-sm text-neutral-500 font-semibold leading-relaxed">
             {validationError?.message}
           </p>
-          <div className="pt-4 border-t border-neutral-100 flex justify-center">
-            <Button
-              onClick={() => setValidationError(null)}
-              className="bg-danger-605 hover:bg-danger-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm shadow-md transition-all duration-200"
-            >
-              Okay, I understand
-            </Button>
+          <div className="pt-4 border-t border-neutral-100 flex justify-center gap-3">
+            {validationError?.type === "confirm" ? (
+              <>
+                <Button
+                  type="button"
+                  onClick={() => setValidationError(null)}
+                  className="bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-semibold rounded-xl px-6 py-2.5 text-sm transition-all duration-200"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={validationError.onConfirm}
+                  className="bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm shadow-md transition-all duration-200"
+                >
+                  Confirm
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                onClick={() => setValidationError(null)}
+                className="bg-danger-605 hover:bg-danger-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm shadow-md transition-all duration-200"
+              >
+                Okay, I understand
+              </Button>
+            )}
           </div>
         </div>
       </Modal>

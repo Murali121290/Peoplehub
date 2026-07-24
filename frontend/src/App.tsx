@@ -25,6 +25,9 @@ import AnnouncementsPage from './pages/AnnouncementsPage';
 import TelecomDirectoryPage from "./pages/Telecomdirectory ";
 import MeetingRoomsPage from "./pages/mettingroom/MeetingRooms";
 import AppraisalDashboard from "./pages/appraisal/AppraisalDashboard";
+import DBAdminPage from "./pages/admin/DBAdminPage";
+import LeaveApprovalPage from "./pages/manager/LeaveApprovalPage";
+import ShiftApprovalPage from "./pages/manager/ShiftApprovalPage";
 
 
 
@@ -162,6 +165,22 @@ function App() {
         }
       />
       <Route
+        path="/manager/leave-approval"
+        element={
+          <ProtectedRoute>
+            <LeaveApprovalPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/manager/shift-approval"
+        element={
+          <ProtectedRoute>
+            <ShiftApprovalPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/employee-dashboard"
         element={
           <ProtectedRoute>
@@ -186,6 +205,15 @@ function App() {
         element={
           <ProtectedRoute>
             <HrmsModule />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/db"
+        element={
+          <ProtectedRoute>
+            <DBAdminPage />
           </ProtectedRoute>
         }
       />

@@ -180,7 +180,7 @@ def create_employee():
 @employees_bp.route("/", methods=["GET"])
 def get_employees():
 
-    employees = Employee.query.all()
+    employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
     today = date.today()
 
@@ -915,7 +915,7 @@ def update_employee_profile(employee_id):
         }), 500 
 @employees_bp.route('/list', methods=['GET'])
 def get_employees_list():
-    employees = Employee.query.all()
+    employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
     return jsonify([
         {
@@ -1004,9 +1004,9 @@ def get_team_overview():
 
     for team in teams:
 
-        employees = Employee.query.filter_by(
+        employees = [e for e in Employee.query.filter_by(
             team_id=team.id
-        ).all()
+        ).all() if (e.status or '').lower() != 'inactive']
 
         employee_list = []
 
@@ -1105,7 +1105,7 @@ def get_team_attendance(user_id):
         manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
         today = date.today()
 
-        all_employees = Employee.query.all()
+        all_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
         result = []
 
         for emp in all_employees:
@@ -1205,7 +1205,7 @@ def get_reporting_employees(user_id):
             date.today() - timedelta(days=1)
         )
 
-        reporting_employees = Employee.query.all()
+        reporting_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         result = []
 

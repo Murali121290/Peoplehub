@@ -127,44 +127,7 @@ const initialTeamMembers = [
   },
 ];
 
-const initialLeaveRequests = [
-  {
-    id: 1,
-    employeeId: 2,
-    employeeName: "Sarah Johnson",
-    role: "Copywriting",
-    leaveType: "Sick Leave",
-    fromDate: "2026-06-04",
-    toDate: "2026-06-06",
-    reason: "Medical rest required",
-    status: "Pending",
-    submittedAt: "2 hours ago",
-  },
-  {
-    id: 2,
-    employeeId: 5,
-    employeeName: "Michael Brown",
-    role: "Pre-Editing",
-    leaveType: "Casual Leave",
-    fromDate: "2026-06-08",
-    toDate: "2026-06-09",
-    reason: "Personal work",
-    status: "Pending",
-    submittedAt: "5 hours ago",
-  },
-  {
-    id: 3,
-    employeeId: 7,
-    employeeName: "Anita Roy",
-    role: "QA",
-    leaveType: "Privilege Leave",
-    fromDate: "2026-06-10",
-    toDate: "2026-06-12",
-    reason: "Family function",
-    status: "Approved",
-    submittedAt: "1 day ago",
-  },
-];
+// Leave requests removed from manager dashboard
 
 const STATUS_BADGE_VARIANT: Record<string, BadgeVariant> = {
   Active: "success",
@@ -189,7 +152,6 @@ const ManagerDashboardPage = () => {
   const [teamAttendance, setTeamAttendance] = useState<any[]>([]);
   const [attendanceSearch, setAttendanceSearch] = useState("");
   const [attendanceFilter, setAttendanceFilter] = useState("All");
-  const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [managerName, setManagerName] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [showViewDropdown, setShowViewDropdown] = useState(false);
@@ -259,7 +221,7 @@ const ManagerDashboardPage = () => {
     loadTeamMembers();
     loadTeamAttendance();
     loadManagerInfo();
-    loadLeaveRequests();
+    loadManagerInfo();
   }, []);
 
   useEffect(() => {
@@ -301,79 +263,6 @@ const ManagerDashboardPage = () => {
       loadTeamAttendance();
     });
 
-    socket.on("leave_update", (payload: any) => {
-      const checkManagerMatch = (reportingManager: string | null | undefined) => {
-        if (!reportingManager) return false;
-        const repManagerClean = reportingManager.trim().toLowerCase();
-        const managerClean = managerName.trim().toLowerCase();
-        
-        if (repManagerClean === managerClean) return true;
-        
-        const repParts = repManagerClean.split(/\s+/);
-        const managerParts = managerClean.split(/\s+/);
-        
-        if (repParts.length === 1 && managerParts.length > 0) {
-          if (managerParts[0] === repParts[0]) return true;
-        }
-        if (managerParts.length === 1 && repParts.length > 0) {
-          if (repParts[0] === managerParts[0]) return true;
-        }
-        return false;
-      };
-
-      if (checkManagerMatch(payload.reporting_manager)) {
-        const isPermission = payload.request_type === "Permission";
-        
-        const formatTime = (timeStr: string) => {
-          if (!timeStr) return "";
-          const parts = timeStr.split(":");
-          if (parts.length >= 2) {
-            return `${parts[0]}:${parts[1]}`;
-          }
-          return timeStr;
-        };
-
-        const timeRange = (payload.from_time && payload.to_time)
-          ? `${formatTime(payload.from_time)} - ${formatTime(payload.to_time)}`
-          : "";
-
-        const mapped = {
-          id: payload.id,
-          employeeId: Number(payload.employee_id),
-          employeeName: payload.employee_name,
-          role: payload.designation || "Employee",
-          leaveType: isPermission ? "Permission" : payload.leave_type,
-          fromDate: isPermission ? payload.permission_date : payload.from_date,
-          toDate: isPermission ? timeRange : payload.to_date,
-          reason: payload.reason,
-          status: payload.status,
-          submittedAt: "Recently",
-          reporting_manager: payload.reporting_manager,
-        };
-
-        setLeaveRequests((prev) => {
-          const index = prev.findIndex((r) => r.id === payload.id);
-          if (index > -1) {
-            const next = [...prev];
-            next[index] = mapped;
-            return next;
-          }
-          return [mapped, ...prev];
-        });
-
-        // Also update leave status inside teamAttendance
-        if (payload.status === "Approved") {
-          setTeamAttendance((prev) =>
-            prev.map((m) =>
-              m.id === Number(payload.employee_id)
-                ? { ...m, attendance_status: "On Leave" }
-                : m
-            )
-          );
-        }
-      }
-    });
-
     socket.on("employee_profile_update", (payload: any) => {
       setTeamMembers((prev) =>
         prev.map((m) =>
@@ -405,7 +294,7 @@ const ManagerDashboardPage = () => {
     return () => {
       socket.off("attendance_update");
       socket.off("attendance_approved_all");
-      socket.off("leave_update");
+      socket.off("attendance_approved_all");
       socket.off("employee_profile_update");
     };
   }, [managerName]);
@@ -458,48 +347,7 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const loadLeaveRequests = async () => {
-    try {
-      const response = await fetch(`${BASE_URL}/leaves/`);
-      const data = await response.json();
-      if (Array.isArray(data)) {
-        // Map backend leaves to match expected format on dashboard
-        const mapped = data.map((l: any) => {
-          const isPermission = l.request_type === "Permission";
-          
-          const formatTime = (timeStr: string) => {
-            if (!timeStr) return "";
-            const parts = timeStr.split(":");
-            if (parts.length >= 2) {
-              return `${parts[0]}:${parts[1]}`;
-            }
-            return timeStr;
-          };
-
-          const timeRange = (l.from_time && l.to_time)
-            ? `${formatTime(l.from_time)} - ${formatTime(l.to_time)}`
-            : "";
-
-          return {
-            id: l.id,
-            employeeId: Number(l.employee_id),
-            employeeName: l.employee_name,
-            role: l.designation || "Employee",
-            leaveType: isPermission ? "Permission" : l.leave_type,
-            fromDate: isPermission ? l.permission_date : l.from_date,
-            toDate: isPermission ? timeRange : l.to_date,
-            reason: l.reason,
-            status: l.status,
-            submittedAt: "Recently",
-            reporting_manager: l.reporting_manager
-          };
-        });
-        setLeaveRequests(mapped);
-      }
-    } catch (error) {
-      console.error("Failed to load leave requests", error);
-    }
-  };
+  // Leave requests logic moved to LeaveApprovalPage
 
   // ==========================
   // SCOPED TEAM MEMBERS
@@ -572,7 +420,7 @@ const ManagerDashboardPage = () => {
     [scopedTeamMembers],
   );
 
-  const pendingLeaveCount = leaveRequests.filter((req) => req.status === "Pending").length;
+  // Pending leave calculation removed
 
   // ==========================
   // FILTER MEMBERS
@@ -594,37 +442,7 @@ const ManagerDashboardPage = () => {
     return THEME.danger;
   };
 
-  // ==========================
-  // LEAVE ACTION
-  // ==========================
-  const handleLeaveAction = (requestId: number, action: string) => {
-    const request = leaveRequests.find((req) => req.id === requestId);
 
-    if (!request) return;
-
-    setLeaveRequests((prev) =>
-      prev.map((req) =>
-        req.id === requestId
-          ? {
-            ...req,
-            status: action === "approve" ? "Approved" : "Rejected",
-          }
-          : req,
-      ),
-    );
-
-    setTeamMembers((prev) =>
-      prev.map((member) =>
-        member.name === request.employeeName
-          ? {
-            ...member,
-            status: action === "approve" ? "Leave" : "Active",
-            hoursThisWeek: action === "approve" ? 0 : member.hoursThisWeek,
-          }
-          : member,
-      ),
-    );
-  };
 
   const statCards = [
     {
@@ -649,14 +467,7 @@ const ManagerDashboardPage = () => {
       sub: "Approved leave",
       icon: CalendarDaysIcon,
       tone: "warning",
-    },
-    {
-      label: "Pending Leaves",
-      value: pendingLeaveCount,
-      sub: "Need action",
-      icon: InboxArrowDownIcon,
-      tone: "danger",
-    },
+    }
   ];
 
   const getStatTone = (tone: string) => {
