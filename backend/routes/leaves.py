@@ -569,11 +569,11 @@ def cancel_approved_leave(leave_id):
                 "message": "You do not own this leave request."
             }), 403
 
-        # 2. Validate leave status is Approved
-        if leave.status != "Approved":
+        # 2. Validate leave status is Approved or Pending
+        if leave.status not in ["Approved", "Pending"]:
             return jsonify({
                 "success": False,
-                "message": "Only approved leave requests can be cancelled."
+                "message": "Only approved or pending leave requests can be cancelled."
             }), 400
 
         # 3. Validate current date is before leave start date
@@ -599,8 +599,8 @@ def cancel_approved_leave(leave_id):
         leave.cancelled_at = datetime.now(ZoneInfo("Asia/Kolkata"))
         leave.cancellation_reason = data.get("cancellation_reason", "")
 
-        # 5. Restore leave balance
-        if leave.request_type == "Leave":
+        # 5. Restore leave balance only if it was Approved
+        if previous_status == "Approved" and leave.request_type == "Leave":
             if leave.employee_id and str(leave.employee_id).isdigit():
                 employee = Employee.query.filter(
                     (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
@@ -634,11 +634,11 @@ def cancel_approved_leave(leave_id):
         # 6. Create manager notification
         if leave.request_type == "Permission":
             date_str = str(leave.permission_date)
-            msg = f"{leave.employee_name} has cancelled the approved permission scheduled for {date_str}."
+            msg = f"{leave.employee_name} has cancelled the {previous_status.lower()} permission scheduled for {date_str}."
         else:
             from_date_str = str(leave.from_date)
             to_date_str = str(leave.to_date)
-            msg = f"{leave.employee_name} has cancelled the approved leave scheduled from {from_date_str} to {to_date_str}."
+            msg = f"{leave.employee_name} has cancelled the {previous_status.lower()} leave scheduled from {from_date_str} to {to_date_str}."
 
         notification = Notification(
             receiver_name=leave.reporting_manager,
