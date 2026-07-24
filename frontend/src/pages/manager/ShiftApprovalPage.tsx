@@ -38,10 +38,10 @@ const ShiftApprovalPage: React.FC = () => {
   }, []);
 
   const safeManagerShiftRequests = shiftRequests.filter((req: any) => {
-    const isManager = req.reporting_manager === user?.full_name || 
-                      user?.access_level?.toLowerCase() === "admin";
+    const isManager = req.reporting_manager === user?.full_name ||
+      user?.access_level?.toLowerCase() === "admin";
     if (!isManager) return false;
-    
+
     if (statusFilter !== "All" && req.status !== statusFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -58,13 +58,13 @@ const ShiftApprovalPage: React.FC = () => {
       const endpoint = newStatus === "Approved" ? "approve" : "reject";
       const response = await fetch(`${BASE_URL}/shifts/${endpoint}/${id}`, {
         method: "PUT",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         }
       });
       if (!response.ok) throw new Error("Failed to update status");
-      
+
       toast.success(`Shift request ${newStatus.toLowerCase()}`);
       fetchShiftRequests();
     } catch (error) {
@@ -80,7 +80,7 @@ const ShiftApprovalPage: React.FC = () => {
       setProcessingId(id);
       const response = await fetch(`${BASE_URL}/shifts/cancel/${id}`, {
         method: "PUT",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         }
@@ -89,7 +89,7 @@ const ShiftApprovalPage: React.FC = () => {
         const err = await response.json();
         throw new Error(err.error || err.message || "Failed to cancel");
       }
-      
+
       toast.success("Shift request cancelled");
       fetchShiftRequests();
     } catch (error: any) {
@@ -120,7 +120,7 @@ const ShiftApprovalPage: React.FC = () => {
           <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Shift Approval Requests</h1>
           <p className="mt-1 text-sm text-neutral-500">Manage and review shift change applications from your team.</p>
         </div>
-        
+
         <div className="flex items-center gap-3">
           <div className="relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
@@ -137,7 +137,7 @@ const ShiftApprovalPage: React.FC = () => {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="px-3 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
           >
-            <option value="All">All Statuses</option>
+            <option value="All">All Status</option>
             <option value="Pending">Pending</option>
             <option value="Approved">Approved</option>
             <option value="Rejected">Rejected</option>
@@ -145,7 +145,7 @@ const ShiftApprovalPage: React.FC = () => {
           </select>
         </div>
       </div>
-      
+
       <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
@@ -191,7 +191,9 @@ const ShiftApprovalPage: React.FC = () => {
                         {item.employee_id || "-"}
                       </td>
                       <td className="p-4 text-xs text-neutral-600">{item.current_shift || "-"}</td>
-                      <td className="p-4 text-xs font-medium text-neutral-800">{item.requested_shift || "WFH"}</td>
+                      <td className="p-4 text-xs font-medium text-neutral-800">
+                        {item.request_type === "WFH" ? "Work From Home" : (item.requested_shift || "-")}
+                      </td>
                       <td className="p-4">
                         <div>
                           <p className="text-xs font-medium text-neutral-800">{item.from_date}</p>
@@ -203,12 +205,11 @@ const ShiftApprovalPage: React.FC = () => {
                       <td className="p-4 text-xs text-neutral-500 truncate max-w-xs" title={item.reason}>{item.reason || "-"}</td>
                       <td className="p-4 text-center">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getStatusColor(item.status)}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${
-                            isApproved ? "bg-success-600" :
-                            isRejected ? "bg-danger-600" :
-                            item.status === "Cancelled" ? "bg-neutral-400" :
-                            "bg-warning-500 animate-pulse"
-                          }`} />
+                          <span className={`h-1.5 w-1.5 rounded-full ${isApproved ? "bg-success-600" :
+                              isRejected ? "bg-danger-600" :
+                                item.status === "Cancelled" ? "bg-neutral-400" :
+                                  "bg-warning-500 animate-pulse"
+                            }`} />
                           {item.status}
                         </span>
                       </td>

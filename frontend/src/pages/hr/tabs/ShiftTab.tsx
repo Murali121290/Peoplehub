@@ -15,6 +15,7 @@ interface ShiftRequest {
   reason: string;
   reporting_manager: string;
   status: string;
+  request_type?: string;
 }
 
 interface ShiftTabProps {
@@ -98,7 +99,7 @@ export const ShiftTab: React.FC<ShiftTabProps> = ({ shifts, onApprove, onReject 
 
                   <td className="p-3 text-xs font-normal text-neutral-600">
                     <span className="px-2 py-0.5 bg-primary-50 text-primary-700 rounded-md text-[11px] font-medium border border-primary-100">
-                      {s.requested_shift}
+                      {s.request_type === "WFH" ? "Work From Home" : s.requested_shift}
                     </span>
                   </td>
 

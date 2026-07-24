@@ -38,11 +38,11 @@ const LeaveApprovalPage: React.FC = () => {
   }, []);
 
   const approvalLeaves = leaveRequests.filter((l: any) => {
-    const isManager = l.reporting_manager === user?.full_name || 
-                      l.handover_to === user?.full_name || 
-                      user?.access_level?.toLowerCase() === "admin";
+    const isManager = l.reporting_manager === user?.full_name ||
+      l.handover_to === user?.full_name ||
+      user?.access_level?.toLowerCase() === "admin";
     if (!isManager) return false;
-    
+
     if (statusFilter !== "All" && l.status !== statusFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -58,7 +58,7 @@ const LeaveApprovalPage: React.FC = () => {
       setProcessingId(id);
       const res = await fetch(`${BASE_URL}/leaves/approve/${id}`, {
         method: "PUT",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         }
@@ -79,7 +79,7 @@ const LeaveApprovalPage: React.FC = () => {
       setProcessingId(id);
       const res = await fetch(`${BASE_URL}/leaves/reject/${id}`, {
         method: "PUT",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         }
@@ -100,7 +100,7 @@ const LeaveApprovalPage: React.FC = () => {
       setProcessingId(id);
       const res = await fetch(`${BASE_URL}/leaves/cancel/${id}`, {
         method: "PUT",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         }
@@ -139,7 +139,7 @@ const LeaveApprovalPage: React.FC = () => {
           <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Leave Approval Requests</h1>
           <p className="mt-1 text-sm text-neutral-500">Manage and review leave requests from your team members.</p>
         </div>
-        
+
         <div className="flex items-center gap-3">
           <div className="relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
@@ -156,7 +156,7 @@ const LeaveApprovalPage: React.FC = () => {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="px-3 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
           >
-            <option value="All">All Statuses</option>
+            <option value="All">All Status</option>
             <option value="Pending">Pending</option>
             <option value="Approved">Approved</option>
             <option value="Rejected">Rejected</option>
@@ -164,7 +164,7 @@ const LeaveApprovalPage: React.FC = () => {
           </select>
         </div>
       </div>
-      
+
       <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
@@ -194,7 +194,7 @@ const LeaveApprovalPage: React.FC = () => {
                   .map((leave: any) => {
                     const leaveType = leave.request_type === "Permission" ? "Permission" : leave.leave_type;
                     const isPermission = leave.request_type === "Permission";
-                    
+
                     return (
                       <tr key={leave.id} className="hover:bg-neutral-50/40 transition-colors">
                         <td className="p-4 pl-6">
@@ -211,11 +211,10 @@ const LeaveApprovalPage: React.FC = () => {
                         </td>
 
                         <td className="p-4 text-sm text-neutral-700 font-semibold">
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${
-                            isPermission 
-                              ? "bg-purple-50 text-purple-700 border-purple-200" 
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${isPermission
+                              ? "bg-purple-50 text-purple-700 border-purple-200"
                               : "bg-blue-50 text-blue-700 border-blue-200"
-                          }`}>
+                            }`}>
                             {leaveType}
                           </span>
                         </td>
@@ -238,12 +237,11 @@ const LeaveApprovalPage: React.FC = () => {
 
                         <td className="p-4 text-center">
                           <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(leave.status)}`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${
-                              leave.status === "Approved" ? "bg-success-600" :
-                              leave.status === "Rejected" ? "bg-danger-600" :
-                              leave.status === "Cancelled" ? "bg-neutral-400" :
-                              "bg-warning-500 animate-pulse"
-                            }`} />
+                            <span className={`h-1.5 w-1.5 rounded-full ${leave.status === "Approved" ? "bg-success-600" :
+                                leave.status === "Rejected" ? "bg-danger-600" :
+                                  leave.status === "Cancelled" ? "bg-neutral-400" :
+                                    "bg-warning-500 animate-pulse"
+                              }`} />
                             {leave.status}
                           </span>
                         </td>

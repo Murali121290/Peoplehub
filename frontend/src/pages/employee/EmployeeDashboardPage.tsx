@@ -487,8 +487,11 @@ const EmployeeDashboardPage: React.FC = () => {
         window.dispatchEvent(new Event('refreshTeamStatus'));
       } else {
         if (lunchStartTime) {
-          const seconds = Math.floor(
-            (new Date().getTime() - lunchStartTime.getTime()) / 1000,
+          const seconds = Math.max(
+            0,
+            Math.floor(
+              (new Date().getTime() - lunchStartTime.getTime()) / 1000,
+            ),
           );
           setTotalLunchSeconds((prev) => prev + seconds);
           setIsLunchBreak(false);
@@ -1092,11 +1095,11 @@ const EmployeeDashboardPage: React.FC = () => {
         // Add currently-running break seconds on top of already-accumulated seconds
         const runningLunch =
           isLunchBreak && lunchStartTime
-            ? Math.floor((now - lunchStartTime.getTime()) / 1000)
+            ? Math.max(0, Math.floor((now - lunchStartTime.getTime()) / 1000))
             : 0;
         const runningTea =
           isTeaBreak && teaStartTime
-            ? Math.floor((now - teaStartTime.getTime()) / 1000)
+            ? Math.max(0, Math.floor((now - teaStartTime.getTime()) / 1000))
             : 0;
 
         const workingSeconds = Math.max(
