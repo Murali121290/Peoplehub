@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
-import { 
-  PlusIcon, 
-  CalendarIcon, 
-  ClockIcon, 
-  CheckIcon, 
-  XMarkIcon, 
-  ArrowPathIcon, 
-  PencilIcon, 
-  UserIcon, 
+import {
+  PlusIcon,
+  CalendarIcon,
+  ClockIcon,
+  CheckIcon,
+  XMarkIcon,
+  ArrowPathIcon,
+  PencilIcon,
+  UserIcon,
   ShieldCheckIcon,
   DocumentArrowUpIcon,
   InformationCircleIcon,
@@ -142,15 +142,15 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   const canApproveLeaves =
-  ["admin", "manager", "hr"].includes(
-    (user?.access_level || "").toLowerCase()
-  );
+    ["admin", "manager", "hr"].includes(
+      (user?.access_level || "").toLowerCase()
+    );
 
 
 
   // ── Timeline & Calendar View States ─────────────────────────────────────
   const todayObj = new Date();
-    const [selectedMonth, setSelectedMonth] = useState<number>(todayObj.getMonth() + 1);
+  const [selectedMonth, setSelectedMonth] = useState<number>(todayObj.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(todayObj.getFullYear());
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [typeFilter, setTypeFilter] = useState<string>("All");
@@ -158,7 +158,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const [monthlyHolidaysData, setMonthlyHolidaysData] = useState<any[]>([]);
   const [monthlyScheduleData, setMonthlyScheduleData] = useState<any[]>([]);
   const [allYearHolidays, setAllYearHolidays] = useState<any[]>([]);
-  
+
   const MONTH_NAMES = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
@@ -186,15 +186,9 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     fetchHolidays();
   }, [selectedMonth, selectedYear]);
 
-  const isOwnRequest = (req: any) => {
-    if (!currentEmployee) return false;
-    const reqEmpId = Number(req.employee_id);
-    return reqEmpId === Number(currentEmployee.id) || reqEmpId === Number(currentEmployee.employee_id);
-  };
-
   // Filter employee's own leave requests
   const myRequests = React.useMemo(() => {
-    return leaveRequests.filter((req: any) => isOwnRequest(req));
+    return leaveRequests.filter((req: any) => String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id));
   }, [leaveRequests, currentEmployee]);
 
   // Collect all dates where the employee already has a pending or approved leave request
@@ -353,8 +347,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
       const dateStr = req.request_type === "Permission" ? req.permission_date : req.from_date;
       return (req.status === "Pending" || req.status === "Approved") && dateStr >= todayStr;
-    }).sort((a: any, b: any) => 
-      new Date(a.from_date || a.permission_date).getTime() - 
+    }).sort((a: any, b: any) =>
+      new Date(a.from_date || a.permission_date).getTime() -
       new Date(b.from_date || b.permission_date).getTime()
     );
   }, [myRequests, statusFilter, typeFilter, todayStr]);
@@ -391,8 +385,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
     const combined = [...requests, ...filteredPastHolidays];
     // Descending order for history
-    return combined.sort((a: any, b: any) => 
-      new Date(b.from_date || b.permission_date || b.date).getTime() - 
+    return combined.sort((a: any, b: any) =>
+      new Date(b.from_date || b.permission_date || b.date).getTime() -
       new Date(a.from_date || a.permission_date || a.date).getTime()
     );
   }, [myRequests, statusFilter, typeFilter, allYearHolidays, todayStr]);
@@ -418,8 +412,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     });
 
     const combined = [...upcomingLeaveRequests, ...filteredHolidays];
-    return combined.sort((a: any, b: any) => 
-      new Date(a.from_date || a.permission_date || a.date).getTime() - 
+    return combined.sort((a: any, b: any) =>
+      new Date(a.from_date || a.permission_date || a.date).getTime() -
       new Date(b.from_date || b.permission_date || b.date).getTime()
     );
   }, [allYearHolidays, upcomingLeaveRequests, statusFilter, typeFilter, todayStr]);
@@ -552,21 +546,21 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const getAvailableBalance = (leaveType: string, defaultLimit: number) => {
     const bal = employeeBalances.find(b => b.leave_type.toLowerCase() === leaveType.toLowerCase());
     if (bal !== undefined) return bal.available;
-    
+
     // Fallback for standard types
     if (leaveType.toLowerCase() === "sick leave") return currentEmployee?.sick_leave ?? defaultLimit;
     if (leaveType.toLowerCase() === "casual leave") return currentEmployee?.casual_leave ?? defaultLimit;
     if (["earned leave", "privilege leave"].includes(leaveType.toLowerCase())) return currentEmployee?.privilege_leave ?? currentEmployee?.earned_leave ?? defaultLimit;
-    
+
     return defaultLimit;
   };
 
   // Helper to fetch pending days
   const getPendingDays = (leaveType: string) => {
     return leaveRequests
-      .filter((req: any) => 
-        isOwnRequest(req) && 
-        req.status === "Pending" && 
+      .filter((req: any) =>
+        (String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id)) &&
+        req.status === "Pending" &&
         (req.leave_type || "").toLowerCase() === leaveType.toLowerCase()
       )
       .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
@@ -593,7 +587,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     if (leaveForm.requestType === "Leave") {
       const type = (leaveForm.leaveType || "").trim().toLowerCase();
       const requested = leaveForm.totalDays || 0;
-      
+
       const matchedPolicy = leavePolicies.find(p => p.leave_type.toLowerCase() === type);
       const yearlyMax = matchedPolicy ? matchedPolicy.yearly_limit : (type === "privilege leave" || type === "earned leave" ? 15 : 6);
       const available = getAvailableBalance(leaveForm.leaveType, yearlyMax) - getPendingDays(leaveForm.leaveType);
@@ -663,8 +657,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
   // Find active requests (Pending) for live status tracking
   const activeRequests = leaveRequests.filter(
-    (req: any) => 
-      isOwnRequest(req) && 
+    (req: any) =>
+      (String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id)) &&
       req.status === "Pending"
   );
 
@@ -680,8 +674,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             Apply, track, and manage your leave requests and permission balances
           </p>
         </div>
-        <Button 
-          icon={PlusIcon} 
+        <Button
+          icon={PlusIcon}
           onClick={() => setShowLeaveForm(true)}
           className="bg-primary-600 hover:bg-primary-700 text-white shadow-md hover:shadow-lg transition-all duration-200 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
         >
@@ -704,11 +698,13 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
           const dynamicCards = policiesList.map((pol) => {
             const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
-            
+
+            const displayAvailable = Math.max(0, available);
+
             // Calculate approved days
             const approvedDays = myRequests
-              .filter((req: any) => 
-                req.status === "Approved" && 
+              .filter((req: any) =>
+                req.status === "Approved" &&
                 req.request_type === "Leave" &&
                 (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
               )
@@ -716,8 +712,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
             // Calculate pending days
             const pendingDays = myRequests
-              .filter((req: any) => 
-                req.status === "Pending" && 
+              .filter((req: any) =>
+                req.status === "Pending" &&
                 req.request_type === "Leave" &&
                 (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
               )
@@ -725,16 +721,16 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
             // True allocated limit for this employee (handles pro-rated starting balances)
             const allocatedLimit = available + approvedDays;
-            
+
             const used = approvedDays + pendingDays;
             const lopForPol = Math.max(0, used - allocatedLimit);
             const remainingAvailable = Math.max(0, allocatedLimit - used);
-            
+
             let icon = CalendarIcon;
             let iconWrap = "bg-blue-50";
             let iconColor = "text-blue-600";
             let note = "Annual leaves";
-            
+
             if (pol.leave_type.toLowerCase() === "sick leave") {
               icon = ShieldCheckIcon;
               iconWrap = "bg-emerald-50";
@@ -751,10 +747,10 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               iconColor = "text-blue-600";
               note = "Accrued vacation leaves";
             }
-            
+
             return {
               label: pol.leave_type,
-              value: remainingAvailable,
+              value: displayAvailable,
               total: allocatedLimit, // Use allocatedLimit instead of yearly_limit to reflect pro-rated
               used,
               lopForPol,
@@ -838,355 +834,354 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       </motion.div>
 
       {/* Removed Navigation Tabs (My Requests / Approval Requests) */}
-        <>
-          {/* Active Leave Request Timeline Widget */}
-          {activeRequests.length > 0 && (
-            <motion.div 
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-8"
-            >
-              <Card className="border border-warning-200 bg-gradient-to-r from-warning-50/20 to-neutral-50/30 rounded-2xl shadow-sm p-6">
-                <div className="flex justify-between items-start mb-5 pb-3 border-b border-neutral-200/80">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-warning-100 relative">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-warning-500" />
-                    </span>
-                    <h3 className="text-md font-bold text-neutral-850">
-                      Active Leave Request Tracking ({activeRequests.length})
-                    </h3>
-                  </div>
-                  <span className="text-xs font-semibold text-neutral-400 bg-neutral-100 px-3 py-1 rounded-full border border-neutral-200">
-                    Live Updates
+      <>
+        {/* Active Leave Request Timeline Widget */}
+        {activeRequests.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8"
+          >
+            <Card className="border border-warning-200 bg-gradient-to-r from-warning-50/20 to-neutral-50/30 rounded-2xl shadow-sm p-6">
+              <div className="flex justify-between items-start mb-5 pb-3 border-b border-neutral-200/80">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-warning-100 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-warning-500" />
                   </span>
+                  <h3 className="text-md font-bold text-neutral-850">
+                    Active Leave Request Tracking ({activeRequests.length})
+                  </h3>
                 </div>
+                <span className="text-xs font-semibold text-neutral-400 bg-neutral-100 px-3 py-1 rounded-full border border-neutral-200">
+                  Live Updates
+                </span>
+              </div>
 
-                <div className="space-y-6 divide-y divide-neutral-200/60">
-                  {activeRequests.map((leave: any, idx) => {
-                    const isPermission = leave.request_type === "Permission";
-                    const isExpanded = activeRequestDetails === leave.id;
-                    return (
-                      <div key={leave.id} className={`${idx > 0 ? "pt-5" : ""}`}>
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                          <div className="flex items-start gap-4">
-                            <div className="bg-primary-50 text-primary-600 p-2 rounded-xl mt-0.5 border border-primary-100">
-                              <CalendarIcon className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-bold text-neutral-800">
-                                {isPermission ? "Permission Request" : `${leave.leave_type} (${leave.leave_duration || 'Full Day'})`}
-                              </p>
-                              <p className="text-xs text-neutral-500 font-medium mt-0.5 flex items-center gap-1.5">
-                                <ClockIcon className="w-3.5 h-3.5 text-neutral-400" />
-                                {isPermission 
-                                  ? `${leave.permission_date} @ ${leave.from_time} - ${leave.to_time}`
-                                  : `${leave.from_date} to ${leave.to_date} (${leave.total_days} days)`
-                                }
-                              </p>
-                            </div>
+              <div className="space-y-6 divide-y divide-neutral-200/60">
+                {activeRequests.map((leave: any, idx) => {
+                  const isPermission = leave.request_type === "Permission";
+                  const isExpanded = activeRequestDetails === leave.id;
+                  return (
+                    <div key={leave.id} className={`${idx > 0 ? "pt-5" : ""}`}>
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-start gap-4">
+                          <div className="bg-primary-50 text-primary-600 p-2 rounded-xl mt-0.5 border border-primary-100">
+                            <CalendarIcon className="w-5 h-5" />
                           </div>
-
-                          {/* Steps Horizontal Indicator */}
-                          <div className="flex-1 max-w-xl mx-4 my-2 md:my-0">
-                            <div className="flex items-center justify-between relative">
-                              {/* Connector line */}
-                              <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-neutral-200 -translate-y-1/2 z-0" />
-                              <div className="absolute top-1/2 left-0 w-1/2 h-0.5 bg-gradient-to-r from-success-500 to-warning-400 -translate-y-1/2 z-0" />
-
-                              {[
-                                { title: "Applied", desc: "Submitted successfully", completed: true, active: false },
-                                { title: "Manager Review", desc: `Pending with ${leave.reporting_manager || "Manager"}`, completed: false, active: true },
-                                { title: "Final Status", desc: "Awaiting approval", completed: false, active: false }
-                              ].map((step, i) => (
-                                <div key={step.title} className="flex flex-col items-center relative z-10">
-                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 text-xs font-bold transition-all shadow-sm ${
-                                    step.completed 
-                                      ? "bg-success-500 border-success-500 text-white" 
-                                      : step.active 
-                                        ? "bg-white border-warning-500 text-warning-700 ring-4 ring-warning-100" 
-                                        : "bg-white border-neutral-300 text-neutral-400"
-                                  }`}>
-                                    {step.completed ? <CheckIcon className="w-3.5 h-3.5" /> : (i + 1)}
-                                  </div>
-                                  <span className="text-[10px] font-bold mt-1.5 text-neutral-700 bg-white px-1.5">{step.title}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Quick details toggle */}
-                          <div className="flex items-center gap-2">
-                            <Button 
-                              size="sm" 
-                              variant="outline"
-                              onClick={() => setActiveRequestDetails(isExpanded ? null : leave.id)}
-                              className="text-xs font-semibold text-neutral-600 border border-neutral-300 px-3 py-1.5 rounded-lg flex items-center gap-1"
-                            >
-                              {isExpanded ? "Hide Details" : "View Details"}
-                            </Button>
-                            <Button 
-                              size="sm" 
-                              variant="danger" 
-                              onClick={() => onCancel(leave.id)}
-                              className="bg-danger-50 text-danger-700 hover:bg-danger-100 border border-danger-200 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
-                            >
-                              <XMarkIcon className="w-3.5 h-3.5" />
-                              Cancel
-                            </Button>
+                          <div>
+                            <p className="text-sm font-bold text-neutral-800">
+                              {isPermission ? "Permission Request" : `${leave.leave_type} (${leave.leave_duration || 'Full Day'})`}
+                            </p>
+                            <p className="text-xs text-neutral-500 font-medium mt-0.5 flex items-center gap-1.5">
+                              <ClockIcon className="w-3.5 h-3.5 text-neutral-400" />
+                              {isPermission
+                                ? `${leave.permission_date} @ ${leave.from_time} - ${leave.to_time}`
+                                : `${leave.from_date} to ${leave.to_date} (${leave.total_days} days)`
+                              }
+                            </p>
                           </div>
                         </div>
 
-                        {/* Collapsible details drawer */}
-                        <AnimatePresence>
-                          {isExpanded && (
-                            <motion.div 
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: "auto" }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="overflow-hidden mt-4 pl-12 pr-6"
-                            >
-                              <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                                <div>
-                                  <p className="text-neutral-400 font-bold uppercase tracking-wider mb-1">Reason for request</p>
-                                  <p className="text-neutral-800 font-semibold">{leave.reason || "No reason specified."}</p>
+                        {/* Steps Horizontal Indicator */}
+                        <div className="flex-1 max-w-xl mx-4 my-2 md:my-0">
+                          <div className="flex items-center justify-between relative">
+                            {/* Connector line */}
+                            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-neutral-200 -translate-y-1/2 z-0" />
+                            <div className="absolute top-1/2 left-0 w-1/2 h-0.5 bg-gradient-to-r from-success-500 to-warning-400 -translate-y-1/2 z-0" />
+
+                            {[
+                              { title: "Applied", desc: "Submitted successfully", completed: true, active: false },
+                              { title: "Manager Review", desc: `Pending with ${leave.reporting_manager || "Manager"}`, completed: false, active: true },
+                              { title: "Final Status", desc: "Awaiting approval", completed: false, active: false }
+                            ].map((step, i) => (
+                              <div key={step.title} className="flex flex-col items-center relative z-10">
+                                <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 text-xs font-bold transition-all shadow-sm ${step.completed
+                                    ? "bg-success-500 border-success-500 text-white"
+                                    : step.active
+                                      ? "bg-white border-warning-500 text-warning-700 ring-4 ring-warning-100"
+                                      : "bg-white border-neutral-300 text-neutral-400"
+                                  }`}>
+                                  {step.completed ? <CheckIcon className="w-3.5 h-3.5" /> : (i + 1)}
                                 </div>
-                                <div className="space-y-2">
-                                  <div className="flex justify-between py-1 border-b border-neutral-200">
-                                    <span className="text-neutral-500 font-medium">Reporting Manager:</span>
-                                    <span className="text-neutral-800 font-bold">{leave.reporting_manager || "-"}</span>
-                                  </div>
-                                  {leave.handover_to && (
-                                    <div className="flex justify-between py-1 border-b border-neutral-200">
-                                      <span className="text-neutral-500 font-medium">Work Handover:</span>
-                                      <span className="text-neutral-800 font-bold">{leave.handover_to}</span>
-                                    </div>
-                                  )}
-                                </div>
+                                <span className="text-[10px] font-bold mt-1.5 text-neutral-700 bg-white px-1.5">{step.title}</span>
                               </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Quick details toggle */}
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setActiveRequestDetails(isExpanded ? null : leave.id)}
+                            className="text-xs font-semibold text-neutral-600 border border-neutral-300 px-3 py-1.5 rounded-lg flex items-center gap-1"
+                          >
+                            {isExpanded ? "Hide Details" : "View Details"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => onCancel(leave.id)}
+                            className="bg-danger-50 text-danger-700 hover:bg-danger-100 border border-danger-200 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
+                          >
+                            <XMarkIcon className="w-3.5 h-3.5" />
+                            Cancel
+                          </Button>
+                        </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </Card>
-            </motion.div>
-          )}
 
-          {/* ── Leave Timeline Section (Calendar View & Grid View) ── */}
-          <div className="bg-white border border-neutral-200 shadow-sm rounded-xl overflow-hidden mb-6">
-            {/* Header & Filter Controls */}
-            <div className="bg-white p-5 border-b border-neutral-200 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-primary-500/10 rounded-xl text-primary-500">
-                  <CalendarIcon className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-[18px] font-bold text-neutral-850">Leave &amp; Holiday Timeline</h3>
-                </div>
+                      {/* Collapsible details drawer */}
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="overflow-hidden mt-4 pl-12 pr-6"
+                          >
+                            <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                              <div>
+                                <p className="text-neutral-400 font-bold uppercase tracking-wider mb-1">Reason for request</p>
+                                <p className="text-neutral-800 font-semibold">{leave.reason || "No reason specified."}</p>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex justify-between py-1 border-b border-neutral-200">
+                                  <span className="text-neutral-500 font-medium">Reporting Manager:</span>
+                                  <span className="text-neutral-800 font-bold">{leave.reporting_manager || "-"}</span>
+                                </div>
+                                {leave.handover_to && (
+                                  <div className="flex justify-between py-1 border-b border-neutral-200">
+                                    <span className="text-neutral-500 font-medium">Work Handover:</span>
+                                    <span className="text-neutral-800 font-bold">{leave.handover_to}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
               </div>
+            </Card>
+          </motion.div>
+        )}
 
-              {/* Removed Filters per user request */}
-            </div>
-
-            
-            {/* ── Mode 2: Grid View ── */}
-            <div className="bg-white">
-
-
-                {/* Section 1: Employee Leave History */}
-                <div className="pt-6 px-6 pb-2">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-[16px] font-semibold text-neutral-900">📋 Employee Leave History</h4>
-                    <span className="text-[13px] font-medium text-neutral-500">
-                      {leaveHistoryRequests.length} Record{leaveHistoryRequests.length === 1 ? "" : "s"}
-                    </span>
-                  </div>
-
-                  <div className="w-full overflow-x-auto overflow-y-auto max-h-[400px] border border-neutral-200 rounded-lg mb-4">
-                    <table className="w-full border-collapse text-left min-w-[800px]">
-                      <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                        <tr className="border-b border-neutral-200 text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
-                          <th className="py-3 px-4 font-semibold">Date</th>
-                          <th className="py-3 px-4 font-semibold">Day</th>
-                          <th className="py-3 px-4 font-semibold">Leave Type</th>
-                          <th className="py-3 px-4 font-semibold text-center">Status</th>
-                          <th className="py-3 px-4 font-semibold text-center">Duration</th>
-                          <th className="py-3 px-4 font-semibold">Manager Review</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-[14px]">
-                        {leaveHistoryRequests.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="py-12">
-                              <div className="flex flex-col items-center justify-center text-center">
-                                <span className="text-3xl mb-2">📅</span>
-                                <p className="text-[14px] font-semibold text-neutral-700">No leave records found.</p>
-                                <p className="text-[13px] text-neutral-500 mt-1">Apply a leave request to see your history here.</p>
-                              </div>
-                            </td>
-                          </tr>
-                        ) : (
-                          leaveHistoryRequests.map((req: any) => {
-                            const isPermission = req.request_type === "Permission";
-                            const startDateStr = isPermission ? req.permission_date : req.from_date;
-                            const dateObj = startDateStr ? new Date(startDateStr) : null;
-                            const dayName = dateObj ? WEEKDAYS[dateObj.getDay()] : "—";
-
-                            const isApproved = req.status === "Approved";
-                            const isRejected = req.status === "Rejected";
-                            const isPending = req.status === "Pending";
-                            const isCancelled = req.status === "Cancelled";
-
-                            // Dot style badge
-                            const badgeColor = isApproved ? "bg-green-100 text-green-700" :
-                                               isRejected ? "bg-red-100 text-red-700" :
-                                               isCancelled ? "bg-gray-100 text-gray-700" :
-                                               "bg-amber-100 text-amber-700";
-                            const dotColor = isApproved ? "bg-green-500" :
-                                             isRejected ? "bg-red-500" :
-                                             isCancelled ? "bg-gray-500" :
-                                             "bg-amber-500";
-
-                            return (
-                              <tr key={req.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
-                                <td className="py-3 px-4 font-medium text-neutral-900">
-                                  {isPermission ? req.permission_date : `${req.from_date} to ${req.to_date}`}
-                                </td>
-                                <td className="py-3 px-4 text-neutral-500">{dayName}</td>
-                                <td className="py-3 px-4 font-medium text-neutral-900">
-                                  {isPermission ? "Permission Request" : req.leave_type}
-                                </td>
-                                <td className="py-3 px-4 text-center">
-                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${badgeColor}`}>
-                                    <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></div>
-                                    {req.status}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-4 text-center text-neutral-700">
-                                  {isPermission ? "Permission" : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
-                                </td>
-                                <td className="py-3 px-4">
-                                  <div className="flex flex-col">
-                                    <span className="text-neutral-900 font-medium">{req.reporting_manager || "Manager"}</span>
-                                    <span className="text-[13px] text-neutral-500 truncate max-w-[200px]">{req.reason || "No reason"}</span>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <hr className="border-neutral-200 my-2 mx-6" />
-
-                {/* Section 2: Upcoming & Published Holidays Schedule (Read-Only) */}
-                <div className="pt-4 px-6 pb-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-[16px] font-semibold text-neutral-900">✨ Upcoming Leaves & Holidays</h4>
-                    <span className="text-[13px] font-medium text-neutral-500">
-                      {upcomingEvents.length} Record{upcomingEvents.length === 1 ? "" : "s"}
-                    </span>
-                  </div>
-
-                  <div className="w-full overflow-x-auto overflow-y-auto max-h-[400px] border border-neutral-200 rounded-lg">
-                    <table className="w-full border-collapse text-left min-w-[800px]">
-                      <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                        <tr className="border-b border-neutral-200 text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
-                          <th className="py-3 px-4 font-semibold">Date</th>
-                          <th className="py-3 px-4 font-semibold">Day</th>
-                          <th className="py-3 px-4 font-semibold">Leave Type</th>
-                          <th className="py-3 px-4 font-semibold text-center">Status</th>
-                          <th className="py-3 px-4 font-semibold text-center">Duration</th>
-                          <th className="py-3 px-4 font-semibold">Manager Review</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-[14px]">
-                        {upcomingEvents.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="py-12">
-                               <div className="flex flex-col items-center justify-center text-center">
-                                <span className="text-3xl mb-2">🏝️</span>
-                                <p className="text-[14px] font-semibold text-neutral-700">No upcoming leaves or holidays.</p>
-                              </div>
-                            </td>
-                          </tr>
-                        ) : (
-                          upcomingEvents.map((req: any) => {
-                            const isPermission = req.request_type === "Permission";
-                            const startDateStr = isPermission ? req.permission_date : req.from_date;
-                            const dateObj = startDateStr ? new Date(startDateStr) : null;
-                            const dayName = dateObj ? WEEKDAYS[dateObj.getDay()] : req.day || "—";
-
-                            const isApproved = req.status === "Approved";
-                            const isPending = req.status === "Pending";
-                            
-                            const isHoliday = req.request_type === "Holiday";
-                            
-                            const typeLower = (req.leave_type || "").toLowerCase();
-                            
-                            // Color logic: if holiday, make it slightly different (e.g. blue for national, purple for festival)
-                            // If leave request, use standard Green/Amber
-                            let badgeColor = "bg-amber-100 text-amber-700";
-                            let dotColor = "bg-amber-500";
-                            
-                            if (isHoliday) {
-                              badgeColor = typeLower.includes("national") ? "bg-blue-100 text-blue-700" :
-                                           typeLower.includes("festival") ? "bg-purple-100 text-purple-700" :
-                                           typeLower.includes("weekly off") ? "bg-gray-100 text-gray-700" :
-                                           "bg-green-100 text-green-700";
-                              dotColor = typeLower.includes("national") ? "bg-blue-500" :
-                                         typeLower.includes("festival") ? "bg-purple-500" :
-                                         typeLower.includes("weekly off") ? "bg-gray-500" :
-                                         "bg-green-500";
-                            } else {
-                              if (isApproved) {
-                                badgeColor = "bg-green-100 text-green-700";
-                                dotColor = "bg-green-500";
-                              }
-                            }
-
-                            return (
-                              <tr key={req.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
-                                <td className="py-3 px-4 font-medium text-neutral-900">
-                                  {isPermission ? req.permission_date : isHoliday ? req.from_date : `${req.from_date} to ${req.to_date}`}
-                                </td>
-                                <td className="py-3 px-4 text-neutral-500">{dayName}</td>
-                                <td className="py-3 px-4 font-medium text-neutral-900">
-                                  {isPermission ? "Permission Request" : req.leave_type}
-                                </td>
-                                <td className="py-3 px-4 text-center">
-                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${badgeColor}`}>
-                                    <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></div>
-                                    {isHoliday ? "Holiday" : req.status}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-4 text-center text-neutral-700">
-                                  {isPermission ? "Permission" : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
-                                </td>
-                                <td className="py-3 px-4">
-                                  <div className="flex flex-col">
-                                    <span className="text-neutral-900 font-medium">{req.reporting_manager || "Manager"}</span>
-                                    <span className="text-[13px] text-neutral-500 truncate max-w-[200px]">{req.reason || "No reason"}</span>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+        {/* ── Leave Timeline Section (Calendar View & Grid View) ── */}
+        <div className="bg-white border border-neutral-200 shadow-sm rounded-xl overflow-hidden mb-6">
+          {/* Header & Filter Controls */}
+          <div className="bg-white p-5 border-b border-neutral-200 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-primary-500/10 rounded-xl text-primary-500">
+                <CalendarIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-[18px] font-bold text-neutral-850">Leave &amp; Holiday Timeline</h3>
               </div>
             </div>
 
-        </>
+            {/* Removed Filters per user request */}
+          </div>
+
+
+          {/* ── Mode 2: Grid View ── */}
+          <div className="bg-white">
+
+
+            {/* Section 1: Employee Leave History */}
+            <div className="pt-6 px-6 pb-2">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-[16px] font-semibold text-neutral-900">📋 Employee Leave History</h4>
+                <span className="text-[13px] font-medium text-neutral-500">
+                  {leaveHistoryRequests.length} Record{leaveHistoryRequests.length === 1 ? "" : "s"}
+                </span>
+              </div>
+
+              <div className="w-full overflow-x-auto overflow-y-auto max-h-[400px] border border-neutral-200 rounded-lg mb-4">
+                <table className="w-full border-collapse text-left min-w-[800px]">
+                  <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                    <tr className="border-b border-neutral-200 text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
+                      <th className="py-3 px-4 font-semibold">Date</th>
+                      <th className="py-3 px-4 font-semibold">Day</th>
+                      <th className="py-3 px-4 font-semibold">Leave Type</th>
+                      <th className="py-3 px-4 font-semibold text-center">Status</th>
+                      <th className="py-3 px-4 font-semibold text-center">Duration</th>
+                      <th className="py-3 px-4 font-semibold">Manager Review</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-[14px]">
+                    {leaveHistoryRequests.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-12">
+                          <div className="flex flex-col items-center justify-center text-center">
+                            <span className="text-3xl mb-2">📅</span>
+                            <p className="text-[14px] font-semibold text-neutral-700">No leave records found.</p>
+                            <p className="text-[13px] text-neutral-500 mt-1">Apply a leave request to see your history here.</p>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      leaveHistoryRequests.map((req: any) => {
+                        const isPermission = req.request_type === "Permission";
+                        const startDateStr = isPermission ? req.permission_date : req.from_date;
+                        const dateObj = startDateStr ? new Date(startDateStr) : null;
+                        const dayName = dateObj ? WEEKDAYS[dateObj.getDay()] : "—";
+
+                        const isApproved = req.status === "Approved";
+                        const isRejected = req.status === "Rejected";
+                        const isPending = req.status === "Pending";
+                        const isCancelled = req.status === "Cancelled";
+
+                        // Dot style badge
+                        const badgeColor = isApproved ? "bg-green-100 text-green-700" :
+                          isRejected ? "bg-red-100 text-red-700" :
+                            isCancelled ? "bg-gray-100 text-gray-700" :
+                              "bg-amber-100 text-amber-700";
+                        const dotColor = isApproved ? "bg-green-500" :
+                          isRejected ? "bg-red-500" :
+                            isCancelled ? "bg-gray-500" :
+                              "bg-amber-500";
+
+                        return (
+                          <tr key={req.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
+                            <td className="py-3 px-4 font-medium text-neutral-900">
+                              {isPermission ? req.permission_date : `${req.from_date} to ${req.to_date}`}
+                            </td>
+                            <td className="py-3 px-4 text-neutral-500">{dayName}</td>
+                            <td className="py-3 px-4 font-medium text-neutral-900">
+                              {isPermission ? "Permission Request" : req.leave_type}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${badgeColor}`}>
+                                <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></div>
+                                {req.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center text-neutral-700">
+                              {isPermission ? "Permission" : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex flex-col">
+                                <span className="text-neutral-900 font-medium">{req.reporting_manager || "Manager"}</span>
+                                <span className="text-[13px] text-neutral-500 truncate max-w-[200px]">{req.reason || "No reason"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <hr className="border-neutral-200 my-2 mx-6" />
+
+            {/* Section 2: Upcoming & Published Holidays Schedule (Read-Only) */}
+            <div className="pt-4 px-6 pb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-[16px] font-semibold text-neutral-900">✨ Upcoming Leaves & Holidays</h4>
+                <span className="text-[13px] font-medium text-neutral-500">
+                  {upcomingEvents.length} Record{upcomingEvents.length === 1 ? "" : "s"}
+                </span>
+              </div>
+
+              <div className="w-full overflow-x-auto overflow-y-auto max-h-[400px] border border-neutral-200 rounded-lg">
+                <table className="w-full border-collapse text-left min-w-[800px]">
+                  <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                    <tr className="border-b border-neutral-200 text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
+                      <th className="py-3 px-4 font-semibold">Date</th>
+                      <th className="py-3 px-4 font-semibold">Day</th>
+                      <th className="py-3 px-4 font-semibold">Leave Type</th>
+                      <th className="py-3 px-4 font-semibold text-center">Status</th>
+                      <th className="py-3 px-4 font-semibold text-center">Duration</th>
+                      <th className="py-3 px-4 font-semibold">Manager Review</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-[14px]">
+                    {upcomingEvents.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-12">
+                          <div className="flex flex-col items-center justify-center text-center">
+                            <span className="text-3xl mb-2">🏝️</span>
+                            <p className="text-[14px] font-semibold text-neutral-700">No upcoming leaves or holidays.</p>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      upcomingEvents.map((req: any) => {
+                        const isPermission = req.request_type === "Permission";
+                        const startDateStr = isPermission ? req.permission_date : req.from_date;
+                        const dateObj = startDateStr ? new Date(startDateStr) : null;
+                        const dayName = dateObj ? WEEKDAYS[dateObj.getDay()] : req.day || "—";
+
+                        const isApproved = req.status === "Approved";
+                        const isPending = req.status === "Pending";
+
+                        const isHoliday = req.request_type === "Holiday";
+
+                        const typeLower = (req.leave_type || "").toLowerCase();
+
+                        // Color logic: if holiday, make it slightly different (e.g. blue for national, purple for festival)
+                        // If leave request, use standard Green/Amber
+                        let badgeColor = "bg-amber-100 text-amber-700";
+                        let dotColor = "bg-amber-500";
+
+                        if (isHoliday) {
+                          badgeColor = typeLower.includes("national") ? "bg-blue-100 text-blue-700" :
+                            typeLower.includes("festival") ? "bg-purple-100 text-purple-700" :
+                              typeLower.includes("weekly off") ? "bg-gray-100 text-gray-700" :
+                                "bg-green-100 text-green-700";
+                          dotColor = typeLower.includes("national") ? "bg-blue-500" :
+                            typeLower.includes("festival") ? "bg-purple-500" :
+                              typeLower.includes("weekly off") ? "bg-gray-500" :
+                                "bg-green-500";
+                        } else {
+                          if (isApproved) {
+                            badgeColor = "bg-green-100 text-green-700";
+                            dotColor = "bg-green-500";
+                          }
+                        }
+
+                        return (
+                          <tr key={req.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
+                            <td className="py-3 px-4 font-medium text-neutral-900">
+                              {isPermission ? req.permission_date : isHoliday ? req.from_date : `${req.from_date} to ${req.to_date}`}
+                            </td>
+                            <td className="py-3 px-4 text-neutral-500">{dayName}</td>
+                            <td className="py-3 px-4 font-medium text-neutral-900">
+                              {isPermission ? "Permission Request" : req.leave_type}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${badgeColor}`}>
+                                <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></div>
+                                {isHoliday ? "Holiday" : req.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center text-neutral-700">
+                              {isPermission ? "Permission" : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex flex-col">
+                                <span className="text-neutral-900 font-medium">{req.reporting_manager || "Manager"}</span>
+                                <span className="text-[13px] text-neutral-500 truncate max-w-[200px]">{req.reason || "No reason"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </>
 
       {/* Leave Form Modal */}
       <Modal
@@ -1230,8 +1225,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               {leaveForm.requestType === "Leave" && (
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Leave Type <span className="text-danger-500">*</span></label>
-                  <select 
-                    required 
+                  <select
+                    required
                     value={leaveForm.leaveType}
                     onChange={(e) => setLeaveForm({ ...leaveForm, leaveType: e.target.value })}
                     className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer font-medium"
@@ -1256,9 +1251,9 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 <div className="flex gap-4">
                   {["Full Day", "First Half", "Second Half"].map((dur) => (
                     <label key={dur} className="flex items-center gap-2 cursor-pointer font-semibold text-sm text-neutral-700">
-                      <input 
-                        type="radio" 
-                        name="leaveDuration" 
+                      <input
+                        type="radio"
+                        name="leaveDuration"
                         value={dur}
                         checked={leaveForm.leaveDuration === dur}
                         onChange={(e) => setLeaveForm({ ...leaveForm, leaveDuration: e.target.value })}
@@ -1303,10 +1298,10 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Total Estimated Days</label>
-                  <input 
-                    readOnly 
+                  <input
+                    readOnly
                     value={leaveForm.totalDays || 0}
-                    className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-neutral-100 text-sm text-neutral-500 font-semibold text-center select-none" 
+                    className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-neutral-100 text-sm text-neutral-500 font-semibold text-center select-none"
                   />
                 </div>
               </div>
@@ -1350,18 +1345,18 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Reporting Manager</label>
-                <input 
-                  type="text" 
-                  value={currentEmployee?.reporting_manager || "Admin"} 
+                <input
+                  type="text"
+                  value={currentEmployee?.reporting_manager || "Admin"}
                   readOnly
-                  className="w-full px-4 py-2.5 border border-neutral-200 rounded-xl bg-neutral-100 text-sm text-neutral-500 font-medium" 
+                  className="w-full px-4 py-2.5 border border-neutral-200 rounded-xl bg-neutral-100 text-sm text-neutral-500 font-medium"
                 />
               </div>
 
               {leaveForm.requestType === "Leave" && (
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Work Handover Partner</label>
-                  <select 
+                  <select
                     value={leaveForm.handoverTo}
                     onChange={(e) => setLeaveForm({ ...leaveForm, handoverTo: e.target.value })}
                     className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer font-medium"
@@ -1417,21 +1412,21 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   ""
                 ].includes(leaveForm.reason)
               )) && (
-                <div className="mt-3">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
-                    Please specify your reason <span className="text-danger-500">*</span>
-                  </label>
-                  <textarea
-                    required
-                    rows={2}
-                    autoFocus
-                    placeholder="Type your reason here…"
-                    value={leaveForm.reason === "Others" ? "" : leaveForm.reason}
-                    onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value || "Others" })}
-                    className="w-full border border-primary-300 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-700 placeholder-neutral-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all resize-none font-medium"
-                  />
-                </div>
-              )}
+                  <div className="mt-3">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
+                      Please specify your reason <span className="text-danger-500">*</span>
+                    </label>
+                    <textarea
+                      required
+                      rows={2}
+                      autoFocus
+                      placeholder="Type your reason here…"
+                      value={leaveForm.reason === "Others" ? "" : leaveForm.reason}
+                      onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value || "Others" })}
+                      className="w-full border border-primary-300 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-700 placeholder-neutral-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all resize-none font-medium"
+                    />
+                  </div>
+                )}
             </div>
 
             {/* Document Upload */}
@@ -1475,7 +1470,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   });
 
                   const totalAvailable = validPolicies.reduce((sum, pol) => sum + getAvailableBalance(pol.leave_type, pol.yearly_limit), 0);
-                  
+
                   const isLeaveRequest = leaveForm.requestType === "Leave";
                   const activeLeaveType = leaveForm.leaveType;
                   const requestedDays = isLeaveRequest && activeLeaveType ? (leaveForm.totalDays || 0) : 0;
@@ -1487,7 +1482,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     const activePol = validPolicies.find(p => p.leave_type === activeLeaveType);
                     const rawAvail = activePol ? getAvailableBalance(activePol.leave_type, activePol.yearly_limit) : getAvailableBalance(activeLeaveType, 0);
                     const avail = rawAvail;
-                    
+
                     deductionFromTotal = Math.min(avail, requestedDays);
                     if (requestedDays > avail) {
                       lopDays = requestedDays - avail;
@@ -1502,17 +1497,17 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         const rawAvail = getAvailableBalance(pol.leave_type, pol.yearly_limit);
                         const available = rawAvail;
                         const isActive = isLeaveRequest && pol.leave_type === activeLeaveType;
-                        
+
                         return (
                           <div key={pol.id} className="flex justify-between items-start py-2 border-b border-primary-100">
                             <span className="text-neutral-600 font-semibold">{pol.leave_type}</span>
                             <div className="flex flex-col items-end">
-                              <span className="font-extrabold text-primary-700 text-md">{available} days</span>
+                              <span className="font-extrabold text-primary-700 text-md">{Math.max(0, available)} days</span>
                               {isActive && requestedDays > 0 && (
                                 <span className="text-amber-600 font-semibold text-[11px] mt-0.5 whitespace-nowrap">
                                   Booked {requestedDays} {requestedDays === 1 ? "day" : "days"}{" "}
                                   <span className="text-primary-700 ml-1">
-                                    {available - requestedDays}
+                                    {Math.max(0, available - requestedDays)}
                                   </span>
                                 </span>
                               )}
@@ -1520,14 +1515,14 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                           </div>
                         );
                       })}
-                      
+
                       <div className="flex justify-between items-center pt-3 text-sm">
                         <span className="font-bold text-primary-900">Total Balance</span>
                         <div className="flex items-center gap-2 font-extrabold text-primary-800">
-                          <span className={requestedDays > 0 ? "line-through opacity-50" : ""}>{totalAvailable} days</span>
+                          <span className={requestedDays > 0 ? "line-through opacity-50" : ""}>{Math.max(0, totalAvailable)} days</span>
                           {requestedDays > 0 && (
                             <div className="flex items-center gap-1.5">
-                              <span className="text-primary-700">{projectedTotal} days</span>
+                              <span className="text-primary-700">{Math.max(0, projectedTotal)} days</span>
                               {lopDays > 0 && (
                                 <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded text-[11px]">
                                   Lop {lopDays}
