@@ -656,14 +656,9 @@ const ProfileTab = () => {
   const validateTab = (tabId: string): boolean => {
     if (tabId === "personal") {
       const fields = [
-        { key: "phone", label: "Phone Number" },
         { key: "dob", label: "Date of Birth" },
         { key: "gender", label: "Gender" },
-        { key: "marital_status", label: "Marital Status" },
         { key: "blood_group", label: "Blood Group" },
-        { key: "emergency_contact_name", label: "Emergency Contact Name" },
-        { key: "emergency_contact_number", label: "Emergency Contact Number" },
-        { key: "emergency_contact_relation", label: "Emergency Contact Relation" },
       ];
       for (const f of fields) {
         const val = (formData as any)[f.key];
@@ -671,85 +666,28 @@ const ProfileTab = () => {
           toast.error(`${f.label} is required`);
           return false;
         }
+      }
+      if (!phoneDigits || phoneDigits.trim() === "") {
+        toast.error("Phone Number is required");
+        return false;
       }
       if (phoneDigits.length !== 10) {
         toast.error("Phone Number must be exactly 10 digits");
         return false;
       }
-      if (emergencyDigits.length !== 10) {
+      if (emergencyDigits && emergencyDigits.length > 0 && emergencyDigits.length !== 10) {
         toast.error("Emergency Contact Number must be exactly 10 digits");
         return false;
       }
     } else if (tabId === "address_bank") {
-      const fields = [
-        { key: "address", label: "Address" },
-        { key: "city", label: "City" },
-        { key: "state", label: "State" },
-        { key: "country", label: "Country" },
-        { key: "pincode", label: "Pincode" },
-        { key: "bank_name", label: "Bank Name" },
-        { key: "account_number", label: "Account Number" },
-        { key: "ifsc_code", label: "IFSC Code" },
-        { key: "pan_number", label: "PAN Number" },
-        { key: "aadhaar_number", label: "Aadhaar Number" },
-      ];
-      for (const f of fields) {
-        const val = (formData as any)[f.key];
-        if (!val || String(val).trim() === "") {
-          toast.error(`${f.label} is required`);
-          return false;
-        }
-      }
-      const cleanAadhaar = formData.aadhaar_number.replace(/\D/g, "");
-      if (cleanAadhaar.length !== 12) {
+      const cleanAadhaar = formData.aadhaar_number ? formData.aadhaar_number.replace(/\D/g, "") : "";
+      if (cleanAadhaar && cleanAadhaar.length !== 12) {
         toast.error("Aadhaar Number must be exactly 12 digits");
         return false;
       }
-      const cleanPan = formData.pan_number.toUpperCase().replace(/[^A-Z0-9]/g, "");
-      if (cleanPan.length !== 10) {
+      const cleanPan = formData.pan_number ? formData.pan_number.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
+      if (cleanPan && cleanPan.length !== 10) {
         toast.error("PAN Number must be exactly 10 alphanumeric characters");
-        return false;
-      }
-    } else if (tabId === "work_pf") {
-      const fields = [
-        { key: "employee_type", label: "Employee Type" },
-        { key: "work_location", label: "Work Location" },
-        { key: "shift_timing", label: "Shift Timing" },
-        { key: "pf_number", label: "PF Number" },
-        { key: "uan_number", label: "UAN Number" },
-        { key: "esi_number", label: "ESI Number" },
-      ];
-      for (const f of fields) {
-        const val = (formData as any)[f.key];
-        if (!val || String(val).trim() === "") {
-          toast.error(`${f.label} is required`);
-          return false;
-        }
-      }
-    } else if (tabId === "education_career") {
-      const fields = [
-        { key: "tenth_board", label: "10th Board" },
-        { key: "tenth_school", label: "10th School" },
-        { key: "tenth_percentage", label: "10th Percentage" },
-        { key: "twelfth_board", label: "12th Board" },
-        { key: "twelfth_school", label: "12th School" },
-        { key: "twelfth_percentage", label: "12th Percentage" },
-        { key: "total_experience", label: "Total Experience" },
-        { key: "current_ctc", label: "Current CTC" },
-        { key: "notice_period", label: "Notice Period" },
-      ];
-      for (const f of fields) {
-        const val = (formData as any)[f.key];
-        if (val === undefined || val === null || String(val).trim() === "") {
-          toast.error(`${f.label} is required`);
-          return false;
-        }
-      }
-      const isFresher =
-        String(formData.total_experience).trim() === "0" ||
-        String(formData.total_experience).trim().toLowerCase() === "fresher";
-      if (!isFresher && !String(formData.previous_company || "").trim()) {
-        toast.error("Previous Company is required");
         return false;
       }
     }
@@ -760,35 +698,7 @@ const ProfileTab = () => {
     const requiredFields = [
       { key: "dob", label: "Date of Birth" },
       { key: "gender", label: "Gender" },
-      { key: "marital_status", label: "Marital Status" },
       { key: "blood_group", label: "Blood Group" },
-      { key: "address", label: "Address" },
-      { key: "city", label: "City" },
-      { key: "state", label: "State" },
-      { key: "country", label: "Country" },
-      { key: "pincode", label: "Pincode" },
-      { key: "bank_name", label: "Bank Name" },
-      { key: "account_number", label: "Account Number" },
-      { key: "ifsc_code", label: "IFSC Code" },
-      { key: "pan_number", label: "PAN Number" },
-      { key: "aadhaar_number", label: "Aadhaar Number" },
-      { key: "tenth_board", label: "10th Board" },
-      { key: "tenth_school", label: "10th School" },
-      { key: "tenth_percentage", label: "10th Percentage" },
-      { key: "twelfth_board", label: "12th Board" },
-      { key: "twelfth_school", label: "12th School" },
-      { key: "twelfth_percentage", label: "12th Percentage" },
-      { key: "total_experience", label: "Total Experience" },
-      { key: "current_ctc", label: "Current CTC" },
-      { key: "notice_period", label: "Notice Period" },
-      { key: "employee_type", label: "Employee Type" },
-      { key: "work_location", label: "Work Location" },
-      { key: "shift_timing", label: "Shift Timing" },
-      { key: "pf_number", label: "PF Number" },
-      { key: "uan_number", label: "UAN Number" },
-      { key: "esi_number", label: "ESI Number" },
-      { key: "emergency_contact_name", label: "Emergency Contact Name" },
-      { key: "emergency_contact_number", label: "Emergency Contact Number" },
     ];
 
     for (const { key, label } of requiredFields) {
@@ -799,11 +709,27 @@ const ProfileTab = () => {
       }
     }
 
-    const isFresher =
-      String(formData.total_experience).trim() === "0" ||
-      String(formData.total_experience).trim().toLowerCase() === "fresher";
-    if (!isFresher && !String(formData.previous_company || "").trim()) {
-      toast.error("Previous Company is required");
+    if (!phoneDigits || phoneDigits.trim() === "") {
+      toast.error("Phone Number is required");
+      return;
+    }
+    if (phoneDigits.length !== 10) {
+      toast.error("Phone Number must be exactly 10 digits");
+      return;
+    }
+    if (emergencyDigits && emergencyDigits.length > 0 && emergencyDigits.length !== 10) {
+      toast.error("Emergency Contact Number must be exactly 10 digits");
+      return;
+    }
+
+    const cleanAadhaar = formData.aadhaar_number ? formData.aadhaar_number.replace(/\D/g, "") : "";
+    if (cleanAadhaar && cleanAadhaar.length !== 12) {
+      toast.error("Aadhaar Number must be exactly 12 digits");
+      return;
+    }
+    const cleanPan = formData.pan_number ? formData.pan_number.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
+    if (cleanPan && cleanPan.length !== 10) {
+      toast.error("PAN Number must be exactly 10 alphanumeric characters");
       return;
     }
 
@@ -1792,7 +1718,7 @@ const ProfileTab = () => {
                 const isActive = activeSubTab === subTab.id;
                 const order = ["personal", "address_bank", "work_pf", "education_career", "documents"];
                 const activeIdx = order.indexOf(activeSubTab);
-                const isCompleted = order.indexOf(subTab.id) < activeIdx;
+                const isCompleted = isEditing && (order.indexOf(subTab.id) < activeIdx);
 
                 return (
                   <React.Fragment key={subTab.id}>
