@@ -698,15 +698,30 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
           const dynamicCards = policiesList.map((pol) => {
             const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
-            const pending = getPendingDays(pol.leave_type);
-            const realAvailable = available;
-            const used = myRequests
+            
+            // Calculate approved days
+            const approvedDays = myRequests
               .filter((req: any) => 
-                (req.status === "Approved" || req.status === "Pending") && 
+                req.status === "Approved" && 
                 req.request_type === "Leave" &&
                 (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
               )
               .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+
+            // Calculate pending days
+            const pendingDays = myRequests
+              .filter((req: any) => 
+                req.status === "Pending" && 
+                req.request_type === "Leave" &&
+                (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
+              )
+              .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+
+            // True allocated limit for this employee (handles pro-rated starting balances)
+            const allocatedLimit = available + approvedDays;
+            
+            const used = approvedDays + pendingDays;
+            const lopForPol = Math.max(0, used - allocatedLimit);
             
             let icon = CalendarIcon;
             let iconWrap = "bg-blue-50";
@@ -732,9 +747,10 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             
             return {
               label: pol.leave_type,
-              value: realAvailable,
-              total: pol.yearly_limit,
+              value: available,
+              total: allocatedLimit, // Use allocatedLimit instead of yearly_limit to reflect pro-rated
               used,
+              lopForPol,
               icon,
               iconWrap,
               iconColor,
@@ -745,21 +761,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           const totalAvailable = dynamicCards.reduce((sum, c) => sum + c.value, 0);
           const totalLimit = dynamicCards.reduce((sum, c) => sum + c.total, 0);
           const totalUsed = dynamicCards.reduce((sum, c) => sum + c.used, 0);
-
-          let totalLop = 0;
-          policiesList.forEach(pol => {
-            const totalRequested = myRequests
-              .filter((req: any) => 
-                (req.status === "Approved" || req.status === "Pending") && 
-                req.request_type === "Leave" &&
-                (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
-              )
-              .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
-            
-            if (totalRequested > pol.yearly_limit) {
-              totalLop += (totalRequested - pol.yearly_limit);
-            }
-          });
+          const totalLop = dynamicCards.reduce((sum, c) => sum + c.lopForPol, 0);
 
           const allCards = [
             ...dynamicCards,
