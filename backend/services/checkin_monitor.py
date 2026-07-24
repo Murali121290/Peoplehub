@@ -85,14 +85,14 @@ def check_missed_checkins():
         ).all()
 
         for attendance in active_attendances:
-            now_utc = datetime.now()
+            now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
             break_ended = False
             
             # Auto end lunch break (30 mins limit)
             if attendance.lunch_break and attendance.lunch_start:
-                elapsed_lunch = (now_utc - attendance.lunch_start).total_seconds() / 60
+                elapsed_lunch = (now_ist - attendance.lunch_start).total_seconds() / 60
                 if elapsed_lunch >= 30:
-                    attendance.lunch_end = now_utc
+                    attendance.lunch_end = now_ist
                     attendance.lunch_minutes = (attendance.lunch_minutes or 0) + int(elapsed_lunch)
                     attendance.total_break_minutes = (attendance.total_break_minutes or 0) + int(elapsed_lunch)
                     attendance.lunch_break = False
@@ -101,9 +101,9 @@ def check_missed_checkins():
             
             # Auto end tea break (15 mins limit)
             if attendance.tea_break and attendance.tea_start:
-                elapsed_tea = (now_utc - attendance.tea_start).total_seconds() / 60
+                elapsed_tea = (now_ist - attendance.tea_start).total_seconds() / 60
                 if elapsed_tea >= 15:
-                    attendance.tea_end = now_utc
+                    attendance.tea_end = now_ist
                     attendance.tea_minutes = (attendance.tea_minutes or 0) + int(elapsed_tea)
                     attendance.total_break_minutes = (attendance.total_break_minutes or 0) + int(elapsed_tea)
                     attendance.tea_break = False
@@ -113,7 +113,7 @@ def check_missed_checkins():
             gap_minutes = attendance.total_gap_minutes or 0
             break_minutes = attendance.total_break_minutes or 0
             
-            elapsed_seconds = (now_utc - attendance.check_in).total_seconds()
+            elapsed_seconds = (now_ist - attendance.check_in).total_seconds()
             total_seconds = elapsed_seconds - (gap_minutes * 60) - (break_minutes * 60)
             
             working_hours = total_seconds / 3600
@@ -121,8 +121,8 @@ def check_missed_checkins():
             
             if elapsed_hours >= 9.0:
                 print(f"Auto-checking out user {attendance.user_id} (Elapsed: {elapsed_hours:.2f}h)")
-                attendance.check_out = now_utc
-                attendance.total_hours = round(working_hours, 2)
+                attendance.check_out = now_ist
+                attendance.total_hours = int(working_hours * 100) / 100
                 
                 if attendance.total_hours >= 8.0:
                     attendance.status = "Present"

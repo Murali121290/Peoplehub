@@ -1129,19 +1129,25 @@ def get_team_attendance(user_id):
                 LeaveRequest.to_date >= today
             ).first()
 
-            if attendance and attendance.check_in:
-                if attendance.check_out:
-                    att_status = "Checked Out"
+            if attendance:
+                if attendance.check_in or attendance.card_check_in:
+                    if attendance.check_out or attendance.card_check_out:
+                        att_status = "Checked Out"
+                    else:
+                        att_status = "Present"
                 else:
-                    att_status = "Present"
-                check_in = attendance.check_in.strftime("%I:%M %p")
+                    att_status = "Absent"
+
+                # Web Entry: only show from web columns, do not fallback
+                check_in = attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None
                 check_out = attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None
-                working_hours = attendance.total_hours or 0
-                if not attendance.check_out:
+                working_hours = attendance.total_hours or 0.0
+                if attendance.check_in and not attendance.check_out:
                     now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
                     elapsed = (now_ist - attendance.check_in).total_seconds()
                     break_secs = (attendance.total_break_minutes or 0) * 60
-                    working_hours = round(max(elapsed - break_secs, 0) / 3600, 2)
+                    hours_decimal = max(elapsed - break_secs, 0) / 3600
+                    working_hours = int(hours_decimal * 100) / 100
             elif on_leave:
                 att_status = "On Leave"
                 check_in = None
@@ -1167,6 +1173,9 @@ def get_team_attendance(user_id):
                 "check_in": check_in,
                 "check_out": check_out,
                 "working_hours": working_hours,
+                "card_check_in": attendance.card_check_in.strftime("%I:%M %p") if (attendance and attendance.card_check_in) else None,
+                "card_check_out": attendance.card_check_out.strftime("%I:%M %p") if (attendance and attendance.card_check_out) else None,
+                "card_working_hours": attendance.card_working_hours if (attendance and attendance.card_working_hours) else 0.0,
                 "lunch_minutes": attendance.lunch_minutes if attendance else 0,
                 "tea_minutes": attendance.tea_minutes if attendance else 0,
                 "shift": emp.shift_timing or "General Shift",

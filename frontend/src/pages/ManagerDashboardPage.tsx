@@ -34,6 +34,15 @@ import type { BadgeVariant } from "../components/ui/Badge";
 
 const BASE_URL = `${API_URL}/api`;
 
+const formatWorkingHours = (hoursVal: any) => {
+  if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "0 h 0 m";
+  const num = Number(hoursVal);
+  if (isNaN(num) || num <= 0) return "0 h 0 m";
+  const hrs = Math.floor(num);
+  const mins = Math.round((num - hrs) * 60);
+  return `${hrs} h ${mins} m`;
+};
+
 // ==========================
 // THEME - professional enterprise palette
 // ==========================
@@ -1269,7 +1278,7 @@ const ManagerDashboardPage = () => {
                                     color: statusStyle.text,
                                   }}
                                 >
-                                  {member.working_hours || 0} hrs
+                                  {formatWorkingHours(member.working_hours)}
                                 </span>
                               </div>
 
@@ -1407,14 +1416,14 @@ const ManagerDashboardPage = () => {
                               <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }}>{member.check_in || "—"}</td>
                               <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }}>{member.check_out || "—"}</td>
                               <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", fontWeight: 700 }}>
-                                {member.working_hours != null ? `${member.working_hours} hrs` : "0.0 hrs"}
+                                {formatWorkingHours(member.working_hours)}
                               </td>
 
                               {/* Card Entry Columns */}
                               <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: "#7e22ce", fontWeight: 600 }}>{member.card_check_in || "—"}</td>
                               <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: "#7e22ce", fontWeight: 600 }}>{member.card_check_out || "—"}</td>
                               <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", fontWeight: 700, color: "#7e22ce" }}>
-                                {member.card_working_hours != null ? `${member.card_working_hours} hrs` : "0.0 hrs"}
+                                {formatWorkingHours(member.card_working_hours)}
                               </td>
 
                               <td style={{ padding: "12px 16px" }}>

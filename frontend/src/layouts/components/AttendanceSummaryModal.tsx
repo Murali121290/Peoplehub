@@ -10,6 +10,16 @@ import {
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 
+
+const formatWorkingHours = (hoursVal: any) => {
+  if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "0 h 0 m";
+  const num = Number(hoursVal);
+  if (isNaN(num) || num <= 0) return "0 h 0 m";
+  const hrs = Math.floor(num);
+  const mins = Math.round((num - hrs) * 60);
+  return `${hrs} h ${mins} m`;
+};
+
 interface AttendanceSummaryModalProps {
   reportingEmployees: any[];
   onClose: () => void;
@@ -186,7 +196,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
   return (
     <div className="fixed inset-x-0 bottom-0 top-[112px] bg-neutral-900/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 md:p-6 transition-all duration-300">
       <div className="bg-white rounded-[20px] shadow-2xl w-[1100px] max-w-full overflow-hidden border border-neutral-100 flex flex-col max-h-[calc(100vh-136px)] animate-in fade-in zoom-in-95 duration-200">
-        
+
         {/* Modal Header */}
         <div className="px-6 md:px-8 py-5 border-b border-neutral-100 flex justify-between items-center bg-white flex-shrink-0">
           <div className="flex items-center gap-3.5">
@@ -292,14 +302,14 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         <td className="py-3.5 px-4 bg-blue-50/5 text-xs text-neutral-700 font-semibold">{emp.check_in || "—"}</td>
                         <td className="py-3.5 px-4 bg-blue-50/5 text-xs text-neutral-700 font-semibold">{emp.check_out || "—"}</td>
                         <td className="py-3.5 px-4 bg-blue-50/5 text-xs font-bold text-neutral-800">
-                          {emp.working_hours ? `${emp.working_hours} hrs` : "0.0 hrs"}
+                          {formatWorkingHours(emp.working_hours)}
                         </td>
 
                         {/* Card Entry Columns */}
                         <td className="py-3.5 px-4 bg-purple-50/5 text-xs text-purple-700 font-semibold">{emp.card_check_in || "—"}</td>
                         <td className="py-3.5 px-4 bg-purple-50/5 text-xs text-purple-700 font-semibold">{emp.card_check_out || "—"}</td>
                         <td className="py-3.5 px-4 bg-purple-50/5 text-xs font-bold text-purple-800">
-                          {emp.card_working_hours ? `${emp.card_working_hours} hrs` : "0.0 hrs"}
+                          {formatWorkingHours(emp.card_working_hours)}
                         </td>
 
                         {/* Status */}
@@ -329,11 +339,10 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                             <button
                               disabled={isApproved}
                               onClick={() => handleApproveSingle(emp.employee_id || emp.id)}
-                              className={`h-9 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-1.5 ${
-                                isApproved
+                              className={`h-9 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-1.5 ${isApproved
                                   ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
                                   : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 active:translate-y-0 shadow-xs"
-                              }`}
+                                }`}
                             >
                               <CheckIcon className="w-3.5 h-3.5 text-emerald-700" />
                               Approve
@@ -343,11 +352,10 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                             <button
                               disabled={isRejected}
                               onClick={() => handleRejectSingle(emp.employee_id || emp.id)}
-                              className={`h-9 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-1.5 ${
-                                isRejected
+                              className={`h-9 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-1.5 ${isRejected
                                   ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
                                   : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 hover:-translate-y-0.5 active:bg-rose-200 active:translate-y-0 shadow-xs"
-                              }`}
+                                }`}
                             >
                               <XMarkIcon className="w-3.5 h-3.5 text-rose-700" />
                               Reject
@@ -397,11 +405,10 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
             <button
               disabled={pendingCount === 0}
               onClick={() => setConfirmDialog("reject")}
-              className={`h-10 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${
-                pendingCount === 0
+              className={`h-10 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${pendingCount === 0
                   ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
                   : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 hover:-translate-y-0.5 active:bg-rose-200 active:translate-y-0 shadow-xs"
-              }`}
+                }`}
             >
               <XCircleIcon className="w-4 h-4 text-rose-700" />
               {pendingCount === 0 ? "All Employees Processed" : "Reject All"}
@@ -411,11 +418,10 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
             <button
               disabled={pendingCount === 0}
               onClick={() => setConfirmDialog("approve")}
-              className={`h-10 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${
-                pendingCount === 0
+              className={`h-10 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${pendingCount === 0
                   ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
                   : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 active:translate-y-0 shadow-xs"
-              }`}
+                }`}
             >
               <CheckCircleIcon className="w-4 h-4 text-emerald-700" />
               {pendingCount === 0 ? "All Employees Processed" : "Approve All"}
@@ -449,11 +455,10 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                 </button>
                 <button
                   onClick={handleConfirmAction}
-                  className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-xs ${
-                    confirmDialog === "approve"
+                  className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-xs ${confirmDialog === "approve"
                       ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
                       : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
-                  }`}
+                    }`}
                 >
                   {confirmDialog === "approve" ? "Approve" : "Reject"}
                 </button>

@@ -369,10 +369,8 @@ def check_out():
         total_seconds -= break_minutes * 60
         total_seconds -= gap_minutes * 60
 
-        attendance.total_hours = round(
-            total_seconds / 3600,
-            2
-        )
+        hours_decimal = total_seconds / 3600
+        attendance.total_hours = int(hours_decimal * 100) / 100
 
         if attendance.total_hours >= 8.0:
             attendance.status = "Present"
@@ -521,7 +519,8 @@ def sync_card_logs():
             # Calculate card working hours
             if attendance.card_check_in and attendance.card_check_out:
                 total_seconds = (attendance.card_check_out - attendance.card_check_in).total_seconds()
-                attendance.card_working_hours = round(max(total_seconds, 0) / 3600, 2)
+                hours_decimal = max(total_seconds, 0) / 3600
+                attendance.card_working_hours = int(hours_decimal * 100) / 100
             else:
                 attendance.card_working_hours = 0.0
 
@@ -845,15 +844,22 @@ def attendance_history(user_id):
         ).first()
 
         if record:
+            is_today = (record.attendance_date == today)
+            
             if record.check_out:
-                working_hours = record.total_hours
+                working_hours = record.total_hours or 0.0
                 check_out_str = record.check_out.strftime("%I:%M %p")
-            else:
-                # Active check-in: compute live working hours
+            elif is_today and record.check_in:
+                # Active check-in today: compute live working hours
                 now = get_ist_now()
                 elapsed_seconds = (now - record.check_in).total_seconds()
                 break_seconds = (record.total_break_minutes or 0) * 60
-                working_hours = round(max(elapsed_seconds - break_seconds, 0) / 3600, 2)
+                hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
+                working_hours = int(hours_decimal * 100) / 100
+                check_out_str = "-"
+            else:
+                # Past date with missing checkout
+                working_hours = record.total_hours or 0.0
                 check_out_str = "-"
 
             result.append({
@@ -932,7 +938,7 @@ def get_attendance():
                 else "-"
             )
 
-            total_hours = attendance.total_hours
+            total_hours = attendance.total_hours or 0.0
 
         else:
             status = "Absent"
@@ -2415,7 +2421,8 @@ def upload_attendance_excel():
                 # Calculate hours
                 if attendance.card_check_in and attendance.card_check_out:
                     total_seconds = (attendance.card_check_out - attendance.card_check_in).total_seconds()
-                    attendance.card_working_hours = round(max(total_seconds, 0) / 3600, 2)
+                    hours_decimal = max(total_seconds, 0) / 3600
+                    attendance.card_working_hours = int(hours_decimal * 100) / 100
                 else:
                     attendance.card_working_hours = 0.0
                     

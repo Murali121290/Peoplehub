@@ -1,5 +1,15 @@
 import React from 'react';
 
+const formatWorkingHours = (hoursVal: any) => {
+  if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "0 hrs 0 mins";
+  const num = Number(hoursVal);
+  if (isNaN(num) || num <= 0) return "0 hrs 0 mins";
+  const hrs = Math.floor(num);
+  const mins = Math.round((num - hrs) * 60);
+  return `${hrs} hrs ${mins} mins`;
+};
+
+
 interface AttendanceDetailModalProps {
   selectedEmployee: any;
   onClose: () => void;
@@ -35,7 +45,7 @@ const AttendanceDetailModal: React.FC<AttendanceDetailModalProps> = ({
               { label: "Lunch Break", value: `${selectedEmployee.lunch_minutes} min` },
               { label: "Tea Break", value: `${selectedEmployee.tea_minutes} min` },
               { label: "Total Break", value: `${selectedEmployee.total_break_minutes} min` },
-              { label: "Working Hours", value: selectedEmployee.working_hours || "-" },
+              { label: "Working Hours", value: formatWorkingHours(selectedEmployee.working_hours) },
             ].map((item) => (
               <div key={item.label} className="bg-gray-50 p-3 rounded-lg">
                 <label className="text-gray-500 text-xs font-semibold uppercase">{item.label}</label>
