@@ -1249,15 +1249,7 @@ const EmployeeDashboardPage: React.FC = () => {
                       <Icon className="w-4 h-4" />
                       <div className="relative flex items-center">
                         <span>{tab.label}</span>
-                        {/* Leave Notification */}
-                        {tab.id === "leave" && pendingLeaveCount > 0 && (
-                          <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
-                        )}
-
-                        {/* Shift Notification */}
-                        {tab.id === "shift" && pendingShiftCount > 0 && (
-                          <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-red-500"></span>
-                        )}
+                        {/* Notifications moved to sidebar */}
                       </div>
                     </button>
                   );

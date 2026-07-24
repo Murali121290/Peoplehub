@@ -16,6 +16,7 @@ import {
   ClipboardDocumentListIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "react-hot-toast";
+import { socket } from "../../services/socket";
 
 import DashboardTab from "./tabs/DashboardTab";
 import DirectoryTab from "./tabs/DirectoryTab";
@@ -248,6 +249,17 @@ export default function HRAdminDashboard() {
     fetchTeams();
     fetchRoles();
     fetchTeamOverview();
+
+    const handleLeaveUpdate = () => fetchLeaveRequests();
+    const handleShiftUpdate = () => fetchShiftRequests();
+
+    socket.on("leave_update", handleLeaveUpdate);
+    socket.on("shift_update", handleShiftUpdate);
+
+    return () => {
+      socket.off("leave_update", handleLeaveUpdate);
+      socket.off("shift_update", handleShiftUpdate);
+    };
   }, []);
 
   // --- Counts ---

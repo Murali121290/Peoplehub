@@ -26,6 +26,8 @@ import TelecomDirectoryPage from "./pages/Telecomdirectory ";
 import MeetingRoomsPage from "./pages/mettingroom/MeetingRooms";
 import AppraisalDashboard from "./pages/appraisal/AppraisalDashboard";
 import DBAdminPage from "./pages/admin/DBAdminPage";
+import LeaveApprovalPage from "./pages/manager/LeaveApprovalPage";
+import ShiftApprovalPage from "./pages/manager/ShiftApprovalPage";
 
 
 
@@ -159,6 +161,22 @@ function App() {
         element={
           <ProtectedRoute>
             <ManagerDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/manager/leave-approval"
+        element={
+          <ProtectedRoute>
+            <LeaveApprovalPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/manager/shift-approval"
+        element={
+          <ProtectedRoute>
+            <ShiftApprovalPage />
           </ProtectedRoute>
         }
       />
