@@ -186,9 +186,15 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     fetchHolidays();
   }, [selectedMonth, selectedYear]);
 
+  const isOwnRequest = (req: any) => {
+    if (!currentEmployee) return false;
+    const reqEmpId = Number(req.employee_id);
+    return reqEmpId === Number(currentEmployee.id) || reqEmpId === Number(currentEmployee.employee_id);
+  };
+
   // Filter employee's own leave requests
   const myRequests = React.useMemo(() => {
-    return leaveRequests.filter((req: any) => Number(req.employee_id) === Number(currentEmployee?.id));
+    return leaveRequests.filter((req: any) => isOwnRequest(req));
   }, [leaveRequests, currentEmployee]);
 
   // Collect all dates where the employee already has a pending or approved leave request
@@ -559,7 +565,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const getPendingDays = (leaveType: string) => {
     return leaveRequests
       .filter((req: any) => 
-        Number(req.employee_id) === Number(currentEmployee?.id) && 
+        isOwnRequest(req) && 
         req.status === "Pending" && 
         (req.leave_type || "").toLowerCase() === leaveType.toLowerCase()
       )
@@ -658,7 +664,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   // Find active requests (Pending) for live status tracking
   const activeRequests = leaveRequests.filter(
     (req: any) => 
-      Number(req.employee_id) === Number(currentEmployee?.id) && 
+      isOwnRequest(req) && 
       req.status === "Pending"
   );
 

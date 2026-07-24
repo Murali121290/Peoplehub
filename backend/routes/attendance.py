@@ -862,6 +862,9 @@ def attendance_history(user_id):
                 "checkIn": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
                 "checkOut": check_out_str,
                 "workingHours": working_hours,
+                "cardCheckIn": record.card_check_in.strftime("%I:%M %p") if record.card_check_in else "-",
+                "cardCheckOut": record.card_check_out.strftime("%I:%M %p") if record.card_check_out else "-",
+                "cardWorkingHours": record.card_working_hours or 0.0,
                 "lunchMinutes": record.lunch_minutes,
                 "teaMinutes": record.tea_minutes,
                 "totalBreak": record.total_break_minutes,
@@ -885,6 +888,9 @@ def attendance_history(user_id):
                 "checkIn": "-",
                 "checkOut": "-",
                 "workingHours": 0.0,
+                "cardCheckIn": "-",
+                "cardCheckOut": "-",
+                "cardWorkingHours": 0.0,
                 "lunchMinutes": 0,
                 "teaMinutes": 0,
                 "totalBreak": 0,
@@ -2270,3 +2276,200 @@ def approve_all_attendance():
             "success": False,
             "error": str(e)
         }), 500
+
+
+@attendance_bp.route("/upload-excel", methods=["POST"])
+def upload_attendance_excel():
+    try:
+        import xlrd
+        from datetime import time
+        
+        if "file" not in request.files:
+            return jsonify({"success": False, "error": "No file uploaded"}), 400
+            
+        file = request.files["file"]
+        if not file or not file.filename.endswith((".xls", ".xlsx")):
+            return jsonify({"success": False, "error": "Invalid file format. Please upload an .xls or .xlsx file"}), 400
+
+        # Read Excel content directly in memory
+        file_contents = file.read()
+        
+        # Check if legacy XLS
+        if file.filename.endswith(".xls"):
+            workbook = xlrd.open_workbook(file_contents=file_contents)
+            sheet = workbook.sheet_by_index(0)
+            
+            # Read Attendance Date from Row index 6, Column index 4
+            att_date_raw = sheet.cell_value(6, 4)
+            if not att_date_raw:
+                return jsonify({"success": False, "error": "Could not locate report date in Excel sheet"}), 400
+                
+            att_date_str = str(att_date_raw).strip()
+            try:
+                parsed_date = datetime.strptime(att_date_str, "%d-%b-%Y").date()
+            except Exception as de:
+                return jsonify({"success": False, "error": f"Failed to parse report date '{att_date_str}': {str(de)}"}), 400
+
+            print("Standardized Excel Upload Date:", parsed_date)
+            
+            # Loop starting from Row index 10 (11th row)
+            r = 10
+            processed_count = 0
+            batch_attendance = {}
+            
+            while r < sheet.nrows:
+                sno_val = sheet.cell_value(r, 1) # Column 2
+                e_code_val = sheet.cell_value(r, 2) # Column 3
+                
+                # Stop if both columns are empty
+                if not sno_val and not e_code_val:
+                    break
+                    
+                # Convert E. Code to string
+                if isinstance(e_code_val, float):
+                    e_code = str(int(e_code_val))
+                else:
+                    e_code = str(e_code_val).strip()
+                    
+                sno_str = str(sno_val).strip()
+                
+                # Skip header/duplicates/non-records
+                if not e_code or e_code == "E. Code" or not sno_str.replace(".0", "").isdigit():
+                    r += 1
+                    continue
+                    
+                status = str(sheet.cell_value(r, 13)).strip() # Column 14 (Status)
+                if status == "Absent":
+                    r += 1
+                    continue
+                    
+                in_time_val = sheet.cell_value(r, 7) # Column 8 (InTime)
+                out_time_val = sheet.cell_value(r, 8) # Column 9 (OutTime)
+                
+                # Convert In/Out values to string time representation
+                def get_time_str(cell_val):
+                    if not cell_val:
+                        return ""
+                    val_str = str(cell_val).strip()
+                    if val_str == "--:--" or val_str == "0.0" or val_str == "0":
+                        return ""
+                    if isinstance(cell_val, float) and 0.0 < cell_val < 1.0:
+                        total_minutes = int(cell_val * 24 * 60)
+                        hours = total_minutes // 60
+                        minutes = total_minutes % 60
+                        return f"{hours:02d}:{minutes:02d}"
+                    return val_str
+                    
+                in_time_str = get_time_str(in_time_val)
+                out_time_str = get_time_str(out_time_val)
+                
+                # Skip if no punches
+                if not in_time_str and not out_time_str:
+                    r += 1
+                    continue
+                    
+                # Find employee
+                from models.employee import Employee
+                employee = Employee.query.filter_by(employee_id=e_code).first()
+                if not employee:
+                    print(f"Excel skip: Employee '{e_code}' not found")
+                    r += 1
+                    continue
+                    
+                cache_key = (employee.user_id, parsed_date)
+                if cache_key in batch_attendance:
+                    attendance = batch_attendance[cache_key]
+                else:
+                    attendance = Attendance.query.filter_by(
+                        user_id=employee.user_id,
+                        attendance_date=parsed_date
+                    ).first()
+                    
+                    if not attendance:
+                        attendance = Attendance(
+                            user_id=employee.user_id,
+                            attendance_date=parsed_date,
+                            status="Present",
+                            shift_timing=employee.shift_timing or "General Shift"
+                        )
+                        db.session.add(attendance)
+                    batch_attendance[cache_key] = attendance
+                    
+                # Parse log datetime
+                if in_time_str:
+                    time_parts = list(map(int, in_time_str.split(":")))
+                    card_in_dt = datetime.combine(parsed_date, time(time_parts[0], time_parts[1]))
+                    if not attendance.card_check_in:
+                        attendance.card_check_in = card_in_dt
+                    else:
+                        attendance.card_check_in = min(attendance.card_check_in, card_in_dt)
+                        
+                if out_time_str:
+                    time_parts = list(map(int, out_time_str.split(":")))
+                    card_out_dt = datetime.combine(parsed_date, time(time_parts[0], time_parts[1]))
+                    if not attendance.card_check_out:
+                        attendance.card_check_out = card_out_dt
+                    else:
+                        attendance.card_check_out = max(attendance.card_check_out, card_out_dt)
+                        
+                # Calculate hours
+                if attendance.card_check_in and attendance.card_check_out:
+                    total_seconds = (attendance.card_check_out - attendance.card_check_in).total_seconds()
+                    attendance.card_working_hours = round(max(total_seconds, 0) / 3600, 2)
+                else:
+                    attendance.card_working_hours = 0.0
+                    
+                # Recalculate Status
+                web_hrs = attendance.total_hours or 0.0
+                card_hrs = attendance.card_working_hours or 0.0
+                max_hrs = max(web_hrs, card_hrs)
+                
+                if max_hrs >= 8.0:
+                    attendance.status = "Present"
+                elif max_hrs >= 4.0:
+                    attendance.status = "Half Day"
+                elif attendance.check_in or attendance.card_check_in:
+                    attendance.status = "Present"
+                else:
+                    attendance.status = "Absent"
+                    
+                processed_count += 1
+                
+                # Emit socket event
+                try:
+                    from extensions import socketio
+                    web_in = attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None
+                    web_out = attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None
+                    card_in = attendance.card_check_in.strftime("%I:%M %p") if attendance.card_check_in else None
+                    card_out = attendance.card_check_out.strftime("%I:%M %p") if attendance.card_check_out else None
+                    
+                    payload = {
+                        "id": employee.id,
+                        "user_id": employee.user_id,
+                        "attendance_status": attendance.status,
+                        "check_in": web_in,
+                        "check_out": web_out,
+                        "working_hours": attendance.total_hours or 0.0,
+                        "card_check_in": card_in,
+                        "card_check_out": card_out,
+                        "card_working_hours": attendance.card_working_hours or 0.0,
+                        "shift": employee.shift_timing or "General Shift",
+                        "manager_status": attendance.manager_status or "Pending",
+                        "checked_in": (attendance.check_in is not None and attendance.check_out is None),
+                        "card_checked_in": (attendance.card_check_in is not None and attendance.card_check_out is None),
+                    }
+                    socketio.emit("attendance_update", payload)
+                except Exception as se:
+                    print("Socket emit error during Excel upload:", se)
+                    
+                r += 1
+                
+            db.session.commit()
+            return jsonify({"success": True, "message": f"Successfully processed {processed_count} employee records"}), 200
+        else:
+            return jsonify({"success": False, "error": "Only .xls legacy format is currently supported"}), 400
+            
+    except Exception as e:
+        db.session.rollback()
+        print("EXCEL UPLOAD ERROR:", str(e))
+        return jsonify({"success": False, "error": str(e)}), 500

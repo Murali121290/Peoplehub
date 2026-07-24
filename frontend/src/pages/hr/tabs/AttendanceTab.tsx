@@ -1,7 +1,9 @@
 import React, {
   useState,
   useEffect,
+  useRef,
 } from "react";
+import { toast } from "react-hot-toast";
 
 import Panel from "../components/Panel";
 import Chip from "../components/Chip";
@@ -25,6 +27,49 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const [selectedShift, setSelectedShift] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      setLoading(true);
+      const res = await fetch(`${BASE_URL}/attendance/upload-excel`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await res.json();
+      if (res.ok && result.success) {
+        toast.success(result.message || "Excel uploaded and attendance synced successfully!");
+        // Reload attendance data
+        let url = `${BASE_URL}/attendance`;
+        if (attendanceView === "weekly") {
+          url = `${BASE_URL}/attendance/weekly`;
+        } else if (attendanceView === "monthly") {
+          url = `${BASE_URL}/attendance/monthly`;
+        }
+        const response = await fetch(url);
+        const data = await response.json();
+        setAttendanceData(data || []);
+      } else {
+        toast.error(result.error || "Failed to sync Excel attendance");
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Error uploading Excel file");
+    } finally {
+      setLoading(false);
+      if (event.target) {
+        event.target.value = ""; // Clear file selection
+      }
+    }
+  };
 
   // Format Date Range professionally
   const formatReadableDate = (dateObj: Date) => {
@@ -617,6 +662,20 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
           >
             Download Excel
           </Button>
+
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            variant="primary"
+          >
+            Upload Card Excel
+          </Button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleExcelUpload}
+            accept=".xls"
+            style={{ display: "none" }}
+          />
 
           {/* Tabs */}
           <div className="flex gap-2">

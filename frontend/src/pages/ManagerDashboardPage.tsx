@@ -263,6 +263,24 @@ const ManagerDashboardPage = () => {
       loadTeamAttendance();
     });
 
+    socket.on("leave_update", (payload: any) => {
+      if (
+        payload.reporting_manager?.trim().toLowerCase() ===
+        managerName?.trim().toLowerCase()
+      ) {
+        // Also update leave status inside teamAttendance
+        if (payload.status === "Approved") {
+          setTeamAttendance((prev) =>
+            prev.map((m) =>
+              m.id === Number(payload.employee_id)
+                ? { ...m, attendance_status: "On Leave" }
+                : m
+            )
+          );
+        }
+      }
+    });
+
     socket.on("employee_profile_update", (payload: any) => {
       setTeamMembers((prev) =>
         prev.map((m) =>
@@ -467,7 +485,14 @@ const ManagerDashboardPage = () => {
       sub: "Approved leave",
       icon: CalendarDaysIcon,
       tone: "warning",
-    }
+    },
+    {
+      label: "Tasks Completed",
+      value: totalTasks,
+      sub: "Current total",
+      icon: ClockIcon,
+      tone: "default",
+    },
   ];
 
   const getStatTone = (tone: string) => {
@@ -1278,16 +1303,22 @@ const ManagerDashboardPage = () => {
                   <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", background: THEME.surface }}>
                     <thead>
                       <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                        <th style={{ padding: "14px 16px" }}>Employee</th>
-                        <th style={{ padding: "14px 16px" }}>Employee ID</th>
-                        <th style={{ padding: "14px 16px" }}>Department</th>
-                        <th style={{ padding: "14px 16px" }}>Designation</th>
-                        <th style={{ padding: "14px 16px" }}>Shift</th>
-                        <th style={{ padding: "14px 16px" }}>Check In</th>
-                        <th style={{ padding: "14px 16px" }}>Check Out</th>
-                        <th style={{ padding: "14px 16px" }}>Working Hours</th>
-                        <th style={{ padding: "14px 16px" }}>Status</th>
-
+                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Employee</th>
+                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Employee ID</th>
+                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Department</th>
+                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Designation</th>
+                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Shift</th>
+                        <th colSpan={3} style={{ padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(37,99,235,0.05)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
+                        <th colSpan={3} style={{ padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(126,34,206,0.05)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
+                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Status</th>
+                      </tr>
+                      <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                        <th style={{ padding: "8px 16px", background: "rgba(37,99,235,0.02)" }}>Check In</th>
+                        <th style={{ padding: "8px 16px", background: "rgba(37,99,235,0.02)" }}>Check Out</th>
+                        <th style={{ padding: "8px 16px", background: "rgba(37,99,235,0.02)", fontWeight: 700 }}>Hours</th>
+                        <th style={{ padding: "8px 16px", background: "rgba(126,34,206,0.02)" }}>Check In</th>
+                        <th style={{ padding: "8px 16px", background: "rgba(126,34,206,0.02)" }}>Check Out</th>
+                        <th style={{ padding: "8px 16px", background: "rgba(126,34,206,0.02)", fontWeight: 700 }}>Hours</th>
                       </tr>
                     </thead>
                     <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>
@@ -1371,11 +1402,21 @@ const ManagerDashboardPage = () => {
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.department || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.designation || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.shift || "General Shift"}</td>
-                              <td style={{ padding: "12px 16px" }}>{member.check_in || "—"}</td>
-                              <td style={{ padding: "12px 16px" }}>{member.check_out || "—"}</td>
-                              <td style={{ padding: "12px 16px", fontWeight: 700 }}>
-                                {member.working_hours != null ? `${member.working_hours} hrs` : "—"}
+
+                              {/* Web Entry Columns */}
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }}>{member.check_in || "—"}</td>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }}>{member.check_out || "—"}</td>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", fontWeight: 700 }}>
+                                {member.working_hours != null ? `${member.working_hours} hrs` : "0.0 hrs"}
                               </td>
+
+                              {/* Card Entry Columns */}
+                              <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: "#7e22ce", fontWeight: 600 }}>{member.card_check_in || "—"}</td>
+                              <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: "#7e22ce", fontWeight: 600 }}>{member.card_check_out || "—"}</td>
+                              <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", fontWeight: 700, color: "#7e22ce" }}>
+                                {member.card_working_hours != null ? `${member.card_working_hours} hrs` : "0.0 hrs"}
+                              </td>
+
                               <td style={{ padding: "12px 16px" }}>
                                 <span
                                   style={{
@@ -1533,12 +1574,19 @@ const ManagerDashboardPage = () => {
                   <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                     <thead>
                       <tr style={{ background: "#f8fafc", borderBottom: "1px solid #f1f5f9", fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                        <th style={{ padding: "12px 16px" }}>Date</th>
-                        <th style={{ padding: "12px 16px" }}>Status</th>
-                        <th style={{ padding: "12px 16px" }}>Check In</th>
-                        <th style={{ padding: "12px 16px" }}>Check Out</th>
-                        <th style={{ padding: "12px 16px" }}>Working Hours</th>
-                        <th style={{ padding: "12px 16px" }}>Breaks (L/T)</th>
+                        <th rowSpan={2} style={{ padding: "12px 16px" }}>Date</th>
+                        <th rowSpan={2} style={{ padding: "12px 16px" }}>Status</th>
+                        <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(37,99,235,0.05)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
+                        <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(126,34,206,0.05)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
+                        <th rowSpan={2} style={{ padding: "12px 16px" }}>Breaks (L/T)</th>
+                      </tr>
+                      <tr style={{ background: "#f8fafc", borderBottom: "1px solid #f1f5f9", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.02)" }}>Check In</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.02)" }}>Check Out</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.02)", fontWeight: 700 }}>Hours</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.02)" }}>Check In</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.02)" }}>Check Out</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.02)", fontWeight: 700 }}>Hours</th>
                       </tr>
                     </thead>
                     <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>
@@ -1587,14 +1635,25 @@ const ManagerDashboardPage = () => {
                                 {status}
                               </span>
                             </td>
-                            <td style={{ padding: "12px 16px", color: record.checkIn !== "-" ? THEME.text : THEME.textSoft }}>
+                            {/* Web site entry */}
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", color: record.checkIn !== "-" ? THEME.text : THEME.textSoft }}>
                               {record.checkIn}
                             </td>
-                            <td style={{ padding: "12px 16px", color: record.checkOut !== "-" ? THEME.text : THEME.textSoft }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", color: record.checkOut !== "-" ? THEME.text : THEME.textSoft }}>
                               {record.checkOut}
                             </td>
-                            <td style={{ padding: "12px 16px", fontWeight: 700, color: record.workingHours > 0 ? THEME.primary : THEME.textSoft }}>
-                              {record.workingHours > 0 ? `${record.workingHours} hrs` : "—"}
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", fontWeight: 700, color: record.workingHours > 0 ? THEME.primary : THEME.textSoft }}>
+                              {record.workingHours > 0 ? `${record.workingHours} hrs` : "0.0 hrs"}
+                            </td>
+                            {/* Biometric Card entry */}
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: record.cardCheckIn !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600 }}>
+                              {record.cardCheckIn}
+                            </td>
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: record.cardCheckOut !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600 }}>
+                              {record.cardCheckOut}
+                            </td>
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", fontWeight: 700, color: "#7e22ce" }}>
+                              {record.cardWorkingHours > 0 ? `${record.cardWorkingHours} hrs` : "0.0 hrs"}
                             </td>
                             <td style={{ padding: "12px 16px", color: THEME.textSoft }}>
                               {record.lunchMinutes > 0 || record.teaMinutes > 0 ? (
