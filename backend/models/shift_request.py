@@ -100,9 +100,19 @@ class ShiftRequest(db.Model):
 
 
     def to_dict(self):
+        emp_string_id = self.employee_id
+        try:
+            from models.employee import Employee
+            if emp_string_id:
+                emp = Employee.query.get(int(emp_string_id))
+                if emp and emp.employee_id:
+                    emp_string_id = emp.employee_id
+        except:
+            pass
+
         return {
             "id": self.id,
-            "employee_id": self.employee_id,
+            "employee_id": emp_string_id,
             "employee_name": self.employee_name,
             "current_shift": self.current_shift,
             "requested_shift": self.requested_shift,

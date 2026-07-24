@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { API_URL } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
-import { CheckIcon, XMarkIcon, ArrowRightIcon } from "@heroicons/react/24/outline";
+import { CheckIcon, XMarkIcon, ArrowRightIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
@@ -13,6 +13,8 @@ const ShiftApprovalPage: React.FC = () => {
   const [shiftRequests, setShiftRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
 
   const fetchShiftRequests = async () => {
     try {
@@ -35,9 +37,20 @@ const ShiftApprovalPage: React.FC = () => {
     fetchShiftRequests();
   }, []);
 
-  const safeManagerShiftRequests = shiftRequests.filter(
-    (req: any) => req.reporting_manager === user?.full_name || user?.access_level?.toLowerCase() === "admin"
-  );
+  const safeManagerShiftRequests = shiftRequests.filter((req: any) => {
+    const isManager = req.reporting_manager === user?.full_name || 
+                      user?.access_level?.toLowerCase() === "admin";
+    if (!isManager) return false;
+    
+    if (statusFilter !== "All" && req.status !== statusFilter) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const empName = (req.employee_name || "").toLowerCase();
+      const empId = (req.employee_id || "").toString().toLowerCase();
+      if (!empName.includes(q) && !empId.includes(q)) return false;
+    }
+    return true;
+  });
 
   const handleUpdateShiftStatus = async (id: number, newStatus: string) => {
     try {
@@ -62,10 +75,36 @@ const ShiftApprovalPage: React.FC = () => {
     }
   };
 
+  const handleCancel = async (id: number) => {
+    try {
+      setProcessingId(id);
+      const response = await fetch(`${BASE_URL}/shifts/cancel/${id}`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || err.message || "Failed to cancel");
+      }
+      
+      toast.success("Shift request cancelled");
+      fetchShiftRequests();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Failed to cancel request");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Approved": return "bg-success-50 text-success-700 border-success-200";
       case "Rejected": return "bg-danger-50 text-danger-700 border-danger-200";
+      case "Cancelled": return "bg-neutral-50 text-neutral-600 border-neutral-300";
       default: return "bg-warning-50 text-warning-700 border-warning-200";
     }
   };
@@ -76,9 +115,35 @@ const ShiftApprovalPage: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Shift Approval Requests</h1>
-        <p className="mt-1 text-sm text-neutral-500">Manage and review shift change applications from your team.</p>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Shift Approval Requests</h1>
+          <p className="mt-1 text-sm text-neutral-500">Manage and review shift change applications from your team.</p>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+            <input
+              type="text"
+              placeholder="Search by name or ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-4 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all w-64 bg-white"
+            />
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
+          >
+            <option value="All">All Statuses</option>
+            <option value="Pending">Pending</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        </div>
       </div>
       
       <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
@@ -87,6 +152,7 @@ const ShiftApprovalPage: React.FC = () => {
             <thead>
               <tr className="bg-neutral-50/50 border-b border-neutral-200 text-neutral-500 text-[10px] font-semibold uppercase tracking-wider">
                 <th className="text-left p-4 pl-6">Employee</th>
+                <th className="text-left p-4">Emp ID</th>
                 <th className="text-left p-4">Current Shift</th>
                 <th className="text-left p-4">Requested Shift</th>
                 <th className="text-left p-4">Date Range</th>
@@ -98,7 +164,7 @@ const ShiftApprovalPage: React.FC = () => {
             <tbody className="divide-y divide-neutral-200/80">
               {safeManagerShiftRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
+                  <td colSpan={8} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
                     <div className="flex flex-col items-center justify-center gap-2 py-4">
                       <CheckIcon className="w-12 h-12 text-success-400" />
                       <p className="text-xs font-bold text-neutral-500">All caught up!</p>
@@ -121,6 +187,9 @@ const ShiftApprovalPage: React.FC = () => {
                           <span className="text-xs font-medium text-neutral-800">{item.employee_name}</span>
                         </div>
                       </td>
+                      <td className="p-4 text-xs font-medium text-neutral-600">
+                        {item.employee_id || "-"}
+                      </td>
                       <td className="p-4 text-xs text-neutral-600">{item.current_shift || "-"}</td>
                       <td className="p-4 text-xs font-medium text-neutral-800">{item.requested_shift || "WFH"}</td>
                       <td className="p-4">
@@ -133,10 +202,11 @@ const ShiftApprovalPage: React.FC = () => {
                       </td>
                       <td className="p-4 text-xs text-neutral-500 truncate max-w-xs" title={item.reason}>{item.reason || "-"}</td>
                       <td className="p-4 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getStatusColor(item.status)}`}>
-                          <span className={`h-1 w-1 rounded-full ${
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getStatusColor(item.status)}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${
                             isApproved ? "bg-success-600" :
                             isRejected ? "bg-danger-600" :
+                            item.status === "Cancelled" ? "bg-neutral-400" :
                             "bg-warning-500 animate-pulse"
                           }`} />
                           {item.status}
@@ -172,6 +242,23 @@ const ShiftApprovalPage: React.FC = () => {
                                 <XMarkIcon className="w-3 h-3 mr-1" />
                               )}
                               Reject
+                            </Button>
+                          </div>
+                        ) : item.status === "Approved" && ((item.shift_date || "") >= new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]) ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              onClick={() => handleCancel(item.id)}
+                              disabled={processingId === item.id}
+                              className="!py-1 !px-2.5 !text-[10px] shadow-sm"
+                            >
+                              {processingId === item.id ? (
+                                <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                              ) : (
+                                <XMarkIcon className="w-3 h-3 mr-1" />
+                              )}
+                              Cancel
                             </Button>
                           </div>
                         ) : (

@@ -19,9 +19,18 @@ leave_bp = Blueprint(
 )
 
 def serialize_leave(leave):
+    emp_string_id = leave.employee_id
+    try:
+        if emp_string_id and str(emp_string_id).isdigit():
+            emp = Employee.query.get(int(emp_string_id))
+            if emp and emp.employee_id:
+                emp_string_id = emp.employee_id
+    except:
+        pass
+
     return {
         "id": leave.id,
-        "employee_id": leave.employee_id,
+        "employee_id": emp_string_id,
         "employee_name": leave.employee_name,
         "leave_type": leave.leave_type,
         "from_date": str(leave.from_date) if leave.from_date else None,
@@ -155,10 +164,20 @@ def get_leaves():
                 f"Status: {leave.status}"
             )
 
-        return jsonify([
-            {
+        leaves_data = []
+        for leave in leaves:
+            emp_string_id = leave.employee_id
+            try:
+                if emp_string_id and str(emp_string_id).isdigit():
+                    emp = Employee.query.get(int(emp_string_id))
+                    if emp and emp.employee_id:
+                        emp_string_id = emp.employee_id
+            except:
+                pass
+
+            leaves_data.append({
                 "id": leave.id,
-                "employee_id": leave.employee_id,
+                "employee_id": emp_string_id,
                 "employee_name": leave.employee_name,
                 "leave_type": leave.leave_type,
                 "from_date": str(leave.from_date) if leave.from_date else None,
@@ -173,9 +192,8 @@ def get_leaves():
                 "permission_date": str(leave.permission_date) if leave.permission_date else None,
                 "from_time": str(leave.from_time) if leave.from_time else None,
                 "to_time": str(leave.to_time) if leave.to_time else None,
-            }
-            for leave in leaves
-        ]), 200
+            })
+        return jsonify(leaves_data), 200
 
     except Exception as e:
         import traceback
@@ -418,7 +436,51 @@ def cancel_leave(leave_id):
                 "error": "Already cancelled"
             }), 400
 
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        
+        today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+        start_date = leave.permission_date if leave.request_type == "Permission" else leave.from_date
+        
+        if start_date and today > start_date:
+            return jsonify({
+                "success": False,
+                "error": "Cannot cancel a leave request from the past."
+            }), 400
+
+        previous_status = leave.status
         leave.status = "Cancelled"
+        
+        if previous_status == "Approved" and leave.request_type == "Leave":
+            if leave.employee_id and str(leave.employee_id).isdigit():
+                employee = Employee.query.filter(
+                    (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
+                ).first()
+            else:
+                employee = Employee.query.filter(
+                    Employee.employee_id == str(leave.employee_id)
+                ).first()
+
+            if employee:
+                leave_type = (leave.leave_type or "").strip().lower()
+                leave_days = leave.total_days or 0
+
+                if leave_type == "sick leave":
+                    employee.sick_leave = (employee.sick_leave or 0) + leave_days
+                elif leave_type == "casual leave":
+                    employee.casual_leave = (employee.casual_leave or 0) + leave_days
+                elif leave_type in ["earned leave", "privilege leave"]:
+                    employee.privilege_leave = (employee.privilege_leave or 0) + leave_days
+
+                # Restore EmployeeLeaveBalance
+                from models.leave import EmployeeLeaveBalance
+                from sqlalchemy import func
+                balance = EmployeeLeaveBalance.query.filter(
+                    EmployeeLeaveBalance.employee_id == employee.id,
+                    func.lower(EmployeeLeaveBalance.leave_type) == leave_type
+                ).first()
+                if balance:
+                    balance.available = (balance.available or 0) + leave_days
 
         db.session.commit()
 
