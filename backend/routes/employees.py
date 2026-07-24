@@ -1259,6 +1259,9 @@ def get_reporting_employees(user_id):
                 "designation":
                     employee.designation,
 
+                "department":
+                    employee.department or "General",
+
                 "profile_image":
                     base64.b64encode(
                         employee.profile_image
@@ -1283,6 +1286,21 @@ def get_reporting_employees(user_id):
                     attendance.total_hours
                     if attendance and attendance.total_hours
                     else 0,
+
+                "card_check_in":
+                    attendance.card_check_in.strftime("%I:%M %p")
+                    if attendance and attendance.card_check_in
+                    else "-",
+
+                "card_check_out":
+                    attendance.card_check_out.strftime("%I:%M %p")
+                    if attendance and attendance.card_check_out
+                    else "-",
+
+                "card_working_hours":
+                    attendance.card_working_hours
+                    if attendance and attendance.card_working_hours
+                    else 0.0,
 
                 "lunch_minutes":
                     attendance.lunch_minutes

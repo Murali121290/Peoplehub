@@ -226,18 +226,27 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 text-[11px] font-bold uppercase tracking-wider">
-                  <th className="text-left py-3.5 px-5">Employee</th>
-                  <th className="text-left py-3.5 px-5">Department</th>
-                  <th className="text-left py-3.5 px-5">Status</th>
-                  <th className="text-left py-3.5 px-5">Working Hours</th>
-                  <th className="text-left py-3.5 px-5">Verification</th>
-                  <th className="text-center py-3.5 px-5 w-[260px]">Actions</th>
+                  <th rowSpan={2} className="text-left py-3.5 px-5">Employee</th>
+                  <th rowSpan={2} className="text-left py-3.5 px-5">Department</th>
+                  <th colSpan={3} className="py-2.5 px-4 text-center bg-blue-50/60 text-blue-700 font-extrabold border-b border-neutral-200">Web Site Entry</th>
+                  <th colSpan={3} className="py-2.5 px-4 text-center bg-purple-50/60 text-purple-700 font-extrabold border-b border-neutral-200">Biometric Card Entry</th>
+                  <th rowSpan={2} className="text-left py-3.5 px-5">Status</th>
+                  <th rowSpan={2} className="text-left py-3.5 px-5">Verification</th>
+                  <th rowSpan={2} className="text-center py-3.5 px-5 w-[260px]">Actions</th>
+                </tr>
+                <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 text-[10px] font-bold uppercase tracking-wider">
+                  <th className="py-2 px-4 bg-blue-50/20">Check In</th>
+                  <th className="py-2 px-4 bg-blue-50/20">Check Out</th>
+                  <th className="py-2 px-4 bg-blue-50/20">Hours</th>
+                  <th className="py-2 px-4 bg-purple-50/20">Check In</th>
+                  <th className="py-2 px-4 bg-purple-50/20">Check Out</th>
+                  <th className="py-2 px-4 bg-purple-50/20">Hours</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 text-sm font-medium">
                 {employees.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-neutral-400 font-medium">
+                    <td colSpan={11} className="py-12 text-center text-neutral-400 font-medium">
                       No yesterday attendance records found for approval.
                     </td>
                   </tr>
@@ -279,16 +288,23 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                           {emp.department || "General"}
                         </td>
 
+                        {/* Web Entry Columns */}
+                        <td className="py-3.5 px-4 bg-blue-50/5 text-xs text-neutral-700 font-semibold">{emp.check_in || "—"}</td>
+                        <td className="py-3.5 px-4 bg-blue-50/5 text-xs text-neutral-700 font-semibold">{emp.check_out || "—"}</td>
+                        <td className="py-3.5 px-4 bg-blue-50/5 text-xs font-bold text-neutral-800">
+                          {emp.working_hours ? `${emp.working_hours} hrs` : "0.0 hrs"}
+                        </td>
+
+                        {/* Card Entry Columns */}
+                        <td className="py-3.5 px-4 bg-purple-50/5 text-xs text-purple-700 font-semibold">{emp.card_check_in || "—"}</td>
+                        <td className="py-3.5 px-4 bg-purple-50/5 text-xs text-purple-700 font-semibold">{emp.card_check_out || "—"}</td>
+                        <td className="py-3.5 px-4 bg-purple-50/5 text-xs font-bold text-purple-800">
+                          {emp.card_working_hours ? `${emp.card_working_hours} hrs` : "0.0 hrs"}
+                        </td>
+
                         {/* Status */}
                         <td className="py-3.5 px-5">
                           {getStatusBadge(emp.status)}
-                        </td>
-
-                        {/* Working Hours */}
-                        <td className="py-3.5 px-5">
-                          <span className="font-bold text-neutral-700 text-xs">
-                            {emp.working_hours ? `${emp.working_hours} hrs` : "0 hrs"}
-                          </span>
                         </td>
 
                         {/* Verification Status */}
