@@ -24,6 +24,7 @@ const LoginPage: React.FC = () => {
   // ---- Which card is showing ----
   const [view, setView] = useState<ViewMode>("login");
   const [pendingUserId, setPendingUserId] = useState<number | null>(null);
+  const [loginKey, setLoginKey] = useState(0);
 
   // ---- Login form state ----
   const [formData, setFormData] = useState({
@@ -96,6 +97,7 @@ const LoginPage: React.FC = () => {
 
   const handleBackToLogin = () => {
     resetPwForm();
+    setLoginKey(prev => prev + 1);
     setView("login");
   };
 
@@ -127,7 +129,8 @@ const LoginPage: React.FC = () => {
       );
 
       toast.success(res.data.message || "Password changed successfully");
-      handleBackToLogin();
+      setFormData({ email: "", password: "" });
+      setTimeout(() => window.location.reload(), 500);
     } catch (error: any) {
       console.error(error);
       toast.error(
@@ -168,7 +171,7 @@ const LoginPage: React.FC = () => {
 
       toast.success("Password secured! Please login again with your new password.");
       setFormData({ email: "", password: "" });
-      handleBackToLogin();
+      setTimeout(() => window.location.reload(), 1500);
     } catch (error: any) {
       console.error(error);
       toast.error(
@@ -403,7 +406,7 @@ const LoginPage: React.FC = () => {
                   <div style={{ width: "40px", height: "3px", background: "linear-gradient(90deg, #fbbf24, #f59e0b)", borderRadius: "2px", marginTop: "12px" }}></div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-5">
+                <form key={`login-form-${loginKey}`} onSubmit={handleSubmit} className="space-y-5">
                   <div>
                     <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
                       Employee ID
@@ -414,6 +417,8 @@ const LoginPage: React.FC = () => {
                       </div>
                       <input
                         type="text"
+                        name="employee_id"
+                        id="employee_id"
                         required
                         autoComplete="off"
                         value={formData.email}
@@ -436,6 +441,8 @@ const LoginPage: React.FC = () => {
                       </div>
                       <input
                         type={showPassword ? "text" : "password"}
+                        name="employee_password"
+                        id="employee_password"
                         required
                         autoComplete="new-password"
                         value={formData.password}
