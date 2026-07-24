@@ -23,7 +23,8 @@ import {
   SparklesIcon,
   BuildingOfficeIcon,
   CheckCircleIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  UserMinusIcon
 } from '@heroicons/react/24/outline';
 import { getStatusColor } from '../utils/employeeHelpers';
 
@@ -698,8 +699,14 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           const dynamicCards = policiesList.map((pol) => {
             const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
             const pending = getPendingDays(pol.leave_type);
-            const realAvailable = Math.max(0, available - pending);
-            const used = Math.max(0, pol.yearly_limit - available);
+            const realAvailable = available;
+            const used = myRequests
+              .filter((req: any) => 
+                (req.status === "Approved" || req.status === "Pending") && 
+                req.request_type === "Leave" &&
+                (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
+              )
+              .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
             
             let icon = CalendarIcon;
             let iconWrap = "bg-blue-50";
@@ -739,6 +746,21 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           const totalLimit = dynamicCards.reduce((sum, c) => sum + c.total, 0);
           const totalUsed = dynamicCards.reduce((sum, c) => sum + c.used, 0);
 
+          let totalLop = 0;
+          policiesList.forEach(pol => {
+            const totalRequested = myRequests
+              .filter((req: any) => 
+                (req.status === "Approved" || req.status === "Pending") && 
+                req.request_type === "Leave" &&
+                (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
+              )
+              .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+            
+            if (totalRequested > pol.yearly_limit) {
+              totalLop += (totalRequested - pol.yearly_limit);
+            }
+          });
+
           const allCards = [
             ...dynamicCards,
             {
@@ -750,6 +772,17 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               iconWrap: "bg-slate-100",
               iconColor: "text-slate-600",
               note: "Cumulative leave count"
+            },
+            {
+              label: "Loss of Pay (LOP)",
+              value: 0,
+              total: 0,
+              used: totalLop,
+              icon: UserMinusIcon,
+              iconWrap: "bg-red-50",
+              iconColor: "text-red-600",
+              note: "Excess leave taken",
+              isLopCard: true
             }
           ];
 
@@ -768,17 +801,26 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 </div>
 
                 <div className="w-full space-y-1.5 mt-auto px-1">
-                  <div className="flex justify-between items-center text-[14px]">
-                    <span className="text-slate-600 font-medium">Available</span>
-                    <span className="font-semibold text-emerald-600">{item.value}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[14px]">
-                    <span className="text-slate-600 font-medium">Booked</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-slate-900">{item.used}</span>
-                      <InformationCircleIcon className="w-4 h-4 text-slate-400 cursor-pointer hover:text-slate-600 transition-colors" />
+                  {(item as any).isLopCard ? (
+                    <div className="flex justify-between items-center text-[14px]">
+                      <span className="text-slate-600 font-medium">Accumulated</span>
+                      <span className="font-semibold text-red-600">{item.used} {item.used === 1 ? "day" : "days"}</span>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center text-[14px]">
+                        <span className="text-slate-600 font-medium">Available</span>
+                        <span className="font-semibold text-emerald-600">{item.value}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[14px]">
+                        <span className="text-slate-600 font-medium">Booked</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-slate-900">{item.used}</span>
+                          <InformationCircleIcon className="w-4 h-4 text-slate-400 cursor-pointer hover:text-slate-600 transition-colors" />
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </Card>
             );
