@@ -335,9 +335,23 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     };
   }, [myRequests, leaveForm.requestType, leaveForm.permissionDate]);
 
-  const filteredTimelineRequests = React.useMemo(() => {
-    const todayStr = new Date().toISOString().split("T")[0];
-    
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  const upcomingLeaveRequests = React.useMemo(() => {
+    return myRequests.filter((req: any) => {
+      const matchStatus = statusFilter === "All" || req.status === statusFilter;
+      const matchType = typeFilter === "All" || req.leave_type === typeFilter;
+      if (!matchStatus || !matchType) return false;
+
+      const dateStr = req.request_type === "Permission" ? req.permission_date : req.from_date;
+      return (req.status === "Pending" || req.status === "Approved") && dateStr >= todayStr;
+    }).sort((a: any, b: any) => 
+      new Date(a.from_date || a.permission_date).getTime() - 
+      new Date(b.from_date || b.permission_date).getTime()
+    );
+  }, [myRequests, statusFilter, typeFilter, todayStr]);
+
+  const leaveHistoryRequests = React.useMemo(() => {
     // Convert past holidays into the format of leave requests so they show in history
     const pastHolidays = allYearHolidays.filter((h: any) => h.date < todayStr).map((h: any) => ({
       ...h,
@@ -352,30 +366,55 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       reporting_manager: "Company",
     }));
 
-    const requests = myRequests.filter((req: any) => {
-      const matchStatus = statusFilter === "All" || req.status === statusFilter;
-      const matchType = typeFilter === "All" || req.leave_type === typeFilter;
-      return matchStatus && matchType;
-    });
-
-    // Also apply filters to past holidays if applicable
     const filteredPastHolidays = pastHolidays.filter((h: any) => {
       const matchStatus = statusFilter === "All" || h.status === statusFilter;
       const matchType = typeFilter === "All" || h.leave_type === typeFilter;
       return matchStatus && matchType;
     });
 
+    const requests = myRequests.filter((req: any) => {
+      const matchStatus = statusFilter === "All" || req.status === statusFilter;
+      const matchType = typeFilter === "All" || req.leave_type === typeFilter;
+      if (!matchStatus || !matchType) return false;
+
+      const dateStr = req.request_type === "Permission" ? req.permission_date : req.from_date;
+      return (req.status === "Cancelled" || req.status === "Rejected") || dateStr < todayStr;
+    });
+
     const combined = [...requests, ...filteredPastHolidays];
+    // Descending order for history
+    return combined.sort((a: any, b: any) => 
+      new Date(b.from_date || b.permission_date || b.date).getTime() - 
+      new Date(a.from_date || a.permission_date || a.date).getTime()
+    );
+  }, [myRequests, statusFilter, typeFilter, allYearHolidays, todayStr]);
+
+  const upcomingEvents = React.useMemo(() => {
+    const holidays = allYearHolidays.filter((h: any) => h.date >= todayStr).map((h: any) => ({
+      ...h,
+      id: `hol-${h.id}`,
+      request_type: "Holiday",
+      from_date: h.date,
+      to_date: h.date,
+      leave_type: h.holiday_type || "Holiday",
+      reason: h.name,
+      status: "Approved",
+      total_days: 1,
+      reporting_manager: "Company",
+    }));
+
+    const filteredHolidays = holidays.filter((h: any) => {
+      const matchStatus = statusFilter === "All" || h.status === statusFilter;
+      const matchType = typeFilter === "All" || h.leave_type === typeFilter;
+      return matchStatus && matchType;
+    });
+
+    const combined = [...upcomingLeaveRequests, ...filteredHolidays];
     return combined.sort((a: any, b: any) => 
       new Date(a.from_date || a.permission_date || a.date).getTime() - 
       new Date(b.from_date || b.permission_date || b.date).getTime()
     );
-  }, [myRequests, statusFilter, typeFilter, allYearHolidays]);
-
-  const upcomingHolidays = React.useMemo(() => {
-    const todayStr = new Date().toISOString().split("T")[0];
-    return allYearHolidays.filter((h: any) => h.date >= todayStr);
-  }, [allYearHolidays]);
+  }, [allYearHolidays, upcomingLeaveRequests, statusFilter, typeFilter, todayStr]);
 
   // Generate 35-42 days grid for monthly calendar
   const calendarGridDays = React.useMemo(() => {
@@ -894,12 +933,14 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             
             {/* ── Mode 2: Grid View ── */}
             <div className="bg-white">
+
+
                 {/* Section 1: Employee Leave History */}
                 <div className="pt-6 px-6 pb-2">
                   <div className="flex items-center justify-between mb-4">
                     <h4 className="text-[16px] font-semibold text-neutral-900">📋 Employee Leave History</h4>
                     <span className="text-[13px] font-medium text-neutral-500">
-                      {filteredTimelineRequests.length} Record{filteredTimelineRequests.length === 1 ? "" : "s"}
+                      {leaveHistoryRequests.length} Record{leaveHistoryRequests.length === 1 ? "" : "s"}
                     </span>
                   </div>
 
@@ -916,7 +957,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         </tr>
                       </thead>
                       <tbody className="text-[14px]">
-                        {filteredTimelineRequests.length === 0 ? (
+                        {leaveHistoryRequests.length === 0 ? (
                           <tr>
                             <td colSpan={6} className="py-12">
                               <div className="flex flex-col items-center justify-center text-center">
@@ -927,7 +968,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                             </td>
                           </tr>
                         ) : (
-                          filteredTimelineRequests.map((req: any) => {
+                          leaveHistoryRequests.map((req: any) => {
                             const isPermission = req.request_type === "Permission";
                             const startDateStr = isPermission ? req.permission_date : req.from_date;
                             const dateObj = startDateStr ? new Date(startDateStr) : null;
@@ -986,59 +1027,92 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 {/* Section 2: Upcoming & Published Holidays Schedule (Read-Only) */}
                 <div className="pt-4 px-6 pb-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-[16px] font-semibold text-neutral-900">✨ Upcoming Holidays</h4>
-                    <span className="text-[12px] font-medium px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 border border-gray-200">
-                      Read Only
+                    <h4 className="text-[16px] font-semibold text-neutral-900">✨ Upcoming Leaves & Holidays</h4>
+                    <span className="text-[13px] font-medium text-neutral-500">
+                      {upcomingEvents.length} Record{upcomingEvents.length === 1 ? "" : "s"}
                     </span>
                   </div>
 
-                  <div className="w-full overflow-x-auto overflow-y-auto max-h-[350px] border border-neutral-200 rounded-lg">
-                    <table className="w-full border-collapse text-left min-w-[600px]">
+                  <div className="w-full overflow-x-auto overflow-y-auto max-h-[400px] border border-neutral-200 rounded-lg">
+                    <table className="w-full border-collapse text-left min-w-[800px]">
                       <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
                         <tr className="border-b border-neutral-200 text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
                           <th className="py-3 px-4 font-semibold">Date</th>
                           <th className="py-3 px-4 font-semibold">Day</th>
-                          <th className="py-3 px-4 font-semibold">Holiday Name</th>
-                          <th className="py-3 px-4 font-semibold">Holiday Type</th>
+                          <th className="py-3 px-4 font-semibold">Leave Type</th>
+                          <th className="py-3 px-4 font-semibold text-center">Status</th>
+                          <th className="py-3 px-4 font-semibold text-center">Duration</th>
+                          <th className="py-3 px-4 font-semibold">Manager Review</th>
                         </tr>
                       </thead>
                       <tbody className="text-[14px]">
-                        {upcomingHolidays.length === 0 ? (
+                        {upcomingEvents.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="py-12">
+                            <td colSpan={6} className="py-12">
                                <div className="flex flex-col items-center justify-center text-center">
                                 <span className="text-3xl mb-2">🏝️</span>
-                                <p className="text-[14px] font-semibold text-neutral-700">No upcoming holidays.</p>
+                                <p className="text-[14px] font-semibold text-neutral-700">No upcoming leaves or holidays.</p>
                               </div>
                             </td>
                           </tr>
                         ) : (
-                          upcomingHolidays.map((h: any) => {
-                            const hDate = new Date(h.date);
-                            const dayName = WEEKDAYS[hDate.getDay()] || h.day || "—";
+                          upcomingEvents.map((req: any) => {
+                            const isPermission = req.request_type === "Permission";
+                            const startDateStr = isPermission ? req.permission_date : req.from_date;
+                            const dateObj = startDateStr ? new Date(startDateStr) : null;
+                            const dayName = dateObj ? WEEKDAYS[dateObj.getDay()] : req.day || "—";
 
-                            const typeLower = (h.holiday_type || "").toLowerCase();
-                            const badgeColor = typeLower.includes("national") ? "bg-blue-100 text-blue-700" :
-                                               typeLower.includes("festival") ? "bg-purple-100 text-purple-700" :
-                                               typeLower.includes("weekly off") ? "bg-gray-100 text-gray-700" :
-                                               "bg-green-100 text-green-700";
-                            const dotColor = typeLower.includes("national") ? "bg-blue-500" :
-                                             typeLower.includes("festival") ? "bg-purple-500" :
-                                             typeLower.includes("weekly off") ? "bg-gray-500" :
-                                             "bg-green-500";
+                            const isApproved = req.status === "Approved";
+                            const isPending = req.status === "Pending";
+                            
+                            const isHoliday = req.request_type === "Holiday";
+                            
+                            const typeLower = (req.leave_type || "").toLowerCase();
+                            
+                            // Color logic: if holiday, make it slightly different (e.g. blue for national, purple for festival)
+                            // If leave request, use standard Green/Amber
+                            let badgeColor = "bg-amber-100 text-amber-700";
+                            let dotColor = "bg-amber-500";
+                            
+                            if (isHoliday) {
+                              badgeColor = typeLower.includes("national") ? "bg-blue-100 text-blue-700" :
+                                           typeLower.includes("festival") ? "bg-purple-100 text-purple-700" :
+                                           typeLower.includes("weekly off") ? "bg-gray-100 text-gray-700" :
+                                           "bg-green-100 text-green-700";
+                              dotColor = typeLower.includes("national") ? "bg-blue-500" :
+                                         typeLower.includes("festival") ? "bg-purple-500" :
+                                         typeLower.includes("weekly off") ? "bg-gray-500" :
+                                         "bg-green-500";
+                            } else {
+                              if (isApproved) {
+                                badgeColor = "bg-green-100 text-green-700";
+                                dotColor = "bg-green-500";
+                              }
+                            }
 
                             return (
-                              <tr key={h.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
-                                <td className="py-3 px-4 font-medium text-neutral-900">{h.date}</td>
+                              <tr key={req.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
+                                <td className="py-3 px-4 font-medium text-neutral-900">
+                                  {isPermission ? req.permission_date : isHoliday ? req.from_date : `${req.from_date} to ${req.to_date}`}
+                                </td>
                                 <td className="py-3 px-4 text-neutral-500">{dayName}</td>
                                 <td className="py-3 px-4 font-medium text-neutral-900">
-                                  {h.name}
+                                  {isPermission ? "Permission Request" : req.leave_type}
                                 </td>
-                                <td className="py-3 px-4">
+                                <td className="py-3 px-4 text-center">
                                   <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${badgeColor}`}>
                                     <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></div>
-                                    {h.holiday_type || "Company Holiday"}
+                                    {isHoliday ? "Holiday" : req.status}
                                   </span>
+                                </td>
+                                <td className="py-3 px-4 text-center text-neutral-700">
+                                  {isPermission ? "Permission" : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="flex flex-col">
+                                    <span className="text-neutral-900 font-medium">{req.reporting_manager || "Manager"}</span>
+                                    <span className="text-[13px] text-neutral-500 truncate max-w-[200px]">{req.reason || "No reason"}</span>
+                                  </div>
                                 </td>
                               </tr>
                             );
