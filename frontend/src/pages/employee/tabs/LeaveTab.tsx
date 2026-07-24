@@ -102,7 +102,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const [validationError, setValidationError] = useState<{
     title: string;
     message: string;
-    type: "limit" | "insufficient";
+    type: "limit" | "insufficient" | "confirm";
+    onConfirm?: () => void;
   } | null>(null);
 
   interface LeaveFormState {
@@ -567,6 +568,21 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    const submitPayload = () => {
+      const payload = {
+        ...leaveForm,
+        request_type: leaveForm.requestType,
+        leave_type: leaveForm.leaveType === "Earned Leave" ? "Privilege Leave" : leaveForm.leaveType,
+        permission_date: leaveForm.permissionDate,
+        from_time: leaveForm.fromTime,
+        to_time: leaveForm.toTime,
+      };
+      onSubmitLeave(e, payload, editingLeave);
+      setShowLeaveForm(false);
+      setEditingLeave(null);
+      resetLeaveForm();
+    };
+
     if (leaveForm.requestType === "Leave") {
       const type = (leaveForm.leaveType || "").trim().toLowerCase();
       const requested = leaveForm.totalDays || 0;
@@ -587,10 +603,15 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         }
 
         if (requested > available) {
+          const lop = requested - available;
           setValidationError({
-            type: "insufficient",
+            type: "confirm",
             title: "Insufficient Leave Balance",
-            message: `Requested: ${requested} Days, Available: ${available} Days. Please reduce the requested leave duration.`
+            message: `Requested: ${requested} Days, Available: ${available} Days. So ${lop} day${lop > 1 ? "s are" : " is"} LOP. Are you sure you want to apply for leave?`,
+            onConfirm: () => {
+              setValidationError(null);
+              submitPayload();
+            }
           });
           return;
         }
@@ -630,18 +651,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       }
     }
 
-    const payload = {
-      ...leaveForm,
-      request_type: leaveForm.requestType,
-      leave_type: leaveForm.leaveType === "Earned Leave" ? "Privilege Leave" : leaveForm.leaveType,
-      permission_date: leaveForm.permissionDate,
-      from_time: leaveForm.fromTime,
-      to_time: leaveForm.toTime,
-    };
-    onSubmitLeave(e, payload, editingLeave);
-    setShowLeaveForm(false);
-    setEditingLeave(null);
-    resetLeaveForm();
+    submitPayload();
   };
 
   // Find active requests (Pending) for live status tracking
@@ -1221,6 +1231,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     onChange={(val) => setLeaveForm({ ...leaveForm, fromDate: val })}
                     disablePast={true}
                     disableWeekends={true}
+                    disabled={!leaveForm.leaveType}
                     disabledDates={allYearHolidays.map((h: any) => h.date)}
                     bookedDates={myAppliedLeaveDates}
                   />
@@ -1234,6 +1245,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     disablePast={true}
                     disableWeekends={true}
                     minDate={leaveForm.fromDate}
+                    disabled={!leaveForm.leaveType}
                     disabledDates={allYearHolidays.map((h: any) => h.date)}
                     bookedDates={myAppliedLeaveDates}
                   />
@@ -1404,29 +1416,79 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 Leave Balance Summary
               </h3>
               <div className="space-y-3.5 text-xs">
-                {leavePolicies.filter(pol => {
-                  const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
-                  const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
-                  return polGender === "all" || polGender === userGender;
-                }).map((pol) => {
-                  const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+                {(() => {
+                  const validPolicies = leavePolicies.filter(pol => {
+                    const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
+                    const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
+                    return polGender === "all" || polGender === userGender;
+                  });
+
+                  const totalAvailable = validPolicies.reduce((sum, pol) => sum + getAvailableBalance(pol.leave_type, pol.yearly_limit), 0);
+                  
+                  const isLeaveRequest = leaveForm.requestType === "Leave";
+                  const activeLeaveType = leaveForm.leaveType;
+                  const requestedDays = isLeaveRequest && activeLeaveType ? (leaveForm.totalDays || 0) : 0;
+
+                  let deductionFromTotal = 0;
+                  let lopDays = 0;
+
+                  if (requestedDays > 0 && activeLeaveType) {
+                    const activePol = validPolicies.find(p => p.leave_type === activeLeaveType);
+                    const rawAvail = activePol ? getAvailableBalance(activePol.leave_type, activePol.yearly_limit) : getAvailableBalance(activeLeaveType, 0);
+                    const avail = rawAvail;
+                    
+                    deductionFromTotal = Math.min(avail, requestedDays);
+                    if (requestedDays > avail) {
+                      lopDays = requestedDays - avail;
+                    }
+                  }
+
+                  const projectedTotal = totalAvailable - deductionFromTotal;
+
                   return (
-                    <div key={pol.id} className="flex justify-between items-center py-2 border-b border-primary-100">
-                      <span className="text-neutral-600 font-semibold">{pol.leave_type}</span>
-                      <span className="font-extrabold text-primary-700 text-md">{available} days</span>
-                    </div>
+                    <>
+                      {validPolicies.map((pol) => {
+                        const rawAvail = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+                        const available = rawAvail;
+                        const isActive = isLeaveRequest && pol.leave_type === activeLeaveType;
+                        
+                        return (
+                          <div key={pol.id} className="flex justify-between items-start py-2 border-b border-primary-100">
+                            <span className="text-neutral-600 font-semibold">{pol.leave_type}</span>
+                            <div className="flex flex-col items-end">
+                              <span className="font-extrabold text-primary-700 text-md">{available} days</span>
+                              {isActive && requestedDays > 0 && (
+                                <span className="text-amber-600 font-semibold text-[11px] mt-0.5 whitespace-nowrap">
+                                  Booked {requestedDays} {requestedDays === 1 ? "day" : "days"}{" "}
+                                  <span className="text-primary-700 ml-1">
+                                    {available - requestedDays}
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      
+                      <div className="flex justify-between items-center pt-3 text-sm">
+                        <span className="font-bold text-primary-900">Total Balance</span>
+                        <div className="flex items-center gap-2 font-extrabold text-primary-800">
+                          <span className={requestedDays > 0 ? "line-through opacity-50" : ""}>{totalAvailable} days</span>
+                          {requestedDays > 0 && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-primary-700">{projectedTotal} days</span>
+                              {lopDays > 0 && (
+                                <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded text-[11px]">
+                                  Lop {lopDays}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
                   );
-                })}
-                <div className="flex justify-between items-center pt-3 text-sm">
-                  <span className="font-bold text-primary-900">Total Balance</span>
-                  <span className="font-extrabold text-primary-800">
-                    {leavePolicies.filter(pol => {
-                      const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
-                      const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
-                      return polGender === "all" || polGender === userGender;
-                    }).reduce((sum, pol) => sum + getAvailableBalance(pol.leave_type, pol.yearly_limit), 0)} days
-                  </span>
-                </div>
+                })()}
               </div>
             </div>
 
@@ -1512,13 +1574,33 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           <p className="text-sm text-neutral-500 font-semibold leading-relaxed">
             {validationError?.message}
           </p>
-          <div className="pt-4 border-t border-neutral-100 flex justify-center">
-            <Button
-              onClick={() => setValidationError(null)}
-              className="bg-danger-605 hover:bg-danger-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm shadow-md transition-all duration-200"
-            >
-              Okay, I understand
-            </Button>
+          <div className="pt-4 border-t border-neutral-100 flex justify-center gap-3">
+            {validationError?.type === "confirm" ? (
+              <>
+                <Button
+                  type="button"
+                  onClick={() => setValidationError(null)}
+                  className="bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-semibold rounded-xl px-6 py-2.5 text-sm transition-all duration-200"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={validationError.onConfirm}
+                  className="bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm shadow-md transition-all duration-200"
+                >
+                  Confirm
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                onClick={() => setValidationError(null)}
+                className="bg-danger-605 hover:bg-danger-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm shadow-md transition-all duration-200"
+              >
+                Okay, I understand
+              </Button>
+            )}
           </div>
         </div>
       </Modal>

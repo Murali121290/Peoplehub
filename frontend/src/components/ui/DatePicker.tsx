@@ -13,6 +13,7 @@ interface DatePickerProps {
   disablePast?: boolean;
   disableWeekends?: boolean;
   minDate?: string; // Standard "YYYY-MM-DD" format
+  disabled?: boolean;
 }
 
 const MONTH_NAMES = [
@@ -54,6 +55,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   disablePast = false,
   disableWeekends = false,
   minDate,
+  disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputVal, setInputVal] = useState(value);
@@ -113,6 +115,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   }, [isOpen]);
 
   const handleOpen = () => {
+    if (disabled) return;
     setIsOpen(true);
     setViewMode("calendar");
   };
@@ -362,10 +365,13 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           name={name}
           readOnly
           required={required}
+          disabled={disabled}
           onClick={handleOpen}
           value={getDisplayValue()}
           placeholder={placeholder}
-          className={`w-full border rounded-xl px-4 py-2.5 pr-10 text-sm text-neutral-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white font-medium transition-all ${
+          className={`w-full border rounded-xl px-4 py-2.5 pr-10 text-sm font-medium transition-all ${
+            disabled ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : "cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white text-neutral-700"
+          } ${
             error ? "border-red-400" : "border-neutral-200"
           } ${className}`}
         />
