@@ -25,6 +25,7 @@ import AnnouncementsPage from './pages/AnnouncementsPage';
 import TelecomDirectoryPage from "./pages/Telecomdirectory ";
 import MeetingRoomsPage from "./pages/mettingroom/MeetingRooms";
 import AppraisalDashboard from "./pages/appraisal/AppraisalDashboard";
+import DBAdminPage from "./pages/admin/DBAdminPage";
 
 
 
@@ -186,6 +187,15 @@ function App() {
         element={
           <ProtectedRoute>
             <HrmsModule />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/db"
+        element={
+          <ProtectedRoute>
+            <DBAdminPage />
           </ProtectedRoute>
         }
       />

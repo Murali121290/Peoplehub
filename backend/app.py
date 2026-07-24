@@ -33,6 +33,7 @@ from routes.communications import communication_bp
 from routes.appraisal_routes import appraisal_bp
 from routes.meeting_rooms import meeting_rooms_bp
 from routes.holidays import holidays_bp
+from routes.db_admin import db_admin_bp
 
 # Import Socket.IO and register events
 from extensions import socketio
@@ -71,6 +72,7 @@ def create_app():
     fastapi_app.include_router(users_bp, prefix="/api/users")
     fastapi_app.include_router(communication_bp, prefix="/api/communications")
     fastapi_app.include_router(appraisal_bp, prefix="/api")
+    fastapi_app.include_router(db_admin_bp, prefix="/api/admin/db")
 
     # Mount uploads directory static files
     os.makedirs("uploads", exist_ok=True)

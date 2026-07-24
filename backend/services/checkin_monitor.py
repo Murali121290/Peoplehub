@@ -50,7 +50,7 @@ def check_missed_checkins():
 
                 manager_name = employee.reporting_manager.strip().lower()
                 manager_emp = None
-                for e in Employee.query.all():
+                for e in [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]:
                     full_name = f"{e.first_name} {e.last_name}".strip().lower()
                     if full_name == manager_name:
                         manager_emp = e
@@ -201,7 +201,7 @@ def generate_daily_notifications():
 
     try:
         # 1. Fetch all active employees
-        employees = Employee.query.all()
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
         print(f"Checking birthdays and anniversaries for {len(employees)} employees...")
 
         for emp in employees:

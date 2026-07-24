@@ -219,7 +219,7 @@ def send_manager_request_email(request_obj, request_type):
     manager_email = "selvabharath@s4carlisle.com"
     if employee.reporting_manager:
         search_name = employee.reporting_manager.strip().lower()
-        all_emps = Employee.query.all()
+        all_emps = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
         matching_manager = None
         for emp in all_emps:
             emp_full_name = f"{emp.first_name or ''} {emp.last_name or ''}".strip().lower()

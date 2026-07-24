@@ -1104,7 +1104,7 @@ def create_leave_policy():
         db.session.add(policy)
         db.session.commit()
 
-        employees = Employee.query.all()
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
         for emp in employees:
             emp_gender = (emp.gender or "").strip().lower()
             pol_gender = applicable_gender.strip().lower()

@@ -481,3 +481,42 @@ def search_users():
         }
         for user in users
     ])
+
+# =========================================
+# RESET PASSWORD (INDIVIDUAL)
+# =========================================
+@users_bp.route('/<int:user_id>/reset-password', methods=['POST'])
+@auth_required
+@access_level_required("admin", "hr", "s4c")
+def reset_password(user_id):
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        user.set_password("Welcome_PeopleHub")
+        db.session.commit()
+
+        return jsonify({'message': 'Password reset successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# =========================================
+# RESET ALL PASSWORDS (GROUP)
+# =========================================
+@users_bp.route('/reset-all-passwords', methods=['POST'])
+@auth_required
+@access_level_required("admin", "hr", "s4c")
+def reset_all_passwords():
+    try:
+        users = User.query.all()
+        for user in users:
+            user.set_password("Welcome_PeopleHub")
+        
+        db.session.commit()
+
+        return jsonify({'message': f'All {len(users)} passwords reset successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500

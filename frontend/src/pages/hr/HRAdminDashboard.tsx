@@ -31,6 +31,7 @@ import AddEmployeeModal from "./modals/AddEmployeeModal";
 import ProfileCompleteModal from "./modals/ProfileCompleteModal";
 import AddTeamModal from "./modals/AddTeamModal";
 import { Tabs } from "../../components/ui/Tabs";
+import ConfirmDialog from "../../components/ui/Modal/ConfirmDialog";
 const NAV = [
   { id: "dashboard", label: "Dashboard" },
   { id: "directory", label: "Employee Directory" },
@@ -55,7 +56,7 @@ const DEFAULT_NEW_EMP = {
   role_id: "",
   access_level: "",
   company_email: "",
-  password: "",
+  password: "Welcome_PeopleHub",
   team_id: "",
   department: "",
   designation: "",
@@ -124,13 +125,20 @@ export default function HRAdminDashboard() {
   const [newEmp, setNewEmp] = useState(DEFAULT_NEW_EMP);
   const [profileData, setProfileData] = useState(DEFAULT_PROFILE_DATA);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [resetUserId, setResetUserId] = useState<string | null>(null);
+  const [resetAllOpen, setResetAllOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   // --- API Calls ---
   const fetchEmployees = async () => {
     try {
       const response = await fetch(`${BASE_URL}/employees/`);
       const data = await response.json();
-      const nonAdmins = (data || []).filter((emp: any) => emp.access_level?.toLowerCase() !== 'admin');
+      const nonAdmins = (data || []).filter((emp: any) => {
+        const isNotAdmin = emp.access_level?.toLowerCase() !== 'admin';
+        const isActive = emp.status?.toLowerCase() !== 'inactive';
+        return isNotAdmin && isActive;
+      });
       setEmployees(nonAdmins);
     } catch (error) {
       console.error(error);
@@ -637,6 +645,16 @@ export default function HRAdminDashboard() {
               setAddEmpOpen(true);
             }}
             onEditEmployee={handleEditEmployee}
+            onResetPassword={async (userId) => {
+              if (!userId) {
+                toast.error("User ID not found for this employee");
+                return;
+              }
+              setResetUserId(userId);
+            }}
+            onResetAllPasswords={async () => {
+              setResetAllOpen(true);
+            }}
             BASE_URL={BASE_URL}
           />
         )}
@@ -704,6 +722,66 @@ export default function HRAdminDashboard() {
           teamData={editingTeam}
         />
       )}
+      <ConfirmDialog
+        isOpen={!!resetUserId}
+        title="Reset Password"
+        message="Are you sure you want to reset this user's password to 'Welcome_PeopleHub'?"
+        variant="warning"
+        confirmLabel="Reset"
+        onConfirm={async () => {
+          if (!resetUserId) return;
+          setIsResetting(true);
+          try {
+            const res = await fetch(`${BASE_URL}/users/${resetUserId}/reset-password`, {
+              method: "POST",
+              headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+            });
+            const data = await res.json();
+            if (res.ok) {
+              toast.success("Password reset successfully");
+            } else {
+              toast.error(data.error || "Failed to reset password");
+            }
+          } catch (e) {
+            toast.error("An error occurred");
+          } finally {
+            setIsResetting(false);
+            setResetUserId(null);
+          }
+        }}
+        onCancel={() => setResetUserId(null)}
+        loading={isResetting}
+      />
+      <ConfirmDialog
+        isOpen={resetAllOpen}
+        title="Reset All Passwords"
+        message="WARNING: Are you sure you want to reset ALL users' passwords to 'Welcome_PeopleHub'?"
+        description="This action cannot be undone and will affect all administrators and employees."
+        variant="danger"
+        confirmLabel="Reset All"
+        onConfirm={async () => {
+          setIsResetting(true);
+          try {
+            const res = await fetch(`${BASE_URL}/users/reset-all-passwords`, {
+              method: "POST",
+              headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+            });
+            const data = await res.json();
+            if (res.ok) {
+              toast.success(data.message || "All passwords reset successfully");
+            } else {
+              toast.error(data.error || "Failed to reset passwords");
+            }
+          } catch (e) {
+            toast.error("An error occurred");
+          } finally {
+            setIsResetting(false);
+            setResetAllOpen(false);
+          }
+        }}
+        onCancel={() => setResetAllOpen(false)}
+        loading={isResetting}
+      />
     </div>
   );
 }

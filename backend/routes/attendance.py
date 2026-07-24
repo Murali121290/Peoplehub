@@ -235,7 +235,7 @@ def check_in():
             # 1. Look up manager's employee details to locate their socket room
             manager_name = employee.reporting_manager.strip().lower() if employee.reporting_manager else ""
             manager_emp = None
-            for e in Employee.query.all():
+            for e in [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]:
                 full_name = f"{e.first_name} {e.last_name}".strip().lower()
                 is_match = (full_name == manager_name) or (len(manager_name.split()) == 1 and full_name.split()[0] == manager_name) or (len(full_name.split()) == 1 and manager_name.split()[0] == full_name)
                 if is_match:
@@ -899,7 +899,7 @@ def get_attendance():
 
     today = get_ist_today()
 
-    employees = Employee.query.all()
+    employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
     attendance_list = []
 
@@ -1013,7 +1013,7 @@ def get_weekly_attendance():
 
         result = []
 
-        employees = Employee.query.all()
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         # Today first
         for i in range(7):
@@ -1103,7 +1103,7 @@ def get_monthly_attendance():
 
         result = []
 
-        employees = Employee.query.all()
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         # Last 30 days - newest first
         for i in range(30):
@@ -1358,7 +1358,7 @@ def export_monthly_attendance():
         # EMPLOYEE DATA
         # =====================================
 
-        employees = Employee.query.all()
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         row = 6
 
@@ -1566,7 +1566,7 @@ def credit_monthly_leaves():
         current_month = datetime.now().strftime("%B")
         current_year = datetime.now().year
 
-        employees = Employee.query.all()
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         for employee in employees:
 
@@ -1798,7 +1798,7 @@ def export_paysheet():
 
             cell.border = thin_border
 
-        employees = Employee.query.all()
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         row = 4
 
@@ -2205,7 +2205,7 @@ def approve_all_attendance():
             manager = Employee.query.filter_by(user_id=int(manager_id)).first()
             if manager:
                 manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
-                reporting_employees = Employee.query.all()
+                reporting_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
                 for employee in reporting_employees:
                     if not employee.reporting_manager:
                         continue
