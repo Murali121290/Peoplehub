@@ -1652,7 +1652,7 @@ const ManagerDashboardPage = () => {
                               {record.checkOut}
                             </td>
                             <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", fontWeight: 700, color: record.workingHours > 0 ? THEME.primary : THEME.textSoft }}>
-                              {record.workingHours > 0 ? `${record.workingHours} hrs` : "0.0 hrs"}
+                              {formatWorkingHours(record.workingHours)}
                             </td>
                             {/* Biometric Card entry */}
                             <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: record.cardCheckIn !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600 }}>
@@ -1662,7 +1662,7 @@ const ManagerDashboardPage = () => {
                               {record.cardCheckOut}
                             </td>
                             <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", fontWeight: 700, color: "#7e22ce" }}>
-                              {record.cardWorkingHours > 0 ? `${record.cardWorkingHours} hrs` : "0.0 hrs"}
+                              {formatWorkingHours(record.cardWorkingHours)}
                             </td>
                             <td style={{ padding: "12px 16px", color: THEME.textSoft }}>
                               {record.lunchMinutes > 0 || record.teaMinutes > 0 ? (

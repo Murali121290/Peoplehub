@@ -345,8 +345,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
           <button
             onClick={() => setViewMode("calendar")}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all ${viewMode === "calendar"
-                ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
-                : "text-neutral-600 hover:text-neutral-900"
+              ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
+              : "text-neutral-600 hover:text-neutral-900"
               }`}
           >
             <CalendarIcon className="w-4 h-4" /> Calendar View
@@ -354,8 +354,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
           <button
             onClick={() => setViewMode("grid")}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all ${viewMode === "grid"
-                ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
-                : "text-neutral-600 hover:text-neutral-900"
+              ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
+              : "text-neutral-600 hover:text-neutral-900"
               }`}
           >
             <ListBulletIcon className="w-4 h-4" /> Grid View
@@ -445,7 +445,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               onChange={(e) => setStatusFilter(e.target.value)}
               className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
             >
-              <option value="All">All Statuses</option>
+              <option value="All">All Status</option>
               <option value="Present">🟢 Present</option>
               <option value="Absent">🔴 Absent</option>
               <option value="Half Day">🟠 Half Day</option>
@@ -507,23 +507,21 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 return (
                   <div
                     key={cell.dateStr}
-                    className={`h-[80px] p-2 flex flex-col justify-between rounded-xl border relative group cursor-default transition-all duration-200 ${
-                      cell.isToday 
-                        ? "border-primary-500 shadow-sm bg-white" 
-                        : cell.status === "Future" 
-                          ? "border-transparent bg-transparent" 
+                    className={`h-[80px] p-2 flex flex-col justify-between rounded-xl border relative group cursor-default transition-all duration-200 ${cell.isToday
+                        ? "border-primary-500 shadow-sm bg-white"
+                        : cell.status === "Future"
+                          ? "border-transparent bg-transparent"
                           : "border-neutral-100 bg-white hover:border-neutral-200 hover:shadow-sm"
-                    }`}
+                      }`}
                   >
                     {/* Top Row: Date Number */}
                     <div className="flex justify-between items-start">
-                      <span className={`text-[12px] font-bold flex items-center justify-center rounded-full ${
-                        cell.isToday 
-                          ? "bg-primary-500 text-white w-6 h-6 shadow-sm" 
-                          : cell.status === "Future" 
-                            ? "text-neutral-300" 
+                      <span className={`text-[12px] font-bold flex items-center justify-center rounded-full ${cell.isToday
+                          ? "bg-primary-500 text-white w-6 h-6 shadow-sm"
+                          : cell.status === "Future"
+                            ? "text-neutral-300"
                             : "text-neutral-700"
-                      }`}>
+                        }`}>
                         {cell.dayNum}
                       </span>
                     </div>
@@ -659,11 +657,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       </td>
                       <td className="p-3.5 text-center">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${dayObj.status === "Present" ? "bg-emerald-100 text-emerald-800 border-emerald-300" :
-                            dayObj.status === "Absent" ? "bg-rose-100 text-rose-800 border-rose-300" :
-                              dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
-                                dayObj.status === "Leave" ? "bg-primary-500/15 text-primary-500 border-primary-500/30" :
-                                  dayObj.status === "Holiday" ? "bg-blue-100 text-blue-800 border-blue-300" :
-                                    "bg-neutral-200 text-neutral-700 border-neutral-300"
+                          dayObj.status === "Absent" ? "bg-rose-100 text-rose-800 border-rose-300" :
+                            dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
+                              dayObj.status === "Leave" ? "bg-primary-500/15 text-primary-500 border-primary-500/30" :
+                                dayObj.status === "Holiday" ? "bg-blue-100 text-blue-800 border-blue-300" :
+                                  "bg-neutral-200 text-neutral-700 border-neutral-300"
                           }`}>
                           <span>{dayObj.badgeEmoji}</span>
                           <span>{dayObj.status}</span>

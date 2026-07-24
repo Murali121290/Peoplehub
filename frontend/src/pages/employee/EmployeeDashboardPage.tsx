@@ -1203,7 +1203,7 @@ const EmployeeDashboardPage: React.FC = () => {
                       Employee Dashboard
                     </h1>
                     <p className="text-xs text-neutral-500">
-                      People Management System
+                      The People Management System
                     </p>
                   </div>
                 </div>
