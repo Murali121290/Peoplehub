@@ -21,7 +21,7 @@ interface AuthState {
   isAuthenticated: boolean
   loading: boolean
 
-  login: (email: string, password: string) => Promise<User>
+  login: (email: string, password: string) => Promise<any>
   logout: () => void
   checkAuth: () => void
   updateUser: (userData: Partial<User>) => void
@@ -46,6 +46,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       })
 
       console.log('LOGIN RESPONSE:', response.data)
+
+      if (response.data.require_password_change) {
+        set({ loading: false })
+        return response.data
+      }
 
       const accessToken = response.data.access_token
       const userData = {

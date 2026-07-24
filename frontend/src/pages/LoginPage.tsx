@@ -15,7 +15,7 @@ import {
 import bg from "../images/login-hero-new.webp";
 import logo from "../images/s.png";
 
-type ViewMode = "login" | "forgot-password";
+type ViewMode = "login" | "forgot-password" | "force-change-password";
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -23,6 +23,7 @@ const LoginPage: React.FC = () => {
 
   // ---- Which card is showing ----
   const [view, setView] = useState<ViewMode>("login");
+  const [pendingUserId, setPendingUserId] = useState<number | null>(null);
 
   // ---- Login form state ----
   const [formData, setFormData] = useState({
@@ -51,6 +52,15 @@ const LoginPage: React.FC = () => {
 
     try {
       const response = await login(formData.email, formData.password);
+
+      if (response.require_password_change) {
+        toast(response.message || "Please change your default password", {
+          icon: 'ℹ️',
+        });
+        setPendingUserId(response.user_id);
+        setView("force-change-password");
+        return;
+      }
 
       sessionStorage.removeItem("attendance_popup_shown");
       sessionStorage.removeItem("birthday_popup_shown");
@@ -102,11 +112,6 @@ const LoginPage: React.FC = () => {
       return;
     }
 
-    if (pwData.oldPassword === pwData.newPassword) {
-      toast.error("New password must be different from the old password");
-      return;
-    }
-
     setPwLoading(true);
 
     try {
@@ -114,15 +119,55 @@ const LoginPage: React.FC = () => {
       const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
 
       const res = await axios.post(
-        `${apiUrl}/auth/change-password`,
+        `${apiUrl}/auth/reset-password`,
         {
-          user_id: user.id,
-          current_password: pwData.oldPassword,
+          username: pwData.username,
           new_password: pwData.newPassword,
         }
       );
 
       toast.success(res.data.message || "Password changed successfully");
+      handleBackToLogin();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        "Password update failed"
+      );
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
+  const handleForceChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (pwData.newPassword.length < 8) {
+      toast.error("New password must be at least 8 characters");
+      return;
+    }
+
+    if (pwData.newPassword !== pwData.confirmPassword) {
+      toast.error("New password and confirm password do not match");
+      return;
+    }
+
+    setPwLoading(true);
+
+    try {
+      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const res = await axios.post(
+        `${apiUrl}/auth/change-password`,
+        {
+          user_id: pendingUserId,
+          current_password: "Welcome_PeopleHub",
+          new_password: pwData.newPassword,
+        }
+      );
+
+      toast.success("Password secured! Please login again with your new password.");
+      setFormData({ email: "", password: "" });
       handleBackToLogin();
     } catch (error: any) {
       console.error(error);
@@ -370,6 +415,7 @@ const LoginPage: React.FC = () => {
                       <input
                         type="text"
                         required
+                        autoComplete="off"
                         value={formData.email}
                         onChange={(e) =>
                           setFormData({ ...formData, email: e.target.value })
@@ -391,6 +437,7 @@ const LoginPage: React.FC = () => {
                       <input
                         type={showPassword ? "text" : "password"}
                         required
+                        autoComplete="new-password"
                         value={formData.password}
                         onChange={(e) =>
                           setFormData({
@@ -407,9 +454,9 @@ const LoginPage: React.FC = () => {
                         className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
                       >
                         {showPassword ? (
-                          <EyeSlashIcon className="h-5 w-5" />
-                        ) : (
                           <EyeIcon className="h-5 w-5" />
+                        ) : (
+                          <EyeSlashIcon className="h-5 w-5" />
                         )}
                       </button>
                     </div>
@@ -520,41 +567,6 @@ const LoginPage: React.FC = () => {
 
                   <div>
                     <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
-                      Old Password
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <LockClosedIcon className="h-5 w-5 text-white/40" />
-                      </div>
-                      <input
-                        type={showOldPassword ? "text" : "password"}
-                        required
-                        value={pwData.oldPassword}
-                        onChange={(e) =>
-                          setPwData({
-                            ...pwData,
-                            oldPassword: e.target.value,
-                          })
-                        }
-                        placeholder="Enter your old password"
-                        className={`${glassInputClass} pr-12`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowOldPassword(!showOldPassword)}
-                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
-                      >
-                        {showOldPassword ? (
-                          <EyeSlashIcon className="h-5 w-5" />
-                        ) : (
-                          <EyeIcon className="h-5 w-5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
                       New Password
                     </label>
                     <div className="relative">
@@ -581,9 +593,9 @@ const LoginPage: React.FC = () => {
                         className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
                       >
                         {showNewPassword ? (
-                          <EyeSlashIcon className="h-5 w-5" />
-                        ) : (
                           <EyeIcon className="h-5 w-5" />
+                        ) : (
+                          <EyeSlashIcon className="h-5 w-5" />
                         )}
                       </button>
                     </div>
@@ -619,9 +631,9 @@ const LoginPage: React.FC = () => {
                         className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
                       >
                         {showConfirmPassword ? (
-                          <EyeSlashIcon className="h-5 w-5" />
-                        ) : (
                           <EyeIcon className="h-5 w-5" />
+                        ) : (
+                          <EyeSlashIcon className="h-5 w-5" />
                         )}
                       </button>
                     </div>
@@ -630,12 +642,7 @@ const LoginPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={pwLoading}
-                    className="w-full h-[52px] text-[15px] font-semibold rounded-xl shadow-[0_8px_24px_rgba(251,191,36,0.2)] hover:shadow-[0_12px_32px_rgba(251,191,36,0.35)] transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed"
-                    style={{
-                      fontFamily: "'Inter', sans-serif",
-                      background: "linear-gradient(135deg, #fbbf24, #f59e0b)",
-                      color: "#0a0f1e",
-                    }}
+                    className="w-full h-[52px] mt-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-neutral-900 font-bold text-[16px] transition-all hover:scale-[1.02] disabled:opacity-70 disabled:hover:scale-100 flex items-center justify-center gap-2"
                   >
                     {pwLoading ? (
                       <>
