@@ -1233,6 +1233,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     onChange={(val) => setLeaveForm({ ...leaveForm, toDate: val })}
                     disablePast={true}
                     disableWeekends={true}
+                    minDate={leaveForm.fromDate}
                     disabledDates={allYearHolidays.map((h: any) => h.date)}
                     bookedDates={myAppliedLeaveDates}
                   />

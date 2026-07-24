@@ -12,6 +12,7 @@ interface DatePickerProps {
   bookedDates?: string[];
   disablePast?: boolean;
   disableWeekends?: boolean;
+  minDate?: string; // Standard "YYYY-MM-DD" format
 }
 
 const MONTH_NAMES = [
@@ -52,6 +53,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   bookedDates = [],
   disablePast = false,
   disableWeekends = false,
+  minDate,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputVal, setInputVal] = useState(value);
@@ -161,12 +163,26 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         const isHoliday = disabledDates.includes(formattedStr);
         const isBooked = bookedDates.includes(formattedStr);
 
+        let isBeforeMinDate = false;
+        if (minDate) {
+          const mParts = minDate.split("-");
+          if (mParts.length === 3) {
+            const minD = new Date(Number(mParts[0]), Number(mParts[1]) - 1, Number(mParts[2]));
+            minD.setHours(0, 0, 0, 0);
+            if (parsed < minD) isBeforeMinDate = true;
+          }
+        }
+
         if (disableWeekends && isWeekoff) {
           alert("Selected date falls on a company weekly off (Sunday / 2nd or 4th Saturday).");
           return;
         }
         if (disablePast && isPast) {
           alert("Selected date cannot be in the past.");
+          return;
+        }
+        if (isBeforeMinDate) {
+          alert("Selected date cannot be before the allowed minimum date.");
           return;
         }
         if (isHoliday) {
@@ -214,8 +230,23 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       targetMonth = viewMonth - 1;
     }
 
-    if (disablePast) {
-      if (targetYear < minYear || (targetYear === minYear && targetMonth < minMonth)) {
+    let minYr = disablePast ? minYear : null;
+    let minMo = disablePast ? minMonth : null;
+    if (minDate) {
+      const parts = minDate.split("-");
+      if (parts.length === 3) {
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        const y = d.getFullYear();
+        const m = d.getMonth();
+        if (minYr === null || y > minYr || (y === minYr && m > (minMo || 0))) {
+          minYr = y;
+          minMo = m;
+        }
+      }
+    }
+
+    if (minYr !== null) {
+      if (targetYear < minYr || (targetYear === minYr && targetMonth < (minMo || 0))) {
         return;
       }
     }
@@ -287,9 +318,18 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   };
 
   const todayObj = new Date();
-  const isAtMinMonth = disablePast && (
-    viewYear < todayObj.getFullYear() ||
-    (viewYear === todayObj.getFullYear() && viewMonth <= todayObj.getMonth())
+  
+  const minDateObj = minDate ? (() => {
+    const p = minDate.split("-");
+    return p.length === 3 ? new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])) : null;
+  })() : null;
+
+  const minYearLimit = minDateObj ? minDateObj.getFullYear() : (disablePast ? todayObj.getFullYear() : null);
+  const minMonthLimit = minDateObj ? minDateObj.getMonth() : (disablePast ? todayObj.getMonth() : null);
+
+  const isAtMinMonth = minYearLimit !== null && (
+    viewYear < minYearLimit ||
+    (viewYear === minYearLimit && viewMonth <= (minMonthLimit ?? -1))
   );
 
   // Year picker grid: show 12 years per page
@@ -302,10 +342,10 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   };
 
   const handleSelectMonth = (monthIdx: number) => {
-    // If disablePast: prevent going to past month
-    if (disablePast) {
-      if (viewYear < todayObj.getFullYear() ||
-        (viewYear === todayObj.getFullYear() && monthIdx < todayObj.getMonth())) {
+    // If disablePast or minDate: prevent going to past month
+    if (minYearLimit !== null) {
+      if (viewYear < minYearLimit ||
+        (viewYear === minYearLimit && monthIdx < (minMonthLimit ?? -1))) {
         return;
       }
     }
@@ -477,11 +517,20 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                     const d = new Date(viewYear, viewMonth, dayNum);
                     return d < t;
                   })();
+                  
+                  const isBeforeMinDate = (() => {
+                    if (minDateObj) {
+                      minDateObj.setHours(0, 0, 0, 0);
+                      const d = new Date(viewYear, viewMonth, dayNum);
+                      return d < minDateObj;
+                    }
+                    return false;
+                  })();
 
                   const isHoliday = disabledDates.includes(dateStr);
                   const isBooked = bookedDates.includes(dateStr);
 
-                  const disabled = (disableWeekends && isWeekoff) || (disablePast && isPast) || isHoliday || isBooked;
+                  const disabled = (disableWeekends && isWeekoff) || (disablePast && isPast) || isBeforeMinDate || isHoliday || isBooked;
 
                   return (
                     <button
@@ -542,7 +591,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
               <div className="grid grid-cols-4 gap-1 mb-3">
                 {yearPageYears.map((yr) => {
                   const isCurrentViewYear = yr === viewYear;
-                  const isPastYear = disablePast && yr < todayObj.getFullYear();
+                  const isPastYear = minYearLimit !== null && yr < minYearLimit;
                   return (
                     <button
                       key={yr}
@@ -570,9 +619,9 @@ export const DatePicker: React.FC<DatePickerProps> = ({
               <div className="grid grid-cols-4 gap-1">
                 {MONTH_NAMES.map((mName, mIdx) => {
                   const isCurrentViewMonth = mIdx === viewMonth;
-                  const isPastMonth = disablePast && (
-                    viewYear < todayObj.getFullYear() ||
-                    (viewYear === todayObj.getFullYear() && mIdx < todayObj.getMonth())
+                  const isPastMonth = minYearLimit !== null && (
+                    viewYear < minYearLimit ||
+                    (viewYear === minYearLimit && mIdx < (minMonthLimit ?? -1))
                   );
                   return (
                     <button
