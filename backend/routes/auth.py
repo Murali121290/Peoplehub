@@ -254,34 +254,102 @@ def change_password():
         }), 500
 
 
-@auth_bp.route("/reset-password", methods=["POST"])
-def reset_password():
+@auth_bp.route("/forgot-password/request-otp", methods=["POST"])
+def request_otp():
     try:
+        from models.otp import OTPToken
+        from services.request_email_service import send_email_via_smtp
+        from services.email_templates import get_otp_email_html
+        import random
+        from datetime import timedelta
+        
         data = request.json
-        username = data.get("username")
-        new_password = data.get("new_password")
+        email = data.get("email")
 
-        if not username or not new_password:
+        if not email:
             return jsonify({
                 "success": False,
-                "message": "Username and new password are required"
+                "message": "Email is required"
             }), 400
 
-        # Find user strictly by company email or employee ID
-        user = User.query.filter(User.company_email == username).first()
-        
+        user = User.query.filter(User.company_email == email).first()
         if not user:
-            employee = Employee.query.filter(Employee.employee_id == username).first()
-            if employee:
-                user = User.query.filter(User.id == employee.user_id).first()
+            return jsonify({
+                "success": False,
+                "message": "No account found with this email"
+            }), 404
 
+        # Generate 6-digit OTP
+        otp_code = str(random.randint(100000, 999999))
+        
+        # Save to DB
+        expires_at = datetime.utcnow() + timedelta(minutes=10)
+        otp_token = OTPToken(email=email, otp_code=otp_code, expires_at=expires_at)
+        db.session.add(otp_token)
+        db.session.commit()
+
+        # Send email
+        html_content = get_otp_email_html(otp_code)
+        send_email_via_smtp(email, "Password Reset OTP", html_content)
+
+        return jsonify({
+            "success": True,
+            "message": "OTP sent to your email"
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        print("REQUEST OTP ERROR:", str(e))
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@auth_bp.route("/forgot-password/reset-with-otp", methods=["POST"])
+def reset_with_otp():
+    try:
+        from models.otp import OTPToken
+        
+        data = request.json
+        email = data.get("email")
+        otp_code = data.get("otp")
+        new_password = data.get("new_password")
+
+        if not email or not otp_code or not new_password:
+            return jsonify({
+                "success": False,
+                "message": "Email, OTP, and new password are required"
+            }), 400
+
+        # Validate OTP
+        token = OTPToken.query.filter_by(email=email, otp_code=otp_code).order_by(OTPToken.created_at.desc()).first()
+        
+        if not token:
+            return jsonify({
+                "success": False,
+                "message": "Invalid OTP"
+            }), 400
+            
+        if token.expires_at < datetime.utcnow():
+            return jsonify({
+                "success": False,
+                "message": "OTP has expired"
+            }), 400
+
+        # Find user
+        user = User.query.filter(User.company_email == email).first()
         if not user:
             return jsonify({
                 "success": False,
                 "message": "User not found"
             }), 404
 
+        # Update password
         user.password_hash = generate_password_hash(new_password)
+        
+        # Delete used OTP
+        db.session.delete(token)
         db.session.commit()
 
         return jsonify({
@@ -291,7 +359,7 @@ def reset_password():
 
     except Exception as e:
         db.session.rollback()
-        print("RESET PASSWORD ERROR:", str(e))
+        print("RESET WITH OTP ERROR:", str(e))
         return jsonify({
             "success": False,
             "error": str(e)

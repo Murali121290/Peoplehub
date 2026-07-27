@@ -83,3 +83,30 @@ def get_employee_status_email_html(employee_first_name, employee_last_name, req_
         </body>
     </html>
     """
+
+def get_otp_email_html(otp_code):
+    return f"""
+    <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f9f9f9; padding: 20px;">
+            <div style="max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center;">
+                <div style="margin-bottom:25px;">
+                    <h2 style="color: #1E3A8A; margin: 0; font-size: 24px;">PeopleHub Password Reset</h2>
+                </div>
+                <p style="font-size: 16px;">Hello,</p>
+                <p style="font-size: 16px;">We received a request to reset your password. Use the OTP code below to proceed.</p>
+                
+                <div style="background-color: #F3F4F6; border-radius: 8px; padding: 20px; margin: 30px auto; max-width: 250px; border: 1px dashed #CBD5E1;">
+                    <span style="font-size: 32px; font-weight: bold; color: #4F46E5; letter-spacing: 4px;">{otp_code}</span>
+                </div>
+                
+                <p style="font-size: 14px; color: #EF4444; font-weight: bold;">This code will expire in 10 minutes.</p>
+                <p style="font-size: 14px; color: #64748B;">If you did not request a password reset, please ignore this email or contact support if you have concerns.</p>
+                
+                <p style="margin-top: 30px; color: #64748B; font-size: 13px;">
+                    Best regards,<br>
+                    PeopleHub HR Team
+                </p>
+            </div>
+        </body>
+    </html>
+    """

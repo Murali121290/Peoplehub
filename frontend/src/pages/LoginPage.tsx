@@ -38,10 +38,12 @@ const LoginPage: React.FC = () => {
   // ---- Forgot / change password form state ----
   const [pwData, setPwData] = useState({
     username: "",
+    otpCode: "",
     oldPassword: "",
     newPassword: "",
     confirmPassword: "",
   });
+  const [otpStep, setOtpStep] = useState<1 | 2>(1);
   const [pwLoading, setPwLoading] = useState(false);
   const [showOldPassword, setShowOldPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -86,10 +88,12 @@ const LoginPage: React.FC = () => {
   const resetPwForm = () => {
     setPwData({
       username: "",
+      otpCode: "",
       oldPassword: "",
       newPassword: "",
       confirmPassword: "",
     });
+    setOtpStep(1);
     setShowOldPassword(false);
     setShowNewPassword(false);
     setShowConfirmPassword(false);
@@ -101,7 +105,27 @@ const LoginPage: React.FC = () => {
     setView("login");
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
+  const handleRequestOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pwData.username) return;
+
+    setPwLoading(true);
+    try {
+      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const res = await axios.post(`${apiUrl}/auth/forgot-password/request-otp`, {
+        email: pwData.username,
+      });
+      toast.success(res.data.message || "OTP sent to your email");
+      setOtpStep(2);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.response?.data?.message || "Failed to send OTP");
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
+  const handleResetPasswordWithOTP = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (pwData.newPassword.length < 8) {
@@ -115,29 +139,20 @@ const LoginPage: React.FC = () => {
     }
 
     setPwLoading(true);
-
     try {
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
       const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const res = await axios.post(`${apiUrl}/auth/forgot-password/reset-with-otp`, {
+        email: pwData.username,
+        otp: pwData.otpCode,
+        new_password: pwData.newPassword,
+      });
 
-      const res = await axios.post(
-        `${apiUrl}/auth/reset-password`,
-        {
-          username: pwData.username,
-          new_password: pwData.newPassword,
-        }
-      );
-
-      toast.success(res.data.message || "Password changed successfully");
-      setFormData({ email: "", password: "" });
-      setTimeout(() => window.location.reload(), 500);
+      toast.success(res.data.message || "Password reset successfully");
+      resetPwForm();
+      setView("login");
     } catch (error: any) {
       console.error(error);
-      toast.error(
-        error.response?.data?.message ||
-        error.response?.data?.error ||
-        "Password update failed"
-      );
+      toast.error(error.response?.data?.message || "Password reset failed");
     } finally {
       setPwLoading(false);
     }
@@ -535,116 +550,159 @@ const LoginPage: React.FC = () => {
                   justifyContent: "flex-start",
                 }}
               >
-                <button
-                  type="button"
-                  onClick={handleBackToLogin}
-                  className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-semibold text-white/60 hover:text-[#fbbf24] hover:underline"
-                >
-                  <ArrowLeftIcon className="h-4 w-4" />
-                  Back to Sign In
-                </button>
+                {view === "forgot-password" && (
+                  <button
+                    type="button"
+                    onClick={handleBackToLogin}
+                    className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-semibold text-white/60 hover:text-[#fbbf24] hover:underline"
+                  >
+                    <ArrowLeftIcon className="h-4 w-4" />
+                    Back to Sign In
+                  </button>
+                )}
 
                 <div className="mb-8">
-                  <h2 className="font-bold text-[26px] mb-1" style={{ fontFamily: "'Outfit', sans-serif", color: "#fff", textShadow: "0 2px 20px rgba(0,0,0,0.3)" }}>Change Password</h2>
-                  <p className="text-[14px] text-white/50">Enter your old password and choose a new one.</p>
+                  <h2 className="font-bold text-[26px] mb-1" style={{ fontFamily: "'Outfit', sans-serif", color: "#fff", textShadow: "0 2px 20px rgba(0,0,0,0.3)" }}>
+                    {view === "force-change-password" ? "Set New Password" : (otpStep === 1 ? "Forgot Password" : "Reset Password")}
+                  </h2>
+                  <p className="text-[14px] text-white/50">
+                    {view === "force-change-password" 
+                      ? "Please choose a new password for your account."
+                      : (otpStep === 1 
+                          ? "Enter your company email to receive an OTP." 
+                          : "Enter the OTP sent to your email and your new password.")}
+                  </p>
                   <div style={{ width: "40px", height: "3px", background: "linear-gradient(90deg, #fbbf24, #f59e0b)", borderRadius: "2px", marginTop: "12px" }}></div>
                 </div>
 
-                <form onSubmit={handleChangePassword} className="space-y-5">
-                  <div>
-                    <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
-                      Employee ID
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <UserCircleIcon className="h-5 w-5 text-white/40" />
+                <form onSubmit={view === "force-change-password" ? handleForceChangePassword : (otpStep === 1 ? handleRequestOTP : handleResetPasswordWithOTP)} className="space-y-5">
+                  {(view === "force-change-password" || otpStep === 1) && (
+                    <div>
+                      <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
+                        {view === "force-change-password" ? "Employee ID" : "Company Email"}
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                          <UserCircleIcon className="h-5 w-5 text-white/40" />
+                        </div>
+                        <input
+                          type={view === "force-change-password" ? "text" : "email"}
+                          required
+                          value={view === "force-change-password" ? formData.email : pwData.username}
+                          onChange={(e) =>
+                            view === "force-change-password" 
+                              ? setFormData({ ...formData, email: e.target.value })
+                              : setPwData({ ...pwData, username: e.target.value })
+                          }
+                          disabled={view === "force-change-password"}
+                          placeholder={view === "force-change-password" ? "Employee ID" : "Enter your company email"}
+                          className={glassInputClass}
+                        />
                       </div>
-                      <input
-                        type="text"
-                        required
-                        value={pwData.username}
-                        onChange={(e) =>
-                          setPwData({ ...pwData, username: e.target.value })
-                        }
-                        placeholder="Enter your Employee ID"
-                        className={glassInputClass}
-                      />
                     </div>
-                  </div>
+                  )}
 
-                  <div>
-                    <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
-                      New Password
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <KeyIcon className="h-5 w-5 text-white/40" />
+                  {view === "forgot-password" && otpStep === 2 && (
+                    <div>
+                      <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
+                        OTP Code
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                          <KeyIcon className="h-5 w-5 text-white/40" />
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          value={pwData.otpCode}
+                          onChange={(e) =>
+                            setPwData({ ...pwData, otpCode: e.target.value })
+                          }
+                          placeholder="Enter 6-digit OTP"
+                          className={glassInputClass}
+                          maxLength={6}
+                        />
                       </div>
-                      <input
-                        type={showNewPassword ? "text" : "password"}
-                        required
-                        minLength={8}
-                        value={pwData.newPassword}
-                        onChange={(e) =>
-                          setPwData({
-                            ...pwData,
-                            newPassword: e.target.value,
-                          })
-                        }
-                        placeholder="Enter your new password"
-                        className={`${glassInputClass} pr-12`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPassword(!showNewPassword)}
-                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
-                      >
-                        {showNewPassword ? (
-                          <EyeIcon className="h-5 w-5" />
-                        ) : (
-                          <EyeSlashIcon className="h-5 w-5" />
-                        )}
-                      </button>
                     </div>
-                  </div>
+                  )}
 
-                  <div>
-                    <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
-                      Confirm Password
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <KeyIcon className="h-5 w-5 text-white/40" />
+                  {(view === "force-change-password" || otpStep === 2) && (
+                    <>
+                      <div>
+                        <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
+                          New Password
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                            <KeyIcon className="h-5 w-5 text-white/40" />
+                          </div>
+                          <input
+                            type={showNewPassword ? "text" : "password"}
+                            required
+                            minLength={8}
+                            value={pwData.newPassword}
+                            onChange={(e) =>
+                              setPwData({
+                                ...pwData,
+                                newPassword: e.target.value,
+                              })
+                            }
+                            placeholder="Enter your new password"
+                            className={`${glassInputClass} pr-12`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword(!showNewPassword)}
+                            className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
+                          >
+                            {showNewPassword ? (
+                              <EyeIcon className="h-5 w-5" />
+                            ) : (
+                              <EyeSlashIcon className="h-5 w-5" />
+                            )}
+                          </button>
+                        </div>
                       </div>
-                      <input
-                        type={showConfirmPassword ? "text" : "password"}
-                        required
-                        minLength={8}
-                        value={pwData.confirmPassword}
-                        onChange={(e) =>
-                          setPwData({
-                            ...pwData,
-                            confirmPassword: e.target.value,
-                          })
-                        }
-                        placeholder="Re-enter your new password"
-                        className={`${glassInputClass} pr-12`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setShowConfirmPassword(!showConfirmPassword)
-                        }
-                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
-                      >
-                        {showConfirmPassword ? (
-                          <EyeIcon className="h-5 w-5" />
-                        ) : (
-                          <EyeSlashIcon className="h-5 w-5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
+
+                      <div>
+                        <label className="block text-[12px] font-semibold mb-1.5 uppercase text-white/60" style={{ letterSpacing: "0.5px" }}>
+                          Confirm Password
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                            <KeyIcon className="h-5 w-5 text-white/40" />
+                          </div>
+                          <input
+                            type={showConfirmPassword ? "text" : "password"}
+                            required
+                            minLength={8}
+                            value={pwData.confirmPassword}
+                            onChange={(e) =>
+                              setPwData({
+                                ...pwData,
+                                confirmPassword: e.target.value,
+                              })
+                            }
+                            placeholder="Re-enter your new password"
+                            className={`${glassInputClass} pr-12`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowConfirmPassword(!showConfirmPassword)
+                            }
+                            className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/70 transition-colors"
+                          >
+                            {showConfirmPassword ? (
+                              <EyeIcon className="h-5 w-5" />
+                            ) : (
+                              <EyeSlashIcon className="h-5 w-5" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   <button
                     type="submit"
@@ -653,14 +711,14 @@ const LoginPage: React.FC = () => {
                   >
                     {pwLoading ? (
                       <>
-                        <span>Updating...</span>
+                        <span>{view === "forgot-password" && otpStep === 1 ? "Sending..." : "Updating..."}</span>
                         <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
                       </>
                     ) : (
-                      "Change Password"
+                      view === "force-change-password" ? "Change Password" : (otpStep === 1 ? "Send OTP" : "Reset Password")
                     )}
                   </button>
                 </form>
