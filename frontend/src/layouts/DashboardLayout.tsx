@@ -347,10 +347,12 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       console.error(error);
     }
   };
-  const rejectAttendance = async (empId: number) => {
+  const rejectAttendance = async (empId: number, reason?: string) => {
     try {
       await fetch(`${BASE_URL}/attendance/reject/${empId}`, {
         method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason || "" }),
       });
 
       setShowAttendanceModal(false);
@@ -651,16 +653,34 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       await fetch(`${BASE_URL}/attendance/approve-all?manager_id=${uid}`, {
         method: "PUT",
       });
-      // Remove all employees from the popup
-      setReportingEmployees([]);
 
-      // Close the popup
-      setShowPopup(false);
+      // Refetch latest list (backend automatically excludes Approved records)
+      const res = await fetch(`${BASE_URL}/employees/reporting-employees/${uid}`);
+      const data = await res.json();
+      const updatedList = Array.isArray(data) ? data : [];
+      setReportingEmployees(updatedList);
 
-      // Optional: refresh the latest data
-      // fetchReportingEmployees();
+      // Close popup ONLY if all employees are approved (0 records left)
+      if (updatedList.length === 0) {
+        setShowPopup(false);
+      }
     } catch (error) {
       console.error("Approve All Error:", error);
+    }
+  };
+
+  const handleRejectAll = async (reason?: string) => {
+    try {
+      const uid = localStorage.getItem("user_id");
+      await fetch(`${BASE_URL}/attendance/reject-all?manager_id=${uid}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason || "" }),
+      });
+      setReportingEmployees([]);
+      setShowPopup(false);
+    } catch (error) {
+      console.error("Reject All Error:", error);
     }
   };
 
@@ -672,7 +692,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       setReportingEmployees((prev) =>
         prev.map((emp) =>
           emp.employee_id === employeeId || emp.id === employeeId
-            ? { ...emp, status: "Present", manager_status: "Approved", decision: "Approved" }
+            ? { ...emp, manager_status: "Approved", decision: "Approved" }
             : emp
         )
       );
@@ -681,15 +701,17 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const handleRejectEmployee = async (employeeId: number) => {
+  const handleRejectEmployee = async (employeeId: number, reason?: string) => {
     try {
       await fetch(`${BASE_URL}/attendance/reject/${employeeId}`, {
         method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason || "" }),
       });
       setReportingEmployees((prev) =>
         prev.map((emp) =>
           emp.employee_id === employeeId || emp.id === employeeId
-            ? { ...emp, status: "Absent", manager_status: "Rejected", decision: "Rejected" }
+            ? { ...emp, manager_status: "Rejected", decision: "Rejected" }
             : emp
         )
       );
@@ -716,8 +738,6 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         <AttendanceDetailModal
           selectedEmployee={selectedEmployee}
           onClose={() => setShowAttendanceModal(false)}
-          onApprove={approveAttendance}
-          onReject={rejectAttendance}
         />
       )}
 
@@ -860,6 +880,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
             setShowAttendanceModal(true);
           }}
           onApproveAll={handleApproveAll}
+          onRejectAll={handleRejectAll}
           onApproveEmployee={handleApproveEmployee}
           onRejectEmployee={handleRejectEmployee}
           onRefresh={loadReportingEmployees}
