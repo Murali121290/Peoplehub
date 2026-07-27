@@ -115,9 +115,15 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   }, [selectedTeam]);
 
   // Group members into columns
-  const checkedIn = teamMembers.filter(m => m.status === "Checked In");
-  const notCheckedIn = teamMembers.filter(m => m.status === "Checked Out" || m.status === "Not Checked In" || m.status === "Absent");
-  const onLeave = teamMembers.filter(m => m.status === "Leave");
+  const sortedMembers = [...teamMembers].sort((a, b) => {
+    const nameA = `${a.first_name || ""} ${a.last_name || ""}`.trim().toLowerCase();
+    const nameB = `${b.first_name || ""} ${b.last_name || ""}`.trim().toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
+
+  const checkedIn = sortedMembers.filter(m => m.status === "Checked In");
+  const notCheckedIn = sortedMembers.filter(m => m.status === "Checked Out" || m.status === "Not Checked In" || m.status === "Absent");
+  const onLeave = sortedMembers.filter(m => m.status === "Leave");
 
   const MemberCard = ({ member }: { member: any }) => (
     <div className="flex items-center gap-3 p-3 bg-white/80 hover:bg-white backdrop-blur-sm rounded-xl border border-white/50 shadow-sm transition-all hover:shadow-md">

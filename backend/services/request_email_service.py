@@ -66,8 +66,8 @@ def send_email_via_smtp(to_email, subject, html_content):
 
     # 2. Localhost Email Interception
     # If running locally, route all emails to MAIL_USERNAME to avoid spamming real people
-    api_base = os.environ.get("BACKEND_URL", "")
-    if "localhost" in api_base.lower() or "127.0.0.1" in api_base:
+    app_env = os.environ.get("APP_ENV", "local").lower()
+    if app_env == "local":
         if mail_username:
             print(f"[TEST ENV] Intercepting email to {to_email}. Sending to {mail_username} instead.")
             to_email = mail_username
