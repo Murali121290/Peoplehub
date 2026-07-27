@@ -81,8 +81,6 @@ def send_email_via_smtp(to_email, subject, html_content):
         return True
 
     try:
-        from email.mime.image import MIMEImage
-
         msg = MIMEMultipart("related")
         msg["From"] = mail_sender
         msg["To"] = to_email
@@ -92,16 +90,6 @@ def send_email_via_smtp(to_email, subject, html_content):
         alternative.attach(MIMEText(html_content, "html"))
         msg.attach(alternative)
 
-        logo_path = Path(current_app.root_path) / "uploads" / "s.png"
-
-        if logo_path.exists():
-            with open(logo_path, "rb") as f:
-                logo = MIMEImage(f.read())
-                logo.add_header("Content-ID", "<company_logo>")
-                logo.add_header("Content-Disposition", "inline", filename="s.png")
-                msg.attach(logo)
-        else:
-            print(f"Logo not found: {logo_path}")
 
         # Connect
         print(f"[SMTP] Step 1: Connecting to {mail_server}:{mail_port}...")
