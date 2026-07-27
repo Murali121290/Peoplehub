@@ -1,9 +1,9 @@
 import React from 'react';
 
 const formatWorkingHours = (hoursVal: any) => {
-  if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "0 hrs 0 mins";
+  if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "—";
   const num = Number(hoursVal);
-  if (isNaN(num) || num <= 0) return "0 hrs 0 mins";
+  if (isNaN(num) || num <= 0) return "—";
   const hrs = Math.floor(num);
   const mins = Math.round((num - hrs) * 60);
   return `${hrs} hrs ${mins} mins`;

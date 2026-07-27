@@ -2041,29 +2041,35 @@ def approve_attendance(employee_id):
             attendance_date=target_date
         ).first()
 
-        from datetime import time
-        default_in = datetime.combine(target_date, time(9, 0))
-        default_out = datetime.combine(target_date, time(18, 0))
-
         if not attendance:
             attendance = Attendance(
                 user_id=target_user_id,
                 attendance_date=target_date,
                 status="Present",
                 manager_status="Approved",
-                check_in=default_in,
-                check_out=default_out,
-                total_hours=9.0
+                check_in=None,
+                check_out=None,
+                total_hours=0.0
             )
             db.session.add(attendance)
         else:
             attendance.status = "Present"
             attendance.manager_status = "Approved"
-            attendance.total_hours = 9.0
-            if not attendance.check_in:
-                attendance.check_in = default_in
-            if not attendance.check_out:
-                attendance.check_out = default_out
+
+            if not attendance.check_in and attendance.card_check_in:
+                attendance.check_in = attendance.card_check_in
+            if not attendance.check_out and attendance.card_check_out:
+                attendance.check_out = attendance.card_check_out
+
+            if attendance.check_in and attendance.check_out:
+                total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
+                break_minutes = attendance.total_break_minutes or 0
+                gap_minutes = attendance.total_gap_minutes or 0
+                total_seconds -= (break_minutes + gap_minutes) * 60
+                hours_decimal = max(total_seconds, 0) / 3600
+                attendance.total_hours = int(hours_decimal * 100) / 100
+            elif attendance.card_working_hours and (not attendance.total_hours or attendance.total_hours == 0.0):
+                attendance.total_hours = attendance.card_working_hours
 
         db.session.commit()
 
@@ -2191,11 +2197,11 @@ def approve_all_attendance():
 
     try:
         manager_id = request.args.get("manager_id")
-        yesterday = date.today() - timedelta(days=1)
-
-        from datetime import time
-        default_in = datetime.combine(yesterday, time(9, 0))
-        default_out = datetime.combine(yesterday, time(18, 0))
+        target_date_str = request.args.get("date")
+        if target_date_str:
+            yesterday = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+        else:
+            yesterday = date.today() - timedelta(days=1)
 
         if manager_id:
             from models.employee import Employee
@@ -2219,19 +2225,29 @@ def approve_all_attendance():
                                 attendance_date=yesterday,
                                 status="Present",
                                 manager_status="Approved",
-                                check_in=default_in,
-                                check_out=default_out,
-                                total_hours=9.0
+                                check_in=None,
+                                check_out=None,
+                                total_hours=0.0
                             )
                             db.session.add(attendance)
                         else:
                             attendance.status = "Present"
                             attendance.manager_status = "Approved"
-                            attendance.total_hours = 9.0
-                            if not attendance.check_in:
-                                attendance.check_in = default_in
-                            if not attendance.check_out:
-                                attendance.check_out = default_out
+                            
+                            if not attendance.check_in and attendance.card_check_in:
+                                attendance.check_in = attendance.card_check_in
+                            if not attendance.check_out and attendance.card_check_out:
+                                attendance.check_out = attendance.card_check_out
+
+                            if attendance.check_in and attendance.check_out:
+                                total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
+                                break_minutes = attendance.total_break_minutes or 0
+                                gap_minutes = attendance.total_gap_minutes or 0
+                                total_seconds -= (break_minutes + gap_minutes) * 60
+                                hours_decimal = max(total_seconds, 0) / 3600
+                                attendance.total_hours = int(hours_decimal * 100) / 100
+                            elif attendance.card_working_hours and (not attendance.total_hours or attendance.total_hours == 0.0):
+                                attendance.total_hours = attendance.card_working_hours
         else:
             attendances = Attendance.query.filter_by(
                 attendance_date=yesterday
@@ -2239,11 +2255,21 @@ def approve_all_attendance():
             for attendance in attendances:
                 attendance.status = "Present"
                 attendance.manager_status = "Approved"
-                attendance.total_hours = 9.0
-                if not attendance.check_in:
-                    attendance.check_in = default_in
-                if not attendance.check_out:
-                    attendance.check_out = default_out
+                
+                if not attendance.check_in and attendance.card_check_in:
+                    attendance.check_in = attendance.card_check_in
+                if not attendance.check_out and attendance.card_check_out:
+                    attendance.check_out = attendance.card_check_out
+
+                if attendance.check_in and attendance.check_out:
+                    total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
+                    break_minutes = attendance.total_break_minutes or 0
+                    gap_minutes = attendance.total_gap_minutes or 0
+                    total_seconds -= (break_minutes + gap_minutes) * 60
+                    hours_decimal = max(total_seconds, 0) / 3600
+                    attendance.total_hours = int(hours_decimal * 100) / 100
+                elif attendance.card_working_hours and (not attendance.total_hours or attendance.total_hours == 0.0):
+                    attendance.total_hours = attendance.card_working_hours
 
         db.session.commit()
 

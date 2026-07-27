@@ -35,9 +35,9 @@ import type { BadgeVariant } from "../components/ui/Badge";
 const BASE_URL = `${API_URL}/api`;
 
 const formatWorkingHours = (hoursVal: any) => {
-  if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "0 h 0 m";
+  if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "—";
   const num = Number(hoursVal);
-  if (isNaN(num) || num <= 0) return "0 h 0 m";
+  if (isNaN(num) || num <= 0) return "—";
   const hrs = Math.floor(num);
   const mins = Math.round((num - hrs) * 60);
   return `${hrs} h ${mins} m`;

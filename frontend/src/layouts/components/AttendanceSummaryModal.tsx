@@ -12,9 +12,9 @@ import {
 
 
 const formatWorkingHours = (hoursVal: any) => {
-  if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "0 h 0 m";
+  if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "—";
   const num = Number(hoursVal);
-  if (isNaN(num) || num <= 0) return "0 h 0 m";
+  if (isNaN(num) || num <= 0) return "—";
   const hrs = Math.floor(num);
   const mins = Math.round((num - hrs) * 60);
   return `${hrs} h ${mins} m`;
@@ -82,19 +82,23 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
   const handleConfirmAction = () => {
     if (confirmDialog === "approve") {
-      const pendingItems = employees.filter(
-        (e) => !e.decision || e.decision === "Pending"
-      );
-      pendingItems.forEach((e) => {
-        onApproveEmployee(e.employee_id || e.id);
-      });
-      setEmployees((prev) =>
-        prev.map((e) =>
-          !e.decision || e.decision === "Pending"
-            ? { ...e, decision: "Approved" }
-            : e
-        )
-      );
+      if (onApproveAll) {
+        onApproveAll();
+      } else {
+        const pendingItems = employees.filter(
+          (e) => !e.decision || e.decision === "Pending"
+        );
+        pendingItems.forEach((e) => {
+          onApproveEmployee(e.employee_id || e.id);
+        });
+        setEmployees((prev) =>
+          prev.map((e) =>
+            !e.decision || e.decision === "Pending"
+              ? { ...e, decision: "Approved" }
+              : e
+          )
+        );
+      }
     } else if (confirmDialog === "reject") {
       const pendingItems = employees.filter(
         (e) => !e.decision || e.decision === "Pending"
