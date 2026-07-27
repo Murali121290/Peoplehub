@@ -22,3 +22,5 @@ build/
 
 # Uploads
 backend/uploads/
+
+backend/debug_emails

@@ -1244,8 +1244,12 @@ def get_reporting_employees(user_id):
                 continue
 
             from models.leave import LeaveRequest
+            from sqlalchemy import or_ as sql_or
             leave = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == str(employee.id),
+                sql_or(
+                    LeaveRequest.employee_id == str(employee.id),
+                    LeaveRequest.employee_id == employee.employee_id
+                ),
                 LeaveRequest.status == "Approved",
                 LeaveRequest.from_date <= yesterday,
                 LeaveRequest.to_date >= yesterday
@@ -1261,6 +1265,9 @@ def get_reporting_employees(user_id):
 
                 "employee_id":
                     employee.id,
+                
+                "employee_code":
+                    employee.employee_id,
 
                 "employee_name":
                     f"{employee.first_name} {employee.last_name}",

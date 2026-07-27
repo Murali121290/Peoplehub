@@ -14,6 +14,7 @@ from .meeting_room import MeetingRoom
 from .room_booking import RoomBooking
 from .communication import Communication
 from .appraisal import AppraisalCycle, AppraisalQuestion, AppraisalRequest, AppraisalAnswer
+from .otp import OTPToken
 
 __all__ = [
     'db', 'init_db',

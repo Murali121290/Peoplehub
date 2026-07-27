@@ -27,6 +27,11 @@ class LeaveRequest(db.Model):
         default="Pending"
     )
 
+    manager_comment = db.Column(
+        db.Text,
+        nullable=True
+    )
+
     request_type = db.Column(
         db.String(30),
         default="Leave"

@@ -319,7 +319,7 @@ const EmployeeDashboardPage: React.FC = () => {
     if (!currentEmployee?.user_id) return;
     try {
       const res = await fetch(
-        `${BASE_URL}/shifts/employee/${currentEmployee.user_id}`,
+        `${BASE_URL}/shifts/employee/${currentEmployee.employee_id}`,
       );
       const data = await res.json();
       setShiftRequests(Array.isArray(data) ? data : []);
@@ -567,7 +567,7 @@ const EmployeeDashboardPage: React.FC = () => {
       let response;
 
       const payload = {
-        employee_id: currentEmployee?.id,
+        employee_id: currentEmployee?.employee_id || currentEmployee?.id,
         employee_name: `${currentEmployee?.first_name} ${currentEmployee?.last_name}`,
 
         request_type: leaveForm.requestType,

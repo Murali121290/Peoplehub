@@ -74,10 +74,7 @@ def check_in():
 
         # Check if there is an approved shift request for today
         approved_request = ShiftRequest.query.filter(
-            or_(
-                ShiftRequest.employee_id == employee.id,
-                ShiftRequest.employee_id == employee.user_id
-            ),
+            ShiftRequest.employee_id == employee.id,
             ShiftRequest.status == "Approved",
             ShiftRequest.from_date <= today_date,
             ShiftRequest.to_date >= today_date
@@ -174,8 +171,8 @@ def check_in():
 
         approved_leave_today = LeaveRequest.query.filter(
             sql_or(
-                LeaveRequest.employee_id == str(employee.id),
-                LeaveRequest.employee_id == str(user_id)
+                LeaveRequest.employee_id == employee.employee_id,
+                LeaveRequest.employee_id == str(employee.id)
             ),
             LeaveRequest.status == "Approved",
             LeaveRequest.request_type == "Leave",

@@ -1,4 +1,4 @@
-from utils.compat import Blueprint, request, jsonify, current_app
+from utils.compat import Blueprint, request, jsonify, current_app, Response
 from models.database import db
 from models.leave import LeaveRequest
 from models.shift_request import ShiftRequest
@@ -13,77 +13,7 @@ from services.request_email_service import (
 
 requests_bp = Blueprint("requests", __name__)
 
-def make_html_response(title, message, is_success):
-    bg_color = "#ECFDF5" if is_success else "#FEF2F2"
-    border_color = "#10B981" if is_success else "#EF4444"
-    text_color = "#065F46" if is_success else "#991B1B"
-    icon = "✅" if is_success else "⚠️"
-    
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>{title}</title>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-                background-color: #f3f4f6;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                height: 100vh;
-                margin: 0;
-            }}
-            .card {{
-                background: white;
-                padding: 40px;
-                border-radius: 16px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-                text-align: center;
-                max-width: 450px;
-                width: 90%;
-                border-top: 6px solid {border_color};
-            }}
-            .icon {{
-                font-size: 48px;
-                margin-bottom: 20px;
-            }}
-            h2 {{
-                color: #111827;
-                margin-top: 0;
-                margin-bottom: 10px;
-                font-size: 24px;
-            }}
-            .message-box {{
-                background-color: {bg_color};
-                color: {text_color};
-                padding: 15px 20px;
-                border-radius: 8px;
-                font-size: 15px;
-                line-height: 1.5;
-                margin: 20px 0;
-                font-weight: 500;
-            }}
-            .footer {{
-                color: #9ca3af;
-                font-size: 12px;
-                margin-top: 30px;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <div class="icon">{icon}</div>
-            <h2>{title}</h2>
-            <div class="message-box">{message}</div>
-            <p style="color: #4b5563; font-size: 14px;">You can close this tab now.</p>
-            <div class="footer">PeopleHub HRMS</div>
-        </div>
-    </body>
-    </html>
-    """
+from services.response_templates import make_html_response, make_rejection_form
 
 def serialize_leave(leave):
     return {
@@ -107,11 +37,12 @@ def serialize_leave(leave):
         "approved_at": leave.approved_at.isoformat() if leave.approved_at else None,
         "rejected_by": leave.rejected_by,
         "rejected_at": leave.rejected_at.isoformat() if leave.rejected_at else None,
+        "manager_comment": leave.manager_comment,
     }
 
-@requests_bp.route("/email-action", methods=["GET"])
+@requests_bp.route("/email-action", methods=["GET", "POST"])
 def email_action():
-    token = request.args.get("token")
+    token = request.args.get("token") or request.form.get("token")
     if not token:
         return make_html_response("Invalid Request", "Authorization token is missing.", False), 400
         
@@ -133,9 +64,9 @@ def email_action():
         if req.status != "Pending":
             return make_html_response("Already Processed", "This request has already been processed.", False), 200
             
-        employee = Employee.query.filter(
-            (Employee.id == int(req.employee_id)) | (Employee.employee_id == str(req.employee_id))
-        ).first()
+        # Strictly check against the custom employee_id field (string)
+        employee = Employee.query.filter_by(employee_id=str(req.employee_id)).first()
+        
         if not employee:
             return make_html_response("Employee Not Found", "The employee record associated with this request could not be found.", False), 404
             
@@ -160,7 +91,7 @@ def email_action():
             notification = Notification(
                 receiver_name=f"{employee.first_name} {employee.last_name}",
                 title=f"✅ {req_type} Approved",
-                message=f"Your {req_type} request has been approved by your manager.",
+                message=f"Your {req_type} request has been approved by your reporting head.",
                 related_id=employee.id,
                 related_type="leave_approved",
                 notification_type="status_update",
@@ -184,15 +115,20 @@ def email_action():
             return make_html_response("Request Approved", f"{req_type} request has been successfully approved.", True)
             
         elif action == "reject":
+            if request.method == "GET":
+                return make_rejection_form("Reject Request", token)
+                
+            reason = request.form.get("reason")
             req.status = "Rejected"
             req.rejected_by = manager_email
             req.rejected_at = datetime.utcnow()
+            req.manager_comment = reason
             
             # Save Notification for employee
             notification = Notification(
                 receiver_name=f"{employee.first_name} {employee.last_name}",
                 title=f"❌ {req_type} Rejected",
-                message=f"Your {req_type} request has been rejected by your manager.",
+                message=f"Your {req_type} request has been rejected by your reporting head.",
                 related_id=employee.id,
                 related_type="leave_rejected",
                 notification_type="status_update",
@@ -223,8 +159,10 @@ def email_action():
         if req.status != "Pending":
             return make_html_response("Already Processed", "This request has already been processed.", False), 200
             
-        employee = Employee.query.get(req.employee_id)
-        resolved_user_id = employee.user_id if employee else req.employee_id
+        # Strictly check against the custom employee_id field (string)
+        employee = Employee.query.filter_by(employee_id=str(req.employee_id)).first()
+        
+        resolved_user_id = employee.user_id if employee else None
         if not employee:
             return make_html_response("Employee Not Found", "The employee record associated with this request could not be found.", False), 404
             
@@ -265,7 +203,7 @@ def email_action():
             notification = Notification(
                 receiver_name=req.employee_name,
                 title=f"✅ {req_type} Request Approved",
-                message=f"Your {req_type} request has been approved by your manager.",
+                message=f"Your {req_type} request has been approved by your reporting head.",
                 related_id=employee.id,
                 related_type="shift_approved",
                 notification_type="status_update",
@@ -289,9 +227,14 @@ def email_action():
             return make_html_response("Request Approved", f"{req_type} request has been successfully approved.", True)
             
         elif action == "reject":
+            if request.method == "GET":
+                return make_rejection_form("Reject Request", token)
+                
+            reason = request.form.get("reason")
             req.status = "Rejected"
             req.rejected_by = manager_email
             req.rejected_at = datetime.utcnow()
+            req.manager_comment = reason
             
             # Delete manager alerts for "New Shift Request"
             try:
@@ -306,7 +249,7 @@ def email_action():
             notification = Notification(
                 receiver_name=req.employee_name,
                 title=f"❌ {req_type} Request Rejected",
-                message=f"Your {req_type} request has been rejected by your manager.",
+                message=f"Your {req_type} request has been rejected by your reporting head.",
                 related_id=employee.id,
                 related_type="shift_rejected",
                 notification_type="status_update",

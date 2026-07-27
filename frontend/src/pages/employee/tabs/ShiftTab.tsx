@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { API_URL } from "../../../config/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  PlusIcon, 
-  CalendarIcon, 
-  ClockIcon, 
-  CheckIcon, 
-  XMarkIcon, 
-  ArrowPathIcon, 
-  UserIcon, 
+import {
+  PlusIcon,
+  CalendarIcon,
+  ClockIcon,
+  CheckIcon,
+  XMarkIcon,
+  ArrowPathIcon,
+  UserIcon,
   BriefcaseIcon,
   HomeIcon,
   InformationCircleIcon,
@@ -61,7 +61,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
     (user?.access_level || "").toLowerCase()
   );
 
-  
+
   const [shiftForm, setShiftForm] = useState({
     requestedShift: "General Shift",
     reason: "",
@@ -93,7 +93,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
     }
 
     onSubmitShift({
-      employee_id: currentEmployee.user_id || currentEmployee.id,
+      employee_id: currentEmployee.employee_id || currentEmployee.id,
       employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
       current_shift: currentEmployee.shift_timing || "General Shift",
       reporting_manager: currentEmployee.reporting_manager || "Admin",
@@ -124,8 +124,8 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
             Apply and manage shift change logs and Work From Home (WFH) schedules
           </p>
         </div>
-        <Button 
-          icon={PlusIcon} 
+        <Button
+          icon={PlusIcon}
           onClick={() => setShowShiftForm(true)}
           className="bg-primary-600 hover:bg-primary-700 text-white shadow-md hover:shadow-lg transition-all duration-200 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
         >
@@ -137,7 +137,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
 
       {/* Active Shift Request Timeline Widget */}
       {activeShiftRequests.length > 0 && (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
@@ -166,11 +166,10 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                   <div key={req.id} className={`${idx > 0 ? "pt-5" : ""}`}>
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="flex items-start gap-4">
-                        <div className={`p-2 rounded-xl border ${
-                          isWFH 
-                            ? "bg-purple-50 border-purple-100 text-purple-600" 
+                        <div className={`p-2 rounded-xl border ${isWFH
+                            ? "bg-purple-50 border-purple-100 text-purple-600"
                             : "bg-blue-50 border-blue-100 text-blue-600"
-                        }`}>
+                          }`}>
                           {isWFH ? <HomeIcon className="w-5 h-5" /> : <BriefcaseIcon className="w-5 h-5" />}
                         </div>
                         <div>
@@ -179,7 +178,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                           </p>
                           <p className="text-xs text-neutral-500 font-medium mt-0.5 flex items-center gap-1.5">
                             <ClockIcon className="w-3.5 h-3.5 text-neutral-400" />
-                            {isWFH 
+                            {isWFH
                               ? `Schedule: ${req.from_date} to ${req.to_date}`
                               : `Change: ${req.current_shift} ➔ ${req.requested_shift} (${req.from_date} to ${req.to_date})`
                             }
@@ -199,13 +198,12 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                             { title: "Final Status", completed: false, active: false }
                           ].map((step, i) => (
                             <div key={step.title} className="flex flex-col items-center relative z-10">
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 text-xs font-bold transition-all shadow-sm ${
-                                step.completed 
-                                  ? "bg-success-500 border-success-500 text-white" 
-                                  : step.active 
-                                    ? "bg-white border-warning-500 text-warning-700 ring-4 ring-warning-100" 
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 text-xs font-bold transition-all shadow-sm ${step.completed
+                                  ? "bg-success-500 border-success-500 text-white"
+                                  : step.active
+                                    ? "bg-white border-warning-500 text-warning-700 ring-4 ring-warning-100"
                                     : "bg-white border-neutral-300 text-neutral-400"
-                              }`}>
+                                }`}>
                                 {step.completed ? <CheckIcon className="w-3.5 h-3.5" /> : (i + 1)}
                               </div>
                               <span className="text-[10px] font-bold mt-1.5 text-neutral-700 bg-white px-1.5">{step.title}</span>
@@ -215,8 +213,8 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="outline"
                           onClick={() => setActiveRequestDetails(isExpanded ? null : req.id)}
                           className="text-xs font-semibold text-neutral-600 border border-neutral-300 px-3 py-1.5 rounded-lg"
@@ -228,7 +226,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
 
                     <AnimatePresence>
                       {isExpanded && (
-                        <motion.div 
+                        <motion.div
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: "auto" }}
                           exit={{ opacity: 0, height: 0 }}
@@ -312,11 +310,10 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                     return (
                       <tr key={item.id} className="hover:bg-neutral-50/40 transition-colors">
                         <td className="p-4 pl-6">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${
-                            isWFH 
-                              ? "bg-purple-50 text-purple-700 border-purple-200" 
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWFH
+                              ? "bg-purple-50 text-purple-700 border-purple-200"
                               : "bg-blue-50 text-blue-700 border-blue-200"
-                          }`}>
+                            }`}>
                             {item.request_type || "Shift"}
                           </span>
                         </td>
@@ -335,11 +332,10 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                         <td className="p-4 text-xs text-neutral-500 truncate max-w-xs" title={item.reason}>{item.reason || "-"}</td>
                         <td className="p-4 text-center">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getStatusColor(item.status)}`}>
-                            <span className={`h-1 w-1 rounded-full ${
-                              isApproved ? "bg-success-600" :
-                              isRejected ? "bg-danger-600" :
-                              "bg-warning-500 animate-pulse"
-                            }`} />
+                            <span className={`h-1 w-1 rounded-full ${isApproved ? "bg-success-600" :
+                                isRejected ? "bg-danger-600" :
+                                  "bg-warning-500 animate-pulse"
+                              }`} />
                             {item.status}
                           </span>
                         </td>
