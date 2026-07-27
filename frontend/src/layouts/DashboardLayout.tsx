@@ -298,6 +298,18 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     loadReportingEmployees();
+
+    socket.on("attendance_update", () => {
+      loadReportingEmployees();
+    });
+
+    const handleRefresh = () => loadReportingEmployees();
+    window.addEventListener('refreshTeamStatus', handleRefresh);
+
+    return () => {
+      socket.off("attendance_update");
+      window.removeEventListener('refreshTeamStatus', handleRefresh);
+    };
   }, []);
 
   useEffect(() => {
