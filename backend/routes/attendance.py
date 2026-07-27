@@ -584,6 +584,7 @@ def attendance_status(user_id):
 
     attendance = Attendance.query.filter_by(
         user_id=user_id,
+        attendance_date=get_ist_today(),
         check_out=None
     ).order_by(
         Attendance.id.desc()
@@ -2017,6 +2018,55 @@ def export_paysheet():
         }), 500
 
 
+def check_is_non_working_day(check_date):
+    try:
+        from models.holiday import Holiday, HolidayOverride
+        override = HolidayOverride.query.filter_by(date=check_date).first()
+        if override:
+            if override.override_type == "Working Day":
+                return False
+            elif override.override_type in ["Holiday", "Weekly Off"]:
+                return True
+
+        holiday = Holiday.query.filter_by(date=check_date, is_published=True).first()
+        if holiday:
+            return True
+    except Exception:
+        pass
+
+    day_name = check_date.strftime("%A")
+    if day_name == "Sunday":
+        return True
+    elif day_name == "Saturday":
+        import calendar
+        weeks = calendar.monthcalendar(check_date.year, check_date.month)
+        sat_count = 0
+        for week in weeks:
+            sat = week[5]
+            if sat != 0:
+                sat_count += 1
+                if sat == check_date.day:
+                    break
+        if sat_count in [2, 4]:
+            return True
+        return False
+
+    return False
+
+
+def get_last_working_day(ref_date=None):
+    if ref_date is None:
+        ref_date = date.today() - timedelta(days=1)
+
+    target_date = ref_date
+    max_steps = 14
+    steps = 0
+    while check_is_non_working_day(target_date) and steps < max_steps:
+        target_date -= timedelta(days=1)
+        steps += 1
+    return target_date
+
+
 @attendance_bp.route(
     "/approve/<int:employee_id>",
     methods=["PUT"]
@@ -2028,7 +2078,7 @@ def approve_attendance(employee_id):
         if target_date_str:
             target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
         else:
-            target_date = date.today() - timedelta(days=1)
+            target_date = get_last_working_day()
 
         from models.employee import Employee
         emp = Employee.query.get(employee_id)
@@ -2036,16 +2086,16 @@ def approve_attendance(employee_id):
             return jsonify({"success": False, "error": "Employee not found"}), 404
         target_user_id = emp.user_id
 
-        attendance = Attendance.query.filter_by(
+        attendances = Attendance.query.filter_by(
             user_id=target_user_id,
             attendance_date=target_date
-        ).first()
+        ).all()
 
-        if not attendance:
+        if not attendances:
             attendance = Attendance(
                 user_id=target_user_id,
                 attendance_date=target_date,
-                status="Present",
+                status="Absent",
                 manager_status="Approved",
                 check_in=None,
                 check_out=None,
@@ -2053,23 +2103,9 @@ def approve_attendance(employee_id):
             )
             db.session.add(attendance)
         else:
-            attendance.status = "Present"
-            attendance.manager_status = "Approved"
-
-            if not attendance.check_in and attendance.card_check_in:
-                attendance.check_in = attendance.card_check_in
-            if not attendance.check_out and attendance.card_check_out:
-                attendance.check_out = attendance.card_check_out
-
-            if attendance.check_in and attendance.check_out:
-                total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
-                break_minutes = attendance.total_break_minutes or 0
-                gap_minutes = attendance.total_gap_minutes or 0
-                total_seconds -= (break_minutes + gap_minutes) * 60
-                hours_decimal = max(total_seconds, 0) / 3600
-                attendance.total_hours = int(hours_decimal * 100) / 100
-            elif attendance.card_working_hours and (not attendance.total_hours or attendance.total_hours == 0.0):
-                attendance.total_hours = attendance.card_working_hours
+            for att in attendances:
+                att.manager_status = "Approved"
+            attendance = attendances[0]
 
         db.session.commit()
 
@@ -2115,14 +2151,21 @@ def approve_attendance(employee_id):
     "/reject/<int:employee_id>",
     methods=["PUT"]
 )
+@attendance_bp.route(
+    "/need-clarification/<int:employee_id>",
+    methods=["PUT"]
+)
 def reject_attendance(employee_id):
 
     try:
         target_date_str = request.args.get("date")
+        data = request.get_json(silent=True) or {}
+        reason = data.get("reason") or request.args.get("reason") or ""
+        
         if target_date_str:
             target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
         else:
-            target_date = date.today() - timedelta(days=1)
+            target_date = get_last_working_day()
 
         from models.employee import Employee
         emp = Employee.query.get(employee_id)
@@ -2130,24 +2173,28 @@ def reject_attendance(employee_id):
             return jsonify({"success": False, "error": "Employee not found"}), 404
         target_user_id = emp.user_id
 
-        attendance = Attendance.query.filter_by(
+        attendances = Attendance.query.filter_by(
             user_id=target_user_id,
             attendance_date=target_date
-        ).first()
+        ).all()
 
-        if not attendance:
+        if not attendances:
             attendance = Attendance(
                 user_id=target_user_id,
                 attendance_date=target_date,
                 status="Absent",
-                manager_status="Rejected",
+                manager_status="Need Clarification",
+                rejection_reason=reason,
+                check_in=None,
+                check_out=None,
                 total_hours=0.0
             )
             db.session.add(attendance)
         else:
-            attendance.status = "Absent"
-            attendance.manager_status = "Rejected"
-            attendance.total_hours = 0.0
+            for att in attendances:
+                att.manager_status = "Need Clarification"
+                att.rejection_reason = reason
+            attendance = attendances[0]
 
         db.session.commit()
 
@@ -2165,7 +2212,8 @@ def reject_attendance(employee_id):
                     "lunch_minutes": attendance.lunch_minutes or 0,
                     "tea_minutes": attendance.tea_minutes or 0,
                     "shift": emp.shift_timing or "General Shift",
-                    "manager_status": attendance.manager_status or "Pending",
+                    "manager_status": attendance.manager_status or "Need Clarification",
+                    "reason": reason,
                     "checked_in": (attendance and attendance.check_in is not None and attendance.check_out is None),
                     "lunch_break": attendance.lunch_break or False,
                     "tea_break": attendance.tea_break or False
@@ -2176,7 +2224,8 @@ def reject_attendance(employee_id):
 
         return jsonify({
             "success": True,
-            "message": "Attendance Rejected and marked as Absent"
+            "message": "Clarification requested",
+            "reason": reason
         })
 
     except Exception as e:
@@ -2201,7 +2250,87 @@ def approve_all_attendance():
         if target_date_str:
             yesterday = datetime.strptime(target_date_str, "%Y-%m-%d").date()
         else:
-            yesterday = date.today() - timedelta(days=1)
+            yesterday = get_last_working_day()
+
+        if manager_id:
+            from models.employee import Employee
+            manager = Employee.query.filter_by(user_id=int(manager_id)).first()
+            if manager:
+                manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
+                reporting_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+                for employee in reporting_employees:
+                    if not employee.reporting_manager:
+                        continue
+                    e_mgr = employee.reporting_manager.strip().lower()
+                    is_match = (e_mgr == manager_name) or (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr) or (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name)
+                    if is_match:
+                        attendances = Attendance.query.filter_by(
+                            user_id=employee.user_id,
+                            attendance_date=yesterday
+                        ).all()
+                        if not attendances:
+                            attendance = Attendance(
+                                user_id=employee.user_id,
+                                attendance_date=yesterday,
+                                status="Absent",
+                                manager_status="Approved",
+                                check_in=None,
+                                check_out=None,
+                                total_hours=0.0
+                            )
+                            db.session.add(attendance)
+                        else:
+                            for att in attendances:
+                                if att.manager_status != "Need Clarification":
+                                    att.manager_status = "Approved"
+        else:
+            attendances = Attendance.query.filter_by(
+                attendance_date=yesterday
+            ).all()
+            for attendance in attendances:
+                if attendance.manager_status != "Need Clarification":
+                    attendance.manager_status = "Approved"
+
+        db.session.commit()
+
+        # Emit attendance_approved_all socket event for real-time dashboard updates
+        try:
+            from extensions import socketio
+            socketio.emit("attendance_approved_all", {"status": "Approved"})
+        except Exception as socket_err:
+            print("Failed to emit approve-all socket:", str(socket_err))
+
+        return jsonify({
+            "success": True,
+            "message": "All attendance approved"
+        })
+
+    except Exception as e:
+
+        db.session.rollback()
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@attendance_bp.route(
+    "/reject-all",
+    methods=["PUT"]
+)
+def reject_all_attendance():
+
+    try:
+        manager_id = request.args.get("manager_id")
+        target_date_str = request.args.get("date")
+        data = request.get_json(silent=True) or {}
+        reason = data.get("reason") or request.args.get("reason") or ""
+
+        if target_date_str:
+            yesterday = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+        else:
+            yesterday = get_last_working_day()
 
         if manager_id:
             from models.employee import Employee
@@ -2223,66 +2352,37 @@ def approve_all_attendance():
                             attendance = Attendance(
                                 user_id=employee.user_id,
                                 attendance_date=yesterday,
-                                status="Present",
-                                manager_status="Approved",
+                                status="Absent",
+                                manager_status="Rejected",
+                                rejection_reason=reason,
                                 check_in=None,
                                 check_out=None,
                                 total_hours=0.0
                             )
                             db.session.add(attendance)
                         else:
-                            attendance.status = "Present"
-                            attendance.manager_status = "Approved"
-                            
-                            if not attendance.check_in and attendance.card_check_in:
-                                attendance.check_in = attendance.card_check_in
-                            if not attendance.check_out and attendance.card_check_out:
-                                attendance.check_out = attendance.card_check_out
-
-                            if attendance.check_in and attendance.check_out:
-                                total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
-                                break_minutes = attendance.total_break_minutes or 0
-                                gap_minutes = attendance.total_gap_minutes or 0
-                                total_seconds -= (break_minutes + gap_minutes) * 60
-                                hours_decimal = max(total_seconds, 0) / 3600
-                                attendance.total_hours = int(hours_decimal * 100) / 100
-                            elif attendance.card_working_hours and (not attendance.total_hours or attendance.total_hours == 0.0):
-                                attendance.total_hours = attendance.card_working_hours
+                            attendance.manager_status = "Rejected"
+                            attendance.rejection_reason = reason
         else:
             attendances = Attendance.query.filter_by(
                 attendance_date=yesterday
             ).all()
             for attendance in attendances:
-                attendance.status = "Present"
-                attendance.manager_status = "Approved"
-                
-                if not attendance.check_in and attendance.card_check_in:
-                    attendance.check_in = attendance.card_check_in
-                if not attendance.check_out and attendance.card_check_out:
-                    attendance.check_out = attendance.card_check_out
-
-                if attendance.check_in and attendance.check_out:
-                    total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
-                    break_minutes = attendance.total_break_minutes or 0
-                    gap_minutes = attendance.total_gap_minutes or 0
-                    total_seconds -= (break_minutes + gap_minutes) * 60
-                    hours_decimal = max(total_seconds, 0) / 3600
-                    attendance.total_hours = int(hours_decimal * 100) / 100
-                elif attendance.card_working_hours and (not attendance.total_hours or attendance.total_hours == 0.0):
-                    attendance.total_hours = attendance.card_working_hours
+                attendance.manager_status = "Rejected"
+                attendance.rejection_reason = reason
 
         db.session.commit()
 
-        # Emit attendance_approved_all socket event for real-time dashboard updates
         try:
             from extensions import socketio
-            socketio.emit("attendance_approved_all", {"status": "Approved"})
+            socketio.emit("attendance_approved_all", {"status": "Rejected", "reason": reason})
         except Exception as socket_err:
-            print("Failed to emit approve-all socket:", str(socket_err))
+            print("Failed to emit reject-all socket:", str(socket_err))
 
         return jsonify({
             "success": True,
-            "message": "All attendance approved"
+            "message": "All attendance rejected",
+            "reason": reason
         })
 
     except Exception as e:

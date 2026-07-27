@@ -210,8 +210,8 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
 
   return (
     <div className="fixed top-5 right-5 z-[9999] w-[440px] max-w-[92vw]">
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
-        <div className="bg-gradient-to-r from-gray-800 to-gray-600 px-6 py-5 flex justify-between items-center">
+      <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 overflow-hidden">
+        <div className="bg-gradient-to-r from-primary-700 to-primary-500 px-6 py-5 flex justify-between items-center">
           <h2 className="text-white font-bold text-xl">
             {selectedEmpForWish ? "✨ Customize Wishes" : "🎉 Today's Birthdays"}
           </h2>
@@ -257,8 +257,8 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
                     onClick={() => setWishMessage(msg)}
                     className={`text-left text-sm px-4 py-2.5 rounded-lg border transition-all ${
                       wishMessage === msg
-                        ? "border-emerald-600 bg-emerald-50 text-emerald-800 font-semibold"
-                        : "border-gray-200 hover:bg-gray-50 text-gray-700"
+                        ? "border-primary-500 bg-primary-50 text-primary-800 font-semibold"
+                        : "border-neutral-200 hover:bg-neutral-50 text-neutral-700"
                     }`}
                   >
                     {msg}
@@ -274,7 +274,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
                   Selected Wish
                 </label>
                 <div
-                  className="w-full text-sm p-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-900 leading-relaxed"
+                  className="w-full text-sm p-3 rounded-lg border border-primary-200 bg-primary-50/50 text-primary-900 leading-relaxed"
                   style={{ userSelect: "text", cursor: "text" }}
                 >
                   {wishMessage}
@@ -305,7 +305,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
                   }
                 }}
                 disabled={!wishMessage.trim()}
-                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors"
+                className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors"
               >
                 Send Wishes
               </button>
@@ -316,23 +316,23 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
             {birthdayEmployees.map((emp: any) => (
               <div
                 key={emp.id}
-                className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors"
+                className="flex items-center gap-4 p-4 rounded-xl bg-primary-50/20 border border-primary-100/50 hover:bg-primary-50/40 transition-colors"
               >
                 <img
                   src={`${BASE_URL}/employees/image/${emp.id}`}
                   alt={emp.first_name}
-                  className="w-16 h-16 rounded-full object-cover border border-gray-300 shadow-sm"
+                  className="w-16 h-16 rounded-full object-cover border border-primary-200 shadow-sm"
                   onError={(e) => {
                     e.currentTarget.src =
                       "https://cdn-icons-png.flaticon.com/512/149/149071.png";
                   }}
                 />
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-gray-800 text-lg truncate">
+                  <h3 className="font-bold text-neutral-800 text-lg truncate">
                     {emp.first_name} {emp.last_name}
                   </h3>
-                  <p className="text-sm text-gray-500 truncate">{emp.designation}</p>
-                  <p className="text-sm text-gray-700 font-semibold mt-1">
+                  <p className="text-sm text-neutral-500 truncate">{emp.designation}</p>
+                  <p className="text-sm text-primary-700 font-semibold mt-1">
                     🎂 Birthday Today
                   </p>
                 </div>
@@ -341,7 +341,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
                     setSelectedEmpForWish(emp);
                     setWishMessage(presetMessages[0]);
                   }}
-                  className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap"
+                  className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap"
                 >
                   🎉 Wishes
                 </button>
@@ -350,7 +350,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
           </div>
         )}
 
-        <div className="text-center text-sm text-gray-500 py-3.5 border-t border-gray-200 bg-gray-50">
+        <div className="text-center text-sm text-neutral-500 py-3.5 border-t border-neutral-200 bg-neutral-50">
           — S4 Carlisle Publishing Services
         </div>
       </div>

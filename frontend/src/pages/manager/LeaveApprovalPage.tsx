@@ -37,9 +37,30 @@ const LeaveApprovalPage: React.FC = () => {
     fetchLeaves();
   }, []);
 
+  const checkManagerMatch = (reportingManager: string | null | undefined, managerFullName: string | null | undefined) => {
+    if (!reportingManager || !managerFullName) return false;
+    const repManagerClean = reportingManager.trim().toLowerCase();
+    const managerName = managerFullName.trim().toLowerCase();
+
+    if (repManagerClean === managerName) return true;
+
+    const repManagerParts = repManagerClean.split(/\s+/);
+    const loggedManagerParts = managerName.split(/\s+/);
+
+    if (repManagerParts.length === 1 && loggedManagerParts.length > 0) {
+      if (loggedManagerParts[0] === repManagerParts[0]) return true;
+    }
+
+    if (loggedManagerParts.length === 1 && repManagerParts.length > 0) {
+      if (repManagerParts[0] === loggedManagerParts[0]) return true;
+    }
+
+    return false;
+  };
+
   const approvalLeaves = leaveRequests.filter((l: any) => {
-    const isManager = l.reporting_manager === user?.full_name ||
-      l.handover_to === user?.full_name ||
+    const isManager = checkManagerMatch(l.reporting_manager, user?.full_name) ||
+      checkManagerMatch(l.handover_to, user?.full_name) ||
       user?.access_level?.toLowerCase() === "admin";
     if (!isManager) return false;
 
@@ -212,8 +233,8 @@ const LeaveApprovalPage: React.FC = () => {
 
                         <td className="p-4 text-sm text-neutral-700 font-semibold">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${isPermission
-                              ? "bg-purple-50 text-purple-700 border-purple-200"
-                              : "bg-blue-50 text-blue-700 border-blue-200"
+                            ? "bg-purple-50 text-purple-700 border-purple-200"
+                            : "bg-blue-50 text-blue-700 border-blue-200"
                             }`}>
                             {leaveType}
                           </span>
@@ -238,9 +259,9 @@ const LeaveApprovalPage: React.FC = () => {
                         <td className="p-4 text-center">
                           <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(leave.status)}`}>
                             <span className={`h-1.5 w-1.5 rounded-full ${leave.status === "Approved" ? "bg-success-600" :
-                                leave.status === "Rejected" ? "bg-danger-600" :
-                                  leave.status === "Cancelled" ? "bg-neutral-400" :
-                                    "bg-warning-500 animate-pulse"
+                              leave.status === "Rejected" ? "bg-danger-600" :
+                                leave.status === "Cancelled" ? "bg-neutral-400" :
+                                  "bg-warning-500 animate-pulse"
                               }`} />
                             {leave.status}
                           </span>
@@ -295,7 +316,7 @@ const LeaveApprovalPage: React.FC = () => {
                               </Button>
                             </div>
                           ) : (
-                            <span className="text-[11px] font-medium text-neutral-400">No actions available</span>
+                            <span className="text-[11px] font-medium text-neutral-400">No actions required</span>
                           )}
                         </td>
                       </tr>

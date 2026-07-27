@@ -37,8 +37,29 @@ const ShiftApprovalPage: React.FC = () => {
     fetchShiftRequests();
   }, []);
 
+  const checkManagerMatch = (reportingManager: string | null | undefined, managerFullName: string | null | undefined) => {
+    if (!reportingManager || !managerFullName) return false;
+    const repManagerClean = reportingManager.trim().toLowerCase();
+    const managerName = managerFullName.trim().toLowerCase();
+
+    if (repManagerClean === managerName) return true;
+
+    const repManagerParts = repManagerClean.split(/\s+/);
+    const loggedManagerParts = managerName.split(/\s+/);
+
+    if (repManagerParts.length === 1 && loggedManagerParts.length > 0) {
+      if (loggedManagerParts[0] === repManagerParts[0]) return true;
+    }
+
+    if (loggedManagerParts.length === 1 && repManagerParts.length > 0) {
+      if (repManagerParts[0] === loggedManagerParts[0]) return true;
+    }
+
+    return false;
+  };
+
   const safeManagerShiftRequests = shiftRequests.filter((req: any) => {
-    const isManager = req.reporting_manager === user?.full_name ||
+    const isManager = checkManagerMatch(req.reporting_manager, user?.full_name) ||
       user?.access_level?.toLowerCase() === "admin";
     if (!isManager) return false;
 
@@ -202,13 +223,22 @@ const ShiftApprovalPage: React.FC = () => {
                           </p>
                         </div>
                       </td>
-                      <td className="p-4 text-xs text-neutral-500 truncate max-w-xs" title={item.reason}>{item.reason || "-"}</td>
+                      <td className="p-4 text-xs text-neutral-500 max-w-xs relative group">
+                        <div className="truncate cursor-help">{item.reason || "-"}</div>
+                        {item.reason && item.reason.length > 20 && (
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block z-50 w-72 p-3 bg-neutral-100 text-neutral-800 text-xs rounded-xl shadow-xl border border-neutral-300 whitespace-normal break-words transition-all duration-200">
+                            <p className="font-semibold mb-1 text-neutral-500">Full Reason:</p>
+                            {item.reason}
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-neutral-100"></div>
+                          </div>
+                        )}
+                      </td>
                       <td className="p-4 text-center">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getStatusColor(item.status)}`}>
                           <span className={`h-1.5 w-1.5 rounded-full ${isApproved ? "bg-success-600" :
-                              isRejected ? "bg-danger-600" :
-                                item.status === "Cancelled" ? "bg-neutral-400" :
-                                  "bg-warning-500 animate-pulse"
+                            isRejected ? "bg-danger-600" :
+                              item.status === "Cancelled" ? "bg-neutral-400" :
+                                "bg-warning-500 animate-pulse"
                             }`} />
                           {item.status}
                         </span>
@@ -263,7 +293,7 @@ const ShiftApprovalPage: React.FC = () => {
                             </Button>
                           </div>
                         ) : (
-                          <span className="text-[10px] font-medium text-neutral-400">No actions available</span>
+                          <span className="text-[10px] font-medium text-neutral-400">No actions required</span>
                         )}
                       </td>
                     </tr>

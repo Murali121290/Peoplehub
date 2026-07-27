@@ -205,11 +205,13 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const handleRejectToday = async (empUserId: number) => {
+  const handleRejectToday = async (empUserId: number, reason?: string) => {
     try {
       const todayStr = new Date().toISOString().split("T")[0];
       const response = await fetch(`${BASE_URL}/attendance/reject/${empUserId}?date=${todayStr}`, {
         method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason || "" }),
       });
       if (response.ok) {
         loadTeamAttendance();

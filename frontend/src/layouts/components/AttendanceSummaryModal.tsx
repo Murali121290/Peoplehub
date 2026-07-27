@@ -25,8 +25,9 @@ interface AttendanceSummaryModalProps {
   onClose: () => void;
   onViewEmployee: (emp: any) => void;
   onApproveAll: () => void;
+  onRejectAll?: (reason?: string) => void;
   onApproveEmployee: (employeeId: number) => void;
-  onRejectEmployee: (employeeId: number) => void;
+  onRejectEmployee: (employeeId: number, reason?: string) => void;
   onRefresh?: () => void;
 }
 
@@ -35,13 +36,23 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
   onClose,
   onViewEmployee,
   onApproveAll,
+  onRejectAll,
   onApproveEmployee,
   onRejectEmployee,
   onRefresh,
 }) => {
   const [employees, setEmployees] = useState<any[]>([]);
   const [confirmDialog, setConfirmDialog] = useState<"approve" | "reject" | null>(null);
+  const [rejectReasonModal, setRejectReasonModal] = useState<{ open: boolean; empId?: number; isBulk?: boolean }>({ open: false });
+  const [rejectReasonText, setRejectReasonText] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
 
   useEffect(() => {
     setEmployees(
@@ -69,15 +80,44 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
     );
   };
 
-  const handleRejectSingle = (empId: number) => {
-    onRejectEmployee(empId);
-    setEmployees((prev) =>
-      prev.map((e) =>
-        (e.employee_id === empId || e.id === empId)
-          ? { ...e, decision: "Rejected" }
-          : e
-      )
-    );
+  const openRejectReasonModal = (empId?: number, isBulk: boolean = false) => {
+    setRejectReasonText("");
+    setRejectReasonModal({ open: true, empId, isBulk });
+  };
+
+  const handleConfirmRejectionWithReason = () => {
+    const reason = rejectReasonText.trim();
+    if (rejectReasonModal.isBulk) {
+      if (onRejectAll) {
+        onRejectAll(reason);
+      } else {
+        const pendingItems = employees.filter(
+          (e) => !e.decision || e.decision === "Pending"
+        );
+        pendingItems.forEach((e) => {
+          onRejectEmployee(e.employee_id || e.id, reason);
+        });
+        setEmployees((prev) =>
+          prev.map((e) =>
+            !e.decision || e.decision === "Pending"
+              ? { ...e, decision: "Rejected" }
+              : e
+          )
+        );
+      }
+    } else if (rejectReasonModal.empId != null) {
+      const empId = rejectReasonModal.empId;
+      onRejectEmployee(empId, reason);
+      setEmployees((prev) =>
+        prev.map((e) =>
+          (e.employee_id === empId || e.id === empId)
+            ? { ...e, decision: "Rejected" }
+            : e
+        )
+      );
+    }
+    setRejectReasonModal({ open: false });
+    setConfirmDialog(null);
   };
 
   const handleConfirmAction = () => {
@@ -99,22 +139,11 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
           )
         );
       }
+      setConfirmDialog(null);
     } else if (confirmDialog === "reject") {
-      const pendingItems = employees.filter(
-        (e) => !e.decision || e.decision === "Pending"
-      );
-      pendingItems.forEach((e) => {
-        onRejectEmployee(e.employee_id || e.id);
-      });
-      setEmployees((prev) =>
-        prev.map((e) =>
-          !e.decision || e.decision === "Pending"
-            ? { ...e, decision: "Rejected" }
-            : e
-        )
-      );
+      setConfirmDialog(null);
+      openRejectReasonModal(undefined, true);
     }
-    setConfirmDialog(null);
   };
 
   const handleRefreshClick = () => {
@@ -181,28 +210,34 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
         </span>
       );
     }
-    if (decision === "Rejected") {
+    if (decision === "Need Clarification" || decision === "Rejected") {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-          <XCircleIcon className="w-3.5 h-3.5 text-rose-600" />
-          Rejected
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+          <ExclamationTriangleIcon className="w-3.5 h-3.5 text-amber-600" />
+          Need Clarification
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+        <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
         Pending
       </span>
     );
   };
 
+  const sortedEmployees = React.useMemo(() => {
+    return [...employees].sort((a: any, b: any) =>
+      (a.employee_name || "").localeCompare(b.employee_name || "", undefined, { sensitivity: 'base' })
+    );
+  }, [employees]);
+
   return (
-    <div className="fixed inset-x-0 bottom-0 top-[112px] bg-neutral-900/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 md:p-6 transition-all duration-300">
-      <div className="bg-white rounded-[20px] shadow-2xl w-[1100px] max-w-full overflow-hidden border border-neutral-100 flex flex-col max-h-[calc(100vh-136px)] animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-sm flex items-center justify-center z-[70] p-3 md:p-5 transition-all duration-300 overscroll-contain">
+      <div className="bg-white rounded-[20px] shadow-2xl w-[1280px] max-w-[96vw] overflow-hidden border border-neutral-100 flex flex-col max-h-[calc(100vh-60px)] animate-in fade-in zoom-in-95 duration-200">
 
         {/* Modal Header */}
-        <div className="px-6 md:px-8 py-5 border-b border-neutral-100 flex justify-between items-center bg-white flex-shrink-0">
+        <div className="px-5 md:px-7 py-4 border-b border-neutral-100 flex justify-between items-center bg-white flex-shrink-0">
           <div className="flex items-center gap-3.5">
             <div className="bg-teal-50 p-2.5 rounded-2xl text-teal-600 shadow-sm border border-teal-100">
               <UserGroupIcon className="w-6 h-6" />
@@ -212,7 +247,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                 Yesterday Attendance Summary
               </h2>
               <p className="text-xs text-neutral-500 font-medium mt-0.5">
-                Review and approve yesterday's attendance before payroll processing.
+                Review and approve attendance for {employees[0]?.summary_date_formatted ? <span className="font-bold text-teal-700">{employees[0].summary_date_formatted}</span> : "last working day"} before payroll processing.
               </p>
             </div>
           </div>
@@ -235,39 +270,40 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
         </div>
 
         {/* Scrollable Employee Table */}
-        <div className="p-6 md:p-8 overflow-y-auto flex-1 bg-white">
-          <div className="overflow-hidden rounded-2xl border border-neutral-200 shadow-sm bg-white">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 text-[11px] font-bold uppercase tracking-wider">
-                  <th rowSpan={2} className="text-left py-3.5 px-5">Employee</th>
-                  <th rowSpan={2} className="text-left py-3.5 px-5">Department</th>
-                  <th colSpan={3} className="py-2.5 px-4 text-center bg-blue-50/60 text-blue-700 font-extrabold border-b border-neutral-200">Web Site Entry</th>
-                  <th colSpan={3} className="py-2.5 px-4 text-center bg-purple-50/60 text-purple-700 font-extrabold border-b border-neutral-200">Biometric Card Entry</th>
-                  <th rowSpan={2} className="text-left py-3.5 px-5">Status</th>
-                  <th rowSpan={2} className="text-left py-3.5 px-5">Verification</th>
-                  <th rowSpan={2} className="text-center py-3.5 px-5 w-[260px]">Actions</th>
+        <div className="p-4 md:p-6 flex-1 flex flex-col bg-white overflow-hidden">
+          <div className="overflow-auto rounded-2xl border border-neutral-200 shadow-sm bg-white max-h-[calc(100vh-270px)] overscroll-contain">
+            <table className="w-full border-collapse min-w-[1000px] relative">
+              <thead className="sticky top-0 z-30 bg-neutral-50 shadow-xs">
+                <tr className="bg-neutral-50 text-neutral-500 text-[11px] font-bold uppercase tracking-wider">
+                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-4 min-w-[160px]">Employee</th>
+                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3 min-w-[120px]">Department</th>
+                  <th colSpan={4} className="bg-blue-100/80 text-blue-800 font-extrabold border-b border-neutral-200 text-center py-2 px-3">Web Site Entry</th>
+                  <th colSpan={3} className="bg-purple-100/80 text-purple-800 font-extrabold border-b border-neutral-200 text-center py-2 px-3">Biometric Card Entry</th>
+                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3">Status</th>
+                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3">Verification</th>
+                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-center py-3.5 px-3 min-w-[290px]">Actions</th>
                 </tr>
-                <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 text-[10px] font-bold uppercase tracking-wider">
-                  <th className="py-2 px-4 bg-blue-50/20">Check In</th>
-                  <th className="py-2 px-4 bg-blue-50/20">Check Out</th>
-                  <th className="py-2 px-4 bg-blue-50/20">Hours</th>
-                  <th className="py-2 px-4 bg-purple-50/20">Check In</th>
-                  <th className="py-2 px-4 bg-purple-50/20">Check Out</th>
-                  <th className="py-2 px-4 bg-purple-50/20">Hours</th>
+                <tr className="bg-neutral-50 text-neutral-500 text-[10px] font-bold uppercase tracking-wider">
+                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check In</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check Out</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Break</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Hours</th>
+                  <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check In</th>
+                  <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check Out</th>
+                  <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Hours</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 text-sm font-medium">
-                {employees.length === 0 ? (
+                {sortedEmployees.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="py-12 text-center text-neutral-400 font-medium">
+                    <td colSpan={12} className="py-12 text-center text-neutral-400 font-medium">
                       No yesterday attendance records found for approval.
                     </td>
                   </tr>
                 ) : (
-                  employees.map((emp: any) => {
+                  sortedEmployees.map((emp: any) => {
                     const isApproved = emp.decision === "Approved";
-                    const isRejected = emp.decision === "Rejected";
+                    const isClarificationNeeded = emp.decision === "Need Clarification";
 
                     return (
                       <tr
@@ -275,8 +311,8 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         className="hover:bg-neutral-50/60 transition-colors"
                       >
                         {/* Employee Info */}
-                        <td className="py-3.5 px-5">
-                          <div className="flex items-center gap-3">
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-2.5">
                             <img
                               src={
                                 emp.profile_image
@@ -284,10 +320,10 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                                   : "/default-avatar.png"
                               }
                               alt={emp.employee_name}
-                              className="w-9 h-9 rounded-full object-cover border border-neutral-200 shadow-sm bg-neutral-50"
+                              className="w-8 h-8 rounded-full object-cover border border-neutral-200 shadow-sm bg-neutral-50"
                             />
                             <div>
-                              <p className="font-semibold text-neutral-800 text-xs md:text-sm">
+                              <p className="font-semibold text-neutral-800 text-xs">
                                 {emp.employee_name}
                               </p>
                               <p className="text-[10px] text-neutral-400 font-mono mt-0.5">
@@ -298,41 +334,44 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         </td>
 
                         {/* Department */}
-                        <td className="py-3.5 px-5 text-neutral-600 text-xs">
+                        <td className="py-3.5 px-4 text-neutral-600 text-xs">
                           {emp.department || "General"}
                         </td>
 
                         {/* Web Entry Columns */}
-                        <td className="py-3.5 px-4 bg-blue-50/5 text-xs text-neutral-700 font-semibold">{emp.check_in || "—"}</td>
-                        <td className="py-3.5 px-4 bg-blue-50/5 text-xs text-neutral-700 font-semibold">{emp.check_out || "—"}</td>
-                        <td className="py-3.5 px-4 bg-blue-50/5 text-xs font-bold text-neutral-800">
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold">{emp.check_in || "—"}</td>
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold">{emp.check_out || "—"}</td>
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold">
+                          {emp.total_break_minutes ? `${emp.total_break_minutes} min` : "0 min"}
+                        </td>
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs font-bold text-neutral-800">
                           {formatWorkingHours(emp.working_hours)}
                         </td>
 
                         {/* Card Entry Columns */}
-                        <td className="py-3.5 px-4 bg-purple-50/5 text-xs text-purple-700 font-semibold">{emp.card_check_in || "—"}</td>
-                        <td className="py-3.5 px-4 bg-purple-50/5 text-xs text-purple-700 font-semibold">{emp.card_check_out || "—"}</td>
-                        <td className="py-3.5 px-4 bg-purple-50/5 text-xs font-bold text-purple-800">
+                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-purple-700 font-semibold">{emp.card_check_in || "—"}</td>
+                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-purple-700 font-semibold">{emp.card_check_out || "—"}</td>
+                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs font-bold text-purple-800">
                           {formatWorkingHours(emp.card_working_hours)}
                         </td>
 
                         {/* Status */}
-                        <td className="py-3.5 px-5">
+                        <td className="py-3.5 px-4">
                           {getStatusBadge(emp.status)}
                         </td>
 
                         {/* Verification Status */}
-                        <td className="py-3.5 px-5">
+                        <td className="py-3.5 px-4">
                           {getVerificationBadge(emp.decision)}
                         </td>
 
                         {/* Action Buttons */}
-                        <td className="py-3.5 px-5 text-center">
-                          <div className="flex items-center justify-end gap-2">
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-end gap-1.5 flex-nowrap">
                             {/* View Button */}
                             <button
                               onClick={() => onViewEmployee(emp)}
-                              className="h-9 px-3 py-1.5 border border-neutral-200 text-neutral-600 hover:text-neutral-800 hover:bg-neutral-50 hover:border-neutral-300 rounded-xl text-xs font-semibold transition-all duration-200 hover:-translate-y-0.5 shadow-xs flex items-center gap-1.5"
+                              className="h-8 px-2.5 py-1 border border-neutral-200 text-neutral-600 hover:text-neutral-800 hover:bg-neutral-50 hover:border-neutral-300 rounded-lg text-xs font-semibold transition-all duration-200 hover:-translate-y-0.5 shadow-xs flex items-center gap-1"
                               title="View Details"
                             >
                               <EyeIcon className="w-3.5 h-3.5" />
@@ -343,26 +382,26 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                             <button
                               disabled={isApproved}
                               onClick={() => handleApproveSingle(emp.employee_id || emp.id)}
-                              className={`h-9 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-1.5 ${isApproved
+                              className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${isApproved
                                   ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
-                                  : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 active:translate-y-0 shadow-xs"
+                                  : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 shadow-xs"
                                 }`}
                             >
                               <CheckIcon className="w-3.5 h-3.5 text-emerald-700" />
                               Approve
                             </button>
 
-                            {/* Reject Button */}
+                            {/* Need Clarification Button */}
                             <button
-                              disabled={isRejected}
-                              onClick={() => handleRejectSingle(emp.employee_id || emp.id)}
-                              className={`h-9 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-1.5 ${isRejected
+                              disabled={isClarificationNeeded}
+                              onClick={() => openRejectReasonModal(emp.employee_id || emp.id, false)}
+                              className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${isClarificationNeeded
                                   ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
-                                  : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 hover:-translate-y-0.5 active:bg-rose-200 active:translate-y-0 shadow-xs"
+                                  : "bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 hover:-translate-y-0.5 active:bg-amber-200 shadow-xs"
                                 }`}
                             >
-                              <XMarkIcon className="w-3.5 h-3.5 text-rose-700" />
-                              Reject
+                              <ExclamationTriangleIcon className="w-3.5 h-3.5 text-amber-600" />
+                              Need Clarification
                             </button>
                           </div>
                         </td>
@@ -387,48 +426,29 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
           {/* Center: Real-time Footer Summary */}
           <div className="flex items-center gap-4 bg-white px-4 py-2 rounded-full border border-neutral-200 shadow-xs text-xs font-bold">
-            <span className="text-emerald-700 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              Approved : {approvedCount}
-            </span>
-            <span className="text-neutral-300">|</span>
-            <span className="text-rose-700 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-rose-500" />
-              Rejected : {rejectedCount}
-            </span>
-            <span className="text-neutral-300">|</span>
-            <span className="text-amber-700 flex items-center gap-1.5">
+            <span className="text-amber-800 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-amber-500" />
+              Need Clarification : {employees.filter((e) => e.decision === "Need Clarification" || e.decision === "Rejected").length}
+            </span>
+            <span className="text-neutral-300">|</span>
+            <span className="text-blue-700 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-blue-500" />
               Pending : {pendingCount}
             </span>
           </div>
 
-          {/* Right: Approve All & Reject All */}
+          {/* Right: Approve All Button */}
           <div className="flex items-center gap-2">
-            {/* Reject All Button */}
             <button
-              disabled={pendingCount === 0}
-              onClick={() => setConfirmDialog("reject")}
-              className={`h-10 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${pendingCount === 0
-                  ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
-                  : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 hover:-translate-y-0.5 active:bg-rose-200 active:translate-y-0 shadow-xs"
-                }`}
-            >
-              <XCircleIcon className="w-4 h-4 text-rose-700" />
-              {pendingCount === 0 ? "All Employees Processed" : "Reject All"}
-            </button>
-
-            {/* Approve All Button */}
-            <button
-              disabled={pendingCount === 0}
+              disabled={pendingCount === 0 && employees.filter((e) => e.decision === "Need Clarification").length === 0}
               onClick={() => setConfirmDialog("approve")}
-              className={`h-10 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${pendingCount === 0
+              className={`h-10 px-5 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${pendingCount === 0 && employees.filter((e) => e.decision === "Need Clarification").length === 0
                   ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
-                  : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 active:translate-y-0 shadow-xs"
+                  : "bg-emerald-600 text-white hover:bg-emerald-700 hover:-translate-y-0.5 active:bg-emerald-800 shadow-sm"
                 }`}
             >
-              <CheckCircleIcon className="w-4 h-4 text-emerald-700" />
-              {pendingCount === 0 ? "All Employees Processed" : "Approve All"}
+              <CheckCircleIcon className="w-4 h-4 text-white" />
+              Approve All
             </button>
           </div>
         </div>
@@ -437,17 +457,15 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
         {confirmDialog && (
           <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-xs flex items-center justify-center z-[100] p-4">
             <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-neutral-100 text-center space-y-4 animate-in fade-in zoom-in-95 duration-150">
-              <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center bg-amber-50 text-amber-600 border border-amber-100">
-                <ExclamationTriangleIcon className="w-6 h-6" />
+              <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center bg-emerald-50 text-emerald-600 border border-emerald-100">
+                <CheckCircleIcon className="w-6 h-6" />
               </div>
               <div>
                 <h3 className="text-base font-bold text-neutral-800">
-                  {confirmDialog === "approve" ? "Approve All Pending" : "Reject All Pending"}
+                  Approve All Attendance
                 </h3>
                 <p className="text-xs text-neutral-500 mt-1">
-                  {confirmDialog === "approve"
-                    ? "Approve all remaining pending employees?"
-                    : "Reject all remaining pending employees?"}
+                  Approve attendance for all remaining team members?
                 </p>
               </div>
               <div className="flex items-center justify-end gap-3 pt-2">
@@ -459,12 +477,58 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                 </button>
                 <button
                   onClick={handleConfirmAction}
-                  className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-xs ${confirmDialog === "approve"
-                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
-                      : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
-                    }`}
+                  className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all shadow-xs"
                 >
-                  {confirmDialog === "approve" ? "Approve" : "Reject"}
+                  Confirm Approve All
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Clarification Reason Modal */}
+        {rejectReasonModal.open && (
+          <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-xs flex items-center justify-center z-[110] p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-neutral-100 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-amber-50 text-amber-600 border border-amber-100">
+                  <ExclamationTriangleIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-neutral-800">
+                    Request Clarification
+                  </h3>
+                  <p className="text-xs text-neutral-500">
+                    Enter details regarding what clarification is needed from the employee.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1.5">
+                  Clarification Reason (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={rejectReasonText}
+                  onChange={(e) => setRejectReasonText(e.target.value)}
+                  placeholder="Enter details of clarification required..."
+                  className="w-full p-3 text-xs border border-neutral-200 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-neutral-800 placeholder-neutral-400"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-1">
+                <button
+                  onClick={() => setRejectReasonModal({ open: false })}
+                  className="py-2.5 px-4 rounded-xl text-xs font-semibold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmRejectionWithReason}
+                  className="py-2.5 px-4 rounded-xl text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-all shadow-xs"
+                >
+                  Submit Request
                 </button>
               </div>
             </div>

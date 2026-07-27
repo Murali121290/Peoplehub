@@ -137,3 +137,13 @@ class Attendance(db.Model):
         db.Float,
         default=0.0
     )
+
+    rejection_reason = db.Column(
+        db.String(255),
+        nullable=True
+    )
+
+    employee_reply = db.Column(
+        db.String(255),
+        nullable=True
+    )

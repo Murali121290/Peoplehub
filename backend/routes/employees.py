@@ -1189,6 +1189,55 @@ def get_team_attendance(user_id):
         return jsonify({"error": str(e)}), 500
 
 
+def check_is_non_working_day(check_date):
+    try:
+        from models.holiday import Holiday, HolidayOverride
+        override = HolidayOverride.query.filter_by(date=check_date).first()
+        if override:
+            if override.override_type == "Working Day":
+                return False
+            elif override.override_type in ["Holiday", "Weekly Off"]:
+                return True
+
+        holiday = Holiday.query.filter_by(date=check_date, is_published=True).first()
+        if holiday:
+            return True
+    except Exception:
+        pass
+
+    day_name = check_date.strftime("%A")
+    if day_name == "Sunday":
+        return True
+    elif day_name == "Saturday":
+        import calendar
+        weeks = calendar.monthcalendar(check_date.year, check_date.month)
+        sat_count = 0
+        for week in weeks:
+            sat = week[5]
+            if sat != 0:
+                sat_count += 1
+                if sat == check_date.day:
+                    break
+        if sat_count in [2, 4]:
+            return True
+        return False
+
+    return False
+
+
+def get_last_working_day(ref_date=None):
+    if ref_date is None:
+        ref_date = date.today() - timedelta(days=1)
+
+    target_date = ref_date
+    max_steps = 14
+    steps = 0
+    while check_is_non_working_day(target_date) and steps < max_steps:
+        target_date -= timedelta(days=1)
+        steps += 1
+    return target_date
+
+
 @employees_bp.route(
     "/reporting-employees/<int:user_id>",
     methods=["GET"]
@@ -1210,9 +1259,7 @@ def get_reporting_employees(user_id):
 
         print("Manager Name:", manager_name)
 
-        yesterday = (
-            date.today() - timedelta(days=1)
-        )
+        target_date = get_last_working_day()
 
         reporting_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
@@ -1237,10 +1284,10 @@ def get_reporting_employees(user_id):
 
             attendance = Attendance.query.filter_by(
                 user_id=employee.user_id,
-                attendance_date=yesterday
+                attendance_date=target_date
             ).first()
 
-            if attendance and attendance.manager_status in ["Approved", "Rejected"]:
+            if attendance and attendance.manager_status == "Approved":
                 continue
 
             from models.leave import LeaveRequest
@@ -1251,8 +1298,8 @@ def get_reporting_employees(user_id):
                     LeaveRequest.employee_id == employee.employee_id
                 ),
                 LeaveRequest.status == "Approved",
-                LeaveRequest.from_date <= yesterday,
-                LeaveRequest.to_date >= yesterday
+                LeaveRequest.from_date <= target_date,
+                LeaveRequest.to_date >= target_date
             ).first()
 
             status = "Absent"
@@ -1262,6 +1309,12 @@ def get_reporting_employees(user_id):
                 status = "Leave"
 
             result.append({
+
+                "summary_date":
+                    target_date.strftime("%Y-%m-%d"),
+
+                "summary_date_formatted":
+                    target_date.strftime("%A, %b %d, %Y"),
 
                 "employee_id":
                     employee.id,
@@ -1318,6 +1371,11 @@ def get_reporting_employees(user_id):
                     if attendance and attendance.card_working_hours
                     else 0.0,
 
+                "rejection_reason":
+                    attendance.rejection_reason
+                    if attendance and attendance.rejection_reason
+                    else None,
+
                 "lunch_minutes":
                     attendance.lunch_minutes
                     if attendance and attendance.lunch_minutes
@@ -1331,9 +1389,31 @@ def get_reporting_employees(user_id):
                 "total_break_minutes":
                     attendance.total_break_minutes
                     if attendance and attendance.total_break_minutes
-                    else 0
+                    else 0,
+
+                "manager_status":
+                    attendance.manager_status
+                    if attendance and attendance.manager_status
+                    else "Pending",
+
+                "decision":
+                    attendance.manager_status
+                    if attendance and attendance.manager_status
+                    else "Pending",
+
+                "clarification_comment":
+                    attendance.rejection_reason
+                    if attendance and attendance.rejection_reason
+                    else None,
+
+                "employee_reply":
+                    attendance.employee_reply
+                    if attendance and attendance.employee_reply
+                    else None
 
             })
+
+        result = sorted(result, key=lambda x: (x.get("employee_name") or "").lower())
 
         print(
             "Reporting Employees Found:",

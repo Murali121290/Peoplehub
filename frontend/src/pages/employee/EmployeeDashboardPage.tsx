@@ -186,11 +186,26 @@ const EmployeeDashboardPage: React.FC = () => {
       const leaveEmpId = String(leave.employee_id || "");
       if (
         leaveEmpId !== String(currentEmployee.id) &&
-        leaveEmpId !== String(currentEmployee.user_id)
+        leaveEmpId !== String(currentEmployee.user_id) &&
+        leaveEmpId !== String(currentEmployee.employee_id)
       ) return false;
       if (!leave.from_date || !leave.to_date) return false;
       const from = new Date(leave.from_date);
       const to = new Date(leave.to_date);
+      return todayDate >= from && todayDate <= to;
+    });
+  })();
+
+  // Check if today is an approved shift change day for the current employee
+  const isShiftChangedToday = (() => {
+    if (!currentEmployee || !shiftRequests.length) return false;
+    const todayStr = new Date().toISOString().split("T")[0];
+    const todayDate = new Date(todayStr);
+    return shiftRequests.some((shift: any) => {
+      if (shift.status !== "Approved") return false;
+      if (!shift.from_date || !shift.to_date) return false;
+      const from = new Date(shift.from_date);
+      const to = new Date(shift.to_date);
       return todayDate >= from && todayDate <= to;
     });
   })();
@@ -806,7 +821,7 @@ const EmployeeDashboardPage: React.FC = () => {
     }
   };
 
-  // --- Auto Check-In Reminder (Every 5 mins when not checked in) ---
+  // --- Auto Check-In Reminder (Every 5 mins) ---
   useEffect(() => {
     if (isCheckedIn || hasCheckedOutToday || !currentEmployee) return;
 
@@ -815,8 +830,13 @@ const EmployeeDashboardPage: React.FC = () => {
     today.setHours(0, 0, 0, 0);
 
     const isOnLeaveToday = leaveRequests.some((leave: any) => {
-      if (leave.employee_id !== currentEmployee.id) return false;
-      if (leave.status !== "Approved") return false;
+      const leaveEmpId = String(leave.employee_id || "");
+      if (
+        leaveEmpId !== String(currentEmployee.id) &&
+        leaveEmpId !== String(currentEmployee.user_id) &&
+        leaveEmpId !== String(currentEmployee.employee_id)
+      ) return false;
+      if (leave.status !== "Approved" || leave.request_type !== "Leave") return false;
       const fromDate = new Date(leave.from_date);
       const toDate = new Date(leave.to_date);
       fromDate.setHours(0, 0, 0, 0);
@@ -1190,16 +1210,24 @@ const EmployeeDashboardPage: React.FC = () => {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <div className="flex items-center justify-between h-16">
                 <div className="flex items-center gap-3">
+                  {currentEmployee?.id ? (
+                    <img
+                      src={`${API_URL}/api/employees/image/${currentEmployee.id}`}
+                      alt="Profile"
+                      className="w-10 h-10 rounded-full object-cover border-2 border-primary-200 shadow-sm"
+                      onError={(e) => {
+                        e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+                      }}
+                    />
+                  ) : (
                   <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center">
                     <SparklesIcon className="w-6 h-6 text-white" />
                   </div>
+                  )}
                   <div>
                     <h1 className="text-xl font-bold text-neutral-800">
-                      Employee Dashboard
+                      Dashboard
                     </h1>
-                    <p className="text-xs text-neutral-500">
-                      The People Management System
-                    </p>
                   </div>
                 </div>
 
@@ -1216,6 +1244,7 @@ const EmployeeDashboardPage: React.FC = () => {
                     teaTimer={teaTimer}
                     hasCheckedOutToday={hasCheckedOutToday}
                     isOnLeave={isOnApprovedLeaveToday}
+                    isShiftChanged={isShiftChangedToday}
                     onCheckInOut={() => isCheckedIn ? setConfirmModal(true) : handleCheckIn()}
                     onLunchBreak={handleLunchBreak}
                     onTeaBreak={handleTeaBreak}
@@ -1289,13 +1318,14 @@ const EmployeeDashboardPage: React.FC = () => {
                 currentEmployee={currentEmployee}
                 shiftRequests={shiftRequests}
                 managerShiftRequests={managerShiftRequests}
+                leaveRequests={leaveRequests}
                 onSubmitShift={submitShiftRequest}
                 onApprove={approveShift}
                 onReject={rejectShift}
               />
             )}
             {activeTab === "attendance" && (
-              <AttendanceTab attendanceData={attendanceData} />
+              <AttendanceTab attendanceData={attendanceData} currentEmployee={currentEmployee} />
             )}
             {activeTab === "profile" && <ProfileTab />}
           </motion.div>
