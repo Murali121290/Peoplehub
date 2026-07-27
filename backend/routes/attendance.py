@@ -661,21 +661,14 @@ def lunch_break():
             attendance.lunch_start = get_ist_now()
 
         elif action == "stop":
-
             attendance.lunch_break = False
-
             attendance.lunch_end = get_ist_now()
 
-        if (
-             attendance.lunch_start and
-             attendance.lunch_end
-            ):
-                attendance.lunch_minutes = int(
-        (
-            attendance.lunch_end -
-            attendance.lunch_start
-        ).total_seconds() / 60
-    )
+            if attendance.lunch_start and attendance.lunch_end:
+                added_mins = int((attendance.lunch_end - attendance.lunch_start).total_seconds() / 60)
+                attendance.lunch_minutes = (attendance.lunch_minutes or 0) + added_mins
+                attendance.lunch_start = None
+                attendance.lunch_end = None
 
         attendance.total_break_minutes = (
             (attendance.lunch_minutes or 0) +
@@ -757,18 +750,13 @@ def tea_break():
 
         elif action == "stop":
             attendance.tea_break = False
-
             attendance.tea_end = get_ist_now()
-        if (
-            attendance.tea_start and
-            attendance.tea_end
-            ):
-              attendance.tea_minutes = int(
-        (
-            attendance.tea_end -
-            attendance.tea_start
-        ).total_seconds() / 60
-    )
+
+            if attendance.tea_start and attendance.tea_end:
+                added_mins = int((attendance.tea_end - attendance.tea_start).total_seconds() / 60)
+                attendance.tea_minutes = (attendance.tea_minutes or 0) + added_mins
+                attendance.tea_start = None
+                attendance.tea_end = None
 
         attendance.total_break_minutes = (
             (attendance.lunch_minutes or 0) +
