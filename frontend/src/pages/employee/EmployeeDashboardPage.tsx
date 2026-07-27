@@ -567,7 +567,7 @@ const EmployeeDashboardPage: React.FC = () => {
       let response;
 
       const payload = {
-        employee_id: currentEmployee?.id,
+        employee_id: currentEmployee?.employee_id || currentEmployee?.id,
         employee_name: `${currentEmployee?.first_name} ${currentEmployee?.last_name}`,
 
         request_type: leaveForm.requestType,

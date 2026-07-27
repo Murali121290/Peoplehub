@@ -51,7 +51,7 @@ def send_email_via_smtp(to_email, subject, html_content):
     print(f"  - Recipient (to_email): {to_email}")
     print(f"  - Password present: {bool(mail_password)}")
 
-    # Always log and save to a debug file for easy local validation
+    # 1. Always log and save a debug file first (so we can view HTML locally)
     try:
         debug_dir = os.path.join(current_app.root_path, "debug_emails")
         os.makedirs(debug_dir, exist_ok=True)
@@ -63,6 +63,17 @@ def send_email_via_smtp(to_email, subject, html_content):
         print(f"[DEBUG EMAIL] Saved email template to local file: {filepath}")
     except Exception as debug_err:
         print(f"Failed to write debug email file: {str(debug_err)}")
+
+    # 2. Localhost Email Interception
+    # If running locally, route all emails to MAIL_USERNAME to avoid spamming real people
+    api_base = os.environ.get("BACKEND_URL", "")
+    if "localhost" in api_base.lower() or "127.0.0.1" in api_base:
+        if mail_username:
+            print(f"[TEST ENV] Intercepting email to {to_email}. Sending to {mail_username} instead.")
+            to_email = mail_username
+        else:
+            print(f"[TEST ENV] MAIL_USERNAME not configured. Skipping email dispatch.")
+            return True
 
     if not mail_username or not mail_password:
         print("[SMTP] Mail username or password is not configured in the environment. Skipping actual SMTP mail dispatch.")
@@ -144,9 +155,9 @@ def send_manager_request_email(request_obj, request_type):
 
     # Get employee details
     emp_id = request_obj.employee_id
-    employee = Employee.query.filter(
-        (Employee.id == int(emp_id)) | (Employee.employee_id == str(emp_id))
-    ).first()
+    
+    # Try exact match on string employee_id
+    employee = Employee.query.filter_by(employee_id=str(emp_id)).first()
 
     if not employee:
         print(f"Employee details not found for ID/Code: {emp_id}")
@@ -215,8 +226,8 @@ def send_manager_request_email(request_obj, request_type):
         req_label = f"{request_type} Request"
         details_html = ""
 
-    # Determine manager's email (falls back to selvabharath@s4carlisle.com)
-    manager_email = "selvabharath@s4carlisle.com"
+    # Determine manager's email
+    manager_email = None
     if employee.reporting_manager:
         search_name = employee.reporting_manager.strip().lower()
         all_emps = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
@@ -228,77 +239,41 @@ def send_manager_request_email(request_obj, request_type):
                 matching_manager = emp
                 break
         if matching_manager:
-            if matching_manager.company_email:
-                manager_email = matching_manager.company_email
+            from models.user import User
+            manager_user = User.query.get(matching_manager.user_id) if matching_manager.user_id else None
+            
+            if manager_user and manager_user.company_email:
+                manager_email = manager_user.company_email
             elif matching_manager.email:
                 manager_email = matching_manager.email
+
+    if not manager_email:
+        print(f"No manager email found for {emp_name}. Skipping manager notification email.")
+        return
 
     # Generate unique, time-limited secure tokens
     approve_token = generate_request_token(request_obj.id, request_type, "approve", manager_email)
     reject_token = generate_request_token(request_obj.id, request_type, "reject", manager_email)
 
     # Base URL of the backend server
-    backend_port = os.environ.get("BACKEND_PORT", "8000")
-    api_base = os.environ.get("BACKEND_URL", f"http://localhost:{backend_port}")
+    api_base = os.environ.get("BACKEND_URL", "https://peoplehub.s4carlisle.com")
     approve_url = f"{api_base}/api/requests/email-action?token={approve_token}"
     reject_url = f"{api_base}/api/requests/email-action?token={reject_token}"
 
-    subject = f"[PENDING] New {req_label} from {emp_name}"
+    subject = f"[PENDING] {req_label} from {emp_name}"
 
-    html_content = f"""
-    <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f9f9f9; padding: 20px;">
-      
-            <div style="max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-              <div style="text-align:center;margin-bottom:25px;">
-    <img
-        src="cid:company_logo"
-        alt="S4Carlisle"
-        width="220"
-        style="display:block;margin:auto;"
-    >
-</div>
-                <div style="border-bottom: 3px solid #4F46E5; padding-bottom: 15px; margin-bottom: 20px;">
-                    <h2 style="color: #1E3A8A; margin: 0; font-size: 20px;">PeopleHub Request Notification</h2>
-                    <span style="font-size: 11px; color: #64748B; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">{req_label}</span>
-                </div>
+    from services.email_templates import get_manager_request_email_html
+    html_content = get_manager_request_email_html(
+        req_label=req_label,
+        emp_name=emp_name,
+        emp_code=emp_code,
+        reason=reason,
+        details_html=details_html,
+        approve_url=approve_url,
+        reject_url=reject_url
+    )
 
-                <p>Hello,</p>
-                <p>A new <strong>{req_label}</strong> has been submitted and is awaiting your decision.</p>
-
-                <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px;">
-                    <tr>
-                        <td style="padding:10px; border:1px solid #ddd; background-color: #f8fafc; font-weight: bold; width: 35%;">Employee Name</td>
-                        <td style="padding:10px; border:1px solid #ddd;">{emp_name}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:10px; border:1px solid #ddd; background-color: #f8fafc; font-weight: bold;">Employee ID</td>
-                        <td style="padding:10px; border:1px solid #ddd;">{emp_code}</td>
-                    </tr>
-                    {details_html}
-                    <tr>
-                        <td style="padding:10px; border:1px solid #ddd; background-color: #f8fafc; font-weight: bold;">Reason</td>
-                        <td style="padding:10px; border:1px solid #ddd;">{reason}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:10px; border:1px solid #ddd; background-color: #f8fafc; font-weight: bold;">Status</td>
-                        <td style="padding:10px; border:1px solid #ddd;"><span style="background-color: #FEF3C7; color: #D97706; padding: 4px 10px; border-radius: 9999px; font-weight: bold; font-size: 12px;">Pending</span></td>
-                    </tr>
-                </table>
-
-                <div style="margin: 30px 0; text-align: center;">
-                    <a href="{approve_url}" style="display: inline-block; padding: 12px 24px; margin-right: 15px; background-color: #10B981; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 14px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.25);">✅ Approve Request</a>
-                    <a href="{reject_url}" style="display: inline-block; padding: 12px 24px; background-color: #EF4444; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 14px; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.25);">❌ Reject Request</a>
-                </div>
-
-                <p style="font-size: 12px; color: #94A3B8; border-top: 1px solid #e2e8f0; padding-top: 15px; margin-top: 25px;">
-                    This is an automated request from the PeopleHub HRMS application. You can approve or reject directly using the links above or by logging into the employee portal.
-                </p>
-            </div>
-        </body>
-    </html>
-    """
-
+    print(f"[EMAIL DEBUG] Preparing to send '{req_label}' email TO: {manager_email}")
     send_email_via_smtp(manager_email, subject, html_content)
 
 def send_employee_status_email(request_obj, employee, status, request_type):
@@ -328,34 +303,24 @@ def send_employee_status_email(request_obj, employee, status, request_type):
     status_color = "#10B981" if status == "Approved" else "#EF4444"
     status_icon = "✅" if status == "Approved" else "❌"
 
+    manager_comment_html = ""
+    if hasattr(request_obj, 'manager_comment') and request_obj.manager_comment:
+        label = "Rejection Reason" if status == "Rejected" else "Manager Comment"
+        manager_comment_html = f'<p style="margin-top: 10px; margin-bottom: 0; color: #EF4444;"><strong>{label}:</strong> {request_obj.manager_comment}</p>'
+
     subject = f"Your {req_label} has been {status}"
 
-    html_content = f"""
-    <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f9f9f9; padding: 20px;">
-            <div style="max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                <div style="border-bottom: 3px solid {status_color}; padding-bottom: 15px; margin-bottom: 20px;">
-                    <h2 style="color: #1E3A8A; margin: 0; font-size: 20px;">PeopleHub Request Status Update</h2>
-                </div>
+    from services.email_templates import get_employee_status_email_html
+    html_content = get_employee_status_email_html(
+        employee_first_name=employee.first_name,
+        employee_last_name=employee.last_name,
+        req_label=req_label,
+        status=status,
+        status_color=status_color,
+        details_html=details_html,
+        reason=request_obj.reason,
+        manager_comment_html=manager_comment_html
+    )
 
-                <p>Dear {employee.first_name} {employee.last_name},</p>
-
-                <p>Your <strong>{req_label}</strong> has been <strong style="color: {status_color};">{status.upper()}</strong> by your manager.</p>
-
-                <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid {status_color}; font-size: 14px;">
-                    {details_html}
-                    <p style="margin-bottom: 0;"><strong>Reason:</strong> {request_obj.reason}</p>
-                </div>
-
-                <p>The status change is updated in the system and will display immediately on your portal dashboard.</p>
-
-                <p style="margin-top: 30px; color: #64748B; font-size: 13px;">
-                    Best regards,<br>
-                    PeopleHub HR Team
-                </p>
-            </div>
-        </body>
-    </html>
-    """
-
+    print(f"[EMAIL DEBUG] Preparing to send '{req_label} {status}' email TO: {to_email}")
     send_email_via_smtp(to_email, subject, html_content)
