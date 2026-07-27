@@ -1125,8 +1125,34 @@ def get_team_attendance(user_id):
             on_leave = LeaveRequest.query.filter(
                 LeaveRequest.employee_id == str(emp.id),
                 LeaveRequest.status == "Approved",
+                LeaveRequest.request_type == "Leave",
                 LeaveRequest.from_date <= today,
                 LeaveRequest.to_date >= today
+            ).first()
+
+            # Check WFH and Shift Change for today
+            from models.shift_request import ShiftRequest
+            emp_ids = [emp.id]
+            if emp.employee_id:
+                try:
+                    emp_ids.append(int(emp.employee_id))
+                except ValueError:
+                    pass
+
+            wfh_today = ShiftRequest.query.filter(
+                ShiftRequest.employee_id.in_(emp_ids),
+                ShiftRequest.status == "Approved",
+                ShiftRequest.request_type == "WFH",
+                ShiftRequest.from_date <= today,
+                ShiftRequest.to_date >= today
+            ).first()
+
+            shift_change_today = ShiftRequest.query.filter(
+                ShiftRequest.employee_id.in_(emp_ids),
+                ShiftRequest.status == "Approved",
+                ShiftRequest.request_type == "Shift",
+                ShiftRequest.from_date <= today,
+                ShiftRequest.to_date >= today
             ).first()
 
             if attendance:
@@ -1178,8 +1204,18 @@ def get_team_attendance(user_id):
                 "card_working_hours": attendance.card_working_hours if (attendance and attendance.card_working_hours) else 0.0,
                 "lunch_minutes": attendance.lunch_minutes if attendance else 0,
                 "tea_minutes": attendance.tea_minutes if attendance else 0,
-                "shift": emp.shift_timing or "General Shift",
+                "shift": (
+                    shift_change_today.requested_shift
+                    if shift_change_today
+                    else (
+                        attendance.shift_timing
+                        if (attendance and attendance.shift_timing)
+                        else emp.shift_timing or "General Shift"
+                    )
+                ),
                 "manager_status": attendance.manager_status if (attendance and attendance.manager_status) else "Pending",
+                "is_wfh": bool(wfh_today),
+                "is_shift_changed": bool(shift_change_today),
             })
 
         return jsonify(result)
@@ -1276,7 +1312,13 @@ def get_reporting_employees(user_id):
                 .lower()
             )
 
-            if employee_manager != manager_name:
+            e_mgr = employee.reporting_manager.strip().lower()
+            is_match = (
+                e_mgr == manager_name
+                or (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr)
+                or (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name)
+            )
+            if not is_match:
                 continue
 
             if employee.user_id == user_id:
@@ -1471,11 +1513,13 @@ def get_peers_attendance(user_id):
 
             status = "Absent"
             if attendance:
-                # Based on the user's logic, "Checked In" / "Checked Out" is preferred for peers if present
-                if attendance.check_out:
-                    status = "Checked Out"
+                if attendance.check_in or attendance.card_check_in:
+                    if attendance.check_out or attendance.card_check_out:
+                        status = "Checked Out"
+                    else:
+                        status = "Checked In"
                 else:
-                    status = "Checked In"
+                    status = "Absent"
             elif leave:
                 status = "Leave"
 
@@ -1611,7 +1655,7 @@ def get_employee_profile(user_id):
             "phone": employee.phone,
             "department": employee.department,
             "designation": employee.designation,
-            "joining_date": str(employee.joining_date),
+            "joining_date": str(employee.joining_date) if employee.joining_date else None,
             "reporting_manager": employee.reporting_manager
         }
     })

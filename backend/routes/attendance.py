@@ -73,8 +73,15 @@ def check_in():
         today_date = get_ist_today()
 
         # Check if there is an approved shift request for today
+        emp_ids = [employee.id]
+        if employee.employee_id:
+            try:
+                emp_ids.append(int(employee.employee_id))
+            except ValueError:
+                pass
+
         approved_request = ShiftRequest.query.filter(
-            ShiftRequest.employee_id == employee.id,
+            ShiftRequest.employee_id.in_(emp_ids),
             ShiftRequest.status == "Approved",
             ShiftRequest.from_date <= today_date,
             ShiftRequest.to_date >= today_date
@@ -131,11 +138,11 @@ def check_in():
             #         "General Shift check-in allowed only after 09:00 AM"
             #     }), 400
 
-        # Second Shift (02:00 PM - 10:00 PM)
+        # Second Shift (12:00 PM - 09:00 PM)
         elif shift_name == "second shift":
 
             allowed_time = datetime.strptime(
-                "14:00",
+                "12:00",
                 "%H:%M"
             ).time()
 
@@ -144,7 +151,7 @@ def check_in():
                 return jsonify({
                     "success": False,
                     "message":
-                    "Second Shift check-in allowed only after 02:00 PM"
+                    "Second Shift check-in allowed only after 12:00 PM"
                 }), 400
 
         # Night Shift (10:00 PM - 06:00 AM)
@@ -584,7 +591,6 @@ def attendance_status(user_id):
 
     attendance = Attendance.query.filter_by(
         user_id=user_id,
-        attendance_date=get_ist_today(),
         check_out=None
     ).order_by(
         Attendance.id.desc()
@@ -656,9 +662,14 @@ def lunch_break():
         action = data.get("action")
 
         if action == "start":
+            # Lunch is allowed only once per day — check existing lunch_minutes (no new column needed)
+            if (attendance.lunch_minutes or 0) > 0 or attendance.lunch_break:
+                return jsonify({
+                    "success": False,
+                    "error": "Lunch break is allowed only once per day."
+                }), 400
 
             attendance.lunch_break = True
-
             attendance.lunch_start = get_ist_now()
 
         elif action == "stop":
@@ -744,10 +755,27 @@ def tea_break():
         action = data.get("action")
 
         if action == "start":
+            # Tea is allowed twice per day — read count via raw SQL (column exists in DB, not in ORM model)
+            from sqlalchemy import text as sql_text
+            tea_count_row = db.session.execute(
+                sql_text("SELECT tea_count FROM attendance WHERE id = :id"),
+                {"id": attendance.id}
+            ).fetchone()
+            tea_count = (tea_count_row[0] or 0) if tea_count_row else 0
+
+            if tea_count >= 2:
+                return jsonify({
+                    "success": False,
+                    "error": "Tea break is allowed only twice per day."
+                }), 400
 
             attendance.tea_break = True
-
             attendance.tea_start = get_ist_now()
+            # Increment tea_count via raw SQL
+            db.session.execute(
+                sql_text("UPDATE attendance SET tea_count = :count WHERE id = :id"),
+                {"count": tea_count + 1, "id": attendance.id}
+            )
 
         elif action == "stop":
             attendance.tea_break = False
@@ -943,6 +971,30 @@ def get_attendance():
             if leave:
                 status = "Leave"
 
+        from models.shift_request import ShiftRequest
+        emp_ids = [employee.id]
+        if employee.employee_id:
+            try:
+                emp_ids.append(int(employee.employee_id))
+            except ValueError:
+                pass
+
+        wfh_today = ShiftRequest.query.filter(
+            ShiftRequest.employee_id.in_(emp_ids),
+            ShiftRequest.status == "Approved",
+            ShiftRequest.request_type == "WFH",
+            ShiftRequest.from_date <= today,
+            ShiftRequest.to_date >= today
+        ).first()
+
+        shift_change_today = ShiftRequest.query.filter(
+            ShiftRequest.employee_id.in_(emp_ids),
+            ShiftRequest.status == "Approved",
+            ShiftRequest.request_type == "Shift",
+            ShiftRequest.from_date <= today,
+            ShiftRequest.to_date >= today
+        ).first()
+
         attendance_list.append({
             "user_id": employee.user_id,
             "employee_name": f"{employee.first_name} {employee.last_name}",
@@ -953,11 +1005,17 @@ def get_attendance():
             "total_hours": total_hours,
             "attendance_date": str(today),
             "status": status,
+            "is_wfh": bool(wfh_today),
+            "is_shift_changed": bool(shift_change_today),
 
             "shift_timing": (
-                attendance.shift_timing
-                if attendance and attendance.shift_timing
-                else employee.shift_timing or "General Shift"
+                shift_change_today.requested_shift
+                if shift_change_today
+                else (
+                    attendance.shift_timing
+                    if attendance and attendance.shift_timing
+                    else employee.shift_timing or "General Shift"
+                )
             )
         })
 
@@ -1043,6 +1101,30 @@ def get_weekly_attendance():
                     if leave:
                         status = "Leave"
 
+                from models.shift_request import ShiftRequest
+                emp_ids = [employee.id]
+                if employee.employee_id:
+                    try:
+                        emp_ids.append(int(employee.employee_id))
+                    except ValueError:
+                        pass
+
+                wfh_today = ShiftRequest.query.filter(
+                    ShiftRequest.employee_id.in_(emp_ids),
+                    ShiftRequest.status == "Approved",
+                    ShiftRequest.request_type == "WFH",
+                    ShiftRequest.from_date <= current_date,
+                    ShiftRequest.to_date >= current_date
+                ).first()
+
+                shift_change_today = ShiftRequest.query.filter(
+                    ShiftRequest.employee_id.in_(emp_ids),
+                    ShiftRequest.status == "Approved",
+                    ShiftRequest.request_type == "Shift",
+                    ShiftRequest.from_date <= current_date,
+                    ShiftRequest.to_date >= current_date
+                ).first()
+
                 result.append({
 
                     "employee_name":
@@ -1072,13 +1154,19 @@ def get_weekly_attendance():
                         else "-",
 
                     "status": status,
+                    "is_wfh": bool(wfh_today),
+                    "is_shift_changed": bool(shift_change_today),
 
                     "shift_timing":
-                        attendance.shift_timing
-                        if attendance and attendance.shift_timing
+                        shift_change_today.requested_shift
+                        if shift_change_today
                         else (
-                            employee.shift_timing
-                            or "General Shift"
+                            attendance.shift_timing
+                            if attendance and attendance.shift_timing
+                            else (
+                                employee.shift_timing
+                                or "General Shift"
+                            )
                         )
                 })
 
@@ -1133,6 +1221,30 @@ def get_monthly_attendance():
                     if leave:
                         status = "Leave"
 
+                from models.shift_request import ShiftRequest
+                emp_ids = [employee.id]
+                if employee.employee_id:
+                    try:
+                        emp_ids.append(int(employee.employee_id))
+                    except ValueError:
+                        pass
+
+                wfh_today = ShiftRequest.query.filter(
+                    ShiftRequest.employee_id.in_(emp_ids),
+                    ShiftRequest.status == "Approved",
+                    ShiftRequest.request_type == "WFH",
+                    ShiftRequest.from_date <= current_date,
+                    ShiftRequest.to_date >= current_date
+                ).first()
+
+                shift_change_today = ShiftRequest.query.filter(
+                    ShiftRequest.employee_id.in_(emp_ids),
+                    ShiftRequest.status == "Approved",
+                    ShiftRequest.request_type == "Shift",
+                    ShiftRequest.from_date <= current_date,
+                    ShiftRequest.to_date >= current_date
+                ).first()
+
                 result.append({
 
                     "employee_name":
@@ -1162,13 +1274,19 @@ def get_monthly_attendance():
                         else "-",
 
                     "status": status,
+                    "is_wfh": bool(wfh_today),
+                    "is_shift_changed": bool(shift_change_today),
 
                     "shift_timing":
-                        attendance.shift_timing
-                        if attendance and attendance.shift_timing
+                        shift_change_today.requested_shift
+                        if shift_change_today
                         else (
-                            employee.shift_timing
-                            or "General Shift"
+                            attendance.shift_timing
+                            if attendance and attendance.shift_timing
+                            else (
+                                employee.shift_timing
+                                or "General Shift"
+                            )
                         )
                 })
 
@@ -2078,7 +2196,7 @@ def approve_attendance(employee_id):
         if target_date_str:
             target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
         else:
-            target_date = get_last_working_day()
+            target_date = date.today() - timedelta(days=1)
 
         from models.employee import Employee
         emp = Employee.query.get(employee_id)
@@ -2086,16 +2204,16 @@ def approve_attendance(employee_id):
             return jsonify({"success": False, "error": "Employee not found"}), 404
         target_user_id = emp.user_id
 
-        attendances = Attendance.query.filter_by(
+        attendance = Attendance.query.filter_by(
             user_id=target_user_id,
             attendance_date=target_date
-        ).all()
+        ).first()
 
-        if not attendances:
+        if not attendance:
             attendance = Attendance(
                 user_id=target_user_id,
                 attendance_date=target_date,
-                status="Absent",
+                status="Present",
                 manager_status="Approved",
                 check_in=None,
                 check_out=None,
@@ -2103,9 +2221,23 @@ def approve_attendance(employee_id):
             )
             db.session.add(attendance)
         else:
-            for att in attendances:
-                att.manager_status = "Approved"
-            attendance = attendances[0]
+            attendance.status = "Present"
+            attendance.manager_status = "Approved"
+
+            if not attendance.check_in and attendance.card_check_in:
+                attendance.check_in = attendance.card_check_in
+            if not attendance.check_out and attendance.card_check_out:
+                attendance.check_out = attendance.card_check_out
+
+            if attendance.check_in and attendance.check_out:
+                total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
+                break_minutes = attendance.total_break_minutes or 0
+                gap_minutes = attendance.total_gap_minutes or 0
+                total_seconds -= (break_minutes + gap_minutes) * 60
+                hours_decimal = max(total_seconds, 0) / 3600
+                attendance.total_hours = int(hours_decimal * 100) / 100
+            elif attendance.card_working_hours and (not attendance.total_hours or attendance.total_hours == 0.0):
+                attendance.total_hours = attendance.card_working_hours
 
         db.session.commit()
 
@@ -2178,12 +2310,14 @@ def reject_attendance(employee_id):
             attendance_date=target_date
         ).all()
 
+        is_clarification = "need-clarification" in request.path
+
         if not attendances:
             attendance = Attendance(
                 user_id=target_user_id,
                 attendance_date=target_date,
-                status="Absent",
-                manager_status="Need Clarification",
+                status="Absent" if not is_clarification else "Absent",
+                manager_status="Need Clarification" if is_clarification else "Rejected",
                 rejection_reason=reason,
                 check_in=None,
                 check_out=None,
@@ -2192,7 +2326,11 @@ def reject_attendance(employee_id):
             db.session.add(attendance)
         else:
             for att in attendances:
-                att.manager_status = "Need Clarification"
+                if is_clarification:
+                    att.manager_status = "Need Clarification"
+                else:
+                    att.manager_status = "Rejected"
+                    att.status = "Absent"
                 att.rejection_reason = reason
             attendance = attendances[0]
 
@@ -2224,7 +2362,7 @@ def reject_attendance(employee_id):
 
         return jsonify({
             "success": True,
-            "message": "Clarification requested",
+            "message": "Clarification requested" if is_clarification else "Attendance Rejected",
             "reason": reason
         })
 
