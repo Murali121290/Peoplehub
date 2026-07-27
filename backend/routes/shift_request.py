@@ -33,6 +33,37 @@ def apply_shift():
 
         print("SHIFT DATA:", data)
 
+        # Check if user has an approved leave request that overlaps with the shift request dates
+        from models.leave import LeaveRequest
+        from sqlalchemy import or_
+
+        req_from = datetime.strptime(data["from_date"], "%Y-%m-%d").date()
+        req_to = datetime.strptime(data["to_date"], "%Y-%m-%d").date()
+
+        employee = Employee.query.filter(
+            or_(
+                Employee.id == data["employee_id"],
+                Employee.employee_id == str(data["employee_id"])
+            )
+        ).first()
+
+        if employee:
+            emp_ids = [str(employee.id), str(employee.employee_id), str(employee.user_id)]
+            
+            overlapping_leave = LeaveRequest.query.filter(
+                LeaveRequest.employee_id.in_(emp_ids),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.request_type == "Leave",
+                LeaveRequest.from_date <= req_to,
+                LeaveRequest.to_date >= req_from
+            ).first()
+            
+            if overlapping_leave:
+                return jsonify({
+                    "success": False,
+                    "message": f"Cannot apply for shift change/WFH. You have an approved leave from {overlapping_leave.from_date} to {overlapping_leave.to_date}."
+                }), 400
+
         shift_request = ShiftRequest(
             employee_id=data["employee_id"],
             employee_name=data["employee_name"],

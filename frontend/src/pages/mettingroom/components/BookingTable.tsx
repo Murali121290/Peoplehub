@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { CalendarDaysIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
 import { cancelBooking } from "../../../services/meetingRoomService";
 import { Card } from "../../../components/ui/Card";
@@ -120,6 +120,74 @@ const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
       return false;
     }
   };
+
+  const getBookingDateTime = (booking: any, timeField: "start_time" | "end_time") => {
+    if (!booking.meeting_date || !booking[timeField]) return new Date(0);
+    try {
+      const dateParts = booking.meeting_date.split("-");
+      const timeParts = booking[timeField].split(":");
+      if (dateParts.length < 3 || timeParts.length < 2) return new Date(0);
+      const year = parseInt(dateParts[0], 10);
+      const month = parseInt(dateParts[1], 10) - 1;
+      const day = parseInt(dateParts[2], 10);
+      const hours = parseInt(timeParts[0], 10);
+      const minutes = parseInt(timeParts[1], 10);
+      const seconds = timeParts.length > 2 ? parseInt(timeParts[2], 10) : 0;
+      return new Date(year, month, day, hours, minutes, seconds);
+    } catch (e) {
+      return new Date(0);
+    }
+  };
+
+  const sortedBookings = useMemo(() => {
+    if (!Array.isArray(bookings)) return [];
+
+    return [...bookings].sort((a, b) => {
+      const isFinishedA = isBookingFinished(a);
+      const isFinishedB = isBookingFinished(b);
+      const isBeforeA = isBeforeStartTime(a);
+      const isBeforeB = isBeforeStartTime(b);
+
+      const isCancelledA = a.status === "Cancelled";
+      const isCancelledB = b.status === "Cancelled";
+
+      const isInProgressA = !isCancelledA && !isFinishedA && !isBeforeA;
+      const isInProgressB = !isCancelledB && !isFinishedB && !isBeforeB;
+
+      const isBookedA = !isCancelledA && !isFinishedA && isBeforeA;
+      const isBookedB = !isCancelledB && !isFinishedB && isBeforeB;
+
+      const isCompletedA = !isCancelledA && isFinishedA;
+      const isCompletedB = !isCancelledB && isFinishedB;
+
+      const getPriority = (isCancelled: boolean, isInProgress: boolean, isBooked: boolean, isCompleted: boolean) => {
+        if (isInProgress) return 1;
+        if (isBooked) return 2;
+        if (isCompleted) return 3;
+        if (isCancelled) return 4;
+        return 5;
+      };
+
+      const priorityA = getPriority(isCancelledA, isInProgressA, isBookedA, isCompletedA);
+      const priorityB = getPriority(isCancelledB, isInProgressB, isBookedB, isCompletedB);
+
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+
+      // Within same priority, sort by date/time
+      const startA = getBookingDateTime(a, "start_time");
+      const startB = getBookingDateTime(b, "start_time");
+
+      if (priorityA === 2) {
+        // Future Bookings: ascending (nearest first)
+        return startA.getTime() - startB.getTime();
+      } else {
+        // Completed, Cancelled, In Progress: descending (latest first)
+        return startB.getTime() - startA.getTime();
+      }
+    });
+  }, [bookings]);
 
   const canCancel = (status: string) => {
     const normalized = (status || "").toLowerCase();
@@ -306,9 +374,9 @@ const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
       <Card padding="none">
         <div className="flex flex-col gap-3 border-b border-neutral-200 px-6 py-5 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-neutral-800">Bookings</h2>
+            <h2 className="text-lg font-semibold text-neutral-800">Reservation</h2>
             <p className="mt-1 text-sm text-neutral-500">
-              Track meeting room reservations and daily schedule status.
+              Track meeting room reservations.
             </p>
           </div>
 
@@ -318,7 +386,7 @@ const BookingTable = ({ bookings, onRefresh }: BookingTableProps) => {
         </div>
 
         <div className="p-0">
-          <Table columns={columns} data={bookings} rowKey={(booking) => booking.id} zebra={false} />
+          <Table columns={columns} data={sortedBookings} rowKey={(booking) => booking.id} zebra={false} />
         </div>
       </Card>
 

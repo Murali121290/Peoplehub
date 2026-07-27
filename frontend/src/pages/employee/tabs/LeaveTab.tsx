@@ -818,7 +818,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         <span className="font-semibold text-emerald-600">{item.value}</span>
                       </div>
                       <div className="flex justify-between items-center text-[14px]">
-                        <span className="text-slate-600 font-medium">Booked</span>
+                        <span className="text-slate-600 font-medium">Availed</span>
                         <div className="flex items-center gap-1.5">
                           <span className="font-semibold text-slate-900">{item.used}</span>
                           <InformationCircleIcon className="w-4 h-4 text-slate-400 cursor-pointer hover:text-slate-600 transition-colors" />
@@ -1505,7 +1505,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                               <span className="font-extrabold text-primary-700 text-md">{Math.max(0, available)} days</span>
                               {isActive && requestedDays > 0 && (
                                 <span className="text-amber-600 font-semibold text-[11px] mt-0.5 whitespace-nowrap">
-                                  Booked {requestedDays} {requestedDays === 1 ? "day" : "days"}{" "}
+                                  Availed {requestedDays} {requestedDays === 1 ? "day" : "days"}{" "}
                                   <span className="text-primary-700 ml-1">
                                     {Math.max(0, available - requestedDays)}
                                   </span>

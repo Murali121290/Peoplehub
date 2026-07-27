@@ -13,6 +13,7 @@ interface DashboardHeaderActionsProps {
   teaTimer?: string;
   hasCheckedOutToday: boolean;
   isOnLeave?: boolean;
+  isShiftChanged?: boolean;
   onCheckInOut: () => void;
   onLunchBreak: () => void;
   onTeaBreak: () => void;
@@ -65,6 +66,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
   teaTimer,
   hasCheckedOutToday,
   isOnLeave = false,
+  isShiftChanged = false,
   onCheckInOut,
   onLunchBreak,
   onTeaBreak,
@@ -133,22 +135,22 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
           ${isOnLeave
             ? "border-violet-300 text-violet-500 bg-violet-50 cursor-not-allowed opacity-80"
             : isCheckedOut
-            ? "border-emerald-400 text-emerald-500 hover:bg-emerald-50"
-            : isCheckedIn
-              ? "border-rose-400 text-rose-500 hover:bg-rose-50"
-              : "border-emerald-400 text-emerald-500 hover:bg-emerald-50"
+              ? "border-emerald-400 text-emerald-500 hover:bg-emerald-50"
+              : isCheckedIn
+                ? "border-rose-400 text-rose-500 hover:bg-rose-50"
+                : "border-emerald-400 text-emerald-500 hover:bg-emerald-50"
           }`}
       >
         {isLoading ? (
           <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
         ) : isOnLeave ? (
           <>
-            <span className="text-base">🌴</span>
+            <span className="text-base"></span>
             <span className="text-[13px] font-semibold text-violet-600">On Leave</span>
           </>
         ) : isCheckedOut ? (
           <>
-            <span className="text-[13px] font-semibold text-emerald-500">Check In</span>
+            <span className="text-[13px] font-semibold text-emerald-500">{isShiftChanged ? "Shift Change" : "Check In"}</span>
             <div className="w-[1px] h-4 bg-gray-200"></div>
             <span className="font-mono text-[13px] text-gray-500">{timer.includes("NaN") ? "00:00:00" : timer}</span>
           </>
@@ -161,7 +163,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
           </>
         ) : (
           <>
-            <span className="text-[13px] font-medium pl-1">Check In</span>
+            <span className="text-[13px] font-medium pl-1">{isShiftChanged ? "Shift Change" : "Check In"}</span>
             <div className="w-[1px] h-4 bg-gray-200"></div>
             <ChevronDown className="w-4 h-4 text-gray-400" />
           </>
