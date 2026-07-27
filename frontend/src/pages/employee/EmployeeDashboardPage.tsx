@@ -319,7 +319,7 @@ const EmployeeDashboardPage: React.FC = () => {
     if (!currentEmployee?.user_id) return;
     try {
       const res = await fetch(
-        `${BASE_URL}/shifts/employee/${currentEmployee.user_id}`,
+        `${BASE_URL}/shifts/employee/${currentEmployee.employee_id}`,
       );
       const data = await res.json();
       setShiftRequests(Array.isArray(data) ? data : []);
