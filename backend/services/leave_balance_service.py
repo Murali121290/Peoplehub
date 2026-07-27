@@ -24,7 +24,7 @@
 
 #     employee.casual_leave += 1.5
 #     employee.sick_leave += 1.5
-#     employee.earned_leave += 2.5
+#     employee.privilege_leave += 2.5
 
 #     employee.last_leave_reset_month = str(current_month)
 #     employee.last_leave_reset_year = current_year
@@ -68,8 +68,8 @@ def update_leave_balance(employee):
         employee.sick_leave or 0
     ) + 1.5
 
-    employee.earned_leave = (
-        employee.earned_leave or 0
+    employee.privilege_leave = (
+        employee.privilege_leave or 0
     ) + 2
 
     employee.last_leave_reset_month = str(
@@ -135,8 +135,10 @@ def update_single_employee_leave_balance(
             employee.casual_leave,
             "sick_leave":
             employee.sick_leave,
+            "privilege_leave":
+            employee.privilege_leave,
             "earned_leave":
-            employee.earned_leave
+            employee.privilege_leave
         }
 
     return {

@@ -241,6 +241,8 @@ def get_employees():
                 emp.casual_leave,
 
             "privilege_leave":
+                emp.privilege_leave,
+            "earned_leave":
                 emp.privilege_leave
         })
 
@@ -437,6 +439,7 @@ def get_employee(employee_id):
     "sick_leave": employee.sick_leave,
     "casual_leave": employee.casual_leave,
     "privilege_leave": employee.privilege_leave,
+    "earned_leave": employee.privilege_leave,
 
     "has_resume": employee.resume_file is not None,
     "has_aadhaar": employee.aadhaar_file is not None,
@@ -1088,7 +1091,8 @@ def get_my_team(user_id):
                 "status": employee.status,
                 "sick_leave": employee.sick_leave,
                 "casual_leave": employee.casual_leave,
-                "privilege_leave": employee.privilege_leave
+                "privilege_leave": employee.privilege_leave,
+                "earned_leave": employee.privilege_leave
             })
 
     return jsonify(result)
@@ -1785,6 +1789,8 @@ def get_employee_details(employee_id):
                     employee.casual_leave,
 
                 "privilege_leave":
+                    employee.privilege_leave,
+                "earned_leave":
                     employee.privilege_leave,
 
                 "attendance_history": [

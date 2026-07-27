@@ -338,6 +338,7 @@ def approve_leave(leave_id):
                 "sick_leave": employee.sick_leave,
                 "casual_leave": employee.casual_leave,
                 "privilege_leave": employee.privilege_leave,
+                "earned_leave": employee.privilege_leave,
                 "total_balance":
                     (employee.sick_leave or 0) +
                     (employee.casual_leave or 0) +
