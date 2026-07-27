@@ -1435,14 +1435,13 @@ def get_team_attendance_by_id(team_id):
         
         # Get all employee records for these users
         team_employees = Employee.query.filter(Employee.user_id.in_(user_ids)).all()
-        employee_ids = [str(emp.id) for emp in team_employees]
-
         # Batch fetch attendance for all team users today
         attendances = Attendance.query.filter(
             Attendance.user_id.in_(user_ids),
             Attendance.attendance_date == today
         ).all()
         attendance_by_user = {a.user_id: a for a in attendances}
+        employee_ids = [str(emp.id) for emp in team_employees] + [emp.employee_id for emp in team_employees if emp.employee_id]
 
         # Batch fetch approved leaves for all team employees today
         from models.leave import LeaveRequest
@@ -1457,7 +1456,7 @@ def get_team_attendance_by_id(team_id):
         result = []
         for emp in team_employees:
             attendance = attendance_by_user.get(emp.user_id)
-            leave = leave_by_employee.get(str(emp.id))
+            leave = leave_by_employee.get(str(emp.id)) or leave_by_employee.get(emp.employee_id)
 
             status = "Absent"
             if attendance:

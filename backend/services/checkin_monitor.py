@@ -87,28 +87,6 @@ def check_missed_checkins():
         for attendance in active_attendances:
             now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
             break_ended = False
-            
-            # Auto end lunch break (30 mins limit)
-            if attendance.lunch_break and attendance.lunch_start:
-                elapsed_lunch = (now_ist - attendance.lunch_start).total_seconds() / 60
-                if elapsed_lunch >= 30:
-                    attendance.lunch_end = now_ist
-                    attendance.lunch_minutes = (attendance.lunch_minutes or 0) + int(elapsed_lunch)
-                    attendance.total_break_minutes = (attendance.total_break_minutes or 0) + int(elapsed_lunch)
-                    attendance.lunch_break = False
-                    break_ended = True
-                    print(f"Auto-ended lunch break for user {attendance.user_id}")
-            
-            # Auto end tea break (15 mins limit)
-            if attendance.tea_break and attendance.tea_start:
-                elapsed_tea = (now_ist - attendance.tea_start).total_seconds() / 60
-                if elapsed_tea >= 15:
-                    attendance.tea_end = now_ist
-                    attendance.tea_minutes = (attendance.tea_minutes or 0) + int(elapsed_tea)
-                    attendance.total_break_minutes = (attendance.total_break_minutes or 0) + int(elapsed_tea)
-                    attendance.tea_break = False
-                    break_ended = True
-                    print(f"Auto-ended tea break for user {attendance.user_id}")
 
             gap_minutes = attendance.total_gap_minutes or 0
             break_minutes = attendance.total_break_minutes or 0
@@ -119,41 +97,8 @@ def check_missed_checkins():
             working_hours = total_seconds / 3600
             elapsed_hours = elapsed_seconds / 3600
             
-            if elapsed_hours >= 9.0:
-                print(f"Auto-checking out user {attendance.user_id} (Elapsed: {elapsed_hours:.2f}h)")
-                attendance.check_out = now_ist
-                attendance.total_hours = int(working_hours * 100) / 100
-                
-                if attendance.total_hours >= 8.0:
-                    attendance.status = "Present"
-                elif attendance.total_hours >= 4.0:
-                    attendance.status = "Half Day"
-                else:
-                    attendance.status = "Absent"
-                
-                # Emit checkout update
-                employee = Employee.query.filter_by(user_id=attendance.user_id).first()
-                if employee:
-                    try:
-                        payload = {
-                            "id": employee.id,
-                            "user_id": employee.user_id,
-                            "attendance_status": "Checked Out",
-                            "check_in": attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None,
-                            "check_out": attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None,
-                            "working_hours": attendance.total_hours or 0.0,
-                            "lunch_minutes": attendance.lunch_minutes or 0,
-                            "tea_minutes": attendance.tea_minutes or 0,
-                            "shift": employee.shift_timing or "General Shift",
-                            "manager_status": attendance.manager_status or "Pending",
-                            "checked_in": False,
-                            "lunch_break": False,
-                            "tea_break": False
-                        }
-                        socketio.emit("attendance_update", payload)
-                    except Exception as e:
-                        print(f"Failed to emit auto-checkout socket: {str(e)}")
-            elif break_ended:
+            # Manual check-out enforced (auto check-out disabled)
+            if break_ended:
                 # If not checked out but a break ended, emit update to sync UI
                 employee = Employee.query.filter_by(user_id=attendance.user_id).first()
                 if employee:

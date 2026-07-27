@@ -806,7 +806,7 @@ const EmployeeDashboardPage: React.FC = () => {
     }
   };
 
-  // --- Auto Check-In Reminder (Every 5 mins) ---
+  // --- Auto Check-In Reminder (Every 5 mins when not checked in) ---
   useEffect(() => {
     if (isCheckedIn || hasCheckedOutToday || !currentEmployee) return;
 
