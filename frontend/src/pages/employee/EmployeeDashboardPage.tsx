@@ -891,7 +891,7 @@ const EmployeeDashboardPage: React.FC = () => {
           setTotalTeaSeconds(teaSecs);
           // Immediately show the correct timer on re-login
           const elapsedSeconds = Math.floor((new Date().getTime() - checkIn.getTime()) / 1000);
-          const workingSeconds = Math.max(elapsedSeconds - lunchSecs - teaSecs, 0);
+          const workingSeconds = Math.max(elapsedSeconds, 0);
           const hrs = Math.floor(workingSeconds / 3600);
           const mins = Math.floor((workingSeconds % 3600) / 60);
           const secs = workingSeconds % 60;
@@ -1094,10 +1094,7 @@ const EmployeeDashboardPage: React.FC = () => {
             ? Math.max(0, Math.floor((now - teaStartTime.getTime()) / 1000))
             : 0;
 
-        const workingSeconds = Math.max(
-          elapsed - totalLunchSeconds - runningLunch - totalTeaSeconds - runningTea,
-          0,
-        );
+        const workingSeconds = Math.max(elapsed, 0);
         const hrs = Math.floor(workingSeconds / 3600);
         const mins = Math.floor((workingSeconds % 3600) / 60);
         const secs = workingSeconds % 60;
