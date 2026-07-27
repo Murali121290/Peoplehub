@@ -757,18 +757,13 @@ def tea_break():
 
         elif action == "stop":
             attendance.tea_break = False
-
             attendance.tea_end = get_ist_now()
-        if (
-            attendance.tea_start and
-            attendance.tea_end
-            ):
-              attendance.tea_minutes = int(
-        (
-            attendance.tea_end -
-            attendance.tea_start
-        ).total_seconds() / 60
-    )
+
+            if attendance.tea_start and attendance.tea_end:
+                added_mins = int((attendance.tea_end - attendance.tea_start).total_seconds() / 60)
+                attendance.tea_minutes = (attendance.tea_minutes or 0) + added_mins
+                attendance.tea_start = None
+                attendance.tea_end = None
 
         attendance.total_break_minutes = (
             (attendance.lunch_minutes or 0) +
