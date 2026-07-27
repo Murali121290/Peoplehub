@@ -960,15 +960,7 @@ const EmployeeDashboardPage: React.FC = () => {
         setIsLunchBreak(payload.lunch_break);
         setIsTeaBreak(payload.tea_break);
         if (payload.check_in) {
-          const userId = localStorage.getItem("user_id");
-          const localSaved = userId ? localStorage.getItem(`checkInTime_${userId}`) : null;
-          const savedDate = userId ? localStorage.getItem(`checkInDate_${userId}`) : null;
-          const todayKey = new Date().toISOString().split("T")[0];
-          if (localSaved && savedDate === todayKey) {
-            setCheckInTime(new Date(localSaved));
-          } else {
-            setCheckInTime(parseTimeString(payload.check_in));
-          }
+          setCheckInTime(parseTimeString(payload.check_in));
         } else {
           setCheckInTime(null);
         }
