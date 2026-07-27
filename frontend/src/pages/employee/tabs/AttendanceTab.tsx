@@ -28,6 +28,7 @@ const FULL_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "
 
 interface AttendanceTabProps {
   attendanceData?: Attendance[];
+  currentEmployee?: any;
 }
 
 interface DayDetails {
@@ -57,7 +58,7 @@ interface DayDetails {
   rawAttendanceRecord?: any;
 }
 
-const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAttendanceProp = [] }) => {
+const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAttendanceProp = [], currentEmployee }) => {
   const today = new Date();
   const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth() + 1); // 1-12
   const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
@@ -92,10 +93,21 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       setMonthlySchedule(sched);
 
       const allLeaves = Array.isArray(leavesRes.data) ? leavesRes.data : [];
-      const myApprovedLeaves = allLeaves.filter((l: any) =>
-        (String(l.employee_id) === String(employeeId) || String(l.employee_id) === String(userId)) &&
-        l.status === "Approved"
-      );
+      const myApprovedLeaves = allLeaves.filter((l: any) => {
+        if (l.status !== "Approved" || l.request_type !== "Leave") return false;
+        const leaveEmpId = String(l.employee_id || "");
+        
+        // Match against database ID, user ID, and company employee_id
+        const empId = currentEmployee ? String(currentEmployee.id) : String(employeeId);
+        const empUserId = currentEmployee ? String(currentEmployee.user_id) : String(userId);
+        const empCompanyId = currentEmployee ? String(currentEmployee.employee_id) : "";
+        
+        return (
+          leaveEmpId === empId || 
+          leaveEmpId === empUserId || 
+          (empCompanyId && leaveEmpId === empCompanyId)
+        );
+      });
       setApprovedLeaves(myApprovedLeaves);
     } catch (err) {
       console.error("Error loading attendance month data:", err);
@@ -238,16 +250,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       status = "Holiday";
       badgeLabel = holidayName || "Company Holiday";
       badgeEmoji = "";
+    } else if (isWeeklyOff) {
+      status = "Weekly Off";
+      badgeLabel = "Week Off";
+      badgeEmoji = "";
     } else if (matchedLeave) {
       status = "Leave";
       badgeLabel = matchedLeave.leave_type || "Approved Leave";
       badgeEmoji = "";
       leaveType = matchedLeave.leave_type;
       leaveReason = matchedLeave.reason;
-    } else if (isWeeklyOff) {
-      status = "Weekly Off";
-      badgeLabel = "Week Off";
-      badgeEmoji = "";
     } else if (attRec && (attRec.status?.toLowerCase() === "present" || (checkIn !== "-" && checkIn !== ""))) {
       // Present vs Half Day threshold (4 hrs)
       if (workingHours > 0 && workingHours < 4) {
@@ -530,7 +542,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     {cell.status !== "Future" && (
                       <div className="mt-1 w-full flex justify-start">
                         <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 w-full ${badgeClass}`}>
-                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("1F7A8C") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
+                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
                           <span className="truncate">{cell.badgeLabel || cell.status}</span>
                         </div>
                       </div>

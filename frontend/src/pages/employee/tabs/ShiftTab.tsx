@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { API_URL } from "../../../config/api";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "react-hot-toast";
 import {
   PlusIcon,
   CalendarIcon,
@@ -24,6 +25,7 @@ interface ShiftTabProps {
   currentEmployee: any;
   shiftRequests: any[];
   managerShiftRequests: any[];
+  leaveRequests: any[];
   onSubmitShift: (form: any) => void;
   onApprove: (id: number) => void;
   onReject: (id: number) => void;
@@ -33,6 +35,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   currentEmployee,
   shiftRequests,
   managerShiftRequests,
+  leaveRequests,
   onSubmitShift,
   onApprove,
   onReject,
@@ -86,9 +89,44 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
     setShowShiftForm(false);
   };
 
+  const hasLeaveOverlap = (startStr: string, endStr: string) => {
+    if (!leaveRequests || !leaveRequests.length || !currentEmployee) return false;
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    return leaveRequests.some((leave: any) => {
+      // 1. Only check approved leaves
+      if (leave.status !== "Approved" || leave.request_type !== "Leave") return false;
+
+      // 2. Match by employee identifier variations
+      const leaveEmpId = String(leave.employee_id || "");
+      if (
+        leaveEmpId !== String(currentEmployee.id) &&
+        leaveEmpId !== String(currentEmployee.user_id) &&
+        leaveEmpId !== String(currentEmployee.employee_id)
+      ) return false;
+
+      if (!leave.from_date || !leave.to_date) return false;
+      const leaveStart = new Date(leave.from_date);
+      const leaveEnd = new Date(leave.to_date);
+      leaveStart.setHours(0, 0, 0, 0);
+      leaveEnd.setHours(0, 0, 0, 0);
+
+      // Overlap formula: (startA <= endB) && (endA >= startB)
+      return (start <= leaveEnd) && (end >= leaveStart);
+    });
+  };
+
   const handleSubmit = () => {
     if (!fromDate || !toDate) {
       alert("Please select dates");
+      return;
+    }
+
+    if (hasLeaveOverlap(fromDate, toDate)) {
+      toast.error("You cannot request a shift change or WFH during your approved leave dates.");
       return;
     }
 

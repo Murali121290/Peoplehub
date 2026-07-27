@@ -285,14 +285,11 @@ const MeetingRooms = () => {
       <Card className="mb-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-sm font-medium text-neutral-500">
-              Workspace / Meeting Rooms
-            </p>
             <h1 className="mt-1 text-3xl font-bold tracking-tight text-neutral-800">
               Meeting Room Management
             </h1>
             <p className="mt-2 text-sm text-neutral-500">
-              Manage rooms, create bookings, and monitor workplace availability.
+              Meeting Room Reservation Hub.
             </p>
           </div>
 
@@ -307,7 +304,7 @@ const MeetingRooms = () => {
               setSelectedRoomForBooking(undefined);
               setShowBookingModal(true);
             }}>
-              + Room Booking
+              + Meeting Room Reservation
             </Button>
           </div>
         </div>
