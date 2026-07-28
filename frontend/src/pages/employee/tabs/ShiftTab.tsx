@@ -104,7 +104,6 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       const leaveEmpId = String(leave.employee_id || "");
       if (
         leaveEmpId !== String(currentEmployee.id) &&
-        leaveEmpId !== String(currentEmployee.user_id) &&
         leaveEmpId !== String(currentEmployee.employee_id)
       ) return false;
 
@@ -123,6 +122,34 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
     if (!fromDate || !toDate) {
       alert("Please select dates");
       return;
+    }
+
+    const todayStr = new Date().toLocaleDateString("en-CA");
+    if (fromDate < todayStr) {
+      toast.error("Cannot apply for a shift change for a past date.");
+      return;
+    }
+
+    if (fromDate === todayStr) {
+      const currentHour = new Date().getHours();
+      const reqShift = (shiftForm.requestedShift || "").trim().toLowerCase();
+
+      if (reqShift === "first shift" && currentHour >= 6) {
+        toast.error("Cannot apply for First Shift today as the shift start time (06:00 AM) has already passed.");
+        return;
+      }
+      if (reqShift === "general shift" && currentHour >= 9) {
+        toast.error("Cannot apply for General Shift today as the shift start time (09:00 AM) has already passed.");
+        return;
+      }
+      if (reqShift === "second shift" && currentHour >= 12) {
+        toast.error("Cannot apply for Second Shift today as the shift start time (12:00 PM) has already passed.");
+        return;
+      }
+      if (reqShift === "night shift" && currentHour >= 22) {
+        toast.error("Cannot apply for Night Shift today as the shift start time (10:00 PM) has already passed.");
+        return;
+      }
     }
 
     if (hasLeaveOverlap(fromDate, toDate)) {
@@ -500,7 +527,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                 </li>
                 <li className="flex justify-between py-1 border-b border-primary-100">
                   <span>Second Shift:</span>
-                  <span className="text-primary-700 font-extrabold">02 PM - 10 PM</span>
+                  <span className="text-primary-700 font-extrabold">12 PM - 09 PM</span>
                 </li>
                 <li className="flex justify-between py-1 border-b border-primary-100">
                   <span>Night Shift:</span>

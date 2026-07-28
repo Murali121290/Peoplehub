@@ -40,6 +40,42 @@ def apply_shift():
         req_from = datetime.strptime(data["from_date"], "%Y-%m-%d").date()
         req_to = datetime.strptime(data["to_date"], "%Y-%m-%d").date()
 
+        # Check if requested shift timing has already started/passed today
+        from zoneinfo import ZoneInfo
+        ist_now = datetime.now(ZoneInfo("Asia/Kolkata"))
+        ist_today = ist_now.date()
+
+        if req_from < ist_today:
+            return jsonify({
+                "success": False,
+                "message": "Cannot apply for a shift change for a past date."
+            }), 400
+
+        if req_from == ist_today:
+            req_shift = (data.get("requested_shift") or "").strip().lower()
+            current_hour = ist_now.hour
+
+            if req_shift == "first shift" and current_hour >= 6:
+                return jsonify({
+                    "success": False,
+                    "message": "Cannot apply for First Shift today as the shift start time (06:00 AM) has already passed."
+                }), 400
+            elif req_shift == "general shift" and current_hour >= 9:
+                return jsonify({
+                    "success": False,
+                    "message": "Cannot apply for General Shift today as the shift start time (09:00 AM) has already passed."
+                }), 400
+            elif req_shift == "second shift" and current_hour >= 12:
+                return jsonify({
+                    "success": False,
+                    "message": "Cannot apply for Second Shift today as the shift start time (12:00 PM) has already passed."
+                }), 400
+            elif req_shift == "night shift" and current_hour >= 22:
+                return jsonify({
+                    "success": False,
+                    "message": "Cannot apply for Night Shift today as the shift start time (10:00 PM) has already passed."
+                }), 400
+
         employee = Employee.query.filter(
             or_(
                 Employee.id == data["employee_id"],
@@ -48,7 +84,7 @@ def apply_shift():
         ).first()
 
         if employee:
-            emp_ids = [str(employee.id), str(employee.employee_id), str(employee.user_id)]
+            emp_ids = [str(employee.id), str(employee.employee_id)]
             
             overlapping_leave = LeaveRequest.query.filter(
                 LeaveRequest.employee_id.in_(emp_ids),
@@ -269,7 +305,7 @@ def approve_shift(id):
                 current_date += timedelta(days=1)
 
         shift.status = "Approved"
-        shift.approved_by = "Website Manager"
+        shift.approved_by = shift.reporting_manager or "Manager"
         shift.approved_at = datetime.utcnow()
 
         # Delete any pending "New Shift Request" notifications for this shift
@@ -349,7 +385,7 @@ def reject_shift(id):
         employee = Employee.query.get(shift.employee_id)
 
         shift.status = "Rejected"
-        shift.rejected_by = "Website Manager"
+        shift.rejected_by = shift.reporting_manager or "Manager"
         shift.rejected_at = datetime.utcnow()
 
         # Delete any pending "New Shift Request" notifications for this shift

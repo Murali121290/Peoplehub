@@ -186,7 +186,6 @@ const EmployeeDashboardPage: React.FC = () => {
       const leaveEmpId = String(leave.employee_id || "");
       if (
         leaveEmpId !== String(currentEmployee.id) &&
-        leaveEmpId !== String(currentEmployee.user_id) &&
         leaveEmpId !== String(currentEmployee.employee_id)
       ) return false;
       if (!leave.from_date || !leave.to_date) return false;
@@ -199,15 +198,38 @@ const EmployeeDashboardPage: React.FC = () => {
   // Check if today is an approved shift change day for the current employee
   const isShiftChangedToday = (() => {
     if (!currentEmployee || !shiftRequests.length) return false;
-    const todayStr = new Date().toISOString().split("T")[0];
-    const todayDate = new Date(todayStr);
+    const todayStr = new Date().toLocaleDateString("en-CA");
     return shiftRequests.some((shift: any) => {
       if (shift.status !== "Approved") return false;
-      if (!shift.from_date || !shift.to_date) return false;
-      const from = new Date(shift.from_date);
-      const to = new Date(shift.to_date);
-      return todayDate >= from && todayDate <= to;
+      return todayStr >= shift.from_date && todayStr <= shift.to_date;
     });
+  })();
+
+  const todayActiveShift = (() => {
+    if (!currentEmployee) return "General Shift";
+    const todayStr = new Date().toLocaleDateString("en-CA");
+    const approvedShift = shiftRequests.find((shift: any) => {
+      if (shift.status !== "Approved") return false;
+      return todayStr >= shift.from_date && todayStr <= shift.to_date;
+    });
+    return approvedShift ? approvedShift.requested_shift : (currentEmployee.shift_timing || "General Shift");
+  })();
+
+  const shiftLockStatus = (() => {
+    if (isCheckedIn) return { isLocked: false, label: "", timeLabel: "" };
+    const currentHour = new Date().getHours();
+    const cleanShift = (todayActiveShift || "").trim().toLowerCase();
+    
+    if (cleanShift === "first shift" && currentHour < 6) {
+      return { isLocked: true, label: "First Shift Locked", timeLabel: "06:00 AM" };
+    }
+    if (cleanShift === "second shift" && currentHour < 12) {
+      return { isLocked: true, label: "Second Shift Locked", timeLabel: "12:00 PM" };
+    }
+    if (cleanShift === "night shift" && currentHour < 22) {
+      return { isLocked: true, label: "Night Shift Locked", timeLabel: "10:00 PM" };
+    }
+    return { isLocked: false, label: "", timeLabel: "" };
   })();
 
   const getTodayKey = () => {
@@ -492,13 +514,18 @@ const EmployeeDashboardPage: React.FC = () => {
       const userId = localStorage.getItem("user_id");
       if (!userId) return;
       if (!isLunchBreak) {
-        setLunchStartTime(new Date());
-        setIsLunchBreak(true);
-        await fetch(`${BASE_URL}/attendance/lunch-break`, {
+        const response = await fetch(`${BASE_URL}/attendance/lunch-break`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ user_id: Number(userId), action: "start" }),
         });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          toast.error(data.error || "Failed to start lunch break");
+          return;
+        }
+        setLunchStartTime(new Date());
+        setIsLunchBreak(true);
         window.dispatchEvent(new Event('refreshTeamStatus'));
       } else {
         if (lunchStartTime) {
@@ -833,7 +860,6 @@ const EmployeeDashboardPage: React.FC = () => {
       const leaveEmpId = String(leave.employee_id || "");
       if (
         leaveEmpId !== String(currentEmployee.id) &&
-        leaveEmpId !== String(currentEmployee.user_id) &&
         leaveEmpId !== String(currentEmployee.employee_id)
       ) return false;
       if (leave.status !== "Approved" || leave.request_type !== "Leave") return false;
@@ -1210,7 +1236,7 @@ const EmployeeDashboardPage: React.FC = () => {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <div className="flex items-center justify-between h-16">
                 <div className="flex items-center gap-3">
-                  {currentEmployee?.id ? (
+                  {/* {currentEmployee?.id ? (
                     <img
                       src={`${API_URL}/api/employees/image/${currentEmployee.id}`}
                       alt="Profile"
@@ -1223,7 +1249,7 @@ const EmployeeDashboardPage: React.FC = () => {
                   <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center">
                     <SparklesIcon className="w-6 h-6 text-white" />
                   </div>
-                  )}
+                  )} */}
                   <div>
                     <h1 className="text-xl font-bold text-neutral-800">
                       Dashboard
@@ -1245,6 +1271,9 @@ const EmployeeDashboardPage: React.FC = () => {
                     hasCheckedOutToday={hasCheckedOutToday}
                     isOnLeave={isOnApprovedLeaveToday}
                     isShiftChanged={isShiftChangedToday}
+                    isShiftLocked={shiftLockStatus.isLocked}
+                    shiftLockLabel={shiftLockStatus.label}
+                    shiftLockTime={shiftLockStatus.timeLabel}
                     onCheckInOut={() => isCheckedIn ? setConfirmModal(true) : handleCheckIn()}
                     onLunchBreak={handleLunchBreak}
                     onTeaBreak={handleTeaBreak}
