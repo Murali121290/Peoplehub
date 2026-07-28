@@ -61,10 +61,31 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
-          setShiftOptions(data.map((s: string) => ({ label: s, value: s })));
+          const opts = data.map((s: string) => ({ label: s, value: s }));
+          if (!opts.some((o: any) => o.value.toUpperCase() === "WFH" || o.value.toLowerCase() === "work from home")) {
+            opts.push({ label: "WFH", value: "WFH" });
+          }
+          setShiftOptions(opts);
+        } else {
+          setShiftOptions([
+            { label: "General Shift", value: "General Shift" },
+            { label: "Morning Shift", value: "Morning Shift" },
+            { label: "Evening Shift", value: "Evening Shift" },
+            { label: "Night Shift", value: "Night Shift" },
+            { label: "WFH", value: "WFH" },
+          ]);
         }
       })
-      .catch((err) => console.error(err));
+      .catch((err) => {
+        console.error(err);
+        setShiftOptions([
+          { label: "General Shift", value: "General Shift" },
+          { label: "Morning Shift", value: "Morning Shift" },
+          { label: "Evening Shift", value: "Evening Shift" },
+          { label: "Night Shift", value: "Night Shift" },
+          { label: "WFH", value: "WFH" },
+        ]);
+      });
   }, []);
 
   useEffect(() => {
@@ -416,6 +437,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                     { label: "Morning Shift", value: "Morning Shift" },
                     { label: "Evening Shift", value: "Evening Shift" },
                     { label: "Night Shift", value: "Night Shift" },
+                    { label: "WFH", value: "WFH" },
                   ]
               }
               className={fieldErrors["shift_timing"] ? "border-danger-500" : ""}

@@ -2457,10 +2457,52 @@ def get_pending_clarifications(user_id):
         for att in attendances:
             history = att.clarification_history or []
             last_manager_msg = next((m["comment"] for m in reversed(history) if isinstance(m, dict) and m.get("sender_role") == "manager"), "")
+
+            # Web Site Entry
+            web_in_str = att.check_in.strftime("%I:%M %p") if att.check_in else "—"
+            web_out_str = att.check_out.strftime("%I:%M %p") if att.check_out else "—"
+            web_break_str = f"{att.total_break_minutes} min" if (att.total_break_minutes is not None and att.total_break_minutes > 0) else "0 min"
+
+            web_hours = att.total_hours or 0.0
+            if web_hours > 0:
+                h_int = int(web_hours)
+                m_int = int(round((web_hours - h_int) * 60))
+                if m_int == 60:
+                    h_int += 1
+                    m_int = 0
+                web_hours_str = f"{h_int} h {m_int} m" if m_int > 0 else f"{h_int} h 0 m"
+            else:
+                web_hours_str = "—"
+
+            # Biometric Card Entry
+            card_in = getattr(att, "card_check_in", None)
+            card_out = getattr(att, "card_check_out", None)
+            card_in_str = card_in.strftime("%I:%M %p") if card_in else "-"
+            card_out_str = card_out.strftime("%I:%M %p") if card_out else "-"
+
+            card_hours = getattr(att, "card_working_hours", 0.0) or 0.0
+            if card_hours > 0:
+                ch_int = int(card_hours)
+                cm_int = int(round((card_hours - ch_int) * 60))
+                if cm_int == 60:
+                    ch_int += 1
+                    cm_int = 0
+                card_hours_str = f"{ch_int} h {cm_int} m" if cm_int > 0 else f"{ch_int} h 0 m"
+            else:
+                card_hours_str = "—"
+
             results.append({
                 "id": att.id,
                 "attendance_date": att.attendance_date.strftime("%Y-%m-%d"),
                 "attendance_date_formatted": att.attendance_date.strftime("%A, %b %d, %Y"),
+                "check_in": web_in_str,
+                "check_out": web_out_str,
+                "total_break_minutes": att.total_break_minutes or 0,
+                "break_str": web_break_str,
+                "total_hours": web_hours_str,
+                "card_check_in": card_in_str,
+                "card_check_out": card_out_str,
+                "card_working_hours": card_hours_str,
                 "manager_status": att.manager_status,
                 "last_manager_comment": last_manager_msg,
                 "clarification_history": history
