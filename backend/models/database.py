@@ -72,14 +72,6 @@ def init_db(app=None):
     except Exception as e:
         print(f"Error running Alembic migrations: {e}")
 
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS clarification_history JSONB DEFAULT '[]'::jsonb;"))
-            conn.execute(text("ALTER TABLE attendance ALTER COLUMN manager_status TYPE VARCHAR(100);"))
-            conn.commit()
-    except Exception as col_err:
-        print(f"Migration check rejection_reason: {col_err}")
-
     # Seed default policies
     from models.leave import LeavePolicy
     defaults = [
