@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 
 import { appraisalService, employeeService } from "../../../services/api";
+import { toast } from "react-hot-toast";
 
 const EmployeeAppraisalTab: React.FC = () => {
   const [employeeDetails, setEmployeeDetails] = useState<any>(null);
@@ -53,7 +54,7 @@ const EmployeeAppraisalTab: React.FC = () => {
 
   const handleSubmit = async () => {
     if (questions.length === 0) {
-      alert("No appraisal questions found.");
+      toast.error("No appraisal questions found.");
       return;
     }
 
@@ -62,14 +63,14 @@ const EmployeeAppraisalTab: React.FC = () => {
     );
 
     if (unanswered.length > 0) {
-      alert("Please answer all questions.");
+      toast.error("Please answer all questions.");
       return;
     }
 
     try {
       const cycleResponse = await appraisalService.getActiveCycle();
       if (!cycleResponse.data.success || !cycleResponse.data.cycle) {
-        alert("No active appraisal cycle found.");
+        toast.error("No active appraisal cycle found.");
         return;
       }
       
@@ -85,13 +86,13 @@ const EmployeeAppraisalTab: React.FC = () => {
       const submitResponse = await appraisalService.submitAnswers(payload);
       if (submitResponse.data.success) {
         setSubmitted(true);
-        alert("Appraisal submitted successfully.");
+        toast.success("Appraisal submitted successfully.");
       } else {
-        alert("Failed to submit: " + submitResponse.data.message);
+        toast.error("Failed to submit: " + submitResponse.data.message);
       }
     } catch (err: any) {
       console.error(err);
-      alert("Error submitting appraisal: " + (err.response?.data?.message || err.message));
+      toast.error("Error submitting appraisal: " + (err.response?.data?.message || err.message));
     }
   };
 

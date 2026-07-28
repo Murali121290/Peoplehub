@@ -156,6 +156,19 @@ const AttendanceDetailModal: React.FC<AttendanceDetailModalProps> = ({
               </p>
             </div>
 
+            {/* Total Hours */}
+            <div className="bg-neutral-50/80 border border-neutral-200/80 rounded-xl p-2.5 flex flex-col justify-between hover:bg-neutral-50 transition-colors">
+              <span className="text-[10px] font-bold text-neutral-700 uppercase tracking-wider">
+                Total Hours
+              </span>
+              <p className="text-sm font-extrabold text-neutral-950 mt-1">
+                {formatWorkingHours(
+                  (selectedEmployee.working_hours || 0) +
+                  ((selectedEmployee.lunch_minutes || 0) + (selectedEmployee.tea_minutes || 0)) / 60
+                )}
+              </p>
+            </div>
+
             {/* Working Hours */}
             <div className="bg-emerald-50/80 border border-emerald-200/80 rounded-xl p-2.5 flex flex-col justify-between hover:bg-emerald-50 transition-colors">
               <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">

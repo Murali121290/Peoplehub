@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { toast } from "react-hot-toast";
 
 interface DatePickerProps {
   value?: string; // Standard "YYYY-MM-DD" format, e.g. "2026-11-17"
@@ -177,29 +178,29 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         }
 
         if (disableWeekends && isWeekoff) {
-          alert("Selected date falls on a company weekly off (Sunday / 2nd or 4th Saturday).");
+          toast.error("Selected date falls on a company weekly off (Sunday / 2nd or 4th Saturday).");
           return;
         }
         if (disablePast && isPast) {
-          alert("Selected date cannot be in the past.");
+          toast.error("Selected date cannot be in the past.");
           return;
         }
         if (isBeforeMinDate) {
-          alert("Selected date cannot be before the allowed minimum date.");
+          toast.error("Selected date cannot be before the allowed minimum date.");
           return;
         }
         if (isHoliday) {
-          alert("Selected date is a company holiday.");
+          toast.error("Selected date is a company holiday.");
           return;
         }
         if (isBooked) {
-          alert("Selected date already has a booked leave.");
+          toast.error("Selected date already has a booked leave.");
           return;
         }
 
         finalDate = parsed;
       } else {
-        alert("Invalid Date format. Please use YYYY-MM-DD.");
+        toast.error("Invalid Date format. Please use YYYY-MM-DD.");
         return;
       }
     }
