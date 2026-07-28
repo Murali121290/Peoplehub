@@ -16,6 +16,8 @@ const STATUS_MAP: Record<string, BadgeStatus> = {
   late: 'late',
   on_leave: 'onLeave',
   cancelled: 'inactive',
+  half_day: 'halfDay',
+  'half day': 'halfDay',
 };
 
 const LABELS: Record<string, string> = {
@@ -28,6 +30,8 @@ const LABELS: Record<string, string> = {
   late: 'LATE',
   on_leave: 'ON LEAVE',
   cancelled: 'CANCELLED',
+  half_day: 'HALF DAY',
+  'half day': 'HALF DAY',
 };
 
 const Chip: React.FC<ChipProps> = ({ type }) => {

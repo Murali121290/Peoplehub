@@ -376,12 +376,10 @@ def check_out():
         hours_decimal = total_seconds / 3600
         attendance.total_hours = int(hours_decimal * 100) / 100
 
-        if attendance.total_hours >= 8.0:
+        if attendance.total_hours >= 4.0:
             attendance.status = "Present"
-        elif attendance.total_hours >= 4.0:
-            attendance.status = "Half Day"
         else:
-            attendance.status = "Absent"
+            attendance.status = "Half Day"
 
         db.session.commit()
 
@@ -533,12 +531,10 @@ def sync_card_logs():
             card_hrs = attendance.card_working_hours or 0.0
             max_hrs = max(web_hrs, card_hrs)
 
-            if max_hrs >= 8.0:
+            if max_hrs >= 4.0:
                 attendance.status = "Present"
-            elif max_hrs >= 4.0:
+            elif max_hrs > 0.0 or attendance.check_in or attendance.card_check_in:
                 attendance.status = "Half Day"
-            elif attendance.check_in or attendance.card_check_in:
-                attendance.status = "Present"
             else:
                 attendance.status = "Absent"
 
@@ -649,6 +645,7 @@ def lunch_break():
 
         attendance = Attendance.query.filter_by(
             user_id=data["user_id"],
+            attendance_date=get_ist_today(),
             check_out=None
         ).order_by(
             Attendance.id.desc()
@@ -742,6 +739,7 @@ def tea_break():
 
         attendance = Attendance.query.filter_by(
             user_id=data["user_id"],
+            attendance_date=get_ist_today(),
             check_out=None
         ).order_by(
             Attendance.id.desc()
@@ -877,6 +875,13 @@ def attendance_history(user_id):
                 working_hours = record.total_hours or 0.0
                 check_out_str = "-"
 
+            # Derive display status: override to Half Day if < 4 working hours
+            base_status = record.status or "Present"
+            if base_status not in ("Absent", "Leave") and working_hours < 4.0 and working_hours > 0:
+                display_status = "Half Day"
+            else:
+                display_status = base_status
+
             result.append({
                 "id": record.id,
                 "date": record.attendance_date.strftime("%Y-%m-%d"),
@@ -889,7 +894,7 @@ def attendance_history(user_id):
                 "lunchMinutes": record.lunch_minutes,
                 "teaMinutes": record.tea_minutes,
                 "totalBreak": record.total_break_minutes,
-                "status": record.status or "Present"
+                "status": display_status
             })
         else:
             # Check for approved leaves on this day
@@ -954,6 +959,10 @@ def get_attendance():
             )
 
             total_hours = attendance.total_hours or 0.0
+
+            # Override to Half Day if checked out with < 4 working hours
+            if attendance.check_out and total_hours < 4.0 and status not in ("Absent", "Leave"):
+                status = "Half Day"
 
         else:
             status = "Absent"
@@ -1088,6 +1097,10 @@ def get_weekly_attendance():
 
                 if attendance:
                     status = attendance.status or "Present"
+                    # Override to Half Day if checked out with < 4 working hours
+                    total_hours_weekly = attendance.total_hours or 0.0
+                    if attendance.check_out and total_hours_weekly < 4.0 and status not in ("Absent", "Leave"):
+                        status = "Half Day"
                 else:
                     status = "Absent"
 
@@ -1208,6 +1221,10 @@ def get_monthly_attendance():
 
                 if attendance:
                     status = attendance.status or "Present"
+                    # Override to Half Day if checked out with < 4 working hours
+                    total_hours_monthly = attendance.total_hours or 0.0
+                    if attendance.check_out and total_hours_monthly < 4.0 and status not in ("Absent", "Leave"):
+                        status = "Half Day"
                 else:
                     status = "Absent"
 
@@ -2817,12 +2834,10 @@ def upload_attendance_excel():
                 card_hrs = attendance.card_working_hours or 0.0
                 max_hrs = max(web_hrs, card_hrs)
                 
-                if max_hrs >= 8.0:
+                if max_hrs >= 4.0:
                     attendance.status = "Present"
-                elif max_hrs >= 4.0:
+                elif max_hrs > 0.0 or attendance.check_in or attendance.card_check_in:
                     attendance.status = "Half Day"
-                elif attendance.check_in or attendance.card_check_in:
-                    attendance.status = "Present"
                 else:
                     attendance.status = "Absent"
                     

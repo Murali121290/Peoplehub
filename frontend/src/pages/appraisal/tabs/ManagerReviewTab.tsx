@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { appraisalService } from "../../../services/api";
+import { toast } from "react-hot-toast";
 import { getRatingColor } from "../utils/appraisalUtils";
 
 const ratings = [
@@ -54,13 +55,13 @@ const ManagerReviewTab: React.FC = () => {
       }
     } catch (err) {
       console.error("Failed to load employee appraisal", err);
-      alert("Failed to load employee answers.");
+      toast.error("Failed to load employee answers.");
     }
   };
 
   const handleSubmit = async () => {
     if (comment.trim() === "") {
-      alert("Please enter manager comments.");
+      toast.error("Please enter manager comments.");
       return;
     }
 
@@ -79,17 +80,17 @@ const ManagerReviewTab: React.FC = () => {
       const res = await appraisalService.submitReview(payload);
       if (res.data.success) {
         setSubmitted(true);
-        alert("Review submitted successfully.");
+        toast.success("Review submitted successfully.");
         // Refresh list
         setSelectedReview(null);
         setEmployeeAppraisal(null);
         fetchPendingReviews();
       } else {
-        alert("Failed to submit review: " + res.data.message);
+        toast.error("Failed to submit review: " + res.data.message);
       }
     } catch (err: any) {
       console.error(err);
-      alert("Error submitting review: " + (err.response?.data?.message || err.message));
+      toast.error("Error submitting review: " + (err.response?.data?.message || err.message));
     }
   };
 

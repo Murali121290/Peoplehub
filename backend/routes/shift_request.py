@@ -52,28 +52,13 @@ def apply_shift():
             }), 400
 
         if req_from == ist_today:
-            req_shift = (data.get("requested_shift") or "").strip().lower()
             current_hour = ist_now.hour
+            current_minute = ist_now.minute
 
-            if req_shift == "first shift" and current_hour >= 6:
+            if current_hour > 9 or (current_hour == 9 and current_minute > 0):
                 return jsonify({
                     "success": False,
-                    "message": "Cannot apply for First Shift today as the shift start time (06:00 AM) has already passed."
-                }), 400
-            elif req_shift == "general shift" and current_hour >= 9:
-                return jsonify({
-                    "success": False,
-                    "message": "Cannot apply for General Shift today as the shift start time (09:00 AM) has already passed."
-                }), 400
-            elif req_shift == "second shift" and current_hour >= 12:
-                return jsonify({
-                    "success": False,
-                    "message": "Cannot apply for Second Shift today as the shift start time (12:00 PM) has already passed."
-                }), 400
-            elif req_shift == "night shift" and current_hour >= 22:
-                return jsonify({
-                    "success": False,
-                    "message": "Cannot apply for Night Shift today as the shift start time (10:00 PM) has already passed."
+                    "message": "Cannot apply for today's shift/WFH request after 09:00 AM."
                 }), 400
 
         employee = Employee.query.filter(

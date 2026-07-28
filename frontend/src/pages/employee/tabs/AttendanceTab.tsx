@@ -266,7 +266,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       leaveType = matchedLeave.leave_type;
       leaveReason = matchedLeave.reason;
     } else if (attRec && (attRec.status?.toLowerCase() === "present" || (checkIn !== "-" && checkIn !== ""))) {
-      // Present vs Half Day threshold (4 hrs)
+      // Present vs Half Day threshold (4 hrs) — applies to both checked-out and still-active sessions
       if (workingHours > 0 && workingHours < 4) {
         status = "Half Day";
         badgeLabel = "Half Day";
@@ -598,9 +598,15 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               </div>
                             </div>
                             <div className="flex justify-between items-center px-1">
-                              <span className="text-[11px] text-neutral-500 font-bold">Total Hours</span>
-                              <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
-                            </div>
+                               <span className="text-[11px] text-neutral-500 font-bold">Total Hours</span>
+                               <span className="text-[12px] font-extrabold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded-md">
+                                 {formatHoursMinutes(cell.workingHours + ((cell.lunchMinutes || 0) + (cell.teaMinutes || 0)) / 60)}
+                               </span>
+                             </div>
+                             <div className="flex justify-between items-center px-1">
+                               <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
+                               <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
+                             </div>
                             {cell.overtime && cell.overtime !== "00:00" && cell.overtime !== "0h" && cell.overtime !== "0.0h" && (
                               <div className="flex justify-between items-center px-1">
                                 <span className="text-[11px] text-neutral-500 font-bold">Overtime</span>
@@ -625,7 +631,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         ) : (
                           <div className="space-y-1 bg-rose-50/50 p-3 rounded-xl border border-rose-100 text-rose-900">
                             <span className="text-[10px] uppercase font-bold text-rose-500 block">Absent</span>
-                            <p className="text-[12px] text-rose-700 font-bold">No Check-In Record • 0h</p>
+                            <p className="font-bold text-[12px] text-rose-700">No Check-In Record • 0h</p>
                           </div>
                         )}
                       </div>
@@ -656,6 +662,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                   <th className="p-3.5">Day</th>
                   <th className="p-3.5">Check-In</th>
                   <th className="p-3.5">Check-Out</th>
+                  <th className="p-3.5 text-center">Total Hours</th>
                   <th className="p-3.5 text-center">Working Hours</th>
                   <th className="p-3.5 text-center">Status</th>
                   <th className="p-3.5">Shift</th>
@@ -667,7 +674,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               <tbody className="divide-y divide-neutral-100 text-xs font-medium text-neutral-700">
                 {filteredGridDays.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
+                    <td colSpan={11} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
                       No attendance records matching status filter "{statusFilter}".
                     </td>
                   </tr>
@@ -681,6 +688,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       <td className="p-3.5 text-neutral-500">{dayObj.dayName}</td>
                       <td className="p-3.5 font-semibold text-neutral-800">{dayObj.checkIn}</td>
                       <td className="p-3.5 font-semibold text-neutral-800">{dayObj.checkOut}</td>
+                      <td className="p-3.5 text-center font-bold text-neutral-600">
+                         {formatHoursMinutes(dayObj.workingHours + ((dayObj.lunchMinutes || 0) + (dayObj.teaMinutes || 0)) / 60)}
+                      </td>
                       <td className="p-3.5 text-center font-bold text-primary-500">
                         {dayObj.workingHoursFormatted}
                       </td>
