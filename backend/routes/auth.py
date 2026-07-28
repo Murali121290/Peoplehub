@@ -17,6 +17,66 @@ from datetime import datetime
 
 auth_bp = Blueprint('auth', __name__)
 
+import os
+import ipaddress
+
+def is_mobile_device(user_agent):
+    if not user_agent:
+        return False
+    ua = user_agent.lower()
+    mobile_keywords = ["mobi", "android", "iphone", "ipad", "ipod", "blackberry", "iemobile", "opera mini", "webos"]
+    return any(keyword in ua for keyword in mobile_keywords)
+
+def is_local_ip(ip_str):
+    if not ip_str:
+        return False
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return ip.is_private or ip.is_loopback
+    except ValueError:
+        clean_ip = ip_str.lower()
+        if clean_ip in ("localhost", "::1"):
+            return True
+        for prefix in ("192.168.", "10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.2", "172.30.", "172.31."):
+            if clean_ip.startswith(prefix):
+                return True
+        return False
+
+def check_ip_allowed(ip_str):
+    if not ip_str:
+        return False
+    if is_local_ip(ip_str):
+        return True
+    allowed_ips_env = os.environ.get("ALLOWED_LOCAL_IPS", "")
+    if allowed_ips_env:
+        allowed_list = [ip.strip() for ip in allowed_ips_env.split(",") if ip.strip()]
+        for allowed in allowed_list:
+            if "/" in allowed:
+                try:
+                    if ipaddress.ip_address(ip_str) in ipaddress.ip_network(allowed, strict=False):
+                        return True
+                except ValueError:
+                    pass
+            else:
+                if ip_str == allowed:
+                    return True
+    return False
+
+def get_client_ip():
+    x_forwarded_for = request.headers.get("X-Forwarded-For")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0].strip()
+    x_real_ip = request.headers.get("X-Real-IP")
+    if x_real_ip:
+        return x_real_ip.strip()
+    from utils.compat import _request_var
+    req = _request_var.get()
+    if req and req.client:
+        return req.client.host
+    return None
+
+
+
 
 # =========================
 # LOGIN
@@ -98,6 +158,65 @@ def login():
         employee = Employee.query.filter_by(
             user_id=user.id
         ).first()
+
+        # SHIFT-BASED DEVICE & IP RESTRICTION VALIDATION
+        role_name = (user.role.name or "").lower() if user.role else ""
+        access_level = (user.access_level or "").lower()
+        is_excluded = role_name in ("admin", "manager") or access_level in ("admin", "manager")
+
+        if employee:
+            from zoneinfo import ZoneInfo
+            from models.shift_request import ShiftRequest
+            
+            # Determine today's date in Asia/Kolkata
+            tz = ZoneInfo("Asia/Kolkata")
+            today_date = datetime.now(tz).date()
+
+            # Check if there is an approved shift request for today
+            approved_request = ShiftRequest.query.filter(
+                ShiftRequest.employee_id == employee.id,
+                ShiftRequest.status == "Approved",
+                ShiftRequest.from_date <= today_date,
+                ShiftRequest.to_date >= today_date
+            ).first()
+
+            is_wfh = False
+            is_general_shift = False
+
+            if approved_request:
+                req_type = (approved_request.request_type or "").strip().upper()
+                shift_name = (approved_request.requested_shift or "").strip().lower()
+                if req_type == "WFH" or "wfh" in shift_name or "work from home" in shift_name:
+                    is_wfh = True
+                elif "general shift" in shift_name or "genetral shift" in shift_name:
+                    is_general_shift = True
+            else:
+                shift_name = (employee.shift_timing or "").strip().lower()
+                if "wfh" in shift_name or "work from home" in shift_name:
+                    is_wfh = True
+                elif "general shift" in shift_name or "genetral shift" in shift_name or not shift_name:
+                    is_general_shift = True
+
+            # Enforce machine (desktop/laptop only, not mobile) for General Shift or WFH
+            # Note: No role exclusions (even admin/manager) can bypass the mobile restriction
+            if is_general_shift or is_wfh:
+                user_agent = request.headers.get("User-Agent", "")
+                if is_mobile_device(user_agent):
+                    return jsonify({
+                        "success": False,
+                        "error": "Login restricted to desktop/laptop devices only."
+                    }), 403
+
+            # Enforce local IP check for General Shift
+            # Exclude managers and admins from IP check
+            if is_general_shift and not is_excluded:
+                client_ip = get_client_ip()
+                if not check_ip_allowed(client_ip):
+                    return jsonify({
+                        "success": False,
+                        "error": f"Login is restricted to the local office network only (Your IP: {client_ip})."
+                    }), 403
+
 
         # Update login time (IST, matching checkin_monitor.py)
         from zoneinfo import ZoneInfo
