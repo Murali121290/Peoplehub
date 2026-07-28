@@ -355,11 +355,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         body: JSON.stringify({ reason: reason || "" }),
       });
 
-      setShowAttendanceModal(false);
-
-      setReportingEmployees((prev) =>
-        prev.filter((emp) => emp.employee_id !== empId)
-      );
+      await loadReportingEmployees();
     } catch (error) {
       console.error(error);
     }

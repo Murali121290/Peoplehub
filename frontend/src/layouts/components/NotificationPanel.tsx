@@ -80,9 +80,9 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                     className="p-4 hover:bg-slate-50 transition-all duration-200 flex gap-4 items-start rounded-xl mx-2 my-2 border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 relative bg-white"
                   >
                     {/* Unread indicator dot */}
-                    {!item.is_read && (
+                    {/* {!item.is_read && (
                       <span className="absolute top-4 left-2 w-2.5 h-2.5 bg-blue-600 rounded-full animate-pulse" title="Unread" />
-                    )}
+                    )} */}
 
                     {/* Avatar */}
                     {item.sender_employee_id ? (

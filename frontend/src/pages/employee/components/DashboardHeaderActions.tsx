@@ -14,6 +14,9 @@ interface DashboardHeaderActionsProps {
   hasCheckedOutToday: boolean;
   isOnLeave?: boolean;
   isShiftChanged?: boolean;
+  isShiftLocked?: boolean;
+  shiftLockLabel?: string;
+  shiftLockTime?: string;
   onCheckInOut: () => void;
   onLunchBreak: () => void;
   onTeaBreak: () => void;
@@ -67,6 +70,9 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
   hasCheckedOutToday,
   isOnLeave = false,
   isShiftChanged = false,
+  isShiftLocked = false,
+  shiftLockLabel = "Shift Locked",
+  shiftLockTime,
   onCheckInOut,
   onLunchBreak,
   onTeaBreak,
@@ -93,6 +99,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
   const lunchDone = !isLunchBreak && totalLunchSeconds > 0;
   const teaBreakDisabled = !isCheckedIn || isLunchBreak;
   const lunchBreakDisabled = !isCheckedIn || isTeaBreak || lunchDone;
+  const teaDone = !isTeaBreak && totalTeaSeconds > 0;
 
   const handleCheckAction = async () => {
     setIsLoading(true);
@@ -126,19 +133,21 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
       <motion.button
         onHoverStart={() => setIsHoveringCheck(true)}
         onHoverEnd={() => setIsHoveringCheck(false)}
-        whileHover={(!isLoading && !isCheckedOut && !isOnLeave) ? { scale: 1.02 } : {}}
-        whileTap={(!isLoading && !isCheckedOut && !isOnLeave) ? { scale: 0.98 } : {}}
-        onClick={isOnLeave ? undefined : handleCheckAction}
-        disabled={isLoading || isCheckedOut || isOnLeave}
-        title={isOnLeave ? "You are on approved leave today" : undefined}
+        whileHover={(!isLoading && !isCheckedOut && !isOnLeave && !isShiftLocked) ? { scale: 1.02 } : {}}
+        whileTap={(!isLoading && !isCheckedOut && !isOnLeave && !isShiftLocked) ? { scale: 0.98 } : {}}
+        onClick={(isOnLeave || isShiftLocked) ? undefined : handleCheckAction}
+        disabled={isLoading || isCheckedOut || isOnLeave || isShiftLocked}
+        title={isOnLeave ? "You are on approved leave today" : isShiftLocked ? `${shiftLockLabel}${shiftLockTime ? ` — allowed after ${shiftLockTime}` : ""}` : undefined}
         className={`flex items-center gap-3 px-4 h-[36px] rounded-full border transition-colors duration-200 whitespace-nowrap ml-2 bg-white
           ${isOnLeave
             ? "border-violet-300 text-violet-500 bg-violet-50 cursor-not-allowed opacity-80"
-            : isCheckedOut
-              ? "border-emerald-400 text-emerald-500 hover:bg-emerald-50"
-              : isCheckedIn
-                ? "border-rose-400 text-rose-500 hover:bg-rose-50"
-                : "border-emerald-400 text-emerald-500 hover:bg-emerald-50"
+            : isShiftLocked
+              ? "border-rose-300 text-rose-500 bg-rose-50/50 cursor-not-allowed opacity-80"
+              : isCheckedOut
+                ? "border-emerald-400 text-emerald-500 bg-emerald-50 cursor-not-allowed opacity-80"
+                : isCheckedIn
+                  ? "border-rose-400 text-rose-500 hover:bg-rose-50"
+                  : "border-emerald-400 text-emerald-500 hover:bg-emerald-50"
           }`}
       >
         {isLoading ? (
@@ -148,9 +157,20 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
             <span className="text-base"></span>
             <span className="text-[13px] font-semibold text-violet-600">On Leave</span>
           </>
+        ) : isShiftLocked ? (
+          <>
+            <span className="text-[13px] font-semibold text-rose-500">{shiftLockLabel}</span>
+            {shiftLockTime && (
+              <>
+                <div className="w-[1px] h-4 bg-gray-200"></div>
+                <span className="text-[11.5px] text-gray-500 font-mono">{shiftLockTime}</span>
+              </>
+            )}
+          </>
         ) : isCheckedOut ? (
           <>
-            <span className="text-[13px] font-semibold text-emerald-500">{isShiftChanged ? "Shift Change" : "Check In"}</span>
+            <Check className="w-4 h-4 text-emerald-500" />
+            <span className="text-[13px] font-semibold text-emerald-500">Day Complete</span>
             <div className="w-[1px] h-4 bg-gray-200"></div>
             <span className="font-mono text-[13px] text-gray-500">{timer.includes("NaN") ? "00:00:00" : timer}</span>
           </>

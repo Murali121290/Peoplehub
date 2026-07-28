@@ -111,7 +111,8 @@ def create_app():
             "ADD COLUMN IF NOT EXISTS total_gap_minutes INTEGER DEFAULT 0, "
             "ADD COLUMN IF NOT EXISTS card_check_in TIMESTAMP, "
             "ADD COLUMN IF NOT EXISTS card_check_out TIMESTAMP, "
-            "ADD COLUMN IF NOT EXISTS card_working_hours DOUBLE PRECISION DEFAULT 0.0"
+            "ADD COLUMN IF NOT EXISTS card_working_hours DOUBLE PRECISION DEFAULT 0.0, "
+            "ADD COLUMN IF NOT EXISTS tea_count INTEGER DEFAULT 0"
         ))
         connection.commit()
 

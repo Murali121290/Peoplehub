@@ -360,6 +360,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const generalCount = getShiftCount("General Shift");
   const secondCount = getShiftCount("Second Shift");
   const nightCount = getShiftCount("Night Shift");
+  const wfhCount = uniqueEmployees.filter((emp) => !!emp.is_wfh).length;
+  const shiftChangedCount = uniqueEmployees.filter((emp) => !!emp.is_shift_changed).length;
 
   // Overview Counts (calculated from current active view's unfiltered attendanceData)
   const totalEmployees = uniqueEmployees.length;
@@ -387,9 +389,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   ).length;
 
   const filteredAttendance = attendanceData.filter((emp) => {
-    // 1. Shift filter
+    // 1. Shift / Operational category filter
     const matchesShift =
       selectedShift === "All" ||
+      (selectedShift === "WFH" && !!emp.is_wfh) ||
+      (selectedShift === "Shift Changed" && !!emp.is_shift_changed) ||
       (emp.shift || emp.shift_timing || "General Shift")
         .trim()
         .toLowerCase() === selectedShift.trim().toLowerCase();
@@ -650,9 +654,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             })}
           </div>
 
-          <div className="text-[11px] text-neutral-400 mt-1.5 font-medium">
+          {/* <div className="text-[11px] text-neutral-400 mt-1.5 font-medium">
             {dateRange}
-          </div>
+          </div> */}
         </div>
 
         <div className="flex items-center gap-4">
@@ -781,74 +785,120 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       </div>
 
       {/* Shift Distribution Cards */}
-      <div className="grid grid-cols-4 gap-3 mb-4">
-        <div
-          onClick={() => setSelectedShift(selectedShift === "Morning Shift" ? "All" : "Morning Shift")}
-          className={
-            "cursor-pointer rounded-[10px] p-4 text-center transition-all " +
-            (selectedShift === "Morning Shift"
-              ? "bg-warning-100 border-2 border-warning-500 text-warning-800"
-              : "bg-neutral-50 border border-neutral-200 text-neutral-500 hover:bg-neutral-100")
-          }
-        >
-          <div className="text-[11px] font-semibold mb-1.5 uppercase">
-            Morning Shift
+      <div className="flex flex-wrap gap-3 mb-4">
+        {morningCount > 0 && (
+          <div
+            onClick={() => setSelectedShift(selectedShift === "Morning Shift" ? "All" : "Morning Shift")}
+            className={
+              "cursor-pointer rounded-[10px] p-4 text-center transition-all flex-1 min-w-[150px] " +
+              (selectedShift === "Morning Shift"
+                ? "bg-warning-100 border-2 border-warning-500 text-warning-800"
+                : "bg-neutral-50 border border-neutral-200 text-neutral-500 hover:bg-neutral-100")
+            }
+          >
+            <div className="text-[11px] font-semibold mb-1.5 uppercase">
+              Morning Shift
+            </div>
+            <div className="text-[22px] font-bold text-neutral-800">
+              {morningCount}
+            </div>
           </div>
-          <div className="text-[22px] font-bold text-neutral-800">
-            {morningCount}
-          </div>
-        </div>
+        )}
 
-        <div
-          onClick={() => setSelectedShift(selectedShift === "General Shift" ? "All" : "General Shift")}
-          className={
-            "cursor-pointer rounded-[10px] p-4 text-center transition-all " +
-            (selectedShift === "General Shift"
-              ? "bg-info-100 border-2 border-info-500 text-info-800"
-              : "bg-neutral-50 border border-neutral-200 text-neutral-500 hover:bg-neutral-100")
-          }
-        >
-          <div className="text-[11px] font-semibold mb-1.5 uppercase">
-            General Shift
+        {generalCount > 0 && (
+          <div
+            onClick={() => setSelectedShift(selectedShift === "General Shift" ? "All" : "General Shift")}
+            className={
+              "cursor-pointer rounded-[10px] p-4 text-center transition-all flex-1 min-w-[150px] " +
+              (selectedShift === "General Shift"
+                ? "bg-info-100 border-2 border-info-500 text-info-800"
+                : "bg-neutral-50 border border-neutral-200 text-neutral-500 hover:bg-neutral-100")
+            }
+          >
+            <div className="text-[11px] font-semibold mb-1.5 uppercase">
+              General Shift
+            </div>
+            <div className="text-[22px] font-bold text-neutral-800">
+              {generalCount}
+            </div>
           </div>
-          <div className="text-[22px] font-bold text-neutral-800">
-            {generalCount}
-          </div>
-        </div>
+        )}
 
-        <div
-          onClick={() => setSelectedShift(selectedShift === "Second Shift" ? "All" : "Second Shift")}
-          className={
-            "cursor-pointer rounded-[10px] p-4 text-center transition-all " +
-            (selectedShift === "Second Shift"
-              ? "bg-pink-100 border-2 border-pink-500 text-pink-800"
-              : "bg-neutral-50 border border-neutral-200 text-neutral-500 hover:bg-neutral-100")
-          }
-        >
-          <div className="text-[11px] font-semibold mb-1.5 uppercase">
-            Second Shift
+        {secondCount > 0 && (
+          <div
+            onClick={() => setSelectedShift(selectedShift === "Second Shift" ? "All" : "Second Shift")}
+            className={
+              "cursor-pointer rounded-[10px] p-4 text-center transition-all flex-1 min-w-[150px] " +
+              (selectedShift === "Second Shift"
+                ? "bg-pink-100 border-2 border-pink-500 text-pink-800"
+                : "bg-neutral-50 border border-neutral-200 text-neutral-500 hover:bg-neutral-100")
+            }
+          >
+            <div className="text-[11px] font-semibold mb-1.5 uppercase">
+              Second Shift
+            </div>
+            <div className="text-[22px] font-bold text-neutral-800">
+              {secondCount}
+            </div>
           </div>
-          <div className="text-[22px] font-bold text-neutral-800">
-            {secondCount}
-          </div>
-        </div>
+        )}
 
-        <div
-          onClick={() => setSelectedShift(selectedShift === "Night Shift" ? "All" : "Night Shift")}
-          className={
-            "cursor-pointer rounded-[10px] p-4 text-center transition-all " +
-            (selectedShift === "Night Shift"
-              ? "bg-purple-100 border-2 border-purple-500 text-purple-800"
-              : "bg-neutral-50 border border-neutral-200 text-neutral-500 hover:bg-neutral-100")
-          }
-        >
-          <div className="text-[11px] font-semibold mb-1.5 uppercase">
-            Night Shift
+        {nightCount > 0 && (
+          <div
+            onClick={() => setSelectedShift(selectedShift === "Night Shift" ? "All" : "Night Shift")}
+            className={
+              "cursor-pointer rounded-[10px] p-4 text-center transition-all flex-1 min-w-[150px] " +
+              (selectedShift === "Night Shift"
+                ? "bg-purple-100 border-2 border-purple-500 text-purple-800"
+                : "bg-neutral-50 border border-neutral-200 text-neutral-500 hover:bg-neutral-100")
+            }
+          >
+            <div className="text-[11px] font-semibold mb-1.5 uppercase">
+              Night Shift
+            </div>
+            <div className="text-[22px] font-bold text-neutral-800">
+              {nightCount}
+            </div>
           </div>
-          <div className="text-[22px] font-bold text-neutral-800">
-            {nightCount}
+        )}
+
+        {wfhCount > 0 && (
+          <div
+            onClick={() => setSelectedShift(selectedShift === "WFH" ? "All" : "WFH")}
+            className={
+              "cursor-pointer rounded-[10px] p-4 text-center transition-all flex-1 min-w-[150px] " +
+              (selectedShift === "WFH"
+                ? "bg-teal-100 border-2 border-teal-500 text-teal-800"
+                : "bg-neutral-50 border border-neutral-200 text-neutral-500 hover:bg-teal-50")
+            }
+          >
+            <div className="text-[11px] font-semibold mb-1.5 uppercase">
+              Work From Home
+            </div>
+            <div className="text-[22px] font-bold text-neutral-800">
+              {wfhCount}
+            </div>
           </div>
-        </div>
+        )}
+
+        {shiftChangedCount > 0 && (
+          <div
+            onClick={() => setSelectedShift(selectedShift === "Shift Changed" ? "All" : "Shift Changed")}
+            className={
+              "cursor-pointer rounded-[10px] p-4 text-center transition-all flex-1 min-w-[150px] " +
+              (selectedShift === "Shift Changed"
+                ? "bg-indigo-100 border-2 border-indigo-500 text-indigo-800"
+                : "bg-neutral-50 border border-neutral-200 text-neutral-500 hover:bg-indigo-50")
+            }
+          >
+            <div className="text-[11px] font-semibold mb-1.5 uppercase">
+              Shift Changed
+            </div>
+            <div className="text-[22px] font-bold text-neutral-800">
+              {shiftChangedCount}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Employee Search Input */}

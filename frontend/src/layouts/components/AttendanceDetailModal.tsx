@@ -167,35 +167,87 @@ const AttendanceDetailModal: React.FC<AttendanceDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Clarification Request Comment (Manager) */}
-          {clarificationComment && (
-            <div className="bg-amber-50 border border-amber-300/80 rounded-xl p-3 space-y-1 shadow-2xs">
-              <div className="flex items-center gap-1.5">
-                <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">
-                  Clarification Comment
-                </span>
+          {/* Chronological Clarification Conversation Thread */}
+          {((selectedEmployee.clarification_history && selectedEmployee.clarification_history.length > 0) ? (
+            <div className="space-y-2 pt-1 border-t border-neutral-100">
+              <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider block">
+                Clarification Discussion Thread
+              </span>
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {selectedEmployee.clarification_history.map((msg: any, idx: number) => {
+                  const isManager = msg.sender_role === "manager";
+                  return (
+                    <div
+                      key={msg.id || idx}
+                      className={`p-3 rounded-xl border space-y-1 shadow-2xs ${isManager
+                        ? "bg-amber-50 border-amber-200/90 text-amber-950"
+                        : "bg-sky-50 border-sky-200/90 text-sky-950 ml-3"
+                        }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          {isManager ? (
+                            <ExclamationTriangleIcon className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                          ) : (
+                            <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5 text-sky-600 flex-shrink-0" />
+                          )}
+                          <span className={`text-[10px] font-bold uppercase tracking-wider ${isManager ? "text-amber-800" : "text-sky-800"}`}>
+                            {isManager
+                              ? (msg.sender_name && msg.sender_name !== "Manager"
+                                  ? `Manager (${msg.sender_name})`
+                                  : (selectedEmployee.reporting_manager ? `Manager (${selectedEmployee.reporting_manager})` : "Manager"))
+                              : (msg.sender_name && msg.sender_name !== "Employee"
+                                  ? msg.sender_name
+                                  : (selectedEmployee.employee_name || "Employee"))}
+                          </span>
+                        </div>
+                        {msg.timestamp && (
+                          <span className="text-[9px] text-neutral-400 font-medium">
+                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs font-medium leading-relaxed pl-5 whitespace-pre-wrap">
+                        {msg.comment}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
-              <p className="text-xs text-amber-950 font-medium leading-relaxed pl-5 whitespace-pre-wrap">
-                {clarificationComment}
-              </p>
             </div>
-          )}
+          ) : (
+            <>
+              {/* Fallback Single Manager Comment */}
+              {clarificationComment && (
+                <div className="bg-amber-50 border border-amber-300/80 rounded-xl p-3 space-y-1 shadow-2xs">
+                  <div className="flex items-center gap-1.5">
+                    <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">
+                      Manager ({selectedEmployee.reporting_manager || "Manager"})
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-950 font-medium leading-relaxed pl-5 whitespace-pre-wrap">
+                    {clarificationComment}
+                  </p>
+                </div>
+              )}
 
-          {/* Employee Response */}
-          {employeeReply && (
-            <div className="bg-sky-50 border border-sky-300/80 rounded-xl p-3 space-y-1 shadow-2xs">
-              <div className="flex items-center gap-1.5">
-                <ChatBubbleLeftEllipsisIcon className="w-4 h-4 text-sky-600 flex-shrink-0" />
-                <span className="text-[10px] font-bold text-sky-800 uppercase tracking-wider">
-                  Employee Reply
-                </span>
-              </div>
-              <p className="text-xs text-sky-950 font-medium leading-relaxed pl-5 whitespace-pre-wrap">
-                {employeeReply}
-              </p>
-            </div>
-          )}
+              {/* Fallback Single Employee Reply */}
+              {employeeReply && (
+                <div className="bg-sky-50 border border-sky-300/80 rounded-xl p-3 space-y-1 shadow-2xs">
+                  <div className="flex items-center gap-1.5">
+                    <ChatBubbleLeftEllipsisIcon className="w-4 h-4 text-sky-600 flex-shrink-0" />
+                    <span className="text-[10px] font-bold text-sky-800 uppercase tracking-wider">
+                      Employee ({selectedEmployee.employee_name || "Employee"})
+                    </span>
+                  </div>
+                  <p className="text-xs text-sky-950 font-medium leading-relaxed pl-5 whitespace-pre-wrap">
+                    {employeeReply}
+                  </p>
+                </div>
+              )}
+            </>
+          ))}
         </div>
 
         {/* Compact Footer */}

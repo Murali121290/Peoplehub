@@ -268,36 +268,48 @@ const LeaveApprovalPage: React.FC = () => {
                         </td>
                         <td className="p-4 text-center">
                           {leave.status === "Pending" ? (
-                            <div className="flex items-center justify-center gap-2">
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => handleApprove(leave.id)}
-                                disabled={processingId === leave.id}
-                                className="!py-1.5 !px-3 !text-xs shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
-                              >
-                                {processingId === leave.id ? (
-                                  <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                                ) : (
-                                  <CheckIcon className="w-3.5 h-3.5 mr-1" />
-                                )}
-                                Approve
-                              </Button>
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                onClick={() => handleReject(leave.id)}
-                                disabled={processingId === leave.id}
-                                className="!py-1.5 !px-3 !text-xs shadow-sm"
-                              >
-                                {processingId === leave.id ? (
-                                  <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                                ) : (
-                                  <XMarkIcon className="w-3.5 h-3.5 mr-1" />
-                                )}
-                                Reject
-                              </Button>
-                            </div>
+                            (() => {
+                              const startDate = leave.from_date || leave.permission_date || leave.to_date || "";
+                              const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                              const isFinished = startDate && startDate < today;
+
+                              if (isFinished) {
+                                return <span className="text-[11px] font-medium text-neutral-400">Out of Date</span>;
+                              }
+
+                              return (
+                                <div className="flex items-center justify-center gap-2">
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => handleApprove(leave.id)}
+                                    disabled={processingId === leave.id}
+                                    className="!py-1.5 !px-3 !text-xs shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
+                                  >
+                                    {processingId === leave.id ? (
+                                      <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                    ) : (
+                                      <CheckIcon className="w-3.5 h-3.5 mr-1" />
+                                    )}
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() => handleReject(leave.id)}
+                                    disabled={processingId === leave.id}
+                                    className="!py-1.5 !px-3 !text-xs shadow-sm"
+                                  >
+                                    {processingId === leave.id ? (
+                                      <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                    ) : (
+                                      <XMarkIcon className="w-3.5 h-3.5 mr-1" />
+                                    )}
+                                    Reject
+                                  </Button>
+                                </div>
+                              );
+                            })()
                           ) : leave.status === "Approved" && ((leave.permission_date || leave.from_date || "") >= new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]) ? (
                             <div className="flex items-center justify-center gap-2">
                               <Button

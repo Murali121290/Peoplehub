@@ -45,6 +45,8 @@ interface DayDetails {
   checkOut: string;
   workingHours: number; // in hours float
   workingHoursFormatted: string; // e.g. "9h 13m"
+  lunchMinutes: number;
+  teaMinutes: number;
   holidayName?: string;
   holidayType?: string;
   leaveType?: string;
@@ -104,7 +106,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         
         return (
           leaveEmpId === empId || 
-          leaveEmpId === empUserId || 
           (empCompanyId && leaveEmpId === empCompanyId)
         );
       });
@@ -222,6 +223,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     let checkOut = "-";
     let workingHours = 0;
     let workingHoursFormatted = "0h";
+    let lunchMinutes = 0;
+    let teaMinutes = 0;
     let leaveType = undefined;
     let leaveReason = undefined;
     let shift = user.shift_timing || "General Shift (09:00 AM - 06:00 PM)";
@@ -236,6 +239,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       checkOut = attRec.checkOut || attRec.check_out || "-";
       workingHours = Number(attRec.workingHours || attRec.working_hours || 0);
       workingHoursFormatted = formatHoursMinutes(workingHours);
+      lunchMinutes = Number(attRec.lunchMinutes || attRec.lunch_minutes || 0);
+      teaMinutes = Number(attRec.teaMinutes || attRec.tea_minutes || 0);
       if (attRec.shift) shift = attRec.shift;
       if (attRec.managerStatus) managerStatus = attRec.managerStatus;
 
@@ -296,6 +301,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       checkOut,
       workingHours,
       workingHoursFormatted,
+      lunchMinutes,
+      teaMinutes,
       holidayName,
       holidayType,
       leaveType,
@@ -441,7 +448,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             </select>
 
             {/* Month Selector */}
-            <select
+            {/* <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(Number(e.target.value))}
               className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
@@ -449,7 +456,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               {MONTH_NAMES.map((mName, idx) => (
                 <option key={idx + 1} value={idx + 1}>{mName}</option>
               ))}
-            </select>
+            </select> */}
 
             {/* Status Filter (for Grid view & highlighting) */}
             <select
@@ -578,6 +585,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               <div>
                                 <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-Out</span>
                                 <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-2.5 rounded-xl border border-neutral-100">
+                              <div>
+                                <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Lunch Break</span>
+                                <span className="font-extrabold text-neutral-700 text-[12px]">{cell.lunchMinutes} mins</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Tea Break</span>
+                                <span className="font-extrabold text-neutral-700 text-[12px]">{cell.teaMinutes} mins</span>
                               </div>
                             </div>
                             <div className="flex justify-between items-center px-1">

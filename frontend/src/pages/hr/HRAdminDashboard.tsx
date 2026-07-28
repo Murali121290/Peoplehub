@@ -288,7 +288,7 @@ export default function HRAdminDashboard() {
       return leaves.some((leave) => {
         const isUserMatch =
           String(leave.employee_id) === String(emp.id) ||
-          String(leave.employee_id) === String(emp.user_id);
+          String(leave.employee_id) === String(emp.employee_id);
         if (!isUserMatch) return false;
 
         const isApproved = (leave.status || "").toLowerCase() === "approved";
