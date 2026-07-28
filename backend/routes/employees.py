@@ -1578,10 +1578,47 @@ def get_team_attendance_by_id(team_id):
         ).all()
         leave_by_employee = {str(l.employee_id): l for l in leaves}
 
+        # Batch fetch approved WFH requests for team employees today
+        from models.shift_request import ShiftRequest
+        wfh_requests = ShiftRequest.query.filter(
+            ShiftRequest.employee_id.in_(employee_ids),
+            ShiftRequest.status == "Approved",
+            ShiftRequest.request_type == "WFH",
+            ShiftRequest.from_date <= today,
+            ShiftRequest.to_date >= today
+        ).all()
+        wfh_by_employee = {str(w.employee_id): w for w in wfh_requests}
+
+        # Batch fetch approved permissions for team employees today
+        from sqlalchemy import or_
+        permissions = LeaveRequest.query.filter(
+            LeaveRequest.employee_id.in_(employee_ids),
+            LeaveRequest.status.in_(["Approved", "Pending"]),
+            or_(LeaveRequest.leave_type == "Permission", LeaveRequest.request_type == "Permission"),
+            LeaveRequest.permission_date == today
+        ).all()
+        permission_by_employee = {str(p.employee_id): p for p in permissions}
+
+        now_time = datetime.now().time()
         result = []
         for emp in team_employees:
             attendance = attendance_by_user.get(emp.user_id)
             leave = leave_by_employee.get(str(emp.id)) or leave_by_employee.get(emp.employee_id)
+            wfh_req = wfh_by_employee.get(str(emp.id)) or wfh_by_employee.get(emp.employee_id)
+            perm_req = permission_by_employee.get(str(emp.id)) or permission_by_employee.get(emp.employee_id)
+
+            is_wfh = bool(wfh_req) or (bool(emp.shift_timing) and emp.shift_timing.upper() in ["WFH", "WORK FROM HOME"])
+            
+            # Permission is only active if current time has not passed permission to_time
+            is_perm = False
+            if perm_req:
+                if perm_req.to_time:
+                    is_perm = now_time <= perm_req.to_time
+                else:
+                    is_perm = True
+
+            perm_from = perm_req.from_time.strftime("%I:%M %p") if (perm_req and perm_req.from_time) else None
+            perm_to = perm_req.to_time.strftime("%I:%M %p") if (perm_req and perm_req.to_time) else None
 
             status = "Absent"
             if attendance:
@@ -1589,7 +1626,7 @@ def get_team_attendance_by_id(team_id):
                     status = "Checked Out"
                 else:
                     status = "Checked In"
-            elif leave:
+            elif leave and leave.leave_type != "Permission":
                 status = "Leave"
 
             result.append({
@@ -1604,6 +1641,11 @@ def get_team_attendance_by_id(team_id):
                 "check_out": attendance.check_out.strftime("%I:%M %p") if attendance and attendance.check_out else "-",
                 "lunch_break": attendance.lunch_break if attendance else False,
                 "tea_break": attendance.tea_break if attendance else False,
+                "is_wfh": is_wfh,
+                "shift_timing": emp.shift_timing,
+                "is_permission": is_perm,
+                "permission_from": perm_from,
+                "permission_to": perm_to,
             })
 
         return jsonify(result)

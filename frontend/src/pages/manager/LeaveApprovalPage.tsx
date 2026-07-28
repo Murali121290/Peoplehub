@@ -310,23 +310,52 @@ const LeaveApprovalPage: React.FC = () => {
                                 </div>
                               );
                             })()
-                          ) : leave.status === "Approved" && ((leave.permission_date || leave.from_date || "") >= new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]) ? (
-                            <div className="flex items-center justify-center gap-2">
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                onClick={() => handleCancel(leave.id)}
-                                disabled={processingId === leave.id}
-                                className="!py-1.5 !px-3 !text-xs shadow-sm"
-                              >
-                                {processingId === leave.id ? (
-                                  <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                                ) : (
-                                  <XMarkIcon className="w-3.5 h-3.5 mr-1" />
-                                )}
-                                Cancel
-                              </Button>
-                            </div>
+                          ) : leave.status === "Approved" ? (
+                            (() => {
+                              const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                              let hasStarted = false;
+
+                              if (isPermission && leave.permission_date) {
+                                if (leave.permission_date < todayStr) {
+                                  hasStarted = true;
+                                } else if (leave.permission_date === todayStr && leave.from_time) {
+                                  const now = new Date();
+                                  const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                                  const startTime = leave.from_time.substring(0, 5);
+                                  if (currentHHMM >= startTime) {
+                                    hasStarted = true;
+                                  }
+                                }
+                              } else {
+                                const startDate = leave.from_date || leave.to_date || "";
+                                if (startDate && startDate <= todayStr) {
+                                  hasStarted = true;
+                                }
+                              }
+
+                              if (hasStarted) {
+                                return <span className="text-[11px] font-medium text-neutral-400">No actions required</span>;
+                              }
+
+                              return (
+                                <div className="flex items-center justify-center gap-2">
+                                  <Button
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() => handleCancel(leave.id)}
+                                    disabled={processingId === leave.id}
+                                    className="!py-1.5 !px-3 !text-xs shadow-sm"
+                                  >
+                                    {processingId === leave.id ? (
+                                      <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                    ) : (
+                                      <XMarkIcon className="w-3.5 h-3.5 mr-1" />
+                                    )}
+                                    Cancel
+                                  </Button>
+                                </div>
+                              );
+                            })()
                           ) : (
                             <span className="text-[11px] font-medium text-neutral-400">No actions required</span>
                           )}

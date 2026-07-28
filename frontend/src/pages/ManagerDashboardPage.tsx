@@ -185,7 +185,12 @@ const ManagerDashboardPage = () => {
     setLoadingHistory(true);
     setHistoryRecords([]);
     try {
-      const response = await fetch(`${BASE_URL}/attendance/history/${member.user_id}`);
+      const targetUserId = member?.user_id || member?.id || member?.employee_id;
+      if (!targetUserId || targetUserId === "undefined") {
+        console.warn("Cannot fetch attendance history: invalid user ID", member);
+        return;
+      }
+      const response = await fetch(`${BASE_URL}/attendance/history/${targetUserId}`);
       if (!response.ok) throw new Error("Failed to fetch history");
       const data = await response.json();
       setHistoryRecords(Array.isArray(data) ? data : []);
@@ -349,6 +354,8 @@ const ManagerDashboardPage = () => {
       const data = await response.json();
       const formattedMembers = data.map((emp: any) => ({
         id: emp.id,
+        user_id: emp.user_id || emp.id,
+        employee_id: emp.employee_id || emp.employee_code || (emp.id ? `EMP${emp.id}` : ""),
         avatar: emp.name
           ? emp.name
             .split(" ")
@@ -360,6 +367,8 @@ const ManagerDashboardPage = () => {
         name: emp.name || "",
         email: emp.email || "",
         role: emp.designation || "Employee",
+        designation: emp.designation || "Employee",
+        department: emp.department || "",
         tasksCompleted: emp.tasks_completed || 0,
         efficiency: emp.efficiency || 0,
         hoursThisWeek: emp.hours_this_week || 0,
@@ -446,6 +455,8 @@ const ManagerDashboardPage = () => {
 
       return {
         id: att.id ?? match?.id,
+        user_id: att.user_id || match?.user_id || att.id || match?.id,
+        employee_id: att.employee_id || match?.employee_id || (att.id ? `EMP${att.id}` : ""),
         name: att.name || match?.name || "",
         email: match?.email || att.email || "",
         role: att.designation || match?.role || "Employee",
@@ -1223,17 +1234,40 @@ const ManagerDashboardPage = () => {
                               </div>
 
                               <div style={{ minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "15px",
-                                    fontWeight: 800,
-                                    color: THEME.navy,
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                >
-                                  {member.name}
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                  <div
+                                    style={{
+                                      fontSize: "15px",
+                                      fontWeight: 800,
+                                      color: THEME.navy,
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                    }}
+                                  >
+                                    {member.name}
+                                  </div>
+
+                                  {member.isWfh && (
+                                    <span
+                                      title="Work From Home (WFH)"
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        padding: "2px 7px",
+                                        borderRadius: "999px",
+                                        background: "#eff6ff",
+                                        border: "1px solid #bfdbfe",
+                                        color: "#1d4ed8",
+                                        fontSize: "10px",
+                                        fontWeight: 800,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <img src="/wfh-icon.svg" alt="WFH" style={{ width: "13px", height: "13px" }} />
+                                    </span>
+                                  )}
                                 </div>
 
                                 <div
@@ -1552,7 +1586,29 @@ const ManagerDashboardPage = () => {
                                       {initials}
                                     </div>
                                   )}
-                                  <span style={{ fontWeight: 700, color: THEME.navy }}>{member.name}</span>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                    <span style={{ fontWeight: 700, color: THEME.navy }}>{member.name}</span>
+                                    {member.isWfh && (
+                                      <span
+                                        title="Work From Home (WFH)"
+                                        style={{
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "3px",
+                                          padding: "2px 6px",
+                                          borderRadius: "999px",
+                                          background: "#eff6ff",
+                                          border: "1px solid #bfdbfe",
+                                          color: "#1d4ed8",
+                                          fontSize: "10px",
+                                          fontWeight: 800,
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        <img src="/wfh-icon.svg" alt="WFH" style={{ width: "13px", height: "13px" }} />
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.employee_id || "—"}</td>
@@ -1601,120 +1657,7 @@ const ManagerDashboardPage = () => {
         </div>
       </main>
 
-      {/* Yesterday's Attendance Summary */}
-      {yesterdaySummary.length > 0 && (
-        <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0 24px 40px" }}>
-          <section style={{
-            background: "#fff",
-            borderRadius: "24px",
-            border: `1px solid ${THEME.border}`,
-            boxShadow: THEME.shadow,
-            overflow: "hidden",
-          }}>
-            {/* Header */}
-            <div style={{ padding: "24px", borderBottom: `1px solid ${THEME.border}`, background: "linear-gradient(180deg,#fff 0%,#fbfdff 100%)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "14px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-                  <div style={{ width: "46px", height: "46px", borderRadius: "14px", background: "#fef9c3", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <CalendarDaysIcon style={{ width: "22px", height: "22px", color: "#ca8a04" }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: "18px", fontWeight: 800, color: THEME.navy }}>Yesterday's Attendance Summary</div>
-                    <div style={{ fontSize: "13px", color: THEME.textSoft, marginTop: "2px" }}>
-                      {yesterdaySummaryDate ? `For ${yesterdaySummaryDate}` : "Last working day"} — Pending your approval
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={loadYesterdaySummary}
-                  style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 16px", borderRadius: "10px", border: `1px solid ${THEME.border}`, background: THEME.surface, color: THEME.textSoft, fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
-                >
-                  <ArrowPathIcon style={{ width: "15px", height: "15px" }} />
-                  Refresh
-                </button>
-              </div>
-            </div>
 
-            {/* Table */}
-            {loadingYesterday ? (
-              <div style={{ padding: "48px", textAlign: "center", color: THEME.textSoft }}>
-                <div style={{ width: "28px", height: "28px", border: `3px solid ${THEME.border}`, borderTop: `3px solid ${THEME.primary}`, borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
-                <p style={{ fontSize: "13px", fontWeight: 500 }}>Loading yesterday's summary...</p>
-              </div>
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px", color: THEME.text }}>
-                  <thead>
-                    <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                      <th style={{ padding: "12px 16px" }}>Employee</th>
-                      <th style={{ padding: "12px 16px" }}>Department</th>
-                      <th style={{ padding: "12px 16px" }}>Status</th>
-                      <th style={{ padding: "12px 16px" }}>Check In</th>
-                      <th style={{ padding: "12px 16px" }}>Check Out</th>
-                      <th style={{ padding: "12px 16px" }}>Hours</th>
-                      <th style={{ padding: "12px 16px" }}>Breaks (L/T)</th>
-                      <th style={{ padding: "12px 16px" }}>Manager Status</th>
-                      <th style={{ padding: "12px 16px", textAlign: "center" }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {yesterdaySummary.map((emp, idx) => {
-                      const status = emp.status || "Absent";
-                      const managerStatus = emp.manager_status || emp.decision || "Pending";
-                      let statusBg = "#fee2e2"; let statusColor = "#b91c1c";
-                      if (status === "Present") { statusBg = "#dcfce7"; statusColor = "#166534"; }
-                      else if (status === "Leave") { statusBg = "#fef3c7"; statusColor = "#92400e"; }
-                      let msBg = "#f1f5f9"; let msColor = "#475569";
-                      if (managerStatus === "Approved") { msBg = "#dcfce7"; msColor = "#166534"; }
-                      else if (managerStatus === "Rejected") { msBg = "#fee2e2"; msColor = "#b91c1c"; }
-                      else if (managerStatus === "Need Clarification") { msBg = "#fef9c3"; msColor = "#854d0e"; }
-                      const summaryDateStr = emp.summary_date || "";
-                      const canAct = managerStatus === "Pending" || managerStatus === "Need Clarification";
-                      return (
-                        <tr key={idx} style={{ borderBottom: `1px solid ${THEME.border}` }}>
-                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.navy }}>
-                            <div>{emp.employee_name}</div>
-                            <div style={{ fontSize: "11px", color: THEME.textSoft, fontWeight: 500 }}>{emp.designation}</div>
-                          </td>
-                          <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{emp.department}</td>
-                          <td style={{ padding: "12px 16px" }}>
-                            <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: 800 }}>{status}</span>
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>{emp.check_in || "—"}</td>
-                          <td style={{ padding: "12px 16px" }}>{emp.check_out || "—"}</td>
-                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.primary }}>{formatWorkingHours(emp.working_hours)}</td>
-                          <td style={{ padding: "12px 16px", color: THEME.textSoft }}>
-                            {(emp.lunch_minutes > 0 || emp.tea_minutes > 0) ? `${emp.lunch_minutes}m / ${emp.tea_minutes}m` : "—"}
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: msBg, color: msColor, fontSize: "11px", fontWeight: 800 }}>{managerStatus}</span>
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "center" }}>
-                            {canAct ? (
-                              <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                                <button
-                                  onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
-                                  style={{ padding: "6px 14px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
-                                >✓ Approve</button>
-                                <button
-                                  onClick={() => handleRejectYesterday(emp.employee_id, summaryDateStr)}
-                                  style={{ padding: "6px 14px", borderRadius: "8px", border: "none", background: "#fee2e2", color: "#b91c1c", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
-                                >✕ Reject</button>
-                              </div>
-                            ) : (
-                              <span style={{ fontSize: "12px", color: THEME.textLight, fontWeight: 500 }}>— Done —</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        </div>
-      )}
 
       {/* Attendance History Modal */}
       {historyModalUser && (
