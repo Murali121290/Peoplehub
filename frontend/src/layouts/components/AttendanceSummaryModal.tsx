@@ -301,7 +301,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                 <tr className="bg-neutral-50 text-neutral-500 text-[11px] font-bold uppercase tracking-wider">
                   <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-4 min-w-[160px]">Employee</th>
                   <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3 min-w-[120px]">Department</th>
-                  <th colSpan={4} className="bg-blue-100/80 text-blue-800 font-extrabold border-b border-neutral-200 text-center py-2 px-3">Web Site Entry</th>
+                  <th colSpan={5} className="bg-blue-100/80 text-blue-800 font-extrabold border-b border-neutral-200 text-center py-2 px-3">Web Site Entry</th>
                   <th colSpan={3} className="bg-purple-100/80 text-purple-800 font-extrabold border-b border-neutral-200 text-center py-2 px-3">Biometric Card Entry</th>
                   <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3">Status</th>
                   <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3">Verification</th>
@@ -311,7 +311,8 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                   <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check In</th>
                   <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check Out</th>
                   <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Break</th>
-                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Hours</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Total Hours</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Working Hours</th>
                   <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check In</th>
                   <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check Out</th>
                   <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Hours</th>
@@ -320,7 +321,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
               <tbody className="divide-y divide-neutral-100 text-sm font-medium">
                 {sortedEmployees.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="py-12 text-center text-neutral-400 font-medium">
+                    <td colSpan={13} className="py-12 text-center text-neutral-400 font-medium">
                       No yesterday attendance records found for approval.
                     </td>
                   </tr>
@@ -371,6 +372,12 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold">{emp.check_out || "—"}</td>
                         <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold">
                           {emp.total_break_minutes ? `${emp.total_break_minutes} min` : "0 min"}
+                        </td>
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-400">
+                          {formatWorkingHours(
+                            (emp.working_hours || 0) +
+                            (emp.total_break_minutes || 0) / 60
+                          )}
                         </td>
                         <td className="py-3.5 px-3 bg-blue-50/5 text-xs font-bold text-neutral-800">
                           {formatWorkingHours(emp.working_hours)}

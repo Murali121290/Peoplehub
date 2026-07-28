@@ -120,7 +120,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
 
   const handleSubmit = () => {
     if (!fromDate || !toDate) {
-      alert("Please select dates");
+      toast.error("Please select dates");
       return;
     }
 
@@ -131,23 +131,12 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
     }
 
     if (fromDate === todayStr) {
-      const currentHour = new Date().getHours();
-      const reqShift = (shiftForm.requestedShift || "").trim().toLowerCase();
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
 
-      if (reqShift === "first shift" && currentHour >= 6) {
-        toast.error("Cannot apply for First Shift today as the shift start time (06:00 AM) has already passed.");
-        return;
-      }
-      if (reqShift === "general shift" && currentHour >= 9) {
-        toast.error("Cannot apply for General Shift today as the shift start time (09:00 AM) has already passed.");
-        return;
-      }
-      if (reqShift === "second shift" && currentHour >= 12) {
-        toast.error("Cannot apply for Second Shift today as the shift start time (12:00 PM) has already passed.");
-        return;
-      }
-      if (reqShift === "night shift" && currentHour >= 22) {
-        toast.error("Cannot apply for Night Shift today as the shift start time (10:00 PM) has already passed.");
+      if (currentHour > 9 || (currentHour === 9 && currentMinute > 0)) {
+        toast.error("Cannot apply for today's shift/WFH request after 09:00 AM.");
         return;
       }
     }
@@ -162,7 +151,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
       current_shift: currentEmployee.shift_timing || "General Shift",
       reporting_manager: currentEmployee.reporting_manager || "Admin",
-      requested_shift: shiftForm.requestedShift,
+      requested_shift: requestType === "WFH" ? "WFH" : shiftForm.requestedShift,
       request_type: requestType,
       from_date: fromDate,
       to_date: toDate,
