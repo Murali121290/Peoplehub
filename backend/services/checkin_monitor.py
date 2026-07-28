@@ -291,3 +291,8 @@ def generate_daily_notifications():
         print("Failed to generate daily notifications:", str(e))
         import traceback
         traceback.print_exc()
+    finally:
+        try:
+            db.session.remove()
+        except Exception as dbe:
+            print(f"Error removing db session: {dbe}")

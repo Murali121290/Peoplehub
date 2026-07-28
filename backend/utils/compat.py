@@ -170,18 +170,25 @@ def make_compat_wrapper(func):
             call_kwargs.pop("request", None)
 
         try:
-            if inspect.iscoroutinefunction(func):
-                res = await func(*args, **call_kwargs)
-            else:
-                res = func(*args, **call_kwargs)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+            try:
+                if inspect.iscoroutinefunction(func):
+                    res = await func(*args, **call_kwargs)
+                else:
+                    res = func(*args, **call_kwargs)
+            except HTTPException as he:
+                raise he
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
-        return format_response(res)
+            return format_response(res)
+        finally:
+            from models.database import db_session
+            try:
+                db_session.remove()
+            except Exception as dbe:
+                print(f"Error removing db session: {dbe}")
 
     # Rewrite signature to include the path parameters and inject the Request object
     parameters = list(sig.parameters.values())
