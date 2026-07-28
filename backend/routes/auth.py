@@ -160,12 +160,11 @@ def login():
         ).first()
 
         # SHIFT-BASED DEVICE & IP RESTRICTION VALIDATION
-        # Exclude managers and admins
         role_name = (user.role.name or "").lower() if user.role else ""
         access_level = (user.access_level or "").lower()
         is_excluded = role_name in ("admin", "manager") or access_level in ("admin", "manager")
 
-        if employee and not is_excluded:
+        if employee:
             from zoneinfo import ZoneInfo
             from models.shift_request import ShiftRequest
             
@@ -199,6 +198,7 @@ def login():
                     is_general_shift = True
 
             # Enforce machine (desktop/laptop only, not mobile) for General Shift or WFH
+            # Note: No role exclusions (even admin/manager) can bypass the mobile restriction
             if is_general_shift or is_wfh:
                 user_agent = request.headers.get("User-Agent", "")
                 if is_mobile_device(user_agent):
@@ -208,7 +208,8 @@ def login():
                     }), 403
 
             # Enforce local IP check for General Shift
-            if is_general_shift:
+            # Exclude managers and admins from IP check
+            if is_general_shift and not is_excluded:
                 client_ip = get_client_ip()
                 if not check_ip_allowed(client_ip):
                     return jsonify({
