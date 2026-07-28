@@ -22,6 +22,8 @@ import {
   BriefcaseIcon,
   Squares2X2Icon,
   ListBulletIcon,
+  HomeIcon,
+  ArrowPathIcon,
 } from "@heroicons/react/24/outline";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -173,6 +175,11 @@ const ManagerDashboardPage = () => {
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<number | null>(null);
 
+  // Yesterday Summary States
+  const [yesterdaySummary, setYesterdaySummary] = useState<any[]>([]);
+  const [loadingYesterday, setLoadingYesterday] = useState(false);
+  const [yesterdaySummaryDate, setYesterdaySummaryDate] = useState("");
+
   const viewEmployeeHistory = async (member: any) => {
     setHistoryModalUser(member);
     setLoadingHistory(true);
@@ -205,13 +212,11 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const handleRejectToday = async (empUserId: number, reason?: string) => {
+  const handleRejectToday = async (empUserId: number) => {
     try {
       const todayStr = new Date().toISOString().split("T")[0];
       const response = await fetch(`${BASE_URL}/attendance/reject/${empUserId}?date=${todayStr}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: reason || "" }),
       });
       if (response.ok) {
         loadTeamAttendance();
@@ -232,7 +237,7 @@ const ManagerDashboardPage = () => {
     loadTeamMembers();
     loadTeamAttendance();
     loadManagerInfo();
-    loadManagerInfo();
+    loadYesterdaySummary();
   }, []);
 
   useEffect(() => {
@@ -376,6 +381,50 @@ const ManagerDashboardPage = () => {
     }
   };
 
+  const loadYesterdaySummary = async () => {
+    try {
+      setLoadingYesterday(true);
+      const response = await fetch(`${BASE_URL}/employees/reporting-employees/${userId}`);
+      const data = await response.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setYesterdaySummary(data);
+        setYesterdaySummaryDate(data[0]?.summary_date_formatted || "");
+      } else {
+        setYesterdaySummary([]);
+      }
+    } catch (error) {
+      console.error("Failed to load yesterday summary", error);
+    } finally {
+      setLoadingYesterday(false);
+    }
+  };
+
+  const handleApproveYesterday = async (empId: number, dateStr: string) => {
+    try {
+      const response = await fetch(`${BASE_URL}/attendance/approve/${empId}?date=${dateStr}`, {
+        method: "PUT",
+      });
+      if (response.ok) {
+        loadYesterdaySummary();
+      }
+    } catch (error) {
+      console.error("Approve yesterday failed:", error);
+    }
+  };
+
+  const handleRejectYesterday = async (empId: number, dateStr: string) => {
+    try {
+      const response = await fetch(`${BASE_URL}/attendance/reject/${empId}?date=${dateStr}`, {
+        method: "PUT",
+      });
+      if (response.ok) {
+        loadYesterdaySummary();
+      }
+    } catch (error) {
+      console.error("Reject yesterday failed:", error);
+    }
+  };
+
   // Leave requests logic moved to LeaveApprovalPage
 
   // ==========================
@@ -416,6 +465,21 @@ const ManagerDashboardPage = () => {
         efficiency: match?.efficiency ?? 0,
         hoursThisWeek: match?.hoursThisWeek ?? att.working_hours ?? 0,
         status: isOnLeave ? "Leave" : match?.status || "Active",
+        isWfh: att.is_wfh || false,
+        isShiftChanged: att.is_shift_changed || false,
+        attendanceStatus: att.attendance_status || "",
+        profile_image: att.profile_image,
+        check_in: att.check_in,
+        check_out: att.check_out,
+        working_hours: att.working_hours,
+        card_check_in: att.card_check_in,
+        card_check_out: att.card_check_out,
+        card_working_hours: att.card_working_hours,
+        lunch_minutes: att.lunch_minutes,
+        tea_minutes: att.tea_minutes,
+        shift: att.shift,
+        manager_status: att.manager_status,
+        attendance_status: att.attendance_status || "",
       };
     });
   }, [teamAttendance, teamMembers]);
@@ -435,6 +499,16 @@ const ManagerDashboardPage = () => {
 
   const totalTasks = useMemo(
     () => scopedTeamMembers.reduce((sum, member) => sum + (member.tasksCompleted || 0), 0),
+    [scopedTeamMembers],
+  );
+
+  const wfhCount = useMemo(
+    () => scopedTeamMembers.filter((member) => member.isWfh).length,
+    [scopedTeamMembers],
+  );
+
+  const shiftChangedCount = useMemo(
+    () => scopedTeamMembers.filter((member) => member.isShiftChanged).length,
     [scopedTeamMembers],
   );
 
@@ -460,7 +534,20 @@ const ManagerDashboardPage = () => {
       member.designation.toLowerCase().includes(searchQuery.toLowerCase()) ||
       member.email.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesFilter = filterStatus === "All" || member.status === filterStatus;
+    let matchesFilter = false;
+    if (filterStatus === "All") {
+      matchesFilter = true;
+    } else if (filterStatus === "Present") {
+      matchesFilter = member.attendanceStatus === "Present" || member.attendanceStatus === "Checked Out";
+    } else if (filterStatus === "Leave") {
+      matchesFilter = member.status === "Leave" || member.attendanceStatus === "On Leave";
+    } else if (filterStatus === "WFH") {
+      matchesFilter = !!member.isWfh;
+    } else if (filterStatus === "Shift Changed") {
+      matchesFilter = !!member.isShiftChanged;
+    } else {
+      matchesFilter = member.status === filterStatus;
+    }
 
     return matchesSearch && matchesFilter;
   });
@@ -498,10 +585,17 @@ const ManagerDashboardPage = () => {
       tone: "warning",
     },
     {
-      label: "Tasks Completed",
-      value: totalTasks,
-      sub: "Current total",
-      icon: ClockIcon,
+      label: "Work From Home",
+      value: wfhCount,
+      sub: "Approved WFH today",
+      icon: HomeIcon,
+      tone: "info",
+    },
+    {
+      label: "Shift Changed",
+      value: shiftChangedCount,
+      sub: "Approved change today",
+      icon: ArrowPathIcon,
       tone: "default",
     },
   ];
@@ -523,10 +617,10 @@ const ManagerDashboardPage = () => {
           iconBg: THEME.dangerBg,
           iconColor: THEME.danger,
         };
-      case "primary":
+      case "info":
         return {
-          iconBg: THEME.primarySoft,
-          iconColor: THEME.primary,
+          iconBg: "#E0F2FE",
+          iconColor: "#0284C7",
         };
       default:
         return {
@@ -697,15 +791,41 @@ const ManagerDashboardPage = () => {
               const tone = getStatTone(card.tone);
               const Icon = card.icon;
 
+              const isSelected = (() => {
+                if (card.label === "Team Members" && attendanceFilter === "All") return true;
+                if (card.label === "Present Today" && attendanceFilter === "Present") return true;
+                if (card.label === "On Leave" && attendanceFilter === "Leave") return true;
+                if (card.label === "Work From Home" && attendanceFilter === "WFH") return true;
+                if (card.label === "Shift Changed" && attendanceFilter === "Shift Changed") return true;
+                return false;
+              })();
+
               return (
                 <div
                   key={card.label}
+                  onClick={() => {
+                    const statusMap: Record<string, string> = {
+                      "Team Members": "All",
+                      "Present Today": "Present",
+                      "On Leave": "Leave",
+                      "Work From Home": "WFH",
+                      "Shift Changed": "Shift Changed",
+                    };
+                    setAttendanceFilter(statusMap[card.label] || "All");
+                  }}
                   style={{
                     background: THEME.surface,
                     borderRadius: "20px",
-                    border: `1px solid ${THEME.border}`,
-                    boxShadow: "0 4px 20px rgba(15, 23, 42, 0.04)",
-                    padding: "20px",
+                    border: isSelected
+                      ? `2px solid ${tone.iconColor}`
+                      : `1px solid ${THEME.border}`,
+                    boxShadow: isSelected
+                      ? "0 10px 25px -5px rgba(0, 0, 0, 0.08)"
+                      : "0 4px 20px rgba(15, 23, 42, 0.04)",
+                    padding: isSelected ? "19px" : "20px",
+                    cursor: "pointer",
+                    transform: isSelected ? "scale(1.02)" : "scale(1)",
+                    transition: "all 0.2s ease-in-out",
                   }}
                 >
                   <div
@@ -895,6 +1015,8 @@ const ManagerDashboardPage = () => {
                     <option value="Checked Out">Checked Out</option>
                     <option value="Absent">Absent</option>
                     <option value="On Leave">On Leave</option>
+                    <option value="WFH">Work From Home</option>
+                    <option value="Shift Changed">Shift Changed</option>
                   </select>
 
                   <div style={{ display: "flex", background: THEME.surface, border: `1px solid ${THEME.border}`, borderRadius: "12px", overflow: "hidden", height: "42px" }}>
@@ -986,7 +1108,7 @@ const ManagerDashboardPage = () => {
                     gap: "18px",
                   }}
                 >
-                  {teamAttendance
+                  {scopedTeamMembers
                     .filter((m) => {
                       const matchSearch =
                         m.name.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
@@ -994,8 +1116,20 @@ const ManagerDashboardPage = () => {
                           .toLowerCase()
                           .includes(attendanceSearch.toLowerCase());
 
-                      const matchFilter =
-                        attendanceFilter === "All" || m.attendance_status === attendanceFilter;
+                      let matchFilter = false;
+                      if (attendanceFilter === "All") {
+                        matchFilter = true;
+                      } else if (attendanceFilter === "Present") {
+                        matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out";
+                      } else if (attendanceFilter === "Leave") {
+                        matchFilter = m.status === "Leave" || m.attendance_status === "On Leave";
+                      } else if (attendanceFilter === "WFH") {
+                        matchFilter = !!m.isWfh;
+                      } else if (attendanceFilter === "Shift Changed") {
+                        matchFilter = !!m.isShiftChanged;
+                      } else {
+                        matchFilter = m.attendance_status === attendanceFilter;
+                      }
 
                       return matchSearch && matchFilter;
                     })
@@ -1333,7 +1467,7 @@ const ManagerDashboardPage = () => {
                       </tr>
                     </thead>
                     <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>
-                      {teamAttendance
+                      {scopedTeamMembers
                         .filter((m) => {
                           const matchSearch =
                             m.name.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
@@ -1341,8 +1475,20 @@ const ManagerDashboardPage = () => {
                               .toLowerCase()
                               .includes(attendanceSearch.toLowerCase());
 
-                          const matchFilter =
-                            attendanceFilter === "All" || m.attendance_status === attendanceFilter;
+                          let matchFilter = false;
+                          if (attendanceFilter === "All") {
+                            matchFilter = true;
+                          } else if (attendanceFilter === "Present") {
+                            matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out";
+                          } else if (attendanceFilter === "Leave") {
+                            matchFilter = m.status === "Leave" || m.attendance_status === "On Leave";
+                          } else if (attendanceFilter === "WFH") {
+                            matchFilter = !!m.isWfh;
+                          } else if (attendanceFilter === "Shift Changed") {
+                            matchFilter = !!m.isShiftChanged;
+                          } else {
+                            matchFilter = m.attendance_status === attendanceFilter;
+                          }
 
                           return matchSearch && matchFilter;
                         })
@@ -1454,6 +1600,121 @@ const ManagerDashboardPage = () => {
           </section>
         </div>
       </main>
+
+      {/* Yesterday's Attendance Summary */}
+      {yesterdaySummary.length > 0 && (
+        <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0 24px 40px" }}>
+          <section style={{
+            background: "#fff",
+            borderRadius: "24px",
+            border: `1px solid ${THEME.border}`,
+            boxShadow: THEME.shadow,
+            overflow: "hidden",
+          }}>
+            {/* Header */}
+            <div style={{ padding: "24px", borderBottom: `1px solid ${THEME.border}`, background: "linear-gradient(180deg,#fff 0%,#fbfdff 100%)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                  <div style={{ width: "46px", height: "46px", borderRadius: "14px", background: "#fef9c3", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <CalendarDaysIcon style={{ width: "22px", height: "22px", color: "#ca8a04" }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "18px", fontWeight: 800, color: THEME.navy }}>Yesterday's Attendance Summary</div>
+                    <div style={{ fontSize: "13px", color: THEME.textSoft, marginTop: "2px" }}>
+                      {yesterdaySummaryDate ? `For ${yesterdaySummaryDate}` : "Last working day"} — Pending your approval
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={loadYesterdaySummary}
+                  style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 16px", borderRadius: "10px", border: `1px solid ${THEME.border}`, background: THEME.surface, color: THEME.textSoft, fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+                >
+                  <ArrowPathIcon style={{ width: "15px", height: "15px" }} />
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            {loadingYesterday ? (
+              <div style={{ padding: "48px", textAlign: "center", color: THEME.textSoft }}>
+                <div style={{ width: "28px", height: "28px", border: `3px solid ${THEME.border}`, borderTop: `3px solid ${THEME.primary}`, borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
+                <p style={{ fontSize: "13px", fontWeight: 500 }}>Loading yesterday's summary...</p>
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px", color: THEME.text }}>
+                  <thead>
+                    <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                      <th style={{ padding: "12px 16px" }}>Employee</th>
+                      <th style={{ padding: "12px 16px" }}>Department</th>
+                      <th style={{ padding: "12px 16px" }}>Status</th>
+                      <th style={{ padding: "12px 16px" }}>Check In</th>
+                      <th style={{ padding: "12px 16px" }}>Check Out</th>
+                      <th style={{ padding: "12px 16px" }}>Hours</th>
+                      <th style={{ padding: "12px 16px" }}>Breaks (L/T)</th>
+                      <th style={{ padding: "12px 16px" }}>Manager Status</th>
+                      <th style={{ padding: "12px 16px", textAlign: "center" }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {yesterdaySummary.map((emp, idx) => {
+                      const status = emp.status || "Absent";
+                      const managerStatus = emp.manager_status || emp.decision || "Pending";
+                      let statusBg = "#fee2e2"; let statusColor = "#b91c1c";
+                      if (status === "Present") { statusBg = "#dcfce7"; statusColor = "#166534"; }
+                      else if (status === "Leave") { statusBg = "#fef3c7"; statusColor = "#92400e"; }
+                      let msBg = "#f1f5f9"; let msColor = "#475569";
+                      if (managerStatus === "Approved") { msBg = "#dcfce7"; msColor = "#166534"; }
+                      else if (managerStatus === "Rejected") { msBg = "#fee2e2"; msColor = "#b91c1c"; }
+                      else if (managerStatus === "Need Clarification") { msBg = "#fef9c3"; msColor = "#854d0e"; }
+                      const summaryDateStr = emp.summary_date || "";
+                      const canAct = managerStatus === "Pending" || managerStatus === "Need Clarification";
+                      return (
+                        <tr key={idx} style={{ borderBottom: `1px solid ${THEME.border}` }}>
+                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.navy }}>
+                            <div>{emp.employee_name}</div>
+                            <div style={{ fontSize: "11px", color: THEME.textSoft, fontWeight: 500 }}>{emp.designation}</div>
+                          </td>
+                          <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{emp.department}</td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: 800 }}>{status}</span>
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>{emp.check_in || "—"}</td>
+                          <td style={{ padding: "12px 16px" }}>{emp.check_out || "—"}</td>
+                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.primary }}>{formatWorkingHours(emp.working_hours)}</td>
+                          <td style={{ padding: "12px 16px", color: THEME.textSoft }}>
+                            {(emp.lunch_minutes > 0 || emp.tea_minutes > 0) ? `${emp.lunch_minutes}m / ${emp.tea_minutes}m` : "—"}
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: msBg, color: msColor, fontSize: "11px", fontWeight: 800 }}>{managerStatus}</span>
+                          </td>
+                          <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                            {canAct ? (
+                              <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+                                <button
+                                  onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "6px 14px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                                >✓ Approve</button>
+                                <button
+                                  onClick={() => handleRejectYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "6px 14px", borderRadius: "8px", border: "none", background: "#fee2e2", color: "#b91c1c", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                                >✕ Reject</button>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: "12px", color: THEME.textLight, fontWeight: 500 }}>— Done —</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
       {/* Attendance History Modal */}
       {historyModalUser && (
