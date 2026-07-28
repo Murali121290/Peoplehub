@@ -323,27 +323,7 @@ const LoginPage: React.FC = () => {
       <main className="relative z-10 flex-1 grid grid-cols-1 lg:grid-cols-[1fr_minmax(400px,460px)] gap-14 items-center px-6 lg:px-18 py-6 pb-12 max-w-[1200px] mx-auto w-full">
         {/* Hero section */}
         <div className="text-white max-w-[560px] flex flex-col justify-start h-full py-12 lg:py-20">
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "6px 16px 6px 10px",
-              width: "fit-content",
-              borderRadius: "50px",
-              border: "1px solid rgba(251,191,36,0.2)",
-              background: "rgba(251,191,36,0.15)",
-              backdropFilter: "blur(8px)",
-              color: "#fbbf24",
-              fontSize: "12px",
-              fontWeight: 500,
-              letterSpacing: "0.3px",
-              marginBottom: "24px",
-            }}
-          >
-            <i className="fa-solid fa-bolt" style={{ fontSize: "10px" }}></i>
-            New ✨ AI-powered insights
-          </div>
+
 
           <h1
             className="font-extrabold text-[40px] md:text-[64px] leading-[1.05] mb-5 tracking-tight"
@@ -566,11 +546,11 @@ const LoginPage: React.FC = () => {
                     {view === "force-change-password" ? "Set New Password" : (otpStep === 1 ? "Forgot Password" : "Reset Password")}
                   </h2>
                   <p className="text-[14px] text-white/50">
-                    {view === "force-change-password" 
+                    {view === "force-change-password"
                       ? "Please choose a new password for your account."
-                      : (otpStep === 1 
-                          ? "Enter your company email to receive an OTP." 
-                          : "Enter the OTP sent to your email and your new password.")}
+                      : (otpStep === 1
+                        ? "Enter your company email to receive an OTP."
+                        : "Enter the OTP sent to your email and your new password.")}
                   </p>
                   <div style={{ width: "40px", height: "3px", background: "linear-gradient(90deg, #fbbf24, #f59e0b)", borderRadius: "2px", marginTop: "12px" }}></div>
                 </div>
@@ -590,7 +570,7 @@ const LoginPage: React.FC = () => {
                           required
                           value={view === "force-change-password" ? formData.email : pwData.username}
                           onChange={(e) =>
-                            view === "force-change-password" 
+                            view === "force-change-password"
                               ? setFormData({ ...formData, email: e.target.value })
                               : setPwData({ ...pwData, username: e.target.value })
                           }
