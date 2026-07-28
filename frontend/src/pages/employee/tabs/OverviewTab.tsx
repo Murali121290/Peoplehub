@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Coffee, UtensilsCrossed } from "lucide-react";
+import { Coffee, UtensilsCrossed, Home, Clock } from "lucide-react";
 import { API_URL } from "../../../config/api";
 
 interface OverviewTabProps {
@@ -125,28 +125,44 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   const notCheckedIn = sortedMembers.filter(m => m.status === "Checked Out" || m.status === "Not Checked In" || m.status === "Absent");
   const onLeave = sortedMembers.filter(m => m.status === "Leave");
 
+  const formatWorkingHours = (hoursVal: any) => {
+    if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0") return "0m";
+    const num = Number(hoursVal);
+    const hrs = Math.floor(num);
+    const mins = Math.round((num - hrs) * 60);
+    if (hrs === 0) return `${mins}m`;
+    return `${hrs}h ${mins}m`;
+  };
+
   const MemberCard = ({ member }: { member: any }) => (
-    <div className="flex items-center gap-3 p-3 bg-white/80 hover:bg-white backdrop-blur-sm rounded-xl border border-white/50 shadow-sm transition-all hover:shadow-md">
-      <div className="w-10 h-10 rounded-full overflow-hidden border border-gray-200 bg-gray-50 flex-shrink-0">
-        {member.profile_image ? (
-          <img
-            src={`data:image/jpeg;base64,${member.profile_image}`}
-            alt={member.first_name}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <img
-            src="https://cdn-icons-png.flaticon.com/512/149/149071.png"
-            alt={member.first_name}
-            className="w-full h-full object-cover"
-          />
-        )}
+    <div className={`flex items-center gap-3 p-3 bg-white/80 hover:bg-white backdrop-blur-sm rounded-xl border shadow-sm transition-all hover:shadow-md ${member.is_shift_changed ? "border-indigo-200 bg-indigo-50/10" : member.is_wfh ? "border-blue-200 bg-blue-50/10" : member.is_permission ? "border-purple-200 bg-purple-50/10" : "border-white/50"}`}>
+      <div className="flex-shrink-0">
+        <div className="w-10 h-10 rounded-full overflow-hidden border border-gray-200 bg-gray-50">
+          {member.profile_image ? (
+            <img
+              src={`data:image/jpeg;base64,${member.profile_image}`}
+              alt={member.first_name}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <img
+              src="https://cdn-icons-png.flaticon.com/512/149/149071.png"
+              alt={member.first_name}
+              className="w-full h-full object-cover"
+            />
+          )}
+        </div>
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <h4 className="text-[14px] font-semibold text-gray-900 truncate">
             {member.first_name} {member.last_name}
           </h4>
+          {member.is_wfh && (
+            <span title="Work From Home" className="flex items-center justify-center bg-blue-50 text-blue-600 rounded-full p-1 shadow-sm border border-blue-200 w-6 h-6 flex-shrink-0">
+              <img src="/wfh-icon.svg" alt="WFH" className="w-4.5 h-4.5" />
+            </span>
+          )}
           {member.lunch_break && (
             <span title="On Lunch Break" className="flex items-center justify-center bg-orange-100 text-orange-600 rounded-full p-1 shadow-sm border border-orange-200">
               <UtensilsCrossed className="w-3.5 h-3.5" />
@@ -158,7 +174,17 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             </span>
           )}
         </div>
-        <p className="text-[12px] text-gray-500 truncate">{member.designation}</p>
+        
+        {member.is_shift_changed && member.approved_shift && (
+          <p className="text-[10px] text-indigo-600 font-bold mt-0.5 truncate" title={member.approved_shift}>
+            Shift: {member.approved_shift}
+          </p>
+        )}
+        {member.is_permission && member.permission_from && member.permission_to && (
+          <p className="text-[10px] text-purple-600 font-bold mt-0.5 truncate" title={`Permission: ${member.permission_from} to ${member.permission_to}`}>
+            Permission: {member.permission_from} - {member.permission_to}
+          </p>
+        )}
       </div>
     </div>
   );
