@@ -19,6 +19,7 @@ import { socket } from "../../services/socket";
 import ConfirmModal from "./components/ConfirmModal";
 import PopupModal from "./components/PopupModal";
 import BirthdayModal from "../../layouts/components/BirthdayModal";
+import EmployeeClarificationModal from "../../layouts/components/EmployeeClarificationModal";
 import OverviewTab from "./tabs/OverviewTab";
 import LeaveTab from "./tabs/LeaveTab";
 import ShiftTab from "./tabs/ShiftTab";
@@ -138,6 +139,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const [hasCheckedOutToday, setHasCheckedOutToday] = useState(false);
   const [shiftDate, setShiftDate] = useState("");
   // Modal state
+  const [pendingClarifications, setPendingClarifications] = useState<any[]>([]);
   const [confirmModal, setConfirmModal] = useState(false);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [birthdayEmployees, setBirthdayEmployees] = useState<any[]>([]);
@@ -149,6 +151,29 @@ const EmployeeDashboardPage: React.FC = () => {
     title: "",
     message: "",
   });
+
+  const loadPendingClarifications = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(`${BASE_URL}/attendance/pending-clarifications/${user.id}`);
+      const data = await res.json();
+      setPendingClarifications(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch pending clarifications", err);
+    }
+  };
+
+  useEffect(() => {
+    loadPendingClarifications();
+
+    socket.on("attendance_update", () => {
+      loadPendingClarifications();
+    });
+
+    return () => {
+      socket.off("attendance_update");
+    };
+  }, [user?.id]);
 
 
 
@@ -219,7 +244,7 @@ const EmployeeDashboardPage: React.FC = () => {
     if (isCheckedIn) return { isLocked: false, label: "", timeLabel: "" };
     const currentHour = new Date().getHours();
     const cleanShift = (todayActiveShift || "").trim().toLowerCase();
-    
+
     if (cleanShift === "first shift" && currentHour < 6) {
       return { isLocked: true, label: "First Shift Locked", timeLabel: "06:00 AM" };
     }
@@ -1360,6 +1385,14 @@ const EmployeeDashboardPage: React.FC = () => {
           </motion.div>
         </main>
       </div>
+
+      {pendingClarifications.length > 0 && (
+        <EmployeeClarificationModal
+          pendingItems={pendingClarifications}
+          employeeId={currentEmployee?.id || user?.id}
+          onSubmitted={() => loadPendingClarifications()}
+        />
+      )}
     </>
   );
 };

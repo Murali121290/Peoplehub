@@ -591,6 +591,7 @@ def attendance_status(user_id):
 
     attendance = Attendance.query.filter_by(
         user_id=user_id,
+        attendance_date=get_ist_today(),
         check_out=None
     ).order_by(
         Attendance.id.desc()
@@ -2310,15 +2311,21 @@ def reject_attendance(employee_id):
             attendance_date=target_date
         ).all()
 
-        is_clarification = "need-clarification" in request.path
+        msg_entry = {
+            "id": f"msg_{int(datetime.now().timestamp())}",
+            "sender_role": "manager",
+            "sender_name": "Manager",
+            "comment": reason,
+            "timestamp": datetime.now().isoformat()
+        }
 
         if not attendances:
             attendance = Attendance(
                 user_id=target_user_id,
                 attendance_date=target_date,
-                status="Absent" if not is_clarification else "Absent",
-                manager_status="Need Clarification" if is_clarification else "Rejected",
-                rejection_reason=reason,
+                status="Absent",
+                manager_status="Need Clarification",
+                clarification_history=[msg_entry],
                 check_in=None,
                 check_out=None,
                 total_hours=0.0
@@ -2326,12 +2333,10 @@ def reject_attendance(employee_id):
             db.session.add(attendance)
         else:
             for att in attendances:
-                if is_clarification:
-                    att.manager_status = "Need Clarification"
-                else:
-                    att.manager_status = "Rejected"
-                    att.status = "Absent"
-                att.rejection_reason = reason
+                att.manager_status = "Need Clarification"
+                history = list(att.clarification_history or [])
+                history.append(msg_entry)
+                att.clarification_history = history
             attendance = attendances[0]
 
         db.session.commit()
@@ -2352,6 +2357,7 @@ def reject_attendance(employee_id):
                     "shift": emp.shift_timing or "General Shift",
                     "manager_status": attendance.manager_status or "Need Clarification",
                     "reason": reason,
+                    "clarification_history": attendance.clarification_history or [],
                     "checked_in": (attendance and attendance.check_in is not None and attendance.check_out is None),
                     "lunch_break": attendance.lunch_break or False,
                     "tea_break": attendance.tea_break or False
@@ -2362,7 +2368,7 @@ def reject_attendance(employee_id):
 
         return jsonify({
             "success": True,
-            "message": "Clarification requested" if is_clarification else "Attendance Rejected",
+            "message": "Clarification requested",
             "reason": reason
         })
 
@@ -2374,6 +2380,95 @@ def reject_attendance(employee_id):
             "success": False,
             "error": str(e)
         }), 500
+
+
+@attendance_bp.route(
+    "/reply-clarification/<int:employee_id>",
+    methods=["PUT"]
+)
+def reply_clarification(employee_id):
+    try:
+        data = request.get_json(silent=True) or {}
+        reply_text = (data.get("reply") or "").strip()
+        target_date_str = data.get("date") or request.args.get("date")
+
+        if target_date_str:
+            target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+        else:
+            target_date = get_last_working_day()
+
+        from models.employee import Employee
+        emp = Employee.query.get(employee_id)
+        if not emp:
+            return jsonify({"success": False, "error": "Employee not found"}), 404
+
+        attendances = Attendance.query.filter_by(
+            user_id=emp.user_id,
+            attendance_date=target_date
+        ).all()
+
+        if not attendances:
+            return jsonify({"success": False, "error": "Attendance record not found"}), 404
+
+        msg_entry = {
+            "id": f"msg_{int(datetime.now().timestamp())}",
+            "sender_role": "employee",
+            "sender_name": f"{emp.first_name} {emp.last_name}".strip(),
+            "comment": reply_text,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        for att in attendances:
+            att.manager_status = "Clarification Provided"
+            history = list(att.clarification_history or [])
+            history.append(msg_entry)
+            att.clarification_history = history
+
+        db.session.commit()
+
+        try:
+            from extensions import socketio
+            socketio.emit("attendance_update", {"user_id": emp.user_id, "manager_status": "Clarification Provided"})
+        except Exception as socket_err:
+            print("Failed to emit reply socket:", str(socket_err))
+
+        return jsonify({
+            "success": True,
+            "message": "Clarification reply submitted successfully"
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@attendance_bp.route(
+    "/pending-clarifications/<int:user_id>",
+    methods=["GET"]
+)
+def get_pending_clarifications(user_id):
+    try:
+        attendances = Attendance.query.filter_by(
+            user_id=user_id,
+            manager_status="Need Clarification"
+        ).all()
+
+        results = []
+        for att in attendances:
+            history = att.clarification_history or []
+            last_manager_msg = next((m["comment"] for m in reversed(history) if isinstance(m, dict) and m.get("sender_role") == "manager"), "")
+            results.append({
+                "id": att.id,
+                "attendance_date": att.attendance_date.strftime("%Y-%m-%d"),
+                "attendance_date_formatted": att.attendance_date.strftime("%A, %b %d, %Y"),
+                "manager_status": att.manager_status,
+                "last_manager_comment": last_manager_msg,
+                "clarification_history": history
+            })
+
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @attendance_bp.route(

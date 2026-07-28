@@ -1303,6 +1303,14 @@ def get_reporting_employees(user_id):
 
         reporting_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
+        def _get_last_msg(history_list, role_name):
+            if not isinstance(history_list, list):
+                return None
+            for item in reversed(history_list):
+                if isinstance(item, dict) and item.get("sender_role") == role_name:
+                    return item.get("comment")
+            return None
+
         result = []
 
         for employee in reporting_employees:
@@ -1310,18 +1318,8 @@ def get_reporting_employees(user_id):
             if not employee.reporting_manager:
                 continue
 
-            employee_manager = (
-                employee.reporting_manager
-                .strip()
-                .lower()
-            )
-
             e_mgr = employee.reporting_manager.strip().lower()
-            is_match = (
-                e_mgr == manager_name
-                or (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr)
-                or (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name)
-            )
+            is_match = (e_mgr == manager_name) or (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr) or (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name)
             if not is_match:
                 continue
 
@@ -1333,7 +1331,7 @@ def get_reporting_employees(user_id):
                 attendance_date=target_date
             ).first()
 
-            if attendance and attendance.manager_status == "Approved":
+            if attendance and (attendance.manager_status or "").strip().lower() == "approved":
                 continue
 
             from models.leave import LeaveRequest
@@ -1353,6 +1351,8 @@ def get_reporting_employees(user_id):
                 status = attendance.status
             elif leave:
                 status = "Leave"
+
+            hist = (attendance.clarification_history if (attendance and isinstance(attendance.clarification_history, list)) else [])
 
             result.append({
 
@@ -1389,18 +1389,18 @@ def get_reporting_employees(user_id):
 
                 "check_in":
                     attendance.check_in.strftime("%I:%M %p")
-                    if attendance and attendance.check_in
-                    else "-",
+                    if (attendance and attendance.check_in)
+                    else None,
 
                 "check_out":
                     attendance.check_out.strftime("%I:%M %p")
-                    if attendance and attendance.check_out
-                    else "-",
+                    if (attendance and attendance.check_out)
+                    else None,
 
                 "working_hours":
                     attendance.total_hours
-                    if attendance and attendance.total_hours
-                    else 0,
+                    if (attendance and attendance.total_hours is not None)
+                    else 0.0,
 
                 "card_check_in":
                     attendance.card_check_in.strftime("%I:%M %p")
@@ -1414,48 +1414,45 @@ def get_reporting_employees(user_id):
 
                 "card_working_hours":
                     attendance.card_working_hours
-                    if attendance and attendance.card_working_hours
+                    if (attendance and attendance.card_working_hours is not None)
                     else 0.0,
 
                 "rejection_reason":
-                    attendance.rejection_reason
-                    if attendance and attendance.rejection_reason
-                    else None,
+                    _get_last_msg(hist, "manager"),
 
                 "lunch_minutes":
                     attendance.lunch_minutes
-                    if attendance and attendance.lunch_minutes
+                    if (attendance and attendance.lunch_minutes is not None)
                     else 0,
 
                 "tea_minutes":
                     attendance.tea_minutes
-                    if attendance and attendance.tea_minutes
+                    if (attendance and attendance.tea_minutes is not None)
                     else 0,
 
                 "total_break_minutes":
-                    attendance.total_break_minutes
-                    if attendance and attendance.total_break_minutes
+                    (attendance.lunch_minutes or 0) + (attendance.tea_minutes or 0)
+                    if attendance
                     else 0,
 
                 "manager_status":
                     attendance.manager_status
-                    if attendance and attendance.manager_status
+                    if (attendance and attendance.manager_status)
                     else "Pending",
 
                 "decision":
                     attendance.manager_status
-                    if attendance and attendance.manager_status
+                    if (attendance and attendance.manager_status)
                     else "Pending",
 
                 "clarification_comment":
-                    attendance.rejection_reason
-                    if attendance and attendance.rejection_reason
-                    else None,
+                    _get_last_msg(hist, "manager"),
 
                 "employee_reply":
-                    attendance.employee_reply
-                    if attendance and attendance.employee_reply
-                    else None
+                    _get_last_msg(hist, "employee"),
+
+                "clarification_history":
+                    hist
 
             })
 

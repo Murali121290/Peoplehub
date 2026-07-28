@@ -119,7 +119,7 @@ class Attendance(db.Model):
 )
     
     manager_status = db.Column(
-    db.String(20),
+    db.String(100),
     default="Pending"
 )
 
@@ -138,12 +138,8 @@ class Attendance(db.Model):
         default=0.0
     )
 
-    rejection_reason = db.Column(
-        db.String(255),
-        nullable=True
-    )
-
-    employee_reply = db.Column(
-        db.String(255),
+    clarification_history = db.Column(
+        db.JSON,
+        default=list,
         nullable=True
     )

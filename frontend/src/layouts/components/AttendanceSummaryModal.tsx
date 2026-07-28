@@ -8,6 +8,7 @@ import {
   XCircleIcon,
   ArrowPathIcon,
   ExclamationTriangleIcon,
+  ChatBubbleLeftEllipsisIcon,
 } from "@heroicons/react/24/outline";
 
 
@@ -111,7 +112,22 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
       setEmployees((prev) =>
         prev.map((e) =>
           (e.employee_id === empId || e.id === empId)
-            ? { ...e, decision: "Rejected" }
+            ? {
+                ...e,
+                decision: "Need Clarification",
+                manager_status: "Need Clarification",
+                clarification_comment: reason,
+                clarification_history: [
+                  ...(e.clarification_history || []),
+                  {
+                    id: `msg_${Date.now()}`,
+                    sender_role: "manager",
+                    sender_name: "Manager",
+                    comment: reason,
+                    timestamp: new Date().toISOString()
+                  }
+                ]
+              }
             : e
         )
       );
@@ -210,6 +226,14 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
         </span>
       );
     }
+    if (decision === "Clarification Provided") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-50 text-sky-800 border border-sky-300">
+          <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5 text-sky-600" />
+          Clarification Provided
+        </span>
+      );
+    }
     if (decision === "Need Clarification" || decision === "Rejected") {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
@@ -302,8 +326,12 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                   </tr>
                 ) : (
                   sortedEmployees.map((emp: any) => {
-                    const isApproved = emp.decision === "Approved";
-                    const isClarificationNeeded = emp.decision === "Need Clarification";
+                    const isApproved = emp.decision === "Approved" || emp.manager_status === "Approved";
+                    const isNeedClarification = emp.decision === "Need Clarification" || emp.manager_status === "Need Clarification";
+
+                    // Disable both buttons if Approved OR while waiting for employee clarification response
+                    const isApproveDisabled = isApproved || isNeedClarification;
+                    const isClarificationDisabled = isApproved || isNeedClarification;
 
                     return (
                       <tr
@@ -349,9 +377,9 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         </td>
 
                         {/* Card Entry Columns */}
-                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-purple-700 font-semibold">{emp.card_check_in || "—"}</td>
-                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-purple-700 font-semibold">{emp.card_check_out || "—"}</td>
-                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs font-bold text-purple-800">
+                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">{emp.card_check_in || "—"}</td>
+                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">{emp.card_check_out || "—"}</td>
+                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">
                           {formatWorkingHours(emp.card_working_hours)}
                         </td>
 
@@ -372,7 +400,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                             <button
                               onClick={() => onViewEmployee(emp)}
                               className="h-8 px-2.5 py-1 border border-neutral-200 text-neutral-600 hover:text-neutral-800 hover:bg-neutral-50 hover:border-neutral-300 rounded-lg text-xs font-semibold transition-all duration-200 hover:-translate-y-0.5 shadow-xs flex items-center gap-1"
-                              title="View Details"
+                              title="View Details & Chat History"
                             >
                               <EyeIcon className="w-3.5 h-3.5" />
                               View
@@ -380,27 +408,31 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
                             {/* Approve Button */}
                             <button
-                              disabled={isApproved}
+                              disabled={isApproveDisabled}
                               onClick={() => handleApproveSingle(emp.employee_id || emp.id)}
-                              className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${isApproved
+                              title={isNeedClarification ? "Approval disabled while waiting for employee clarification response" : isApproved ? "Approved" : "Approve Attendance"}
+                              className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
+                                isApproveDisabled
                                   ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
                                   : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 shadow-xs"
-                                }`}
+                              }`}
                             >
-                              <CheckIcon className="w-3.5 h-3.5 text-emerald-700" />
+                              <CheckIcon className={`w-3.5 h-3.5 ${isApproveDisabled ? "text-neutral-400" : "text-emerald-700"}`} />
                               Approve
                             </button>
 
                             {/* Need Clarification Button */}
                             <button
-                              disabled={isClarificationNeeded}
+                              disabled={isClarificationDisabled}
                               onClick={() => openRejectReasonModal(emp.employee_id || emp.id, false)}
-                              className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${isClarificationNeeded
+                              title={isNeedClarification ? "Clarification request already sent, waiting for employee response" : isApproved ? "Approved" : "Request Need Clarification"}
+                              className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
+                                isClarificationDisabled
                                   ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
                                   : "bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 hover:-translate-y-0.5 active:bg-amber-200 shadow-xs"
-                                }`}
+                              }`}
                             >
-                              <ExclamationTriangleIcon className="w-3.5 h-3.5 text-amber-600" />
+                              <ExclamationTriangleIcon className={`w-3.5 h-3.5 ${isClarificationDisabled ? "text-neutral-400" : "text-amber-600"}`} />
                               Need Clarification
                             </button>
                           </div>
