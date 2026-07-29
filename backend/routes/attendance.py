@@ -2286,7 +2286,7 @@ def approve_attendance(employee_id):
                 db.session.add(attendance)
                 if leave.status == "Pending":
                     leave.status = "Approved"
-                    leave.approved_by = "Manager"
+                    leave.approved_by = emp.reporting_manager or "Manager"
                     leave.approved_at = datetime.now()
             else:
                 # ABSENT employee who submitted regularization or leave via employee portal
@@ -2335,7 +2335,7 @@ def approve_attendance(employee_id):
                     attendance.status = "Leave"
                     attendance.leave_type = leave_req.leave_type
                     leave_req.status = "Approved"
-                    leave_req.approved_by = "Manager"
+                    leave_req.approved_by = emp.reporting_manager or "Manager"
                     leave_req.approved_at = datetime.now()
             else:
                 # Normal present record — just flip manager_status, do NOT recalculate hours
