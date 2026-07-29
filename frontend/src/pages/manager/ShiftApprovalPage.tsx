@@ -15,6 +15,14 @@ const ShiftApprovalPage: React.FC = () => {
   const [processingId, setProcessingId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
+
+  const toggleReason = (id: number) => {
+    setExpandedReasons(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
 
   const fetchShiftRequests = async () => {
     try {
@@ -199,116 +207,150 @@ const ShiftApprovalPage: React.FC = () => {
                   const isRejected = item.status === "Rejected";
 
                   return (
-                    <tr key={item.id} className="hover:bg-neutral-50/40 transition-colors">
-                      <td className="p-4 pl-6">
-                        <div className="flex items-center gap-3">
-                          <div className="w-7 h-7 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-xs">
-                            {item.employee_name?.charAt(0).toUpperCase()}
+                    <React.Fragment key={item.id}>
+                      <tr className="hover:bg-neutral-50/40 transition-colors">
+                        <td className="p-4 pl-6">
+                          <div className="flex items-center gap-3">
+                            <div className="w-7 h-7 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-xs">
+                              {item.employee_name?.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="text-xs font-medium text-neutral-800">{item.employee_name}</span>
                           </div>
-                          <span className="text-xs font-medium text-neutral-800">{item.employee_name}</span>
-                        </div>
-                      </td>
-                      <td className="p-4 text-xs font-medium text-neutral-600">
-                        {item.employee_id || "-"}
-                      </td>
-                      <td className="p-4 text-xs text-neutral-600">{item.current_shift || "-"}</td>
-                      <td className="p-4 text-xs font-medium text-neutral-800">
-                        {item.request_type === "WFH" ? "Work From Home" : (item.requested_shift || "-")}
-                      </td>
-                      <td className="p-4">
-                        <div>
-                          <p className="text-xs font-medium text-neutral-800">{item.from_date}</p>
-                          <p className="text-[11px] text-neutral-450 font-normal mt-0.5 flex items-center gap-1">
-                            <ArrowRightIcon className="w-3 h-3 text-neutral-350" /> to {item.to_date}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="p-4 text-xs text-neutral-500 max-w-xs relative group">
-                        <div className="truncate cursor-help">{item.reason || "-"}</div>
-                        {item.reason && item.reason.length > 20 && (
-                          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block z-50 w-72 p-3 bg-neutral-100 text-neutral-800 text-xs rounded-xl shadow-xl border border-neutral-300 whitespace-normal break-words transition-all duration-200">
-                            <p className="font-semibold mb-1 text-neutral-500">Full Reason:</p>
-                            {item.reason}
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-neutral-100"></div>
+                        </td>
+                        <td className="p-4 text-xs font-medium text-neutral-600">
+                          {item.employee_id || "-"}
+                        </td>
+                        <td className="p-4 text-xs text-neutral-600">{item.current_shift || "-"}</td>
+                        <td className="p-4 text-xs font-medium text-neutral-800">
+                          {item.request_type === "WFH" ? "Work From Home" : (item.requested_shift || "-")}
+                        </td>
+                        <td className="p-4">
+                          <div>
+                            <p className="text-xs font-medium text-neutral-800">{item.from_date}</p>
+                            <p className="text-[11px] text-neutral-450 font-normal mt-0.5 flex items-center gap-1">
+                              <ArrowRightIcon className="w-3 h-3 text-neutral-350" /> to {item.to_date}
+                            </p>
                           </div>
-                        )}
-                      </td>
-                      <td className="p-4 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getStatusColor(item.status)}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${isApproved ? "bg-success-600" :
-                            isRejected ? "bg-danger-600" :
-                              item.status === "Cancelled" ? "bg-neutral-400" :
-                                "bg-warning-500 animate-pulse"
-                            }`} />
-                          {item.status}
-                        </span>
-                      </td>
-                      <td className="p-4 text-center">
-                        {item.status === "Pending" ? (
-                          (() => {
-                            const startDate = item.from_date || item.shift_date || item.to_date || "";
-                            const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
-                            const isFinished = startDate && startDate < today;
-
-                            if (isFinished) {
-                              return <span className="text-[10px] font-medium text-neutral-400">Out of Date</span>;
-                            }
-
-                            return (
-                              <div className="flex items-center justify-center gap-2">
-                                <Button
-                                  variant="primary"
-                                  size="sm"
-                                  onClick={() => handleUpdateShiftStatus(item.id, "Approved")}
-                                  disabled={processingId === item.id}
-                                  className="!py-1 !px-2.5 !text-[10px] shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
-                                >
-                                  {processingId === item.id ? (
-                                    <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                                  ) : (
-                                    <CheckIcon className="w-3 h-3 mr-1" />
-                                  )}
-                                  Approve
-                                </Button>
-                                <Button
-                                  variant="danger"
-                                  size="sm"
-                                  onClick={() => handleUpdateShiftStatus(item.id, "Rejected")}
-                                  disabled={processingId === item.id}
-                                  className="!py-1 !px-2.5 !text-[10px] shadow-sm"
-                                >
-                                  {processingId === item.id ? (
-                                    <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                                  ) : (
-                                    <XMarkIcon className="w-3 h-3 mr-1" />
-                                  )}
-                                  Reject
-                                </Button>
-                              </div>
-                            );
-                          })()
-                        ) : item.status === "Approved" && ((item.shift_date || "") >= new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]) ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={() => handleCancel(item.id)}
-                              disabled={processingId === item.id}
-                              className="!py-1 !px-2.5 !text-[10px] shadow-sm"
+                        </td>
+                        <td className="p-4 text-xs text-neutral-500 max-w-xs">
+                          {item.reason ? (
+                            <button
+                              onClick={() => toggleReason(item.id)}
+                              className="text-left text-neutral-600 hover:text-primary-600 transition-colors duration-150 flex items-center gap-1 focus:outline-none group/reason w-full"
                             >
-                              {processingId === item.id ? (
-                                <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                              ) : (
-                                <XMarkIcon className="w-3 h-3 mr-1" />
+                              <span className="truncate max-w-[150px]">{item.reason}</span>
+                              {item.reason.length > 20 && (
+                                <span className="text-primary-500 group-hover/reason:text-primary-600 text-[10px] font-semibold flex items-center gap-0.5 shrink-0 ml-1">
+                                  {expandedReasons[item.id] ? "Collapse" : "Expand"}
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 20 20"
+                                    fill="currentColor"
+                                    className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedReasons[item.id] ? "rotate-180" : ""}`}
+                                  >
+                                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                  </svg>
+                                </span>
                               )}
-                              Cancel
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-medium text-neutral-400">No actions required</span>
-                        )}
-                      </td>
-                    </tr>
+                            </button>
+                          ) : (
+                            <span className="text-neutral-400">-</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-center">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getStatusColor(item.status)}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${isApproved ? "bg-success-600" :
+                              isRejected ? "bg-danger-600" :
+                                item.status === "Cancelled" ? "bg-neutral-400" :
+                                  "bg-warning-500 animate-pulse"
+                              }`} />
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="p-4 text-center">
+                          {item.status === "Pending" ? (
+                            (() => {
+                              const startDate = item.from_date || item.shift_date || item.to_date || "";
+                              const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                              const isFinished = startDate && startDate < today;
+
+                              if (isFinished) {
+                                return <span className="text-[10px] font-bold text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded">Out of Date</span>;
+                              }
+
+                              return (
+                                <div className="flex items-center justify-center gap-2">
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => handleUpdateShiftStatus(item.id, "Approved")}
+                                    disabled={processingId === item.id}
+                                    className="!py-1 !px-2.5 !text-[10px] shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
+                                  >
+                                    {processingId === item.id ? (
+                                      <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                    ) : (
+                                      <CheckIcon className="w-3 h-3 mr-1" />
+                                    )}
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() => handleUpdateShiftStatus(item.id, "Rejected")}
+                                    disabled={processingId === item.id}
+                                    className="!py-1 !px-2.5 !text-[10px] shadow-sm"
+                                  >
+                                    {processingId === item.id ? (
+                                      <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                    ) : (
+                                      <XMarkIcon className="w-3 h-3 mr-1" />
+                                    )}
+                                    Reject
+                                  </Button>
+                                </div>
+                              );
+                            })()
+                          ) : item.status === "Approved" && ((item.shift_date || "") >= new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]) ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => handleCancel(item.id)}
+                                disabled={processingId === item.id}
+                                className="!py-1 !px-2.5 !text-[10px] shadow-sm"
+                              >
+                                {processingId === item.id ? (
+                                  <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                ) : (
+                                  <XMarkIcon className="w-3 h-3 mr-1" />
+                                )}
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] font-medium text-neutral-400">No actions required</span>
+                          )}
+                        </td>
+                      </tr>
+                      {expandedReasons[item.id] && item.reason && (
+                        <tr className="bg-neutral-50/30">
+                          <td colSpan={8} className="p-4 pl-10 pr-6 border-b border-neutral-200">
+                            <div className="text-xs text-neutral-600 bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-inner max-w-3xl">
+                              <div className="flex items-center gap-1.5 mb-2 text-neutral-400 font-bold uppercase tracking-wider text-[10px]">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-primary-500">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+                                </svg>
+                                <span>Reason for Shift Change Request</span>
+                              </div>
+                              <p className="whitespace-pre-wrap leading-relaxed text-neutral-700 font-medium pl-5">
+                                {item.reason}
+                              </p>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })
               )}

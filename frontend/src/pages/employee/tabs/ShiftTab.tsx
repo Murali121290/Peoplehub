@@ -17,7 +17,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
-import { Modal } from "../../../components/ui/Modal";
+import { Modal, ConfirmDialog } from "../../../components/ui/Modal";
 import { DatePicker } from "../../../components/ui/DatePicker";
 import { getStatusColor } from '../utils/employeeHelpers';
 
@@ -29,6 +29,7 @@ interface ShiftTabProps {
   onSubmitShift: (form: any) => void;
   onApprove: (id: number) => void;
   onReject: (id: number) => void;
+  onCancelShift: (id: number) => void;
 }
 
 const ShiftTab: React.FC<ShiftTabProps> = ({
@@ -39,6 +40,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   onSubmitShift,
   onApprove,
   onReject,
+  onCancelShift,
 }) => {
   const [requestType, setRequestType] = useState("Shift");
   const [fromDate, setFromDate] = useState("");
@@ -47,6 +49,15 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   const [showShiftForm, setShowShiftForm] = useState(false);
   const [activeRequestDetails, setActiveRequestDetails] = useState<number | null>(null);
   const [shiftOptions, setShiftOptions] = useState<string[]>([]);
+  const [cancelRequestId, setCancelRequestId] = useState<number | null>(null);
+  const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
+
+  const toggleReason = (id: number) => {
+    setExpandedReasons(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
 
   useEffect(() => {
     fetch(`${API_URL}/api/shifts/options`)
@@ -130,17 +141,6 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       return;
     }
 
-    if (fromDate === todayStr) {
-      const now = new Date();
-      const currentHour = now.getHours();
-      const currentMinute = now.getMinutes();
-
-      if (currentHour > 9 || (currentHour === 9 && currentMinute > 0)) {
-        toast.error("Cannot apply for today's shift/WFH request after 09:00 AM.");
-        return;
-      }
-    }
-
     if (hasLeaveOverlap(fromDate, toDate)) {
       toast.error("You cannot request a shift change or WFH during your approved leave dates.");
       return;
@@ -163,7 +163,13 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   };
 
   const activeShiftRequests = Array.isArray(shiftRequests)
-    ? shiftRequests.filter((req: any) => req.status === "Pending")
+    ? shiftRequests.filter((req: any) => {
+        if (req.status !== "Pending") return false;
+        const startDate = req.from_date || req.shift_date || req.to_date || "";
+        const todayStr = new Date().toLocaleDateString("en-CA");
+        if (startDate && startDate < todayStr) return false;
+        return true;
+      })
     : [];
 
   return (
@@ -275,6 +281,16 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                         >
                           {isExpanded ? "Hide Details" : "View Details"}
                         </Button>
+                        {req.status === "Pending" && (
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => setCancelRequestId(req.id)}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-danger-600 hover:bg-danger-700 text-white shadow-sm border border-danger-600"
+                          >
+                            Cancel
+                          </Button>
+                        )}
                       </div>
                     </div>
 
@@ -355,45 +371,87 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                       </div>
                     </td>
                   </tr>
-                ) : (
-                  shiftRequests.map((item: any) => {
+                ) : (                  shiftRequests.map((item: any) => {
                     const isApproved = item.status === "Approved";
                     const isRejected = item.status === "Rejected";
                     const isWFH = item.request_type === "WFH";
 
                     return (
-                      <tr key={item.id} className="hover:bg-neutral-50/40 transition-colors">
-                        <td className="p-4 pl-6">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWFH
-                              ? "bg-purple-50 text-purple-700 border-purple-200"
-                              : "bg-blue-50 text-blue-700 border-blue-200"
-                            }`}>
-                            {item.request_type || "Shift"}
-                          </span>
-                        </td>
-                        <td className="p-4 text-xs font-normal text-neutral-600">{item.current_shift || "-"}</td>
-                        <td className="p-4 text-xs font-medium text-neutral-800">
-                          {isWFH ? "Work From Home" : item.requested_shift}
-                        </td>
-                        <td className="p-4">
-                          <div>
-                            <p className="text-xs font-medium text-neutral-800">{item.from_date}</p>
-                            <p className="text-[11px] text-neutral-450 font-normal mt-0.5 flex items-center gap-1">
-                              <ArrowRightIcon className="w-3 h-3 text-neutral-350" /> to {item.to_date}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="p-4 text-xs text-neutral-500 truncate max-w-xs" title={item.reason}>{item.reason || "-"}</td>
-                        <td className="p-4 text-center">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getStatusColor(item.status)}`}>
-                            <span className={`h-1 w-1 rounded-full ${isApproved ? "bg-success-600" :
-                                isRejected ? "bg-danger-600" :
-                                  "bg-warning-500 animate-pulse"
-                              }`} />
-                            {item.status}
-                          </span>
-                        </td>
-                      </tr>
+                      <React.Fragment key={item.id}>
+                        <tr className="hover:bg-neutral-50/40 transition-colors">
+                          <td className="p-4 pl-6">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWFH
+                                ? "bg-purple-50 text-purple-700 border-purple-200"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
+                              }`}>
+                              {item.request_type || "Shift"}
+                            </span>
+                          </td>
+                          <td className="p-4 text-xs font-normal text-neutral-600">{item.current_shift || "-"}</td>
+                          <td className="p-4 text-xs font-medium text-neutral-800">
+                            {isWFH ? "Work From Home" : item.requested_shift}
+                          </td>
+                          <td className="p-4">
+                            <div>
+                              <p className="text-xs font-medium text-neutral-800">{item.from_date}</p>
+                              <p className="text-[11px] text-neutral-450 font-normal mt-0.5 flex items-center gap-1">
+                                <ArrowRightIcon className="w-3 h-3 text-neutral-350" /> to {item.to_date}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="p-4 text-xs text-neutral-500 max-w-xs">
+                            {item.reason ? (
+                              <button
+                                onClick={() => toggleReason(item.id)}
+                                className="text-left text-neutral-600 hover:text-primary-600 transition-colors duration-150 flex items-center gap-1 focus:outline-none group/reason w-full"
+                              >
+                                <span className="truncate max-w-[150px]">{item.reason}</span>
+                                {item.reason.length > 20 && (
+                                  <span className="text-primary-500 group-hover/reason:text-primary-600 text-[10px] font-semibold flex items-center gap-0.5 shrink-0 ml-1">
+                                    {expandedReasons[item.id] ? "Collapse" : "Expand"}
+                                    <svg
+                                      xmlns="http://www.w3.org/2000/svg"
+                                      viewBox="0 0 20 20"
+                                      fill="currentColor"
+                                      className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedReasons[item.id] ? "rotate-180" : ""}`}
+                                    >
+                                      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                    </svg>
+                                  </span>
+                                )}
+                              </button>
+                            ) : (
+                              <span className="text-neutral-400">-</span>
+                            )}
+                          </td>
+                          <td className="p-4 text-center">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getStatusColor(item.status)}`}>
+                              <span className={`h-1 w-1 rounded-full ${isApproved ? "bg-success-600" :
+                                  isRejected ? "bg-danger-600" :
+                                    "bg-warning-500 animate-pulse"
+                                }`} />
+                              {item.status}
+                            </span>
+                          </td>
+                        </tr>
+                        {expandedReasons[item.id] && item.reason && (
+                          <tr className="bg-neutral-50/30">
+                            <td colSpan={6} className="p-4 pl-10 pr-6 border-b border-neutral-200">
+                              <div className="text-xs text-neutral-600 bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-inner max-w-3xl">
+                                <div className="flex items-center gap-1.5 mb-2 text-neutral-400 font-bold uppercase tracking-wider text-[10px]">
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-primary-500">
+                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+                                  </svg>
+                                  <span>Reason for Shift Change Request</span>
+                                </div>
+                                <p className="whitespace-pre-wrap leading-relaxed text-neutral-700 font-medium pl-5">
+                                  {item.reason}
+                                </p>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })
                 )}
@@ -537,6 +595,23 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={cancelRequestId !== null}
+        title="Cancel Shift/WFH Request"
+        message="Are you sure you want to cancel this request?"
+        description="This action cannot be undone."
+        variant="danger"
+        confirmLabel="Yes, Cancel"
+        cancelLabel="No, Keep It"
+        onConfirm={() => {
+          if (cancelRequestId !== null) {
+            onCancelShift(cancelRequestId);
+            setCancelRequestId(null);
+          }
+        }}
+        onCancel={() => setCancelRequestId(null)}
+      />
     </div>
   );
 };
