@@ -3,7 +3,7 @@ import { cn } from '../utils/cn';
 
 export type BadgeStatus =
   | 'active' | 'pending' | 'approved' | 'rejected'
-  | 'present' | 'absent' | 'late' | 'onLeave' | 'inactive';
+  | 'present' | 'absent' | 'late' | 'onLeave' | 'inactive' | 'halfDay';
 export type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 export type BadgeSize = 'sm' | 'md';
 
@@ -22,6 +22,7 @@ const statusMeta: Record<BadgeStatus, { label: string; variant: BadgeVariant }> 
   present: { label: 'Present', variant: 'success' },
   pending: { label: 'Pending', variant: 'warning' },
   late: { label: 'Late', variant: 'warning' },
+  halfDay: { label: 'Half Day', variant: 'warning' },
   rejected: { label: 'Rejected', variant: 'danger' },
   absent: { label: 'Absent', variant: 'danger' },
   onLeave: { label: 'On Leave', variant: 'info' },

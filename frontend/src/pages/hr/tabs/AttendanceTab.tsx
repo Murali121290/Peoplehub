@@ -219,6 +219,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
           status === "on leave"
         ) {
           grouped[empName].leaveCount += 1;
+        } else if (status === "half day" || status === "half_day") {
+          grouped[empName].halfDayCount = (grouped[empName].halfDayCount || 0) + 1;
         }
 
         if (record.total_hours && record.total_hours !== "-") {
@@ -288,6 +290,17 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
           </span>
         </div>
       );
+    } else if (status === "half day" || status === "half_day") {
+      return (
+        <div className="flex flex-col items-center">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 text-purple-800">
+            HD
+          </span>
+          <span className="text-[9px] text-neutral-400 mt-0.5">
+            {cellData.total_hours && cellData.total_hours !== "-" ? `${cellData.total_hours} hrs` : ""}
+          </span>
+        </div>
+      );
     }
 
     return (
@@ -328,6 +341,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
           ) {
             colorClass = "bg-blue-500 hover:bg-blue-600";
             tooltipTitle = `${dateStr}: Leave`;
+          } else if (status === "half day" || status === "half_day") {
+            colorClass = "bg-purple-500 hover:bg-purple-600";
+            tooltipTitle = `${dateStr}: Half Day (${record.total_hours} hrs)`;
           }
 
           return (
@@ -388,6 +404,13 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
     }
   ).length;
 
+  const totalHalfDayCount = attendanceData.filter(
+    (emp) => {
+      const s = (emp.status || "Absent").toLowerCase();
+      return s === "half day" || s === "half_day";
+    }
+  ).length;
+
   const filteredAttendance = attendanceData.filter((emp) => {
     // 1. Shift / Operational category filter
     const matchesShift =
@@ -410,6 +433,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         matchesStatus = status === "late";
       } else if (statusFilter === "On Leave") {
         matchesStatus = status === "on_leave" || status === "leave" || status === "on leave";
+      } else if (statusFilter === "Half Day") {
+        matchesStatus = status === "half day" || status === "half_day";
       }
     }
 
@@ -705,7 +730,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       </div>
 
       {/* Attendance Overview Summary Cards */}
-      <div className="grid grid-cols-5 gap-3 mb-4">
+      <div className="grid grid-cols-6 gap-3 mb-4">
         <div className="rounded-[10px] p-4 text-center bg-neutral-50 border border-neutral-200">
           <div className="text-[11px] text-neutral-500 font-semibold mb-1.5 uppercase">
             Total Employees
@@ -780,6 +805,23 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
           </div>
           <div className="text-[22px] font-bold">
             {totalLeaveCount}
+          </div>
+        </div>
+
+        <div
+          onClick={() => setStatusFilter(statusFilter === "Half Day" ? "All" : "Half Day")}
+          className={
+            "cursor-pointer rounded-[10px] p-4 text-center transition-all " +
+            (statusFilter === "Half Day"
+              ? "bg-purple-100 border-2 border-purple-500 text-purple-800"
+              : "bg-purple-50/50 border border-purple-100 text-purple-700 hover:bg-purple-50")
+          }
+        >
+          <div className="text-[11px] font-semibold mb-1.5 uppercase">
+            Half Day
+          </div>
+          <div className="text-[22px] font-bold">
+            {totalHalfDayCount}
           </div>
         </div>
       </div>

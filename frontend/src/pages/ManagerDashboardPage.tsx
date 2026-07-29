@@ -421,18 +421,21 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const handleRejectYesterday = async (empId: number, dateStr: string) => {
+  const handleNeedClarificationYesterday = async (empId: number, dateStr: string) => {
     try {
-      const response = await fetch(`${BASE_URL}/attendance/reject/${empId}?date=${dateStr}`, {
+      const response = await fetch(`${BASE_URL}/attendance/need-clarification/${empId}?date=${dateStr}`, {
         method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "" }),
       });
       if (response.ok) {
         loadYesterdaySummary();
       }
     } catch (error) {
-      console.error("Reject yesterday failed:", error);
+      console.error("Need clarification failed:", error);
     }
   };
+
 
   // Leave requests logic moved to LeaveApprovalPage
 
@@ -666,6 +669,14 @@ const ManagerDashboardPage = () => {
           text: "#c2410c",
           dot: "#ea580c",
           pillBg: "#ffedd5",
+        };
+      case "Half Day":
+        return {
+          bg: "#f3e8ff",
+          border: "#e9d5ff",
+          text: "#6b21a8",
+          dot: "#a855f7",
+          pillBg: "#f3e8ff",
         };
       default:
         return {
@@ -1657,6 +1668,224 @@ const ManagerDashboardPage = () => {
         </div>
       </main>
 
+      {/* Yesterday's Attendance Summary */}
+      {yesterdaySummary.length > 0 && (
+        <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0 24px 40px" }}>
+          <section style={{
+            background: "#fff",
+            borderRadius: "24px",
+            border: `1px solid ${THEME.border}`,
+            boxShadow: THEME.shadow,
+            overflow: "hidden",
+          }}>
+            {/* Header */}
+            <div style={{ padding: "24px", borderBottom: `1px solid ${THEME.border}`, background: "linear-gradient(180deg,#fff 0%,#fbfdff 100%)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                  <div style={{ width: "46px", height: "46px", borderRadius: "14px", background: "#fef9c3", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <CalendarDaysIcon style={{ width: "22px", height: "22px", color: "#ca8a04" }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "18px", fontWeight: 800, color: THEME.navy }}>Yesterday's Attendance Summary</div>
+                    <div style={{ fontSize: "13px", color: THEME.textSoft, marginTop: "2px" }}>
+                      {yesterdaySummaryDate ? `For ${yesterdaySummaryDate}` : "Last working day"} — Pending your approval
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={loadYesterdaySummary}
+                  style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 16px", borderRadius: "10px", border: `1px solid ${THEME.border}`, background: THEME.surface, color: THEME.textSoft, fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+                >
+                  <ArrowPathIcon style={{ width: "15px", height: "15px" }} />
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            {loadingYesterday ? (
+              <div style={{ padding: "48px", textAlign: "center", color: THEME.textSoft }}>
+                <div style={{ width: "28px", height: "28px", border: `3px solid ${THEME.border}`, borderTop: `3px solid ${THEME.primary}`, borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
+                <p style={{ fontSize: "13px", fontWeight: 500 }}>Loading yesterday's summary...</p>
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px", color: THEME.text }}>
+                  <thead>
+                    <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                      <th style={{ padding: "12px 16px" }}>Employee</th>
+                      <th style={{ padding: "12px 16px" }}>Department</th>
+                      <th style={{ padding: "12px 16px" }}>Status</th>
+                      <th style={{ padding: "12px 16px" }}>Check In</th>
+                      <th style={{ padding: "12px 16px" }}>Check Out</th>
+                      <th style={{ padding: "12px 16px" }}>Working Hours</th>
+                      <th style={{ padding: "12px 16px" }}>Breaks (L/T)</th>
+                      <th style={{ padding: "12px 16px" }}>Manager Status</th>
+                      <th style={{ padding: "12px 16px", textAlign: "center" }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {yesterdaySummary.map((emp, idx) => {
+                      const status = emp.status || "Absent";
+                      // Determine category based on status
+                      let category = "absent";
+                      if (status === "Leave") {
+                        category = "leave";
+                      } else if (status === "Present" || status === "Half Day") {
+                        category = "present";
+                      }
+                      const managerStatus = emp.manager_status || emp.decision || "Pending";
+                      const isRegularization = emp.is_regularization || false;
+                      const isLop = emp.is_lop || false;
+
+                      // Check if employee has responded by looking at clarification_history for employee messages
+                      const clarificationHistory = emp.clarification_history || [];
+                      const employeeReplied = clarificationHistory.some((msg: any) => msg.sender_role === "employee");
+                      const summaryDateStr = emp.summary_date || "";
+
+                      let statusBg = "#fee2e2"; let statusColor = "#b91c1c";
+                      if (status === "Present") { statusBg = "#dcfce7"; statusColor = "#166534"; }
+                      else if (status === "Leave") { statusBg = "#fef3c7"; statusColor = "#92400e"; }
+                      else if (status === "Half Day") { statusBg = "#f3e8ff"; statusColor = "#7e22ce"; }
+
+                      let msBg = "#f1f5f9"; let msColor = "#475569";
+                      if (managerStatus === "Approved") { msBg = "#dcfce7"; msColor = "#166534"; }
+                      else if (managerStatus === "Need Clarification") { msBg = "#fef9c3"; msColor = "#854d0e"; }
+
+                      // Row background hint for leave (read-only)
+                      const rowBg = category === "leave" ? "#fffbeb" : "transparent";
+
+                      return (
+                        <tr key={idx} style={{ borderBottom: `1px solid ${THEME.border}`, background: rowBg }}>
+                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.navy }}>
+                            <div>{emp.employee_name}</div>
+                            <div style={{ fontSize: "11px", color: THEME.textSoft, fontWeight: 500 }}>{emp.designation}</div>
+                          </td>
+                          <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{emp.department}</td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                              <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: 800 }}>{status}</span>
+                              {emp.leave_type && (
+                                <span style={{ fontSize: "10px", color: THEME.textSoft }}>{emp.leave_type}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            {emp.check_in || (category === "leave" ? "—" : <span style={{ color: "#ef4444", fontSize: "11px" }}>No data</span>)}
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>{emp.check_out || "—"}</td>
+                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.primary }}>{formatWorkingHours(emp.working_hours)}</td>
+                          <td style={{ padding: "12px 16px", color: THEME.textSoft }}>
+                            {(emp.lunch_minutes > 0 || emp.tea_minutes > 0) ? `${emp.lunch_minutes}m / ${emp.tea_minutes}m` : "—"}
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: msBg, color: msColor, fontSize: "11px", fontWeight: 800 }}>{managerStatus}</span>
+                          </td>
+
+                          {/* ── ACTION CELL ── */}
+                          <td style={{ padding: "12px 16px", textAlign: "center", minWidth: "160px" }}>
+
+                            {/* LEAVE — read-only, only Confirm Leave */}
+                            {category === "leave" && managerStatus !== "Approved" && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
+                                <span style={{ fontSize: "11px", color: "#92400e", fontWeight: 600, background: "#fef3c7", padding: "2px 8px", borderRadius: "6px" }}>On Leave</span>
+                                <button
+                                  onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                >✓ Confirm Leave</button>
+                              </div>
+                            )}
+
+                            {/* PRESENT — Approve + Need Clarification */}
+                            {category === "present" && managerStatus === "Pending" && (
+                              <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                                <button
+                                  onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "6px 12px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                                >✓ Approve</button>
+                                <button
+                                  onClick={() => handleNeedClarificationYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "6px 12px", borderRadius: "8px", border: "none", background: "#fef9c3", color: "#854d0e", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                                >? Clarify</button>
+                              </div>
+                            )}
+
+                            {/* PRESENT — Need Clarification sent, employee has replied (regularization / leave) */}
+                            {category === "present" && managerStatus === "Need Clarification" && employeeReplied && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
+                                {isRegularization && emp.check_in && (
+                                  <span style={{ fontSize: "10px", color: "#166534", fontWeight: 600 }}>
+                                    Reg: {emp.check_in} – {emp.check_out || "?"}
+                                  </span>
+                                )}
+                                <div style={{ display: "flex", gap: "6px" }}>
+                                  <button
+                                    onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
+                                    style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                  >✓ Approve</button>
+                                  <button
+                                    onClick={() => handleNeedClarificationYesterday(emp.employee_id, summaryDateStr)}
+                                    style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#fef9c3", color: "#854d0e", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                  >? Again</button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* PRESENT — Need Clarification sent, waiting for employee */}
+                            {category === "present" && managerStatus === "Need Clarification" && !employeeReplied && (
+                              <span style={{ fontSize: "11px", color: "#854d0e", fontWeight: 500 }}>⏳ Awaiting employee</span>
+                            )}
+
+                            {/* ABSENT — only Need Clarification (triggers employee to decide) */}
+                            {category === "absent" && managerStatus === "Pending" && (
+                              <button
+                                onClick={() => handleNeedClarificationYesterday(emp.employee_id, summaryDateStr)}
+                                style={{ padding: "6px 14px", borderRadius: "8px", border: "none", background: "#fef9c3", color: "#854d0e", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                              >? Need Clarification</button>
+                            )}
+
+                            {/* ABSENT — Need Clarification sent, employee chose LOP */}
+                            {category === "absent" && managerStatus === "Need Clarification" && isLop && employeeReplied && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
+                                <span style={{ fontSize: "10px", color: "#b91c1c", fontWeight: 600, background: "#fee2e2", padding: "2px 8px", borderRadius: "6px" }}>Employee chose LOP</span>
+                                <button
+                                  onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                >✓ Confirm LOP</button>
+                              </div>
+                            )}
+
+                            {/* ABSENT — Need Clarification sent, employee chose Leave */}
+                            {category === "absent" && managerStatus === "Need Clarification" && status === "Leave" && employeeReplied && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
+                                <span style={{ fontSize: "10px", color: "#92400e", fontWeight: 600, background: "#fef3c7", padding: "2px 8px", borderRadius: "6px" }}>Applied {emp.leave_type || "Leave"}</span>
+                                <button
+                                  onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                >✓ Approve Leave</button>
+                              </div>
+                            )}
+
+                            {/* ABSENT — Need Clarification sent, waiting for employee response */}
+                            {category === "absent" && managerStatus === "Need Clarification" && !employeeReplied && (
+                              <span style={{ fontSize: "11px", color: "#854d0e", fontWeight: 500 }}>⏳ Awaiting employee</span>
+                            )}
+
+                            {/* Done state */}
+                            {managerStatus === "Approved" && (
+                              <span style={{ fontSize: "12px", color: THEME.textLight, fontWeight: 500 }}>— Done —</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
 
       {/* Attendance History Modal */}

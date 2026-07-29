@@ -2,6 +2,7 @@ import React from 'react';
 import { DocumentTextIcon } from '@heroicons/react/24/outline';
 import Panel from '../components/Panel';
 import { Button } from '../../../components/ui/Button';
+import { toast } from 'react-hot-toast';
 const HR_LETTERS = [
   "Experience Letter",
   "Bonafide Certificate",
@@ -37,7 +38,7 @@ const DocumentsTab: React.FC = () => {
                 <div className="text-[11px] text-neutral-500">HR Department</div>
               </div>
             </div>
-            <Button size="sm" onClick={() => alert(`Downloading ${doc}...`)}>
+            <Button size="sm" onClick={() => toast.success(`Downloading ${doc}...`)}>
               Download
             </Button>
           </div>
@@ -50,7 +51,7 @@ const DocumentsTab: React.FC = () => {
           {HR_LETTERS.map((letter, i) => (
             <button
               key={i}
-              onClick={() => alert(`Generating ${letter}...`)}
+              onClick={() => toast.success(`Generating ${letter}...`)}
               className="p-3.5 bg-neutral-50 border border-neutral-200 rounded-lg cursor-pointer text-center text-xs font-semibold hover:bg-neutral-100 transition-colors"
             >
               📄 {letter}

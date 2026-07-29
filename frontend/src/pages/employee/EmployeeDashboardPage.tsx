@@ -50,6 +50,7 @@ const tabs = [
 
 const EmployeeDashboardPage: React.FC = () => {
   const { user } = useAuthStore();
+  const userId = localStorage.getItem("user_id") || (user ? String(user.id) : "");
   const location = useLocation();
   const navigate = useNavigate();
   const queryParams = new URLSearchParams(location.search);
@@ -482,7 +483,7 @@ const EmployeeDashboardPage: React.FC = () => {
       }
       const userId = localStorage.getItem("user_id");
       if (!userId) {
-        alert("User ID not found.");
+        toast.error("User ID not found.");
         return;
       }
       const response = await fetch(`${BASE_URL}/attendance/checkout`, {
@@ -492,7 +493,7 @@ const EmployeeDashboardPage: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) {
-        alert(data.error || "Checkout Failed");
+        toast.error(data.error || "Checkout Failed");
         return;
       }
       const attendanceResponse = await fetch(
@@ -526,7 +527,7 @@ const EmployeeDashboardPage: React.FC = () => {
       toast.success("You have checked out successfully.");
       window.dispatchEvent(new Event('refreshTeamStatus'));
     } catch (error) {
-      alert("Something went wrong while checking out.");
+      toast.error("Something went wrong while checking out.");
     }
   };
 
@@ -592,15 +593,25 @@ const EmployeeDashboardPage: React.FC = () => {
     try {
       if (isTeaBreak) {
         const response = await fetch(`${API_URL}/api/attendance/tea-break`, {
-          method: "PUT",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: currentUserId, action: "stop" }),
+          body: JSON.stringify({ user_id: Number(currentUserId), action: "stop" }),
         });
         const data = await response.json();
         if (!data.success) {
           toast.error(data.error || "Failed to stop tea break");
           return;
         }
+        if (teaStartTime) {
+          const seconds = Math.max(
+            0,
+            Math.floor((new Date().getTime() - teaStartTime.getTime()) / 1000)
+          );
+          setTotalTeaSeconds((prev) => prev + seconds);
+        }
+        setIsTeaBreak(false);
+        setTeaStartTime(null);
+        setTeaTimer("");
         window.dispatchEvent(new Event('refreshTeamStatus'));
       } else {
         const response = await fetch(`${API_URL}/api/attendance/tea-break`, {
@@ -613,6 +624,8 @@ const EmployeeDashboardPage: React.FC = () => {
           toast.error(data.error || "Failed to start tea break");
           return;
         }
+        setTeaStartTime(new Date());
+        setIsTeaBreak(true);
         window.dispatchEvent(new Event('refreshTeamStatus'));
       }
     } catch (error) {
@@ -956,8 +969,17 @@ const EmployeeDashboardPage: React.FC = () => {
           setCheckInTime(checkIn);
           setIsLunchBreak(data.lunch_break || false);
           setIsTeaBreak(data.tea_break || false);
-          if (data.lunch_start) setLunchStartTime(parseTimeString(data.lunch_start));
-          if (data.tea_start) setTeaStartTime(parseTimeString(data.tea_start));
+          if (data.lunch_break && data.lunch_start) {
+    setLunchStartTime(parseTimeString(data.lunch_start));
+} else {
+    setLunchStartTime(null);
+}
+
+if (data.tea_break && data.tea_start) {
+    setTeaStartTime(parseTimeString(data.tea_start));
+} else {
+    setTeaStartTime(null);
+}
           setTotalLunchSeconds(lunchSecs);
           setTotalTeaSeconds(teaSecs);
           // Immediately show the correct timer on re-login
@@ -1035,8 +1057,17 @@ const EmployeeDashboardPage: React.FC = () => {
         } else {
           setCheckInTime(null);
         }
-        if (payload.lunch_start) setLunchStartTime(parseTimeString(payload.lunch_start));
-        if (payload.tea_start) setTeaStartTime(parseTimeString(payload.tea_start));
+        if (payload.lunch_break && payload.lunch_start) {
+    setLunchStartTime(parseTimeString(payload.lunch_start));
+} else {
+    setLunchStartTime(null);
+}
+
+if (payload.tea_break && payload.tea_start) {
+    setTeaStartTime(parseTimeString(payload.tea_start));
+} else {
+    setTeaStartTime(null);
+}
         setTotalLunchSeconds((payload.lunch_minutes || 0) * 60);
         setTotalTeaSeconds((payload.tea_minutes || 0) * 60);
 
@@ -1155,7 +1186,7 @@ const EmployeeDashboardPage: React.FC = () => {
         const now = new Date().getTime();
         const elapsed = Math.floor((now - checkInTime.getTime()) / 1000);
 
-        // Add currently-running break seconds on top of already-accumulated seconds
+        // Add currently-running break seconds on top of already-accumulated seconds for sub-timers
         const runningLunch =
           isLunchBreak && lunchStartTime
             ? Math.max(0, Math.floor((now - lunchStartTime.getTime()) / 1000))
@@ -1389,7 +1420,7 @@ const EmployeeDashboardPage: React.FC = () => {
       {pendingClarifications.length > 0 && (
         <EmployeeClarificationModal
           pendingItems={pendingClarifications}
-          employeeId={currentEmployee?.id || user?.id}
+          userId={Number(userId)}
           onSubmitted={() => loadPendingClarifications()}
         />
       )}

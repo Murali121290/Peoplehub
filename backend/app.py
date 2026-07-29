@@ -114,6 +114,14 @@ def create_app():
             "ADD COLUMN IF NOT EXISTS card_working_hours DOUBLE PRECISION DEFAULT 0.0, "
             "ADD COLUMN IF NOT EXISTS tea_count INTEGER DEFAULT 0"
         ))
+        connection.execute(text(
+            "ALTER TABLE attendance "
+            "ADD COLUMN IF NOT EXISTS is_regularization BOOLEAN DEFAULT FALSE, "
+            "ADD COLUMN IF NOT EXISTS regularization_reason TEXT, "
+            "ADD COLUMN IF NOT EXISTS regularization_submitted_at TIMESTAMP, "
+            "ADD COLUMN IF NOT EXISTS is_lop BOOLEAN DEFAULT FALSE, "
+            "ADD COLUMN IF NOT EXISTS leave_type VARCHAR(100)"
+        ))
         connection.commit()
 
     # Scheduler configuration
