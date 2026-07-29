@@ -1350,15 +1350,31 @@ def get_reporting_employees(user_id):
                 LeaveRequest.to_date >= target_date
             ).first()
 
+            # Determine status and employee_category
             status = "Absent"
+            employee_category = "absent"  # "present" | "absent" | "leave"
+
             if attendance:
                 status = attendance.status
-                # Override to Half Day if working hours < 4 for yesterday
                 total_hours_val = attendance.total_hours or 0.0
                 if attendance.check_out and total_hours_val > 0 and total_hours_val < 4.0 and status not in ("Absent", "Leave"):
                     status = "Half Day"
+                if status in ("Present", "Half Day"):
+                    employee_category = "present"
+                elif status == "Leave":
+                    employee_category = "leave"
+                else:
+                    employee_category = "absent"
             elif leave:
                 status = "Leave"
+                employee_category = "leave"
+
+            # For LEAVE employees (no attendance row yet), include leave info
+            leave_type_val = None
+            if attendance and attendance.leave_type:
+                leave_type_val = attendance.leave_type
+            elif leave:
+                leave_type_val = leave.leave_type
 
             hist = (attendance.clarification_history if (attendance and isinstance(attendance.clarification_history, list)) else [])
 
@@ -1372,7 +1388,7 @@ def get_reporting_employees(user_id):
 
                 "employee_id":
                     employee.id,
-                
+
                 "employee_code":
                     employee.employee_id,
 
@@ -1394,6 +1410,9 @@ def get_reporting_employees(user_id):
 
                 "status":
                     status,
+
+                "employee_category":
+                    employee_category,
 
                 "check_in":
                     attendance.check_in.strftime("%I:%M %p")
@@ -1453,6 +1472,19 @@ def get_reporting_employees(user_id):
                     if (attendance and attendance.manager_status)
                     else "Pending",
 
+                "is_regularization":
+                    bool(attendance.is_regularization)
+                    if attendance
+                    else False,
+
+                "is_lop":
+                    bool(attendance.is_lop)
+                    if attendance
+                    else False,
+
+                "leave_type":
+                    leave_type_val,
+
                 "clarification_comment":
                     _get_last_msg(hist, "manager"),
 
@@ -1465,6 +1497,7 @@ def get_reporting_employees(user_id):
             })
 
         result = sorted(result, key=lambda x: (x.get("employee_name") or "").lower())
+
 
         print(
             "Reporting Employees Found:",

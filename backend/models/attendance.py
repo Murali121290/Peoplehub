@@ -29,7 +29,7 @@ class Attendance(db.Model):
 
     check_in = db.Column(
         db.DateTime,
-        default=get_ist_now
+        nullable=True
     )
 
     check_out = db.Column(
@@ -141,5 +141,35 @@ class Attendance(db.Model):
     clarification_history = db.Column(
         db.JSON,
         default=list,
+        nullable=True
+    )
+
+    # Regularization workflow
+    is_regularization = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=True
+    )
+
+    regularization_reason = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    regularization_submitted_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    # Loss of Pay flag
+    is_lop = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=True
+    )
+
+    # Leave type (when attendance row represents a leave day)
+    leave_type = db.Column(
+        db.String(100),
         nullable=True
     )

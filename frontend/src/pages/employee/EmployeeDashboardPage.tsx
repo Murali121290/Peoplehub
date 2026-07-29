@@ -50,6 +50,7 @@ const tabs = [
 
 const EmployeeDashboardPage: React.FC = () => {
   const { user } = useAuthStore();
+  const userId = localStorage.getItem("user_id") || (user ? String(user.id) : "");
   const location = useLocation();
   const navigate = useNavigate();
   const queryParams = new URLSearchParams(location.search);
@@ -1419,7 +1420,7 @@ if (payload.tea_break && payload.tea_start) {
       {pendingClarifications.length > 0 && (
         <EmployeeClarificationModal
           pendingItems={pendingClarifications}
-          employeeId={currentEmployee?.id || user?.id}
+          userId={Number(userId)}
           onSubmitted={() => loadPendingClarifications()}
         />
       )}

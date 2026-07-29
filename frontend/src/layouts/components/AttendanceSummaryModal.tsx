@@ -116,6 +116,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                 ...e,
                 decision: "Need Clarification",
                 manager_status: "Need Clarification",
+                employee_reply: null,
                 clarification_comment: reason,
                 clarification_history: [
                   ...(e.clarification_history || []),
@@ -250,10 +251,26 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
     );
   };
 
+  useEffect(() => {
+    if (employees.length > 0) {
+      const activeCount = employees.filter(
+        (e) => e.decision !== "Approved" && e.manager_status !== "Approved"
+      ).length;
+      if (activeCount === 0) {
+        const timer = setTimeout(() => {
+          onClose();
+        }, 400); // 400ms delay for visual feedback of last item disappearing
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [employees, onClose]);
+
   const sortedEmployees = React.useMemo(() => {
-    return [...employees].sort((a: any, b: any) =>
-      (a.employee_name || "").localeCompare(b.employee_name || "", undefined, { sensitivity: 'base' })
-    );
+    return employees
+      .filter((e) => e.decision !== "Approved" && e.manager_status !== "Approved")
+      .sort((a: any, b: any) =>
+        (a.employee_name || "").localeCompare(b.employee_name || "", undefined, { sensitivity: 'base' })
+      );
   }, [employees]);
 
   return (
@@ -329,10 +346,11 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                   sortedEmployees.map((emp: any) => {
                     const isApproved = emp.decision === "Approved" || emp.manager_status === "Approved";
                     const isNeedClarification = emp.decision === "Need Clarification" || emp.manager_status === "Need Clarification";
+                    const employeeReplied = !!emp.employee_reply;
 
-                    // Disable both buttons if Approved OR while waiting for employee clarification response
-                    const isApproveDisabled = isApproved || isNeedClarification;
-                    const isClarificationDisabled = isApproved || isNeedClarification;
+                    // Disable both buttons if Approved OR while waiting for employee clarification response (but NOT if employee already replied)
+                    const isApproveDisabled = isApproved || (isNeedClarification && !employeeReplied);
+                    const isClarificationDisabled = isApproved || (isNeedClarification && !employeeReplied);
 
                     return (
                       <tr
@@ -397,7 +415,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
                         {/* Verification Status */}
                         <td className="py-3.5 px-4">
-                          {getVerificationBadge(emp.decision)}
+                          {getVerificationBadge(emp.employee_reply ? "Clarification Provided" : emp.decision)}
                         </td>
 
                         {/* Action Buttons */}
