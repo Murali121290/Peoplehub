@@ -71,6 +71,37 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
     }
   };
 
+  const triggerDbSync = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`${BASE_URL}/attendance/trigger-db-sync`, {
+        method: "POST",
+      });
+
+      const result = await res.json();
+      if (res.ok && result.success) {
+        toast.success(result.message || "Attendance synced from Biometric Database successfully!");
+        // Reload attendance data
+        let url = `${BASE_URL}/attendance`;
+        if (attendanceView === "weekly") {
+          url = `${BASE_URL}/attendance/weekly`;
+        } else if (attendanceView === "monthly") {
+          url = `${BASE_URL}/attendance/monthly`;
+        }
+        const response = await fetch(url);
+        const data = await response.json();
+        setAttendanceData(data || []);
+      } else {
+        toast.error(result.error || "Failed to sync from Biometric Database");
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Error triggering database sync");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Format Date Range professionally
   const formatReadableDate = (dateObj: Date) => {
     return dateObj.toLocaleDateString("en-US", {
@@ -668,6 +699,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             variant="primary"
           >
             Upload Card Excel
+          </Button>
+
+          <Button
+            onClick={triggerDbSync}
+            variant="success"
+            disabled={loading}
+          >
+            {loading ? "Syncing..." : "Link to DB"}
           </Button>
           <input
             type="file"

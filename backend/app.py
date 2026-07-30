@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import models & database
-from models.database import init_db, engine
+from models.database import init_db, engine, db_session
 # pyrefly: ignore [missing-import]
 from sqlalchemy import text
 
@@ -52,6 +52,15 @@ def create_app():
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allow_headers=["*"],
     )
+
+    # Scoped session cleanup middleware
+    @fastapi_app.middleware("http")
+    async def db_session_middleware(request: Request, call_next):
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            db_session.remove()
 
     # Register blueprints (routers)
     fastapi_app.include_router(employees_bp, prefix="/api/employees")
