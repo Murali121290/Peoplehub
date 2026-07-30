@@ -13,6 +13,9 @@ from utils.compat import send_file
 from zoneinfo import ZoneInfo
 from models.leave import LeaveRequest, LeaveLedger
 from io import BytesIO
+import os
+import pymysql
+
 
 
 from openpyxl import Workbook
@@ -427,6 +430,7 @@ def check_out():
             "error": str(e)
         }), 500
 
+
 @attendance_bp.route("/sync-logs", methods=["POST"])
 def sync_card_logs():
     try:
@@ -581,6 +585,7 @@ def sync_card_logs():
             "success": False,
             "error": str(e)
         }), 500
+
 
 @attendance_bp.route("/status/<int:user_id>")
 def attendance_status(user_id):
