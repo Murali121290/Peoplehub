@@ -24,3 +24,23 @@ build/
 backend/uploads/
 
 backend/debug_emails
+
+seed_editorial_employees.py
+seed_holidays.py
+seed_web_access_employees.py
+test_approve_fastapi.py
+test_approve_fn.py
+test_approve_token.py
+test_approve.py
+test_overrides.py
+test_request.py
+update_comm_model.py
+update_leave_tab.py
+update_managers.py
+update_mgr_sql.py
+update_profile_tab.py
+add_editorial_roles.py
+create_hr_admin.py
+add_editorial_roles.py
+
+.gitignore copy
