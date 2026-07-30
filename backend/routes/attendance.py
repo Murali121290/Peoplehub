@@ -849,116 +849,179 @@ def attendance_history(user_id):
     joining = employee.joining_date
     result = []
 
-    for i in range(30):
-        current_date = today - timedelta(days=i)
-        
-        # Do not go before joining date if set
-        if joining and current_date < joining:
-            break
+    # Read start_date from query parameters (format: YYYY-MM-DD)
+    start_date_param = request.args.get("start_date")
+    start_date_val = None
+    if start_date_param:
+        try:
+            start_date_val = datetime.strptime(start_date_param, "%Y-%m-%d").date()
+        except ValueError:
+            start_date_val = None
 
-        record = Attendance.query.filter_by(
-            user_id=user_id,
-            attendance_date=current_date
-        ).first()
-
-        if record:
-            is_today = (record.attendance_date == today)
-            
-            if record.check_out:
-                working_hours = record.total_hours or 0.0
-                check_out_str = record.check_out.strftime("%I:%M %p")
-            elif is_today and record.check_in:
-                # Active check-in today: compute live working hours
-                now = get_ist_now()
-                elapsed_seconds = (now - record.check_in).total_seconds()
-                break_seconds = (record.total_break_minutes or 0) * 60
-                hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
-                working_hours = int(hours_decimal * 100) / 100
-                check_out_str = "-"
-            else:
-                # Past date with missing checkout
-                working_hours = record.total_hours or 0.0
-                check_out_str = "-"
-
-            # Derive display status: override to Half Day if < 4 working hours
-            base_status = record.status or "Present"
-            if base_status not in ("Absent", "Leave") and working_hours < 4.0 and working_hours > 0:
-                display_status = "Half Day"
-            else:
-                display_status = base_status
-
-            result.append({
-                "id": record.id,
-                "date": record.attendance_date.strftime("%Y-%m-%d"),
-                "attendance_date": record.attendance_date.strftime("%Y-%m-%d"),
-                "attendance_date_formatted": record.attendance_date.strftime("%d %b %Y"),
-                "checkIn": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
-                "check_in": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
-                "checkOut": check_out_str,
-                "check_out": check_out_str,
-                "workingHours": working_hours,
-                "working_hours": working_hours,
-                "total_hours": working_hours,
-                "cardCheckIn": record.card_check_in.strftime("%I:%M %p") if record.card_check_in else "-",
-                "card_check_in": record.card_check_in.strftime("%I:%M %p") if record.card_check_in else "-",
-                "cardCheckOut": record.card_check_out.strftime("%I:%M %p") if record.card_check_out else "-",
-                "card_check_out": record.card_check_out.strftime("%I:%M %p") if record.card_check_out else "-",
-                "cardWorkingHours": record.card_working_hours or 0.0,
-                "card_working_hours": record.card_working_hours or 0.0,
-                "lunchMinutes": record.lunch_minutes,
-                "lunch_minutes": record.lunch_minutes,
-                "teaMinutes": record.tea_minutes,
-                "tea_minutes": record.tea_minutes,
-                "totalBreak": record.total_break_minutes,
-                "total_break_minutes": record.total_break_minutes,
-                "status": display_status,
-                "manager_status": record.manager_status or "Pending",
-                "reporting_manager": employee.reporting_manager or "",
-                "clarification_history": record.clarification_history or [],
-                "last_manager_comment": (record.clarification_history[-1]["comment"] if record.clarification_history and record.clarification_history[-1].get("sender_role") == "manager" else "") or ""
-            })
+    if not start_date_val:
+        # Default to current cycle start date
+        if today.day >= 25:
+            start_date_val = date(today.year, today.month, 25)
         else:
-            # Check for approved leaves on this day
-            from models.leave import LeaveRequest
-            leave = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == str(employee.id),
-                LeaveRequest.status == "Approved",
-                LeaveRequest.from_date <= current_date,
-                LeaveRequest.to_date >= current_date
+            if today.month == 1:
+                start_date_val = date(today.year - 1, 12, 25)
+            else:
+                start_date_val = date(today.year, today.month - 1, 25)
+
+    # Cycle runs from start_date_val to 24th of next month
+    if start_date_val.month == 12:
+        end_date_limit = date(start_date_val.year + 1, 1, 24)
+    else:
+        end_date_limit = date(start_date_val.year, start_date_val.month + 1, 24)
+
+    # Limit end_date to today
+    end_date = min(today, end_date_limit)
+
+    # Fetch holidays and overrides within range
+    from models.holiday import Holiday, HolidayOverride
+    holidays = Holiday.query.filter(Holiday.date >= start_date_val, Holiday.date <= end_date).all()
+    overrides = HolidayOverride.query.filter(HolidayOverride.date >= start_date_val, HolidayOverride.date <= end_date).all()
+    
+    holiday_dict = {h.date: h.name for h in holidays}
+    override_dict = {o.date: (o.override_type, o.name) for o in overrides}
+
+    if end_date >= start_date_val:
+        num_days = (end_date - start_date_val).days + 1
+        for i in range(num_days):
+            current_date = end_date - timedelta(days=i)
+        
+            # Do not go before joining date if set
+            if joining and current_date < joining:
+                break
+
+            record = Attendance.query.filter_by(
+                user_id=user_id,
+                attendance_date=current_date
             ).first()
 
-            status = "Leave" if leave else "Absent"
+            if record:
+                is_today = (record.attendance_date == today)
+                
+                if record.check_out:
+                    working_hours = record.total_hours or 0.0
+                    check_out_str = record.check_out.strftime("%I:%M %p")
+                elif is_today and record.check_in:
+                    # Active check-in today: compute live working hours
+                    now = get_ist_now()
+                    elapsed_seconds = (now - record.check_in).total_seconds()
+                    break_seconds = (record.total_break_minutes or 0) * 60
+                    hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
+                    working_hours = int(hours_decimal * 100) / 100
+                    check_out_str = "-"
+                else:
+                    # Past date with missing checkout
+                    working_hours = record.total_hours or 0.0
+                    check_out_str = "-"
 
-            result.append({
-                "id": f"virtual-{current_date.strftime('%Y-%m-%d')}",
-                "date": current_date.strftime("%Y-%m-%d"),
-                "attendance_date": current_date.strftime("%Y-%m-%d"),
-                "attendance_date_formatted": current_date.strftime("%d %b %Y"),
-                "checkIn": "-",
-                "check_in": "-",
-                "checkOut": "-",
-                "check_out": "-",
-                "workingHours": 0.0,
-                "working_hours": 0.0,
-                "total_hours": 0.0,
-                "cardCheckIn": "-",
-                "card_check_in": "-",
-                "cardCheckOut": "-",
-                "card_check_out": "-",
-                "cardWorkingHours": 0.0,
-                "card_working_hours": 0.0,
-                "lunchMinutes": 0,
-                "lunch_minutes": 0,
-                "teaMinutes": 0,
-                "tea_minutes": 0,
-                "totalBreak": 0,
-                "total_break_minutes": 0,
-                "status": status,
-                "manager_status": "Pending",
-                "reporting_manager": employee.reporting_manager or "",
-                "clarification_history": [],
-                "last_manager_comment": ""
-            })
+                # Derive display status: override to Half Day if < 4 working hours
+                base_status = record.status or "Present"
+                if base_status not in ("Absent", "Leave") and working_hours < 4.0 and working_hours > 0:
+                    display_status = "Half Day"
+                else:
+                    display_status = base_status
+
+                result.append({
+                    "id": record.id,
+                    "date": record.attendance_date.strftime("%Y-%m-%d"),
+                    "attendance_date": record.attendance_date.strftime("%Y-%m-%d"),
+                    "attendance_date_formatted": record.attendance_date.strftime("%d %b %Y"),
+                    "checkIn": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
+                    "check_in": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
+                    "checkOut": check_out_str,
+                    "check_out": check_out_str,
+                    "workingHours": working_hours,
+                    "working_hours": working_hours,
+                    "total_hours": working_hours,
+                    "cardCheckIn": record.card_check_in.strftime("%I:%M %p") if record.card_check_in else "-",
+                    "card_check_in": record.card_check_in.strftime("%I:%M %p") if record.card_check_in else "-",
+                    "cardCheckOut": record.card_check_out.strftime("%I:%M %p") if record.card_check_out else "-",
+                    "card_check_out": record.card_check_out.strftime("%I:%M %p") if record.card_check_out else "-",
+                    "cardWorkingHours": record.card_working_hours or 0.0,
+                    "card_working_hours": record.card_working_hours or 0.0,
+                    "lunchMinutes": record.lunch_minutes,
+                    "lunch_minutes": record.lunch_minutes,
+                    "teaMinutes": record.tea_minutes,
+                    "tea_minutes": record.tea_minutes,
+                    "totalBreak": record.total_break_minutes,
+                    "total_break_minutes": record.total_break_minutes,
+                    "status": display_status,
+                    "manager_status": record.manager_status or "Pending",
+                    "reporting_manager": employee.reporting_manager or "",
+                    "clarification_history": record.clarification_history or [],
+                    "last_manager_comment": (record.clarification_history[-1]["comment"] if record.clarification_history and record.clarification_history[-1].get("sender_role") == "manager" else "") or ""
+                })
+            else:
+                # Check normal calendar rules for virtual status
+                status = "Absent"
+                
+                # 1. Check HolidayOverride first
+                override = override_dict.get(current_date)
+                if override:
+                    if override[0] == "Holiday":
+                        status = "Holiday"
+                    else:
+                        # override is "Working Day" -> check approved leaves or mark Absent
+                        from models.leave import LeaveRequest
+                        leave = LeaveRequest.query.filter(
+                            LeaveRequest.employee_id == str(employee.id),
+                            LeaveRequest.status == "Approved",
+                            LeaveRequest.from_date <= current_date,
+                            LeaveRequest.to_date >= current_date
+                        ).first()
+                        status = "Leave" if leave else "Absent"
+                else:
+                    # 2. Check Holiday table
+                    if current_date in holiday_dict:
+                        status = "Holiday"
+                    # 3. Check weekend (Saturday=5, Sunday=6)
+                    elif current_date.weekday() in (5, 6):
+                        status = "Week Off"
+                    # 4. Check approved leaves
+                    else:
+                        from models.leave import LeaveRequest
+                        leave = LeaveRequest.query.filter(
+                            LeaveRequest.employee_id == str(employee.id),
+                            LeaveRequest.status == "Approved",
+                            LeaveRequest.from_date <= current_date,
+                            LeaveRequest.to_date >= current_date
+                        ).first()
+                        status = "Leave" if leave else "Absent"
+
+                result.append({
+                    "id": f"virtual-{current_date.strftime('%Y-%m-%d')}",
+                    "date": current_date.strftime("%Y-%m-%d"),
+                    "attendance_date": current_date.strftime("%Y-%m-%d"),
+                    "attendance_date_formatted": current_date.strftime("%d %b %Y"),
+                    "checkIn": "-",
+                    "check_in": "-",
+                    "checkOut": "-",
+                    "check_out": "-",
+                    "workingHours": 0.0,
+                    "working_hours": 0.0,
+                    "total_hours": 0.0,
+                    "cardCheckIn": "-",
+                    "card_check_in": "-",
+                    "cardCheckOut": "-",
+                    "card_check_out": "-",
+                    "cardWorkingHours": 0.0,
+                    "card_working_hours": 0.0,
+                    "lunchMinutes": 0,
+                    "lunch_minutes": 0,
+                    "teaMinutes": 0,
+                    "tea_minutes": 0,
+                    "totalBreak": 0,
+                    "total_break_minutes": 0,
+                    "status": status,
+                    "manager_status": "Pending",
+                    "reporting_manager": employee.reporting_manager or "",
+                    "clarification_history": [],
+                    "last_manager_comment": ""
+                })
 
     return jsonify(result)
 

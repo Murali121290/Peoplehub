@@ -244,10 +244,14 @@ def get_employees():
             "casual_leave":
                 emp.casual_leave,
 
-            "privilege_leave":
+             "privilege_leave":
                 emp.privilege_leave,
             "earned_leave":
-                emp.privilege_leave
+                emp.privilege_leave,
+            "joining_date":
+                emp.joining_date.isoformat() if emp.joining_date else None,
+            "profile_image":
+                base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None
         })
 
     return jsonify(result)
@@ -1113,6 +1117,7 @@ def get_my_team(user_id):
     ).all()
 
     result = []
+    all_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
     for team_user in team_users:
 
@@ -1123,6 +1128,15 @@ def get_my_team(user_id):
         if employee:
             update_leave_balance(employee)
 
+            emp_full_name = f"{employee.first_name} {employee.last_name}".strip().lower()
+            is_reporting_manager = False
+            for other in all_employees:
+                if not other.reporting_manager:
+                    continue
+                o_mgr = other.reporting_manager.strip().lower()
+                if (o_mgr == emp_full_name) or (len(o_mgr.split()) == 1 and emp_full_name.split()[0] == o_mgr) or (len(emp_full_name.split()) == 1 and o_mgr.split()[0] == emp_full_name):
+                    is_reporting_manager = True
+                    break
 
             result.append({
                 "id": employee.id,
@@ -1137,11 +1151,46 @@ def get_my_team(user_id):
                 "sick_leave": employee.sick_leave,
                 "casual_leave": employee.casual_leave,
                 "privilege_leave": employee.privilege_leave,
-                "earned_leave": employee.privilege_leave
+                "earned_leave": employee.privilege_leave,
+                "is_reporting_manager": is_reporting_manager
             })
 
     return jsonify(result)
 
+
+def is_manager_match(e_mgr, manager_name):
+    if not e_mgr or not manager_name:
+        return False
+    e_mgr = e_mgr.strip().lower()
+    mgr = manager_name.strip().lower()
+    if e_mgr == mgr:
+        return True
+    e_words = e_mgr.split()
+    m_words = mgr.split()
+    if len(e_words) == 1 and m_words and m_words[0] == e_mgr:
+        return True
+    if len(m_words) == 1 and e_words and e_words[0] == mgr:
+        return True
+    return False
+
+
+def get_all_reporting_employees_recursive(manager_name, all_employees, visited=None):
+    if visited is None:
+        visited = set()
+    reports = []
+    for emp in all_employees:
+        if emp.id in visited:
+            continue
+        if is_manager_match(emp.reporting_manager, manager_name):
+            visited.add(emp.id)
+            reports.append(emp)
+            
+    recursive_reports = list(reports)
+    for r in reports:
+        r_name = f"{r.first_name} {r.last_name}"
+        sub = get_all_reporting_employees_recursive(r_name, all_employees, visited)
+        recursive_reports.extend(sub)
+    return recursive_reports
 
 
 @employees_bp.route("/team-attendance/<int:user_id>", methods=["GET"])
@@ -1149,21 +1198,27 @@ def get_team_attendance(user_id):
     """Return all employees reporting to this manager with today's attendance status."""
     try:
         manager = Employee.query.filter_by(user_id=user_id).first()
-        if not manager:
-            return jsonify([])
+        user = User.query.get(user_id)
+        is_admin = False
+        if user:
+            role_name = (user.role.name or "").lower() if user.role else ""
+            access_level = (user.access_level or "").lower()
+            if "admin" in role_name or "admin" in access_level:
+                is_admin = True
 
-        manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
         today = date.today()
-
         all_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
         result = []
 
-        for emp in all_employees:
-            if not emp.reporting_manager:
-                continue
-            e_mgr = emp.reporting_manager.strip().lower()
-            if e_mgr != manager_name and not (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr) and not (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name):
-                continue
+        if is_admin:
+            reporting_list = [e for e in all_employees if e.user_id != user_id]
+        else:
+            if not manager:
+                return jsonify([])
+            manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
+            reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
+
+        for emp in reporting_list:
 
             # Today's attendance
             attendance = Attendance.query.filter_by(
@@ -1250,6 +1305,17 @@ def get_team_attendance(user_id):
                 check_out = None
                 working_hours = 0
 
+            emp_full_name = f"{emp.first_name} {emp.last_name}".strip().lower()
+            is_reporting_manager = False
+            report_count = 0
+            for other in all_employees:
+                if not other.reporting_manager:
+                    continue
+                o_mgr = other.reporting_manager.strip().lower()
+                if (o_mgr == emp_full_name) or (len(o_mgr.split()) == 1 and emp_full_name.split()[0] == o_mgr) or (len(emp_full_name.split()) == 1 and o_mgr.split()[0] == emp_full_name):
+                    is_reporting_manager = True
+                    report_count += 1
+
             result.append({
                 "id": emp.id,
                 "user_id": emp.user_id,
@@ -1292,6 +1358,9 @@ def get_team_attendance(user_id):
                 ),
                 "is_permanent_wfh": (emp.work_mode == "WFH"),
                 "is_shift_changed": bool(shift_change_today),
+                "is_reporting_manager": is_reporting_manager,
+                "report_count": report_count,
+                "reporting_manager": emp.reporting_manager,
             })
 
         return jsonify(result)
@@ -1374,7 +1443,7 @@ def get_reporting_employees(user_id):
 
         target_date = get_last_working_day()
 
-        reporting_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+        all_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         def _get_last_msg(history_list, role_name):
             if not isinstance(history_list, list):
@@ -1384,20 +1453,25 @@ def get_reporting_employees(user_id):
                     return item.get("comment")
             return None
 
+        user = User.query.get(user_id)
+        is_admin = False
+        if user:
+            role_name = (user.role.name or "").lower() if user.role else ""
+            access_level = (user.access_level or "").lower()
+            if "admin" in role_name or "admin" in access_level:
+                is_admin = True
+
         result = []
 
-        for employee in reporting_employees:
+        if is_admin:
+            reporting_list = [e for e in all_employees if e.user_id != user_id]
+        else:
+            if not manager:
+                return jsonify([])
+            manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
+            reporting_list = [e for e in all_employees if e.user_id != user_id and is_manager_match(e.reporting_manager, manager_full_name)]
 
-            if not employee.reporting_manager:
-                continue
-
-            e_mgr = employee.reporting_manager.strip().lower()
-            is_match = (e_mgr == manager_name) or (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr) or (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name)
-            if not is_match:
-                continue
-
-            if employee.user_id == user_id:
-                continue
+        for employee in reporting_list:
 
             attendance = Attendance.query.filter_by(
                 user_id=employee.user_id,

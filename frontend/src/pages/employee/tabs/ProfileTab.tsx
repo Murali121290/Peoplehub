@@ -603,8 +603,7 @@ const ProfileTab = () => {
 
       await axios.patch(`${BASE_URL}/employees/${employeeId}`, payload, {
         headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "multipart/form-data"
+          Authorization: `Bearer ${token}`
         }
       });
 
@@ -762,8 +761,7 @@ const ProfileTab = () => {
 
       await axios.patch(`${BASE_URL}/employees/${employeeId}`, payload, {
         headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "multipart/form-data"
+          Authorization: `Bearer ${token}`
         }
       });
 
