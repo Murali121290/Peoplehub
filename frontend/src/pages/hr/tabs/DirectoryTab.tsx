@@ -60,7 +60,7 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
         <table className="w-full border-collapse text-left text-[13px]">
           <thead>
             <tr className="border-b-2 border-neutral-200 bg-white text-neutral-500">
-              {["Employee ID", "Employee", "Designation", "Reporting Manager", "Team", "Shift", "Status", "Actions"].map((h) => (
+              {["Employee ID", "Employee", "Designation", "Reporting Manager", "Team", "Shift", "Today Shift", "Status", "Actions"].map((h) => (
                 <th key={h} className="px-4 py-4 text-xs font-semibold uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -92,6 +92,28 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
                 </td>
                 <td className="px-4 py-3.5 cursor-pointer" onClick={() => onEditEmployee(emp)}>
                   {emp.shift_timing || "-"}
+                </td>
+                <td className="px-4 py-3.5 cursor-pointer" onClick={() => onEditEmployee(emp)}>
+                  {(() => {
+                    const shift = emp.today_shift || emp.shift_timing || "General Shift";
+                    const type = emp.today_shift_type || "permanent";
+                    const chipClass =
+                      type === "wfh"
+                        ? "bg-blue-100 text-blue-700 border-blue-200"
+                        : type === "changed"
+                        ? "bg-indigo-100 text-indigo-700 border-indigo-200"
+                        : "bg-neutral-100 text-neutral-600 border-neutral-200";
+                    return (
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${chipClass}`}
+                        title={type === "changed" ? `Shift changed today: ${shift}` : shift}>
+                        {type === "wfh" && (
+                          <img src="/wfh-icon.svg" alt="WFH" className="w-3 h-3" />
+                        )}
+                        {shift}
+                        {type === "changed" && <span className="text-[9px]">↺</span>}
+                      </span>
+                    );
+                  })()}
                 </td>
                 <td className="px-4 py-3.5 cursor-pointer" onClick={() => onEditEmployee(emp)}>
                   {emp.status === "Present" ? (

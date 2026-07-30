@@ -1222,7 +1222,8 @@ def get_team_attendance(user_id):
                     )
                 ),
                 "manager_status": attendance.manager_status if (attendance and attendance.manager_status) else "Pending",
-                "is_wfh": bool(wfh_today),
+                "is_wfh": bool(wfh_today) or ((emp.shift_timing or "").strip().upper() == "WFH" and not shift_change_today),
+                "is_permanent_wfh": (emp.shift_timing or "").strip().upper() == "WFH" and not shift_change_today,
                 "is_shift_changed": bool(shift_change_today),
             })
 
@@ -1667,13 +1668,15 @@ def get_team_attendance_by_id(team_id):
             is_shift_changed = emp_shift_request is not None
             approved_shift = emp_shift_request.requested_shift if is_shift_changed else None
 
-            # Check if WFH
+            # Check if WFH (permanent via shift_timing OR approved WFH request for today)
+            # Permanent WFH is suppressed if the employee has a shift change today (coming to office)
             emp_wfh_request = (
                 wfh_by_employee.get(str(emp.id)) or 
                 wfh_by_employee.get(emp.employee_id) or
                 wfh_by_employee.get(str(emp.employee_id))
             )
-            is_wfh = emp_wfh_request is not None
+            is_permanent_wfh = (emp.shift_timing or "").strip().upper() == "WFH" and not is_shift_changed
+            is_wfh = emp_wfh_request is not None or is_permanent_wfh
 
             # Check if Permission is active now
             emp_permission = (
@@ -1741,6 +1744,7 @@ def get_team_attendance_by_id(team_id):
                 "is_shift_changed": is_shift_changed,
                 "approved_shift": approved_shift,
                 "is_wfh": is_wfh,
+                "is_permanent_wfh": is_permanent_wfh,
                 "is_permission": is_permission_active,
                 "permission_from": permission_from,
                 "permission_to": permission_to,

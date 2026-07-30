@@ -41,6 +41,12 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
   const [pendingShiftCount, setPendingShiftCount] = useState(0);
+  const [effectiveShift, setEffectiveShift] = useState<{
+    effective_shift: string;
+    is_wfh: boolean;
+    is_permanent_wfh: boolean;
+    is_shift_changed: boolean;
+  } | null>(null);
 
   const navigate = useNavigate();
 
@@ -83,6 +89,39 @@ const Sidebar: React.FC<SidebarProps> = ({
       };
     }
   }, [user, location.pathname]); // re-fetch when navigating so counts stay fresh
+
+  // Fetch effective shift for the logged-in employee
+  useEffect(() => {
+    const employeeId = localStorage.getItem('employee_id');
+    if (!employeeId) return;
+
+    const fetchShift = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/shifts/effective-today/${employeeId}`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setEffectiveShift(data);
+        }
+      } catch (e) {
+        // silently ignore
+      }
+    };
+
+    fetchShift();
+
+    // Instant refresh when any shift request is approved/rejected via Socket.IO
+    socket.on('shift_update', fetchShift);
+
+    // 5-minute fallback poll (safety net for missed socket events)
+    const interval = setInterval(fetchShift, 5 * 60 * 1000);
+
+    return () => {
+      socket.off('shift_update', fetchShift);
+      clearInterval(interval);
+    };
+  }, [user]);
 
 
   const accessLevel = `${user?.access_level || ''}`.toLowerCase();
@@ -298,6 +337,40 @@ const Sidebar: React.FC<SidebarProps> = ({
           <Link to="/employee-dashboard?tab=profile" className="ml-3 flex-1 overflow-hidden block hover:opacity-80 transition-opacity cursor-pointer">
             <p className="truncate text-sm font-medium text-neutral-800">{user?.full_name}</p>
             <p className="text-xs text-neutral-400 capitalize">{user?.designation || user?.role_name || user?.role || "Employee"}</p>
+            {effectiveShift && (
+              <span
+                className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  effectiveShift.is_wfh
+                    ? effectiveShift.is_permanent_wfh
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'bg-sky-100 text-sky-600'
+                    : effectiveShift.is_shift_changed
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'bg-neutral-100 text-neutral-500'
+                }`}
+                title={effectiveShift.is_shift_changed ? `Today: ${effectiveShift.effective_shift}` : effectiveShift.effective_shift}
+              >
+                {effectiveShift.is_wfh ? (
+                  <>
+                    <img
+                      src="/wfh-icon.svg"
+                      alt="WFH"
+                      className="w-2.5 h-2.5"
+                    />
+                    WFH{effectiveShift.is_permanent_wfh ? ' (Permanent)' : ''}
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={2.5} fill="none" />
+                    </svg>
+                    {effectiveShift.effective_shift}
+                    {effectiveShift.is_shift_changed && ' ↺'}
+                  </>
+                )}
+              </span>
+            )}
           </Link>
         </div>
         <>
