@@ -480,6 +480,7 @@ const ManagerDashboardPage = () => {
         hoursThisWeek: match?.hoursThisWeek ?? att.working_hours ?? 0,
         status: isOnLeave ? "Leave" : match?.status || "Active",
         isWfh: att.is_wfh || false,
+        isPermanentWfh: att.is_permanent_wfh || false,
         isShiftChanged: att.is_shift_changed || false,
         attendanceStatus: att.attendance_status || "",
         profile_image: att.profile_image,
@@ -1261,7 +1262,7 @@ const ManagerDashboardPage = () => {
 
                                   {member.isWfh && (
                                     <span
-                                      title="Work From Home (WFH)"
+                                      title={member.isPermanentWfh ? "Permanent Work From Home" : "Work From Home (WFH)"}
                                       style={{
                                         display: "inline-flex",
                                         alignItems: "center",
@@ -1276,7 +1277,14 @@ const ManagerDashboardPage = () => {
                                         flexShrink: 0,
                                       }}
                                     >
-                                      <img src="/wfh-icon.svg" alt="WFH" style={{ width: "13px", height: "13px" }} />
+                                      <img
+                                        src="/wfh-icon.svg"
+                                        alt="WFH"
+                                        style={{
+                                          width: "13px",
+                                          height: "13px",
+                                        }}
+                                      />
                                     </span>
                                   )}
                                 </div>
@@ -1601,7 +1609,7 @@ const ManagerDashboardPage = () => {
                                     <span style={{ fontWeight: 700, color: THEME.navy }}>{member.name}</span>
                                     {member.isWfh && (
                                       <span
-                                        title="Work From Home (WFH)"
+                                        title={member.isPermanentWfh ? "Permanent Work From Home" : "Work From Home (WFH)"}
                                         style={{
                                           display: "inline-flex",
                                           alignItems: "center",
@@ -1616,7 +1624,14 @@ const ManagerDashboardPage = () => {
                                           flexShrink: 0,
                                         }}
                                       >
-                                        <img src="/wfh-icon.svg" alt="WFH" style={{ width: "13px", height: "13px" }} />
+                                        <img
+                                          src="/wfh-icon.svg"
+                                          alt="WFH"
+                                          style={{
+                                            width: "13px",
+                                            height: "13px",
+                                          }}
+                                        />
                                       </span>
                                     )}
                                   </div>

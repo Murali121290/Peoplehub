@@ -267,7 +267,13 @@ def login():
                 else True
             ),
 
-            "user": user.to_dict()
+            "user": user.to_dict(),
+
+            "shift_timing": (
+                employee.shift_timing
+                if employee
+                else None
+            ),
 
         }), 200
 

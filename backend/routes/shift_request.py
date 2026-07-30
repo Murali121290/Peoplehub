@@ -571,3 +571,59 @@ def get_shift_options():
         return jsonify(sorted(list(shifts_set)))
     except Exception as e:
         return jsonify(["General Shift", "First Shift", "Second Shift", "Night Shift"])
+
+
+# ==========================================
+# EFFECTIVE SHIFT FOR TODAY (Sidebar use)
+# ==========================================
+@shift_bp.route("/effective-today/<int:employee_id>", methods=["GET"])
+def get_effective_shift_today(employee_id):
+    """
+    Return the employee's effective shift for today.
+    Priority: approved ShiftRequest covering today > permanent shift_timing.
+    Also returns is_wfh and is_permanent_wfh flags.
+    """
+    try:
+        from datetime import date
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+
+        emp = Employee.query.get(employee_id)
+        if not emp:
+            return jsonify({"error": "Employee not found"}), 404
+
+        permanent_shift = (emp.shift_timing or "General Shift").strip()
+        is_permanent_wfh = permanent_shift.upper() == "WFH"
+
+        # Look for an approved shift request (Shift or WFH) covering today
+        approved_request = ShiftRequest.query.filter(
+            ShiftRequest.employee_id == employee_id,
+            ShiftRequest.status == "Approved",
+            ShiftRequest.from_date <= today,
+            ShiftRequest.to_date >= today
+        ).order_by(ShiftRequest.id.desc()).first()
+
+        if approved_request:
+            req_type = (approved_request.request_type or "").strip().upper()
+            if req_type == "WFH":
+                effective_shift = "WFH"
+                is_wfh = True
+                is_shift_changed = False
+            else:
+                effective_shift = approved_request.requested_shift or permanent_shift
+                is_wfh = False
+                is_shift_changed = True
+        else:
+            effective_shift = permanent_shift
+            is_wfh = is_permanent_wfh
+            is_shift_changed = False
+
+        return jsonify({
+            "effective_shift": effective_shift,
+            "permanent_shift": permanent_shift,
+            "is_wfh": is_wfh,
+            "is_permanent_wfh": is_permanent_wfh and not is_shift_changed,
+            "is_shift_changed": is_shift_changed,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
