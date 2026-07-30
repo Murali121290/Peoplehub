@@ -324,7 +324,73 @@ export default function HRAdminDashboard() {
         .toLowerCase()
         .includes(search.toLowerCase()) ||
       (e.designation || "").toLowerCase().includes(search.toLowerCase()),
-  ).sort((a, b) => {
+  ).map((emp) => {
+    // ── Today's date string (YYYY-MM-DD) ──────────────────────────────────
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    // ── Today's attendance ────────────────────────────────────────────────
+    const todayAtt = attendance.find(
+      (a: any) => a.user_id === emp.user_id && a.attendance_date === todayStr
+    );
+
+    // ── Today's approved leave ─────────────────────────────────────────────
+    const onLeaveToday = leaves.some((l: any) => {
+      const empMatch =
+        String(l.employee_id) === String(emp.id) ||
+        String(l.employee_id) === String(emp.employee_id);
+      if (!empMatch) return false;
+      if ((l.status || "").toLowerCase() !== "approved") return false;
+      try {
+        const from = new Date(l.from_date).toISOString().split("T")[0];
+        const to = new Date(l.to_date).toISOString().split("T")[0];
+        return from <= todayStr && todayStr <= to;
+      } catch { return false; }
+    });
+
+    // ── Today's attendance status ──────────────────────────────────────────
+    let today_status = "Absent";
+    if (todayAtt) {
+      const attStatus = (todayAtt.status || "").toLowerCase();
+      if (attStatus === "present" || attStatus === "late" || todayAtt.check_in) {
+        today_status = todayAtt.check_out ? "Checked Out" : "Present";
+      }
+    } else if (onLeaveToday) {
+      today_status = "On Leave";
+    }
+
+    // ── Today's effective shift ────────────────────────────────────────────
+    const approvedShiftReq = shifts.find((s: any) => {
+      const empMatch =
+        String(s.employee_id) === String(emp.id) ||
+        String(s.employee_id) === String(emp.employee_id);
+      if (!empMatch) return false;
+      if ((s.status || "").toLowerCase() !== "approved") return false;
+      try {
+        const from = new Date(s.from_date).toISOString().split("T")[0];
+        const to = new Date(s.to_date).toISOString().split("T")[0];
+        return from <= todayStr && todayStr <= to;
+      } catch { return false; }
+    });
+
+    let today_shift = emp.shift_timing || "General Shift";
+    let today_shift_type: "permanent" | "wfh" | "changed" = "permanent";
+    if (approvedShiftReq) {
+      const rt = (approvedShiftReq.request_type || "").toUpperCase();
+      if (rt === "WFH") {
+        today_shift = "WFH";
+        today_shift_type = "wfh";
+      } else {
+        today_shift = approvedShiftReq.requested_shift || today_shift;
+        today_shift_type = "changed";
+      }
+    } else if ((emp.shift_timing || "").toUpperCase() === "WFH") {
+      today_shift = "WFH";
+      today_shift_type = "wfh";
+    }
+
+    return { ...emp, today_status, today_shift, today_shift_type };
+  }).sort((a, b) => {
     const idA = String(a.employee_id || "");
     const idB = String(b.employee_id || "");
     return idA.localeCompare(idB, undefined, { numeric: true });
