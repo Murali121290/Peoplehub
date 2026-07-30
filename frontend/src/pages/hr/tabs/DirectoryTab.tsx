@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { MagnifyingGlassIcon, PlusIcon, KeyIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import Panel from '../components/Panel';
 import Btn from '../components/Btn';
@@ -15,6 +15,57 @@ interface DirectoryTabProps {
   BASE_URL: string;
 }
 
+// Custom Premium Scrollable Dropdown Selector
+const CustomSelect: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  options: string[];
+  placeholder: string;
+}> = ({ value, onChange, options, placeholder }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClose = () => setIsOpen(false);
+    document.addEventListener("click", handleClose);
+    return () => document.removeEventListener("click", handleClose);
+  }, [isOpen]);
+
+  return (
+    <div className="relative w-full text-left" onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full items-center justify-between rounded border border-neutral-200 bg-white px-2 py-1 text-[11px] font-semibold text-neutral-700 outline-none hover:border-neutral-300"
+        style={{ textTransform: "none" }}
+      >
+        <span className="truncate">{value === "All" ? placeholder : value}</span>
+        <span className="ml-1 text-[8px] text-neutral-400">▼</span>
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+          {options.map((opt) => (
+            <div
+              key={opt}
+              onClick={() => {
+                onChange(opt);
+                setIsOpen(false);
+              }}
+              className={`cursor-pointer px-2.5 py-1.5 text-[11px] text-neutral-700 hover:bg-neutral-100 truncate ${
+                opt === value ? "bg-primary-50 font-bold text-primary-700" : ""
+              }`}
+              style={{ textTransform: "none" }}
+              title={opt}
+            >
+              {opt === "All" ? placeholder : opt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const DirectoryTab: React.FC<DirectoryTabProps> = ({
   filteredEmps,
   search,
@@ -25,6 +76,74 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
   onResetAllPasswords,
   BASE_URL
 }) => {
+  // Local Filter States
+  const [desigFilter, setDesigFilter] = useState("All");
+  const [managerFilter, setManagerFilter] = useState("All");
+  const [teamFilter, setTeamFilter] = useState("All");
+  const [shiftFilter, setShiftFilter] = useState("All");
+  const [workModeFilter, setWorkModeFilter] = useState("All");
+  const [todayShiftFilter, setTodayShiftFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("All");
+
+  // Dynamic filter lists from searched list
+  const uniqueDesignations = useMemo(() => {
+    const s = new Set<string>();
+    filteredEmps.forEach(e => { if (e.designation) s.add(e.designation); });
+    return ["All", ...Array.from(s)];
+  }, [filteredEmps]);
+
+  const uniqueManagers = useMemo(() => {
+    const s = new Set<string>();
+    filteredEmps.forEach(e => { if (e.reporting_manager) s.add(e.reporting_manager); });
+    return ["All", ...Array.from(s)];
+  }, [filteredEmps]);
+
+  const uniqueTeams = useMemo(() => {
+    const s = new Set<string>();
+    filteredEmps.forEach(e => { if (e.department) s.add(e.department); });
+    return ["All", ...Array.from(s)];
+  }, [filteredEmps]);
+
+  const uniqueShifts = useMemo(() => {
+    const s = new Set<string>();
+    filteredEmps.forEach(e => { if (e.shift_timing) s.add(e.shift_timing); });
+    return ["All", ...Array.from(s)];
+  }, [filteredEmps]);
+
+  const uniqueWorkModes = useMemo(() => {
+    const s = new Set<string>();
+    filteredEmps.forEach(e => { if (e.work_mode) s.add(e.work_mode); });
+    return ["All", ...Array.from(s)];
+  }, [filteredEmps]);
+
+  const uniqueTodayShifts = useMemo(() => {
+    const s = new Set<string>();
+    filteredEmps.forEach(e => {
+      const shift = e.today_shift || e.shift_timing || "General Shift";
+      s.add(shift);
+    });
+    return ["All", ...Array.from(s)];
+  }, [filteredEmps]);
+
+  const uniqueStatuses = useMemo(() => {
+    const s = new Set<string>();
+    filteredEmps.forEach(e => { if (e.status) s.add(e.status); });
+    return ["All", ...Array.from(s)];
+  }, [filteredEmps]);
+
+  // Apply filters
+  const displayedEmps = useMemo(() => {
+    return filteredEmps.filter((emp) => {
+      const matchDesig = desigFilter === "All" || emp.designation === desigFilter;
+      const matchMgr = managerFilter === "All" || emp.reporting_manager === managerFilter;
+      const matchTeam = teamFilter === "All" || emp.department === teamFilter;
+      const matchShift = shiftFilter === "All" || emp.shift_timing === shiftFilter;
+      const matchWorkMode = workModeFilter === "All" || (emp.work_mode || "Office") === workModeFilter;
+      const matchTodayShift = todayShiftFilter === "All" || (emp.today_shift || emp.shift_timing || "General Shift") === todayShiftFilter;
+      const matchStatus = statusFilter === "All" || emp.status === statusFilter;
+      return matchDesig && matchMgr && matchTeam && matchShift && matchWorkMode && matchTodayShift && matchStatus;
+    });
+  }, [filteredEmps, desigFilter, managerFilter, teamFilter, shiftFilter, workModeFilter, todayShiftFilter, statusFilter]);
 
   return (
     <Panel>
@@ -56,17 +175,109 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-neutral-100 shadow-sm">
+      <div className="overflow-x-auto overflow-y-auto max-h-[600px] rounded-xl border border-neutral-200 bg-neutral-100 shadow-sm">
         <table className="w-full border-collapse text-left text-[13px]">
-          <thead>
-            <tr className="border-b-2 border-neutral-200 bg-white text-neutral-500">
-              {["Employee ID", "Employee", "Designation", "Reporting Manager", "Team", "Shift", "Work Mode", "Today Shift", "Status", "Actions"].map((h) => (
-                <th key={h} className="px-4 py-4 text-xs font-semibold uppercase tracking-wide">{h}</th>
-              ))}
+          <thead className="sticky top-0 z-10 bg-white">
+            <tr className="border-b-2 border-neutral-200 text-neutral-500">
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[100px]">Employee ID</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[150px]">Employee</th>
+              
+              {/* Designation Filter */}
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[160px]">
+                <div className="flex flex-col gap-1.5">
+                  <span>Designation</span>
+                  <CustomSelect
+                    value={desigFilter}
+                    onChange={setDesigFilter}
+                    options={uniqueDesignations}
+                    placeholder="All"
+                  />
+                </div>
+              </th>
+
+              {/* Reporting Manager Filter */}
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[170px]">
+                <div className="flex flex-col gap-1.5">
+                  <span>Reporting Manager</span>
+                  <CustomSelect
+                    value={managerFilter}
+                    onChange={setManagerFilter}
+                    options={uniqueManagers}
+                    placeholder="All"
+                  />
+                </div>
+              </th>
+
+              {/* Team Filter */}
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[140px]">
+                <div className="flex flex-col gap-1.5">
+                  <span>Team</span>
+                  <CustomSelect
+                    value={teamFilter}
+                    onChange={setTeamFilter}
+                    options={uniqueTeams}
+                    placeholder="All"
+                  />
+                </div>
+              </th>
+
+              {/* Shift Filter */}
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[140px]">
+                <div className="flex flex-col gap-1.5">
+                  <span>Shift</span>
+                  <CustomSelect
+                    value={shiftFilter}
+                    onChange={setShiftFilter}
+                    options={uniqueShifts}
+                    placeholder="All"
+                  />
+                </div>
+              </th>
+
+              {/* Work Mode Filter */}
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[120px]">
+                <div className="flex flex-col gap-1.5">
+                  <span>Work Mode</span>
+                  <CustomSelect
+                    value={workModeFilter}
+                    onChange={setWorkModeFilter}
+                    options={uniqueWorkModes}
+                    placeholder="All"
+                  />
+                </div>
+              </th>
+
+              {/* Today Shift Filter */}
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[140px]">
+                <div className="flex flex-col gap-1.5">
+                  <span>Today Shift</span>
+                  <CustomSelect
+                    value={todayShiftFilter}
+                    onChange={setTodayShiftFilter}
+                    options={uniqueTodayShifts}
+                    placeholder="All"
+                  />
+                </div>
+              </th>
+
+              {/* Status Filter */}
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[120px]">
+                <div className="flex flex-col gap-1.5">
+                  <span>Status</span>
+                  <CustomSelect
+                    value={statusFilter}
+                    onChange={setStatusFilter}
+                    options={uniqueStatuses}
+                    placeholder="All"
+                  />
+                </div>
+              </th>
+
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[100px]">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filteredEmps.map((emp, index) => (
+            {displayedEmps.map((emp, index) => (
              <tr
                 key={emp.id}
                 className={`border-b border-neutral-200 transition-colors duration-150 hover:bg-primary-50 ${
@@ -143,23 +354,21 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
             ))}
           </tbody>
         </table>
-        {filteredEmps.length === 0 && (
+        {displayedEmps.length === 0 && (
           <div className="px-5 py-12 text-center text-neutral-500">
             <div className="mb-1.5 text-[15px] font-semibold text-neutral-800">No employees found</div>
-            <div className="mb-4 text-[13px]">Try adjusting your search terms</div>
+            <div className="mb-4 text-[13px]">Try adjusting your search or filter terms</div>
           </div>
         )}
       </div>
-      {filteredEmps.length > 0 && (
+      {displayedEmps.length > 0 && (
         <div className="mt-4 flex items-center justify-between text-[13px] text-neutral-500">
-          <span>Showing <strong className="text-neutral-800">{filteredEmps.length}</strong> {filteredEmps.length === 1 ? "employee" : "employees"}</span>
+          <span>Showing <strong className="text-neutral-800">{displayedEmps.length}</strong> {displayedEmps.length === 1 ? "employee" : "employees"}</span>
           <span>Last updated: {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
         </div>
       )}
     </Panel>
   );
 };
-
-
 
 export default DirectoryTab;

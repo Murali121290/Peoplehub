@@ -34,6 +34,93 @@ import { Input, Select } from "../components/ui/Form";
 import type { StatCardColor } from "../components/ui/StatCard";
 import type { BadgeVariant } from "../components/ui/Badge";
 
+const CustomSelect: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  options: string[];
+  placeholder: string;
+}> = ({ value, onChange, options, placeholder }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClose = () => setIsOpen(false);
+    document.addEventListener("click", handleClose);
+    return () => document.removeEventListener("click", handleClose);
+  }, [isOpen]);
+
+  return (
+    <div style={{ position: "relative", width: "100%", textAlign: "left", textTransform: "none" }} onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          display: "flex",
+          width: "100%",
+          alignItems: "center",
+          justifyContent: "space-between",
+          borderRadius: "6px",
+          border: "1px solid #cbd5e1",
+          background: "#fff",
+          padding: "4px 8px",
+          fontSize: "11px",
+          fontWeight: 600,
+          color: "#334155",
+          outline: "none",
+          cursor: "pointer",
+        }}
+      >
+        <span style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+          {value === "All" ? placeholder : value}
+        </span>
+        <span style={{ marginLeft: "4px", fontSize: "8px", color: "#94a3b8" }}>▼</span>
+      </button>
+
+      {isOpen && (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            zIndex: 50,
+            marginTop: "4px",
+            maxHeight: "192px",
+            overflowY: "auto",
+            borderRadius: "8px",
+            border: "1px solid #e2e8f0",
+            background: "#fff",
+            padding: "4px 0",
+            boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+          }}
+        >
+          {options.map((opt) => (
+            <div
+              key={opt}
+              onClick={() => {
+                onChange(opt);
+                setIsOpen(false);
+              }}
+              style={{
+                cursor: "pointer",
+                padding: "6px 10px",
+                fontSize: "11px",
+                color: "#334155",
+                background: opt === value ? "#f1f5f9" : "transparent",
+                fontWeight: opt === value ? "bold" : "normal",
+                textOverflow: "ellipsis",
+                overflow: "hidden",
+                whiteSpace: "nowrap",
+              }}
+              title={opt}
+            >
+              {opt === "All" ? placeholder : opt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const BASE_URL = `${API_URL}/api`;
 
 const formatWorkingHours = (hoursVal: any) => {
@@ -163,6 +250,10 @@ const ManagerDashboardPage = () => {
   const [teamAttendance, setTeamAttendance] = useState<any[]>([]);
   const [attendanceSearch, setAttendanceSearch] = useState("");
   const [attendanceFilter, setAttendanceFilter] = useState("All");
+  const [deptFilter, setDeptFilter] = useState("All");
+  const [desigFilter, setDesigFilter] = useState("All");
+  const [mgrFilter, setMgrFilter] = useState("All");
+  const [shiftFilter, setShiftFilter] = useState("All");
   const [managerName, setManagerName] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [showViewDropdown, setShowViewDropdown] = useState(false);
@@ -495,9 +586,36 @@ const ManagerDashboardPage = () => {
         shift: att.shift,
         manager_status: att.manager_status,
         attendance_status: att.attendance_status || "",
+        is_reporting_manager: att.is_reporting_manager || match?.is_reporting_manager || false,
+        report_count: att.report_count ?? match?.report_count ?? 0,
+        reporting_manager: att.reporting_manager || match?.reporting_manager || "",
       };
     });
   }, [teamAttendance, teamMembers]);
+
+  const departments = useMemo(() => {
+    const s = new Set<string>();
+    scopedTeamMembers.forEach((m) => { if (m.department) s.add(m.department); });
+    return ["All", ...Array.from(s)];
+  }, [scopedTeamMembers]);
+
+  const designations = useMemo(() => {
+    const s = new Set<string>();
+    scopedTeamMembers.forEach((m) => { if (m.designation) s.add(m.designation); });
+    return ["All", ...Array.from(s)];
+  }, [scopedTeamMembers]);
+
+  const managersList = useMemo(() => {
+    const s = new Set<string>();
+    scopedTeamMembers.forEach((m) => { if (m.reporting_manager) s.add(m.reporting_manager); });
+    return ["All", ...Array.from(s)];
+  }, [scopedTeamMembers]);
+
+  const shiftsList = useMemo(() => {
+    const s = new Set<string>();
+    scopedTeamMembers.forEach((m) => { if (m.shift) s.add(m.shift); });
+    return ["All", ...Array.from(s)];
+  }, [scopedTeamMembers]);
 
   // ==========================
   // TEAM STATS
@@ -806,8 +924,8 @@ const ManagerDashboardPage = () => {
           <section
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-              gap: "18px",
+              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              gap: "14px",
             }}
           >
             {statCards.map((card) => {
@@ -838,14 +956,14 @@ const ManagerDashboardPage = () => {
                   }}
                   style={{
                     background: THEME.surface,
-                    borderRadius: "20px",
+                    borderRadius: "16px",
                     border: isSelected
                       ? `2px solid ${tone.iconColor}`
                       : `1px solid ${THEME.border}`,
                     boxShadow: isSelected
-                      ? "0 10px 25px -5px rgba(0, 0, 0, 0.08)"
-                      : "0 4px 20px rgba(15, 23, 42, 0.04)",
-                    padding: isSelected ? "19px" : "20px",
+                      ? "0 8px 20px -5px rgba(0, 0, 0, 0.08)"
+                      : "0 2px 12px rgba(15, 23, 42, 0.03)",
+                    padding: isSelected ? "10px 14px" : "12px 14px",
                     cursor: "pointer",
                     transform: isSelected ? "scale(1.02)" : "scale(1)",
                     transition: "all 0.2s ease-in-out",
@@ -856,13 +974,13 @@ const ManagerDashboardPage = () => {
                       display: "flex",
                       alignItems: "flex-start",
                       justifyContent: "space-between",
-                      gap: "12px",
+                      gap: "8px",
                     }}
                   >
                     <div>
                       <div
                         style={{
-                          fontSize: "12px",
+                          fontSize: "10.5px",
                           fontWeight: 700,
                           color: THEME.textLight,
                           textTransform: "uppercase",
@@ -873,8 +991,8 @@ const ManagerDashboardPage = () => {
                       </div>
                       <div
                         style={{
-                          marginTop: "12px",
-                          fontSize: "34px",
+                          marginTop: "6px",
+                          fontSize: "24px",
                           fontWeight: 800,
                           lineHeight: 1,
                           color: THEME.navy,
@@ -884,8 +1002,8 @@ const ManagerDashboardPage = () => {
                       </div>
                       <div
                         style={{
-                          marginTop: "8px",
-                          fontSize: "13px",
+                          marginTop: "4px",
+                          fontSize: "11px",
                           color: THEME.textSoft,
                         }}
                       >
@@ -895,9 +1013,9 @@ const ManagerDashboardPage = () => {
 
                     <div
                       style={{
-                        width: "46px",
-                        height: "46px",
-                        borderRadius: "14px",
+                        width: "36px",
+                        height: "36px",
+                        borderRadius: "10px",
                         background: tone.iconBg,
                         display: "flex",
                         alignItems: "center",
@@ -905,7 +1023,7 @@ const ManagerDashboardPage = () => {
                         flexShrink: 0,
                       }}
                     >
-                      <Icon style={{ width: "22px", height: "22px", color: tone.iconColor }} />
+                      <Icon style={{ width: "18px", height: "18px", color: tone.iconColor }} />
                     </div>
                   </div>
                 </div>
@@ -1017,30 +1135,7 @@ const ManagerDashboardPage = () => {
                     />
                   </div>
 
-                  <select
-                    value={attendanceFilter}
-                    onChange={(e) => setAttendanceFilter(e.target.value)}
-                    style={{
-                      height: "42px",
-                      padding: "0 14px",
-                      borderRadius: "12px",
-                      border: `1px solid ${THEME.border}`,
-                      background: THEME.surface,
-                      outline: "none",
-                      fontSize: "14px",
-                      color: THEME.text,
-                      minWidth: "150px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <option value="All">All Status</option>
-                    <option value="Present">Present</option>
-                    <option value="Checked Out">Checked Out</option>
-                    <option value="Absent">Absent</option>
-                    <option value="On Leave">On Leave</option>
-                    <option value="WFH">Work From Home</option>
-                    <option value="Shift Changed">Shift Changed</option>
-                  </select>
+
 
                   <div style={{ display: "flex", background: THEME.surface, border: `1px solid ${THEME.border}`, borderRadius: "12px", overflow: "hidden", height: "42px" }}>
                     <button
@@ -1154,7 +1249,12 @@ const ManagerDashboardPage = () => {
                         matchFilter = m.attendance_status === attendanceFilter;
                       }
 
-                      return matchSearch && matchFilter;
+                      const matchDept = deptFilter === "All" || m.department === deptFilter;
+                      const matchDesig = desigFilter === "All" || m.designation === desigFilter;
+                      const matchMgr = mgrFilter === "All" || m.reporting_manager === mgrFilter;
+                      const matchShift = shiftFilter === "All" || m.shift === shiftFilter;
+
+                      return matchSearch && matchFilter && matchDept && matchDesig && matchMgr && matchShift;
                     })
                     .map((member) => {
                       const status = member.attendance_status;
@@ -1259,7 +1359,25 @@ const ManagerDashboardPage = () => {
                                   >
                                     {member.name}
                                   </div>
-
+                                  {member.is_reporting_manager && (
+                                    <span
+                                      title="This employee is also a reporting manager for other team members"
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        padding: "2px 8px",
+                                        borderRadius: "999px",
+                                        background: "#f0fdf4",
+                                        border: "1px solid #bbf7d0",
+                                        color: "#166534",
+                                        fontSize: "10px",
+                                        fontWeight: 800,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      People Manager
+                                    </span>
+                                  )}
                                   {member.isWfh && (
                                     <span
                                       title={member.isPermanentWfh ? "Permanent Work From Home" : "Work From Home (WFH)"}
@@ -1497,18 +1615,69 @@ const ManagerDashboardPage = () => {
                     })}
                 </div>
               ) : (
-                <div style={{ overflowX: "auto", border: `1px solid ${THEME.border}`, borderRadius: "16px" }}>
+                <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "600px", border: `1px solid ${THEME.border}`, borderRadius: "16px" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", background: THEME.surface }}>
-                    <thead>
+                    <thead style={{ position: "sticky", top: 0, zIndex: 10, background: THEME.surfaceSoft }}>
                       <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                         <th rowSpan={2} style={{ padding: "14px 16px" }}>Employee</th>
                         <th rowSpan={2} style={{ padding: "14px 16px" }}>Employee ID</th>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Department</th>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Designation</th>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Shift</th>
+                        <th rowSpan={2} style={{ padding: "8px 12px", minWidth: "140px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span>Department</span>
+                            <CustomSelect
+                              value={deptFilter}
+                              onChange={setDeptFilter}
+                              options={departments}
+                              placeholder="All"
+                            />
+                          </div>
+                        </th>
+                        <th rowSpan={2} style={{ padding: "8px 12px", minWidth: "140px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span>Designation</span>
+                            <CustomSelect
+                              value={desigFilter}
+                              onChange={setDesigFilter}
+                              options={designations}
+                              placeholder="All"
+                            />
+                          </div>
+                        </th>
+                        <th rowSpan={2} style={{ padding: "8px 12px", minWidth: "150px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span>Reporting Manager</span>
+                            <CustomSelect
+                              value={mgrFilter}
+                              onChange={setMgrFilter}
+                              options={managersList}
+                              placeholder="All"
+                            />
+                          </div>
+                        </th>
+                        <th rowSpan={2} style={{ padding: "8px 12px", minWidth: "130px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span>Shift</span>
+                            <CustomSelect
+                              value={shiftFilter}
+                              onChange={setShiftFilter}
+                              options={shiftsList}
+                              placeholder="All"
+                            />
+                          </div>
+                        </th>
                         <th colSpan={3} style={{ padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(37,99,235,0.05)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
                         <th colSpan={3} style={{ padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(126,34,206,0.05)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Status</th>
+                        <th rowSpan={2} style={{ padding: "8px 12px", minWidth: "120px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span>Status</span>
+                            <CustomSelect
+                              value={attendanceFilter}
+                              onChange={setAttendanceFilter}
+                              options={["All", "Present", "Checked Out", "Absent", "On Leave", "WFH", "Shift Changed"]}
+                              placeholder="All"
+                            />
+                          </div>
+                        </th>
                       </tr>
                       <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                         <th style={{ padding: "8px 16px", background: "rgba(37,99,235,0.02)" }}>Check In</th>
@@ -1543,7 +1712,12 @@ const ManagerDashboardPage = () => {
                             matchFilter = m.attendance_status === attendanceFilter;
                           }
 
-                          return matchSearch && matchFilter;
+                          const matchDept = deptFilter === "All" || m.department === deptFilter;
+                          const matchDesig = desigFilter === "All" || m.designation === desigFilter;
+                          const matchMgr = mgrFilter === "All" || m.reporting_manager === mgrFilter;
+                          const matchShift = shiftFilter === "All" || m.shift === shiftFilter;
+
+                          return matchSearch && matchFilter && matchDept && matchDesig && matchMgr && matchShift;
                         })
                         .map((member) => {
                           const status = member.attendance_status;
@@ -1605,8 +1779,27 @@ const ManagerDashboardPage = () => {
                                       {initials}
                                     </div>
                                   )}
-                                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                                     <span style={{ fontWeight: 700, color: THEME.navy }}>{member.name}</span>
+                                    {member.is_reporting_manager && (
+                                      <span
+                                        title="This employee is also a reporting manager for other team members"
+                                        style={{
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          padding: "2px 8px",
+                                          borderRadius: "999px",
+                                          background: "#f0fdf4",
+                                          border: "1px solid #bbf7d0",
+                                          color: "#166534",
+                                          fontSize: "10px",
+                                          fontWeight: 800,
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        People Manager ({member.report_count})
+                                      </span>
+                                    )}
                                     {member.isWfh && (
                                       <span
                                         title={member.isPermanentWfh ? "Permanent Work From Home" : "Work From Home (WFH)"}
@@ -1640,6 +1833,7 @@ const ManagerDashboardPage = () => {
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.employee_id || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.department || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.designation || "—"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.reporting_manager || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.shift || "General Shift"}</td>
 
                               {/* Web Entry Columns */}
