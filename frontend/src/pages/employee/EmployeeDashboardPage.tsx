@@ -30,6 +30,80 @@ import NotificationsPanel from "./components/NotificationsPanel";
 
 const BASE_URL = `${API_URL}/api`;
 
+const NewHireTab: React.FC<{ employees: any[] }> = ({ employees }) => {
+  const newJoiners = React.useMemo(() => {
+    return employees.filter(emp => {
+      if (!emp.joining_date) return false;
+      const joinDate = new Date(emp.joining_date);
+      const today = new Date();
+      const diffTime = today.getTime() - joinDate.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      // 2 months is roughly 60 days
+      return diffDays >= 0 && diffDays <= 60 && (emp.status || "").toLowerCase() !== "inactive";
+    }).sort((a, b) => new Date(b.joining_date).getTime() - new Date(a.joining_date).getTime());
+  }, [employees]);
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {newJoiners.length === 0 ? (
+        <div className="col-span-full text-center py-12 bg-white rounded-2xl border border-neutral-200 shadow-sm">
+          <span className="text-4xl">👋</span>
+          <p className="mt-4 text-neutral-500 font-medium">No new joiners in the last 2 months.</p>
+        </div>
+      ) : (
+        newJoiners.map((emp) => {
+          const joinDate = new Date(emp.joining_date);
+          const formattedJoinDate = joinDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+          const today = new Date();
+          const diffDays = Math.floor((today.getTime() - joinDate.getTime()) / (1000 * 60 * 60 * 24));
+          const initials = `${(emp.first_name || "").charAt(0)}${(emp.last_name || "").charAt(0)}`.toUpperCase();
+
+          return (
+            <div
+              key={emp.id}
+              className="relative p-6 bg-white rounded-2xl border border-neutral-200 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md flex flex-col justify-between"
+              style={{ minHeight: "150px" }}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  {/* Avatar / Profile Pic */}
+                  <img
+                    src={emp.profile_image ? `data:image/jpeg;base64,${emp.profile_image}` : "/default-avatar.png"}
+                    alt={`${emp.first_name} ${emp.last_name}`}
+                    className="w-12 h-12 rounded-2xl object-cover border border-neutral-100 bg-neutral-50"
+                    onError={(e) => {
+                      e.currentTarget.src = "/default-avatar.png";
+                    }}
+                  />
+                  {/* Days Joined Badge */}
+                  <span className="bg-neutral-50 text-neutral-600 border border-neutral-100 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
+                    Day {diffDays}
+                  </span>
+                </div>
+
+                {/* Name & Designation */}
+                <h3 className="text-base font-bold text-neutral-800 mb-1">{emp.first_name} {emp.last_name}</h3>
+                <p className="text-sm font-semibold text-neutral-500 mb-4">{emp.designation || "N/A"}</p>
+              </div>
+
+              {/* Department & Joining Date Badges */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="inline-flex items-center rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 border border-blue-100">
+                  {emp.department || "N/A"}
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500 font-semibold">
+                  <CalendarDaysIcon className="w-4 h-4 text-neutral-400" />
+                  {formattedJoinDate}
+                </span>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+};
+
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { staggerChildren: 0.1 } },
@@ -45,6 +119,7 @@ const tabs = [
   { id: "leave", label: "Leave Requests", icon: CalendarDaysIcon },
   { id: "shift", label: "Shift Request", icon: ClockIcon },
   { id: "attendance", label: "Attendance", icon: ClockIcon },
+  { id: "new-hire", label: "New Hire", icon: SparklesIcon },
   { id: "profile", label: "Profile", icon: UserCircleIcon },
 ];
 
@@ -995,16 +1070,16 @@ const EmployeeDashboardPage: React.FC = () => {
           setIsLunchBreak(data.lunch_break || false);
           setIsTeaBreak(data.tea_break || false);
           if (data.lunch_break && data.lunch_start) {
-    setLunchStartTime(parseTimeString(data.lunch_start));
-} else {
-    setLunchStartTime(null);
-}
+            setLunchStartTime(parseTimeString(data.lunch_start));
+          } else {
+            setLunchStartTime(null);
+          }
 
-if (data.tea_break && data.tea_start) {
-    setTeaStartTime(parseTimeString(data.tea_start));
-} else {
-    setTeaStartTime(null);
-}
+          if (data.tea_break && data.tea_start) {
+            setTeaStartTime(parseTimeString(data.tea_start));
+          } else {
+            setTeaStartTime(null);
+          }
           setTotalLunchSeconds(lunchSecs);
           setTotalTeaSeconds(teaSecs);
           // Immediately show the correct timer on re-login
@@ -1083,16 +1158,16 @@ if (data.tea_break && data.tea_start) {
           setCheckInTime(null);
         }
         if (payload.lunch_break && payload.lunch_start) {
-    setLunchStartTime(parseTimeString(payload.lunch_start));
-} else {
-    setLunchStartTime(null);
-}
+          setLunchStartTime(parseTimeString(payload.lunch_start));
+        } else {
+          setLunchStartTime(null);
+        }
 
-if (payload.tea_break && payload.tea_start) {
-    setTeaStartTime(parseTimeString(payload.tea_start));
-} else {
-    setTeaStartTime(null);
-}
+        if (payload.tea_break && payload.tea_start) {
+          setTeaStartTime(parseTimeString(payload.tea_start));
+        } else {
+          setTeaStartTime(null);
+        }
         setTotalLunchSeconds((payload.lunch_minutes || 0) * 60);
         setTotalTeaSeconds((payload.tea_minutes || 0) * 60);
 
@@ -1437,6 +1512,9 @@ if (payload.tea_break && payload.tea_start) {
             )}
             {activeTab === "attendance" && (
               <AttendanceTab attendanceData={attendanceData} currentEmployee={currentEmployee} />
+            )}
+            {activeTab === "new-hire" && (
+              <NewHireTab employees={employees} />
             )}
             {activeTab === "profile" && <ProfileTab />}
           </motion.div>

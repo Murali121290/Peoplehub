@@ -244,10 +244,14 @@ def get_employees():
             "casual_leave":
                 emp.casual_leave,
 
-            "privilege_leave":
+             "privilege_leave":
                 emp.privilege_leave,
             "earned_leave":
-                emp.privilege_leave
+                emp.privilege_leave,
+            "joining_date":
+                emp.joining_date.isoformat() if emp.joining_date else None,
+            "profile_image":
+                base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None
         })
 
     return jsonify(result)
