@@ -124,6 +124,7 @@ class Employee(db.Model):
     employee_type = db.Column(db.String(50))
     work_location = db.Column(db.String(100))
     shift_timing = db.Column(db.String(100))
+    work_mode = db.Column(db.String(50), default="Office")
 
     probation_end_date = db.Column(db.Date)
 

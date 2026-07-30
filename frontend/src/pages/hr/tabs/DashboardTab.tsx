@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDownIcon, Squares2X2Icon, PencilIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, Squares2X2Icon, PencilIcon, PlusIcon, HomeIcon } from '@heroicons/react/24/outline';
 import Panel from '../components/Panel';
 import { Card } from '../../../components/ui/Card';
 
@@ -136,8 +136,11 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ counts, teamOverview, teams
                       <tbody>
                         {teamEmployees.map((emp: any, idx: number) => (
                           <tr key={emp.id || idx} className={`${idx !== teamEmployees.length - 1 ? "border-b border-neutral-100" : ""} hover:bg-primary-50/40 transition-colors`}>
-                            <td className="px-5 py-3 text-neutral-800 font-semibold">
+                            <td className="px-5 py-3 text-neutral-800 font-semibold flex items-center gap-1.5">
                               {emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || "—"}
+                              {emp.is_wfh && (
+                                <HomeIcon className="w-3.5 h-3.5 text-blue-500 inline-block animate-pulse" title="Working from Home" />
+                              )}
                             </td>
                             <td className="px-5 py-3 text-neutral-600">
                               {emp.designation || "—"}

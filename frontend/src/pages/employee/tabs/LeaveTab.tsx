@@ -30,7 +30,7 @@ import { getStatusColor } from '../utils/employeeHelpers';
 
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
-import { Modal } from '../../../components/ui/Modal';
+import { Modal, ConfirmDialog } from '../../../components/ui/Modal';
 import { TimePicker } from '../../../components/ui/TimePicker';
 import { DatePicker } from '../../../components/ui/DatePicker';
 
@@ -70,6 +70,82 @@ interface LeaveTabProps {
   onSubmitLeave: (e: React.FormEvent, leaveForm: any, editingLeave: any) => void;
 }
 
+const getResolvedStatus = (req: any) => {
+  if (req.status === "Cancelled") return "Cancelled";
+  if (req.status === "Rejected") return "Rejected";
+  
+  const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+  const isPermission = req.request_type === "Permission";
+  
+  const checkIsCompleted = () => {
+    if (!isPermission) {
+      if (!req.to_date) return false;
+      return req.to_date < today;
+    }
+    if (!req.permission_date) return false;
+    if (req.permission_date < today) return true;
+    if (req.permission_date > today) return false;
+    if (req.permission_date === today && req.to_time) {
+      const now = new Date();
+      const currentHrs = now.getHours();
+      const currentMins = now.getMinutes();
+      const match = req.to_time.match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/i);
+      if (match) {
+        let hrs = parseInt(match[1]);
+        const mins = parseInt(match[2]);
+        const ampm = match[3];
+        if (ampm) {
+          if (ampm.toLowerCase() === 'pm' && hrs < 12) hrs += 12;
+          if (ampm.toLowerCase() === 'am' && hrs === 12) hrs = 0;
+        }
+        if (currentHrs > hrs) return true;
+        if (currentHrs === hrs && currentMins >= mins) return true;
+      }
+    }
+    return false;
+  };
+  
+  const isCompleted = checkIsCompleted();
+  
+  if (isCompleted) {
+    if (req.status === "Pending") return "Out of Date";
+    if (req.status === "Approved") return "Completed";
+  }
+  
+  const checkIsInProgress = () => {
+    if (req.status !== "Approved") return false;
+    if (isPermission) {
+      if (req.permission_date !== today) return false;
+      let isStarted = false;
+      if (req.from_time) {
+        const now = new Date();
+        const currentHrs = now.getHours();
+        const currentMins = now.getMinutes();
+        const matchFrom = req.from_time.match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/i);
+        if (matchFrom) {
+          let hrsFrom = parseInt(matchFrom[1]);
+          const minsFrom = parseInt(matchFrom[2]);
+          const ampmFrom = matchFrom[3];
+          if (ampmFrom) {
+            if (ampmFrom.toLowerCase() === 'pm' && hrsFrom < 12) hrsFrom += 12;
+            if (ampmFrom.toLowerCase() === 'am' && hrsFrom === 12) hrsFrom = 0;
+          }
+          if (currentHrs > hrsFrom || (currentHrs === hrsFrom && currentMins >= minsFrom)) {
+            isStarted = true;
+          }
+        }
+      }
+      return isStarted && !isCompleted;
+    } else {
+      return req.from_date && req.to_date && today >= req.from_date && today <= req.to_date;
+    }
+  };
+  
+  if (checkIsInProgress()) return "In Progress";
+  
+  return req.status;
+};
+
 const LeaveTab: React.FC<LeaveTabProps> = ({
   leaveRequests, currentEmployee, employees, approvalLeaves,
   totalBalance, itemVariants, onApprove, onReject, onCancel, onSubmitLeave,
@@ -78,6 +154,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const [editingLeave, setEditingLeave] = useState<any>(null);
   const [leaveTab, setLeaveTab] = useState("myRequests");
   const [activeRequestDetails, setActiveRequestDetails] = useState<number | null>(null);
+  const [cancelLeaveId, setCancelLeaveId] = useState<number | null>(null);
 
   const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
 
@@ -354,69 +431,60 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   }, [myRequests, statusFilter, typeFilter, todayStr]);
 
   const leaveHistoryRequests = React.useMemo(() => {
-    // Convert past holidays into the format of leave requests so they show in history
-    const pastHolidays = allYearHolidays.filter((h: any) => h.date < todayStr).map((h: any) => ({
-      ...h,
-      id: `hol-${h.id}`,
-      request_type: "Holiday",
-      from_date: h.date,
-      to_date: h.date,
-      leave_type: h.holiday_type || "Holiday",
-      reason: h.name,
-      status: "Approved",
-      total_days: 1,
-      reporting_manager: "Company",
-    }));
-
-    const filteredPastHolidays = pastHolidays.filter((h: any) => {
-      const matchStatus = statusFilter === "All" || h.status === statusFilter;
-      const matchType = typeFilter === "All" || h.leave_type === typeFilter;
-      return matchStatus && matchType;
-    });
-
     const requests = myRequests.filter((req: any) => {
       const matchStatus = statusFilter === "All" || req.status === statusFilter;
       const matchType = typeFilter === "All" || req.leave_type === typeFilter;
-      if (!matchStatus || !matchType) return false;
-
-      const dateStr = req.request_type === "Permission" ? req.permission_date : req.from_date;
-      return (req.status === "Cancelled" || req.status === "Rejected") || dateStr < todayStr;
-    });
-
-    const combined = [...requests, ...filteredPastHolidays];
-    // Descending order for history
-    return combined.sort((a: any, b: any) =>
-      new Date(b.from_date || b.permission_date || b.date).getTime() -
-      new Date(a.from_date || a.permission_date || a.date).getTime()
-    );
-  }, [myRequests, statusFilter, typeFilter, allYearHolidays, todayStr]);
-
-  const upcomingEvents = React.useMemo(() => {
-    const holidays = allYearHolidays.filter((h: any) => h.date >= todayStr).map((h: any) => ({
-      ...h,
-      id: `hol-${h.id}`,
-      request_type: "Holiday",
-      from_date: h.date,
-      to_date: h.date,
-      leave_type: h.holiday_type || "Holiday",
-      reason: h.name,
-      status: "Approved",
-      total_days: 1,
-      reporting_manager: "Company",
-    }));
-
-    const filteredHolidays = holidays.filter((h: any) => {
-      const matchStatus = statusFilter === "All" || h.status === statusFilter;
-      const matchType = typeFilter === "All" || h.leave_type === typeFilter;
       return matchStatus && matchType;
     });
 
-    const combined = [...upcomingLeaveRequests, ...filteredHolidays];
-    return combined.sort((a: any, b: any) =>
-      new Date(a.from_date || a.permission_date || a.date).getTime() -
-      new Date(b.from_date || b.permission_date || b.date).getTime()
+    const getStatusWeight = (resolvedStatus: string) => {
+      switch (resolvedStatus) {
+        case "In Progress": return 1;
+        case "Approved": return 2;
+        case "Pending": return 3;
+        case "Rejected": return 4;
+        case "Completed": return 5;
+        case "Out of Date": return 6;
+        case "Cancelled": return 7;
+        default: return 8;
+      }
+    };
+
+    return requests.sort((a: any, b: any) => {
+      const weightA = getStatusWeight(getResolvedStatus(a));
+      const weightB = getStatusWeight(getResolvedStatus(b));
+      if (weightA !== weightB) {
+        return weightA - weightB;
+      }
+      return new Date(b.from_date || b.permission_date || 0).getTime() -
+             new Date(a.from_date || a.permission_date || 0).getTime();
+    });
+  }, [myRequests, statusFilter, typeFilter]);
+
+  const upcomingPending = React.useMemo(() => {
+    return myRequests.filter((req: any) => {
+      const dateStr = req.request_type === "Permission" ? req.permission_date : req.from_date;
+      return req.status === "Pending" && dateStr >= todayStr;
+    }).sort((a: any, b: any) =>
+      new Date(a.from_date || a.permission_date).getTime() -
+      new Date(b.from_date || b.permission_date).getTime()
     );
-  }, [allYearHolidays, upcomingLeaveRequests, statusFilter, typeFilter, todayStr]);
+  }, [myRequests, todayStr]);
+
+  const upcomingApproved = React.useMemo(() => {
+    return myRequests.filter((req: any) => {
+      const dateStr = req.request_type === "Permission" ? req.permission_date : req.from_date;
+      return req.status === "Approved" && dateStr >= todayStr;
+    }).sort((a: any, b: any) =>
+      new Date(a.from_date || a.permission_date).getTime() -
+      new Date(b.from_date || b.permission_date).getTime()
+    );
+  }, [myRequests, todayStr]);
+
+  const upcomingCompanyHolidays = React.useMemo(() => {
+    const upcoming = allYearHolidays.filter((h: any) => h.date >= todayStr);
+    return upcoming.sort((a: any, b: any) => a.date.localeCompare(b.date)).slice(0, 3);
+  }, [allYearHolidays, todayStr]);
 
   // Generate 35-42 days grid for monthly calendar
   const calendarGridDays = React.useMemo(() => {
@@ -656,11 +724,17 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   };
 
   // Find active requests (Pending) for live status tracking
-  const activeRequests = leaveRequests.filter(
-    (req: any) =>
-      (String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id)) &&
-      req.status === "Pending"
-  );
+  const activeRequests = leaveRequests.filter((req: any) => {
+    const isOwner = (String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id));
+    if (!isOwner) return false;
+    if (req.status !== "Pending") return false;
+
+    const startDate = req.request_type === "Permission" ? req.permission_date : req.from_date;
+    const todayStr = new Date().toLocaleDateString("en-CA");
+    if (startDate && startDate <= todayStr) return false;
+
+    return true;
+  });
 
   return (
     <>
@@ -923,7 +997,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                           <Button
                             size="sm"
                             variant="danger"
-                            onClick={() => onCancel(leave.id)}
+                            onClick={() => setCancelLeaveId(leave.id)}
                             className="bg-danger-50 text-danger-700 hover:bg-danger-100 border border-danger-200 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
                           >
                             <XMarkIcon className="w-3.5 h-3.5" />
@@ -970,9 +1044,9 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           </motion.div>
         )}
 
-        {/* ── Leave Timeline Section (Calendar View & Grid View) ── */}
+        {/* ── Leave & Holiday Timeline Section (75% / 25% Split) ── */}
         <div className="bg-white border border-neutral-200 shadow-sm rounded-xl overflow-hidden mb-6">
-          {/* Header & Filter Controls */}
+          {/* Header */}
           <div className="bg-white p-5 border-b border-neutral-200 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
             <div className="flex items-center gap-2.5">
               <div className="p-2 bg-primary-500/10 rounded-xl text-primary-500">
@@ -982,17 +1056,11 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 <h3 className="text-[18px] font-bold text-neutral-850">Leave &amp; Holiday Timeline</h3>
               </div>
             </div>
-
-            {/* Removed Filters per user request */}
           </div>
 
-
-          {/* ── Mode 2: Grid View ── */}
-          <div className="bg-white">
-
-
-            {/* Section 1: Employee Leave History */}
-            <div className="pt-6 px-6 pb-2">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 p-6 bg-white">
+            {/* Left 75% Column: Employee Leave History (Modern Cards List) */}
+            <div className="lg:col-span-3">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-[16px] font-semibold text-neutral-900">📋 Employee Leave History</h4>
                 <span className="text-[13px] font-medium text-neutral-500">
@@ -1000,184 +1068,218 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 </span>
               </div>
 
-              <div className="w-full overflow-x-auto overflow-y-auto max-h-[400px] border border-neutral-200 rounded-lg mb-4">
-                <table className="w-full border-collapse text-left min-w-[800px]">
-                  <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                    <tr className="border-b border-neutral-200 text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
-                      <th className="py-3 px-4 font-semibold">Date</th>
-                      <th className="py-3 px-4 font-semibold">Day</th>
-                      <th className="py-3 px-4 font-semibold">Leave Type</th>
-                      <th className="py-3 px-4 font-semibold text-center">Status</th>
-                      <th className="py-3 px-4 font-semibold text-center">Duration</th>
-                      <th className="py-3 px-4 font-semibold">Manager Review</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-[14px]">
-                    {leaveHistoryRequests.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-12">
-                          <div className="flex flex-col items-center justify-center text-center">
-                            <span className="text-3xl mb-2">📅</span>
-                            <p className="text-[14px] font-semibold text-neutral-700">No leave records found.</p>
-                            <p className="text-[13px] text-neutral-500 mt-1">Apply a leave request to see your history here.</p>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      leaveHistoryRequests.map((req: any) => {
-                        const isPermission = req.request_type === "Permission";
-                        const startDateStr = isPermission ? req.permission_date : req.from_date;
-                        const dateObj = startDateStr ? new Date(startDateStr) : null;
-                        const dayName = dateObj ? WEEKDAYS[dateObj.getDay()] : "—";
+              <div className="max-h-[420px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                {leaveHistoryRequests.length === 0 ? (
+                  <div className="p-12 text-center border border-dashed border-neutral-200 rounded-xl bg-neutral-50/30">
+                    <span className="text-3xl mb-2 block">📅</span>
+                    <p className="text-[14px] font-semibold text-neutral-700">No leave records found.</p>
+                    <p className="text-[13px] text-neutral-500 mt-1">Apply a leave request to see your history here.</p>
+                  </div>
+                ) : (
+                  leaveHistoryRequests.map((req: any) => {
+                    const isPermission = req.request_type === "Permission";
+                    const isApproved = req.status === "Approved";
+                    const isRejected = req.status === "Rejected";
+                    const isPending = req.status === "Pending";
+                    const isCancelled = req.status === "Cancelled";
 
-                        const isApproved = req.status === "Approved";
-                        const isRejected = req.status === "Rejected";
-                        const isPending = req.status === "Pending";
-                        const isCancelled = req.status === "Cancelled";
+                    const badgeColor = isApproved ? "bg-green-50 text-green-700 border-green-200" :
+                      isRejected ? "bg-red-50 text-red-700 border-red-200" :
+                        isCancelled ? "bg-gray-55/60 text-gray-700 border-gray-200" :
+                          "bg-amber-50 text-amber-700 border-amber-200";
 
-                        // Dot style badge
-                        const badgeColor = isApproved ? "bg-green-100 text-green-700" :
-                          isRejected ? "bg-red-100 text-red-700" :
-                            isCancelled ? "bg-gray-100 text-gray-700" :
-                              "bg-amber-100 text-amber-700";
-                        const dotColor = isApproved ? "bg-green-500" :
-                          isRejected ? "bg-red-500" :
-                            isCancelled ? "bg-gray-500" :
-                              "bg-amber-500";
+                    const dateStr = isPermission 
+                      ? `${req.permission_date} @ ${req.from_time} - ${req.to_time}` 
+                      : `${req.from_date} to ${req.to_date}`;
 
-                        return (
-                          <tr key={req.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
-                            <td className="py-3 px-4 font-medium text-neutral-900">
-                              {isPermission ? req.permission_date : `${req.from_date} to ${req.to_date}`}
-                            </td>
-                            <td className="py-3 px-4 text-neutral-500">{dayName}</td>
-                            <td className="py-3 px-4 font-medium text-neutral-900">
-                              {isPermission ? "Permission Request" : req.leave_type}
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${badgeColor}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></div>
-                                {req.status}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-center text-neutral-700">
-                              {isPermission ? "Permission" : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
-                            </td>
-                            <td className="py-3 px-4">
-                              <div className="flex flex-col">
-                                <span className="text-neutral-900 font-medium">{req.reporting_manager || "Manager"}</span>
-                                <span className="text-[13px] text-neutral-500 truncate max-w-[200px]">{req.reason || "No reason"}</span>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <hr className="border-neutral-200 my-2 mx-6" />
-
-            {/* Section 2: Upcoming & Published Holidays Schedule (Read-Only) */}
-            <div className="pt-4 px-6 pb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-[16px] font-semibold text-neutral-900">✨ Upcoming Leaves & Holidays</h4>
-                <span className="text-[13px] font-medium text-neutral-500">
-                  {upcomingEvents.length} Record{upcomingEvents.length === 1 ? "" : "s"}
-                </span>
-              </div>
-
-              <div className="w-full overflow-x-auto overflow-y-auto max-h-[400px] border border-neutral-200 rounded-lg">
-                <table className="w-full border-collapse text-left min-w-[800px]">
-                  <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                    <tr className="border-b border-neutral-200 text-neutral-500 text-[12px] font-semibold uppercase tracking-wider">
-                      <th className="py-3 px-4 font-semibold">Date</th>
-                      <th className="py-3 px-4 font-semibold">Day</th>
-                      <th className="py-3 px-4 font-semibold">Leave Type</th>
-                      <th className="py-3 px-4 font-semibold text-center">Status</th>
-                      <th className="py-3 px-4 font-semibold text-center">Duration</th>
-                      <th className="py-3 px-4 font-semibold">Manager Review</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-[14px]">
-                    {upcomingEvents.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-12">
-                          <div className="flex flex-col items-center justify-center text-center">
-                            <span className="text-3xl mb-2">🏝️</span>
-                            <p className="text-[14px] font-semibold text-neutral-700">No upcoming leaves or holidays.</p>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      upcomingEvents.map((req: any) => {
-                        const isPermission = req.request_type === "Permission";
-                        const startDateStr = isPermission ? req.permission_date : req.from_date;
-                        const dateObj = startDateStr ? new Date(startDateStr) : null;
-                        const dayName = dateObj ? WEEKDAYS[dateObj.getDay()] : req.day || "—";
-
-                        const isApproved = req.status === "Approved";
-                        const isPending = req.status === "Pending";
-
-                        const isHoliday = req.request_type === "Holiday";
-
-                        const typeLower = (req.leave_type || "").toLowerCase();
-
-                        // Color logic: if holiday, make it slightly different (e.g. blue for national, purple for festival)
-                        // If leave request, use standard Green/Amber
-                        let badgeColor = "bg-amber-100 text-amber-700";
-                        let dotColor = "bg-amber-500";
-
-                        if (isHoliday) {
-                          badgeColor = typeLower.includes("national") ? "bg-blue-100 text-blue-700" :
-                            typeLower.includes("festival") ? "bg-purple-100 text-purple-700" :
-                              typeLower.includes("weekly off") ? "bg-gray-100 text-gray-700" :
-                                "bg-green-100 text-green-700";
-                          dotColor = typeLower.includes("national") ? "bg-blue-500" :
-                            typeLower.includes("festival") ? "bg-purple-500" :
-                              typeLower.includes("weekly off") ? "bg-gray-500" :
-                                "bg-green-500";
-                        } else {
-                          if (isApproved) {
-                            badgeColor = "bg-green-100 text-green-700";
-                            dotColor = "bg-green-500";
+                    const checkIsCompleted = () => {
+                      if (!isPermission) {
+                        if (!req.to_date) return false;
+                        const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                        return req.to_date < today;
+                      }
+                      if (!req.permission_date) return false;
+                      const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                      if (req.permission_date < today) return true;
+                      if (req.permission_date > today) return false;
+                      if (req.permission_date === today && req.to_time) {
+                        const now = new Date();
+                        const currentHrs = now.getHours();
+                        const currentMins = now.getMinutes();
+                        const match = req.to_time.match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/i);
+                        if (match) {
+                          let hrs = parseInt(match[1]);
+                          const mins = parseInt(match[2]);
+                          const ampm = match[3];
+                          if (ampm) {
+                            if (ampm.toLowerCase() === 'pm' && hrs < 12) hrs += 12;
+                            if (ampm.toLowerCase() === 'am' && hrs === 12) hrs = 0;
                           }
+                          if (currentHrs > hrs) return true;
+                          if (currentHrs === hrs && currentMins >= mins) return true;
                         }
+                      }
+                      return false;
+                    };
+                    const resolved = getResolvedStatus(req);
+                    const isCompleted = resolved === "Completed" || resolved === "Out of Date";
+                    const statusDisplay = resolved;
+                    
+                    let calculatedBadgeColor = "bg-amber-50 text-amber-700 border-amber-200";
 
-                        return (
-                          <tr key={req.id} className="border-b border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer">
-                            <td className="py-3 px-4 font-medium text-neutral-900">
-                              {isPermission ? req.permission_date : isHoliday ? req.from_date : `${req.from_date} to ${req.to_date}`}
-                            </td>
-                            <td className="py-3 px-4 text-neutral-500">{dayName}</td>
-                            <td className="py-3 px-4 font-medium text-neutral-900">
-                              {isPermission ? "Permission Request" : req.leave_type}
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${badgeColor}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></div>
-                                {isHoliday ? "Holiday" : req.status}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-center text-neutral-700">
-                              {isPermission ? "Permission" : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
-                            </td>
-                            <td className="py-3 px-4">
-                              <div className="flex flex-col">
-                                <span className="text-neutral-900 font-medium">{req.reporting_manager || "Manager"}</span>
-                                <span className="text-[13px] text-neutral-500 truncate max-w-[200px]">{req.reason || "No reason"}</span>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                    if (resolved === "In Progress") {
+                      calculatedBadgeColor = "bg-sky-50 text-sky-700 border-sky-200";
+                    } else if (resolved === "Approved") {
+                      calculatedBadgeColor = "bg-green-50 text-green-700 border-green-200";
+                    } else if (resolved === "Pending") {
+                      calculatedBadgeColor = "bg-amber-50 text-amber-700 border-amber-200";
+                    } else if (resolved === "Rejected") {
+                      calculatedBadgeColor = "bg-red-50 text-red-700 border-red-200";
+                    } else if (resolved === "Completed") {
+                      calculatedBadgeColor = "bg-green-50 text-green-700 border-green-250/90";
+                    } else if (resolved === "Out of Date") {
+                      calculatedBadgeColor = "bg-neutral-50 text-neutral-500 border-neutral-200/80";
+                    } else if (resolved === "Cancelled") {
+                      calculatedBadgeColor = "bg-gray-55/60 text-gray-700 border-gray-200";
+                    }
+
+                    const iconBgClass = (resolved === "Completed" || resolved === "Approved" || resolved === "In Progress") 
+                      ? "bg-green-50 text-green-600" 
+                      : (resolved === "Out of Date" || resolved === "Cancelled") 
+                        ? "bg-neutral-100 text-neutral-500" 
+                        : resolved === "Rejected"
+                          ? "bg-red-50 text-red-500"
+                          : "bg-amber-50 text-amber-600";
+
+                    return (
+                      <div 
+                        key={req.id} 
+                        className="p-4 bg-white border border-neutral-200 rounded-xl hover:shadow-md hover:border-neutral-300 transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className={`p-2.5 rounded-xl shrink-0 ${iconBgClass}`}>
+                            <CalendarIcon className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <h5 className="text-[14px] font-bold text-neutral-800 truncate">
+                              {isPermission ? "Hourly Permission" : req.leave_type}
+                            </h5>
+                            <p className="text-xs text-neutral-500 font-medium mt-1">
+                              {dateStr}
+                            </p>
+                            {req.reason && (
+                              <p className="text-xs text-neutral-450 italic mt-2 line-clamp-1">
+                                &ldquo;{req.reason}&rdquo;
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-6 self-end md:self-auto">
+                          <div className="text-left md:text-right">
+                            <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Duration</p>
+                            <p className="text-xs font-bold text-neutral-700 mt-0.5 whitespace-nowrap">
+                              {isPermission 
+                                ? (isCompleted ? "Completed" : "Hourly") 
+                                : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
+                            </p>
+                          </div>
+
+                          <div className="text-left md:text-right">
+                            <p className="text-[10px] text-neutral-450 font-bold uppercase tracking-wider">Status</p>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold border mt-0.5 ${calculatedBadgeColor}`}>
+                              {statusDisplay}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
+
+            {/* Right 25% Column: Upcoming Sidebar */}
+            <div className="lg:col-span-1 border-l border-neutral-200 lg:pl-6 space-y-6">
+              <h4 className="text-[16px] font-semibold text-neutral-900">📅 Upcoming Summary</h4>
+              
+              {/* Upcoming Company Holidays Subsection */}
+              <div className="space-y-3">
+                <h5 className="text-[13px] font-bold text-primary-700 flex items-center gap-1.5">
+                  <span className="text-sm">🎉</span>
+                  Company Holidays ({upcomingCompanyHolidays.length})
+                </h5>
+                {upcomingCompanyHolidays.length === 0 ? (
+                  <p className="text-xs text-neutral-400 italic pl-3.5">No upcoming holidays scheduled</p>
+                ) : (
+                  <div className="space-y-2">
+                    {upcomingCompanyHolidays.map((holiday: any) => (
+                      <div key={holiday.name + holiday.date} className="p-3 bg-primary-50/30 border border-primary-100 rounded-xl">
+                        <p className="text-xs font-bold text-neutral-800">{holiday.name}</p>
+                        <div className="flex justify-between items-center text-[11px] text-neutral-500 mt-1 font-semibold">
+                          <span>{holiday.date}</span>
+                          <span>{WEEKDAYS[new Date(holiday.date).getDay()] || "—"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Separate Company Holidays Section (Grid Deck Style) ── */}
+        <div className="bg-white border border-neutral-200 shadow-sm rounded-xl overflow-hidden mb-6">
+          <div className="bg-white p-5 border-b border-neutral-200 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-primary-500/10 rounded-xl text-primary-500">
+                <span className="text-lg">🎉</span>
+              </div>
+              <div>
+                <h3 className="text-[18px] font-bold text-neutral-850">Company Holidays</h3>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 bg-neutral-50/30">
+            {allYearHolidays.length === 0 ? (
+              <p className="text-sm text-neutral-500 text-center py-8 italic">No published holidays available.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {allYearHolidays.map((hol: any) => {
+                  const dateObj = new Date(hol.date);
+                  const dayName = WEEKDAYS[dateObj.getDay()] || "—";
+                  const isUpcoming = hol.date >= todayStr;
+
+                  const cardBg = isUpcoming 
+                    ? "bg-gradient-to-br from-primary-50/30 to-white border-primary-100" 
+                    : "bg-white border-neutral-200 opacity-65";
+
+                  return (
+                    <div 
+                      key={hol.id} 
+                      className={`p-4 border rounded-xl shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between ${cardBg}`}
+                    >
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${isUpcoming ? "bg-blue-50 text-blue-700 border-blue-150" : "bg-neutral-100 text-neutral-600 border-neutral-200"}`}>
+                            {isUpcoming ? "Upcoming" : "Passed"}
+                          </span>
+                          <span className="text-[11px] text-neutral-400 font-semibold">{dayName}</span>
+                        </div>
+                        <h5 className="text-[14px] font-bold text-neutral-800 mt-2 leading-snug">{hol.name}</h5>
+                      </div>
+                      
+                      <div className="flex justify-between items-center mt-4 pt-3 border-t border-neutral-100">
+                        <span className="text-xs font-bold text-neutral-600">{hol.date}</span>
+                        <span className="text-[10px] text-neutral-450 font-medium italic">{hol.holiday_type || "Holiday"}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1650,6 +1752,23 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={cancelLeaveId !== null}
+        title="Cancel Leave Request"
+        message="Are you sure you want to cancel this leave request?"
+        description="This action cannot be undone."
+        variant="danger"
+        confirmLabel="Yes, Cancel"
+        cancelLabel="No, Keep It"
+        onConfirm={() => {
+          if (cancelLeaveId !== null) {
+            onCancel(cancelLeaveId);
+            setCancelLeaveId(null);
+          }
+        }}
+        onCancel={() => setCancelLeaveId(null)}
+      />
     </>
   );
 };

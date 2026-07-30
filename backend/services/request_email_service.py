@@ -202,8 +202,8 @@ def send_manager_request_email(request_obj, request_type):
             <td style="padding:10px; border:1px solid #ddd;">{request_obj.from_date} to {request_obj.to_date}</td>
         </tr>
         """
-    elif request_type == "WFH":
-        req_label = "Work From Home (WFH) Request"
+    elif request_type in ("WFH", "Office"):
+        req_label = "Work From Home (WFH) Request" if request_type == "WFH" else "Work From Office Request"
         details_html = f"""
         <tr>
             <td style="padding:10px; border:1px solid #ddd; background-color: #f8fafc; font-weight: bold; width: 35%;">Date Range</td>

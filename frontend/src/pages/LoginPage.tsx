@@ -254,6 +254,20 @@ const LoginPage: React.FC = () => {
         .glass-input::placeholder { 
           color: rgba(255,255,255,0.25); 
         }
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover, 
+        input:-webkit-autofill:focus, 
+        input:-webkit-autofill:active,
+        input:autofill,
+        input:autofill:hover,
+        input:autofill:focus,
+        input:autofill:active {
+          -webkit-box-shadow: 0 0 0 1000px #1c1f2e inset !important;
+          -webkit-text-fill-color: #ffffff !important;
+          box-shadow: 0 0 0 1000px #1c1f2e inset !important;
+          color: #ffffff !important;
+          transition: background-color 5000s ease-in-out 0s;
+        }
 
         .feature-pill {
           background: rgba(0,0,0,0.3); 

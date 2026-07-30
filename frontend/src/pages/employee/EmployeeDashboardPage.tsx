@@ -806,6 +806,8 @@ const EmployeeDashboardPage: React.FC = () => {
           employee_name: shiftForm.employee_name,
           current_shift: shiftForm.current_shift,
           requested_shift: shiftForm.requested_shift,
+          current_work_mode: shiftForm.current_work_mode,
+          requested_work_mode: shiftForm.requested_work_mode,
           request_type: shiftForm.request_type,
           from_date: shiftForm.from_date,
           to_date: shiftForm.to_date,
@@ -855,6 +857,29 @@ const EmployeeDashboardPage: React.FC = () => {
       toast.success("Shift Rejected");
       loadShiftRequests();
       loadManagerShiftRequests();
+    }
+  };
+
+  const cancelShiftRequest = async (id: number) => {
+    try {
+      const response = await fetch(`${BASE_URL}/shifts/cancel/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("token")}`
+        }
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        toast.success("Shift Request Cancelled Successfully");
+        loadShiftRequests();
+        loadManagerShiftRequests();
+      } else {
+        toast.error(data.message || data.error || "Failed to cancel request");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Server Error");
     }
   };
 
@@ -1407,6 +1432,7 @@ if (payload.tea_break && payload.tea_start) {
                 onSubmitShift={submitShiftRequest}
                 onApprove={approveShift}
                 onReject={rejectShift}
+                onCancelShift={cancelShiftRequest}
               />
             )}
             {activeTab === "attendance" && (
@@ -1420,7 +1446,7 @@ if (payload.tea_break && payload.tea_start) {
       {pendingClarifications.length > 0 && (
         <EmployeeClarificationModal
           pendingItems={pendingClarifications}
-          userId={Number(userId)}
+          userId={Number(currentEmployee?.id || user?.id || 0)}
           onSubmitted={() => loadPendingClarifications()}
         />
       )}

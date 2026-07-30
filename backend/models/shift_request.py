@@ -22,12 +22,22 @@ class ShiftRequest(db.Model):
 
     current_shift = db.Column(
         db.String(100),
-        nullable=False
+        nullable=True
     )
 
     requested_shift = db.Column(
         db.String(100),
-        nullable=False
+        nullable=True
+    )
+
+    current_work_mode = db.Column(
+        db.String(50),
+        nullable=True
+    )
+
+    requested_work_mode = db.Column(
+        db.String(50),
+        nullable=True
     )
 
 
@@ -116,6 +126,8 @@ class ShiftRequest(db.Model):
             "employee_name": self.employee_name,
             "current_shift": self.current_shift,
             "requested_shift": self.requested_shift,
+            "current_work_mode": self.current_work_mode,
+            "requested_work_mode": self.requested_work_mode,
             "reason": self.reason,
             "reporting_manager": self.reporting_manager,
             "status": self.status,

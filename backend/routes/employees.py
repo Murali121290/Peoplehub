@@ -118,6 +118,7 @@ def create_employee():
 
             joining_date=joining_date,
             shift_timing=data.get("shift_timing"),
+            work_mode=data.get("work_mode", "Office"),
 
             salary=float(data.get("salary") or 0),
 
@@ -220,6 +221,9 @@ def get_employees():
 
             "shift_timing":
                 emp.shift_timing,
+
+            "work_mode":
+                emp.work_mode,
 
             "status":
                 attendance.status
@@ -416,6 +420,7 @@ def get_employee(employee_id):
 "employee_type": employee.employee_type,
 "work_location": employee.work_location,
 "shift_timing": employee.shift_timing,
+"work_mode": employee.work_mode,
 
 "probation_end_date": (
     employee.probation_end_date.isoformat()
@@ -824,6 +829,11 @@ def update_employee_profile(employee_id):
             employee.shift_timing
         )
 
+        employee.work_mode = data.get(
+            "work_mode",
+            employee.work_mode
+        )
+
         if data.get("probation_end_date"):
             employee.probation_end_date = datetime.strptime(
                 data["probation_end_date"],
@@ -902,6 +912,7 @@ def update_employee_profile(employee_id):
                 "designation": employee.designation,
                 "department": employee.department,
                 "shift": employee.shift_timing or "General Shift",
+                "work_mode": employee.work_mode,
                 "status": employee.status
             })
         except Exception as socket_err:
@@ -931,7 +942,8 @@ def get_employees_list():
             "name": f"{emp.first_name} {emp.last_name}",
             "department": emp.department,
             "designation": emp.designation,
-            "role": emp.designation
+            "role": emp.designation,
+            "work_mode": emp.work_mode
         }
         for emp in employees
     ])
@@ -1031,6 +1043,33 @@ def get_team_overview():
                 if role:
                     role_name = role.name
 
+            # Resolve today's work mode
+            from models.shift_request import ShiftRequest
+            from datetime import date
+            today = date.today()
+            emp_ids = [emp.id]
+            if emp.employee_id:
+                try:
+                    emp_ids.append(int(emp.employee_id))
+                except ValueError:
+                    pass
+
+            wfh_request = ShiftRequest.query.filter(
+                ShiftRequest.employee_id.in_(emp_ids),
+                ShiftRequest.status == "Approved",
+                ShiftRequest.from_date <= today,
+                ShiftRequest.to_date >= today
+            ).order_by(ShiftRequest.id.desc()).first()
+
+            is_wfh = False
+            if wfh_request:
+                if wfh_request.requested_work_mode:
+                    is_wfh = (wfh_request.requested_work_mode == "WFH")
+                elif wfh_request.request_type == "WFH" or wfh_request.requested_shift == "WFH":
+                    is_wfh = True
+            else:
+                is_wfh = (emp.work_mode == "WFH")
+
             employee_list.append({
                 "id": emp.id,
                 "name": f"{emp.first_name} {emp.last_name or ''}".strip(),
@@ -1041,7 +1080,9 @@ def get_team_overview():
                 "department": emp.department,
                 "team_id": emp.team_id,
                 "employee_id": emp.employee_id,
-                "profile_image": emp.profile_image is not None
+                "profile_image": emp.profile_image is not None,
+                "work_mode": emp.work_mode,
+                "is_wfh": is_wfh
             })
 
         result.append({
@@ -1237,9 +1278,19 @@ def get_team_attendance(user_id):
                         else emp.shift_timing or "General Shift"
                     )
                 ),
+                "work_mode": (
+                    shift_change_today.requested_work_mode
+                    if (shift_change_today and shift_change_today.requested_work_mode)
+                    else (
+                        emp.work_mode or "Office"
+                    )
+                ),
                 "manager_status": attendance.manager_status if (attendance and attendance.manager_status) else "Pending",
-                "is_wfh": bool(wfh_today) or ((emp.shift_timing or "").strip().upper() == "WFH" and not shift_change_today),
-                "is_permanent_wfh": (emp.shift_timing or "").strip().upper() == "WFH" and not shift_change_today,
+                "is_wfh": (
+                    (shift_change_today.requested_work_mode == "WFH") if (shift_change_today and shift_change_today.requested_work_mode)
+                    else (wfh_today is not None or (emp.work_mode or "Office") == "WFH")
+                ),
+                "is_permanent_wfh": (emp.work_mode == "WFH"),
                 "is_shift_changed": bool(shift_change_today),
             })
 
@@ -1704,8 +1755,12 @@ def get_team_attendance_by_id(team_id):
                 wfh_by_employee.get(emp.employee_id) or
                 wfh_by_employee.get(str(emp.employee_id))
             )
-            is_permanent_wfh = (emp.shift_timing or "").strip().upper() == "WFH" and not is_shift_changed
-            is_wfh = emp_wfh_request is not None or is_permanent_wfh
+            is_permanent_wfh = (emp.work_mode == "WFH")
+            is_wfh = (
+                (emp_shift_request.requested_work_mode == "WFH" if (emp_shift_request and emp_shift_request.requested_work_mode) else False) or
+                (emp_wfh_request is not None) or
+                (emp.work_mode == "WFH")
+            )
 
             # Check if Permission is active now
             emp_permission = (
@@ -1983,6 +2038,9 @@ def get_employee_details(employee_id):
 
                 "shift_timing":
                     employee.shift_timing,
+
+                "work_mode":
+                    employee.work_mode,
 
                 "joining_date":
                     str(employee.joining_date),
