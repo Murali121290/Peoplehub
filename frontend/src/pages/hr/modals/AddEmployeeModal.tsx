@@ -52,7 +52,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   ];
 
   const getLabel = (fieldKey: string, baseLabel: string) => {
-    const isRequired = fieldKey === "profile_image" ? !isEdit : requiredFields.includes(fieldKey);
+    const isRequired = requiredFields.includes(fieldKey);
     return `${baseLabel.trim()}${isRequired ? " *" : ""}`;
   };
 
@@ -123,10 +123,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
     console.log("PROFILE IMAGE =", profileImage);
 
-    // Profile image is only required when creating a new employee
-    if (!isEdit && !profileImage) {
-      errors["profile_image"] = true;
-    }
+
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
@@ -347,22 +344,18 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <FieldError fieldKey="status" />
           </FormField>
 
-          {/* Profile Image: only shown when adding a NEW employee, hidden on edit */}
-          {!isEdit && (
-            <FormField label={getLabel("profile_image", "PROFILE IMAGE")}>
-              <Input
-                type="file"
-                accept="image/*"
-                onChange={(e: any) => {
-                  setProfileImage(e.target.files[0]);
-                  clearError("profile_image");
-                }}
-                required
-                className={fieldErrors["profile_image"] ? "border-danger-500" : ""}
-              />
-              <FieldError fieldKey="profile_image" />
-            </FormField>
-          )}
+          <FormField label={getLabel("profile_image", "PROFILE IMAGE")}>
+            <Input
+              type="file"
+              accept="image/*"
+              onChange={(e: any) => {
+                setProfileImage(e.target.files[0]);
+                clearError("profile_image");
+              }}
+              className={fieldErrors["profile_image"] ? "border-danger-500" : ""}
+            />
+            <FieldError fieldKey="profile_image" />
+          </FormField>
 
           <FormField label={getLabel("company_email", "Company Email")}>
             <Input

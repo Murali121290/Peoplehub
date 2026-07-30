@@ -315,6 +315,9 @@ def get_employee(employee_id):
             "error": "Employee not found"
         }), 404
 
+    user = User.query.get(employee.user_id) if employee.user_id else None
+    user_email = user.email if (user and user.email) else employee.email
+
     return jsonify({
     "id": employee.id,
     "employee_id": employee.employee_id,
@@ -322,7 +325,7 @@ def get_employee(employee_id):
     "first_name": employee.first_name,
     "last_name": employee.last_name,
 
-    "email": employee.email,
+    "email": user_email,
     "phone": employee.phone,
     "alternate_phone": employee.alternate_phone,
 
@@ -533,8 +536,10 @@ def update_employee_profile(employee_id):
         if data.get("last_name") and is_hr_or_admin:
             employee.last_name = data.get("last_name")
 
-        if data.get("email") and is_hr_or_admin:
+        if data.get("email"):
             employee.email = data.get("email")
+            if user:
+                user.email = data.get("email")
 
         if data.get("phone"):
             employee.phone = data.get("phone")
@@ -868,7 +873,6 @@ def update_employee_profile(employee_id):
 
             if data.get("email"):
                 user.email = data.get("email")
-                user.company_email = data.get("email")
 
 
             if data.get("access_level"):

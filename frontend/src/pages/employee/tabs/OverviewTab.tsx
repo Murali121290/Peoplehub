@@ -161,16 +161,9 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           {member.is_wfh && (
             <span
               title={member.is_permanent_wfh ? "Permanent Work From Home" : "Work From Home"}
-              className={`flex items-center gap-1 rounded-full px-1.5 py-0.5 shadow-sm border flex-shrink-0 ${
-                member.is_permanent_wfh
-                  ? "bg-blue-600 border-blue-700 text-white"
-                  : "bg-blue-50 border-blue-200 text-blue-600"
-              }`}
+              className="flex items-center gap-1 rounded-full px-1.5 py-0.5 shadow-sm border flex-shrink-0 bg-blue-50 border-blue-200 text-blue-600"
             >
-              <img src="/wfh-icon.svg" alt="WFH" className="w-3.5 h-3.5" style={{ filter: member.is_permanent_wfh ? "brightness(0) invert(1)" : undefined }} />
-              {member.is_permanent_wfh && (
-                <span className="text-[9px] font-bold leading-none">P</span>
-              )}
+              <img src="/wfh-icon.svg" alt="WFH" className="w-3.5 h-3.5" />
             </span>
           )}
           {member.lunch_break && (

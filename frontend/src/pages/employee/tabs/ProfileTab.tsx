@@ -73,6 +73,7 @@ const ProfileTab = () => {
 
   const [formData, setFormData] = useState({
     phone: "",
+    email: "",
     dob: "",
     gender: "",
     marital_status: "",
@@ -367,6 +368,7 @@ const ProfileTab = () => {
       if (data) {
         setFormData({
           phone: data.phone || "",
+          email: data.email || "",
           dob: data.dob || "",
           gender: data.gender || "",
           marital_status: data.marital_status || "",
@@ -1022,6 +1024,7 @@ const ProfileTab = () => {
             />
           </div>
           {renderEditField("Gender", "gender", "select", "", ["Male", "Female", "Other"])}
+          {renderEditField("Personal Email", "email", "email", "example@personal.com")}
           {renderEditField("Marital Status", "marital_status", "select", "", ["Married", "Unmarried"])}
           {renderEditField("Blood Group", "blood_group", "select", "", ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"])}
           
@@ -1062,6 +1065,7 @@ const ProfileTab = () => {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {renderField(PhoneIcon, "Phone Number", profile.phone)}
+        {renderField(EnvelopeIcon, "Personal Email", profile.email)}
         {renderField(CalendarDaysIcon, "Date of Birth", profile.dob)}
         {renderField(UserIcon, "Gender", profile.gender)}
         {renderField(UserIcon, "Marital Status", profile.marital_status)}
@@ -1628,7 +1632,7 @@ const ProfileTab = () => {
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 mt-1 justify-center sm:justify-start">
               <p className="text-sm font-bold text-primary-600">{profile.designation || user.designation}</p>
               <span className="hidden sm:inline text-neutral-300 text-xs">•</span>
-              <p className="text-xs text-neutral-400">{profile.email || user.email}</p>
+              <p className="text-xs text-neutral-400">{profile.company_email || user.company_email || user.email}</p>
             </div>
             
             <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-neutral-500 justify-center sm:justify-start border-t border-neutral-100 pt-3">

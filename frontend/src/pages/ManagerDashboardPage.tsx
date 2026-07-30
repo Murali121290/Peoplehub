@@ -1269,9 +1269,9 @@ const ManagerDashboardPage = () => {
                                         gap: "4px",
                                         padding: "2px 7px",
                                         borderRadius: "999px",
-                                        background: member.isPermanentWfh ? "#1d4ed8" : "#eff6ff",
-                                        border: member.isPermanentWfh ? "1px solid #1e40af" : "1px solid #bfdbfe",
-                                        color: member.isPermanentWfh ? "#ffffff" : "#1d4ed8",
+                                        background: "#eff6ff",
+                                        border: "1px solid #bfdbfe",
+                                        color: "#1d4ed8",
                                         fontSize: "10px",
                                         fontWeight: 800,
                                         flexShrink: 0,
@@ -1283,10 +1283,8 @@ const ManagerDashboardPage = () => {
                                         style={{
                                           width: "13px",
                                           height: "13px",
-                                          filter: member.isPermanentWfh ? "brightness(0) invert(1)" : undefined,
                                         }}
                                       />
-                                      {member.isPermanentWfh && <span>P</span>}
                                     </span>
                                   )}
                                 </div>
@@ -1618,9 +1616,9 @@ const ManagerDashboardPage = () => {
                                           gap: "3px",
                                           padding: "2px 6px",
                                           borderRadius: "999px",
-                                          background: member.isPermanentWfh ? "#1d4ed8" : "#eff6ff",
-                                          border: member.isPermanentWfh ? "1px solid #1e40af" : "1px solid #bfdbfe",
-                                          color: member.isPermanentWfh ? "#ffffff" : "#1d4ed8",
+                                          background: "#eff6ff",
+                                          border: "1px solid #bfdbfe",
+                                          color: "#1d4ed8",
                                           fontSize: "10px",
                                           fontWeight: 800,
                                           flexShrink: 0,
@@ -1632,10 +1630,8 @@ const ManagerDashboardPage = () => {
                                           style={{
                                             width: "13px",
                                             height: "13px",
-                                            filter: member.isPermanentWfh ? "brightness(0) invert(1)" : undefined,
                                           }}
                                         />
-                                        {member.isPermanentWfh && <span>P</span>}
                                       </span>
                                     )}
                                   </div>
