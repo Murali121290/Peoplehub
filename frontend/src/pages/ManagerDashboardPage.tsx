@@ -480,6 +480,7 @@ const ManagerDashboardPage = () => {
         hoursThisWeek: match?.hoursThisWeek ?? att.working_hours ?? 0,
         status: isOnLeave ? "Leave" : match?.status || "Active",
         isWfh: att.is_wfh || false,
+        isPermanentWfh: att.is_permanent_wfh || false,
         isShiftChanged: att.is_shift_changed || false,
         attendanceStatus: att.attendance_status || "",
         profile_image: att.profile_image,
@@ -1261,22 +1262,31 @@ const ManagerDashboardPage = () => {
 
                                   {member.isWfh && (
                                     <span
-                                      title="Work From Home (WFH)"
+                                      title={member.isPermanentWfh ? "Permanent Work From Home" : "Work From Home (WFH)"}
                                       style={{
                                         display: "inline-flex",
                                         alignItems: "center",
                                         gap: "4px",
                                         padding: "2px 7px",
                                         borderRadius: "999px",
-                                        background: "#eff6ff",
-                                        border: "1px solid #bfdbfe",
-                                        color: "#1d4ed8",
+                                        background: member.isPermanentWfh ? "#1d4ed8" : "#eff6ff",
+                                        border: member.isPermanentWfh ? "1px solid #1e40af" : "1px solid #bfdbfe",
+                                        color: member.isPermanentWfh ? "#ffffff" : "#1d4ed8",
                                         fontSize: "10px",
                                         fontWeight: 800,
                                         flexShrink: 0,
                                       }}
                                     >
-                                      <img src="/wfh-icon.svg" alt="WFH" style={{ width: "13px", height: "13px" }} />
+                                      <img
+                                        src="/wfh-icon.svg"
+                                        alt="WFH"
+                                        style={{
+                                          width: "13px",
+                                          height: "13px",
+                                          filter: member.isPermanentWfh ? "brightness(0) invert(1)" : undefined,
+                                        }}
+                                      />
+                                      {member.isPermanentWfh && <span>P</span>}
                                     </span>
                                   )}
                                 </div>
@@ -1601,22 +1611,31 @@ const ManagerDashboardPage = () => {
                                     <span style={{ fontWeight: 700, color: THEME.navy }}>{member.name}</span>
                                     {member.isWfh && (
                                       <span
-                                        title="Work From Home (WFH)"
+                                        title={member.isPermanentWfh ? "Permanent Work From Home" : "Work From Home (WFH)"}
                                         style={{
                                           display: "inline-flex",
                                           alignItems: "center",
                                           gap: "3px",
                                           padding: "2px 6px",
                                           borderRadius: "999px",
-                                          background: "#eff6ff",
-                                          border: "1px solid #bfdbfe",
-                                          color: "#1d4ed8",
+                                          background: member.isPermanentWfh ? "#1d4ed8" : "#eff6ff",
+                                          border: member.isPermanentWfh ? "1px solid #1e40af" : "1px solid #bfdbfe",
+                                          color: member.isPermanentWfh ? "#ffffff" : "#1d4ed8",
                                           fontSize: "10px",
                                           fontWeight: 800,
                                           flexShrink: 0,
                                         }}
                                       >
-                                        <img src="/wfh-icon.svg" alt="WFH" style={{ width: "13px", height: "13px" }} />
+                                        <img
+                                          src="/wfh-icon.svg"
+                                          alt="WFH"
+                                          style={{
+                                            width: "13px",
+                                            height: "13px",
+                                            filter: member.isPermanentWfh ? "brightness(0) invert(1)" : undefined,
+                                          }}
+                                        />
+                                        {member.isPermanentWfh && <span>P</span>}
                                       </span>
                                     )}
                                   </div>
