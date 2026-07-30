@@ -1102,6 +1102,7 @@ def get_my_team(user_id):
     return jsonify(result)
 
 
+
 @employees_bp.route("/team-attendance/<int:user_id>", methods=["GET"])
 def get_team_attendance(user_id):
     """Return all employees reporting to this manager with today's attendance status."""
@@ -1165,8 +1166,19 @@ def get_team_attendance(user_id):
 
             if attendance:
                 if attendance.check_in or attendance.card_check_in:
-                    if attendance.check_out or attendance.card_check_out:
-                        att_status = "Checked Out"
+                    if attendance.check_in and not attendance.check_out:
+                        att_status = "Present"
+                    elif attendance.check_out or attendance.card_check_out:
+                        is_today = (attendance.attendance_date == today)
+                        if is_today and attendance.card_check_out and not attendance.check_out:
+                            punch_out_hour = attendance.card_check_out.hour
+                            working_hrs = attendance.card_working_hours or 0.0
+                            if punch_out_hour >= 15 or working_hrs >= 4.0:
+                                att_status = "Checked Out"
+                            else:
+                                att_status = "Present"
+                        else:
+                            att_status = "Checked Out"
                     else:
                         att_status = "Present"
                 else:
@@ -1285,6 +1297,7 @@ def get_last_working_day(ref_date=None):
         target_date -= timedelta(days=1)
         steps += 1
     return target_date
+
 
 
 @employees_bp.route(
@@ -1523,6 +1536,7 @@ def get_reporting_employees(user_id):
         }), 500
     
 @employees_bp.route(
+
     "/peers-attendance/<int:user_id>",
     methods=["GET"]
 )
@@ -1561,8 +1575,19 @@ def get_peers_attendance(user_id):
             status = "Absent"
             if attendance:
                 if attendance.check_in or attendance.card_check_in:
-                    if attendance.check_out or attendance.card_check_out:
-                        status = "Checked Out"
+                    if attendance.check_in and not attendance.check_out:
+                        status = "Checked In"
+                    elif attendance.check_out or attendance.card_check_out:
+                        is_today = (attendance.attendance_date == today)
+                        if is_today and attendance.card_check_out and not attendance.check_out:
+                            punch_out_hour = attendance.card_check_out.hour
+                            working_hrs = attendance.card_working_hours or 0.0
+                            if punch_out_hour >= 15 or working_hrs >= 4.0:
+                                status = "Checked Out"
+                            else:
+                                status = "Checked In"
+                        else:
+                            status = "Checked Out"
                     else:
                         status = "Checked In"
                 else:
@@ -1762,6 +1787,7 @@ def get_team_attendance_by_id(team_id):
         return jsonify({"error": str(e)}), 500
 
 @employees_bp.route(
+
     "/roles/<int:team_id>",
     methods=["GET"]
 )

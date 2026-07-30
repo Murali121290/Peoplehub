@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import models & database
-from models.database import init_db, engine
+from models.database import init_db, engine, db_session
 # pyrefly: ignore [missing-import]
 from sqlalchemy import text
 
@@ -53,6 +53,15 @@ def create_app():
         allow_headers=["*"],
     )
 
+    # Scoped session cleanup middleware
+    @fastapi_app.middleware("http")
+    async def db_session_middleware(request: Request, call_next):
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            db_session.remove()
+
     # Register blueprints (routers)
     fastapi_app.include_router(employees_bp, prefix="/api/employees")
     fastapi_app.include_router(meeting_rooms_bp, prefix="/api/meeting-rooms")
@@ -80,7 +89,6 @@ def create_app():
 
     # Initialize database, apply Alembic migrations, and seed defaults
     init_db()
-
     with engine.connect() as connection:
         connection.execute(text(
             "ALTER TABLE telecom_directory "
