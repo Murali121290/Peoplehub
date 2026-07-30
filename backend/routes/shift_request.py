@@ -40,7 +40,7 @@ def apply_shift():
         req_from = datetime.strptime(data["from_date"], "%Y-%m-%d").date()
         req_to = datetime.strptime(data["to_date"], "%Y-%m-%d").date()
 
-        # Check if requested shift timing has already started/passed today
+        # Check if requested shift timing is in the past
         from zoneinfo import ZoneInfo
         ist_now = datetime.now(ZoneInfo("Asia/Kolkata"))
         ist_today = ist_now.date()
@@ -51,22 +51,26 @@ def apply_shift():
                 "message": "Cannot apply for a shift change for a past date."
             }), 400
 
-        if req_from == ist_today:
-            current_hour = ist_now.hour
-            current_minute = ist_now.minute
-
-            if current_hour > 9 or (current_hour == 9 and current_minute > 0):
-                return jsonify({
-                    "success": False,
-                    "message": "Cannot apply for today's shift/WFH request after 09:00 AM."
-                }), 400
-
         employee = Employee.query.filter(
             or_(
                 Employee.id == data["employee_id"],
                 Employee.employee_id == str(data["employee_id"])
             )
         ).first()
+
+        if req_from == ist_today:
+            # Check if employee already checked in today
+            resolved_user_id = employee.user_id if employee else data["employee_id"]
+            attendance = Attendance.query.filter_by(
+                user_id=resolved_user_id,
+                attendance_date=ist_today
+            ).first()
+
+            if attendance and (attendance.check_in is not None or attendance.card_check_in is not None):
+                return jsonify({
+                    "success": False,
+                    "message": "Cannot apply for today's shift/WFH request because you have already checked in today."
+                }), 400
 
         if employee:
             emp_ids = [str(employee.id), str(employee.employee_id)]

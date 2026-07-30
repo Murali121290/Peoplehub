@@ -858,6 +858,29 @@ const EmployeeDashboardPage: React.FC = () => {
     }
   };
 
+  const cancelShiftRequest = async (id: number) => {
+    try {
+      const response = await fetch(`${BASE_URL}/shifts/cancel/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("token")}`
+        }
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        toast.success("Shift Request Cancelled Successfully");
+        loadShiftRequests();
+        loadManagerShiftRequests();
+      } else {
+        toast.error(data.message || data.error || "Failed to cancel request");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Server Error");
+    }
+  };
+
   const sendBirthdayWish = async (emp: any, customMessage: string) => {
     const senderId = localStorage.getItem("employee_id");
     if (!senderId) {
@@ -1407,6 +1430,7 @@ if (payload.tea_break && payload.tea_start) {
                 onSubmitShift={submitShiftRequest}
                 onApprove={approveShift}
                 onReject={rejectShift}
+                onCancelShift={cancelShiftRequest}
               />
             )}
             {activeTab === "attendance" && (
@@ -1420,7 +1444,7 @@ if (payload.tea_break && payload.tea_start) {
       {pendingClarifications.length > 0 && (
         <EmployeeClarificationModal
           pendingItems={pendingClarifications}
-          userId={Number(userId)}
+          userId={Number(currentEmployee?.id || user?.id || 0)}
           onSubmitted={() => loadPendingClarifications()}
         />
       )}

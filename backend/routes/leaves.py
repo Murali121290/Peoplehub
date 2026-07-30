@@ -626,7 +626,24 @@ def cancel_approved_leave(leave_id):
                 "message": "employee_id is required to validate ownership"
             }), 400
 
-        if str(leave.employee_id) != str(employee_id):
+        # Resolve employee details to match either primary key ID or employee_id string
+        from models.employee import Employee
+        from sqlalchemy import or_
+
+        employee = Employee.query.filter(
+            or_(
+                Employee.id == employee_id,
+                Employee.employee_id == str(employee_id)
+            )
+        ).first()
+
+        # Check if ownership is valid (matches database ID, employee code, or raw passed ID)
+        valid_ids = [str(employee_id)]
+        if employee:
+            valid_ids.append(str(employee.id))
+            valid_ids.append(str(employee.employee_id))
+
+        if str(leave.employee_id) not in valid_ids:
             return jsonify({
                 "success": False,
                 "message": "You do not own this leave request."

@@ -274,7 +274,7 @@ const LeaveApprovalPage: React.FC = () => {
                               const isFinished = startDate && startDate < today;
 
                               if (isFinished) {
-                                return <span className="text-[11px] font-medium text-neutral-400">Out of Date</span>;
+                                return <span className="text-[11px] font-bold text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded">Out of Date</span>;
                               }
 
                               return (
