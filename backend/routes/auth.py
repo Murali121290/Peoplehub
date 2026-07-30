@@ -186,15 +186,14 @@ def login():
             if approved_request:
                 req_type = (approved_request.request_type or "").strip().upper()
                 shift_name = (approved_request.requested_shift or "").strip().lower()
-                if req_type == "WFH" or "wfh" in shift_name or "work from home" in shift_name:
+                if approved_request.requested_work_mode == "WFH" or req_type == "WFH":
                     is_wfh = True
-                elif "general shift" in shift_name or "genetral shift" in shift_name:
+                if "general shift" in shift_name or "genetral shift" in shift_name:
                     is_general_shift = True
             else:
+                is_wfh = (employee.work_mode == "WFH")
                 shift_name = (employee.shift_timing or "").strip().lower()
-                if "wfh" in shift_name or "work from home" in shift_name:
-                    is_wfh = True
-                elif "general shift" in shift_name or "genetral shift" in shift_name or not shift_name:
+                if "general shift" in shift_name or "general shift" in shift_name or not shift_name:
                     is_general_shift = True
 
             # Enforce machine (desktop/laptop only, not mobile) for General Shift or WFH

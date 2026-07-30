@@ -806,6 +806,8 @@ const EmployeeDashboardPage: React.FC = () => {
           employee_name: shiftForm.employee_name,
           current_shift: shiftForm.current_shift,
           requested_shift: shiftForm.requested_shift,
+          current_work_mode: shiftForm.current_work_mode,
+          requested_work_mode: shiftForm.requested_work_mode,
           request_type: shiftForm.request_type,
           from_date: shiftForm.from_date,
           to_date: shiftForm.to_date,

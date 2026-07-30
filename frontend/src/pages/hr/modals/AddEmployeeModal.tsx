@@ -61,10 +61,9 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
-          const opts = data.map((s: string) => ({ label: s, value: s }));
-          if (!opts.some((o: any) => o.value.toUpperCase() === "WFH" || o.value.toLowerCase() === "work from home")) {
-            opts.push({ label: "WFH", value: "WFH" });
-          }
+          const opts = data
+            .filter((s: string) => s.toUpperCase() !== "WFH" && s.toLowerCase() !== "work from home")
+            .map((s: string) => ({ label: s, value: s }));
           setShiftOptions(opts);
         } else {
           setShiftOptions([
@@ -72,7 +71,6 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             { label: "Morning Shift", value: "Morning Shift" },
             { label: "Evening Shift", value: "Evening Shift" },
             { label: "Night Shift", value: "Night Shift" },
-            { label: "WFH", value: "WFH" },
           ]);
         }
       })
@@ -83,7 +81,6 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
           { label: "Morning Shift", value: "Morning Shift" },
           { label: "Evening Shift", value: "Evening Shift" },
           { label: "Night Shift", value: "Night Shift" },
-          { label: "WFH", value: "WFH" },
         ]);
       });
   }, []);
@@ -430,12 +427,30 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                     { label: "Morning Shift", value: "Morning Shift" },
                     { label: "Evening Shift", value: "Evening Shift" },
                     { label: "Night Shift", value: "Night Shift" },
-                    { label: "WFH", value: "WFH" },
                   ]
               }
               className={fieldErrors["shift_timing"] ? "border-danger-500" : ""}
             />
             <FieldError fieldKey="shift_timing" />
+          </FormField>
+
+          <FormField label={getLabel("work_mode", "Work Mode")}>
+            <Select
+              value={newEmp.work_mode || "Office"}
+              onChange={(value) => {
+                setNewEmp({
+                  ...newEmp,
+                  work_mode: value,
+                });
+                clearError("work_mode");
+              }}
+              options={[
+                { label: "Office", value: "Office" },
+                { label: "WFH", value: "WFH" },
+              ]}
+              className={fieldErrors["work_mode"] ? "border-danger-500" : ""}
+            />
+            <FieldError fieldKey="work_mode" />
           </FormField>
         </div>
       </form>

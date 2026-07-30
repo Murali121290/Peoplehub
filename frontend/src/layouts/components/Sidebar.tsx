@@ -339,36 +339,26 @@ const Sidebar: React.FC<SidebarProps> = ({
             <p className="text-xs text-neutral-400 capitalize">{user?.designation || user?.role_name || user?.role || "Employee"}</p>
             {effectiveShift && (
               <span
-                className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
                   effectiveShift.is_wfh
-                    ? effectiveShift.is_permanent_wfh
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'bg-sky-100 text-sky-600'
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
                     : effectiveShift.is_shift_changed
-                    ? 'bg-indigo-100 text-indigo-700'
-                    : 'bg-neutral-100 text-neutral-500'
+                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                    : 'bg-neutral-50 text-neutral-500 border border-neutral-200'
                 }`}
                 title={effectiveShift.is_shift_changed ? `Today: ${effectiveShift.effective_shift}` : effectiveShift.effective_shift}
               >
-                {effectiveShift.is_wfh ? (
-                  <>
-                    <img
-                      src="/wfh-icon.svg"
-                      alt="WFH"
-                      className="w-2.5 h-2.5"
-                    />
-                    WFH{effectiveShift.is_permanent_wfh ? ' (Permanent)' : ''}
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={2.5} fill="none" />
-                    </svg>
-                    {effectiveShift.effective_shift}
-                    {effectiveShift.is_shift_changed && ' ↺'}
-                  </>
+                {effectiveShift.is_wfh && (
+                  <img
+                    src="/wfh-icon.svg"
+                    alt="WFH"
+                    className="w-3.5 h-3.5"
+                  />
                 )}
+                <span>
+                  {effectiveShift.effective_shift === "WFH" ? "General Shift" : effectiveShift.effective_shift}
+                  {effectiveShift.is_shift_changed && ' ↺'}
+                </span>
               </span>
             )}
           </Link>
