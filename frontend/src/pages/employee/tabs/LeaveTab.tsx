@@ -437,7 +437,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       const matchType = typeFilter === "All" || req.leave_type === typeFilter;
       if (!matchStatus || !matchType) return false;
       const dateStr = req.request_type === "Permission" ? req.permission_date : (req.to_date || req.from_date);
-      return dateStr <= todayStr;
+      return dateStr <= todayStr || req.status === "Cancelled" || req.status === "Rejected";
     });
 
     return requests.sort((a: any, b: any) => {
@@ -450,7 +450,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const upcomingLeaves = React.useMemo(() => {
     return myRequests.filter((req: any) => {
       const dateStr = req.request_type === "Permission" ? req.permission_date : req.from_date;
-      return (req.status === "Pending" || req.status === "Approved") && dateStr > todayStr;
+      return (req.status === "Pending" || req.status === "Approved") && dateStr > todayStr && req.status !== "Cancelled" && req.status !== "Rejected";
     }).sort((a: any, b: any) => {
       const dateA = a.from_date || a.permission_date || "";
       const dateB = b.from_date || b.permission_date || "";
