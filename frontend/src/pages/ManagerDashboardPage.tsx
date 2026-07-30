@@ -265,23 +265,77 @@ const ManagerDashboardPage = () => {
   const [hoveredRowId, setHoveredRowId] = useState<number | null>(null);
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<number | null>(null);
+  const [selectedCycle, setSelectedCycle] = useState<string>("");
 
   // Yesterday Summary States
   const [yesterdaySummary, setYesterdaySummary] = useState<any[]>([]);
   const [loadingYesterday, setLoadingYesterday] = useState(false);
   const [yesterdaySummaryDate, setYesterdaySummaryDate] = useState("");
 
+  const generatePayrollCycles = () => {
+    const today = new Date();
+    const cycles = [];
+    for (let i = 0; i < 6; i++) {
+      let year = today.getFullYear();
+      let month = today.getMonth();
+      let targetMonth = month - i;
+      let targetYear = year;
+      if (targetMonth < 0) {
+        targetYear += Math.floor(targetMonth / 12);
+        targetMonth = (targetMonth % 12 + 12) % 12;
+      }
+      if (today.getDate() < 25) {
+        targetMonth = targetMonth - 1;
+        if (targetMonth < 0) {
+          targetYear -= 1;
+          targetMonth = 11;
+        }
+      }
+      const cycleStart = new Date(targetYear, targetMonth, 25);
+      let cycleEndMonth = targetMonth + 1;
+      let cycleEndYear = targetYear;
+      if (cycleEndMonth > 11) {
+        cycleEndMonth = 0;
+        cycleEndYear += 1;
+      }
+      const cycleEnd = new Date(cycleEndYear, cycleEndMonth, 24);
+      const label = `${cycleStart.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - ${cycleEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+      const value = `${cycleStart.getFullYear()}-${String(cycleStart.getMonth() + 1).padStart(2, "0")}-25`;
+      cycles.push({ label, value });
+    }
+    return cycles;
+  };
+
   const viewEmployeeHistory = async (member: any) => {
     setHistoryModalUser(member);
     setLoadingHistory(true);
     setHistoryRecords([]);
+    const cycles = generatePayrollCycles();
+    const defaultCycle = cycles[0]?.value || "";
+    setSelectedCycle(defaultCycle);
     try {
       const targetUserId = member?.user_id || member?.id || member?.employee_id;
       if (!targetUserId || targetUserId === "undefined") {
         console.warn("Cannot fetch attendance history: invalid user ID", member);
         return;
       }
-      const response = await fetch(`${BASE_URL}/attendance/history/${targetUserId}`);
+      const response = await fetch(`${BASE_URL}/attendance/history/${targetUserId}?start_date=${defaultCycle}`);
+      if (!response.ok) throw new Error("Failed to fetch history");
+      const data = await response.json();
+      setHistoryRecords(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to load attendance history:", error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleCycleChange = async (cycleValue: string) => {
+    setSelectedCycle(cycleValue);
+    setLoadingHistory(true);
+    try {
+      const targetUserId = historyModalUser?.user_id || historyModalUser?.id || historyModalUser?.employee_id;
+      const response = await fetch(`${BASE_URL}/attendance/history/${targetUserId}?start_date=${cycleValue}`);
       if (!response.ok) throw new Error("Failed to fetch history");
       const data = await response.json();
       setHistoryRecords(Array.isArray(data) ? data : []);
@@ -1991,9 +2045,33 @@ const ManagerDashboardPage = () => {
 
             {/* Modal Body */}
             <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
-              <h4 style={{ fontSize: "13px", fontWeight: 700, color: THEME.navy, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "16px" }}>
-                30-Day Attendance History
-              </h4>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
+                <h4 style={{ fontSize: "13px", fontWeight: 700, color: THEME.navy, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
+                  Attendance History
+                </h4>
+                <div style={{ width: "260px" }}>
+                  <select
+                    value={selectedCycle}
+                    onChange={(e) => handleCycleChange(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "4px 8px",
+                      borderRadius: "6px",
+                      border: "1px solid #cbd5e1",
+                      background: "#fff",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#334155",
+                      outline: "none",
+                      cursor: "pointer"
+                    }}
+                  >
+                    {generatePayrollCycles().map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
               {loadingHistory ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "60px 0", gap: "12px" }}>
@@ -2040,6 +2118,12 @@ const ManagerDashboardPage = () => {
                         } else if (status === "Absent") {
                           pillBg = THEME.dangerBg;
                           pillText = THEME.danger;
+                        } else if (status === "Week Off") {
+                          pillBg = "rgba(148, 163, 184, 0.15)";
+                          pillText = "#64748b";
+                        } else if (status === "Holiday") {
+                          pillBg = "rgba(124, 58, 237, 0.15)";
+                          pillText = "#7c3aed";
                         }
 
                         // Format date nicely
