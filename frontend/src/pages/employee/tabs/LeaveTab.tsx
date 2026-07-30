@@ -231,6 +231,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const [selectedYear, setSelectedYear] = useState<number>(todayObj.getFullYear());
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [typeFilter, setTypeFilter] = useState<string>("All");
+  const [timelineTab, setTimelineTab] = useState<"timeline" | "holidays">("timeline");
 
   const [monthlyHolidaysData, setMonthlyHolidaysData] = useState<any[]>([]);
   const [monthlyScheduleData, setMonthlyScheduleData] = useState<any[]>([]);
@@ -434,56 +435,32 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     const requests = myRequests.filter((req: any) => {
       const matchStatus = statusFilter === "All" || req.status === statusFilter;
       const matchType = typeFilter === "All" || req.leave_type === typeFilter;
-      return matchStatus && matchType;
+      if (!matchStatus || !matchType) return false;
+      const dateStr = req.request_type === "Permission" ? req.permission_date : (req.to_date || req.from_date);
+      return dateStr <= todayStr;
     });
-
-    const getStatusWeight = (resolvedStatus: string) => {
-      switch (resolvedStatus) {
-        case "In Progress": return 1;
-        case "Approved": return 2;
-        case "Pending": return 3;
-        case "Rejected": return 4;
-        case "Completed": return 5;
-        case "Out of Date": return 6;
-        case "Cancelled": return 7;
-        default: return 8;
-      }
-    };
 
     return requests.sort((a: any, b: any) => {
-      const weightA = getStatusWeight(getResolvedStatus(a));
-      const weightB = getStatusWeight(getResolvedStatus(b));
-      if (weightA !== weightB) {
-        return weightA - weightB;
-      }
-      return new Date(b.from_date || b.permission_date || 0).getTime() -
-             new Date(a.from_date || a.permission_date || 0).getTime();
+      const dateA = a.from_date || a.permission_date || "";
+      const dateB = b.from_date || b.permission_date || "";
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
     });
-  }, [myRequests, statusFilter, typeFilter]);
+  }, [myRequests, statusFilter, typeFilter, todayStr]);
 
-  const upcomingPending = React.useMemo(() => {
+  const upcomingLeaves = React.useMemo(() => {
     return myRequests.filter((req: any) => {
       const dateStr = req.request_type === "Permission" ? req.permission_date : req.from_date;
-      return req.status === "Pending" && dateStr >= todayStr;
-    }).sort((a: any, b: any) =>
-      new Date(a.from_date || a.permission_date).getTime() -
-      new Date(b.from_date || b.permission_date).getTime()
-    );
-  }, [myRequests, todayStr]);
-
-  const upcomingApproved = React.useMemo(() => {
-    return myRequests.filter((req: any) => {
-      const dateStr = req.request_type === "Permission" ? req.permission_date : req.from_date;
-      return req.status === "Approved" && dateStr >= todayStr;
-    }).sort((a: any, b: any) =>
-      new Date(a.from_date || a.permission_date).getTime() -
-      new Date(b.from_date || b.permission_date).getTime()
-    );
+      return (req.status === "Pending" || req.status === "Approved") && dateStr > todayStr;
+    }).sort((a: any, b: any) => {
+      const dateA = a.from_date || a.permission_date || "";
+      const dateB = b.from_date || b.permission_date || "";
+      return new Date(dateA).getTime() - new Date(dateB).getTime();
+    });
   }, [myRequests, todayStr]);
 
   const upcomingCompanyHolidays = React.useMemo(() => {
     const upcoming = allYearHolidays.filter((h: any) => h.date >= todayStr);
-    return upcoming.sort((a: any, b: any) => a.date.localeCompare(b.date)).slice(0, 3);
+    return upcoming.sort((a: any, b: any) => a.date.localeCompare(b.date));
   }, [allYearHolidays, todayStr]);
 
   // Generate 35-42 days grid for monthly calendar
@@ -1045,242 +1022,222 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         )}
 
         {/* ── Leave & Holiday Timeline Section (75% / 25% Split) ── */}
+        {/* ── Tabbed Leave Timeline & Company Holidays Section ── */}
         <div className="bg-white border border-neutral-200 shadow-sm rounded-xl overflow-hidden mb-6">
-          {/* Header */}
-          <div className="bg-white p-5 border-b border-neutral-200 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+          {/* Header & Segmented Tabs */}
+          <div className="bg-white p-5 border-b border-neutral-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-2.5">
               <div className="p-2 bg-primary-500/10 rounded-xl text-primary-500">
                 <CalendarIcon className="w-5 h-5" />
               </div>
+              <h3 className="text-[18px] font-bold text-neutral-850">Timeline &amp; Holidays</h3>
+            </div>
+
+            <div className="flex bg-neutral-100 p-1 rounded-xl border border-neutral-200">
+              <button
+                onClick={() => setTimelineTab("timeline")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                  timelineTab === "timeline"
+                    ? "bg-white text-primary-700 shadow-sm"
+                    : "text-neutral-600 hover:text-neutral-800"
+                }`}
+              >
+                📅 Leave &amp; Holiday Timeline ({upcomingLeaves.length + leaveHistoryRequests.length})
+              </button>
+              <button
+                onClick={() => setTimelineTab("holidays")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                  timelineTab === "holidays"
+                    ? "bg-white text-primary-700 shadow-sm"
+                    : "text-neutral-600 hover:text-neutral-800"
+                }`}
+              >
+                🎉 Company Holidays ({allYearHolidays.length})
+              </button>
+            </div>
+          </div>
+
+          {timelineTab === "timeline" ? (
+            <div className="p-6 bg-white space-y-8">
+              {/* Planned Leaves & Permissions (Planned) */}
               <div>
-                <h3 className="text-[18px] font-bold text-neutral-850">Leave &amp; Holiday Timeline</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-[15px] font-bold text-neutral-900 flex items-center gap-2">
+                    <span>📅</span> Planned Leaves &amp; Permissions (Upcoming)
+                  </h4>
+                  <span className="text-[12px] font-semibold text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded">
+                    {upcomingLeaves.length} Planned
+                  </span>
+                </div>
+
+                <div className="border border-neutral-200 rounded-xl overflow-hidden bg-white shadow-sm max-h-[250px] overflow-y-auto custom-scrollbar">
+                  <table className="w-full border-collapse text-left">
+                    <thead>
+                      <tr className="bg-neutral-50 border-b border-neutral-200 text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
+                        <th className="p-3">Type</th>
+                        <th className="p-3">Date / Time Slot</th>
+                        <th className="p-3">Duration</th>
+                        <th className="p-3">Reason</th>
+                        <th className="p-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-200/80 text-xs text-neutral-700">
+                      {upcomingLeaves.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-6 text-center text-neutral-400 font-medium bg-neutral-50/10 italic">
+                            No upcoming planned leaves or permissions found.
+                          </td>
+                        </tr>
+                      ) : (
+                        upcomingLeaves.map((req: any) => {
+                          const isPermission = req.request_type === "Permission";
+                          const dateStr = isPermission 
+                            ? `${req.permission_date} @ ${req.from_time} - ${req.to_time}` 
+                            : `${req.from_date} to ${req.to_date}`;
+                          
+                          return (
+                            <tr key={req.id} className="hover:bg-neutral-50/40 transition-colors">
+                              <td className="p-3 font-semibold text-neutral-800">
+                                {isPermission ? "Hourly Permission" : req.leave_type}
+                              </td>
+                              <td className="p-3 text-neutral-600 font-medium">{dateStr}</td>
+                              <td className="p-3 text-neutral-600 font-medium">
+                                {isPermission ? "Hourly" : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
+                              </td>
+                              <td className="p-3 text-neutral-500 max-w-[200px] truncate" title={req.reason}>
+                                {req.reason || "—"}
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border ${req.status === "Approved" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                                  {req.status}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 p-6 bg-white">
-            {/* Left 75% Column: Employee Leave History (Modern Cards List) */}
-            <div className="lg:col-span-3">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-[16px] font-semibold text-neutral-900">📋 Employee Leave History</h4>
-                <span className="text-[13px] font-medium text-neutral-500">
-                  {leaveHistoryRequests.length} Record{leaveHistoryRequests.length === 1 ? "" : "s"}
-                </span>
-              </div>
-
-              <div className="max-h-[420px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                {leaveHistoryRequests.length === 0 ? (
-                  <div className="p-12 text-center border border-dashed border-neutral-200 rounded-xl bg-neutral-50/30">
-                    <span className="text-3xl mb-2 block">📅</span>
-                    <p className="text-[14px] font-semibold text-neutral-700">No leave records found.</p>
-                    <p className="text-[13px] text-neutral-500 mt-1">Apply a leave request to see your history here.</p>
-                  </div>
-                ) : (
-                  leaveHistoryRequests.map((req: any) => {
-                    const isPermission = req.request_type === "Permission";
-                    const isApproved = req.status === "Approved";
-                    const isRejected = req.status === "Rejected";
-                    const isPending = req.status === "Pending";
-                    const isCancelled = req.status === "Cancelled";
-
-                    const badgeColor = isApproved ? "bg-green-50 text-green-700 border-green-200" :
-                      isRejected ? "bg-red-50 text-red-700 border-red-200" :
-                        isCancelled ? "bg-gray-55/60 text-gray-700 border-gray-200" :
-                          "bg-amber-50 text-amber-700 border-amber-200";
-
-                    const dateStr = isPermission 
-                      ? `${req.permission_date} @ ${req.from_time} - ${req.to_time}` 
-                      : `${req.from_date} to ${req.to_date}`;
-
-                    const checkIsCompleted = () => {
-                      if (!isPermission) {
-                        if (!req.to_date) return false;
-                        const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
-                        return req.to_date < today;
-                      }
-                      if (!req.permission_date) return false;
-                      const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
-                      if (req.permission_date < today) return true;
-                      if (req.permission_date > today) return false;
-                      if (req.permission_date === today && req.to_time) {
-                        const now = new Date();
-                        const currentHrs = now.getHours();
-                        const currentMins = now.getMinutes();
-                        const match = req.to_time.match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/i);
-                        if (match) {
-                          let hrs = parseInt(match[1]);
-                          const mins = parseInt(match[2]);
-                          const ampm = match[3];
-                          if (ampm) {
-                            if (ampm.toLowerCase() === 'pm' && hrs < 12) hrs += 12;
-                            if (ampm.toLowerCase() === 'am' && hrs === 12) hrs = 0;
-                          }
-                          if (currentHrs > hrs) return true;
-                          if (currentHrs === hrs && currentMins >= mins) return true;
-                        }
-                      }
-                      return false;
-                    };
-                    const resolved = getResolvedStatus(req);
-                    const isCompleted = resolved === "Completed" || resolved === "Out of Date";
-                    const statusDisplay = resolved;
-                    
-                    let calculatedBadgeColor = "bg-amber-50 text-amber-700 border-amber-200";
-
-                    if (resolved === "In Progress") {
-                      calculatedBadgeColor = "bg-sky-50 text-sky-700 border-sky-200";
-                    } else if (resolved === "Approved") {
-                      calculatedBadgeColor = "bg-green-50 text-green-700 border-green-200";
-                    } else if (resolved === "Pending") {
-                      calculatedBadgeColor = "bg-amber-50 text-amber-700 border-amber-200";
-                    } else if (resolved === "Rejected") {
-                      calculatedBadgeColor = "bg-red-50 text-red-700 border-red-200";
-                    } else if (resolved === "Completed") {
-                      calculatedBadgeColor = "bg-green-50 text-green-700 border-green-250/90";
-                    } else if (resolved === "Out of Date") {
-                      calculatedBadgeColor = "bg-neutral-50 text-neutral-500 border-neutral-200/80";
-                    } else if (resolved === "Cancelled") {
-                      calculatedBadgeColor = "bg-gray-55/60 text-gray-700 border-gray-200";
-                    }
-
-                    const iconBgClass = (resolved === "Completed" || resolved === "Approved" || resolved === "In Progress") 
-                      ? "bg-green-50 text-green-600" 
-                      : (resolved === "Out of Date" || resolved === "Cancelled") 
-                        ? "bg-neutral-100 text-neutral-500" 
-                        : resolved === "Rejected"
-                          ? "bg-red-50 text-red-500"
-                          : "bg-amber-50 text-amber-600";
-
-                    return (
-                      <div 
-                        key={req.id} 
-                        className="p-4 bg-white border border-neutral-200 rounded-xl hover:shadow-md hover:border-neutral-300 transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4"
-                      >
-                        <div className="flex items-start gap-4">
-                          <div className={`p-2.5 rounded-xl shrink-0 ${iconBgClass}`}>
-                            <CalendarIcon className="w-5 h-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <h5 className="text-[14px] font-bold text-neutral-800 truncate">
-                              {isPermission ? "Hourly Permission" : req.leave_type}
-                            </h5>
-                            <p className="text-xs text-neutral-500 font-medium mt-1">
-                              {dateStr}
-                            </p>
-                            {req.reason && (
-                              <p className="text-xs text-neutral-450 italic mt-2 line-clamp-1">
-                                &ldquo;{req.reason}&rdquo;
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-6 self-end md:self-auto">
-                          <div className="text-left md:text-right">
-                            <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Duration</p>
-                            <p className="text-xs font-bold text-neutral-700 mt-0.5 whitespace-nowrap">
-                              {isPermission 
-                                ? (isCompleted ? "Completed" : "Hourly") 
-                                : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
-                            </p>
-                          </div>
-
-                          <div className="text-left md:text-right">
-                            <p className="text-[10px] text-neutral-450 font-bold uppercase tracking-wider">Status</p>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold border mt-0.5 ${calculatedBadgeColor}`}>
-                              {statusDisplay}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* Right 25% Column: Upcoming Sidebar */}
-            <div className="lg:col-span-1 border-l border-neutral-200 lg:pl-6 space-y-6">
-              <h4 className="text-[16px] font-semibold text-neutral-900">📅 Upcoming Summary</h4>
-              
-              {/* Upcoming Company Holidays Subsection */}
-              <div className="space-y-3">
-                <h5 className="text-[13px] font-bold text-primary-700 flex items-center gap-1.5">
-                  <span className="text-sm">🎉</span>
-                  Company Holidays ({upcomingCompanyHolidays.length})
-                </h5>
-                {upcomingCompanyHolidays.length === 0 ? (
-                  <p className="text-xs text-neutral-400 italic pl-3.5">No upcoming holidays scheduled</p>
-                ) : (
-                  <div className="space-y-2">
-                    {upcomingCompanyHolidays.map((holiday: any) => (
-                      <div key={holiday.name + holiday.date} className="p-3 bg-primary-50/30 border border-primary-100 rounded-xl">
-                        <p className="text-xs font-bold text-neutral-800">{holiday.name}</p>
-                        <div className="flex justify-between items-center text-[11px] text-neutral-500 mt-1 font-semibold">
-                          <span>{holiday.date}</span>
-                          <span>{WEEKDAYS[new Date(holiday.date).getDay()] || "—"}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Separate Company Holidays Section (Grid Deck Style) ── */}
-        <div className="bg-white border border-neutral-200 shadow-sm rounded-xl overflow-hidden mb-6">
-          <div className="bg-white p-5 border-b border-neutral-200 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-primary-500/10 rounded-xl text-primary-500">
-                <span className="text-lg">🎉</span>
-              </div>
+              {/* Employee Leave & Permission History (Past & Today) */}
               <div>
-                <h3 className="text-[18px] font-bold text-neutral-850">Company Holidays</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-[15px] font-bold text-neutral-900 flex items-center gap-2">
+                    <span>📋</span> Employee Leave &amp; Permission History (Past &amp; Today)
+                  </h4>
+                  <span className="text-[12px] font-semibold text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded">
+                    {leaveHistoryRequests.length} Record{leaveHistoryRequests.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+
+                <div className="border border-neutral-200 rounded-xl overflow-hidden bg-white shadow-sm max-h-[350px] overflow-y-auto custom-scrollbar">
+                  <table className="w-full border-collapse text-left">
+                    <thead>
+                      <tr className="bg-neutral-50 border-b border-neutral-200 text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
+                        <th className="p-3">Type</th>
+                        <th className="p-3">Date / Time Slot</th>
+                        <th className="p-3">Duration</th>
+                        <th className="p-3">Reason</th>
+                        <th className="p-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-200/80 text-xs text-neutral-700">
+                      {leaveHistoryRequests.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-8 text-center text-neutral-400 font-medium bg-neutral-50/10">
+                            No leave or permission history found.
+                          </td>
+                        </tr>
+                      ) : (
+                        leaveHistoryRequests.map((req: any) => {
+                          const isPermission = req.request_type === "Permission";
+                          const dateStr = isPermission 
+                            ? `${req.permission_date} @ ${req.from_time} - ${req.to_time}` 
+                            : `${req.from_date} to ${req.to_date}`;
+                          
+                          const resolved = getResolvedStatus(req);
+                          
+                          let calculatedBadgeColor = "bg-amber-50 text-amber-700 border-amber-200";
+                          if (resolved === "In Progress") calculatedBadgeColor = "bg-sky-50 text-sky-700 border-sky-200";
+                          else if (resolved === "Approved" || resolved === "Completed") calculatedBadgeColor = "bg-green-50 text-green-700 border-green-200";
+                          else if (resolved === "Rejected") calculatedBadgeColor = "bg-red-50 text-red-700 border-red-200";
+                          else if (resolved === "Out of Date") calculatedBadgeColor = "bg-neutral-50 text-neutral-500 border-neutral-200";
+                          else if (resolved === "Cancelled") calculatedBadgeColor = "bg-gray-100 text-gray-600 border-gray-200";
+
+                          return (
+                            <tr key={req.id} className="hover:bg-neutral-50/40 transition-colors">
+                              <td className="p-3 font-semibold text-neutral-800">
+                                {isPermission ? "Hourly Permission" : req.leave_type}
+                              </td>
+                              <td className="p-3 text-neutral-600 font-medium">
+                                {dateStr}
+                              </td>
+                              <td className="p-3 text-neutral-600 font-medium">
+                                {isPermission 
+                                  ? "Hourly" 
+                                  : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
+                              </td>
+                              <td className="p-3 text-neutral-500 max-w-[200px] truncate" title={req.reason}>
+                                {req.reason || "—"}
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${calculatedBadgeColor}`}>
+                                  {resolved}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          </div>
-
-          <div className="p-6 bg-neutral-50/30">
-            {allYearHolidays.length === 0 ? (
-              <p className="text-sm text-neutral-500 text-center py-8 italic">No published holidays available.</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {allYearHolidays.map((hol: any) => {
-                  const dateObj = new Date(hol.date);
-                  const dayName = WEEKDAYS[dateObj.getDay()] || "—";
-                  const isUpcoming = hol.date >= todayStr;
-
-                  const cardBg = isUpcoming 
-                    ? "bg-gradient-to-br from-primary-50/30 to-white border-primary-100" 
-                    : "bg-white border-neutral-200 opacity-65";
-
-                  return (
-                    <div 
-                      key={hol.id} 
-                      className={`p-4 border rounded-xl shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between ${cardBg}`}
-                    >
-                      <div>
-                        <div className="flex justify-between items-center mb-2">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${isUpcoming ? "bg-blue-50 text-blue-700 border-blue-150" : "bg-neutral-100 text-neutral-600 border-neutral-200"}`}>
-                            {isUpcoming ? "Upcoming" : "Passed"}
-                          </span>
-                          <span className="text-[11px] text-neutral-400 font-semibold">{dayName}</span>
-                        </div>
-                        <h5 className="text-[14px] font-bold text-neutral-800 mt-2 leading-snug">{hol.name}</h5>
-                      </div>
-                      
-                      <div className="flex justify-between items-center mt-4 pt-3 border-t border-neutral-100">
-                        <span className="text-xs font-bold text-neutral-600">{hol.date}</span>
-                        <span className="text-[10px] text-neutral-450 font-medium italic">{hol.holiday_type || "Holiday"}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          ) : (
+            <div className="p-6 bg-white">
+              {allYearHolidays.length === 0 ? (
+                <p className="text-sm text-neutral-500 text-center py-8 italic">No published holidays available.</p>
+              ) : (
+                <div className="border border-neutral-200 rounded-xl overflow-hidden bg-white shadow-sm max-h-[500px] overflow-y-auto custom-scrollbar">
+                  <table className="w-full border-collapse text-left">
+                    <thead>
+                      <tr className="bg-neutral-50 border-b border-neutral-200 text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
+                        <th className="p-3">Holiday Name</th>
+                        <th className="p-3">Date</th>
+                        <th className="p-3">Day</th>
+                        <th className="p-3">Type</th>
+                        <th className="p-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-200/80 text-xs text-neutral-700">
+                      {allYearHolidays.map((hol: any) => {
+                        const isUpcoming = hol.date >= todayStr;
+                        const dateObj = new Date(hol.date);
+                        const dayName = WEEKDAYS[dateObj.getDay()] || "—";
+                        
+                        return (
+                          <tr key={hol.id} className={`hover:bg-neutral-50/40 transition-colors ${!isUpcoming ? "opacity-60" : ""}`}>
+                            <td className="p-3 font-semibold text-neutral-800">{hol.name}</td>
+                            <td className="p-3 text-neutral-600 font-medium">{hol.date}</td>
+                            <td className="p-3 text-neutral-500 font-medium">{dayName}</td>
+                            <td className="p-3 text-neutral-500 font-medium">{hol.holiday_type || "Holiday"}</td>
+                            <td className="p-3 text-center">
+                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border ${isUpcoming ? "bg-blue-50 text-blue-700 border-blue-150" : "bg-neutral-100 text-neutral-600 border-neutral-200"}`}>
+                                {isUpcoming ? "Upcoming" : "Passed"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
       </>
