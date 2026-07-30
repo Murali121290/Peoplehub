@@ -1194,17 +1194,25 @@ def get_team_attendance(user_id):
     """Return all employees reporting to this manager with today's attendance status."""
     try:
         manager = Employee.query.filter_by(user_id=user_id).first()
-        if not manager:
-            return jsonify([])
+        user = User.query.get(user_id)
+        is_admin = False
+        if user:
+            role_name = (user.role.name or "").lower() if user.role else ""
+            access_level = (user.access_level or "").lower()
+            if "admin" in role_name or "admin" in access_level:
+                is_admin = True
 
-        manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
         today = date.today()
-
         all_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
         result = []
 
-        manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
-        reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
+        if is_admin:
+            reporting_list = [e for e in all_employees if e.user_id != user_id]
+        else:
+            if not manager:
+                return jsonify([])
+            manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
+            reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
 
         for emp in reporting_list:
 
@@ -1441,17 +1449,25 @@ def get_reporting_employees(user_id):
                     return item.get("comment")
             return None
 
+        user = User.query.get(user_id)
+        is_admin = False
+        if user:
+            role_name = (user.role.name or "").lower() if user.role else ""
+            access_level = (user.access_level or "").lower()
+            if "admin" in role_name or "admin" in access_level:
+                is_admin = True
+
         result = []
 
-        manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
+        if is_admin:
+            reporting_list = [e for e in all_employees if e.user_id != user_id]
+        else:
+            if not manager:
+                return jsonify([])
+            manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
+            reporting_list = [e for e in all_employees if e.user_id != user_id and is_manager_match(e.reporting_manager, manager_full_name)]
 
-        for employee in all_employees:
-            if not employee.reporting_manager:
-                continue
-            if employee.user_id == user_id:
-                continue
-            if not is_manager_match(employee.reporting_manager, manager_full_name):
-                continue
+        for employee in reporting_list:
 
             attendance = Attendance.query.filter_by(
                 user_id=employee.user_id,
