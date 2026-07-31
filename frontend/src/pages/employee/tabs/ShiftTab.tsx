@@ -64,7 +64,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
-          setShiftOptions(data);
+          setShiftOptions(data.filter((s: string) => s.toUpperCase() !== "WFH" && s.toLowerCase() !== "work from home"));
         }
       })
       .catch((err) => console.error("Failed to load shift options", err));
@@ -151,7 +151,9 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
       current_shift: currentEmployee.shift_timing || "General Shift",
       reporting_manager: currentEmployee.reporting_manager || "Admin",
-      requested_shift: requestType === "WFH" ? "WFH" : shiftForm.requestedShift,
+      requested_shift: (requestType === "WFH" || requestType === "Office") ? (currentEmployee.shift_timing || "General Shift") : shiftForm.requestedShift,
+      current_work_mode: currentEmployee.work_mode || "Office",
+      requested_work_mode: requestType === "WFH" ? "WFH" : requestType === "Office" ? "Office" : (currentEmployee.work_mode || "Office"),
       request_type: requestType,
       from_date: fromDate,
       to_date: toDate,
@@ -221,24 +223,25 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
             <div className="space-y-6 divide-y divide-neutral-200/60">
               {activeShiftRequests.map((req: any, idx) => {
                 const isWFH = req.request_type === "WFH";
+                const isOffice = req.request_type === "Office";
                 const isExpanded = activeRequestDetails === req.id;
                 return (
                   <div key={req.id} className={`${idx > 0 ? "pt-5" : ""}`}>
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="flex items-start gap-4">
-                        <div className={`p-2 rounded-xl border ${isWFH
+                        <div className={`p-2 rounded-xl border ${(isWFH || isOffice)
                             ? "bg-purple-50 border-purple-100 text-purple-600"
                             : "bg-blue-50 border-blue-100 text-blue-600"
                           }`}>
-                          {isWFH ? <HomeIcon className="w-5 h-5" /> : <BriefcaseIcon className="w-5 h-5" />}
+                          {(isWFH || isOffice) ? <HomeIcon className="w-5 h-5" /> : <BriefcaseIcon className="w-5 h-5" />}
                         </div>
                         <div>
                           <p className="text-sm font-bold text-neutral-800">
-                            {isWFH ? "Work From Home Request" : `Shift Change Request`}
+                            {isWFH ? "Work From Home Request" : isOffice ? "Work From Office Request" : `Shift Change Request`}
                           </p>
                           <p className="text-xs text-neutral-500 font-medium mt-0.5 flex items-center gap-1.5">
                             <ClockIcon className="w-3.5 h-3.5 text-neutral-400" />
-                            {isWFH
+                            {(isWFH || isOffice)
                               ? `Schedule: ${req.from_date} to ${req.to_date}`
                               : `Change: ${req.current_shift} ➔ ${req.requested_shift} (${req.from_date} to ${req.to_date})`
                             }
@@ -374,22 +377,26 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                 ) : (                  shiftRequests.map((item: any) => {
                     const isApproved = item.status === "Approved";
                     const isRejected = item.status === "Rejected";
-                    const isWFH = item.request_type === "WFH";
+                    const isWorkMode = item.request_type === "WFH" || item.request_type === "Office" || item.requested_work_mode === "WFH" || item.requested_work_mode === "Office";
 
                     return (
                       <React.Fragment key={item.id}>
                         <tr className="hover:bg-neutral-50/40 transition-colors">
                           <td className="p-4 pl-6">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWFH
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWorkMode
                                 ? "bg-purple-50 text-purple-700 border-purple-200"
                                 : "bg-blue-50 text-blue-700 border-blue-200"
                               }`}>
                               {item.request_type || "Shift"}
                             </span>
                           </td>
-                          <td className="p-4 text-xs font-normal text-neutral-600">{item.current_shift || "-"}</td>
+                          <td className="p-4 text-xs font-normal text-neutral-600">
+                            {item.current_shift || "-"}
+                            {item.current_work_mode && <span className="text-[10px] text-blue-500 font-semibold ml-1">({item.current_work_mode})</span>}
+                          </td>
                           <td className="p-4 text-xs font-medium text-neutral-800">
-                            {isWFH ? "Work From Home" : item.requested_shift}
+                            {item.requested_shift || "-"}
+                            {item.requested_work_mode && <span className="text-[10px] text-blue-500 font-semibold ml-1">({item.requested_work_mode})</span>}
                           </td>
                           <td className="p-4">
                             <div>
@@ -482,6 +489,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                 >
                   <option value="Shift">Shift Change</option>
                   <option value="WFH">Work From Home (WFH)</option>
+                  <option value="Office">Work From Office (Office)</option>
                 </select>
               </div>
 

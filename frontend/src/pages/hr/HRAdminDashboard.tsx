@@ -66,6 +66,7 @@ const DEFAULT_NEW_EMP = {
   joining_date: "",
   salary: "",
   shift_timing: "",
+  work_mode: "Office",
   status: "Active",
 };
 
@@ -375,18 +376,23 @@ export default function HRAdminDashboard() {
 
     let today_shift = emp.shift_timing || "General Shift";
     let today_shift_type: "permanent" | "wfh" | "changed" = "permanent";
+
     if (approvedShiftReq) {
-      const rt = (approvedShiftReq.request_type || "").toUpperCase();
-      if (rt === "WFH") {
-        today_shift = "WFH";
-        today_shift_type = "wfh";
-      } else {
-        today_shift = approvedShiftReq.requested_shift || today_shift;
+      if (approvedShiftReq.requested_shift && approvedShiftReq.requested_shift !== "WFH") {
+        today_shift = approvedShiftReq.requested_shift;
         today_shift_type = "changed";
       }
-    } else if ((emp.shift_timing || "").toUpperCase() === "WFH") {
-      today_shift = "WFH";
+    }
+
+    const isWfhToday = approvedShiftReq
+      ? (approvedShiftReq.requested_work_mode === "WFH" || approvedShiftReq.request_type === "WFH" || approvedShiftReq.requested_shift === "WFH")
+      : (emp.work_mode === "WFH" || (emp.shift_timing || "").toUpperCase() === "WFH");
+
+    if (isWfhToday) {
       today_shift_type = "wfh";
+      if (today_shift === "WFH") {
+        today_shift = "General Shift";
+      }
     }
 
     return { ...emp, today_status, today_shift, today_shift_type };
@@ -500,6 +506,10 @@ export default function HRAdminDashboard() {
         "shift_timing",
         newEmp.shift_timing || ""
       );
+      formData.append(
+        "work_mode",
+        newEmp.work_mode || "Office"
+      );
 
       if (profileImage) {
         formData.append("profile_image", profileImage);
@@ -605,7 +615,8 @@ export default function HRAdminDashboard() {
         role_id: fullEmployee.role_id ?? "",
         reporting_manager: resolvedManager,
         access_level: fullEmployee.access_level ?? "",
-        shift_timing: fullEmployee.shift_timing ?? "",
+        shift_timing: (fullEmployee.shift_timing ?? "").toUpperCase() === "WFH" ? "General Shift" : (fullEmployee.shift_timing ?? ""),
+        work_mode: (fullEmployee.shift_timing ?? "").toUpperCase() === "WFH" ? "WFH" : (fullEmployee.work_mode ?? "Office"),
         status: fullEmployee.status ?? "active",
         password: "",   // never pre-fill password
       });

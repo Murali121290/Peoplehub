@@ -182,6 +182,7 @@ const ShiftApprovalPage: React.FC = () => {
               <tr className="bg-neutral-50/50 border-b border-neutral-200 text-neutral-500 text-[10px] font-semibold uppercase tracking-wider">
                 <th className="text-left p-4 pl-6">Employee</th>
                 <th className="text-left p-4">Emp ID</th>
+                <th className="text-left p-4">Request Type</th>
                 <th className="text-left p-4">Current Shift</th>
                 <th className="text-left p-4">Requested Shift</th>
                 <th className="text-left p-4">Date Range</th>
@@ -193,7 +194,7 @@ const ShiftApprovalPage: React.FC = () => {
             <tbody className="divide-y divide-neutral-200/80">
               {safeManagerShiftRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
+                  <td colSpan={9} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
                     <div className="flex flex-col items-center justify-center gap-2 py-4">
                       <CheckIcon className="w-12 h-12 text-success-400" />
                       <p className="text-xs font-bold text-neutral-500">All caught up!</p>
@@ -220,9 +221,25 @@ const ShiftApprovalPage: React.FC = () => {
                         <td className="p-4 text-xs font-medium text-neutral-600">
                           {item.employee_id || "-"}
                         </td>
-                        <td className="p-4 text-xs text-neutral-600">{item.current_shift || "-"}</td>
+                        <td className="p-4 text-xs font-normal">
+                          {(() => {
+                            const isWorkMode = item.request_type === "WFH" || item.request_type === "Office";
+                            const label = item.request_type === "WFH" ? "WFH" : item.request_type === "Office" ? "Office" : "Shift";
+                            return (
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWorkMode
+                                ? "bg-purple-50 text-purple-700 border-purple-200"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
+                              }`}>
+                                {label}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td className="p-4 text-xs text-neutral-600">
+                          {item.current_shift || "-"} {(item.current_work_mode || (item.request_type === "Office" ? "WFH" : item.request_type === "WFH" ? "Office" : "")) ? `(${item.current_work_mode || (item.request_type === "Office" ? "WFH" : item.request_type === "WFH" ? "Office" : "")})` : ""}
+                        </td>
                         <td className="p-4 text-xs font-medium text-neutral-800">
-                          {item.request_type === "WFH" ? "Work From Home" : (item.requested_shift || "-")}
+                          {(item.request_type === "WFH" ? "General Shift" : (item.requested_shift || "-"))} {(item.requested_work_mode || (item.request_type === "WFH" ? "WFH" : item.request_type === "Office" ? "Office" : "")) ? `(${item.requested_work_mode || (item.request_type === "WFH" ? "WFH" : item.request_type === "Office" ? "Office" : "")})` : ""}
                         </td>
                         <td className="p-4">
                           <div>

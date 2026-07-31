@@ -151,7 +151,7 @@ def email_action():
                 
             return make_html_response("Request Rejected", f"{req_type} request has been rejected.", True)
             
-    elif req_type in ("Shift", "WFH"):
+    elif req_type in ("Shift", "WFH", "Office"):
         req = ShiftRequest.query.get(req_id)
         if not req:
             return make_html_response("Request Not Found", "The requested shift/WFH record could not be found.", False), 404

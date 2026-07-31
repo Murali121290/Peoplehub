@@ -118,6 +118,7 @@ def create_employee():
 
             joining_date=joining_date,
             shift_timing=data.get("shift_timing"),
+            work_mode=data.get("work_mode", "Office"),
 
             salary=float(data.get("salary") or 0),
 
@@ -221,6 +222,9 @@ def get_employees():
             "shift_timing":
                 emp.shift_timing,
 
+            "work_mode":
+                emp.work_mode,
+
             "status":
                 attendance.status
                 if attendance
@@ -240,10 +244,14 @@ def get_employees():
             "casual_leave":
                 emp.casual_leave,
 
-            "privilege_leave":
+             "privilege_leave":
                 emp.privilege_leave,
             "earned_leave":
-                emp.privilege_leave
+                emp.privilege_leave,
+            "joining_date":
+                emp.joining_date.isoformat() if emp.joining_date else None,
+            "profile_image":
+                base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None
         })
 
     return jsonify(result)
@@ -416,6 +424,7 @@ def get_employee(employee_id):
 "employee_type": employee.employee_type,
 "work_location": employee.work_location,
 "shift_timing": employee.shift_timing,
+"work_mode": employee.work_mode,
 
 "probation_end_date": (
     employee.probation_end_date.isoformat()
@@ -824,6 +833,11 @@ def update_employee_profile(employee_id):
             employee.shift_timing
         )
 
+        employee.work_mode = data.get(
+            "work_mode",
+            employee.work_mode
+        )
+
         if data.get("probation_end_date"):
             employee.probation_end_date = datetime.strptime(
                 data["probation_end_date"],
@@ -902,6 +916,7 @@ def update_employee_profile(employee_id):
                 "designation": employee.designation,
                 "department": employee.department,
                 "shift": employee.shift_timing or "General Shift",
+                "work_mode": employee.work_mode,
                 "status": employee.status
             })
         except Exception as socket_err:
@@ -931,7 +946,8 @@ def get_employees_list():
             "name": f"{emp.first_name} {emp.last_name}",
             "department": emp.department,
             "designation": emp.designation,
-            "role": emp.designation
+            "role": emp.designation,
+            "work_mode": emp.work_mode
         }
         for emp in employees
     ])
@@ -1031,6 +1047,33 @@ def get_team_overview():
                 if role:
                     role_name = role.name
 
+            # Resolve today's work mode
+            from models.shift_request import ShiftRequest
+            from datetime import date
+            today = date.today()
+            emp_ids = [emp.id]
+            if emp.employee_id:
+                try:
+                    emp_ids.append(int(emp.employee_id))
+                except ValueError:
+                    pass
+
+            wfh_request = ShiftRequest.query.filter(
+                ShiftRequest.employee_id.in_(emp_ids),
+                ShiftRequest.status == "Approved",
+                ShiftRequest.from_date <= today,
+                ShiftRequest.to_date >= today
+            ).order_by(ShiftRequest.id.desc()).first()
+
+            is_wfh = False
+            if wfh_request:
+                if wfh_request.requested_work_mode:
+                    is_wfh = (wfh_request.requested_work_mode == "WFH")
+                elif wfh_request.request_type == "WFH" or wfh_request.requested_shift == "WFH":
+                    is_wfh = True
+            else:
+                is_wfh = (emp.work_mode == "WFH")
+
             employee_list.append({
                 "id": emp.id,
                 "name": f"{emp.first_name} {emp.last_name or ''}".strip(),
@@ -1041,7 +1084,9 @@ def get_team_overview():
                 "department": emp.department,
                 "team_id": emp.team_id,
                 "employee_id": emp.employee_id,
-                "profile_image": emp.profile_image is not None
+                "profile_image": emp.profile_image is not None,
+                "work_mode": emp.work_mode,
+                "is_wfh": is_wfh
             })
 
         result.append({
@@ -1072,6 +1117,7 @@ def get_my_team(user_id):
     ).all()
 
     result = []
+    all_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
     for team_user in team_users:
 
@@ -1082,6 +1128,15 @@ def get_my_team(user_id):
         if employee:
             update_leave_balance(employee)
 
+            emp_full_name = f"{employee.first_name} {employee.last_name}".strip().lower()
+            is_reporting_manager = False
+            for other in all_employees:
+                if not other.reporting_manager:
+                    continue
+                o_mgr = other.reporting_manager.strip().lower()
+                if (o_mgr == emp_full_name) or (len(o_mgr.split()) == 1 and emp_full_name.split()[0] == o_mgr) or (len(emp_full_name.split()) == 1 and o_mgr.split()[0] == emp_full_name):
+                    is_reporting_manager = True
+                    break
 
             result.append({
                 "id": employee.id,
@@ -1096,10 +1151,46 @@ def get_my_team(user_id):
                 "sick_leave": employee.sick_leave,
                 "casual_leave": employee.casual_leave,
                 "privilege_leave": employee.privilege_leave,
-                "earned_leave": employee.privilege_leave
+                "earned_leave": employee.privilege_leave,
+                "is_reporting_manager": is_reporting_manager
             })
 
     return jsonify(result)
+
+
+def is_manager_match(e_mgr, manager_name):
+    if not e_mgr or not manager_name:
+        return False
+    e_mgr = e_mgr.strip().lower()
+    mgr = manager_name.strip().lower()
+    if e_mgr == mgr:
+        return True
+    e_words = e_mgr.split()
+    m_words = mgr.split()
+    if len(e_words) == 1 and m_words and m_words[0] == e_mgr:
+        return True
+    if len(m_words) == 1 and e_words and e_words[0] == mgr:
+        return True
+    return False
+
+
+def get_all_reporting_employees_recursive(manager_name, all_employees, visited=None):
+    if visited is None:
+        visited = set()
+    reports = []
+    for emp in all_employees:
+        if emp.id in visited:
+            continue
+        if is_manager_match(emp.reporting_manager, manager_name):
+            visited.add(emp.id)
+            reports.append(emp)
+            
+    recursive_reports = list(reports)
+    for r in reports:
+        r_name = f"{r.first_name} {r.last_name}"
+        sub = get_all_reporting_employees_recursive(r_name, all_employees, visited)
+        recursive_reports.extend(sub)
+    return recursive_reports
 
 
 @employees_bp.route("/team-attendance/<int:user_id>", methods=["GET"])
@@ -1107,21 +1198,27 @@ def get_team_attendance(user_id):
     """Return all employees reporting to this manager with today's attendance status."""
     try:
         manager = Employee.query.filter_by(user_id=user_id).first()
-        if not manager:
-            return jsonify([])
+        user = User.query.get(user_id)
+        is_admin = False
+        if user:
+            role_name = (user.role.name or "").lower() if user.role else ""
+            access_level = (user.access_level or "").lower()
+            if "admin" in role_name or "admin" in access_level:
+                is_admin = True
 
-        manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
         today = date.today()
-
         all_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
         result = []
 
-        for emp in all_employees:
-            if not emp.reporting_manager:
-                continue
-            e_mgr = emp.reporting_manager.strip().lower()
-            if e_mgr != manager_name and not (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr) and not (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name):
-                continue
+        if is_admin:
+            reporting_list = [e for e in all_employees if e.user_id != user_id]
+        else:
+            if not manager:
+                return jsonify([])
+            manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
+            reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
+
+        for emp in reporting_list:
 
             # Today's attendance
             attendance = Attendance.query.filter_by(
@@ -1165,8 +1262,19 @@ def get_team_attendance(user_id):
 
             if attendance:
                 if attendance.check_in or attendance.card_check_in:
-                    if attendance.check_out or attendance.card_check_out:
-                        att_status = "Checked Out"
+                    if attendance.check_in and not attendance.check_out:
+                        att_status = "Present"
+                    elif attendance.check_out or attendance.card_check_out:
+                        is_today = (attendance.attendance_date == today)
+                        if is_today and attendance.card_check_out and not attendance.check_out:
+                            punch_out_hour = attendance.card_check_out.hour
+                            working_hrs = attendance.card_working_hours or 0.0
+                            if punch_out_hour >= 15 or working_hrs >= 4.0:
+                                att_status = "Checked Out"
+                            else:
+                                att_status = "Present"
+                        else:
+                            att_status = "Checked Out"
                     else:
                         att_status = "Present"
                 else:
@@ -1197,6 +1305,17 @@ def get_team_attendance(user_id):
                 check_out = None
                 working_hours = 0
 
+            emp_full_name = f"{emp.first_name} {emp.last_name}".strip().lower()
+            is_reporting_manager = False
+            report_count = 0
+            for other in all_employees:
+                if not other.reporting_manager:
+                    continue
+                o_mgr = other.reporting_manager.strip().lower()
+                if (o_mgr == emp_full_name) or (len(o_mgr.split()) == 1 and emp_full_name.split()[0] == o_mgr) or (len(emp_full_name.split()) == 1 and o_mgr.split()[0] == emp_full_name):
+                    is_reporting_manager = True
+                    report_count += 1
+
             result.append({
                 "id": emp.id,
                 "user_id": emp.user_id,
@@ -1225,10 +1344,23 @@ def get_team_attendance(user_id):
                         else emp.shift_timing or "General Shift"
                     )
                 ),
+                "work_mode": (
+                    shift_change_today.requested_work_mode
+                    if (shift_change_today and shift_change_today.requested_work_mode)
+                    else (
+                        emp.work_mode or "Office"
+                    )
+                ),
                 "manager_status": attendance.manager_status if (attendance and attendance.manager_status) else "Pending",
-                "is_wfh": bool(wfh_today) or ((emp.shift_timing or "").strip().upper() == "WFH" and not shift_change_today),
-                "is_permanent_wfh": (emp.shift_timing or "").strip().upper() == "WFH" and not shift_change_today,
+                "is_wfh": (
+                    (shift_change_today.requested_work_mode == "WFH") if (shift_change_today and shift_change_today.requested_work_mode)
+                    else (wfh_today is not None or (emp.work_mode or "Office") == "WFH")
+                ),
+                "is_permanent_wfh": (emp.work_mode == "WFH"),
                 "is_shift_changed": bool(shift_change_today),
+                "is_reporting_manager": is_reporting_manager,
+                "report_count": report_count,
+                "reporting_manager": emp.reporting_manager,
             })
 
         return jsonify(result)
@@ -1287,6 +1419,7 @@ def get_last_working_day(ref_date=None):
     return target_date
 
 
+
 @employees_bp.route(
     "/reporting-employees/<int:user_id>",
     methods=["GET"]
@@ -1310,7 +1443,7 @@ def get_reporting_employees(user_id):
 
         target_date = get_last_working_day()
 
-        reporting_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+        all_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         def _get_last_msg(history_list, role_name):
             if not isinstance(history_list, list):
@@ -1320,20 +1453,25 @@ def get_reporting_employees(user_id):
                     return item.get("comment")
             return None
 
+        user = User.query.get(user_id)
+        is_admin = False
+        if user:
+            role_name = (user.role.name or "").lower() if user.role else ""
+            access_level = (user.access_level or "").lower()
+            if "admin" in role_name or "admin" in access_level:
+                is_admin = True
+
         result = []
 
-        for employee in reporting_employees:
+        if is_admin:
+            reporting_list = [e for e in all_employees if e.user_id != user_id]
+        else:
+            if not manager:
+                return jsonify([])
+            manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
+            reporting_list = [e for e in all_employees if e.user_id != user_id and is_manager_match(e.reporting_manager, manager_full_name)]
 
-            if not employee.reporting_manager:
-                continue
-
-            e_mgr = employee.reporting_manager.strip().lower()
-            is_match = (e_mgr == manager_name) or (len(e_mgr.split()) == 1 and manager_name.split()[0] == e_mgr) or (len(manager_name.split()) == 1 and e_mgr.split()[0] == manager_name)
-            if not is_match:
-                continue
-
-            if employee.user_id == user_id:
-                continue
+        for employee in reporting_list:
 
             attendance = Attendance.query.filter_by(
                 user_id=employee.user_id,
@@ -1523,6 +1661,7 @@ def get_reporting_employees(user_id):
         }), 500
     
 @employees_bp.route(
+
     "/peers-attendance/<int:user_id>",
     methods=["GET"]
 )
@@ -1561,8 +1700,19 @@ def get_peers_attendance(user_id):
             status = "Absent"
             if attendance:
                 if attendance.check_in or attendance.card_check_in:
-                    if attendance.check_out or attendance.card_check_out:
-                        status = "Checked Out"
+                    if attendance.check_in and not attendance.check_out:
+                        status = "Checked In"
+                    elif attendance.check_out or attendance.card_check_out:
+                        is_today = (attendance.attendance_date == today)
+                        if is_today and attendance.card_check_out and not attendance.check_out:
+                            punch_out_hour = attendance.card_check_out.hour
+                            working_hrs = attendance.card_working_hours or 0.0
+                            if punch_out_hour >= 15 or working_hrs >= 4.0:
+                                status = "Checked Out"
+                            else:
+                                status = "Checked In"
+                        else:
+                            status = "Checked Out"
                     else:
                         status = "Checked In"
                 else:
@@ -1679,8 +1829,12 @@ def get_team_attendance_by_id(team_id):
                 wfh_by_employee.get(emp.employee_id) or
                 wfh_by_employee.get(str(emp.employee_id))
             )
-            is_permanent_wfh = (emp.shift_timing or "").strip().upper() == "WFH" and not is_shift_changed
-            is_wfh = emp_wfh_request is not None or is_permanent_wfh
+            is_permanent_wfh = (emp.work_mode == "WFH")
+            is_wfh = (
+                (emp_shift_request.requested_work_mode == "WFH" if (emp_shift_request and emp_shift_request.requested_work_mode) else False) or
+                (emp_wfh_request is not None) or
+                (emp.work_mode == "WFH")
+            )
 
             # Check if Permission is active now
             emp_permission = (
@@ -1762,6 +1916,7 @@ def get_team_attendance_by_id(team_id):
         return jsonify({"error": str(e)}), 500
 
 @employees_bp.route(
+
     "/roles/<int:team_id>",
     methods=["GET"]
 )
@@ -1957,6 +2112,9 @@ def get_employee_details(employee_id):
 
                 "shift_timing":
                     employee.shift_timing,
+
+                "work_mode":
+                    employee.work_mode,
 
                 "joining_date":
                     str(employee.joining_date),

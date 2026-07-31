@@ -92,8 +92,10 @@ def apply_shift():
         shift_request = ShiftRequest(
             employee_id=data["employee_id"],
             employee_name=data["employee_name"],
-            current_shift=data["current_shift"],
-            requested_shift=data["requested_shift"],
+            current_shift=data.get("current_shift"),
+            requested_shift=data.get("requested_shift"),
+            current_work_mode=data.get("current_work_mode"),
+            requested_work_mode=data.get("requested_work_mode"),
 
             # Required because your DB has shift_date NOT NULL
             shift_date=datetime.strptime(
@@ -292,6 +294,12 @@ def approve_shift(id):
                     attendance.shift_timing = shift.requested_shift
 
                 current_date += timedelta(days=1)
+
+        if employee:
+            if shift.requested_shift:
+                employee.shift_timing = shift.requested_shift
+            if shift.requested_work_mode:
+                employee.work_mode = shift.requested_work_mode
 
         shift.status = "Approved"
         shift.approved_by = shift.reporting_manager or "Manager"
@@ -593,7 +601,7 @@ def get_effective_shift_today(employee_id):
             return jsonify({"error": "Employee not found"}), 404
 
         permanent_shift = (emp.shift_timing or "General Shift").strip()
-        is_permanent_wfh = permanent_shift.upper() == "WFH"
+        is_permanent_wfh = (emp.work_mode == "WFH")
 
         # Look for an approved shift request (Shift or WFH) covering today
         approved_request = ShiftRequest.query.filter(
@@ -604,26 +612,29 @@ def get_effective_shift_today(employee_id):
         ).order_by(ShiftRequest.id.desc()).first()
 
         if approved_request:
-            req_type = (approved_request.request_type or "").strip().upper()
-            if req_type == "WFH":
-                effective_shift = "WFH"
+            effective_shift = approved_request.requested_shift or permanent_shift
+            if approved_request.requested_work_mode:
+                is_wfh = (approved_request.requested_work_mode == "WFH")
+            elif (approved_request.request_type or "").strip().upper() == "WFH":
                 is_wfh = True
-                is_shift_changed = False
             else:
-                effective_shift = approved_request.requested_shift or permanent_shift
-                is_wfh = False
-                is_shift_changed = True
+                is_wfh = is_permanent_wfh
+            is_shift_changed = True
         else:
             effective_shift = permanent_shift
             is_wfh = is_permanent_wfh
             is_shift_changed = False
 
+        effective_work_mode = "WFH" if is_wfh else "Office"
+
         return jsonify({
             "effective_shift": effective_shift,
             "permanent_shift": permanent_shift,
             "is_wfh": is_wfh,
-            "is_permanent_wfh": is_permanent_wfh and not is_shift_changed,
+            "is_permanent_wfh": is_permanent_wfh,
             "is_shift_changed": is_shift_changed,
+            "effective_work_mode": effective_work_mode,
+            "permanent_work_mode": emp.work_mode or "Office"
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

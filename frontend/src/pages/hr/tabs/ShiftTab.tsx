@@ -16,6 +16,8 @@ interface ShiftRequest {
   reporting_manager: string;
   status: string;
   request_type?: string;
+  current_work_mode?: string;
+  requested_work_mode?: string;
 }
 
 interface ShiftTabProps {
@@ -30,10 +32,10 @@ export const ShiftTab: React.FC<ShiftTabProps> = ({ shifts, onApprove, onReject 
       <div className="flex items-start justify-between mb-4">
         <div>
           <div className="text-sm font-bold text-neutral-850 mb-0.5">
-            Shift Request Management
+            Shift & Work Mode Request Management
           </div>
           <div className="text-[11px] font-normal text-neutral-450">
-            Review, approve, or reject employee shift timing transition requests
+            Review, approve, or reject employee shift timing and work mode transition requests
           </div>
         </div>
       </div>
@@ -45,6 +47,7 @@ export const ShiftTab: React.FC<ShiftTabProps> = ({ shifts, onApprove, onReject 
               {[
                 "Employee",
                 "Employee ID",
+                "Request Type",
                 "Current Shift",
                 "Requested Shift",
                 "From Date",
@@ -66,7 +69,7 @@ export const ShiftTab: React.FC<ShiftTabProps> = ({ shifts, onApprove, onReject 
 
           <tbody>
             {shifts.map((s: ShiftRequest, index: number) => {
-              const initials = s.employee_name
+               const initials = s.employee_name
                 ? s.employee_name
                     .split(" ")
                     .map((n) => n[0])
@@ -91,15 +94,30 @@ export const ShiftTab: React.FC<ShiftTabProps> = ({ shifts, onApprove, onReject 
 
                   <td className="p-3 text-xs font-normal text-neutral-500">{s.employee_id}</td>
 
+                  <td className="p-3 text-xs font-normal">
+                    {(() => {
+                      const isWorkMode = s.request_type === "WFH" || s.request_type === "Office";
+                      const label = s.request_type === "WFH" ? "WFH" : s.request_type === "Office" ? "Office" : "Shift";
+                      return (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-bold border ${isWorkMode
+                          ? "bg-purple-50 text-purple-700 border-purple-200"
+                          : "bg-blue-50 text-blue-700 border-blue-200"
+                        }`}>
+                          {label}
+                        </span>
+                      );
+                    })()}
+                  </td>
+
                   <td className="p-3 text-xs font-normal text-neutral-600">
                     <span className="px-2 py-0.5 bg-neutral-100 text-neutral-700 rounded-md text-[11px]">
-                      {s.current_shift}
+                      {s.current_shift} {(s.current_work_mode || (s.request_type === "Office" ? "WFH" : s.request_type === "WFH" ? "Office" : "")) ? `(${s.current_work_mode || (s.request_type === "Office" ? "WFH" : s.request_type === "WFH" ? "Office" : "")})` : ""}
                     </span>
                   </td>
 
                   <td className="p-3 text-xs font-normal text-neutral-600">
                     <span className="px-2 py-0.5 bg-primary-50 text-primary-700 rounded-md text-[11px] font-medium border border-primary-100">
-                      {s.request_type === "WFH" ? "Work From Home" : s.requested_shift}
+                      {s.requested_shift} {(s.requested_work_mode || (s.request_type === "WFH" ? "WFH" : s.request_type === "Office" ? "Office" : "")) ? `(${s.requested_work_mode || (s.request_type === "WFH" ? "WFH" : s.request_type === "Office" ? "Office" : "")})` : ""}
                     </span>
                   </td>
 

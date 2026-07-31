@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import models & database
-from models.database import init_db, engine
+from models.database import init_db, engine, db_session
 # pyrefly: ignore [missing-import]
 from sqlalchemy import text
 
@@ -53,6 +53,15 @@ def create_app():
         allow_headers=["*"],
     )
 
+    # Scoped session cleanup middleware
+    @fastapi_app.middleware("http")
+    async def db_session_middleware(request: Request, call_next):
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            db_session.remove()
+
     # Register blueprints (routers)
     fastapi_app.include_router(employees_bp, prefix="/api/employees")
     fastapi_app.include_router(meeting_rooms_bp, prefix="/api/meeting-rooms")
@@ -80,49 +89,6 @@ def create_app():
 
     # Initialize database, apply Alembic migrations, and seed defaults
     init_db()
-
-    with engine.connect() as connection:
-        connection.execute(text(
-            "ALTER TABLE telecom_directory "
-            "ADD COLUMN IF NOT EXISTS designation VARCHAR(150), "
-            "ADD COLUMN IF NOT EXISTS location VARCHAR(100)"
-        ))
-        connection.execute(text(
-            "ALTER TABLE users "
-            "ADD COLUMN IF NOT EXISTS seen_announcement_ids JSONB DEFAULT '[]'::jsonb"
-        ))
-        connection.execute(text(
-            "ALTER TABLE leave_requests "
-            "ADD COLUMN IF NOT EXISTS approved_by VARCHAR(200), "
-            "ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP, "
-            "ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(200), "
-            "ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP, "
-            "ADD COLUMN IF NOT EXISTS cancelled_by VARCHAR(200), "
-            "ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP, "
-            "ADD COLUMN IF NOT EXISTS cancellation_reason TEXT"
-        ))
-        connection.execute(text(
-            "ALTER TABLE shift_requests "
-            "ADD COLUMN IF NOT EXISTS approved_by VARCHAR(200), "
-            "ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(200)"
-        ))
-        connection.execute(text(
-            "ALTER TABLE attendance "
-            "ADD COLUMN IF NOT EXISTS total_gap_minutes INTEGER DEFAULT 0, "
-            "ADD COLUMN IF NOT EXISTS card_check_in TIMESTAMP, "
-            "ADD COLUMN IF NOT EXISTS card_check_out TIMESTAMP, "
-            "ADD COLUMN IF NOT EXISTS card_working_hours DOUBLE PRECISION DEFAULT 0.0, "
-            "ADD COLUMN IF NOT EXISTS tea_count INTEGER DEFAULT 0"
-        ))
-        connection.execute(text(
-            "ALTER TABLE attendance "
-            "ADD COLUMN IF NOT EXISTS is_regularization BOOLEAN DEFAULT FALSE, "
-            "ADD COLUMN IF NOT EXISTS regularization_reason TEXT, "
-            "ADD COLUMN IF NOT EXISTS regularization_submitted_at TIMESTAMP, "
-            "ADD COLUMN IF NOT EXISTS is_lop BOOLEAN DEFAULT FALSE, "
-            "ADD COLUMN IF NOT EXISTS leave_type VARCHAR(100)"
-        ))
-        connection.commit()
 
     # Scheduler configuration
     scheduler = BackgroundScheduler()
