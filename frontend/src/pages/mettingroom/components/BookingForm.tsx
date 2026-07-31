@@ -19,11 +19,16 @@ const BookingForm: React.FC<BookingFormProps> = ({
 }) => {
   const today = new Date().toISOString().split("T")[0];
 
+  const userStr = localStorage.getItem("user");
+  const loggedInUser = userStr ? JSON.parse(userStr) : null;
+  const defaultOrganizer = loggedInUser?.full_name || "";
+  const defaultDepartment = loggedInUser?.department || "";
+
   const initialForm = {
     room_id: selectedRoomId ? selectedRoomId.toString() : "",
     meeting_title: "",
-    organizer_name: "",
-    department: "",
+    organizer_name: defaultOrganizer,
+    department: defaultDepartment,
     meeting_date: today,
     start_time: "",
     end_time: "",
@@ -34,6 +39,43 @@ const BookingForm: React.FC<BookingFormProps> = ({
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resolvedOrganizer, setResolvedOrganizer] = useState(defaultOrganizer);
+  const [resolvedDepartment, setResolvedDepartment] = useState(defaultDepartment);
+
+  useEffect(() => {
+    const fetchCurrentEmployeeDetails = async () => {
+      try {
+        const userStr = localStorage.getItem("user");
+        const loggedInUser = userStr ? JSON.parse(userStr) : null;
+        if (!loggedInUser) return;
+
+        const response = await fetch(`${API_URL}/api/employees/`);
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data)) {
+            const currentEmp = data.find(
+              (emp) =>
+                emp.user_id === loggedInUser.id ||
+                emp.employee_id === loggedInUser.employee_id
+            );
+            if (currentEmp) {
+              const fullName = `${currentEmp.first_name} ${currentEmp.last_name}`;
+              setResolvedOrganizer(fullName);
+              setResolvedDepartment(currentEmp.department || "");
+              setForm((prev) => ({
+                ...prev,
+                organizer_name: fullName,
+                department: currentEmp.department || "",
+              }));
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch current employee database details", err);
+      }
+    };
+    fetchCurrentEmployeeDetails();
+  }, []);
 
   useEffect(() => {
     if (selectedRoomId != null) {
@@ -287,15 +329,13 @@ const BookingForm: React.FC<BookingFormProps> = ({
         </FormField>
 
         <FormField label="Organizer Name" required error={errors.organizer_name}>
-          <Select
+          <Input
+            type="text"
             name="organizer_name"
+            placeholder="Organizer Name"
             value={form.organizer_name}
-            onChange={handleOrganizerChange}
-            options={[
-              { label: "Select Organizer", value: "" },
-              ...organizerOptions
-            ]}
-            placeholder="Select Organizer"
+            readOnly
+            className="bg-neutral-50 cursor-not-allowed border-neutral-300 text-neutral-500 font-medium"
             error={!!errors.organizer_name}
           />
         </FormField>
@@ -367,7 +407,11 @@ const BookingForm: React.FC<BookingFormProps> = ({
           type="button"
           variant="outline"
           onClick={() => {
-            setForm(initialForm);
+            setForm({
+              ...initialForm,
+              organizer_name: resolvedOrganizer,
+              department: resolvedDepartment,
+            });
             setErrors({});
             setMessage({ type: "", text: "" });
           }}

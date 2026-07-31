@@ -133,16 +133,16 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
       <motion.button
         onHoverStart={() => setIsHoveringCheck(true)}
         onHoverEnd={() => setIsHoveringCheck(false)}
-        whileHover={(!isLoading && !isCheckedOut && !isOnLeave && !isShiftLocked) ? { scale: 1.02 } : {}}
-        whileTap={(!isLoading && !isCheckedOut && !isOnLeave && !isShiftLocked) ? { scale: 0.98 } : {}}
-        onClick={(isOnLeave || isShiftLocked) ? undefined : handleCheckAction}
-        disabled={isLoading || isCheckedOut || isOnLeave || isShiftLocked}
-        title={isOnLeave ? "You are on approved leave today" : isShiftLocked ? `${shiftLockLabel}${shiftLockTime ? ` — allowed after ${shiftLockTime}` : ""}` : undefined}
+        whileHover={(!isLoading && !isCheckedOut && !isOnLeave) ? { scale: 1.02 } : {}}
+        whileTap={(!isLoading && !isCheckedOut && !isOnLeave) ? { scale: 0.98 } : {}}
+        onClick={isOnLeave ? undefined : handleCheckAction}
+        disabled={isLoading || isCheckedOut || isOnLeave}
+        title={isOnLeave ? "You are on approved leave today" : isShiftLocked ? `${shiftLockLabel}${shiftLockTime ? ` — allowed after ${shiftLockTime}. Click to change shift.` : ""}` : undefined}
         className={`flex items-center gap-3 px-4 h-[36px] rounded-full border transition-colors duration-200 whitespace-nowrap ml-2 bg-white
           ${isOnLeave
             ? "border-violet-300 text-violet-500 bg-violet-50 cursor-not-allowed opacity-80"
             : isShiftLocked
-              ? "border-rose-300 text-rose-500 bg-rose-50/50 cursor-not-allowed opacity-80"
+              ? "border-rose-300 text-rose-500 bg-rose-50/50 cursor-pointer opacity-95 hover:bg-rose-50/80"
               : isCheckedOut
                 ? "border-emerald-400 text-emerald-500 bg-emerald-50 cursor-not-allowed opacity-80"
                 : isCheckedIn

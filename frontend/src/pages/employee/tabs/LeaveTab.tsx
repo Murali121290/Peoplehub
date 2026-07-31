@@ -639,21 +639,13 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       const displayType = matchedPolicy ? matchedPolicy.leave_type : leaveForm.leaveType;
 
       if (type) {
-        if (available <= 0) {
-          setValidationError({
-            type: "limit",
-            title: "Leave Limit Reached",
-            message: `You have already used all ${yearlyMax} ${displayType} days for this year. Please select another leave type or contact HR.`
-          });
-          return;
-        }
-
-        if (requested > available) {
-          const lop = requested - available;
+        const activeAvailable = Math.max(0, available);
+        if (requested > activeAvailable || available <= 0) {
+          const lop = requested - activeAvailable;
           setValidationError({
             type: "confirm",
-            title: "Insufficient Leave Balance",
-            message: `Requested: ${requested} Days, Available: ${available} Days. So ${lop} day${lop > 1 ? "s are" : " is"} LOP. Are you sure you want to apply for leave?`,
+            title: available <= 0 ? "Leave Limit Reached" : "Insufficient Leave Balance",
+            message: `Requested: ${requested} Days, Available: ${activeAvailable} Days. So ${lop} day${lop > 1 ? "s are" : " is"} LOP. Are you sure you want to apply for leave?`,
             onConfirm: () => {
               setValidationError(null);
               submitPayload();

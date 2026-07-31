@@ -42,7 +42,7 @@ const ApprovalNavigationTabs: React.FC = () => {
   );
 };
 
-const ShiftApprovalPage: React.FC = () => {
+const WFHApprovalPage: React.FC = () => {
   const { user, token } = useAuthStore();
   const [shiftRequests, setShiftRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,7 +69,7 @@ const ShiftApprovalPage: React.FC = () => {
       setShiftRequests(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
-      toast.error("Failed to load shift requests");
+      toast.error("Failed to load WFH requests");
     } finally {
       setLoading(false);
     }
@@ -101,7 +101,8 @@ const ShiftApprovalPage: React.FC = () => {
   };
 
   const safeManagerShiftRequests = shiftRequests.filter((req: any) => {
-    if (req.request_type === "WFH") return false;
+    // Only display WFH requests
+    if (req.request_type !== "WFH") return false;
 
     const isManager = checkManagerMatch(req.reporting_manager, user?.full_name) ||
       user?.access_level?.toLowerCase() === "admin";
@@ -130,7 +131,7 @@ const ShiftApprovalPage: React.FC = () => {
       });
       if (!response.ok) throw new Error("Failed to update status");
 
-      toast.success(`Shift request ${newStatus.toLowerCase()}`);
+      toast.success(`WFH request ${newStatus.toLowerCase()}`);
       fetchShiftRequests();
     } catch (error) {
       console.error(error);
@@ -155,7 +156,7 @@ const ShiftApprovalPage: React.FC = () => {
         throw new Error(err.error || err.message || "Failed to cancel");
       }
 
-      toast.success("Shift request cancelled");
+      toast.success("WFH request cancelled");
       fetchShiftRequests();
     } catch (error: any) {
       console.error(error);
@@ -180,10 +181,10 @@ const ShiftApprovalPage: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Shift Approval Requests</h1>
-          <p className="mt-1 text-sm text-neutral-500">Manage and review shift change applications from your team.</p>
+          <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">WFH Approval Requests</h1>
+          <p className="mt-1 text-sm text-neutral-500">Manage and review Work From Home applications from your team.</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -221,8 +222,6 @@ const ShiftApprovalPage: React.FC = () => {
                 <th className="text-left p-4 pl-6">Employee</th>
                 <th className="text-left p-4">Emp ID</th>
                 <th className="text-left p-4">Request Type</th>
-                <th className="text-left p-4">Current Shift</th>
-                <th className="text-left p-4">Requested Shift</th>
                 <th className="text-left p-4">Date Range</th>
                 <th className="text-left p-4">Reason</th>
                 <th className="text-center p-4">Status</th>
@@ -232,11 +231,11 @@ const ShiftApprovalPage: React.FC = () => {
             <tbody className="divide-y divide-neutral-200/80">
               {safeManagerShiftRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
+                  <td colSpan={7} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
                     <div className="flex flex-col items-center justify-center gap-2 py-4">
                       <CheckIcon className="w-12 h-12 text-success-400" />
                       <p className="text-xs font-bold text-neutral-500">All caught up!</p>
-                      <p className="text-[11px] text-neutral-400">There are no pending shift approval requests from your team.</p>
+                      <p className="text-[11px] text-neutral-400">There are no pending WFH approval requests from your team.</p>
                     </div>
                   </td>
                 </tr>
@@ -259,25 +258,10 @@ const ShiftApprovalPage: React.FC = () => {
                         <td className="p-4 text-xs font-medium text-neutral-600">
                           {item.employee_id || "-"}
                         </td>
-                        <td className="p-4 text-xs font-normal">
-                          {(() => {
-                            const isWorkMode = item.request_type === "WFH" || item.request_type === "Office";
-                            const label = item.request_type === "WFH" ? "WFH" : item.request_type === "Office" ? "Office" : "Shift";
-                            return (
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWorkMode
-                                ? "bg-purple-50 text-purple-700 border-purple-200"
-                                : "bg-blue-50 text-blue-700 border-blue-200"
-                              }`}>
-                                {label}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td className="p-4 text-xs text-neutral-600">
-                          {item.current_shift || "-"} {(item.current_work_mode || (item.request_type === "Office" ? "WFH" : item.request_type === "WFH" ? "Office" : "")) ? `(${item.current_work_mode || (item.request_type === "Office" ? "WFH" : item.request_type === "WFH" ? "Office" : "")})` : ""}
-                        </td>
-                        <td className="p-4 text-xs font-medium text-neutral-800">
-                          {(item.request_type === "WFH" ? "General Shift" : (item.requested_shift || "-"))} {(item.requested_work_mode || (item.request_type === "WFH" ? "WFH" : item.request_type === "Office" ? "Office" : "")) ? `(${item.requested_work_mode || (item.request_type === "WFH" ? "WFH" : item.request_type === "Office" ? "Office" : "")})` : ""}
+                        <td className="p-4 text-xs font-semibold text-neutral-700">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-blue-50 text-blue-700 border-blue-200">
+                            Work From Home
+                          </span>
                         </td>
                         <td className="p-4">
                           <div>
@@ -343,7 +327,7 @@ const ShiftApprovalPage: React.FC = () => {
                                     className="!py-1 !px-2.5 !text-[10px] shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
                                   >
                                     {processingId === item.id ? (
-                                      <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                      <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
                                     ) : (
                                       <CheckIcon className="w-3 h-3 mr-1" />
                                     )}
@@ -357,7 +341,7 @@ const ShiftApprovalPage: React.FC = () => {
                                     className="!py-1 !px-2.5 !text-[10px] shadow-sm"
                                   >
                                     {processingId === item.id ? (
-                                      <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                      <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
                                     ) : (
                                       <XMarkIcon className="w-3 h-3 mr-1" />
                                     )}
@@ -378,7 +362,7 @@ const ShiftApprovalPage: React.FC = () => {
                                 {processingId === item.id ? (
                                   <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
                                 ) : (
-                                  <XMarkIcon className="w-3 h-3 mr-1" />
+                                  <XMarkIcon className="w-3.5 h-3.5 mr-1" />
                                 )}
                                 Cancel
                               </Button>
@@ -390,13 +374,13 @@ const ShiftApprovalPage: React.FC = () => {
                       </tr>
                       {expandedReasons[item.id] && item.reason && (
                         <tr className="bg-neutral-50/30">
-                          <td colSpan={8} className="p-4 pl-10 pr-6 border-b border-neutral-200">
+                          <td colSpan={7} className="p-4 pl-10 pr-6 border-b border-neutral-200">
                             <div className="text-xs text-neutral-600 bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-inner max-w-3xl">
                               <div className="flex items-center gap-1.5 mb-2 text-neutral-400 font-bold uppercase tracking-wider text-[10px]">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-primary-500">
                                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
                                 </svg>
-                                <span>Reason for Shift Change Request</span>
+                                <span>Reason for WFH Request</span>
                               </div>
                               <p className="whitespace-pre-wrap leading-relaxed text-neutral-700 font-medium pl-5">
                                 {item.reason}
@@ -417,4 +401,4 @@ const ShiftApprovalPage: React.FC = () => {
   );
 };
 
-export default ShiftApprovalPage;
+export default WFHApprovalPage;

@@ -13,7 +13,7 @@ from models.user import Role, Team
 from services.leave_balance_service import update_leave_balance
 from models.leave import LeaveRequest
 from models.user import User, Role, Team
-from sqlalchemy import extract
+from sqlalchemy import extract, or_
 from sqlalchemy.exc import IntegrityError
 
 employees_bp = Blueprint("employees", __name__)
@@ -228,12 +228,15 @@ def get_employees():
             "status":
                 attendance.status
                 if attendance
-                else ("Leave" if LeaveRequest.query.filter(
-                    LeaveRequest.employee_id == str(emp.id),
-                    LeaveRequest.status == "Approved",
-                    LeaveRequest.from_date <= today,
-                    LeaveRequest.to_date >= today
-                ).first() else "Absent"),
+                 else ("Leave" if LeaveRequest.query.filter(
+                     or_(
+                         LeaveRequest.employee_id == str(emp.id),
+                         LeaveRequest.employee_id == emp.employee_id
+                     ),
+                     LeaveRequest.status == "Approved",
+                     LeaveRequest.from_date <= today,
+                     LeaveRequest.to_date >= today
+                 ).first() else "Absent"),
 
             "salary":
                 emp.salary,
@@ -1228,7 +1231,10 @@ def get_team_attendance(user_id):
 
             # Check leave for today
             on_leave = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == str(emp.id),
+                or_(
+                    LeaveRequest.employee_id == str(emp.id),
+                    LeaveRequest.employee_id == emp.employee_id
+                ),
                 LeaveRequest.status == "Approved",
                 LeaveRequest.request_type == "Leave",
                 LeaveRequest.from_date <= today,
@@ -1691,7 +1697,10 @@ def get_peers_attendance(user_id):
 
             from models.leave import LeaveRequest
             leave = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == str(peer.id),
+                or_(
+                    LeaveRequest.employee_id == str(peer.id),
+                    LeaveRequest.employee_id == peer.employee_id
+                ),
                 LeaveRequest.status == "Approved",
                 LeaveRequest.from_date <= today,
                 LeaveRequest.to_date >= today
@@ -2056,7 +2065,10 @@ def get_employee_details(employee_id):
         ]
 
         leave_requests = LeaveRequest.query.filter(
-            LeaveRequest.employee_id == str(employee.id),
+            or_(
+                LeaveRequest.employee_id == str(employee.id),
+                LeaveRequest.employee_id == employee.employee_id
+            ),
             LeaveRequest.status == "Approved",
             LeaveRequest.from_date >= start_date,
             LeaveRequest.to_date <= end_date

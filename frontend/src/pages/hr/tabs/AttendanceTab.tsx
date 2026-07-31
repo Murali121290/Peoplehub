@@ -27,6 +27,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const [selectedShift, setSelectedShift] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [availableMonths, setAvailableMonths] = useState<any[]>([]);
+  const [selectedCycle, setSelectedCycle] = useState<string>("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -513,17 +515,56 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
     updateDateRange(attendanceView);
   }, [attendanceView, BASE_URL]);
 
+  useEffect(() => {
+    const fetchMonths = async () => {
+      try {
+        const response = await fetch(`${BASE_URL}/attendance/available-months`);
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setAvailableMonths(data);
+          setSelectedCycle(`${data[0].month},${data[0].year}`);
+        }
+      } catch (err) {
+        console.error("Failed to load available cycles:", err);
+      }
+    };
+    fetchMonths();
+  }, [BASE_URL]);
+
   const downloadAttendance = async () => {
     try {
-      console.log("BASE_URL =", BASE_URL);
-      console.log(`${BASE_URL}/attendance/export-monthly`);
+      const userId = localStorage.getItem("user_id");
+      const userStr = localStorage.getItem("user");
+      const user = userStr ? JSON.parse(userStr) : null;
+      const userRole = user?.role;
 
-      const response = await fetch(`${BASE_URL}/attendance/export-monthly`);
+      let url = `${BASE_URL}/attendance/export-monthly`;
+      const queryParams: string[] = [];
+
+      if (userRole === "Manager") {
+        queryParams.push(`manager_id=${userId}`);
+      }
+      if (selectedCycle) {
+        const [m, y] = selectedCycle.split(",");
+        queryParams.push(`month=${m}`);
+        queryParams.push(`year=${y}`);
+      }
+
+      if (queryParams.length > 0) {
+        url += `?${queryParams.join("&")}`;
+      }
+
+      console.log("BASE_URL =", BASE_URL);
+      console.log(url);
+
+      const response = await fetch(url);
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const urlBlob = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = "Attendance_Report.xlsx";
+      a.href = urlBlob;
+      const activeLabel = availableMonths.find((m) => `${m.month},${m.year}` === selectedCycle)?.label || "";
+      const filenameSuffix = activeLabel ? `_${activeLabel.replace(" ", "_")}` : "";
+      a.download = userRole === "Manager" ? `Team_Attendance_Report${filenameSuffix}.xlsx` : `Attendance_Report${filenameSuffix}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -717,6 +758,20 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         </div>
 
         <div className="flex items-center gap-4">
+          {availableMonths.length > 0 && (
+            <select
+              value={selectedCycle}
+              onChange={(e) => setSelectedCycle(e.target.value)}
+              className="px-3 py-1.5 border border-neutral-200 rounded-xl bg-white text-xs font-semibold text-neutral-600 outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-100 cursor-pointer"
+            >
+              {availableMonths.map((m: any) => (
+                <option key={`${m.month}-${m.year}`} value={`${m.month},${m.year}`}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          )}
+
           <Button
             onClick={downloadAttendance}
             variant="success"
