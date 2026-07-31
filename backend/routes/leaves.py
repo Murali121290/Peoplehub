@@ -84,7 +84,7 @@ def apply_leave():
                 "%Y-%m-%d"
             ).date()
 
-            leave.total_days = int(data.get("total_days", 0))
+            leave.total_days = float(data.get("total_days", 0))
 
         # ===========================
         # PERMISSION REQUEST

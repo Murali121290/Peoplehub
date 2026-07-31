@@ -28,6 +28,8 @@ import AppraisalDashboard from "./pages/appraisal/AppraisalDashboard";
 import DBAdminPage from "./pages/admin/DBAdminPage";
 import LeaveApprovalPage from "./pages/manager/LeaveApprovalPage";
 import ShiftApprovalPage from "./pages/manager/ShiftApprovalPage";
+import PermissionApprovalPage from "./pages/manager/PermissionApprovalPage";
+import WFHApprovalPage from "./pages/manager/WFHApprovalPage";
 
 
 
@@ -173,10 +175,26 @@ function App() {
         }
       />
       <Route
+        path="/manager/permission-approval"
+        element={
+          <ProtectedRoute>
+            <PermissionApprovalPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/manager/shift-approval"
         element={
           <ProtectedRoute>
             <ShiftApprovalPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/manager/wfh-approval"
+        element={
+          <ProtectedRoute>
+            <WFHApprovalPage />
           </ProtectedRoute>
         }
       />

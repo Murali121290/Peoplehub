@@ -14,7 +14,11 @@ class LeaveRequest(db.Model):
     from_date = db.Column(db.Date)
     to_date = db.Column(db.Date)
 
-    total_days = db.Column(db.Integer)
+    total_days = db.Column(
+    db.Float,
+    nullable=False,
+    default=0.0
+)
 
     reporting_manager = db.Column(db.String(200))
     handover_to = db.Column(db.String(200))

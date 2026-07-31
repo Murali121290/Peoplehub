@@ -5,7 +5,7 @@ from datetime import datetime
 from models.employee import Employee
 from models.user import User
 from datetime import date
-from sqlalchemy import extract
+from sqlalchemy import extract, or_
 from datetime import timedelta
 from openpyxl.styles import Font
 from openpyxl.styles import PatternFill
@@ -15,6 +15,8 @@ from models.leave import LeaveRequest, LeaveLedger
 from io import BytesIO
 import os
 import pymysql
+from middleware.auth import auth_required
+from utils.jwt_helper import get_jwt_identity
 
 
 
@@ -190,7 +192,7 @@ def check_in():
             LeaveRequest.to_date >= today_date
         ).first()
 
-        if approved_leave_today:
+        if approved_leave_today and (approved_leave_today.total_days is None or approved_leave_today.total_days > 0.5):
             leave_type = approved_leave_today.leave_type or "Leave"
             return jsonify({
                 "success": False,
@@ -968,12 +970,15 @@ def attendance_history(user_id):
                         # override is "Working Day" -> check approved leaves or mark Absent
                         from models.leave import LeaveRequest
                         leave = LeaveRequest.query.filter(
-                            LeaveRequest.employee_id == str(employee.id),
+                            or_(
+                                LeaveRequest.employee_id == str(employee.id),
+                                LeaveRequest.employee_id == employee.employee_id
+                            ),
                             LeaveRequest.status == "Approved",
                             LeaveRequest.from_date <= current_date,
                             LeaveRequest.to_date >= current_date
                         ).first()
-                        status = "Leave" if leave else "Absent"
+                        status = ("Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave") if leave else "Absent"
                 else:
                     # 2. Check Holiday table
                     if current_date in holiday_dict:
@@ -985,12 +990,15 @@ def attendance_history(user_id):
                     else:
                         from models.leave import LeaveRequest
                         leave = LeaveRequest.query.filter(
-                            LeaveRequest.employee_id == str(employee.id),
+                            or_(
+                                LeaveRequest.employee_id == str(employee.id),
+                                LeaveRequest.employee_id == employee.employee_id
+                            ),
                             LeaveRequest.status == "Approved",
                             LeaveRequest.from_date <= current_date,
                             LeaveRequest.to_date >= current_date
                         ).first()
-                        status = "Leave" if leave else "Absent"
+                        status = ("Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave") if leave else "Absent"
 
                 result.append({
                     "id": f"virtual-{current_date.strftime('%Y-%m-%d')}",
@@ -1073,13 +1081,16 @@ def get_attendance():
         if status == "Absent":
             from models.leave import LeaveRequest
             leave = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == str(employee.id),
+                or_(
+                    LeaveRequest.employee_id == str(employee.id),
+                    LeaveRequest.employee_id == employee.employee_id
+                ),
                 LeaveRequest.status == "Approved",
                 LeaveRequest.from_date <= today,
                 LeaveRequest.to_date >= today
             ).first()
             if leave:
-                status = "Leave"
+                status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
 
         from models.shift_request import ShiftRequest
         emp_ids = [employee.id]
@@ -1207,13 +1218,16 @@ def get_weekly_attendance():
                 if status == "Absent":
                     from models.leave import LeaveRequest
                     leave = LeaveRequest.query.filter(
-                        LeaveRequest.employee_id == str(employee.id),
+                        or_(
+                            LeaveRequest.employee_id == str(employee.id),
+                            LeaveRequest.employee_id == employee.employee_id
+                        ),
                         LeaveRequest.status == "Approved",
                         LeaveRequest.from_date <= current_date,
                         LeaveRequest.to_date >= current_date
                     ).first()
                     if leave:
-                        status = "Leave"
+                        status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
 
                 from models.shift_request import ShiftRequest
                 emp_ids = [employee.id]
@@ -1331,13 +1345,16 @@ def get_monthly_attendance():
                 if status == "Absent":
                     from models.leave import LeaveRequest
                     leave = LeaveRequest.query.filter(
-                        LeaveRequest.employee_id == str(employee.id),
+                        or_(
+                            LeaveRequest.employee_id == str(employee.id),
+                            LeaveRequest.employee_id == employee.employee_id
+                        ),
                         LeaveRequest.status == "Approved",
                         LeaveRequest.from_date <= current_date,
                         LeaveRequest.to_date >= current_date
                     ).first()
                     if leave:
-                        status = "Leave"
+                        status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
 
                 from models.shift_request import ShiftRequest
                 emp_ids = [employee.id]
@@ -1346,6 +1363,7 @@ def get_monthly_attendance():
                         emp_ids.append(int(employee.employee_id))
                     except ValueError:
                         pass
+
 
                 wfh_today = ShiftRequest.query.filter(
                     ShiftRequest.employee_id.in_(emp_ids),
@@ -1417,9 +1435,58 @@ def get_monthly_attendance():
         }), 500
     
 @attendance_bp.route(
+    "/available-months",
+    methods=["GET"]
+)
+@auth_required
+def get_available_months():
+    try:
+        # Get all distinct attendance dates in the database
+        dates = db.session.query(Attendance.attendance_date).distinct().all()
+        
+        cycles = set()
+        for d_tuple in dates:
+            d = d_tuple[0]
+            if not d:
+                continue
+            # Determine cycle month and year: day >= 25 is next month
+            if d.day >= 25:
+                if d.month == 12:
+                    cycles.add((d.year + 1, 1))
+                else:
+                    cycles.add((d.year, d.month + 1))
+            else:
+                cycles.add((d.year, d.month))
+                
+        # Sort descending
+        sorted_cycles = sorted(list(cycles), key=lambda x: (x[0], x[1]), reverse=True)
+        
+        results = []
+        for y, m in sorted_cycles:
+            dt = date(y, m, 1)
+            results.append({
+                "year": y,
+                "month": m,
+                "label": dt.strftime("%B %Y")
+            })
+            
+        if not results:
+            today = date.today()
+            results.append({
+                "year": today.year,
+                "month": today.month,
+                "label": today.strftime("%B %Y")
+            })
+            
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@attendance_bp.route(
     "/export-monthly",
     methods=["GET"]
 )
+@auth_required
 def export_monthly_attendance():
 
     try:
@@ -1430,29 +1497,32 @@ def export_monthly_attendance():
 
         ws.title = "Attendance Report"
 
-        today = date.today()
-
-        if today.month == 1:
-
-           start_date = date(
-           today.year - 1,
-           12,
-           25
-        )
-
+        month_param = request.args.get("month")
+        year_param = request.args.get("year")
+        
+        if month_param and year_param:
+            try:
+                m = int(month_param)
+                y = int(year_param)
+                if m == 1:
+                    start_date = date(y - 1, 12, 25)
+                else:
+                    start_date = date(y, m - 1, 25)
+                end_date = date(y, m, 24)
+            except ValueError:
+                today = date.today()
+                if today.month == 1:
+                    start_date = date(today.year - 1, 12, 25)
+                else:
+                    start_date = date(today.year, today.month - 1, 25)
+                end_date = date(today.year, today.month, 24)
         else:
-
-           start_date = date(
-           today.year,
-           today.month - 1,
-           25
-        )
-
-        end_date = date(
-        today.year,
-        today.month,
-        24
-        )
+            today = date.today()
+            if today.month == 1:
+                start_date = date(today.year - 1, 12, 25)
+            else:
+                start_date = date(today.year, today.month - 1, 25)
+            end_date = date(today.year, today.month, 24)
 
         # =====================================
         # STYLES
@@ -1591,8 +1661,40 @@ def export_monthly_attendance():
         # =====================================
         # EMPLOYEE DATA
         # =====================================
+        from routes.employees import is_manager_match
 
-        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+        manager_id = request.args.get("manager_id")
+        current_user_id = get_jwt_identity()
+        current_user = User.query.get(int(current_user_id)) if current_user_id else None
+        is_hr_or_admin = current_user and current_user.access_level.lower() in ["admin", "hr"]
+
+        if manager_id:
+            manager_emp = Employee.query.filter_by(user_id=int(manager_id)).first()
+            if manager_emp:
+                manager_full_name = f"{manager_emp.first_name} {manager_emp.last_name}".strip()
+                employees = [
+                    e for e in Employee.query.all()
+                    if (e.status or "").lower() != "inactive"
+                    and is_manager_match(e.reporting_manager, manager_full_name)
+                ]
+            else:
+                employees = []
+        elif not is_hr_or_admin:
+            if current_user:
+                caller_emp = Employee.query.filter_by(user_id=current_user.id).first()
+                if caller_emp:
+                    manager_full_name = f"{caller_emp.first_name} {caller_emp.last_name}".strip()
+                    employees = [
+                        e for e in Employee.query.all()
+                        if (e.status or "").lower() != "inactive"
+                        and is_manager_match(e.reporting_manager, manager_full_name)
+                    ]
+                else:
+                    employees = []
+            else:
+                employees = []
+        else:
+            employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         row = 6
 

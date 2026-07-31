@@ -25,7 +25,9 @@ export const useNavigation = (user: any) => {
       subItems: [
         { name: "Team Overview", icon: ChartBarIcon, path: "/manager-dashboard" },
         { name: "Leave Approval", icon: CheckCircleIcon, path: "/manager/leave-approval" },
+        { name: "Permission Approval", icon: ClipboardDocumentCheckIcon, path: "/manager/permission-approval" },
         { name: "Shift Approval", icon: ClockIcon, path: "/manager/shift-approval" },
+        { name: "WFH Approval", icon: HomeIcon, path: "/manager/wfh-approval" },
       ]
     };
 
