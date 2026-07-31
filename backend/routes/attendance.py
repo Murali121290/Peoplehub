@@ -15,6 +15,8 @@ from models.leave import LeaveRequest, LeaveLedger
 from io import BytesIO
 import os
 import pymysql
+from middleware.auth import auth_required
+from utils.jwt_helper import get_jwt_identity
 
 
 
@@ -190,7 +192,7 @@ def check_in():
             LeaveRequest.to_date >= today_date
         ).first()
 
-        if approved_leave_today:
+        if approved_leave_today and (approved_leave_today.total_days is None or approved_leave_today.total_days > 0.5):
             leave_type = approved_leave_today.leave_type or "Leave"
             return jsonify({
                 "success": False,
@@ -976,7 +978,7 @@ def attendance_history(user_id):
                             LeaveRequest.from_date <= current_date,
                             LeaveRequest.to_date >= current_date
                         ).first()
-                        status = "Leave" if leave else "Absent"
+                        status = ("Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave") if leave else "Absent"
                 else:
                     # 2. Check Holiday table
                     if current_date in holiday_dict:
@@ -996,7 +998,7 @@ def attendance_history(user_id):
                             LeaveRequest.from_date <= current_date,
                             LeaveRequest.to_date >= current_date
                         ).first()
-                        status = "Leave" if leave else "Absent"
+                        status = ("Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave") if leave else "Absent"
 
                 result.append({
                     "id": f"virtual-{current_date.strftime('%Y-%m-%d')}",
@@ -1088,7 +1090,7 @@ def get_attendance():
                 LeaveRequest.to_date >= today
             ).first()
             if leave:
-                status = "Leave"
+                status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
 
         from models.shift_request import ShiftRequest
         emp_ids = [employee.id]
@@ -1225,7 +1227,7 @@ def get_weekly_attendance():
                         LeaveRequest.to_date >= current_date
                     ).first()
                     if leave:
-                        status = "Leave"
+                        status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
 
                 from models.shift_request import ShiftRequest
                 emp_ids = [employee.id]
@@ -1352,7 +1354,7 @@ def get_monthly_attendance():
                         LeaveRequest.to_date >= current_date
                     ).first()
                     if leave:
-                        status = "Leave"
+                        status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
 
                 from models.shift_request import ShiftRequest
                 emp_ids = [employee.id]
@@ -1436,6 +1438,7 @@ def get_monthly_attendance():
     "/available-months",
     methods=["GET"]
 )
+@auth_required
 def get_available_months():
     try:
         # Get all distinct attendance dates in the database
@@ -1483,6 +1486,7 @@ def get_available_months():
     "/export-monthly",
     methods=["GET"]
 )
+@auth_required
 def export_monthly_attendance():
 
     try:
@@ -1657,8 +1661,40 @@ def export_monthly_attendance():
         # =====================================
         # EMPLOYEE DATA
         # =====================================
+        from routes.employees import is_manager_match
 
-        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+        manager_id = request.args.get("manager_id")
+        current_user_id = get_jwt_identity()
+        current_user = User.query.get(int(current_user_id)) if current_user_id else None
+        is_hr_or_admin = current_user and current_user.access_level.lower() in ["admin", "hr"]
+
+        if manager_id:
+            manager_emp = Employee.query.filter_by(user_id=int(manager_id)).first()
+            if manager_emp:
+                manager_full_name = f"{manager_emp.first_name} {manager_emp.last_name}".strip()
+                employees = [
+                    e for e in Employee.query.all()
+                    if (e.status or "").lower() != "inactive"
+                    and is_manager_match(e.reporting_manager, manager_full_name)
+                ]
+            else:
+                employees = []
+        elif not is_hr_or_admin:
+            if current_user:
+                caller_emp = Employee.query.filter_by(user_id=current_user.id).first()
+                if caller_emp:
+                    manager_full_name = f"{caller_emp.first_name} {caller_emp.last_name}".strip()
+                    employees = [
+                        e for e in Employee.query.all()
+                        if (e.status or "").lower() != "inactive"
+                        and is_manager_match(e.reporting_manager, manager_full_name)
+                    ]
+                else:
+                    employees = []
+            else:
+                employees = []
+        else:
+            employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         row = 6
 

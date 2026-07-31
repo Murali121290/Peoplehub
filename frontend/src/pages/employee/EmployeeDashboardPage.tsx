@@ -30,6 +30,23 @@ import NotificationsPanel from "./components/NotificationsPanel";
 
 const BASE_URL = `${API_URL}/api`;
 
+const isHalfDayLeave = (totalDays: any) => Number(totalDays) <= 0.5;
+
+const checkShiftLock = (shiftName: string) => {
+  const currentHour = new Date().getHours();
+  const cleanShift = (shiftName || "").trim().toLowerCase();
+  if (cleanShift === "first shift" && currentHour < 6) {
+    return { isLocked: true, timeLabel: "06:00 AM" };
+  }
+  if (cleanShift === "second shift" && currentHour < 12) {
+    return { isLocked: true, timeLabel: "12:00 PM" };
+  }
+  if (cleanShift === "night shift" && currentHour < 22) {
+    return { isLocked: true, timeLabel: "10:00 PM" };
+  }
+  return { isLocked: false, timeLabel: "" };
+};
+
 const NewHireTab: React.FC<{ employees: any[] }> = ({ employees }) => {
   const newJoiners = React.useMemo(() => {
     return employees.filter(emp => {
@@ -289,7 +306,7 @@ const EmployeeDashboardPage: React.FC = () => {
 if (leave.request_type !== "Leave") return false;
 
 // Do NOT block check-in for half-day leave
-if (Number(leave.total_days) <= 0.5) return false;;
+if (isHalfDayLeave(leave.total_days)) return false;
       // Match by employee_id (stored as string in DB)
       const leaveEmpId = String(leave.employee_id || "");
       if (
@@ -325,19 +342,10 @@ if (Number(leave.total_days) <= 0.5) return false;;
 
   const shiftLockStatus = (() => {
     if (isCheckedIn) return { isLocked: false, label: "", timeLabel: "" };
-    const currentHour = new Date().getHours();
-    const cleanShift = (todayActiveShift || "").trim().toLowerCase();
-
-    if (cleanShift === "first shift" && currentHour < 6) {
-      return { isLocked: true, label: "First Shift Locked", timeLabel: "06:00 AM" };
-    }
-    if (cleanShift === "second shift" && currentHour < 12) {
-      return { isLocked: true, label: "Second Shift Locked", timeLabel: "12:00 PM" };
-    }
-    if (cleanShift === "night shift" && currentHour < 22) {
-      return { isLocked: true, label: "Night Shift Locked", timeLabel: "10:00 PM" };
-    }
-    return { isLocked: false, label: "", timeLabel: "" };
+    const { isLocked, timeLabel } = checkShiftLock(todayActiveShift);
+    const formattedShift = (todayActiveShift || "").split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+    const label = isLocked ? `${formattedShift} Locked` : "";
+    return { isLocked, label, timeLabel };
   })();
 
   const getTodayKey = () => {
@@ -608,20 +616,7 @@ if (Number(leave.total_days) <= 0.5) return false;;
         loadManagerShiftRequests();
 
         // Check timing lock on the newly selected shift
-        const currentHour = new Date().getHours();
-        let isLocked = false;
-        let timeLabel = "";
-
-        if (cleanSelected === "first shift" && currentHour < 6) {
-          isLocked = true;
-          timeLabel = "06:00 AM";
-        } else if (cleanSelected === "second shift" && currentHour < 12) {
-          isLocked = true;
-          timeLabel = "12:00 PM";
-        } else if (cleanSelected === "night shift" && currentHour < 22) {
-          isLocked = true;
-          timeLabel = "10:00 PM";
-        }
+        const { isLocked, timeLabel } = checkShiftLock(selectedCheckInShift);
 
         if (isLocked) {
           toast.error(`${selectedCheckInShift} starts at ${timeLabel}. Check-in is locked until then.`);
@@ -634,20 +629,7 @@ if (Number(leave.total_days) <= 0.5) return false;;
         toast.error("Error setting shift timing.");
       }
     } else {
-      const currentHour = new Date().getHours();
-      let isLocked = false;
-      let timeLabel = "";
-
-      if (cleanSelected === "first shift" && currentHour < 6) {
-        isLocked = true;
-        timeLabel = "06:00 AM";
-      } else if (cleanSelected === "second shift" && currentHour < 12) {
-        isLocked = true;
-        timeLabel = "12:00 PM";
-      } else if (cleanSelected === "night shift" && currentHour < 22) {
-        isLocked = true;
-        timeLabel = "10:00 PM";
-      }
+      const { isLocked, timeLabel } = checkShiftLock(selectedCheckInShift);
 
       if (isLocked) {
         toast.error(`${selectedCheckInShift} starts at ${timeLabel}. Check-in is locked until then.`);
@@ -1116,7 +1098,7 @@ if (Number(leave.total_days) <= 0.5) return false;;
 if (leave.request_type !== "Leave") return false;
 
 // Half-day leave should not stop reminders/check-in
-if (Number(leave.total_days) === 0.5) return false;
+if (isHalfDayLeave(leave.total_days)) return false;
       const fromDate = new Date(leave.from_date);
       const toDate = new Date(leave.to_date);
       fromDate.setHours(0, 0, 0, 0);

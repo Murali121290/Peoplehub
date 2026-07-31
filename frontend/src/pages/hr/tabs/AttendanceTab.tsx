@@ -518,7 +518,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   useEffect(() => {
     const fetchMonths = async () => {
       try {
-        const response = await fetch(`${BASE_URL}/attendance/available-months`);
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${BASE_URL}/attendance/available-months`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
           setAvailableMonths(data);
@@ -557,7 +560,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       console.log("BASE_URL =", BASE_URL);
       console.log(url);
 
-      const response = await fetch(url);
+      const token = localStorage.getItem("token");
+      const response = await fetch(url, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       const blob = await response.blob();
       const urlBlob = window.URL.createObjectURL(blob);
       const a = document.createElement("a");

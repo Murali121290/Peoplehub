@@ -2,6 +2,8 @@
 
 # pyrefly: ignore [missing-import]
 from utils.compat import Blueprint, request, jsonify
+from utils.jwt_helper import jwt_required, get_jwt_identity
+from models.user import User
 
 from datetime import datetime
 # pyrefly: ignore [missing-import]
@@ -172,17 +174,49 @@ def apply_shift():
     "/",
     methods=["GET"]
 )
+@jwt_required()
 def get_shift_requests():
+    try:
+        user_id = get_jwt_identity()
+        current_user = User.query.get(int(user_id))
+        if not current_user:
+            return jsonify({"success": False, "message": "User not found"}), 404
 
-    shift_requests = ShiftRequest.query\
-        .order_by(
-            ShiftRequest.id.desc()
-        ).all()
+        role_name = (current_user.role.name or "").lower() if current_user.role else ""
+        access_level = (current_user.access_level or "").lower()
+        is_admin_or_hr = "admin" in role_name or "admin" in access_level or "hr" in role_name or "hr" in access_level
 
-    return jsonify([
-        item.to_dict()
-        for item in shift_requests
-    ])
+        shift_requests = ShiftRequest.query.order_by(ShiftRequest.id.desc()).all()
+
+        if not is_admin_or_hr:
+            caller_emp = Employee.query.filter_by(user_id=current_user.id).first()
+            if caller_emp:
+                manager_full_name = f"{caller_emp.first_name} {caller_emp.last_name}".strip().lower()
+
+                def matches_manager(rep_mgr):
+                    if not rep_mgr:
+                        return False
+                    rep_mgr_clean = rep_mgr.strip().lower()
+                    if rep_mgr_clean == manager_full_name:
+                        return True
+                    rep_words = rep_mgr_clean.split()
+                    mgr_words = manager_full_name.split()
+                    if len(rep_words) == 1 and mgr_words and mgr_words[0] == rep_mgr_clean:
+                        return True
+                    if len(mgr_words) == 1 and rep_words and rep_words[0] == manager_full_name:
+                        return True
+                    return False
+
+                shift_requests = [s for s in shift_requests if matches_manager(s.reporting_manager)]
+            else:
+                shift_requests = []
+
+        return jsonify([
+            item.to_dict()
+            for item in shift_requests
+        ])
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 # ==========================================

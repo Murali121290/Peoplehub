@@ -19,8 +19,17 @@ const BookingForm: React.FC<BookingFormProps> = ({
 }) => {
   const today = new Date().toISOString().split("T")[0];
 
-  const userStr = localStorage.getItem("user");
-  const loggedInUser = userStr ? JSON.parse(userStr) : null;
+  const getLoggedInUser = () => {
+    try {
+      const userStr = localStorage.getItem("user");
+      return userStr ? JSON.parse(userStr) : null;
+    } catch (e) {
+      console.error("Failed to parse user from localStorage:", e);
+      return null;
+    }
+  };
+
+  const loggedInUser = getLoggedInUser();
   const defaultOrganizer = loggedInUser?.full_name || "";
   const defaultDepartment = loggedInUser?.department || "";
 
@@ -45,8 +54,7 @@ const BookingForm: React.FC<BookingFormProps> = ({
   useEffect(() => {
     const fetchCurrentEmployeeDetails = async () => {
       try {
-        const userStr = localStorage.getItem("user");
-        const loggedInUser = userStr ? JSON.parse(userStr) : null;
+        const loggedInUser = getLoggedInUser();
         if (!loggedInUser) return;
 
         const response = await fetch(`${API_URL}/api/employees/`);

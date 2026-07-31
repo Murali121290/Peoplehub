@@ -386,7 +386,10 @@ const ManagerDashboardPage = () => {
   useEffect(() => {
     const fetchMonths = async () => {
       try {
-        const response = await fetch(`${BASE_URL}/attendance/available-months`);
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${BASE_URL}/attendance/available-months`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
           setAvailableMonths(data);
@@ -607,7 +610,10 @@ const ManagerDashboardPage = () => {
         const [m, y] = selectedReportCycle.split(",");
         url += `&month=${m}&year=${y}`;
       }
-      const response = await fetch(url);
+      const token = localStorage.getItem("token");
+      const response = await fetch(url, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       const blob = await response.blob();
       const urlBlob = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -2141,7 +2147,7 @@ const ManagerDashboardPage = () => {
                           <td style={{ padding: "12px 16px", textAlign: "center", minWidth: "160px" }}>
 
                             {/* LEAVE — read-only, only Confirm Leave */}
-                            {category === "leave" && managerStatus !== "Approved" && (
+                            {category === "leave" && managerStatus !== "Approved" && !(managerStatus === "Need Clarification" && employeeReplied) && (
                               <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
                                 <span style={{ fontSize: "11px", color: "#92400e", fontWeight: 600, background: "#fef3c7", padding: "2px 8px", borderRadius: "6px" }}>On Leave</span>
                                 <button
@@ -2211,7 +2217,7 @@ const ManagerDashboardPage = () => {
                             )}
 
                             {/* ABSENT — Need Clarification sent, employee chose Leave */}
-                            {category === "absent" && managerStatus === "Need Clarification" && status === "Leave" && employeeReplied && (
+                            {category === "leave" && managerStatus === "Need Clarification" && employeeReplied && (
                               <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
                                 <span style={{ fontSize: "10px", color: "#92400e", fontWeight: 600, background: "#fef3c7", padding: "2px 8px", borderRadius: "6px" }}>Applied {emp.leave_type || "Leave"}</span>
                                 <button
