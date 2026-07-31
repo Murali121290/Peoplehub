@@ -45,9 +45,12 @@ def serialize_leave(leave):
         "permission_date": str(leave.permission_date) if leave.permission_date else None,
         "from_time": str(leave.from_time) if leave.from_time else None,
         "to_time": str(leave.to_time) if leave.to_time else None,
-        "cancelled_at": leave.cancelled_at.isoformat() if hasattr(leave, "cancelled_at") and leave.cancelled_at else None,
+        "cancelled_at": leave.cancelled_at.isoformat() + "Z" if hasattr(leave, "cancelled_at") and leave.cancelled_at else None,
         "cancelled_by": leave.cancelled_by if hasattr(leave, "cancelled_by") else None,
         "cancellation_reason": leave.cancellation_reason if hasattr(leave, "cancellation_reason") else None,
+        "created_at": leave.created_at.isoformat() + "Z" if hasattr(leave, "created_at") and leave.created_at else None,
+        "approved_at": leave.approved_at.isoformat() + "Z" if hasattr(leave, "approved_at") and leave.approved_at else None,
+        "rejected_at": leave.rejected_at.isoformat() + "Z" if hasattr(leave, "rejected_at") and leave.rejected_at else None,
     }
 
 @leave_bp.route("/", methods=["POST"])
@@ -164,35 +167,7 @@ def get_leaves():
                 f"Status: {leave.status}"
             )
 
-        leaves_data = []
-        for leave in leaves:
-            emp_string_id = leave.employee_id
-            try:
-                if emp_string_id and str(emp_string_id).isdigit():
-                    emp = Employee.query.get(int(emp_string_id))
-                    if emp and emp.employee_id:
-                        emp_string_id = emp.employee_id
-            except:
-                pass
-
-            leaves_data.append({
-                "id": leave.id,
-                "employee_id": emp_string_id,
-                "employee_name": leave.employee_name,
-                "leave_type": leave.leave_type,
-                "from_date": str(leave.from_date) if leave.from_date else None,
-                "to_date": str(leave.to_date) if leave.to_date else None,
-                "total_days": leave.total_days,
-                "reporting_manager": leave.reporting_manager,
-                "handover_to": leave.handover_to,
-                "emergency_contact": leave.emergency_contact,
-                "reason": leave.reason,
-                "status": leave.status,
-                "request_type": leave.request_type,
-                "permission_date": str(leave.permission_date) if leave.permission_date else None,
-                "from_time": str(leave.from_time) if leave.from_time else None,
-                "to_time": str(leave.to_time) if leave.to_time else None,
-            })
+        leaves_data = [serialize_leave(leave) for leave in leaves]
         return jsonify(leaves_data), 200
 
     except Exception as e:

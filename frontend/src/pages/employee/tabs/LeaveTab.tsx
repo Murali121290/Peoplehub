@@ -1069,6 +1069,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         <th className="p-3">Type</th>
                         <th className="p-3">Date / Time Slot</th>
                         <th className="p-3">Duration</th>
+                        <th className="p-3">Applied At</th>
+                        <th className="p-3">Actioned At</th>
                         <th className="p-3">Reason</th>
                         <th className="p-3 text-center">Status</th>
                       </tr>
@@ -1076,7 +1078,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     <tbody className="divide-y divide-neutral-200/80 text-xs text-neutral-700">
                       {upcomingLeaves.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="p-6 text-center text-neutral-400 font-medium bg-neutral-50/10 italic">
+                          <td colSpan={7} className="p-6 text-center text-neutral-400 font-medium bg-neutral-50/10 italic">
                             No upcoming planned leaves or permissions found.
                           </td>
                         </tr>
@@ -1086,6 +1088,39 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                           const dateStr = isPermission 
                             ? `${req.permission_date} @ ${req.from_time} - ${req.to_time}` 
                             : `${req.from_date} to ${req.to_date}`;
+
+                          const formatDateTime = (isoString: string | null | undefined) => {
+                            if (!isoString) return "—";
+                            try {
+                              const isMidnight = isoString.includes("T00:00:00");
+                              const d = new Date(isoString);
+                              if (isNaN(d.getTime())) return "—";
+                              if (isMidnight) {
+                                return d.toLocaleDateString("en-US", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  year: "numeric"
+                                });
+                              }
+                              return d.toLocaleString("en-US", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: true
+                              });
+                            } catch (e) {
+                              return "—";
+                            }
+                          };
+
+                          const getActionedAtText = (r: any) => {
+                            if (r.status === "Approved") return formatDateTime(r.approved_at);
+                            if (r.status === "Rejected") return formatDateTime(r.rejected_at);
+                            if (r.status === "Cancelled") return formatDateTime(r.cancelled_at);
+                            return "Pending";
+                          };
                           
                           return (
                             <tr key={req.id} className="hover:bg-neutral-50/40 transition-colors">
@@ -1095,6 +1130,12 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                               <td className="p-3 text-neutral-600 font-medium">{dateStr}</td>
                               <td className="p-3 text-neutral-600 font-medium">
                                 {isPermission ? "Hourly" : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
+                              </td>
+                              <td className="p-3 text-neutral-600 font-medium">
+                                {formatDateTime(req.created_at)}
+                              </td>
+                              <td className="p-3 text-neutral-600 font-medium">
+                                {getActionedAtText(req)}
                               </td>
                               <td className="p-3 text-neutral-500 max-w-[200px] truncate" title={req.reason}>
                                 {req.reason || "—"}
@@ -1131,6 +1172,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         <th className="p-3">Type</th>
                         <th className="p-3">Date / Time Slot</th>
                         <th className="p-3">Duration</th>
+                        <th className="p-3">Applied At</th>
+                        <th className="p-3">Actioned At</th>
                         <th className="p-3">Reason</th>
                         <th className="p-3 text-center">Status</th>
                       </tr>
@@ -1138,7 +1181,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     <tbody className="divide-y divide-neutral-200/80 text-xs text-neutral-700">
                       {leaveHistoryRequests.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="p-8 text-center text-neutral-400 font-medium bg-neutral-50/10">
+                          <td colSpan={7} className="p-8 text-center text-neutral-400 font-medium bg-neutral-50/10">
                             No leave or permission history found.
                           </td>
                         </tr>
@@ -1158,6 +1201,39 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                           else if (resolved === "Out of Date") calculatedBadgeColor = "bg-neutral-50 text-neutral-500 border-neutral-200";
                           else if (resolved === "Cancelled") calculatedBadgeColor = "bg-gray-100 text-gray-600 border-gray-200";
 
+                          const formatDateTime = (isoString: string | null | undefined) => {
+                            if (!isoString) return "—";
+                            try {
+                              const isMidnight = isoString.includes("T00:00:00");
+                              const d = new Date(isoString);
+                              if (isNaN(d.getTime())) return "—";
+                              if (isMidnight) {
+                                return d.toLocaleDateString("en-US", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  year: "numeric"
+                                });
+                              }
+                              return d.toLocaleString("en-US", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: true
+                              });
+                            } catch (e) {
+                              return "—";
+                            }
+                          };
+
+                          const getActionedAtText = (r: any) => {
+                            if (r.status === "Approved") return formatDateTime(r.approved_at);
+                            if (r.status === "Rejected") return formatDateTime(r.rejected_at);
+                            if (r.status === "Cancelled") return formatDateTime(r.cancelled_at);
+                            return "Pending";
+                          };
+
                           return (
                             <tr key={req.id} className="hover:bg-neutral-50/40 transition-colors">
                               <td className="p-3 font-semibold text-neutral-800">
@@ -1170,6 +1246,12 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                                 {isPermission 
                                   ? "Hourly" 
                                   : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
+                              </td>
+                              <td className="p-3 text-neutral-600 font-medium">
+                                {formatDateTime(req.created_at)}
+                              </td>
+                              <td className="p-3 text-neutral-600 font-medium">
+                                {getActionedAtText(req)}
                               </td>
                               <td className="p-3 text-neutral-500 max-w-[200px] truncate" title={req.reason}>
                                 {req.reason || "—"}
