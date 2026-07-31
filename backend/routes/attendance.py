@@ -3297,3 +3297,183 @@ def upload_attendance_excel():
         db.session.rollback()
         print("EXCEL UPLOAD ERROR:", str(e))
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@attendance_bp.route("/trigger-db-sync", methods=["POST"])
+def trigger_db_sync():
+    try:
+        mysql_host = os.environ.get("MYSQL_BIOMETRIC_HOST", "10.1.6.157")
+        mysql_port = int(os.environ.get("MYSQL_BIOMETRIC_PORT", 3306))
+        mysql_user = os.environ.get("MYSQL_BIOMETRIC_USER", "Muralibalu")
+        mysql_password = os.environ.get("MYSQL_BIOMETRIC_PASSWORD", "Murali@12")
+        mysql_db = os.environ.get("MYSQL_BIOMETRIC_DB", "TimeTrack")
+
+        if not mysql_password:
+            return jsonify({
+                "success": False,
+                "error": "MYSQL_BIOMETRIC_PASSWORD is not set in environment (.env)"
+            }), 400
+
+        # 1. Connect to MySQL database
+        connection = pymysql.connect(
+            host=mysql_host,
+            port=mysql_port,
+            user=mysql_user,
+            password=mysql_password,
+            database=mysql_db,
+            cursorclass=pymysql.cursors.DictCursor
+        )
+        
+        # 2. Query absolute MIN and MAX punch times per employee per day for the last 30 days
+        with connection.cursor() as cursor:
+            sql = """
+                SELECT 
+                    EmployeeCode,
+                    MIN(LogDateTime) AS FirstPunch,
+                    MAX(LogDateTime) AS LastPunch
+                FROM AttendanceLogs
+                WHERE LogDate >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                GROUP BY EmployeeCode, LogDate
+            """
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+            
+        connection.close()
+        
+        if not rows:
+            return jsonify({
+                "success": True,
+                "message": "No biometric logs found in MySQL for the last 30 days"
+            }), 200
+
+        # 3. Process logs directly per employee per day
+        processed_count = 0
+        
+        for row in rows:
+            emp_code = str(row["EmployeeCode"]).strip()
+            first_punch = row["FirstPunch"]
+            last_punch = row["LastPunch"]
+
+            if not first_punch:
+                continue
+
+            employee = Employee.query.filter_by(employee_id=emp_code).first()
+            if not employee:
+                continue
+
+            att_date = first_punch.date()
+
+            # Find existing or create new attendance
+            attendance = Attendance.query.filter_by(
+                user_id=employee.user_id,
+                attendance_date=att_date
+            ).first()
+
+            # Determine target values
+            target_check_in = first_punch
+            target_check_out = last_punch if last_punch != first_punch else None
+
+            # Skip if we already have the exact same biometric details in the DB
+            # (No need to update same date details if already synced and identical)
+            if attendance:
+                if attendance.card_check_in == target_check_in and attendance.card_check_out == target_check_out:
+                    continue
+
+            if not attendance:
+                attendance = Attendance(
+                    user_id=employee.user_id,
+                    attendance_date=att_date,
+                    status="Present",
+                    shift_timing=employee.shift_timing or "General Shift"
+                )
+                db.session.add(attendance)
+
+            # Update biometric check-in and check-out
+            attendance.card_check_in = target_check_in
+            attendance.card_check_out = target_check_out
+
+            # Recalculate card working hours
+            if attendance.card_check_in and attendance.card_check_out:
+                total_seconds = (attendance.card_check_out - attendance.card_check_in).total_seconds()
+                hours_decimal = max(total_seconds, 0) / 3600
+                attendance.card_working_hours = int(hours_decimal * 100) / 100
+            else:
+                attendance.card_working_hours = 0.0
+
+            # Recalculate status
+            web_hrs = attendance.total_hours or 0.0
+            card_hrs = attendance.card_working_hours or 0.0
+            max_hrs = max(web_hrs, card_hrs)
+            if max_hrs >= 8.0:
+                attendance.status = "Present"
+            elif max_hrs >= 4.0:
+                attendance.status = "Half Day"
+            elif attendance.check_in or attendance.card_check_in:
+                attendance.status = "Present"
+            else:
+                attendance.status = "Absent"
+
+            processed_count += 1
+
+            # Emit Socket.IO updates for live dashboard
+            try:
+                from extensions import socketio
+                web_in_str = attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None
+                web_out_str = attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None
+                card_in_str = attendance.card_check_in.strftime("%I:%M %p") if attendance.card_check_in else None
+                card_out_str = attendance.card_check_out.strftime("%I:%M %p") if attendance.card_check_out else None
+
+                # Determine UI status
+                ui_status = "Absent"
+                if attendance.check_in or attendance.card_check_in:
+                    if attendance.check_in and not attendance.check_out:
+                        ui_status = "Present"
+                    elif attendance.check_out or attendance.card_check_out:
+                        from datetime import date
+                        is_today = (attendance.attendance_date == date.today())
+                        if is_today and attendance.card_check_out and not attendance.check_out:
+                            punch_out_hour = attendance.card_check_out.hour
+                            working_hrs = attendance.card_working_hours or 0.0
+                            if punch_out_hour >= 15 or working_hrs >= 4.0:
+                                ui_status = "Checked Out"
+                            else:
+                                ui_status = "Present"
+                        else:
+                            ui_status = "Checked Out"
+                    else:
+                        ui_status = "Present"
+                else:
+                    ui_status = "Absent"
+
+                payload = {
+                    "id": employee.id,
+                    "user_id": employee.user_id,
+                    "attendance_status": ui_status,
+                    "check_in": web_in_str,
+                    "check_out": web_out_str,
+                    "working_hours": attendance.total_hours or 0.0,
+                    "card_check_in": card_in_str,
+                    "card_check_out": card_out_str,
+                    "card_working_hours": attendance.card_working_hours or 0.0,
+                    "shift": employee.shift_timing or "General Shift",
+                    "manager_status": attendance.manager_status or "Pending",
+                    "checked_in": (attendance.check_in is not None and attendance.check_out is None),
+                    "card_checked_in": (attendance.card_check_in is not None and attendance.card_check_out is None),
+                }
+                socketio.emit("attendance_update", payload)
+            except Exception as se:
+                print("Socket emit error during db sync:", se)
+
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": f"Successfully synced {processed_count} logs from Biometric DB"
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print("DB SYNC TRIGGER ERROR:", str(e))
+        return jsonify({
+            "success": False,
+            "error": f"Failed to sync database: {str(e)}"
+        }), 500

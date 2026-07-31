@@ -104,6 +104,7 @@ def login():
                 "error": "Username and Password are required"
             }), 400
 
+
         # Find user strictly by company email or employee ID
         user = User.query.filter(User.company_email == login_id).first()
         
