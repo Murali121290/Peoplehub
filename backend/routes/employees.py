@@ -1869,10 +1869,14 @@ def get_team_attendance_by_id(team_id):
                     from datetime import datetime
                     from zoneinfo import ZoneInfo
                     now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
-                    elapsed = (now_ist - attendance.check_in).total_seconds()
-                    break_secs = (attendance.total_break_minutes or 0) * 60
-                    working_hours = max(elapsed - break_secs, 0) / 3600
-                    total_hours = elapsed / 3600
+                    if attendance.check_in:
+                        elapsed = (now_ist - attendance.check_in).total_seconds()
+                        break_secs = (attendance.total_break_minutes or 0) * 60
+                        working_hours = max(elapsed - break_secs, 0) / 3600
+                        total_hours = elapsed / 3600
+                    else:
+                        working_hours = 0.0
+                        total_hours = 0.0
                     
             working_hours = int(working_hours * 100) / 100
             total_hours = int(total_hours * 100) / 100
