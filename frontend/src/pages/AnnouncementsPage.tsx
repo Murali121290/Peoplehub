@@ -1,10 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { socket } from "../socket";
-import { MegaphoneIcon, HandThumbUpIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import { HandThumbUpIcon as HandThumbUpSolid } from "@heroicons/react/24/solid";
+import { MegaphoneIcon } from "@heroicons/react/24/outline";
 import { Button } from "../components/ui/Button";
-import { Input, Select, Textarea } from "../components/ui/Form";
-import { EmptyState } from "../components/ui/EmptyState";
 import EmojiPicker from 'emoji-picker-react';
 
 const AnnouncementsPage = () => {
@@ -17,16 +14,39 @@ const AnnouncementsPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterRole, setFilterRole] = useState("all");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [sidebarTopOffset, setSidebarTopOffset] = useState("8.5rem");
 
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
 
   const userStr = localStorage.getItem("user");
   const user = userStr ? JSON.parse(userStr) : {};
   const currentUserId = user.id || null;
-  const canSendAnnouncement = user.access_level === "admin" || user.access_level === "hr";
+  const userAccessLevel = (user.access_level || "").toLowerCase();
+  const canSendAnnouncement = userAccessLevel === "admin" || userAccessLevel === "hr";
+
+  const [todayBirthdays, setTodayBirthdays] = useState<any[]>([]);
+  const [todayAnniversaries, setTodayAnniversaries] = useState<any[]>([]);
+
+  const fetchCelebrations = async () => {
+    try {
+      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const [bRes, aRes] = await Promise.all([
+        fetch(`${apiUrl}/employees/birthdays/today`),
+        fetch(`${apiUrl}/employees/anniversaries/today`),
+      ]);
+      const bData = await bRes.json();
+      const aData = await aRes.json();
+      setTodayBirthdays(Array.isArray(bData) ? bData : []);
+      setTodayAnniversaries(Array.isArray(aData) ? aData : []);
+    } catch (err) {
+      console.error("Error fetching celebrations:", err);
+    }
+  };
 
   useEffect(() => {
     fetchAnnouncements();
+    fetchCelebrations();
     socket.on("receive_announcement", (newAnnouncement) => {
       const userLevel = (user.access_level || "").toLowerCase();
       const target = (newAnnouncement.target_role || "all").toLowerCase();
@@ -59,27 +79,59 @@ const AnnouncementsPage = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    const updateSidebarOffset = () => {
+      if (headerRef.current) {
+        const headerHeight = headerRef.current.offsetHeight;
+        setSidebarTopOffset(`${headerHeight + 16}px`);
+      }
+    };
+
+    updateSidebarOffset();
+    window.addEventListener("resize", updateSidebarOffset);
+    return () => window.removeEventListener("resize", updateSidebarOffset);
+  }, []);
+
   const handleSend = () => {
     if (!title.trim() || !message.trim()) return;
+    if (!canSendAnnouncement) {
+      console.error("User does not have permission to send announcements");
+      return;
+    }
+
     setIsLoading(true);
-    socket.emit("send_announcement", {
+
+    const announcementData = {
+      user_id: user.id,
       sender_name: user.first_name || "HR Admin",
-      title,
+      title: title.trim(),
       target_role: targetRole,
-      message,
-    });
-    setTimeout(() => {
-      setShowSuccess(true);
-      setTitle("");
-      setMessage("");
-      setTargetRole("all");
-      setShowEmojiPicker(false);
-      setIsLoading(false);
+      message: message.trim(),
+    };
+
+    console.log("Sending announcement:", announcementData);
+
+    try {
+      socket.emit("send_announcement", announcementData, (response: any) => {
+        console.log("Announcement response:", response);
+      });
+
       setTimeout(() => {
-        setShowSuccess(false);
-        fetchAnnouncements();
-      }, 3000);
-    }, 500);
+        setShowSuccess(true);
+        setTitle("");
+        setMessage("");
+        setTargetRole("all");
+        setShowEmojiPicker(false);
+        setIsLoading(false);
+        setTimeout(() => {
+          setShowSuccess(false);
+          fetchAnnouncements();
+        }, 3000);
+      }, 500);
+    } catch (error) {
+      console.error("Error sending announcement:", error);
+      setIsLoading(false);
+    }
   };
 
   const fetchAnnouncements = async () => {
@@ -186,14 +238,14 @@ const AnnouncementsPage = () => {
         </div>
       )}
 
-      <div className="mx-auto max-w-2xl">
-        <div className="sticky top-0 z-10 bg-neutral-100 pt-8 pb-4 -mt-8 mb-4">
+      <div className="mx-auto max-w-6xl">
+        <div ref={headerRef} className="sticky top-0 z-10 bg-neutral-100 pt-8 pb-4 -mt-8 mb-4">
           <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Company Wall</h1>
             <p className="text-sm text-neutral-500 mt-1">Stay updated with the latest announcements</p>
           </div>
-          
+
           <div className="flex items-center gap-3">
              <div className="relative">
                 <input
@@ -219,7 +271,11 @@ const AnnouncementsPage = () => {
               </select>
           </div>
         </div>
+        </div>
 
+        <div className="flex gap-6">
+          {/* Main Content - Announcements */}
+          <div className="flex-1 min-w-0">
         {canSendAnnouncement && (
           <div className="mb-8 rounded-2xl bg-white p-5 shadow-sm border border-neutral-200 transition-all focus-within:shadow-md focus-within:border-primary-300">
             <div className="flex gap-4">
@@ -234,7 +290,7 @@ const AnnouncementsPage = () => {
                   placeholder="Announcement Title"
                   className="w-full border-b border-transparent bg-transparent px-2 py-1 text-lg font-bold text-neutral-800 placeholder-neutral-400 focus:border-neutral-200 focus:outline-none mb-2"
                 />
-                
+
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
@@ -257,7 +313,7 @@ const AnnouncementsPage = () => {
                         <EmojiPicker onEmojiClick={onEmojiClick} autoFocusSearch={false} />
                       </div>
                     )}
-                    
+
                     <div className="ml-2">
                        <select
                           value={targetRole}
@@ -284,8 +340,6 @@ const AnnouncementsPage = () => {
             </div>
             </div>
           )}
-        </div>
-
         <div className="space-y-5">
           {filteredAnnouncements.length === 0 ? (
             <div className="rounded-2xl border border-neutral-200 bg-white p-12 text-center">
@@ -341,7 +395,7 @@ const AnnouncementsPage = () => {
                         <h3 className="text-[16px] font-bold text-neutral-800 mb-1.5">{item.title}</h3>
                         <p className="text-[14.5px] leading-relaxed text-neutral-700 whitespace-pre-wrap">{item.message}</p>
                       </div>
-                      
+
                       <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between gap-4 flex-wrap">
                         {/* Multi-Emoji Picker Bar on Hover/Click */}
                         <div className="relative group flex items-center gap-2">
@@ -409,6 +463,83 @@ const AnnouncementsPage = () => {
                 </div>
               );
             })
+          )}
+          </div>
+          </div>
+
+          {/* Right Sidebar - Today's Celebrations */}
+          {(todayBirthdays.length > 0 || todayAnniversaries.length > 0) && (
+            <div className="w-80 hidden lg:block">
+              <div className="sticky rounded-2xl bg-white p-5 shadow-sm border border-neutral-200" style={{ top: sidebarTopOffset }}>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-2xl">🎉</span>
+                  <h2 className="text-lg font-bold text-neutral-900">Today's Celebrations</h2>
+                </div>
+
+                {/* Birthdays Section */}
+                {todayBirthdays.length > 0 && (
+                  <div className="mb-5">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-600 mb-3 flex items-center gap-2">
+                      <span className="text-lg">🎂</span>
+                      <span>Birthdays Today ({todayBirthdays.length})</span>
+                    </h3>
+                    <div className="space-y-3">
+                      {todayBirthdays.map((b: any) => (
+                        <div key={b.id} className="rounded-xl bg-neutral-50 p-3 hover:bg-neutral-100 transition-colors">
+                          <div className="flex items-center gap-3">
+                            {b.profile_image ? (
+                              <img src={`data:image/jpeg;base64,${b.profile_image}`} alt={b.first_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                                {b.first_name?.[0]}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-semibold text-sm text-neutral-900">{b.first_name} {b.last_name}</h4>
+                              {b.department && <p className="text-xs text-neutral-600">{b.department}</p>}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Divider */}
+                {todayBirthdays.length > 0 && todayAnniversaries.length > 0 && (
+                  <div className="h-px bg-neutral-200 mb-5"></div>
+                )}
+
+                {/* Anniversaries Section */}
+                {todayAnniversaries.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-600 mb-3 flex items-center gap-2">
+                      <span className="text-lg">🏆</span>
+                      <span>Anniversaries ({todayAnniversaries.length})</span>
+                    </h3>
+                    <div className="space-y-3">
+                      {todayAnniversaries.map((a: any) => (
+                        <div key={a.id} className="rounded-xl bg-neutral-50 p-3 hover:bg-neutral-100 transition-colors">
+                          <div className="flex items-center gap-3">
+                            {a.profile_image ? (
+                              <img src={`data:image/jpeg;base64,${a.profile_image}`} alt={a.first_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                                {a.first_name?.[0]}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-semibold text-sm text-neutral-900">{a.first_name} {a.last_name}</h4>
+                              <p className="text-xs text-amber-700 font-medium">{a.years} {a.years === 1 ? 'Year' : 'Years'} Milestone</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
       </div>
