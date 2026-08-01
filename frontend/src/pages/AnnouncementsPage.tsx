@@ -95,14 +95,23 @@ const AnnouncementsPage = () => {
     }
   };
 
-  const toggleLike = async (messageId: number) => {
+  const toggleLike = async (messageId: number, reactionEmoji: string = "👍") => {
     if (!currentUserId) return;
     try {
       const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const senderName =
+        user.full_name ||
+        user.name ||
+        (user.first_name ? `${user.first_name} ${user.last_name || ""}`.trim() : "") ||
+        "Employee";
       const response = await fetch(`${apiUrl}/communications/${messageId}/like`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employee_id: currentUserId })
+        body: JSON.stringify({
+          employee_id: currentUserId,
+          reaction: reactionEmoji,
+          employee_name: senderName
+        })
       });
       const data = await response.json();
       if (data.success) {
@@ -114,6 +123,15 @@ const AnnouncementsPage = () => {
       console.error("Error toggling like:", error);
     }
   };
+
+  const REACTION_OPTIONS = [
+    { emoji: "👍", label: "Like" },
+    { emoji: "❤️", label: "Love" },
+    { emoji: "🎉", label: "Celebrate" },
+    { emoji: "💡", label: "Insightful" },
+    { emoji: "🚀", label: "Launch" },
+    { emoji: "👏", label: "Clap" },
+  ];
 
   const onEmojiClick = (emojiObject: any) => {
     setMessage(prev => prev + emojiObject.emoji);
@@ -278,8 +296,23 @@ const AnnouncementsPage = () => {
           ) : (
             filteredAnnouncements.map((item: any) => {
               const badge = getRoleBadge(item.target_role);
-              const likesArray = item.likes || [];
-              const hasLiked = currentUserId ? likesArray.includes(currentUserId) : false;
+              const likesArray: any[] = (item.likes || []).map((l: any) =>
+                typeof l === "object" ? l : { employee_id: l, name: `User #${l}`, reaction: "👍" }
+              );
+
+              const myReaction = likesArray.find((l: any) => Number(l.employee_id) === Number(currentUserId));
+              const hasReacted = !!myReaction;
+
+              // Group reactions by emoji type
+              const emojiCounts: { [key: string]: { count: number; names: string[] } } = {};
+              likesArray.forEach((l: any) => {
+                const emo = l.reaction || "👍";
+                if (!emojiCounts[emo]) {
+                  emojiCounts[emo] = { count: 0, names: [] };
+                }
+                emojiCounts[emo].count += 1;
+                if (l.name) emojiCounts[emo].names.push(l.name);
+              });
 
               return (
                 <div
@@ -309,22 +342,67 @@ const AnnouncementsPage = () => {
                         <p className="text-[14.5px] leading-relaxed text-neutral-700 whitespace-pre-wrap">{item.message}</p>
                       </div>
                       
-                      <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center gap-4">
-                        <button 
-                          onClick={() => toggleLike(item.id)}
-                          className={`flex items-center gap-1.5 text-sm font-semibold transition-colors px-3 py-1.5 rounded-full ${
-                            hasLiked 
-                              ? "text-primary-600 bg-primary-50" 
-                              : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700"
-                          }`}
-                        >
-                          {hasLiked ? (
-                            <HandThumbUpSolid className="w-5 h-5" />
-                          ) : (
-                            <HandThumbUpIcon className="w-5 h-5" />
-                          )}
-                          <span>{likesArray.length > 0 ? likesArray.length : "Like"}</span>
-                        </button>
+                      <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between gap-4 flex-wrap">
+                        {/* Multi-Emoji Picker Bar on Hover/Click */}
+                        <div className="relative group flex items-center gap-2">
+                          <button
+                            onClick={() => toggleLike(item.id, myReaction?.reaction || "👍")}
+                            className={`flex items-center gap-2 text-sm font-semibold transition-all px-3 py-1.5 rounded-full border ${
+                              hasReacted
+                                ? "text-primary-700 bg-primary-50 border-primary-200 shadow-xs"
+                                : "text-neutral-600 bg-neutral-50 border-neutral-200 hover:bg-neutral-100"
+                            }`}
+                          >
+                            <span>{myReaction?.reaction || "👍"}</span>
+                            <span>{hasReacted ? "Reacted" : "React"}</span>
+                          </button>
+
+                          {/* Hover Emoji Reaction Bar */}
+                          <div className="absolute left-0 bottom-full mb-1 hidden group-hover:flex items-center gap-1.5 p-1.5 bg-white border border-neutral-200 shadow-xl rounded-full z-30 transition-all animate-fadeIn">
+                            {REACTION_OPTIONS.map((opt) => (
+                              <button
+                                key={opt.emoji}
+                                onClick={() => toggleLike(item.id, opt.emoji)}
+                                className="w-8 h-8 flex items-center justify-center text-lg hover:scale-125 transition-transform rounded-full hover:bg-neutral-100"
+                                title={opt.label}
+                              >
+                                {opt.emoji}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Reaction Badges with Hover Tooltip of Names */}
+                        {likesArray.length > 0 && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {Object.entries(emojiCounts).map(([emo, info]) => (
+                              <div
+                                key={emo}
+                                className="relative group/tooltip flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-100 border border-neutral-200 text-xs font-bold text-neutral-700 cursor-pointer hover:bg-neutral-200 transition-colors"
+                              >
+                                <span>{emo}</span>
+                                <span>{info.count}</span>
+
+                                {/* Hover Tooltip Listing Reacted Employee Names */}
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/tooltip:block z-40 w-max max-w-xs p-2 bg-neutral-900 text-white text-[11px] rounded-lg shadow-xl pointer-events-none">
+                                  <div className="font-semibold text-neutral-300 border-b border-neutral-700 pb-1 mb-1">
+                                    Reacted with {emo}:
+                                  </div>
+                                  <div className="flex flex-col gap-0.5 max-h-32 overflow-y-auto">
+                                    {info.names.length > 0 ? (
+                                      info.names.map((name, i) => (
+                                        <span key={i} className="text-white font-medium">• {name}</span>
+                                      ))
+                                    ) : (
+                                      <span className="text-neutral-400">Anonymous</span>
+                                    )}
+                                  </div>
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-neutral-900"></div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
