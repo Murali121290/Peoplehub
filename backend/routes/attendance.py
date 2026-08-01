@@ -6,6 +6,7 @@ from models.employee import Employee
 from models.user import User
 from datetime import date
 from sqlalchemy import extract
+from sqlalchemy.orm.attributes import flag_modified
 from datetime import timedelta
 from openpyxl.styles import Font
 from openpyxl.styles import PatternFill
@@ -2477,8 +2478,10 @@ def submit_regularization(employee_id):
         check_in_dt = datetime.combine(target_date, datetime.strptime(check_in_str, "%H:%M").time())
         check_out_dt = datetime.combine(target_date, datetime.strptime(check_out_str, "%H:%M").time())
 
+        target_user_id = emp.user_id if (emp and emp.user_id) else employee_id
+
         attendance = Attendance.query.filter_by(
-            user_id=emp.user_id,
+            user_id=target_user_id,
             attendance_date=target_date
         ).first()
 
@@ -2497,10 +2500,10 @@ def submit_regularization(employee_id):
 
         if not attendance:
             attendance = Attendance(
-                user_id=emp.user_id,
+                user_id=target_user_id,
                 attendance_date=target_date,
                 status="Present",
-                manager_status="Need Clarification",
+                manager_status="Clarification Provided",
                 is_regularization=True,
                 regularization_reason=reason,
                 regularization_submitted_at=datetime.now(),
@@ -2512,7 +2515,7 @@ def submit_regularization(employee_id):
             db.session.add(attendance)
         else:
             attendance.status = "Present"
-            attendance.manager_status = "Need Clarification"
+            attendance.manager_status = "Clarification Provided"
             attendance.is_regularization = True
             attendance.regularization_reason = reason
             attendance.regularization_submitted_at = datetime.now()
@@ -2523,7 +2526,18 @@ def submit_regularization(employee_id):
             history.append(msg_entry)
             attendance.clarification_history = history
 
+        flag_modified(attendance, "clarification_history")
+        flag_modified(attendance, "manager_status")
+        flag_modified(attendance, "is_regularization")
+
         db.session.commit()
+
+        try:
+            from extensions import socketio
+            socketio.emit("attendance_update", {"user_id": target_user_id, "manager_status": "Clarification Provided"})
+        except Exception as socket_err:
+            print("Failed to emit regularization socket:", str(socket_err))
+
         return jsonify({"success": True, "message": "Regularization submitted. Awaiting manager approval."})
 
     except Exception as e:
@@ -2553,6 +2567,8 @@ def apply_leave_for_absent_day(employee_id):
             emp = Employee.query.get(employee_id)
         if not emp:
             return jsonify({"success": False, "error": "Employee not found"}), 404
+
+        target_user_id = emp.user_id if (emp and emp.user_id) else employee_id
 
         # Deduct leave balance from employee_leave_balances table
         from models.leave import EmployeeLeaveBalance
@@ -2594,17 +2610,17 @@ def apply_leave_for_absent_day(employee_id):
         db.session.add(leave_req)
 
         attendance = Attendance.query.filter_by(
-            user_id=emp.user_id,
+            user_id=target_user_id,
             attendance_date=target_date
         ).first()
 
         if not attendance:
             attendance = Attendance(
-                user_id=emp.user_id,
+                user_id=target_user_id,
                 attendance_date=target_date,
                 status="Leave",
                 leave_type=leave_type,
-                manager_status="Need Clarification",
+                manager_status="Clarification Provided",
                 check_in=None,
                 check_out=None,
                 total_hours=0.0,
@@ -2614,7 +2630,7 @@ def apply_leave_for_absent_day(employee_id):
         else:
             attendance.status = "Leave"
             attendance.leave_type = leave_type
-            attendance.manager_status = "Need Clarification"
+            attendance.manager_status = "Clarification Provided"
             attendance.check_in = None
             attendance.check_out = None
             attendance.total_hours = 0.0
@@ -2622,7 +2638,18 @@ def apply_leave_for_absent_day(employee_id):
             history.append(msg_entry)
             attendance.clarification_history = history
 
+        flag_modified(attendance, "clarification_history")
+        flag_modified(attendance, "manager_status")
+        flag_modified(attendance, "leave_type")
+
         db.session.commit()
+
+        try:
+            from extensions import socketio
+            socketio.emit("attendance_update", {"user_id": target_user_id, "manager_status": "Clarification Provided"})
+        except Exception as socket_err:
+            print("Failed to emit leave socket:", str(socket_err))
+
         return jsonify({"success": True, "message": f"{leave_type} applied. Awaiting manager approval."})
 
     except Exception as e:
@@ -2652,6 +2679,8 @@ def accept_lop(employee_id):
         if not emp:
             return jsonify({"success": False, "error": "Employee not found"}), 404
 
+        target_user_id = emp.user_id if (emp and emp.user_id) else employee_id
+
         msg_entry = {
             "id": f"msg_{int(datetime.now().timestamp())}",
             "sender_role": "employee",
@@ -2661,16 +2690,16 @@ def accept_lop(employee_id):
         }
 
         attendance = Attendance.query.filter_by(
-            user_id=emp.user_id,
+            user_id=target_user_id,
             attendance_date=target_date
         ).first()
 
         if not attendance:
             attendance = Attendance(
-                user_id=emp.user_id,
+                user_id=target_user_id,
                 attendance_date=target_date,
                 status="Absent",
-                manager_status="Need Clarification",
+                manager_status="Clarification Provided",
                 is_lop=True,
                 check_in=None,
                 check_out=None,
@@ -2680,15 +2709,25 @@ def accept_lop(employee_id):
             db.session.add(attendance)
         else:
             attendance.status = "Absent"
-            attendance.manager_status = "Need Clarification"
+            attendance.manager_status = "Clarification Provided"
             attendance.is_lop = True
             attendance.check_in = None
             attendance.check_out = None
             history = list(attendance.clarification_history or [])
             history.append(msg_entry)
             attendance.clarification_history = history
+            flag_modified(attendance, "clarification_history")
+            flag_modified(attendance, "manager_status")
+            flag_modified(attendance, "is_lop")
 
         db.session.commit()
+
+        try:
+            from extensions import socketio
+            socketio.emit("attendance_update", {"user_id": target_user_id, "manager_status": "Clarification Provided"})
+        except Exception as socket_err:
+            print("Failed to emit LOP socket:", str(socket_err))
+
         return jsonify({"success": True, "message": "LOP accepted. Awaiting manager approval."})
 
     except Exception as e:
@@ -2824,13 +2863,24 @@ def reply_clarification(employee_id):
         if not emp:
             return jsonify({"success": False, "error": "Employee not found"}), 404
 
+        target_user_id = emp.user_id if (emp and emp.user_id) else employee_id
+
         attendances = Attendance.query.filter_by(
-            user_id=emp.user_id,
+            user_id=target_user_id,
             attendance_date=target_date
         ).all()
 
         if not attendances:
-            return jsonify({"success": False, "error": "Attendance record not found"}), 404
+            # If no attendance record exists for an absent day query, create the record
+            att = Attendance(
+                user_id=target_user_id,
+                attendance_date=target_date,
+                status="Absent",
+                manager_status="Clarification Provided",
+                clarification_history=[]
+            )
+            db.session.add(att)
+            attendances = [att]
 
         msg_entry = {
             "id": f"msg_{int(datetime.now().timestamp())}",
@@ -2840,11 +2890,15 @@ def reply_clarification(employee_id):
             "timestamp": datetime.now().isoformat()
         }
 
+        from sqlalchemy.orm.attributes import flag_modified
+
         for att in attendances:
             att.manager_status = "Clarification Provided"
             history = list(att.clarification_history or [])
             history.append(msg_entry)
             att.clarification_history = history
+            flag_modified(att, "clarification_history")
+            flag_modified(att, "manager_status")
 
         db.session.commit()
 
