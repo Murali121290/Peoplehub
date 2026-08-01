@@ -17,6 +17,73 @@ const ShiftApprovalPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState("All");
   const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
 
+  // Direct Manager Log Modal State
+  const [showManagerLogModal, setShowManagerLogModal] = useState(false);
+  const [teamEmployees, setTeamEmployees] = useState<any[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+  const [modalRequestType, setModalRequestType] = useState<"WFH" | "Office" | "Shift">("WFH");
+  const [modalFromDate, setModalFromDate] = useState<string>("");
+  const [modalToDate, setModalToDate] = useState<string>("");
+  const [modalRequestedShift, setModalRequestedShift] = useState<string>("General Shift");
+  const [modalReason, setModalReason] = useState<string>("");
+  const [isSubmittingLog, setIsSubmittingLog] = useState(false);
+
+  const fetchEmployees = async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/employees/`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeamEmployees(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch employees", err);
+    }
+  };
+
+  const handleManagerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEmployeeId || !modalFromDate || !modalToDate) {
+      toast.error("Please fill in all required fields.");
+      return;
+    }
+
+    try {
+      setIsSubmittingLog(true);
+      const res = await fetch(`${BASE_URL}/shifts/manager-submit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          employee_id: selectedEmployeeId,
+          from_date: modalFromDate,
+          to_date: modalToDate,
+          request_type: modalRequestType,
+          requested_work_mode: modalRequestType === "WFH" ? "WFH" : "Office",
+          requested_shift: modalRequestType === "Shift" ? modalRequestedShift : "General Shift",
+          reason: modalReason || "Logged directly by manager",
+          manager_name: user?.full_name || "Manager"
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || "Shift/WFH entry logged & approved!");
+        setShowManagerLogModal(false);
+        setModalReason("");
+        fetchShiftRequests();
+      } else {
+        toast.error(data.message || "Failed to log entry");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("An error occurred while logging shift entry.");
+    } finally {
+      setIsSubmittingLog(false);
+    }
+  };
+
   const toggleReason = (id: number) => {
     setExpandedReasons(prev => ({
       ...prev,
@@ -43,6 +110,7 @@ const ShiftApprovalPage: React.FC = () => {
 
   useEffect(() => {
     fetchShiftRequests();
+    fetchEmployees();
   }, []);
 
   const checkManagerMatch = (reportingManager: string | null | undefined, managerFullName: string | null | undefined) => {
@@ -143,14 +211,21 @@ const ShiftApprovalPage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div className="w-full px-4 sm:px-6 lg:px-8 pt-3 pb-1">
+      <div className="mb-3 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Shift Approval Requests</h1>
           <p className="mt-1 text-sm text-neutral-500">Manage and review shift change applications from your team.</p>
         </div>
 
         <div className="flex items-center gap-3">
+          <Button
+            variant="primary"
+            onClick={() => setShowManagerLogModal(true)}
+            className="flex items-center gap-2 font-semibold shadow-md"
+          >
+            + Log Shift / WFH Entry
+          </Button>
           <div className="relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
             <input
@@ -176,19 +251,19 @@ const ShiftApprovalPage: React.FC = () => {
       </div>
 
       <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-115px)]">
           <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-neutral-50/50 border-b border-neutral-200 text-neutral-500 text-[10px] font-semibold uppercase tracking-wider">
-                <th className="text-left p-4 pl-6">Employee</th>
-                <th className="text-left p-4">Emp ID</th>
-                <th className="text-left p-4">Request Type</th>
-                <th className="text-left p-4">Current Shift</th>
-                <th className="text-left p-4">Requested Shift</th>
-                <th className="text-left p-4">Date Range</th>
-                <th className="text-left p-4">Reason</th>
-                <th className="text-center p-4">Status</th>
-                <th className="text-center p-4">Action</th>
+            <thead className="sticky top-0 z-20 bg-neutral-50">
+              <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 text-[10px] font-semibold uppercase tracking-wider">
+                <th className="text-left p-4 pl-6 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Employee</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Emp ID</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Request Type</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Current Shift</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Requested Shift</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Date Range</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Reason</th>
+                <th className="text-center p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Status</th>
+                <th className="text-center p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200/80">
@@ -375,6 +450,170 @@ const ShiftApprovalPage: React.FC = () => {
           </table>
         </div>
       </Card>
+      {/* Manager Direct Log Shift / WFH Modal */}
+      {showManagerLogModal && (
+        <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-neutral-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-primary-600 px-6 py-4 flex items-center justify-between text-white">
+              <h3 className="text-base font-bold">Log Direct Shift / WFH Request</h3>
+              <button
+                type="button"
+                onClick={() => setShowManagerLogModal(false)}
+                className="text-white/80 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleManagerSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                  Employee <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  value={selectedEmployeeId}
+                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                  className="w-full p-2.5 border border-neutral-300 rounded-xl text-xs bg-neutral-50/50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">Select an Employee...</option>
+                  {teamEmployees
+                    .filter((emp) =>
+                      user?.access_level?.toLowerCase() === "admin" ||
+                      checkManagerMatch(emp.reporting_manager, user?.full_name)
+                    )
+                    .sort((a, b) => {
+                      const nameA = `${a.first_name || ""} ${a.last_name || ""}`.trim().toLowerCase();
+                      const nameB = `${b.first_name || ""} ${b.last_name || ""}`.trim().toLowerCase();
+                      return nameA.localeCompare(nameB);
+                    })
+                    .map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.first_name} {emp.last_name} ({emp.employee_id || emp.id})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                  Request Type <span className="text-red-500">*</span>
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModalRequestType("WFH")}
+                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
+                      modalRequestType === "WFH"
+                        ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                        : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
+                    }`}
+                  >
+                    🏠 WFH
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalRequestType("Office")}
+                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
+                      modalRequestType === "Office"
+                        ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                        : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
+                    }`}
+                  >
+                    🏢 Office Mode
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalRequestType("Shift")}
+                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
+                      modalRequestType === "Shift"
+                        ? "bg-amber-600 text-white border-amber-600 shadow-xs"
+                        : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
+                    }`}
+                  >
+                    ⏱️ Shift Change
+                  </button>
+                </div>
+              </div>
+
+              {modalRequestType === "Shift" && (
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                    Target Shift Timing <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={modalRequestedShift}
+                    onChange={(e) => setModalRequestedShift(e.target.value)}
+                    className="w-full p-2.5 border border-neutral-300 rounded-xl text-xs bg-neutral-50/50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="General Shift">General Shift (09:00 AM - 06:00 PM)</option>
+                    <option value="First Shift">First Shift (06:00 AM - 02:30 PM)</option>
+                    <option value="Second Shift">Second Shift (01:30 PM - 10:00 PM)</option>
+                    <option value="Night Shift">Night Shift (10:00 PM - 06:00 AM)</option>
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                    From Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={modalFromDate}
+                    onChange={(e) => setModalFromDate(e.target.value)}
+                    className="w-full p-2 border border-neutral-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                    To Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={modalToDate}
+                    onChange={(e) => setModalToDate(e.target.value)}
+                    className="w-full p-2 border border-neutral-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                  Reason / Manager Note
+                </label>
+                <textarea
+                  rows={2}
+                  value={modalReason}
+                  onChange={(e) => setModalReason(e.target.value)}
+                  placeholder="e.g. Employee forgot to submit WFH request on time..."
+                  className="w-full p-2.5 border border-neutral-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-neutral-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowManagerLogModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingLog}
+                  className="px-5 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-md transition-all disabled:opacity-50"
+                >
+                  {isSubmittingLog ? "Submitting..." : "Log & Approve Entry"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

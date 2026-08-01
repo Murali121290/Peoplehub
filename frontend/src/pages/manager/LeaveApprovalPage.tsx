@@ -154,8 +154,8 @@ const LeaveApprovalPage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div className="w-full px-4 sm:px-6 lg:px-8 pt-3 pb-1">
+      <div className="mb-3 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Leave Approval Requests</h1>
           <p className="mt-1 text-sm text-neutral-500">Manage and review leave requests from your team members.</p>
@@ -187,16 +187,16 @@ const LeaveApprovalPage: React.FC = () => {
       </div>
 
       <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-115px)]">
           <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-neutral-50/50 border-b border-neutral-200 text-neutral-500 text-xs font-semibold uppercase tracking-wider">
-                <th className="text-left p-4 pl-6">Employee</th>
-                <th className="text-left p-4">Emp ID</th>
-                <th className="text-left p-4">Request Type</th>
-                <th className="text-left p-4">Date Range / Details</th>
-                <th className="text-center p-4">Status</th>
-                <th className="text-center p-4">Action</th>
+            <thead className="sticky top-0 z-20 bg-neutral-50">
+              <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 text-xs font-semibold uppercase tracking-wider">
+                <th className="text-left p-4 pl-6 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Employee</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Emp ID</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Request Type</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Date Range / Details</th>
+                <th className="text-center p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Status</th>
+                <th className="text-center p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200/80">
