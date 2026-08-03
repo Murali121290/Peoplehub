@@ -534,6 +534,22 @@ def sync_card_logs():
             else:
                 attendance.card_working_hours = 0.0
 
+            # Sync to web check_in / check_out columns if they are NULL
+            if attendance.card_check_in and not attendance.check_in:
+                attendance.check_in = attendance.card_check_in
+            if attendance.card_check_out and not attendance.check_out:
+                attendance.check_out = attendance.card_check_out
+
+            # Calculate web working hours if both check_in and check_out are present
+            if attendance.check_in and attendance.check_out:
+                total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
+                break_minutes = attendance.total_break_minutes or 0
+                gap_minutes = attendance.total_gap_minutes or 0
+                total_seconds -= break_minutes * 60
+                total_seconds -= gap_minutes * 60
+                hours_decimal = max(total_seconds, 0) / 3600
+                attendance.total_hours = int(hours_decimal * 100) / 100
+
             # Recalculate status
             web_hrs = attendance.total_hours or 0.0
             card_hrs = attendance.card_working_hours or 0.0
@@ -596,8 +612,7 @@ def attendance_status(user_id):
 
     attendance = Attendance.query.filter_by(
         user_id=user_id,
-        attendance_date=get_ist_today(),
-        check_out=None
+        attendance_date=get_ist_today()
     ).order_by(
         Attendance.id.desc()
     ).first()
@@ -607,37 +622,29 @@ def attendance_status(user_id):
             "checked_in": False
         })
 
+    # User is checked in if they have check_in/card_check_in and haven't checked out on those channels
+    web_active = (attendance.check_in is not None) and (attendance.check_out is None)
+    card_active = (attendance.card_check_in is not None) and (attendance.card_check_out is None)
+    is_checked_in = web_active or card_active
+
+    if not is_checked_in:
+        return jsonify({
+            "checked_in": False
+        })
+
+    effective_check_in = attendance.check_in or attendance.card_check_in
+
     return jsonify({
-    "checked_in": True,
-
-    "check_in":
-        attendance.check_in.isoformat(),
-
-    "lunch_break":
-        attendance.lunch_break,
-
-    "tea_break":
-        attendance.tea_break,
-
-    "lunch_start":
-        attendance.lunch_start.isoformat()
-        if attendance.lunch_start
-        else None,
-
-    "tea_start":
-        attendance.tea_start.isoformat()
-        if attendance.tea_start
-        else None,
-
-    "lunch_minutes":
-        attendance.lunch_minutes or 0,
-
-    "tea_minutes":
-        attendance.tea_minutes or 0,
-
-    "total_break_minutes":
-        attendance.total_break_minutes or 0
-})
+        "checked_in": True,
+        "check_in": effective_check_in.isoformat() if effective_check_in else None,
+        "lunch_break": attendance.lunch_break,
+        "tea_break": attendance.tea_break,
+        "lunch_start": attendance.lunch_start.isoformat() if attendance.lunch_start else None,
+        "tea_start": attendance.tea_start.isoformat() if attendance.tea_start else None,
+        "lunch_minutes": attendance.lunch_minutes or 0,
+        "tea_minutes": attendance.tea_minutes or 0,
+        "total_break_minutes": attendance.total_break_minutes or 0
+    })
 
 
 
@@ -654,8 +661,7 @@ def lunch_break():
 
         attendance = Attendance.query.filter_by(
             user_id=data["user_id"],
-            attendance_date=get_ist_today(),
-            check_out=None
+            attendance_date=get_ist_today()
         ).order_by(
             Attendance.id.desc()
         ).first()
@@ -665,6 +671,15 @@ def lunch_break():
                 "success": False,
                 "error": "Attendance not found"
             }), 404
+
+        # Verify they are currently checked in (web active or card active)
+        web_active = (attendance.check_in is not None) and (attendance.check_out is None)
+        card_active = (attendance.card_check_in is not None) and (attendance.card_check_out is None)
+        if not (web_active or card_active):
+            return jsonify({
+                "success": False,
+                "error": "User is not checked in or has already checked out."
+            }), 400
 
         action = data.get("action")
 
@@ -748,8 +763,7 @@ def tea_break():
 
         attendance = Attendance.query.filter_by(
             user_id=data["user_id"],
-            attendance_date=get_ist_today(),
-            check_out=None
+            attendance_date=get_ist_today()
         ).order_by(
             Attendance.id.desc()
         ).first()
@@ -759,6 +773,15 @@ def tea_break():
                 "success": False,
                 "error": "Attendance not found"
             }), 404
+
+        # Verify they are currently checked in (web active or card active)
+        web_active = (attendance.check_in is not None) and (attendance.check_out is None)
+        card_active = (attendance.card_check_in is not None) and (attendance.card_check_out is None)
+        if not (web_active or card_active):
+            return jsonify({
+                "success": False,
+                "error": "User is not checked in or has already checked out."
+            }), 400
 
         action = data.get("action")
 
@@ -3545,6 +3568,7 @@ def trigger_db_sync():
                     MAX(LogDateTime) AS LastPunch
                 FROM AttendanceLogs
                 WHERE LogDate >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                  AND LogDate < CURDATE()
                 GROUP BY EmployeeCode, LogDate
             """
             cursor.execute(sql)
@@ -3574,6 +3598,10 @@ def trigger_db_sync():
                 continue
 
             att_date = first_punch.date()
+
+            # Ignore same day (today) entries
+            if att_date == get_ist_today():
+                continue
 
             # Find existing or create new attendance
             attendance = Attendance.query.filter_by(
