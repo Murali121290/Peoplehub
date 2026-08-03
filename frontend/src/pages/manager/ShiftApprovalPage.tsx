@@ -9,6 +9,39 @@ import ApprovalNavigationTabs from "../../components/ApprovalNavigationTabs";
 
 const BASE_URL = `${API_URL}/api`;
 
+const formatDateTime = (isoString: string | null | undefined) => {
+  if (!isoString) return "—";
+  try {
+    const isMidnight = isoString.includes("T00:00:00");
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return "—";
+    if (isMidnight) {
+      return d.toLocaleDateString("en-US", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric"
+      });
+    }
+    return d.toLocaleString("en-US", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true
+    });
+  } catch (e) {
+    return "—";
+  }
+};
+
+const getActionedAtText = (r: any) => {
+  if (r.status === "Approved") return formatDateTime(r.approved_at);
+  if (r.status === "Rejected") return formatDateTime(r.rejected_at);
+  if (r.status === "Cancelled") return formatDateTime(r.cancelled_at);
+  return "Pending";
+};
+
 const ShiftApprovalPage: React.FC = () => {
   const { user, token } = useAuthStore();
   const [shiftRequests, setShiftRequests] = useState<any[]>([]);
@@ -192,6 +225,8 @@ const ShiftApprovalPage: React.FC = () => {
                 <th className="text-left p-4">Requested Shift</th>
                 <th className="text-left p-4">Date Range</th>
                 <th className="text-left p-4">Reason</th>
+                <th className="text-left p-4">Applied At</th>
+                <th className="text-left p-4">Actioned At</th>
                 <th className="text-center p-4">Status</th>
                 <th className="text-center p-4">Action</th>
               </tr>
@@ -199,7 +234,7 @@ const ShiftApprovalPage: React.FC = () => {
             <tbody className="divide-y divide-neutral-200/80">
               {safeManagerShiftRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
+                  <td colSpan={11} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
                     <div className="flex flex-col items-center justify-center gap-2 py-4">
                       <CheckIcon className="w-12 h-12 text-success-400" />
                       <p className="text-xs font-bold text-neutral-500">All caught up!</p>
@@ -278,6 +313,12 @@ const ShiftApprovalPage: React.FC = () => {
                           ) : (
                             <span className="text-neutral-400">-</span>
                           )}
+                        </td>
+                        <td className="p-4 text-xs font-medium text-neutral-600">
+                          {formatDateTime(item.created_at)}
+                        </td>
+                        <td className="p-4 text-xs font-medium text-neutral-800">
+                          {getActionedAtText(item)}
                         </td>
                         <td className="p-4 text-center">
                           <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getStatusColor(item.status)}`}>
