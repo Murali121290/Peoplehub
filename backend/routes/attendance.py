@@ -1735,18 +1735,14 @@ def export_monthly_attendance():
             total_lop_days = 0.0
 
             leave_dates_list = []
-            
-            # Record leave dates text
-            with open("test_out.txt", "a", encoding="utf-8") as f_out:
-                f_out.write(f"DEBUG: emp={employee.first_name}, leaves_count={len(emp_leaves)}\n")
-                for leave in emp_leaves:
-                    if leave.from_date and leave.to_date:
-                        f_out.write(f"  LEAVE: {leave.from_date} (type={type(leave.from_date)}) to {leave.to_date} (type={type(leave.to_date)})\n")
-                        cl_start = max(leave.from_date, start_date)
-                        cl_end = min(leave.to_date, end_date)
-                        leave_dates_list.append(
-                            f"{cl_start.strftime('%d-%b-%Y')} to {cl_end.strftime('%d-%b-%Y')}"
-                        )
+
+            for leave in emp_leaves:
+                if leave.from_date and leave.to_date:
+                    cl_start = max(leave.from_date, start_date)
+                    cl_end = min(leave.to_date, end_date)
+                    leave_dates_list.append(
+                        f"{cl_start.strftime('%d-%b-%Y')} to {cl_end.strftime('%d-%b-%Y')}"
+                    )
 
             num_days_in_cycle = (end_date - start_date).days + 1
             for i in range(num_days_in_cycle):
@@ -1770,9 +1766,6 @@ def export_monthly_attendance():
 
                 # Check if there is an approved leave request on this date
                 day_leaves = [l for l in emp_leaves if l.from_date <= d and l.to_date >= d]
-                if day_leaves:
-                    with open("test_out.txt", "a", encoding="utf-8") as f_out:
-                        f_out.write(f"  MATCH d={d} (type={type(d)}): {[l.id for l in day_leaves]}\n")
                 leave_val = 0.0
                 if day_leaves:
                     first_leave = day_leaves[0]

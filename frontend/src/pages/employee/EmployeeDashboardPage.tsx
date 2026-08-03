@@ -55,8 +55,8 @@ const NewHireTab: React.FC<{ employees: any[] }> = ({ employees }) => {
       const today = new Date();
       const diffTime = today.getTime() - joinDate.getTime();
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      // 2 months is roughly 60 days
-      return diffDays >= 0 && diffDays <= 60 && (emp.status || "").toLowerCase() !== "inactive";
+      // Show new hires only for 30 days from joining date
+      return diffDays >= 0 && diffDays <= 30 && (emp.status || "").toLowerCase() !== "inactive";
     }).sort((a, b) => new Date(b.joining_date).getTime() - new Date(a.joining_date).getTime());
   }, [employees]);
 
@@ -65,7 +65,7 @@ const NewHireTab: React.FC<{ employees: any[] }> = ({ employees }) => {
       {newJoiners.length === 0 ? (
         <div className="col-span-full text-center py-12 bg-white rounded-2xl border border-neutral-200 shadow-sm">
           <span className="text-4xl">👋</span>
-          <p className="mt-4 text-neutral-500 font-medium">No new joiners in the last 2 months.</p>
+          <p className="mt-4 text-neutral-500 font-medium">No new joiners in the last 30 days.</p>
         </div>
       ) : (
         newJoiners.map((emp) => {

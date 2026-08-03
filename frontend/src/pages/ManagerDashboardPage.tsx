@@ -276,7 +276,7 @@ const ManagerDashboardPage = () => {
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<number | null>(null);
   const [selectedCycle, setSelectedCycle] = useState<string>("");
   const [availableMonths, setAvailableMonths] = useState<any[]>([]);
-  const [selectedReportCycle, setSelectedReportCycle] = useState<string>("");
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
 
   // Yesterday Summary States
   const [yesterdaySummary, setYesterdaySummary] = useState<any[]>([]);
@@ -407,7 +407,6 @@ const ManagerDashboardPage = () => {
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
           setAvailableMonths(data);
-          setSelectedReportCycle(`${data[0].month},${data[0].year}`);
         }
       } catch (err) {
         console.error("Failed to load available cycles:", err);
@@ -620,31 +619,6 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const downloadAttendance = async () => {
-    try {
-      let url = `${BASE_URL}/attendance/export-monthly?manager_id=${userId}`;
-      if (selectedReportCycle) {
-        const [m, y] = selectedReportCycle.split(",");
-        url += `&month=${m}&year=${y}`;
-      }
-      const token = localStorage.getItem("token");
-      const response = await fetch(url, {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      const blob = await response.blob();
-      const urlBlob = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = urlBlob;
-      const activeLabel = availableMonths.find((m) => `${m.month},${m.year}` === selectedReportCycle)?.label || "";
-      const filenameSuffix = activeLabel ? `_${activeLabel.replace(" ", "_")}` : "";
-      a.download = `Team_Attendance_Report${filenameSuffix}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (error) {
-      console.error("Failed to download team attendance report:", error);
-    }
-  };
 
   // Leave requests logic moved to LeaveApprovalPage
 
@@ -1016,66 +990,120 @@ const ManagerDashboardPage = () => {
               })}
             </div>
 
-            {availableMonths.length > 0 && (
-              <select
-                value={selectedReportCycle}
-                onChange={(e) => setSelectedReportCycle(e.target.value)}
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setShowExportDropdown(!showExportDropdown)}
                 style={{
-                  height: "42px",
-                  padding: "0 10px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "9px 16px",
                   borderRadius: "12px",
-                  border: `1px solid ${THEME.border}`,
-                  background: THEME.surface,
-                  outline: "none",
+                  border: "none",
+                  background: THEME.navy,
+                  color: "#fff",
                   fontSize: "13px",
-                  color: THEME.textSoft,
+                  fontWeight: 700,
                   cursor: "pointer",
-                  fontWeight: 600,
+                  boxShadow: "0 4px 10px rgba(15,23,42,0.15)",
+                  height: "42px",
                 }}
               >
-                {availableMonths.map((m: any) => (
-                  <option key={`${m.month}-${m.year}`} value={`${m.month},${m.year}`}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            )}
+                <ArrowDownTrayIcon style={{ width: "16px", height: "16px" }} />
+                Export Team Attendance
+              </button>
 
-            <button
-              onClick={downloadAttendance}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "9px 16px",
-                borderRadius: "12px",
-                border: "none",
-                background: THEME.navy,
-                color: "#fff",
-                fontSize: "13px",
-                fontWeight: 700,
-                cursor: "pointer",
-                boxShadow: "0 4px 10px rgba(15,23,42,0.15)",
-                height: "42px",
-              }}
-            >
-              <ArrowDownTrayIcon style={{ width: "16px", height: "16px" }} />
-              Export Team Attendance
-            </button>
-
-            <div
-              style={{
-                padding: "10px 14px",
-                borderRadius: "12px",
-                background: THEME.primarySoft,
-                border: `1px solid #c7f9e9`,
-                color: THEME.primaryDark,
-                fontSize: "13px",
-                fontWeight: 700,
-              }}
-            >
-              {managerName ? `Welcome, ${managerName}` : "Welcome, Manager"}
+              {showExportDropdown && availableMonths.length > 0 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: "8px",
+                    minWidth: "280px",
+                    borderRadius: "12px",
+                    border: `1px solid ${THEME.border}`,
+                    background: THEME.surface,
+                    boxShadow: "0 12px 32px rgba(15, 23, 42, 0.15)",
+                    zIndex: 50,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "10px 12px",
+                      borderBottom: `1px solid ${THEME.border}`,
+                      background: THEME.surfaceSoft,
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: THEME.textSoft,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Select Month
+                  </div>
+                  {availableMonths.map((m: any) => (
+                    <button
+                      key={`${m.month}-${m.year}`}
+                      onClick={async () => {
+                        setShowExportDropdown(false);
+                        try {
+                          let url = `${BASE_URL}/attendance/export-monthly?manager_id=${userId}`;
+                          url += `&month=${m.month}&year=${m.year}`;
+                          const token = localStorage.getItem("token");
+                          const response = await fetch(url, {
+                            headers: { "Authorization": `Bearer ${token}` }
+                          });
+                          const blob = await response.blob();
+                          const urlBlob = window.URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = urlBlob;
+                          a.download = `Team_Attendance_Report_${m.label.replace(/\s+/g, "_")}.xlsx`;
+                          document.body.appendChild(a);
+                          a.click();
+                          a.remove();
+                        } catch (error) {
+                          console.error("Failed to download team attendance report:", error);
+                        }
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "12px 16px",
+                        border: "none",
+                        background: "transparent",
+                        color: THEME.text,
+                        fontSize: "13px",
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        transition: "all 0.2s ease",
+                        borderBottom: `1px solid ${THEME.border}`,
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.target as HTMLElement).style.background = THEME.surfaceMuted;
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.target as HTMLElement).style.background = "transparent";
+                      }}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+
+            {showExportDropdown && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 40,
+                }}
+                onClick={() => setShowExportDropdown(false)}
+              />
+            )}
           </div>
         </div>
       </header>
@@ -1573,21 +1601,24 @@ const ManagerDashboardPage = () => {
                                   </div>
                                   {member.is_reporting_manager && (
                                     <span
-                                      title="This employee is also a reporting manager for other team members"
+                                      title={`This employee manages ${member.report_count || 0} team members`}
                                       style={{
                                         display: "inline-flex",
                                         alignItems: "center",
-                                        padding: "2px 8px",
-                                        borderRadius: "999px",
+                                        gap: "4px",
+                                        padding: "3px 10px",
+                                        borderRadius: "6px",
                                         background: "#f0fdf4",
                                         border: "1px solid #bbf7d0",
                                         color: "#166534",
-                                        fontSize: "10px",
-                                        fontWeight: 800,
+                                        fontSize: "11px",
+                                        fontWeight: 700,
                                         flexShrink: 0,
+                                        whiteSpace: "nowrap",
                                       }}
                                     >
-                                      People Manager
+                                      <span>👥</span>
+                                      <span>People Manager ({member.report_count || 0})</span>
                                     </span>
                                   )}
                                   {member.isWfh && (
@@ -2044,21 +2075,24 @@ const ManagerDashboardPage = () => {
                                     <span style={{ fontWeight: 700, color: THEME.navy }}>{member.name}</span>
                                     {member.is_reporting_manager && (
                                       <span
-                                        title="This employee is also a reporting manager for other team members"
+                                        title={`This employee manages ${member.report_count || 0} team members`}
                                         style={{
                                           display: "inline-flex",
                                           alignItems: "center",
-                                          padding: "2px 8px",
-                                          borderRadius: "999px",
+                                          gap: "4px",
+                                          padding: "3px 10px",
+                                          borderRadius: "6px",
                                           background: "#f0fdf4",
                                           border: "1px solid #bbf7d0",
                                           color: "#166534",
-                                          fontSize: "10px",
-                                          fontWeight: 800,
+                                          fontSize: "11px",
+                                          fontWeight: 700,
                                           flexShrink: 0,
+                                          whiteSpace: "nowrap",
                                         }}
                                       >
-                                        People Manager ({member.report_count})
+                                        <span>👥</span>
+                                        <span>People Manager ({member.report_count || 0})</span>
                                       </span>
                                     )}
                                     {member.isWfh && (
