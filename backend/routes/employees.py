@@ -1219,7 +1219,7 @@ def get_team_attendance(user_id):
             if not manager:
                 return jsonify([])
             manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
-            reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
+            reporting_list = [e for e in all_employees if is_manager_match(e.reporting_manager, manager_full_name)]
 
         for emp in reporting_list:
 

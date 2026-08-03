@@ -1560,7 +1560,7 @@ def export_monthly_attendance():
         # TITLE
         # =====================================
 
-        ws.merge_cells("A1:K1")
+        ws.merge_cells("A1:L1")
 
         ws["A1"] = "ATTENDANCE REPORT"
 
@@ -1581,7 +1581,7 @@ def export_monthly_attendance():
         # MONTH HEADER
         # =====================================
 
-        ws.merge_cells("A2:K2")
+        ws.merge_cells("A2:L2")
 
         ws["A2"] = (
             f"Attendance Summary "
@@ -1601,7 +1601,7 @@ def export_monthly_attendance():
         # =====================================
 
 
-        ws.merge_cells("A3:K3")
+        ws.merge_cells("A3:L3")
 
         ws["A3"] = (
     f"Attendance Cycle : "
@@ -1623,18 +1623,19 @@ def export_monthly_attendance():
         # =====================================
 
         headers = [
-    "S.No",
-    "Emp Code",
-    "Emp Name",
-    "D.O.J",
-    "Department",
-    "Total Days In Cycle",
-    "Days Payable",
-    "Total Days Worked",
-    "Total Leaves Taken",
-    "Date Of Leave",
-    "Remarks"
-]
+            "S.No",
+            "Emp Code",
+            "Emp Name",
+            "D.O.J",
+            "Department",
+            "Total Days In Cycle",
+            "Days Payable",
+            "Total Days Worked",
+            "Total Leaves Taken",
+            "LOP/Absent",
+            "Date Of Leave",
+            "Remarks"
+        ]
 
         for col_num, header in enumerate(
             headers,
@@ -1696,6 +1697,14 @@ def export_monthly_attendance():
         else:
             employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
+        # Fetch holidays and overrides within range
+        from models.holiday import Holiday, HolidayOverride
+        holidays = Holiday.query.filter(Holiday.date >= start_date, Holiday.date <= end_date).all()
+        overrides = HolidayOverride.query.filter(HolidayOverride.date >= start_date, HolidayOverride.date <= end_date).all()
+        
+        holiday_dict = {h.date: h.name for h in holidays}
+        override_dict = {o.date: (o.override_type, o.name) for o in overrides}
+
         row = 6
 
         for index, employee in enumerate(
@@ -1704,53 +1713,101 @@ def export_monthly_attendance():
         ):
 
             attendance_records = Attendance.query.filter(
-            Attendance.user_id == employee.user_id,
-            Attendance.attendance_date >= start_date,
-            Attendance.attendance_date <= end_date
+                Attendance.user_id == employee.user_id,
+                Attendance.attendance_date >= start_date,
+                Attendance.attendance_date <= end_date
             ).all()
 
-            leave_requests = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == employee.employee_id,
-                LeaveRequest.status == "Approved"
+            # Map attendance records by date
+            attendance_by_date = {a.attendance_date: a for a in attendance_records}
+
+            # Map approved leaves covering the dates
+            emp_leaves = LeaveRequest.query.filter(
+                LeaveRequest.employee_id.in_([employee.employee_id, str(employee.id)]),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.request_type == "Leave",
+                LeaveRequest.from_date <= end_date,
+                LeaveRequest.to_date >= start_date
             ).all()
 
-            days_worked = len([
-                a
-                for a in attendance_records
-                if a.status == "Present" 
-            ])
-
-            total_leaves = 0
+            total_days_worked = 0.0
+            total_leaves_taken = 0.0
+            total_lop_days = 0.0
 
             leave_dates_list = []
+            
+            # Record leave dates text
+            with open("test_out.txt", "a", encoding="utf-8") as f_out:
+                f_out.write(f"DEBUG: emp={employee.first_name}, leaves_count={len(emp_leaves)}\n")
+                for leave in emp_leaves:
+                    if leave.from_date and leave.to_date:
+                        f_out.write(f"  LEAVE: {leave.from_date} (type={type(leave.from_date)}) to {leave.to_date} (type={type(leave.to_date)})\n")
+                        cl_start = max(leave.from_date, start_date)
+                        cl_end = min(leave.to_date, end_date)
+                        leave_dates_list.append(
+                            f"{cl_start.strftime('%d-%b-%Y')} to {cl_end.strftime('%d-%b-%Y')}"
+                        )
 
-            for leave in leave_requests:
+            num_days_in_cycle = (end_date - start_date).days + 1
+            for i in range(num_days_in_cycle):
+                d = start_date + timedelta(days=i)
+                
+                # Check holiday/weekoff status
+                is_holiday = False
+                is_week_off = False
+                override = override_dict.get(d)
+                if override:
+                    if override[0] == "Holiday":
+                        is_holiday = True
+                else:
+                    if d in holiday_dict:
+                        is_holiday = True
+                    elif d.weekday() in (5, 6):
+                        is_week_off = True
 
-                total_leaves += (
-                    leave.total_days or 0
-                )
+                # Check if there is an attendance record
+                att = attendance_by_date.get(d)
 
-                if leave.from_date and leave.to_date:
+                # Check if there is an approved leave request on this date
+                day_leaves = [l for l in emp_leaves if l.from_date <= d and l.to_date >= d]
+                if day_leaves:
+                    with open("test_out.txt", "a", encoding="utf-8") as f_out:
+                        f_out.write(f"  MATCH d={d} (type={type(d)}): {[l.id for l in day_leaves]}\n")
+                leave_val = 0.0
+                if day_leaves:
+                    first_leave = day_leaves[0]
+                    if first_leave.total_days is not None and first_leave.total_days <= 0.5:
+                        leave_val = 0.5
+                    else:
+                        leave_val = 1.0
 
-                    leave_dates_list.append(
-                    f"{leave.from_date.strftime('%d-%b-%Y')} "
-                    f"to "
-                    f"{leave.to_date.strftime('%d-%b-%Y')}"
-                )
+                if att:
+                    if att.status == "Present":
+                        total_days_worked += 1.0
+                    elif att.status == "Half Day":
+                        total_days_worked += 0.5
+                        if leave_val > 0.0:
+                            total_leaves_taken += min(leave_val, 0.5)
+                        else:
+                            total_lop_days += 0.5
+                    elif att.status == "Leave":
+                        total_leaves_taken += leave_val if leave_val > 0.0 else 1.0
+                    elif att.status == "Absent":
+                        total_lop_days += 1.0
+                else:
+                    if is_holiday or is_week_off:
+                        pass
+                    else:
+                        if leave_val > 0.0:
+                            total_leaves_taken += leave_val
+                            if leave_val < 1.0:
+                                total_lop_days += (1.0 - leave_val)
+                        else:
+                            total_lop_days += 1.0
 
-            leave_dates = ", ".join(
-            leave_dates_list
-        )
-            remarks = ""
-
-            total_days_cycle = (
-            end_date - start_date
-        ).days + 1
-
-            days_payable = (
-            total_days_cycle -
-            total_leaves
-)
+            total_days_cycle = num_days_in_cycle
+            days_payable = total_days_cycle - total_lop_days
+            leave_dates = ", ".join(leave_dates_list)
 
             ws.cell(
                 row=row,
@@ -1805,24 +1862,29 @@ def export_monthly_attendance():
             ws.cell(
                row=row,
                column=8
-            ).value = days_worked
+            ).value = total_days_worked
 
             ws.cell(
             row=row,
             column=9
-            ).value = total_leaves
+            ).value = total_leaves_taken
 
             ws.cell(
             row=row,
             column=10
-            ).value = leave_dates
+            ).value = total_lop_days
 
             ws.cell(
             row=row,
             column=11
+            ).value = leave_dates
+
+            ws.cell(
+            row=row,
+            column=12
             ).value = ""
 
-            for col in range(1, 12):
+            for col in range(1, 13):
 
                 c = ws.cell(
                     row=row,

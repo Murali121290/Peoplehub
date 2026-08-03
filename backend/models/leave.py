@@ -41,6 +41,11 @@ class LeaveRequest(db.Model):
         default="Leave"
     )
 
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
     approved_by = db.Column(
         db.String(200),
         nullable=True
