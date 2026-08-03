@@ -531,6 +531,22 @@ def sync_card_logs():
             else:
                 attendance.card_working_hours = 0.0
 
+            # Sync to web check_in / check_out columns if they are NULL
+            if attendance.card_check_in and not attendance.check_in:
+                attendance.check_in = attendance.card_check_in
+            if attendance.card_check_out and not attendance.check_out:
+                attendance.check_out = attendance.card_check_out
+
+            # Calculate web working hours if both check_in and check_out are present
+            if attendance.check_in and attendance.check_out:
+                total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
+                break_minutes = attendance.total_break_minutes or 0
+                gap_minutes = attendance.total_gap_minutes or 0
+                total_seconds -= break_minutes * 60
+                total_seconds -= gap_minutes * 60
+                hours_decimal = max(total_seconds, 0) / 3600
+                attendance.total_hours = int(hours_decimal * 100) / 100
+
             # Recalculate status
             web_hrs = attendance.total_hours or 0.0
             card_hrs = attendance.card_working_hours or 0.0
