@@ -180,7 +180,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-xl font-bold text-neutral-800 tracking-tight flex items-center gap-2">
-            Shift & Schedule Requests
+            Shift & Work Mode Requests
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
             Apply and manage shift change logs and Work From Home (WFH) schedules

@@ -1688,6 +1688,27 @@ def get_peers_attendance(user_id):
         
         peers = [p for p in peers if p.reporting_manager and p.reporting_manager.strip().lower() == manager_name]
 
+        # Extract peer IDs for batch fetching
+        peer_user_ids = [p.user_id for p in peers]
+        peer_employee_ids = [str(p.id) for p in peers]
+
+        # Batch fetch attendances
+        attendances = Attendance.query.filter(
+            Attendance.user_id.in_(peer_user_ids),
+            Attendance.attendance_date == today
+        ).all()
+        attendance_by_user = {a.user_id: a for a in attendances}
+
+        # Batch fetch approved leaves
+        from models.leave import LeaveRequest
+        leaves = LeaveRequest.query.filter(
+            LeaveRequest.employee_id.in_(peer_employee_ids),
+            LeaveRequest.status == "Approved",
+            LeaveRequest.from_date <= today,
+            LeaveRequest.to_date >= today
+        ).all()
+        leave_by_employee = {str(l.employee_id): l for l in leaves}
+
         result = []
         for peer in peers:
             attendance = Attendance.query.filter_by(
@@ -1878,10 +1899,14 @@ def get_team_attendance_by_id(team_id):
                     from datetime import datetime
                     from zoneinfo import ZoneInfo
                     now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
-                    elapsed = (now_ist - attendance.check_in).total_seconds()
-                    break_secs = (attendance.total_break_minutes or 0) * 60
-                    working_hours = max(elapsed - break_secs, 0) / 3600
-                    total_hours = elapsed / 3600
+                    if attendance.check_in:
+                        elapsed = (now_ist - attendance.check_in).total_seconds()
+                        break_secs = (attendance.total_break_minutes or 0) * 60
+                        working_hours = max(elapsed - break_secs, 0) / 3600
+                        total_hours = elapsed / 3600
+                    else:
+                        working_hours = 0.0
+                        total_hours = 0.0
                     
             working_hours = int(working_hours * 100) / 100
             total_hours = int(total_hours * 100) / 100

@@ -199,13 +199,37 @@ def get_announcements():
                 Communication.created_at.desc()
             ).all()
 
+        # Map employee IDs to full names for any legacy integer likes
+        from models.employee import Employee
+        all_emps = Employee.query.all()
+        emp_map = {e.id: f"{e.first_name} {e.last_name}".strip() for e in all_emps}
+        # Also map user_id if employee.id differs
+        for e in all_emps:
+            if e.user_id and e.user_id not in emp_map:
+                emp_map[e.user_id] = f"{e.first_name} {e.last_name}".strip()
+
+        formatted_announcements = []
+        for ann in announcements:
+            d = ann.to_dict()
+            likes = d.get("likes", [])
+            normalized_likes = []
+            for l in likes:
+                if isinstance(l, dict):
+                    normalized_likes.append(l)
+                elif isinstance(l, int):
+                    name = emp_map.get(l, f"Employee #{l}")
+                    normalized_likes.append({
+                        "employee_id": l,
+                        "name": name,
+                        "reaction": "👍"
+                    })
+            d["likes"] = normalized_likes
+            formatted_announcements.append(d)
+
         return jsonify({
             "success": True,
-            "count": len(announcements),
-            "announcements": [
-                announcement.to_dict()
-                for announcement in announcements
-            ]
+            "count": len(formatted_announcements),
+            "announcements": formatted_announcements
         })
 
     except Exception as e:
@@ -401,6 +425,9 @@ def toggle_like(message_id):
     try:
         data = request.json
         employee_id = data.get("employee_id")
+        reaction_emoji = data.get("reaction", "👍")
+        employee_name = data.get("employee_name", "")
+
         if not employee_id:
             return jsonify({"success": False, "error": "employee_id required"}), 400
 
@@ -408,13 +435,65 @@ def toggle_like(message_id):
         if not message:
             return jsonify({"success": False, "error": "Message Not Found"}), 404
 
-        likes = list(message.likes) if message.likes else []
-        if employee_id in likes:
-            likes.remove(employee_id)
-        else:
-            likes.append(employee_id)
+        # Normalize likes JSON column into list of reaction dict objects
+        raw_likes = list(message.likes) if message.likes else []
+        reactions_list = []
 
-        message.likes = likes
+        for item in raw_likes:
+            if isinstance(item, dict):
+                reactions_list.append(item)
+            elif isinstance(item, int):
+                # Legacy compatibility: fallback integer ID to standard dict
+                reactions_list.append({
+                    "employee_id": item,
+                    "name": f"Employee #{item}",
+                    "reaction": "👍"
+                })
+
+        # Fetch employee details if name was not provided
+        if not employee_name:
+            from models.employee import Employee
+            from sqlalchemy import or_
+            emp = Employee.query.filter(
+                or_(
+                    Employee.id == employee_id,
+                    Employee.user_id == employee_id,
+                    Employee.employee_id == str(employee_id)
+                )
+            ).first()
+            if emp:
+                employee_name = f"{emp.first_name} {emp.last_name}".strip()
+            else:
+                employee_name = f"User #{employee_id}"
+
+        # Check if this user already reacted with the exact same emoji
+        existing_idx = -1
+        for idx, item in enumerate(reactions_list):
+            if item.get("employee_id") == employee_id:
+                existing_idx = idx
+                break
+
+        if existing_idx != -1:
+            prev_reaction = reactions_list[existing_idx].get("reaction")
+            if prev_reaction == reaction_emoji:
+                # Remove reaction if clicking the same emoji again
+                reactions_list.pop(existing_idx)
+            else:
+                # Update emoji reaction
+                reactions_list[existing_idx] = {
+                    "employee_id": employee_id,
+                    "name": employee_name,
+                    "reaction": reaction_emoji
+                }
+        else:
+            # Add new reaction
+            reactions_list.append({
+                "employee_id": employee_id,
+                "name": employee_name,
+                "reaction": reaction_emoji
+            })
+
+        message.likes = reactions_list
         
         # This tells SQLAlchemy that the JSON column changed
         from sqlalchemy.orm.attributes import flag_modified
@@ -422,7 +501,7 @@ def toggle_like(message_id):
         
         db.session.commit()
 
-        return jsonify({"success": True, "likes": likes})
+        return jsonify({"success": True, "likes": reactions_list})
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500

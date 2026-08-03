@@ -763,7 +763,9 @@ const ManagerDashboardPage = () => {
     if (filterStatus === "All") {
       matchesFilter = true;
     } else if (filterStatus === "Present") {
-      matchesFilter = member.attendanceStatus === "Present" || member.attendanceStatus === "Checked Out";
+      matchesFilter = !!member.check_in || !!member.card_check_in || member.attendanceStatus === "Present" || member.attendanceStatus === "Checked Out" || member.attendanceStatus === "Half Day";
+    } else if (filterStatus === "Not Checked In") {
+      matchesFilter = !member.check_in && !member.card_check_in && member.attendanceStatus !== "Present" && member.attendanceStatus !== "Checked Out" && member.attendanceStatus !== "Half Day";
     } else if (filterStatus === "Leave") {
       matchesFilter = member.status === "Leave" || member.attendanceStatus === "On Leave";
     } else if (filterStatus === "WFH") {
@@ -785,6 +787,19 @@ const ManagerDashboardPage = () => {
 
 
 
+  const notCheckedInCount = useMemo(
+    () =>
+      teamAttendance.filter(
+        (m) =>
+          !m.check_in &&
+          !m.card_check_in &&
+          m.attendance_status !== "Present" &&
+          m.attendance_status !== "Checked Out" &&
+          m.attendance_status !== "Half Day",
+      ).length,
+    [teamAttendance],
+  );
+
   const statCards = [
     {
       label: "Team Members",
@@ -796,11 +811,23 @@ const ManagerDashboardPage = () => {
     {
       label: "Present Today",
       value: teamAttendance.filter(
-        (m) => m.attendance_status === "Present" || m.attendance_status === "Checked Out" || m.attendance_status === "Half Day",
+        (m) =>
+          !!m.check_in ||
+          !!m.card_check_in ||
+          m.attendance_status === "Present" ||
+          m.attendance_status === "Checked Out" ||
+          m.attendance_status === "Half Day",
       ).length,
-      sub: "Available now",
+      sub: "Checked in (Web/Card)",
       icon: CheckCircleIcon,
       tone: "success",
+    },
+    {
+      label: "Not Checked In",
+      value: notCheckedInCount,
+      sub: "Pending check-in today",
+      icon: ArrowRightOnRectangleIcon,
+      tone: "default",
     },
     {
       label: "On Leave",
@@ -1128,6 +1155,7 @@ const ManagerDashboardPage = () => {
               const isSelected = (() => {
                 if (card.label === "Team Members" && attendanceFilter === "All") return true;
                 if (card.label === "Present Today" && attendanceFilter === "Present") return true;
+                if (card.label === "Not Checked In" && attendanceFilter === "Not Checked In") return true;
                 if (card.label === "On Leave" && attendanceFilter === "Leave") return true;
                 if (card.label === "Work From Home" && attendanceFilter === "WFH") return true;
                 if (card.label === "Shift Changed" && attendanceFilter === "Shift Changed") return true;
@@ -1141,6 +1169,7 @@ const ManagerDashboardPage = () => {
                     const statusMap: Record<string, string> = {
                       "Team Members": "All",
                       "Present Today": "Present",
+                      "Not Checked In": "Not Checked In",
                       "On Leave": "Leave",
                       "Work From Home": "WFH",
                       "Shift Changed": "Shift Changed",
@@ -1149,45 +1178,45 @@ const ManagerDashboardPage = () => {
                   }}
                   style={{
                     background: THEME.surface,
-                    borderRadius: "16px",
+                    borderRadius: "14px",
                     border: isSelected
                       ? `2px solid ${tone.iconColor}`
                       : `1px solid ${THEME.border}`,
                     boxShadow: isSelected
-                      ? "0 8px 20px -5px rgba(0, 0, 0, 0.08)"
-                      : "0 2px 12px rgba(15, 23, 42, 0.03)",
-                    padding: isSelected ? "10px 14px" : "12px 14px",
+                      ? "0 6px 16px -4px rgba(0, 0, 0, 0.08)"
+                      : "0 2px 10px rgba(15, 23, 42, 0.03)",
+                    padding: isSelected ? "8px 12px" : "9px 12px",
                     cursor: "pointer",
-                    transform: isSelected ? "scale(1.02)" : "scale(1)",
+                    transform: isSelected ? "scale(1.01)" : "scale(1)",
                     transition: "all 0.2s ease-in-out",
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
-                      alignItems: "flex-start",
+                      alignItems: "center",
                       justifyContent: "space-between",
-                      gap: "8px",
+                      gap: "6px",
                     }}
                   >
                     <div>
                       <div
                         style={{
-                          fontSize: "10.5px",
+                          fontSize: "10px",
                           fontWeight: 700,
                           color: THEME.textLight,
                           textTransform: "uppercase",
-                          letterSpacing: "0.08em",
+                          letterSpacing: "0.06em",
                         }}
                       >
                         {card.label}
                       </div>
                       <div
                         style={{
-                          marginTop: "6px",
-                          fontSize: "24px",
+                          marginTop: "2px",
+                          fontSize: "20px",
                           fontWeight: 800,
-                          lineHeight: 1,
+                          lineHeight: 1.1,
                           color: THEME.navy,
                         }}
                       >
@@ -1195,8 +1224,8 @@ const ManagerDashboardPage = () => {
                       </div>
                       <div
                         style={{
-                          marginTop: "4px",
-                          fontSize: "11px",
+                          marginTop: "2px",
+                          fontSize: "10px",
                           color: THEME.textSoft,
                         }}
                       >
@@ -1206,9 +1235,9 @@ const ManagerDashboardPage = () => {
 
                     <div
                       style={{
-                        width: "36px",
-                        height: "36px",
-                        borderRadius: "10px",
+                        width: "30px",
+                        height: "30px",
+                        borderRadius: "8px",
                         background: tone.iconBg,
                         display: "flex",
                         alignItems: "center",
@@ -1216,7 +1245,7 @@ const ManagerDashboardPage = () => {
                         flexShrink: 0,
                       }}
                     >
-                      <Icon style={{ width: "18px", height: "18px", color: tone.iconColor }} />
+                      <Icon style={{ width: "16px", height: "16px", color: tone.iconColor }} />
                     </div>
                   </div>
                 </div>
@@ -1464,6 +1493,9 @@ const ManagerDashboardPage = () => {
                     display: "grid",
                     gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
                     gap: "18px",
+                    maxHeight: "calc(100vh - 350px)",
+                    overflowY: "auto",
+                    paddingRight: "4px",
                   }}
                 >
                   {scopedTeamMembers
@@ -1904,13 +1936,13 @@ const ManagerDashboardPage = () => {
                     })}
                 </div>
               ) : (
-                <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "600px", border: `1px solid ${THEME.border}`, borderRadius: "16px" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", background: THEME.surface }}>
-                    <thead style={{ position: "sticky", top: 0, zIndex: 10, background: THEME.surfaceSoft }}>
-                      <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Employee</th>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Employee ID</th>
-                        <th rowSpan={2} style={{ padding: "8px 12px", minWidth: "140px" }}>
+                <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 380px)", border: `1px solid ${THEME.border}`, borderRadius: "16px" }}>
+                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, textAlign: "left", background: THEME.surface }}>
+                    <thead style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc" }}>
+                      <tr style={{ background: "#f8fafc", borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}` }}>Employee</th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}` }}>Employee ID</th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Department</span>
                             <CustomSelect
@@ -1921,7 +1953,7 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th rowSpan={2} style={{ padding: "8px 12px", minWidth: "140px" }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Designation</span>
                             <CustomSelect
@@ -1932,7 +1964,7 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th rowSpan={2} style={{ padding: "8px 12px", minWidth: "150px" }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "150px", borderBottom: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Reporting Manager</span>
                             <CustomSelect
@@ -1943,7 +1975,7 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th rowSpan={2} style={{ padding: "8px 12px", minWidth: "130px" }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "130px", borderBottom: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Shift</span>
                             <CustomSelect
@@ -1954,9 +1986,9 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th colSpan={3} style={{ padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(37,99,235,0.05)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
-                        <th colSpan={3} style={{ padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(126,34,206,0.05)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
-                        <th rowSpan={2} style={{ padding: "8px 12px", minWidth: "120px" }}>
+                        <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "#eff6ff", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
+                        <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "#faf5ff", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "120px", borderBottom: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Status</span>
                             <CustomSelect
@@ -1971,13 +2003,13 @@ const ManagerDashboardPage = () => {
                           Actions
                         </th>
                       </tr>
-                      <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                        <th style={{ padding: "8px 16px", background: "rgba(37,99,235,0.02)" }}>Check In</th>
-                        <th style={{ padding: "8px 16px", background: "rgba(37,99,235,0.02)" }}>Check Out</th>
-                        <th style={{ padding: "8px 16px", background: "rgba(37,99,235,0.02)", fontWeight: 700 }}>Hours</th>
-                        <th style={{ padding: "8px 16px", background: "rgba(126,34,206,0.02)" }}>Check In</th>
-                        <th style={{ padding: "8px 16px", background: "rgba(126,34,206,0.02)" }}>Check Out</th>
-                        <th style={{ padding: "8px 16px", background: "rgba(126,34,206,0.02)", fontWeight: 700 }}>Hours</th>
+                      <tr style={{ background: "#f8fafc", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}` }}>Check In</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}` }}>Check Out</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, fontWeight: 700 }}>Hours</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}` }}>Check In</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}` }}>Check Out</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}`, fontWeight: 700 }}>Hours</th>
                       </tr>
                     </thead>
                     <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>

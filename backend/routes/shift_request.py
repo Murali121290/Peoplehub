@@ -5,7 +5,7 @@ from utils.compat import Blueprint, request, jsonify
 from utils.jwt_helper import jwt_required, get_jwt_identity
 from models.user import User
 
-from datetime import datetime
+from datetime import datetime, timedelta
 # pyrefly: ignore [missing-import]
 from models.attendance import Attendance
 # pyrefly: ignore [missing-import]
@@ -89,6 +89,21 @@ def apply_shift():
                 return jsonify({
                     "success": False,
                     "message": f"Cannot apply for shift change/WFH. You have an approved leave from {overlapping_leave.from_date} to {overlapping_leave.to_date}."
+                }), 400
+
+            # Check for existing approved Shift/WFH/Office requests in the date range
+            existing_approved_request = ShiftRequest.query.filter(
+                ShiftRequest.employee_id == employee.id,
+                ShiftRequest.status == "Approved",
+                ShiftRequest.from_date <= req_to,
+                ShiftRequest.to_date >= req_from
+            ).first()
+
+            if existing_approved_request:
+                req_label = existing_approved_request.request_type or "Shift/WFH"
+                return jsonify({
+                    "success": False,
+                    "message": f"An approved {req_label} request already exists from {existing_approved_request.from_date} to {existing_approved_request.to_date}. Please cancel the active approved request first before applying for a new shift, WFH, or office mode."
                 }), 400
 
         shift_request = ShiftRequest(
@@ -672,3 +687,118 @@ def get_effective_shift_today(employee_id):
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ==========================================
+# MANAGER DIRECT SUBMIT & AUTO-APPROVE (Retrospective/Direct Request)
+# ==========================================
+@shift_bp.route("/manager-submit", methods=["POST"])
+def manager_submit_shift():
+    """
+    Manager directly applies and auto-approves a Shift, WFH, or Office mode request
+    on behalf of an employee (supports backdated dates for missed entries).
+    """
+    try:
+        data = request.get_json() or {}
+        employee_id = data.get("employee_id")
+        from_date_str = data.get("from_date")
+        to_date_str = data.get("to_date")
+        requested_shift = data.get("requested_shift")
+        requested_work_mode = data.get("requested_work_mode") or "WFH"
+        request_type = data.get("request_type") or "WFH"
+        reason = (data.get("reason") or "Direct manager entry").strip()
+        manager_name = (data.get("manager_name") or "Manager").strip()
+
+        if not employee_id or not from_date_str or not to_date_str:
+            return jsonify({"success": False, "message": "employee_id, from_date, and to_date are required."}), 400
+
+        from models.employee import Employee
+        from sqlalchemy import or_
+
+        employee = Employee.query.filter(
+            or_(
+                Employee.id == employee_id,
+                Employee.employee_id == str(employee_id)
+            )
+        ).first()
+
+        if not employee:
+            return jsonify({"success": False, "message": "Employee not found."}), 404
+
+        from_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
+        to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date()
+
+        # Check for existing approved Shift/WFH/Office request in the date range
+        existing_approved_request = ShiftRequest.query.filter(
+            ShiftRequest.employee_id == employee.id,
+            ShiftRequest.status == "Approved",
+            ShiftRequest.from_date <= to_date,
+            ShiftRequest.to_date >= from_date
+        ).first()
+
+        if existing_approved_request:
+            req_label = existing_approved_request.request_type or "Shift/WFH"
+            return jsonify({
+                "success": False,
+                "message": f"An approved {req_label} request already exists from {existing_approved_request.from_date} to {existing_approved_request.to_date}. Please cancel the active approved request first before applying for a new shift, WFH, or office mode."
+            }), 400
+
+        current_shift = (employee.shift_timing or "General Shift").strip()
+        current_work_mode = employee.work_mode or "Office"
+
+        # Create auto-approved ShiftRequest record
+        now = datetime.utcnow()
+        shift_request = ShiftRequest(
+            employee_id=employee.id,
+            employee_name=f"{employee.first_name} {employee.last_name}".strip(),
+            current_shift=current_shift,
+            requested_shift=requested_shift or current_shift,
+            current_work_mode=current_work_mode,
+            requested_work_mode=requested_work_mode,
+            reason=f"[Manager Logged] {reason}",
+            reporting_manager=employee.reporting_manager or manager_name,
+            status="Approved",
+            request_type=request_type,
+            approved_by=manager_name,
+            approved_at=now,
+            from_date=from_date,
+            to_date=to_date,
+            shift_date=from_date,
+            manager_comment=f"Directly created and approved by manager ({manager_name})"
+        )
+        db.session.add(shift_request)
+
+        # Update Attendance records for the specified date range if attendance rows exist
+        curr_date = from_date
+        while curr_date <= to_date:
+            attendance = Attendance.query.filter_by(
+                user_id=employee.user_id,
+                attendance_date=curr_date
+            ).first()
+
+            if attendance:
+                if requested_shift:
+                    attendance.shift_timing = requested_shift
+                if requested_work_mode:
+                    attendance.work_mode = requested_work_mode
+                    if requested_work_mode == "WFH" and attendance.status == "Absent":
+                        attendance.status = "Present"
+            curr_date += timedelta(days=1)
+
+        db.session.commit()
+
+        # Emit socket notification
+        try:
+            from extensions import socketio
+            socketio.emit("attendance_update", {"user_id": employee.user_id, "manager_status": "Approved"})
+        except Exception as socket_err:
+            print("Failed to emit manager-submit socket:", str(socket_err))
+
+        return jsonify({
+            "success": True,
+            "message": f"Successfully logged and approved {request_type} request for {employee.first_name} {employee.last_name}."
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "message": str(e)}), 500

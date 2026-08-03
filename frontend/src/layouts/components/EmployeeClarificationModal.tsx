@@ -77,6 +77,9 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
         setCheckInTime("");
         setCheckOutTime("");
         setSelectedMode(null);
+        if (currentIndex >= pendingItems.length - 1) {
+          setCurrentIndex(Math.max(0, pendingItems.length - 2));
+        }
         onSubmitted();
       } else {
         alert(data.error || "Failed to submit resolution");
@@ -110,6 +113,9 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
       const data = await response.json();
       if (data.success) {
         setReplyText("");
+        if (currentIndex >= pendingItems.length - 1) {
+          setCurrentIndex(Math.max(0, pendingItems.length - 2));
+        }
         onSubmitted();
       } else {
         alert(data.error || "Failed to submit clarification response");

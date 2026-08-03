@@ -1622,7 +1622,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       {pendingClarifications.length > 0 && (
         <EmployeeClarificationModal
           pendingItems={pendingClarifications}
-          userId={Number(currentEmployee?.id || user?.id || 0)}
+          userId={Number(user?.id || currentEmployee?.user_id || currentEmployee?.id || 0)}
           onSubmitted={() => loadPendingClarifications()}
         />
       )}

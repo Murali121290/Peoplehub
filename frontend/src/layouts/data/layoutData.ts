@@ -1,4 +1,12 @@
-export const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
+const getBaseUrl = () => {
+  let url = (import.meta.env.VITE_API_URL || "") as string;
+  if (typeof window !== "undefined" && window.location.protocol === "https:" && url.startsWith("http:")) {
+    url = url.replace(/^http:/, "https:");
+  }
+  return `${url}/api`;
+};
+
+export const BASE_URL = getBaseUrl();
 
 export const reportLinks = [
   {

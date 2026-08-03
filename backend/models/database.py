@@ -30,7 +30,13 @@ def create_database_if_not_exists(url):
 
 create_database_if_not_exists(DATABASE_URL)
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=15,
+    max_overflow=25,
+    pool_recycle=300,
+    pool_pre_ping=True
+)
 db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 
 Base = declarative_base()
