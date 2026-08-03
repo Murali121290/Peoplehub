@@ -61,9 +61,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (isManagerOrAdmin) {
       const fetchCounts = async () => {
         try {
+          const token = localStorage.getItem('token');
+          const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
           const [leaveRes, shiftRes] = await Promise.all([
-             fetch(`${API_URL}/api/leaves/`),
-             fetch(`${API_URL}/api/shifts/`)
+             fetch(`${API_URL}/api/leaves/`, { headers }),
+             fetch(`${API_URL}/api/shifts/`, { headers })
           ]);
           if (leaveRes.ok) {
             const leaves = await leaveRes.json();
