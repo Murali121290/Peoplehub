@@ -653,12 +653,13 @@ def get_effective_shift_today(employee_id):
         is_permanent_wfh = (emp.work_mode == "WFH")
 
         # Look for an approved shift request (Shift or WFH) covering today
+        # Latest request (by created_at) takes precedence
         approved_request = ShiftRequest.query.filter(
             ShiftRequest.employee_id == employee_id,
             ShiftRequest.status == "Approved",
             ShiftRequest.from_date <= today,
             ShiftRequest.to_date >= today
-        ).order_by(ShiftRequest.id.desc()).first()
+        ).order_by(ShiftRequest.created_at.desc()).first()
 
         if approved_request:
             effective_shift = approved_request.requested_shift or permanent_shift
