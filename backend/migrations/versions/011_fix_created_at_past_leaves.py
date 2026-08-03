@@ -1,7 +1,7 @@
 """fix created_at for past leaves with future dates
 
-Revision ID: a2b3c4d5e6f7
-Revises: a1b2c3d4e5f6
+Revision ID: 011
+Revises: 010
 Create Date: 2026-07-31 17:10:00.000000
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a2b3c4d5e6f7'
-down_revision: Union[str, None] = 'a1b2c3d4e5f6'
+revision: str = '011'
+down_revision: Union[str, None] = '010'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

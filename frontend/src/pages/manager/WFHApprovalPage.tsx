@@ -5,7 +5,6 @@ import { CheckIcon, XMarkIcon, ArrowRightIcon, MagnifyingGlassIcon } from "@hero
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
-import ApprovalNavigationTabs from "../../components/ApprovalNavigationTabs";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -51,11 +50,76 @@ const WFHApprovalPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState("All");
   const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
 
+  // Direct Manager Log Modal State
+  const [showManagerLogModal, setShowManagerLogModal] = useState(false);
+  const [teamEmployees, setTeamEmployees] = useState<any[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+  const [modalFromDate, setModalFromDate] = useState<string>("");
+  const [modalToDate, setModalToDate] = useState<string>("");
+  const [modalReason, setModalReason] = useState<string>("");
+  const [isSubmittingLog, setIsSubmittingLog] = useState(false);
+
   const toggleReason = (id: number) => {
     setExpandedReasons(prev => ({
       ...prev,
       [id]: !prev[id]
     }));
+  };
+
+  const fetchEmployees = async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/employees/`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeamEmployees(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch employees", err);
+    }
+  };
+
+  const handleManagerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEmployeeId || !modalFromDate || !modalToDate) {
+      toast.error("Please fill in all required fields.");
+      return;
+    }
+
+    try {
+      setIsSubmittingLog(true);
+      const res = await fetch(`${BASE_URL}/shifts/manager-submit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          employee_id: selectedEmployeeId,
+          from_date: modalFromDate,
+          to_date: modalToDate,
+          request_type: "WFH",
+          requested_work_mode: "WFH",
+          requested_shift: "General Shift",
+          reason: modalReason || "Logged directly by manager",
+          manager_name: user?.full_name || "Manager"
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || "WFH entry logged & approved!");
+        setShowManagerLogModal(false);
+        setModalReason("");
+        fetchShiftRequests();
+      } else {
+        toast.error(data.message || "Failed to log entry");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("An error occurred while logging WFH entry.");
+    } finally {
+      setIsSubmittingLog(false);
+    }
   };
 
   const fetchShiftRequests = async () => {
@@ -77,6 +141,7 @@ const WFHApprovalPage: React.FC = () => {
 
   useEffect(() => {
     fetchShiftRequests();
+    fetchEmployees();
   }, []);
 
   const checkManagerMatch = (reportingManager: string | null | undefined, managerFullName: string | null | undefined) => {
@@ -188,6 +253,13 @@ const WFHApprovalPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <Button
+            variant="primary"
+            onClick={() => setShowManagerLogModal(true)}
+            className="flex items-center gap-2 font-semibold shadow-md bg-purple-600 hover:bg-purple-700 border-purple-600"
+          >
+            + Log WFH Entry
+          </Button>
           <div className="relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
             <input
@@ -211,8 +283,6 @@ const WFHApprovalPage: React.FC = () => {
           </select>
         </div>
       </div>
-
-      <ApprovalNavigationTabs />
 
       <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
         <div className="overflow-x-auto">
@@ -405,6 +475,132 @@ const WFHApprovalPage: React.FC = () => {
           </table>
         </div>
       </Card>
+
+      {/* Manager Direct Log WFH Modal */}
+      {showManagerLogModal && (
+        <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-neutral-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-purple-600 px-6 py-4 flex items-center justify-between text-white">
+              <h3 className="text-base font-bold">Log Direct WFH Request</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManagerLogModal(false);
+                  setSelectedEmployeeId("");
+                  setModalFromDate("");
+                  setModalToDate("");
+                  setModalReason("");
+                }}
+                className="text-white/80 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              handleManagerSubmit(e);
+              setTimeout(() => {
+                setSelectedEmployeeId("");
+                setModalFromDate("");
+                setModalToDate("");
+                setModalReason("");
+              }, 500);
+            }} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                  Employee <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  value={selectedEmployeeId}
+                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                  className="w-full p-2.5 border border-neutral-300 rounded-xl text-xs bg-neutral-50/50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">Select an Employee...</option>
+                  {teamEmployees
+                    .filter((emp) =>
+                      user?.access_level?.toLowerCase() === "admin" ||
+                      checkManagerMatch(emp.reporting_manager, user?.full_name)
+                    )
+                    .sort((a, b) => {
+                      const nameA = `${a.first_name || ""} ${a.last_name || ""}`.trim().toLowerCase();
+                      const nameB = `${b.first_name || ""} ${b.last_name || ""}`.trim().toLowerCase();
+                      return nameA.localeCompare(nameB);
+                    })
+                    .map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.first_name} {emp.last_name} ({emp.employee_id || emp.id})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                    From Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={modalFromDate}
+                    onChange={(e) => setModalFromDate(e.target.value)}
+                    className="w-full p-2 border border-neutral-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                    To Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={modalToDate}
+                    onChange={(e) => setModalToDate(e.target.value)}
+                    className="w-full p-2 border border-neutral-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                  Reason / Manager Note
+                </label>
+                <textarea
+                  rows={2}
+                  value={modalReason}
+                  onChange={(e) => setModalReason(e.target.value)}
+                  placeholder="e.g. Employee forgot to submit WFH request on time..."
+                  className="w-full p-2.5 border border-neutral-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-neutral-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowManagerLogModal(false);
+                    setSelectedEmployeeId("");
+                    setModalFromDate("");
+                    setModalToDate("");
+                    setModalReason("");
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingLog}
+                  className="px-5 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-md transition-all disabled:opacity-50"
+                >
+                  {isSubmittingLog ? "Submitting..." : "Log & Approve Entry"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import {
-  HomeIcon, UserGroupIcon, FolderIcon, CalendarIcon, ChartBarIcon,
-  Cog6ToothIcon, BanknotesIcon, BellIcon, PhoneIcon, BuildingOffice2Icon, ClipboardDocumentCheckIcon, CheckCircleIcon, ClockIcon
+  HomeIcon, UserGroupIcon, ChartBarIcon,
+  BellIcon, PhoneIcon, BuildingOffice2Icon, ClipboardDocumentCheckIcon
 } from "@heroicons/react/24/outline";
 
 export const useNavigation = (user: any) => {
@@ -24,10 +24,7 @@ export const useNavigation = (user: any) => {
       path: "/manager-dashboard",
       subItems: [
         { name: "Team Overview", icon: ChartBarIcon, path: "/manager-dashboard" },
-        { name: "Leave Approval", icon: CheckCircleIcon, path: "/manager/leave-approval" },
-        { name: "Permission Approval", icon: ClipboardDocumentCheckIcon, path: "/manager/permission-approval" },
-        { name: "Shift Approval", icon: ClockIcon, path: "/manager/shift-approval" },
-        { name: "WFH Approval", icon: HomeIcon, path: "/manager/wfh-approval" },
+        { name: "All Approvals", icon: ClipboardDocumentCheckIcon, path: "/manager/team-management" },
       ]
     };
 

@@ -5,7 +5,6 @@ import { CheckIcon, XMarkIcon, ArrowRightIcon, MagnifyingGlassIcon } from "@hero
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
-import ApprovalNavigationTabs from "../../components/ApprovalNavigationTabs";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -61,6 +60,7 @@ const ShiftApprovalPage: React.FC = () => {
   const [modalRequestedShift, setModalRequestedShift] = useState<string>("General Shift");
   const [modalReason, setModalReason] = useState<string>("");
   const [isSubmittingLog, setIsSubmittingLog] = useState(false);
+  const [logModalType, setLogModalType] = useState<"Shift" | "WFH">("Shift");
 
   const fetchEmployees = async () => {
     try {
@@ -257,10 +257,14 @@ const ShiftApprovalPage: React.FC = () => {
         <div className="flex items-center gap-3">
           <Button
             variant="primary"
-            onClick={() => setShowManagerLogModal(true)}
+            onClick={() => {
+              setLogModalType("Shift");
+              setModalRequestType("Shift");
+              setShowManagerLogModal(true);
+            }}
             className="flex items-center gap-2 font-semibold shadow-md"
           >
-            + Log Shift / WFH Entry
+            + Log Shift Entry
           </Button>
           <div className="relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
@@ -285,8 +289,6 @@ const ShiftApprovalPage: React.FC = () => {
           </select>
         </div>
       </div>
-
-      <ApprovalNavigationTabs />
 
       <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-115px)]">
@@ -500,18 +502,36 @@ const ShiftApprovalPage: React.FC = () => {
       {showManagerLogModal && (
         <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-neutral-200 animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-primary-600 px-6 py-4 flex items-center justify-between text-white">
-              <h3 className="text-base font-bold">Log Direct Shift / WFH Request</h3>
+            <div className={`px-6 py-4 flex items-center justify-between text-white ${logModalType === "WFH" ? "bg-purple-600" : "bg-primary-600"}`}>
+              <h3 className="text-base font-bold">
+                {logModalType === "WFH" ? "Log Direct WFH Request" : "Log Direct Shift Request"}
+              </h3>
               <button
                 type="button"
-                onClick={() => setShowManagerLogModal(false)}
+                onClick={() => {
+                  setShowManagerLogModal(false);
+                  setSelectedEmployeeId("");
+                  setModalFromDate("");
+                  setModalToDate("");
+                  setModalRequestedShift("General Shift");
+                  setModalReason("");
+                }}
                 className="text-white/80 hover:text-white text-lg font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleManagerSubmit} className="p-6 space-y-4">
+            <form onSubmit={(e) => {
+              handleManagerSubmit(e);
+              setTimeout(() => {
+                setSelectedEmployeeId("");
+                setModalFromDate("");
+                setModalToDate("");
+                setModalRequestedShift("General Shift");
+                setModalReason("");
+              }, 500);
+            }} className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
                   Employee <span className="text-red-500">*</span>
@@ -546,17 +566,19 @@ const ShiftApprovalPage: React.FC = () => {
                   Request Type <span className="text-red-500">*</span>
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setModalRequestType("WFH")}
-                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
-                      modalRequestType === "WFH"
-                        ? "bg-purple-600 text-white border-purple-600 shadow-xs"
-                        : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
-                    }`}
-                  >
-                    🏠 WFH
-                  </button>
+                  {logModalType !== "Shift" && (
+                    <button
+                      type="button"
+                      onClick={() => setModalRequestType("WFH")}
+                      className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
+                        modalRequestType === "WFH"
+                          ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                          : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
+                      }`}
+                    >
+                      🏠 WFH
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setModalRequestType("Office")}
@@ -568,17 +590,19 @@ const ShiftApprovalPage: React.FC = () => {
                   >
                     🏢 Office Mode
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setModalRequestType("Shift")}
-                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
-                      modalRequestType === "Shift"
-                        ? "bg-amber-600 text-white border-amber-600 shadow-xs"
-                        : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
-                    }`}
-                  >
-                    ⏱️ Shift Change
-                  </button>
+                  {logModalType !== "WFH" && (
+                    <button
+                      type="button"
+                      onClick={() => setModalRequestType("Shift")}
+                      className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
+                        modalRequestType === "Shift"
+                          ? "bg-amber-600 text-white border-amber-600 shadow-xs"
+                          : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
+                      }`}
+                    >
+                      ⏱️ Shift Change
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -643,7 +667,14 @@ const ShiftApprovalPage: React.FC = () => {
               <div className="pt-3 border-t border-neutral-100 flex items-center justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowManagerLogModal(false)}
+                  onClick={() => {
+                    setShowManagerLogModal(false);
+                    setSelectedEmployeeId("");
+                    setModalFromDate("");
+                    setModalToDate("");
+                    setModalRequestedShift("General Shift");
+                    setModalReason("");
+                  }}
                   className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl transition-all"
                 >
                   Cancel

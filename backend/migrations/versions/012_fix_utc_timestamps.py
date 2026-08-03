@@ -1,7 +1,7 @@
 """fix utc timestamps in leave requests
 
-Revision ID: a3b4c5d6e7f8
-Revises: a2b3c4d5e6f7
+Revision ID: 012
+Revises: 011
 Create Date: 2026-07-31 17:15:00.000000
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a3b4c5d6e7f8'
-down_revision: Union[str, None] = 'a2b3c4d5e6f7'
+revision: str = '012'
+down_revision: Union[str, None] = '011'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

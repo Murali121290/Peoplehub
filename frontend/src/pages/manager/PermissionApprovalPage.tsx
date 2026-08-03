@@ -5,7 +5,6 @@ import { CheckIcon, XMarkIcon, MagnifyingGlassIcon } from "@heroicons/react/24/o
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
-import ApprovalNavigationTabs from "../../components/ApprovalNavigationTabs";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -230,8 +229,6 @@ const PermissionApprovalPage: React.FC = () => {
           </select>
         </div>
       </div>
-
-      <ApprovalNavigationTabs />
 
       <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
         <div className="overflow-x-auto">
