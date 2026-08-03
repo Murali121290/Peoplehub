@@ -175,7 +175,7 @@ def login():
 
             # Check if there is an approved shift request for today
             approved_request = ShiftRequest.query.filter(
-                ShiftRequest.employee_id == employee.id,
+                ShiftRequest.employee_id == employee.employee_id,
                 ShiftRequest.status == "Approved",
                 ShiftRequest.from_date <= today_date,
                 ShiftRequest.to_date >= today_date

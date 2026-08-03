@@ -75,8 +75,8 @@ def apply_shift():
                 }), 400
 
         if employee:
-            emp_ids = [str(employee.id), str(employee.employee_id)]
-            
+            emp_ids = [employee.employee_id]
+
             overlapping_leave = LeaveRequest.query.filter(
                 LeaveRequest.employee_id.in_(emp_ids),
                 LeaveRequest.status == "Approved",
@@ -93,7 +93,7 @@ def apply_shift():
 
             # Check for existing approved Shift/WFH/Office requests in the date range
             existing_approved_request = ShiftRequest.query.filter(
-                ShiftRequest.employee_id == employee.id,
+                ShiftRequest.employee_id == employee.employee_id,
                 ShiftRequest.status == "Approved",
                 ShiftRequest.from_date <= req_to,
                 ShiftRequest.to_date >= req_from
@@ -731,7 +731,7 @@ def manager_submit_shift():
 
         # Check for existing approved Shift/WFH/Office request in the date range
         existing_approved_request = ShiftRequest.query.filter(
-            ShiftRequest.employee_id == employee.id,
+            ShiftRequest.employee_id == employee.employee_id,
             ShiftRequest.status == "Approved",
             ShiftRequest.from_date <= to_date,
             ShiftRequest.to_date >= from_date
@@ -750,7 +750,7 @@ def manager_submit_shift():
         # Create auto-approved ShiftRequest record
         now = datetime.utcnow()
         shift_request = ShiftRequest(
-            employee_id=employee.id,
+            employee_id=employee.employee_id,
             employee_name=f"{employee.first_name} {employee.last_name}".strip(),
             current_shift=current_shift,
             requested_shift=requested_shift or current_shift,

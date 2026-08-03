@@ -80,12 +80,7 @@ def check_in():
         today_date = get_ist_today()
 
         # Check if there is an approved shift request for today
-        emp_ids = [employee.id]
-        if employee.employee_id:
-            try:
-                emp_ids.append(int(employee.employee_id))
-            except ValueError:
-                pass
+        emp_ids = [employee.employee_id] if employee.employee_id else []
 
         approved_request = ShiftRequest.query.filter(
             ShiftRequest.employee_id.in_(emp_ids),
@@ -1118,12 +1113,7 @@ def get_attendance():
                 status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
 
         from models.shift_request import ShiftRequest
-        emp_ids = [employee.id]
-        if employee.employee_id:
-            try:
-                emp_ids.append(int(employee.employee_id))
-            except ValueError:
-                pass
+        emp_ids = [employee.employee_id] if employee.employee_id else []
 
         wfh_today = ShiftRequest.query.filter(
             ShiftRequest.employee_id.in_(emp_ids),
@@ -1255,12 +1245,7 @@ def get_weekly_attendance():
                         status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
 
                 from models.shift_request import ShiftRequest
-                emp_ids = [employee.id]
-                if employee.employee_id:
-                    try:
-                        emp_ids.append(int(employee.employee_id))
-                    except ValueError:
-                        pass
+                emp_ids = [employee.employee_id] if employee.employee_id else []
 
                 wfh_today = ShiftRequest.query.filter(
                     ShiftRequest.employee_id.in_(emp_ids),
@@ -1382,13 +1367,7 @@ def get_monthly_attendance():
                         status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
 
                 from models.shift_request import ShiftRequest
-                emp_ids = [employee.id]
-                if employee.employee_id:
-                    try:
-                        emp_ids.append(int(employee.employee_id))
-                    except ValueError:
-                        pass
-
+                emp_ids = [employee.employee_id] if employee.employee_id else []
 
                 wfh_today = ShiftRequest.query.filter(
                     ShiftRequest.employee_id.in_(emp_ids),

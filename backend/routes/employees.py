@@ -1054,12 +1054,7 @@ def get_team_overview():
             from models.shift_request import ShiftRequest
             from datetime import date
             today = date.today()
-            emp_ids = [emp.id]
-            if emp.employee_id:
-                try:
-                    emp_ids.append(int(emp.employee_id))
-                except ValueError:
-                    pass
+            emp_ids = [emp.employee_id] if emp.employee_id else []
 
             wfh_request = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_(emp_ids),
@@ -1246,12 +1241,7 @@ def get_team_attendance(user_id):
 
             # Check WFH and Shift Change for today
             from models.shift_request import ShiftRequest
-            emp_ids = [emp.id]
-            if emp.employee_id:
-                try:
-                    emp_ids.append(int(emp.employee_id))
-                except ValueError:
-                    pass
+            emp_ids = [emp.employee_id] if emp.employee_id else []
 
             # Get ALL approved requests for today, sorted by created_at (latest first)
             all_requests_today = ShiftRequest.query.filter(
