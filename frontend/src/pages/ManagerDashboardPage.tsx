@@ -244,6 +244,14 @@ const NOTIFICATION_STYLES: Record<string, string> = {
 };
 
 const ManagerDashboardPage = () => {
+  const userId = localStorage.getItem("user_id");
+
+  const [managerPath, setManagerPath] = useState<{ id: number; name: string }[]>([
+    { id: Number(userId) || 0, name: "My Team" }
+  ]);
+
+  const currentViewedManagerId = managerPath[managerPath.length - 1]?.id || Number(userId);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
 
@@ -307,6 +315,14 @@ const ManagerDashboardPage = () => {
       cycles.push({ label, value });
     }
     return cycles;
+  };
+
+  const handleMemberClick = (member: any) => {
+    if (member.is_reporting_manager && member.user_id) {
+      setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
+    } else {
+      viewEmployeeHistory(member);
+    }
   };
 
   const viewEmployeeHistory = async (member: any) => {
@@ -381,8 +397,6 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const userId = localStorage.getItem("user_id");
-
   useEffect(() => {
     const fetchMonths = async () => {
       try {
@@ -406,8 +420,11 @@ const ManagerDashboardPage = () => {
   // LOAD TEAM MEMBERS & ATTENDANCE
   // ==========================
   useEffect(() => {
-    loadTeamMembers();
-    loadTeamAttendance();
+    loadTeamMembers(currentViewedManagerId);
+    loadTeamAttendance(currentViewedManagerId);
+  }, [currentViewedManagerId]);
+
+  useEffect(() => {
     loadManagerInfo();
     loadYesterdaySummary();
   }, []);
@@ -515,9 +532,9 @@ const ManagerDashboardPage = () => {
     } catch { }
   };
 
-  const loadTeamMembers = async () => {
+  const loadTeamMembers = async (viewedUserId = currentViewedManagerId) => {
     try {
-      const response = await fetch(`${BASE_URL}/employees/my-team/${userId}`);
+      const response = await fetch(`${BASE_URL}/employees/my-team/${viewedUserId}`);
       const data = await response.json();
       const formattedMembers = data.map((emp: any) => ({
         id: emp.id,
@@ -547,9 +564,9 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const loadTeamAttendance = async () => {
+  const loadTeamAttendance = async (viewedUserId = currentViewedManagerId) => {
     try {
-      const response = await fetch(`${BASE_URL}/employees/team-attendance/${userId}`);
+      const response = await fetch(`${BASE_URL}/employees/team-attendance/${viewedUserId}`);
       const data = await response.json();
       setTeamAttendance(Array.isArray(data) ? data : []);
     } catch (error) {
@@ -1329,6 +1346,53 @@ const ManagerDashboardPage = () => {
             </div>
 
             <div style={{ padding: "24px" }}>
+              {/* Breadcrumbs for manager team hierarchy */}
+              {managerPath.length > 1 && (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "20px",
+                  fontSize: "14px",
+                  color: THEME.textSoft,
+                  background: THEME.surfaceSoft,
+                  padding: "10px 18px",
+                  borderRadius: "12px",
+                  border: `1px solid ${THEME.border}`,
+                  width: "fit-content"
+                }}>
+                  <UsersIcon style={{ width: "16px", height: "16px", color: THEME.primary }} />
+                  <span style={{ fontWeight: 600, color: THEME.navy }}>Viewing Team:</span>
+                  {managerPath.map((mgr, index) => (
+                    <React.Fragment key={mgr.id}>
+                      {index > 0 && <span style={{ color: THEME.textLight }}>&gt;</span>}
+                      {index === managerPath.length - 1 ? (
+                        <span style={{ fontWeight: 700, color: THEME.primary }}>{mgr.name}</span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            const newPath = managerPath.slice(0, index + 1);
+                            setManagerPath(newPath);
+                          }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: THEME.textSoft,
+                            textDecoration: "underline",
+                            cursor: "pointer",
+                            padding: 0,
+                            font: "inherit",
+                            fontWeight: 500
+                          }}
+                        >
+                          {mgr.name}
+                        </button>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              )}
+
               {teamAttendance.length === 0 ? (
                 <div
                   style={{
@@ -1423,7 +1487,7 @@ const ManagerDashboardPage = () => {
                           key={member.id}
                           onMouseEnter={() => setHoveredCardId(member.id)}
                           onMouseLeave={() => setHoveredCardId(null)}
-                          onClick={() => viewEmployeeHistory(member)}
+                          onClick={() => handleMemberClick(member)}
                           style={{
                             background: statusStyle.bg,
                             border: highlightedEmployeeId === member.id ? `2px solid #3b82f6` : `1px solid ${statusStyle.border}`,
@@ -1758,6 +1822,52 @@ const ManagerDashboardPage = () => {
                               </div>
                             </div>
                           )}
+
+                          {/* Action Buttons */}
+                          <div style={{ display: "flex", gap: "8px", marginTop: "14px" }}>
+                            {member.is_reporting_manager && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: "6px 12px",
+                                  borderRadius: "10px",
+                                  border: "none",
+                                  background: THEME.primary,
+                                  color: "#fff",
+                                  fontSize: "12px",
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  textAlign: "center",
+                                }}
+                              >
+                                View Team
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                  e.stopPropagation();
+                                  viewEmployeeHistory(member);
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: "6px 12px",
+                                borderRadius: "10px",
+                                border: `1px solid ${THEME.border}`,
+                                background: "#fff",
+                                color: THEME.textSoft,
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                textAlign: "center",
+                              }}
+                            >
+                              View History
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -1826,6 +1936,9 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
+                        <th rowSpan={2} style={{ padding: "14px 16px", minWidth: "140px", verticalAlign: "middle", textAlign: "center" }}>
+                          Actions
+                        </th>
                       </tr>
                       <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                         <th style={{ padding: "8px 16px", background: "rgba(37,99,235,0.02)" }}>Check In</th>
@@ -1892,7 +2005,7 @@ const ManagerDashboardPage = () => {
                               key={member.id}
                               onMouseEnter={() => setHoveredRowId(member.id)}
                               onMouseLeave={() => setHoveredRowId(null)}
-                              onClick={() => viewEmployeeHistory(member)}
+                              onClick={() => handleMemberClick(member)}
                               style={{
                                 borderBottom: `1px solid ${THEME.border}`,
                                 background: highlightedEmployeeId === member.id ? "rgba(59, 130, 246, 0.15)" : (hoveredRowId === member.id ? THEME.surfaceSoft : "transparent"),
@@ -2012,6 +2125,48 @@ const ManagerDashboardPage = () => {
                                 >
                                   {status}
                                 </span>
+                              </td>
+                              <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                                <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      viewEmployeeHistory(member);
+                                    }}
+                                    style={{
+                                      padding: "6px 12px",
+                                      borderRadius: "6px",
+                                      border: `1px solid ${THEME.border}`,
+                                      background: "#fff",
+                                      color: THEME.textSoft,
+                                      fontSize: "12px",
+                                      fontWeight: 600,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    History
+                                  </button>
+                                  {member.is_reporting_manager && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
+                                      }}
+                                      style={{
+                                        padding: "6px 12px",
+                                        borderRadius: "6px",
+                                        border: "none",
+                                        background: THEME.primary,
+                                        color: "#fff",
+                                        fontSize: "12px",
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Team
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );

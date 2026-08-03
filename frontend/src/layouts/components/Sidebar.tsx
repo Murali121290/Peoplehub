@@ -137,7 +137,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       animate={{ x: 0 }}
       exit={{ x: -280 }}
       transition={{ type: "spring", damping: 22, stiffness: 220 }}
-      className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-neutral-200 bg-white shadow-sm lg:sticky flex flex-col"
+      className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-neutral-200 bg-white shadow-sm md:sticky flex flex-col"
     >
       {/* Logo */}
       <div className="flex justify-center items-center mb-10 mt-2 flex-shrink-0">
