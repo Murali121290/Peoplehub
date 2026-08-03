@@ -3410,6 +3410,7 @@ def trigger_db_sync():
                     MAX(LogDateTime) AS LastPunch
                 FROM AttendanceLogs
                 WHERE LogDate >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                  AND LogDate < CURDATE()
                 GROUP BY EmployeeCode, LogDate
             """
             cursor.execute(sql)
@@ -3439,6 +3440,10 @@ def trigger_db_sync():
                 continue
 
             att_date = first_punch.date()
+
+            # Ignore same day (today) entries
+            if att_date == get_ist_today():
+                continue
 
             # Find existing or create new attendance
             attendance = Attendance.query.filter_by(
