@@ -24,6 +24,7 @@ import {
   ListBulletIcon,
   HomeIcon,
   ArrowPathIcon,
+  ArrowDownTrayIcon,
 } from "@heroicons/react/24/outline";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -243,6 +244,14 @@ const NOTIFICATION_STYLES: Record<string, string> = {
 };
 
 const ManagerDashboardPage = () => {
+  const userId = localStorage.getItem("user_id");
+
+  const [managerPath, setManagerPath] = useState<{ id: number; name: string }[]>([
+    { id: Number(userId) || 0, name: "My Team" }
+  ]);
+
+  const currentViewedManagerId = managerPath[managerPath.length - 1]?.id || Number(userId);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
 
@@ -266,6 +275,8 @@ const ManagerDashboardPage = () => {
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<number | null>(null);
   const [selectedCycle, setSelectedCycle] = useState<string>("");
+  const [availableMonths, setAvailableMonths] = useState<any[]>([]);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
 
   // Yesterday Summary States
   const [yesterdaySummary, setYesterdaySummary] = useState<any[]>([]);
@@ -304,6 +315,14 @@ const ManagerDashboardPage = () => {
       cycles.push({ label, value });
     }
     return cycles;
+  };
+
+  const handleMemberClick = (member: any) => {
+    if (member.is_reporting_manager && member.user_id) {
+      setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
+    } else {
+      viewEmployeeHistory(member);
+    }
   };
 
   const viewEmployeeHistory = async (member: any) => {
@@ -378,14 +397,33 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const userId = localStorage.getItem("user_id");
+  useEffect(() => {
+    const fetchMonths = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${BASE_URL}/attendance/available-months`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setAvailableMonths(data);
+        }
+      } catch (err) {
+        console.error("Failed to load available cycles:", err);
+      }
+    };
+    fetchMonths();
+  }, [BASE_URL]);
 
   // ==========================
   // LOAD TEAM MEMBERS & ATTENDANCE
   // ==========================
   useEffect(() => {
-    loadTeamMembers();
-    loadTeamAttendance();
+    loadTeamMembers(currentViewedManagerId);
+    loadTeamAttendance(currentViewedManagerId);
+  }, [currentViewedManagerId]);
+
+  useEffect(() => {
     loadManagerInfo();
     loadYesterdaySummary();
   }, []);
@@ -493,9 +531,9 @@ const ManagerDashboardPage = () => {
     } catch { }
   };
 
-  const loadTeamMembers = async () => {
+  const loadTeamMembers = async (viewedUserId = currentViewedManagerId) => {
     try {
-      const response = await fetch(`${BASE_URL}/employees/my-team/${userId}`);
+      const response = await fetch(`${BASE_URL}/employees/my-team/${viewedUserId}`);
       const data = await response.json();
       const formattedMembers = data.map((emp: any) => ({
         id: emp.id,
@@ -525,9 +563,9 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const loadTeamAttendance = async () => {
+  const loadTeamAttendance = async (viewedUserId = currentViewedManagerId) => {
     try {
-      const response = await fetch(`${BASE_URL}/employees/team-attendance/${userId}`);
+      const response = await fetch(`${BASE_URL}/employees/team-attendance/${viewedUserId}`);
       const data = await response.json();
       setTeamAttendance(Array.isArray(data) ? data : []);
     } catch (error) {
@@ -979,19 +1017,120 @@ const ManagerDashboardPage = () => {
               })}
             </div>
 
-            <div
-              style={{
-                padding: "10px 14px",
-                borderRadius: "12px",
-                background: THEME.primarySoft,
-                border: `1px solid #c7f9e9`,
-                color: THEME.primaryDark,
-                fontSize: "13px",
-                fontWeight: 700,
-              }}
-            >
-              {managerName ? `Welcome, ${managerName}` : "Welcome, Manager"}
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setShowExportDropdown(!showExportDropdown)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "9px 16px",
+                  borderRadius: "12px",
+                  border: "none",
+                  background: THEME.navy,
+                  color: "#fff",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  boxShadow: "0 4px 10px rgba(15,23,42,0.15)",
+                  height: "42px",
+                }}
+              >
+                <ArrowDownTrayIcon style={{ width: "16px", height: "16px" }} />
+                Export Team Attendance
+              </button>
+
+              {showExportDropdown && availableMonths.length > 0 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: "8px",
+                    minWidth: "280px",
+                    borderRadius: "12px",
+                    border: `1px solid ${THEME.border}`,
+                    background: THEME.surface,
+                    boxShadow: "0 12px 32px rgba(15, 23, 42, 0.15)",
+                    zIndex: 50,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "10px 12px",
+                      borderBottom: `1px solid ${THEME.border}`,
+                      background: THEME.surfaceSoft,
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: THEME.textSoft,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Select Month
+                  </div>
+                  {availableMonths.map((m: any) => (
+                    <button
+                      key={`${m.month}-${m.year}`}
+                      onClick={async () => {
+                        setShowExportDropdown(false);
+                        try {
+                          let url = `${BASE_URL}/attendance/export-monthly?manager_id=${userId}`;
+                          url += `&month=${m.month}&year=${m.year}`;
+                          const token = localStorage.getItem("token");
+                          const response = await fetch(url, {
+                            headers: { "Authorization": `Bearer ${token}` }
+                          });
+                          const blob = await response.blob();
+                          const urlBlob = window.URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = urlBlob;
+                          a.download = `Team_Attendance_Report_${m.label.replace(/\s+/g, "_")}.xlsx`;
+                          document.body.appendChild(a);
+                          a.click();
+                          a.remove();
+                        } catch (error) {
+                          console.error("Failed to download team attendance report:", error);
+                        }
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "12px 16px",
+                        border: "none",
+                        background: "transparent",
+                        color: THEME.text,
+                        fontSize: "13px",
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        transition: "all 0.2s ease",
+                        borderBottom: `1px solid ${THEME.border}`,
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.target as HTMLElement).style.background = THEME.surfaceMuted;
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.target as HTMLElement).style.background = "transparent";
+                      }}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+
+            {showExportDropdown && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 40,
+                }}
+                onClick={() => setShowExportDropdown(false)}
+              />
+            )}
           </div>
         </div>
       </header>
@@ -1264,6 +1403,53 @@ const ManagerDashboardPage = () => {
             </div>
 
             <div style={{ padding: "24px" }}>
+              {/* Breadcrumbs for manager team hierarchy */}
+              {managerPath.length > 1 && (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "20px",
+                  fontSize: "14px",
+                  color: THEME.textSoft,
+                  background: THEME.surfaceSoft,
+                  padding: "10px 18px",
+                  borderRadius: "12px",
+                  border: `1px solid ${THEME.border}`,
+                  width: "fit-content"
+                }}>
+                  <UsersIcon style={{ width: "16px", height: "16px", color: THEME.primary }} />
+                  <span style={{ fontWeight: 600, color: THEME.navy }}>Viewing Team:</span>
+                  {managerPath.map((mgr, index) => (
+                    <React.Fragment key={mgr.id}>
+                      {index > 0 && <span style={{ color: THEME.textLight }}>&gt;</span>}
+                      {index === managerPath.length - 1 ? (
+                        <span style={{ fontWeight: 700, color: THEME.primary }}>{mgr.name}</span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            const newPath = managerPath.slice(0, index + 1);
+                            setManagerPath(newPath);
+                          }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: THEME.textSoft,
+                            textDecoration: "underline",
+                            cursor: "pointer",
+                            padding: 0,
+                            font: "inherit",
+                            fontWeight: 500
+                          }}
+                        >
+                          {mgr.name}
+                        </button>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              )}
+
               {teamAttendance.length === 0 ? (
                 <div
                   style={{
@@ -1324,7 +1510,7 @@ const ManagerDashboardPage = () => {
                       if (attendanceFilter === "All") {
                         matchFilter = true;
                       } else if (attendanceFilter === "Present") {
-                        matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out";
+                        matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out" || m.attendance_status === "Half Day";
                       } else if (attendanceFilter === "Leave") {
                         matchFilter = m.status === "Leave" || m.attendance_status === "On Leave";
                       } else if (attendanceFilter === "WFH") {
@@ -1361,7 +1547,7 @@ const ManagerDashboardPage = () => {
                           key={member.id}
                           onMouseEnter={() => setHoveredCardId(member.id)}
                           onMouseLeave={() => setHoveredCardId(null)}
-                          onClick={() => viewEmployeeHistory(member)}
+                          onClick={() => handleMemberClick(member)}
                           style={{
                             background: statusStyle.bg,
                             border: highlightedEmployeeId === member.id ? `2px solid #3b82f6` : `1px solid ${statusStyle.border}`,
@@ -1447,21 +1633,24 @@ const ManagerDashboardPage = () => {
                                   </div>
                                   {member.is_reporting_manager && (
                                     <span
-                                      title="This employee is also a reporting manager for other team members"
+                                      title={`This employee manages ${member.report_count || 0} team members`}
                                       style={{
                                         display: "inline-flex",
                                         alignItems: "center",
-                                        padding: "2px 8px",
-                                        borderRadius: "999px",
+                                        gap: "4px",
+                                        padding: "3px 10px",
+                                        borderRadius: "6px",
                                         background: "#f0fdf4",
                                         border: "1px solid #bbf7d0",
                                         color: "#166534",
-                                        fontSize: "10px",
-                                        fontWeight: 800,
+                                        fontSize: "11px",
+                                        fontWeight: 700,
                                         flexShrink: 0,
+                                        whiteSpace: "nowrap",
                                       }}
                                     >
-                                      People Manager
+                                      <span>👥</span>
+                                      <span>People Manager ({member.report_count || 0})</span>
                                     </span>
                                   )}
                                   {member.isWfh && (
@@ -1696,6 +1885,52 @@ const ManagerDashboardPage = () => {
                               </div>
                             </div>
                           )}
+
+                          {/* Action Buttons */}
+                          <div style={{ display: "flex", gap: "8px", marginTop: "14px" }}>
+                            {member.is_reporting_manager && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: "6px 12px",
+                                  borderRadius: "10px",
+                                  border: "none",
+                                  background: THEME.primary,
+                                  color: "#fff",
+                                  fontSize: "12px",
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  textAlign: "center",
+                                }}
+                              >
+                                View Team
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                  e.stopPropagation();
+                                  viewEmployeeHistory(member);
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: "6px 12px",
+                                borderRadius: "10px",
+                                border: `1px solid ${THEME.border}`,
+                                background: "#fff",
+                                color: THEME.textSoft,
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                textAlign: "center",
+                              }}
+                            >
+                              View History
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -1764,6 +1999,9 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
+                        <th rowSpan={2} style={{ padding: "14px 16px", minWidth: "140px", verticalAlign: "middle", textAlign: "center" }}>
+                          Actions
+                        </th>
                       </tr>
                       <tr style={{ background: "#f8fafc", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                         <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}` }}>Check In</th>
@@ -1787,7 +2025,7 @@ const ManagerDashboardPage = () => {
                           if (attendanceFilter === "All") {
                             matchFilter = true;
                           } else if (attendanceFilter === "Present") {
-                            matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out";
+                            matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out" || m.attendance_status === "Half Day";
                           } else if (attendanceFilter === "Leave") {
                             matchFilter = m.status === "Leave" || m.attendance_status === "On Leave";
                           } else if (attendanceFilter === "WFH") {
@@ -1830,7 +2068,7 @@ const ManagerDashboardPage = () => {
                               key={member.id}
                               onMouseEnter={() => setHoveredRowId(member.id)}
                               onMouseLeave={() => setHoveredRowId(null)}
-                              onClick={() => viewEmployeeHistory(member)}
+                              onClick={() => handleMemberClick(member)}
                               style={{
                                 borderBottom: `1px solid ${THEME.border}`,
                                 background: highlightedEmployeeId === member.id ? "rgba(59, 130, 246, 0.15)" : (hoveredRowId === member.id ? THEME.surfaceSoft : "transparent"),
@@ -1869,21 +2107,24 @@ const ManagerDashboardPage = () => {
                                     <span style={{ fontWeight: 700, color: THEME.navy }}>{member.name}</span>
                                     {member.is_reporting_manager && (
                                       <span
-                                        title="This employee is also a reporting manager for other team members"
+                                        title={`This employee manages ${member.report_count || 0} team members`}
                                         style={{
                                           display: "inline-flex",
                                           alignItems: "center",
-                                          padding: "2px 8px",
-                                          borderRadius: "999px",
+                                          gap: "4px",
+                                          padding: "3px 10px",
+                                          borderRadius: "6px",
                                           background: "#f0fdf4",
                                           border: "1px solid #bbf7d0",
                                           color: "#166534",
-                                          fontSize: "10px",
-                                          fontWeight: 800,
+                                          fontSize: "11px",
+                                          fontWeight: 700,
                                           flexShrink: 0,
+                                          whiteSpace: "nowrap",
                                         }}
                                       >
-                                        People Manager ({member.report_count})
+                                        <span>👥</span>
+                                        <span>People Manager ({member.report_count || 0})</span>
                                       </span>
                                     )}
                                     {member.isWfh && (
@@ -1951,6 +2192,48 @@ const ManagerDashboardPage = () => {
                                   {status}
                                 </span>
                               </td>
+                              <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                                <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      viewEmployeeHistory(member);
+                                    }}
+                                    style={{
+                                      padding: "6px 12px",
+                                      borderRadius: "6px",
+                                      border: `1px solid ${THEME.border}`,
+                                      background: "#fff",
+                                      color: THEME.textSoft,
+                                      fontSize: "12px",
+                                      fontWeight: 600,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    History
+                                  </button>
+                                  {member.is_reporting_manager && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
+                                      }}
+                                      style={{
+                                        padding: "6px 12px",
+                                        borderRadius: "6px",
+                                        border: "none",
+                                        background: THEME.primary,
+                                        color: "#fff",
+                                        fontSize: "12px",
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Team
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
                             </tr>
                           );
                         })}
@@ -1963,8 +2246,228 @@ const ManagerDashboardPage = () => {
         </div>
       </main>
 
+      {/* Yesterday's Attendance Summary */}
+      {yesterdaySummary.length > 0 && (
+        <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0 24px 40px" }}>
+          <section style={{
+            background: "#fff",
+            borderRadius: "24px",
+            border: `1px solid ${THEME.border}`,
+            boxShadow: THEME.shadow,
+            overflow: "hidden",
+          }}>
+            {/* Header */}
+            <div style={{ padding: "24px", borderBottom: `1px solid ${THEME.border}`, background: "linear-gradient(180deg,#fff 0%,#fbfdff 100%)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                  <div style={{ width: "46px", height: "46px", borderRadius: "14px", background: "#fef9c3", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <CalendarDaysIcon style={{ width: "22px", height: "22px", color: "#ca8a04" }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "18px", fontWeight: 800, color: THEME.navy }}>Yesterday's Attendance Summary</div>
+                    <div style={{ fontSize: "13px", color: THEME.textSoft, marginTop: "2px" }}>
+                      {yesterdaySummaryDate ? `For ${yesterdaySummaryDate}` : "Last working day"} — Pending your approval
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={loadYesterdaySummary}
+                  style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 16px", borderRadius: "10px", border: `1px solid ${THEME.border}`, background: THEME.surface, color: THEME.textSoft, fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+                >
+                  <ArrowPathIcon style={{ width: "15px", height: "15px" }} />
+                  Refresh
+                </button>
+              </div>
+            </div>
 
+            {/* Table */}
+            {loadingYesterday ? (
+              <div style={{ padding: "48px", textAlign: "center", color: THEME.textSoft }}>
+                <div style={{ width: "28px", height: "28px", border: `3px solid ${THEME.border}`, borderTop: `3px solid ${THEME.primary}`, borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
+                <p style={{ fontSize: "13px", fontWeight: 500 }}>Loading yesterday's summary...</p>
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px", color: THEME.text }}>
+                  <thead>
+                    <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                      <th style={{ padding: "12px 16px" }}>Employee</th>
+                      <th style={{ padding: "12px 16px" }}>Department</th>
+                      <th style={{ padding: "12px 16px" }}>Status</th>
+                      <th style={{ padding: "12px 16px" }}>Check In</th>
+                      <th style={{ padding: "12px 16px" }}>Check Out</th>
+                      <th style={{ padding: "12px 16px" }}>Working Hours</th>
+                      <th style={{ padding: "12px 16px" }}>Breaks (L/T)</th>
+                      <th style={{ padding: "12px 16px" }}>Permission</th>
+                      <th style={{ padding: "12px 16px" }}>Manager Status</th>
+                      <th style={{ padding: "12px 16px", textAlign: "center" }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {yesterdaySummary.map((emp, idx) => {
+                      const status = emp.status || "Absent";
+                      // Determine category based on status
+                      let category = "absent";
+                      if (status === "Leave") {
+                        category = "leave";
+                      } else if (status === "Present" || status === "Half Day") {
+                        category = "present";
+                      }
+                      const managerStatus = emp.manager_status || emp.decision || "Pending";
+                      const isRegularization = emp.is_regularization || false;
+                      const isLop = emp.is_lop || false;
 
+                      // Check if employee has responded by looking at clarification_history for employee messages
+                      const clarificationHistory = emp.clarification_history || [];
+                      const employeeReplied = clarificationHistory.some((msg: any) => msg.sender_role === "employee");
+                      const summaryDateStr = emp.summary_date || "";
+
+                      let statusBg = "#fee2e2"; let statusColor = "#b91c1c";
+                      if (status === "Present") { statusBg = "#dcfce7"; statusColor = "#166534"; }
+                      else if (status === "Leave") { statusBg = "#fef3c7"; statusColor = "#92400e"; }
+                      else if (status === "Half Day") { statusBg = "#f3e8ff"; statusColor = "#7e22ce"; }
+
+                      let msBg = "#f1f5f9"; let msColor = "#475569";
+                      if (managerStatus === "Approved") { msBg = "#dcfce7"; msColor = "#166534"; }
+                      else if (managerStatus === "Need Clarification") { msBg = "#fef9c3"; msColor = "#854d0e"; }
+
+                      // Row background hint for leave (read-only)
+                      const rowBg = category === "leave" ? "#fffbeb" : "transparent";
+
+                      return (
+                        <tr key={idx} style={{ borderBottom: `1px solid ${THEME.border}`, background: rowBg }}>
+                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.navy }}>
+                            <div>{emp.employee_name}</div>
+                            <div style={{ fontSize: "11px", color: THEME.textSoft, fontWeight: 500 }}>{emp.designation}</div>
+                          </td>
+                          <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{emp.department}</td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                              <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: 800 }}>{status}</span>
+                              {emp.leave_type && (
+                                <span style={{ fontSize: "10px", color: THEME.textSoft }}>{emp.leave_type}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            {emp.check_in || (category === "leave" ? "—" : <span style={{ color: "#ef4444", fontSize: "11px" }}>No data</span>)}
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>{emp.check_out || "—"}</td>
+                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.primary }}>{formatWorkingHours(emp.working_hours)}</td>
+                          <td style={{ padding: "12px 16px", color: THEME.textSoft }}>
+                            {(emp.lunch_minutes > 0 || emp.tea_minutes > 0) ? `${emp.lunch_minutes}m / ${emp.tea_minutes}m` : "—"}
+                          </td>
+                          <td style={{ padding: "12px 16px", color: "#0f766e", fontWeight: 700 }}>
+                            {emp.permission_time || "—"}
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: msBg, color: msColor, fontSize: "11px", fontWeight: 800 }}>{managerStatus}</span>
+                          </td>
+
+                          {/* ── ACTION CELL ── */}
+                          <td style={{ padding: "12px 16px", textAlign: "center", minWidth: "160px" }}>
+
+                            {/* LEAVE — read-only, only Confirm Leave */}
+                            {category === "leave" && managerStatus !== "Approved" && !(managerStatus === "Need Clarification" && employeeReplied) && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
+                                <span style={{ fontSize: "11px", color: "#92400e", fontWeight: 600, background: "#fef3c7", padding: "2px 8px", borderRadius: "6px" }}>On Leave</span>
+                                <button
+                                  onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                >✓ Confirm Leave</button>
+                              </div>
+                            )}
+
+                            {/* PRESENT — Approve + Need Clarification */}
+                            {category === "present" && managerStatus === "Pending" && (
+                              <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                                <button
+                                  onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "6px 12px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                                >✓ Approve</button>
+                                <button
+                                  onClick={() => handleNeedClarificationYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "6px 12px", borderRadius: "8px", border: "none", background: "#fef9c3", color: "#854d0e", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                                >? Clarify</button>
+                              </div>
+                            )}
+
+                            {/* PRESENT — Need Clarification sent, employee has replied (regularization / leave) */}
+                            {category === "present" && managerStatus === "Need Clarification" && employeeReplied && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
+                                {isRegularization && emp.check_in && (
+                                  <span style={{ fontSize: "10px", color: "#166534", fontWeight: 600 }}>
+                                    Reg: {emp.check_in} – {emp.check_out || "?"}
+                                  </span>
+                                )}
+                                <div style={{ display: "flex", gap: "6px" }}>
+                                  <button
+                                    onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
+                                    style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                  >✓ Approve</button>
+                                  <button
+                                    onClick={() => handleNeedClarificationYesterday(emp.employee_id, summaryDateStr)}
+                                    style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#fef9c3", color: "#854d0e", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                  >? Again</button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* PRESENT — Need Clarification sent, waiting for employee */}
+                            {category === "present" && managerStatus === "Need Clarification" && !employeeReplied && (
+                              <span style={{ fontSize: "11px", color: "#854d0e", fontWeight: 500 }}>⏳ Awaiting employee</span>
+                            )}
+
+                            {/* ABSENT — only Need Clarification (triggers employee to decide) */}
+                            {category === "absent" && managerStatus === "Pending" && (
+                              <button
+                                onClick={() => handleNeedClarificationYesterday(emp.employee_id, summaryDateStr)}
+                                style={{ padding: "6px 14px", borderRadius: "8px", border: "none", background: "#fef9c3", color: "#854d0e", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                              >? Need Clarification</button>
+                            )}
+
+                            {/* ABSENT — Need Clarification sent, employee chose LOP */}
+                            {category === "absent" && managerStatus === "Need Clarification" && isLop && employeeReplied && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
+                                <span style={{ fontSize: "10px", color: "#b91c1c", fontWeight: 600, background: "#fee2e2", padding: "2px 8px", borderRadius: "6px" }}>Employee chose LOP</span>
+                                <button
+                                  onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                >✓ Confirm LOP</button>
+                              </div>
+                            )}
+
+                            {/* ABSENT — Need Clarification sent, employee chose Leave */}
+                            {category === "leave" && managerStatus === "Need Clarification" && employeeReplied && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
+                                <span style={{ fontSize: "10px", color: "#92400e", fontWeight: 600, background: "#fef3c7", padding: "2px 8px", borderRadius: "6px" }}>Applied {emp.leave_type || "Leave"}</span>
+                                <button
+                                  onClick={() => handleApproveYesterday(emp.employee_id, summaryDateStr)}
+                                  style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                >✓ Approve Leave</button>
+                              </div>
+                            )}
+
+                            {/* ABSENT — Need Clarification sent, waiting for employee response */}
+                            {category === "absent" && managerStatus === "Need Clarification" && !employeeReplied && (
+                              <span style={{ fontSize: "11px", color: "#854d0e", fontWeight: 500 }}>⏳ Awaiting employee</span>
+                            )}
+
+                            {/* Done state */}
+                            {managerStatus === "Approved" && (
+                              <span style={{ fontSize: "12px", color: THEME.textLight, fontWeight: 500 }}>— Done —</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
       {/* Attendance History Modal */}
       {historyModalUser && (

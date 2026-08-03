@@ -41,6 +41,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
   const [pendingShiftCount, setPendingShiftCount] = useState(0);
+  const [teamManagementCount, setTeamManagementCount] = useState(0);
   const [effectiveShift, setEffectiveShift] = useState<{
     effective_shift: string;
     is_wfh: boolean;
@@ -83,9 +84,16 @@ const Sidebar: React.FC<SidebarProps> = ({
       socket.on("leave_update", fetchCounts);
       socket.on("shift_update", fetchCounts);
 
+      // Listen for team management notification count updates
+      const handleTeamManagementCount = (event: any) => {
+        setTeamManagementCount(event.detail);
+      };
+      window.addEventListener("teamManagementNotificationCount", handleTeamManagementCount);
+
       return () => {
         socket.off("leave_update", fetchCounts);
         socket.off("shift_update", fetchCounts);
+        window.removeEventListener("teamManagementNotificationCount", handleTeamManagementCount);
       };
     }
   }, [user, location.pathname]); // re-fetch when navigating so counts stay fresh
@@ -137,7 +145,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       animate={{ x: 0 }}
       exit={{ x: -280 }}
       transition={{ type: "spring", damping: 22, stiffness: 220 }}
-      className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-neutral-200 bg-white shadow-sm lg:sticky flex flex-col"
+      className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-neutral-200 bg-white shadow-sm md:sticky flex flex-col"
     >
       {/* Logo */}
       <div className="flex justify-center items-center mb-10 mt-2 flex-shrink-0">
@@ -215,6 +223,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                                 {subItem.name === "Shift Approval" && pendingShiftCount > 0 && (
                                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-pulse">
                                     {pendingShiftCount}
+                                  </span>
+                                )}
+                                {subItem.name === "All Approvals" && teamManagementCount > 0 && (
+                                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-pulse">
+                                    {teamManagementCount > 9 ? "9+" : teamManagementCount}
                                   </span>
                                 )}
                               </div>

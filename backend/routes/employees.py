@@ -13,7 +13,7 @@ from models.user import Role, Team
 from services.leave_balance_service import update_leave_balance
 from models.leave import LeaveRequest
 from models.user import User, Role, Team
-from sqlalchemy import extract
+from sqlalchemy import extract, or_
 from sqlalchemy.exc import IntegrityError
 
 employees_bp = Blueprint("employees", __name__)
@@ -228,12 +228,15 @@ def get_employees():
             "status":
                 attendance.status
                 if attendance
-                else ("Leave" if LeaveRequest.query.filter(
-                    LeaveRequest.employee_id == str(emp.id),
-                    LeaveRequest.status == "Approved",
-                    LeaveRequest.from_date <= today,
-                    LeaveRequest.to_date >= today
-                ).first() else "Absent"),
+                 else ("Leave" if LeaveRequest.query.filter(
+                     or_(
+                         LeaveRequest.employee_id == str(emp.id),
+                         LeaveRequest.employee_id == emp.employee_id
+                     ),
+                     LeaveRequest.status == "Approved",
+                     LeaveRequest.from_date <= today,
+                     LeaveRequest.to_date >= today
+                 ).first() else "Absent"),
 
             "salary":
                 emp.salary,
@@ -1051,12 +1054,7 @@ def get_team_overview():
             from models.shift_request import ShiftRequest
             from datetime import date
             today = date.today()
-            emp_ids = [emp.id]
-            if emp.employee_id:
-                try:
-                    emp_ids.append(int(emp.employee_id))
-                except ValueError:
-                    pass
+            emp_ids = [emp.employee_id] if emp.employee_id else []
 
             wfh_request = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_(emp_ids),
@@ -1216,7 +1214,7 @@ def get_team_attendance(user_id):
             if not manager:
                 return jsonify([])
             manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
-            reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
+            reporting_list = [e for e in all_employees if is_manager_match(e.reporting_manager, manager_full_name)]
 
         for emp in reporting_list:
 
@@ -1226,39 +1224,38 @@ def get_team_attendance(user_id):
                 attendance_date=today
             ).first()
 
-            # Check leave for today
-            on_leave = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == str(emp.id),
+            # Check leave for today - get latest request if multiple exist
+            leave_requests_today = LeaveRequest.query.filter(
+                or_(
+                    LeaveRequest.employee_id == str(emp.id),
+                    LeaveRequest.employee_id == emp.employee_id
+                ),
                 LeaveRequest.status == "Approved",
                 LeaveRequest.request_type == "Leave",
                 LeaveRequest.from_date <= today,
                 LeaveRequest.to_date >= today
-            ).first()
+            ).order_by(LeaveRequest.created_at.desc()).all()
+
+            # Latest leave request takes precedence
+            on_leave = leave_requests_today[0] if leave_requests_today else None
 
             # Check WFH and Shift Change for today
             from models.shift_request import ShiftRequest
-            emp_ids = [emp.id]
-            if emp.employee_id:
-                try:
-                    emp_ids.append(int(emp.employee_id))
-                except ValueError:
-                    pass
+            emp_ids = [emp.employee_id] if emp.employee_id else []
 
-            wfh_today = ShiftRequest.query.filter(
+            # Get ALL approved requests for today, sorted by created_at (latest first)
+            all_requests_today = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_(emp_ids),
                 ShiftRequest.status == "Approved",
-                ShiftRequest.request_type == "WFH",
                 ShiftRequest.from_date <= today,
                 ShiftRequest.to_date >= today
-            ).first()
+            ).order_by(ShiftRequest.created_at.desc()).all()
 
-            shift_change_today = ShiftRequest.query.filter(
-                ShiftRequest.employee_id.in_(emp_ids),
-                ShiftRequest.status == "Approved",
-                ShiftRequest.request_type == "Shift",
-                ShiftRequest.from_date <= today,
-                ShiftRequest.to_date >= today
-            ).first()
+            # The latest request takes precedence
+            latest_request = all_requests_today[0] if all_requests_today else None
+
+            wfh_today = next((r for r in all_requests_today if r.request_type == "WFH"), None)
+            shift_change_today = next((r for r in all_requests_today if r.request_type == "Shift"), None)
 
             if attendance:
                 if attendance.check_in or attendance.card_check_in:
@@ -1345,16 +1342,16 @@ def get_team_attendance(user_id):
                     )
                 ),
                 "work_mode": (
-                    shift_change_today.requested_work_mode
-                    if (shift_change_today and shift_change_today.requested_work_mode)
+                    latest_request.requested_work_mode
+                    if (latest_request and latest_request.requested_work_mode)
                     else (
                         emp.work_mode or "Office"
                     )
                 ),
                 "manager_status": attendance.manager_status if (attendance and attendance.manager_status) else "Pending",
                 "is_wfh": (
-                    (shift_change_today.requested_work_mode == "WFH") if (shift_change_today and shift_change_today.requested_work_mode)
-                    else (wfh_today is not None or (emp.work_mode or "Office") == "WFH")
+                    (latest_request.request_type == "WFH") if latest_request
+                    else ((emp.work_mode or "Office") == "WFH")
                 ),
                 "is_permanent_wfh": (emp.work_mode == "WFH"),
                 "is_shift_changed": bool(shift_change_today),
@@ -1705,8 +1702,21 @@ def get_peers_attendance(user_id):
 
         result = []
         for peer in peers:
-            attendance = attendance_by_user.get(peer.user_id)
-            leave = leave_by_employee.get(str(peer.id))
+            attendance = Attendance.query.filter_by(
+                user_id=peer.user_id,
+                attendance_date=today
+            ).first()
+
+            from models.leave import LeaveRequest
+            leave = LeaveRequest.query.filter(
+                or_(
+                    LeaveRequest.employee_id == str(peer.id),
+                    LeaveRequest.employee_id == peer.employee_id
+                ),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.from_date <= today,
+                LeaveRequest.to_date >= today
+            ).first()
 
             status = "Absent"
             if attendance:
@@ -1785,28 +1795,26 @@ def get_team_attendance_by_id(team_id):
         ).all()
         leave_by_employee = {str(l.employee_id): l for l in leaves}
 
-        # Batch fetch approved shift requests for all team employees today
+        # Batch fetch ALL approved shift requests (Shift, WFH, Office) for all team employees today
+        # Latest request (by created_at) takes precedence
         from models.shift_request import ShiftRequest
-        shift_requests = ShiftRequest.query.filter(
+        all_shift_requests = ShiftRequest.query.filter(
             ShiftRequest.status == "Approved",
-            ShiftRequest.request_type == "Shift",
             ShiftRequest.from_date <= today,
             ShiftRequest.to_date >= today
         ).all()
-        shift_by_employee = {}
-        for sr in shift_requests:
-            shift_by_employee[str(sr.employee_id)] = sr
 
-        # Batch fetch approved WFH requests for all team employees today
-        wfh_requests = ShiftRequest.query.filter(
-            ShiftRequest.status == "Approved",
-            ShiftRequest.request_type == "WFH",
-            ShiftRequest.from_date <= today,
-            ShiftRequest.to_date >= today
-        ).all()
-        wfh_by_employee = {}
-        for w in wfh_requests:
-            wfh_by_employee[str(w.employee_id)] = w
+        # Group by employee and keep only the latest request per employee
+        latest_by_employee = {}
+        for sr in all_shift_requests:
+            emp_id = str(sr.employee_id)
+            if emp_id not in latest_by_employee or sr.created_at > latest_by_employee[emp_id].created_at:
+                latest_by_employee[emp_id] = sr
+
+        # Also maintain separate dicts for backwards compatibility
+        shift_by_employee = {emp_id: sr for emp_id, sr in latest_by_employee.items() if sr.request_type == "Shift"}
+        wfh_by_employee = {emp_id: sr for emp_id, sr in latest_by_employee.items() if sr.request_type == "WFH"}
+        office_by_employee = {emp_id: sr for emp_id, sr in latest_by_employee.items() if sr.request_type == "Office"}
 
         # Batch fetch approved permissions for all team employees today
         permissions = LeaveRequest.query.filter(
@@ -1833,19 +1841,26 @@ def get_team_attendance_by_id(team_id):
             is_shift_changed = emp_shift_request is not None
             approved_shift = emp_shift_request.requested_shift if is_shift_changed else None
 
-            # Check if WFH (permanent via shift_timing OR approved WFH request for today)
-            # Permanent WFH is suppressed if the employee has a shift change today (coming to office)
-            emp_wfh_request = (
-                wfh_by_employee.get(str(emp.id)) or 
-                wfh_by_employee.get(emp.employee_id) or
-                wfh_by_employee.get(str(emp.employee_id))
+            # Check if WFH - use latest request if available
+            emp_latest_request = (
+                latest_by_employee.get(str(emp.id)) or
+                latest_by_employee.get(emp.employee_id) or
+                latest_by_employee.get(str(emp.employee_id))
             )
             is_permanent_wfh = (emp.work_mode == "WFH")
-            is_wfh = (
-                (emp_shift_request.requested_work_mode == "WFH" if (emp_shift_request and emp_shift_request.requested_work_mode) else False) or
-                (emp_wfh_request is not None) or
-                (emp.work_mode == "WFH")
-            )
+
+            # Latest request takes precedence; if no request, fall back to permanent WFH
+            if emp_latest_request:
+                if emp_latest_request.request_type == "WFH":
+                    is_wfh = True
+                elif emp_latest_request.request_type == "Office":
+                    is_wfh = False
+                elif emp_latest_request.requested_work_mode == "WFH":
+                    is_wfh = True
+                else:
+                    is_wfh = is_permanent_wfh
+            else:
+                is_wfh = is_permanent_wfh
 
             # Check if Permission is active now
             emp_permission = (
@@ -2071,7 +2086,10 @@ def get_employee_details(employee_id):
         ]
 
         leave_requests = LeaveRequest.query.filter(
-            LeaveRequest.employee_id == str(employee.id),
+            or_(
+                LeaveRequest.employee_id == str(employee.id),
+                LeaveRequest.employee_id == employee.employee_id
+            ),
             LeaveRequest.status == "Approved",
             LeaveRequest.from_date >= start_date,
             LeaveRequest.to_date <= end_date

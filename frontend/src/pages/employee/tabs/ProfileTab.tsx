@@ -1618,10 +1618,12 @@ const ProfileTab = () => {
             ) : (
               userInitials
             )}
-            <label htmlFor="tab_photo_input" className={`absolute -bottom-1 -right-1 bg-primary-600 hover:bg-primary-700 text-white p-2 rounded-full shadow-lg cursor-pointer transition-all hover:scale-105 ${isUploadingPhoto ? 'opacity-50 cursor-not-allowed' : ''}`} title="Change profile photo" onClick={(e) => e.stopPropagation()}>
-              <PencilIcon className="w-3.5 h-3.5" />
-              <input id="tab_photo_input" type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoChange} disabled={isUploadingPhoto} />
-            </label>
+            {!profile.profile_image && (
+              <label htmlFor="tab_photo_input" className={`absolute -bottom-1 -right-1 bg-primary-600 hover:bg-primary-700 text-white p-2 rounded-full shadow-lg cursor-pointer transition-all hover:scale-105 ${isUploadingPhoto ? 'opacity-50 cursor-not-allowed' : ''}`} title="Change profile photo" onClick={(e) => e.stopPropagation()}>
+                <PencilIcon className="w-3.5 h-3.5" />
+                <input id="tab_photo_input" type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoChange} disabled={isUploadingPhoto} />
+              </label>
+            )}
           </div>
           <div>
             <h2 className="text-2xl font-extrabold text-neutral-800 flex items-center gap-2 justify-center sm:justify-start">

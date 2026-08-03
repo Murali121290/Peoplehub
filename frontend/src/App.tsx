@@ -28,6 +28,9 @@ const AppraisalDashboard = lazy(() => import("./pages/appraisal/AppraisalDashboa
 const DBAdminPage = lazy(() => import("./pages/admin/DBAdminPage"));
 const LeaveApprovalPage = lazy(() => import("./pages/manager/LeaveApprovalPage"));
 const ShiftApprovalPage = lazy(() => import("./pages/manager/ShiftApprovalPage"));
+const PermissionApprovalPage = lazy(() => import("./pages/manager/PermissionApprovalPage"));
+const WFHApprovalPage = lazy(() => import("./pages/manager/WFHApprovalPage"));
+const TeamManagementPage = lazy(() => import("./pages/manager/TeamManagementPage"));
 
 const PageLoadingFallback = () => (
   <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
@@ -196,6 +199,14 @@ function App() {
         }
       />
       <Route
+        path="/manager/team-management"
+        element={
+          <ProtectedRoute>
+            <TeamManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/manager/leave-approval"
         element={
           <ProtectedRoute>
@@ -204,10 +215,26 @@ function App() {
         }
       />
       <Route
+        path="/manager/permission-approval"
+        element={
+          <ProtectedRoute>
+            <PermissionApprovalPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/manager/shift-approval"
         element={
           <ProtectedRoute>
             <ShiftApprovalPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/manager/wfh-approval"
+        element={
+          <ProtectedRoute>
+            <WFHApprovalPage />
           </ProtectedRoute>
         }
       />

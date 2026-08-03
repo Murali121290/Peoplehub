@@ -133,12 +133,12 @@ class ShiftRequest(db.Model):
             "status": self.status,
             "manager_comment": self.manager_comment,
             "created_at": (
-                self.created_at.isoformat()
+                self.created_at.isoformat() + "Z"
                 if self.created_at
                 else None
             ),
             "approved_at": (
-                self.approved_at.isoformat()
+                self.approved_at.isoformat() + "Z"
                 if self.approved_at
                 else None
             ),
@@ -150,7 +150,7 @@ class ShiftRequest(db.Model):
     else None
 ),
             "rejected_at": (
-                self.rejected_at.isoformat()
+                self.rejected_at.isoformat() + "Z"
                 if self.rejected_at
                 else None
             ),

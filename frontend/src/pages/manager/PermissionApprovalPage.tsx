@@ -41,7 +41,7 @@ const getActionedAtText = (r: any) => {
   return "Pending";
 };
 
-const LeaveApprovalPage: React.FC = () => {
+const PermissionApprovalPage: React.FC = () => {
   const { user, token } = useAuthStore();
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,7 +68,7 @@ const LeaveApprovalPage: React.FC = () => {
       setLeaveRequests(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
-      toast.error("Failed to load leave requests");
+      toast.error("Failed to load permission requests");
     } finally {
       setLoading(false);
     }
@@ -100,7 +100,8 @@ const LeaveApprovalPage: React.FC = () => {
   };
 
   const approvalLeaves = leaveRequests.filter((l: any) => {
-    if (l.request_type === "Permission") return false;
+    // Only display Permission requests
+    if (l.request_type !== "Permission") return false;
 
     const isManager = checkManagerMatch(l.reporting_manager, user?.full_name) ||
       checkManagerMatch(l.handover_to, user?.full_name) ||
@@ -128,11 +129,11 @@ const LeaveApprovalPage: React.FC = () => {
         }
       });
       if (res.ok) {
-        toast.success("Leave approved");
+        toast.success("Permission approved");
         fetchLeaves();
       }
     } catch (error) {
-      toast.error("Error approving leave");
+      toast.error("Error approving permission");
     } finally {
       setProcessingId(null);
     }
@@ -149,11 +150,11 @@ const LeaveApprovalPage: React.FC = () => {
         }
       });
       if (res.ok) {
-        toast.success("Leave rejected");
+        toast.success("Permission rejected");
         fetchLeaves();
       }
     } catch (error) {
-      toast.error("Error rejecting leave");
+      toast.error("Error rejecting permission");
     } finally {
       setProcessingId(null);
     }
@@ -170,14 +171,14 @@ const LeaveApprovalPage: React.FC = () => {
         }
       });
       if (res.ok) {
-        toast.success("Leave cancelled");
+        toast.success("Permission cancelled");
         fetchLeaves();
       } else {
         const err = await res.json();
         toast.error(err.error || err.message || "Failed to cancel");
       }
     } catch (error) {
-      toast.error("Error cancelling leave");
+      toast.error("Error cancelling permission");
     } finally {
       setProcessingId(null);
     }
@@ -197,11 +198,11 @@ const LeaveApprovalPage: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 pt-3 pb-1">
-      <div className="mb-3 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Leave Approval Requests</h1>
-          <p className="mt-1 text-sm text-neutral-500">Manage and review leave requests from your team members.</p>
+          <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Permission Approval Requests</h1>
+          <p className="mt-1 text-sm text-neutral-500">Manage and review permission timings from your team members.</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -230,19 +231,19 @@ const LeaveApprovalPage: React.FC = () => {
       </div>
 
       <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
-        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-115px)]">
+        <div className="overflow-x-auto">
           <table className="w-full border-collapse">
-            <thead className="sticky top-0 z-20 bg-neutral-50">
-              <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 text-xs font-semibold uppercase tracking-wider">
-                <th className="text-left p-4 pl-6 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Employee</th>
-                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Emp ID</th>
-                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Request Type</th>
-                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Date Range / Details</th>
-                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Reason</th>
-                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Applied At</th>
-                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Actioned At</th>
-                <th className="text-center p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Status</th>
-                <th className="text-center p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Action</th>
+            <thead>
+              <tr className="bg-neutral-50/50 border-b border-neutral-200 text-neutral-500 text-xs font-semibold uppercase tracking-wider">
+                <th className="text-left p-4 pl-6">Employee</th>
+                <th className="text-left p-4">Emp ID</th>
+                <th className="text-left p-4">Request Type</th>
+                <th className="text-left p-4">Date / Details</th>
+                <th className="text-left p-4">Reason</th>
+                <th className="text-left p-4">Applied At</th>
+                <th className="text-left p-4">Actioned At</th>
+                <th className="text-center p-4">Status</th>
+                <th className="text-center p-4">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200/80">
@@ -252,16 +253,13 @@ const LeaveApprovalPage: React.FC = () => {
                     <div className="flex flex-col items-center justify-center gap-2 py-4">
                       <CheckIcon className="w-12 h-12 text-success-400" />
                       <p className="text-sm font-bold text-neutral-500">All caught up!</p>
-                      <p className="text-xs text-neutral-400">There are no pending leave approval requests.</p>
+                      <p className="text-xs text-neutral-400">There are no pending permission approval requests.</p>
                     </div>
                   </td>
                 </tr>
               ) : (
                 approvalLeaves
                   .map((leave: any) => {
-                    const leaveType = leave.request_type === "Permission" ? "Permission" : leave.leave_type;
-                    const isPermission = leave.request_type === "Permission";
-
                     return (
                       <React.Fragment key={leave.id}>
                         <tr className="hover:bg-neutral-50/40 transition-colors">
@@ -279,28 +277,18 @@ const LeaveApprovalPage: React.FC = () => {
                           </td>
 
                           <td className="p-4 text-sm text-neutral-700 font-semibold">
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${isPermission
-                              ? "bg-purple-50 text-purple-700 border-purple-200"
-                              : "bg-blue-50 text-blue-700 border-blue-200"
-                              }`}>
-                              {leaveType}
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border bg-purple-50 text-purple-700 border-purple-200">
+                              Permission
                             </span>
                           </td>
 
                           <td className="p-4 text-sm">
-                            {isPermission ? (
-                              <div>
-                                <p className="font-semibold text-neutral-800">{leave.permission_date || "-"}</p>
-                                <p className="text-xs text-neutral-400 font-semibold mt-0.5">
-                                  {leave.from_time} to {leave.to_time}
-                                </p>
-                              </div>
-                            ) : (
-                              <div>
-                                <p className="font-semibold text-neutral-800">{leave.from_date || "-"} to {leave.to_date || "-"}</p>
-                                <p className="text-xs text-neutral-400 font-semibold mt-0.5">Duration: {leave.total_days || 0} days</p>
-                              </div>
-                            )}
+                            <div>
+                              <p className="font-semibold text-neutral-800">{leave.permission_date || "-"}</p>
+                              <p className="text-xs text-neutral-400 font-semibold mt-0.5">
+                                {leave.from_time} to {leave.to_time}
+                              </p>
+                            </div>
                           </td>
 
                           <td className="p-4 text-sm text-neutral-500 max-w-xs">
@@ -350,7 +338,7 @@ const LeaveApprovalPage: React.FC = () => {
                           <td className="p-4 text-center">
                             {leave.status === "Pending" ? (
                               (() => {
-                                const startDate = leave.from_date || leave.permission_date || leave.to_date || "";
+                                const startDate = leave.permission_date || "";
                                 const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
                                 const isFinished = startDate && startDate < today;
 
@@ -396,21 +384,16 @@ const LeaveApprovalPage: React.FC = () => {
                                 const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
                                 let hasStarted = false;
 
-                                if (isPermission && leave.permission_date && leave.from_time) {
+                                if (leave.permission_date) {
                                   if (leave.permission_date < todayStr) {
                                     hasStarted = true;
-                                  } else if (leave.permission_date === todayStr) {
+                                  } else if (leave.permission_date === todayStr && leave.from_time) {
                                     const now = new Date();
                                     const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
                                     const startTime = leave.from_time.substring(0, 5);
                                     if (currentHHMM >= startTime) {
                                       hasStarted = true;
                                     }
-                                  }
-                                } else {
-                                  const startDate = leave.from_date || leave.to_date || "";
-                                  if (startDate && startDate <= todayStr) {
-                                    hasStarted = true;
                                   }
                                 }
 
@@ -471,4 +454,4 @@ const LeaveApprovalPage: React.FC = () => {
   );
 };
 
-export default LeaveApprovalPage;
+export default PermissionApprovalPage;
