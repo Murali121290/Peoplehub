@@ -393,9 +393,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       </div>
 
       {/* Main Content Card */}
-      <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
+      <Card padding="none" className="border border-neutral-200 shadow-sm rounded-2xl bg-white">
         {/* Toolbar Header */}
-        <div className="p-5 border-b border-neutral-200 bg-neutral-50/50 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="p-5 border-b border-neutral-200 bg-neutral-50/50 flex flex-col md:flex-row md:items-center md:justify-between gap-4 rounded-t-2xl">
           {/* Left: Active Month Title */}
           <div className="flex items-center gap-3">
             <h3 className="text-lg font-bold text-neutral-850">
@@ -477,7 +477,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
         {/* Mode 1: Calendar View */}
         {viewMode === "calendar" ? (
-          <div className="p-5 max-w-[1000px] mx-auto space-y-4">
+          <div className="p-5 max-w-[1000px] mx-auto space-y-4 relative z-10">
             {/* 7-Column Weekday Header */}
             <div className="grid grid-cols-7 gap-2 mb-2">
               {WEEKDAYS.map((wd) => (
@@ -526,7 +526,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 return (
                   <div
                     key={cell.dateStr}
-                    className={`h-[80px] p-2 flex flex-col justify-between rounded-xl border relative group cursor-default transition-all duration-200 ${cell.isToday
+                    className={`h-[80px] p-2 flex flex-col justify-between rounded-xl border relative group cursor-default transition-all duration-200 hover:z-50 ${cell.isToday
                         ? "border-primary-500 shadow-sm bg-white"
                         : cell.status === "Future"
                           ? "border-transparent bg-transparent"
