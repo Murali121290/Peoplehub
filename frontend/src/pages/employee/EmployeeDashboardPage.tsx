@@ -521,7 +521,10 @@ const EmployeeDashboardPage: React.FC = () => {
       }
       const response = await fetch(`${BASE_URL}/attendance/checkin`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
         body: JSON.stringify({ user_id: Number(userId) }),
       });
       const data = await response.json();
@@ -563,7 +566,10 @@ const EmployeeDashboardPage: React.FC = () => {
       }
       const response = await fetch(`${BASE_URL}/attendance/checkout`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
         body: JSON.stringify({ user_id: Number(userId) }),
       });
       const data = await response.json();
@@ -617,7 +623,10 @@ const EmployeeDashboardPage: React.FC = () => {
       if (!isLunchBreak) {
         const response = await fetch(`${BASE_URL}/attendance/lunch-break`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
           body: JSON.stringify({ user_id: Number(userId), action: "start" }),
         });
         const data = await response.json();
@@ -641,7 +650,10 @@ const EmployeeDashboardPage: React.FC = () => {
           setLunchStartTime(null);
           await fetch(`${BASE_URL}/attendance/lunch-break`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
             body: JSON.stringify({
               user_id: Number(userId),
               action: "stop",
@@ -669,7 +681,10 @@ const EmployeeDashboardPage: React.FC = () => {
       if (isTeaBreak) {
         const response = await fetch(`${API_URL}/api/attendance/tea-break`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
           body: JSON.stringify({ user_id: Number(currentUserId), action: "stop" }),
         });
         const data = await response.json();
@@ -691,7 +706,10 @@ const EmployeeDashboardPage: React.FC = () => {
       } else {
         const response = await fetch(`${API_URL}/api/attendance/tea-break`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
           body: JSON.stringify({ user_id: Number(currentUserId), action: "start" }),
         });
         const data = await response.json();

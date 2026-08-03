@@ -120,8 +120,6 @@ def login():
         if user:
             print("DB EMAIL:", user.email)
             print("COMPANY EMAIL:", user.company_email)
-            print("HASH:", user.password_hash)
-            print("PASSWORD MATCH:", user.check_password(password))
         else:
             print("USER NOT FOUND")
         print("================================")

@@ -1,7 +1,7 @@
 """add manager_comment to leave_requests
 
-Revision ID: 399fee761905
-Revises: 256d59a2b81c
+Revision ID: 004
+Revises: 003
 Create Date: 2026-07-24 15:18:53.553567
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '399fee761905'
-down_revision: Union[str, None] = '256d59a2b81c'
+revision: str = '004'
+down_revision: Union[str, None] = '003'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
