@@ -350,6 +350,17 @@ def get_pending_appraisals():
             status="Pending Review"
         ).all()
 
+        # Batch fetch all data to avoid N+3 query loops
+        all_employees = Employee.query.all()
+        employee_map = {emp.id: emp for emp in all_employees}
+
+        from models.appraisal import AppraisalCycle
+        all_cycles = AppraisalCycle.query.all()
+        cycle_map = {c.id: c for c in all_cycles}
+
+        all_users = User.query.all()
+        user_map = {u.id: u for u in all_users}
+
         if not pending_answers:
             return jsonify({
                 "success": True,
@@ -367,13 +378,13 @@ def get_pending_appraisals():
                 continue
             seen.add(key)
 
-            employee = Employee.query.get(record.employee_id)
-            cycle = AppraisalCycle.query.get(record.cycle_id)
+            employee = employee_map.get(record.employee_id)
+            cycle = cycle_map.get(record.cycle_id)
 
             if not employee or not cycle:
                 continue
 
-            user = User.query.get(employee.user_id)
+            user = user_map.get(employee.user_id)
 
             role_name = (
                 user.role.name

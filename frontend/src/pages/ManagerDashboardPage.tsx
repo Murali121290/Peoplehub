@@ -24,6 +24,7 @@ import {
   ListBulletIcon,
   HomeIcon,
   ArrowPathIcon,
+  ArrowDownTrayIcon,
 } from "@heroicons/react/24/outline";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -33,6 +34,93 @@ import { Tabs } from "../components/ui/Tabs";
 import { Input, Select } from "../components/ui/Form";
 import type { StatCardColor } from "../components/ui/StatCard";
 import type { BadgeVariant } from "../components/ui/Badge";
+
+const CustomSelect: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  options: string[];
+  placeholder: string;
+}> = ({ value, onChange, options, placeholder }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClose = () => setIsOpen(false);
+    document.addEventListener("click", handleClose);
+    return () => document.removeEventListener("click", handleClose);
+  }, [isOpen]);
+
+  return (
+    <div style={{ position: "relative", width: "100%", textAlign: "left", textTransform: "none" }} onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          display: "flex",
+          width: "100%",
+          alignItems: "center",
+          justifyContent: "space-between",
+          borderRadius: "6px",
+          border: "1px solid #cbd5e1",
+          background: "#fff",
+          padding: "4px 8px",
+          fontSize: "11px",
+          fontWeight: 600,
+          color: "#334155",
+          outline: "none",
+          cursor: "pointer",
+        }}
+      >
+        <span style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+          {value === "All" ? placeholder : value}
+        </span>
+        <span style={{ marginLeft: "4px", fontSize: "8px", color: "#94a3b8" }}>▼</span>
+      </button>
+
+      {isOpen && (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            zIndex: 50,
+            marginTop: "4px",
+            maxHeight: "192px",
+            overflowY: "auto",
+            borderRadius: "8px",
+            border: "1px solid #e2e8f0",
+            background: "#fff",
+            padding: "4px 0",
+            boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+          }}
+        >
+          {options.map((opt) => (
+            <div
+              key={opt}
+              onClick={() => {
+                onChange(opt);
+                setIsOpen(false);
+              }}
+              style={{
+                cursor: "pointer",
+                padding: "6px 10px",
+                fontSize: "11px",
+                color: "#334155",
+                background: opt === value ? "#f1f5f9" : "transparent",
+                fontWeight: opt === value ? "bold" : "normal",
+                textOverflow: "ellipsis",
+                overflow: "hidden",
+                whiteSpace: "nowrap",
+              }}
+              title={opt}
+            >
+              {opt === "All" ? placeholder : opt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -156,6 +244,14 @@ const NOTIFICATION_STYLES: Record<string, string> = {
 };
 
 const ManagerDashboardPage = () => {
+  const userId = localStorage.getItem("user_id");
+
+  const [managerPath, setManagerPath] = useState<{ id: number; name: string }[]>([
+    { id: Number(userId) || 0, name: "My Team" }
+  ]);
+
+  const currentViewedManagerId = managerPath[managerPath.length - 1]?.id || Number(userId);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
 
@@ -163,6 +259,10 @@ const ManagerDashboardPage = () => {
   const [teamAttendance, setTeamAttendance] = useState<any[]>([]);
   const [attendanceSearch, setAttendanceSearch] = useState("");
   const [attendanceFilter, setAttendanceFilter] = useState("All");
+  const [deptFilter, setDeptFilter] = useState("All");
+  const [desigFilter, setDesigFilter] = useState("All");
+  const [mgrFilter, setMgrFilter] = useState("All");
+  const [shiftFilter, setShiftFilter] = useState("All");
   const [managerName, setManagerName] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [showViewDropdown, setShowViewDropdown] = useState(false);
@@ -174,23 +274,87 @@ const ManagerDashboardPage = () => {
   const [hoveredRowId, setHoveredRowId] = useState<number | null>(null);
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<number | null>(null);
+  const [selectedCycle, setSelectedCycle] = useState<string>("");
+  const [availableMonths, setAvailableMonths] = useState<any[]>([]);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
 
   // Yesterday Summary States
   const [yesterdaySummary, setYesterdaySummary] = useState<any[]>([]);
   const [loadingYesterday, setLoadingYesterday] = useState(false);
   const [yesterdaySummaryDate, setYesterdaySummaryDate] = useState("");
 
+  const generatePayrollCycles = () => {
+    const today = new Date();
+    const cycles = [];
+    for (let i = 0; i < 6; i++) {
+      let year = today.getFullYear();
+      let month = today.getMonth();
+      let targetMonth = month - i;
+      let targetYear = year;
+      if (targetMonth < 0) {
+        targetYear += Math.floor(targetMonth / 12);
+        targetMonth = (targetMonth % 12 + 12) % 12;
+      }
+      if (today.getDate() < 25) {
+        targetMonth = targetMonth - 1;
+        if (targetMonth < 0) {
+          targetYear -= 1;
+          targetMonth = 11;
+        }
+      }
+      const cycleStart = new Date(targetYear, targetMonth, 25);
+      let cycleEndMonth = targetMonth + 1;
+      let cycleEndYear = targetYear;
+      if (cycleEndMonth > 11) {
+        cycleEndMonth = 0;
+        cycleEndYear += 1;
+      }
+      const cycleEnd = new Date(cycleEndYear, cycleEndMonth, 24);
+      const label = `${cycleStart.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - ${cycleEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+      const value = `${cycleStart.getFullYear()}-${String(cycleStart.getMonth() + 1).padStart(2, "0")}-25`;
+      cycles.push({ label, value });
+    }
+    return cycles;
+  };
+
+  const handleMemberClick = (member: any) => {
+    if (member.is_reporting_manager && member.user_id) {
+      setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
+    } else {
+      viewEmployeeHistory(member);
+    }
+  };
+
   const viewEmployeeHistory = async (member: any) => {
     setHistoryModalUser(member);
     setLoadingHistory(true);
     setHistoryRecords([]);
+    const cycles = generatePayrollCycles();
+    const defaultCycle = cycles[0]?.value || "";
+    setSelectedCycle(defaultCycle);
     try {
       const targetUserId = member?.user_id || member?.id || member?.employee_id;
       if (!targetUserId || targetUserId === "undefined") {
         console.warn("Cannot fetch attendance history: invalid user ID", member);
         return;
       }
-      const response = await fetch(`${BASE_URL}/attendance/history/${targetUserId}`);
+      const response = await fetch(`${BASE_URL}/attendance/history/${targetUserId}?start_date=${defaultCycle}`);
+      if (!response.ok) throw new Error("Failed to fetch history");
+      const data = await response.json();
+      setHistoryRecords(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to load attendance history:", error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleCycleChange = async (cycleValue: string) => {
+    setSelectedCycle(cycleValue);
+    setLoadingHistory(true);
+    try {
+      const targetUserId = historyModalUser?.user_id || historyModalUser?.id || historyModalUser?.employee_id;
+      const response = await fetch(`${BASE_URL}/attendance/history/${targetUserId}?start_date=${cycleValue}`);
       if (!response.ok) throw new Error("Failed to fetch history");
       const data = await response.json();
       setHistoryRecords(Array.isArray(data) ? data : []);
@@ -233,14 +397,33 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const userId = localStorage.getItem("user_id");
+  useEffect(() => {
+    const fetchMonths = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${BASE_URL}/attendance/available-months`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setAvailableMonths(data);
+        }
+      } catch (err) {
+        console.error("Failed to load available cycles:", err);
+      }
+    };
+    fetchMonths();
+  }, [BASE_URL]);
 
   // ==========================
   // LOAD TEAM MEMBERS & ATTENDANCE
   // ==========================
   useEffect(() => {
-    loadTeamMembers();
-    loadTeamAttendance();
+    loadTeamMembers(currentViewedManagerId);
+    loadTeamAttendance(currentViewedManagerId);
+  }, [currentViewedManagerId]);
+
+  useEffect(() => {
     loadManagerInfo();
     loadYesterdaySummary();
   }, []);
@@ -348,9 +531,9 @@ const ManagerDashboardPage = () => {
     } catch { }
   };
 
-  const loadTeamMembers = async () => {
+  const loadTeamMembers = async (viewedUserId = currentViewedManagerId) => {
     try {
-      const response = await fetch(`${BASE_URL}/employees/my-team/${userId}`);
+      const response = await fetch(`${BASE_URL}/employees/my-team/${viewedUserId}`);
       const data = await response.json();
       const formattedMembers = data.map((emp: any) => ({
         id: emp.id,
@@ -380,9 +563,9 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const loadTeamAttendance = async () => {
+  const loadTeamAttendance = async (viewedUserId = currentViewedManagerId) => {
     try {
-      const response = await fetch(`${BASE_URL}/employees/team-attendance/${userId}`);
+      const response = await fetch(`${BASE_URL}/employees/team-attendance/${viewedUserId}`);
       const data = await response.json();
       setTeamAttendance(Array.isArray(data) ? data : []);
     } catch (error) {
@@ -495,9 +678,36 @@ const ManagerDashboardPage = () => {
         shift: att.shift,
         manager_status: att.manager_status,
         attendance_status: att.attendance_status || "",
+        is_reporting_manager: att.is_reporting_manager || match?.is_reporting_manager || false,
+        report_count: att.report_count ?? match?.report_count ?? 0,
+        reporting_manager: att.reporting_manager || match?.reporting_manager || "",
       };
     });
   }, [teamAttendance, teamMembers]);
+
+  const departments = useMemo(() => {
+    const s = new Set<string>();
+    scopedTeamMembers.forEach((m) => { if (m.department) s.add(m.department); });
+    return ["All", ...Array.from(s)];
+  }, [scopedTeamMembers]);
+
+  const designations = useMemo(() => {
+    const s = new Set<string>();
+    scopedTeamMembers.forEach((m) => { if (m.designation) s.add(m.designation); });
+    return ["All", ...Array.from(s)];
+  }, [scopedTeamMembers]);
+
+  const managersList = useMemo(() => {
+    const s = new Set<string>();
+    scopedTeamMembers.forEach((m) => { if (m.reporting_manager) s.add(m.reporting_manager); });
+    return ["All", ...Array.from(s)];
+  }, [scopedTeamMembers]);
+
+  const shiftsList = useMemo(() => {
+    const s = new Set<string>();
+    scopedTeamMembers.forEach((m) => { if (m.shift) s.add(m.shift); });
+    return ["All", ...Array.from(s)];
+  }, [scopedTeamMembers]);
 
   // ==========================
   // TEAM STATS
@@ -553,7 +763,9 @@ const ManagerDashboardPage = () => {
     if (filterStatus === "All") {
       matchesFilter = true;
     } else if (filterStatus === "Present") {
-      matchesFilter = member.attendanceStatus === "Present" || member.attendanceStatus === "Checked Out";
+      matchesFilter = !!member.check_in || !!member.card_check_in || member.attendanceStatus === "Present" || member.attendanceStatus === "Checked Out" || member.attendanceStatus === "Half Day";
+    } else if (filterStatus === "Not Checked In") {
+      matchesFilter = !member.check_in && !member.card_check_in && member.attendanceStatus !== "Present" && member.attendanceStatus !== "Checked Out" && member.attendanceStatus !== "Half Day";
     } else if (filterStatus === "Leave") {
       matchesFilter = member.status === "Leave" || member.attendanceStatus === "On Leave";
     } else if (filterStatus === "WFH") {
@@ -575,6 +787,19 @@ const ManagerDashboardPage = () => {
 
 
 
+  const notCheckedInCount = useMemo(
+    () =>
+      teamAttendance.filter(
+        (m) =>
+          !m.check_in &&
+          !m.card_check_in &&
+          m.attendance_status !== "Present" &&
+          m.attendance_status !== "Checked Out" &&
+          m.attendance_status !== "Half Day",
+      ).length,
+    [teamAttendance],
+  );
+
   const statCards = [
     {
       label: "Team Members",
@@ -586,11 +811,23 @@ const ManagerDashboardPage = () => {
     {
       label: "Present Today",
       value: teamAttendance.filter(
-        (m) => m.attendance_status === "Present" || m.attendance_status === "Checked Out",
+        (m) =>
+          !!m.check_in ||
+          !!m.card_check_in ||
+          m.attendance_status === "Present" ||
+          m.attendance_status === "Checked Out" ||
+          m.attendance_status === "Half Day",
       ).length,
-      sub: "Available now",
+      sub: "Checked in (Web/Card)",
       icon: CheckCircleIcon,
       tone: "success",
+    },
+    {
+      label: "Not Checked In",
+      value: notCheckedInCount,
+      sub: "Pending check-in today",
+      icon: ArrowRightOnRectangleIcon,
+      tone: "default",
     },
     {
       label: "On Leave",
@@ -780,19 +1017,120 @@ const ManagerDashboardPage = () => {
               })}
             </div>
 
-            <div
-              style={{
-                padding: "10px 14px",
-                borderRadius: "12px",
-                background: THEME.primarySoft,
-                border: `1px solid #c7f9e9`,
-                color: THEME.primaryDark,
-                fontSize: "13px",
-                fontWeight: 700,
-              }}
-            >
-              {managerName ? `Welcome, ${managerName}` : "Welcome, Manager"}
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setShowExportDropdown(!showExportDropdown)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "9px 16px",
+                  borderRadius: "12px",
+                  border: "none",
+                  background: THEME.navy,
+                  color: "#fff",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  boxShadow: "0 4px 10px rgba(15,23,42,0.15)",
+                  height: "42px",
+                }}
+              >
+                <ArrowDownTrayIcon style={{ width: "16px", height: "16px" }} />
+                Export Team Attendance
+              </button>
+
+              {showExportDropdown && availableMonths.length > 0 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: "8px",
+                    minWidth: "280px",
+                    borderRadius: "12px",
+                    border: `1px solid ${THEME.border}`,
+                    background: THEME.surface,
+                    boxShadow: "0 12px 32px rgba(15, 23, 42, 0.15)",
+                    zIndex: 50,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "10px 12px",
+                      borderBottom: `1px solid ${THEME.border}`,
+                      background: THEME.surfaceSoft,
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: THEME.textSoft,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Select Month
+                  </div>
+                  {availableMonths.map((m: any) => (
+                    <button
+                      key={`${m.month}-${m.year}`}
+                      onClick={async () => {
+                        setShowExportDropdown(false);
+                        try {
+                          let url = `${BASE_URL}/attendance/export-monthly?manager_id=${userId}`;
+                          url += `&month=${m.month}&year=${m.year}`;
+                          const token = localStorage.getItem("token");
+                          const response = await fetch(url, {
+                            headers: { "Authorization": `Bearer ${token}` }
+                          });
+                          const blob = await response.blob();
+                          const urlBlob = window.URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = urlBlob;
+                          a.download = `Team_Attendance_Report_${m.label.replace(/\s+/g, "_")}.xlsx`;
+                          document.body.appendChild(a);
+                          a.click();
+                          a.remove();
+                        } catch (error) {
+                          console.error("Failed to download team attendance report:", error);
+                        }
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "12px 16px",
+                        border: "none",
+                        background: "transparent",
+                        color: THEME.text,
+                        fontSize: "13px",
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        transition: "all 0.2s ease",
+                        borderBottom: `1px solid ${THEME.border}`,
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.target as HTMLElement).style.background = THEME.surfaceMuted;
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.target as HTMLElement).style.background = "transparent";
+                      }}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+
+            {showExportDropdown && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 40,
+                }}
+                onClick={() => setShowExportDropdown(false)}
+              />
+            )}
           </div>
         </div>
       </header>
@@ -806,8 +1144,8 @@ const ManagerDashboardPage = () => {
           <section
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-              gap: "18px",
+              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              gap: "14px",
             }}
           >
             {statCards.map((card) => {
@@ -817,6 +1155,7 @@ const ManagerDashboardPage = () => {
               const isSelected = (() => {
                 if (card.label === "Team Members" && attendanceFilter === "All") return true;
                 if (card.label === "Present Today" && attendanceFilter === "Present") return true;
+                if (card.label === "Not Checked In" && attendanceFilter === "Not Checked In") return true;
                 if (card.label === "On Leave" && attendanceFilter === "Leave") return true;
                 if (card.label === "Work From Home" && attendanceFilter === "WFH") return true;
                 if (card.label === "Shift Changed" && attendanceFilter === "Shift Changed") return true;
@@ -830,6 +1169,7 @@ const ManagerDashboardPage = () => {
                     const statusMap: Record<string, string> = {
                       "Team Members": "All",
                       "Present Today": "Present",
+                      "Not Checked In": "Not Checked In",
                       "On Leave": "Leave",
                       "Work From Home": "WFH",
                       "Shift Changed": "Shift Changed",
@@ -838,45 +1178,45 @@ const ManagerDashboardPage = () => {
                   }}
                   style={{
                     background: THEME.surface,
-                    borderRadius: "20px",
+                    borderRadius: "14px",
                     border: isSelected
                       ? `2px solid ${tone.iconColor}`
                       : `1px solid ${THEME.border}`,
                     boxShadow: isSelected
-                      ? "0 10px 25px -5px rgba(0, 0, 0, 0.08)"
-                      : "0 4px 20px rgba(15, 23, 42, 0.04)",
-                    padding: isSelected ? "19px" : "20px",
+                      ? "0 6px 16px -4px rgba(0, 0, 0, 0.08)"
+                      : "0 2px 10px rgba(15, 23, 42, 0.03)",
+                    padding: isSelected ? "8px 12px" : "9px 12px",
                     cursor: "pointer",
-                    transform: isSelected ? "scale(1.02)" : "scale(1)",
+                    transform: isSelected ? "scale(1.01)" : "scale(1)",
                     transition: "all 0.2s ease-in-out",
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
-                      alignItems: "flex-start",
+                      alignItems: "center",
                       justifyContent: "space-between",
-                      gap: "12px",
+                      gap: "6px",
                     }}
                   >
                     <div>
                       <div
                         style={{
-                          fontSize: "12px",
+                          fontSize: "10px",
                           fontWeight: 700,
                           color: THEME.textLight,
                           textTransform: "uppercase",
-                          letterSpacing: "0.08em",
+                          letterSpacing: "0.06em",
                         }}
                       >
                         {card.label}
                       </div>
                       <div
                         style={{
-                          marginTop: "12px",
-                          fontSize: "34px",
+                          marginTop: "2px",
+                          fontSize: "20px",
                           fontWeight: 800,
-                          lineHeight: 1,
+                          lineHeight: 1.1,
                           color: THEME.navy,
                         }}
                       >
@@ -884,8 +1224,8 @@ const ManagerDashboardPage = () => {
                       </div>
                       <div
                         style={{
-                          marginTop: "8px",
-                          fontSize: "13px",
+                          marginTop: "2px",
+                          fontSize: "10px",
                           color: THEME.textSoft,
                         }}
                       >
@@ -895,9 +1235,9 @@ const ManagerDashboardPage = () => {
 
                     <div
                       style={{
-                        width: "46px",
-                        height: "46px",
-                        borderRadius: "14px",
+                        width: "30px",
+                        height: "30px",
+                        borderRadius: "8px",
                         background: tone.iconBg,
                         display: "flex",
                         alignItems: "center",
@@ -905,7 +1245,7 @@ const ManagerDashboardPage = () => {
                         flexShrink: 0,
                       }}
                     >
-                      <Icon style={{ width: "22px", height: "22px", color: tone.iconColor }} />
+                      <Icon style={{ width: "16px", height: "16px", color: tone.iconColor }} />
                     </div>
                   </div>
                 </div>
@@ -1017,30 +1357,7 @@ const ManagerDashboardPage = () => {
                     />
                   </div>
 
-                  <select
-                    value={attendanceFilter}
-                    onChange={(e) => setAttendanceFilter(e.target.value)}
-                    style={{
-                      height: "42px",
-                      padding: "0 14px",
-                      borderRadius: "12px",
-                      border: `1px solid ${THEME.border}`,
-                      background: THEME.surface,
-                      outline: "none",
-                      fontSize: "14px",
-                      color: THEME.text,
-                      minWidth: "150px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <option value="All">All Status</option>
-                    <option value="Present">Present</option>
-                    <option value="Checked Out">Checked Out</option>
-                    <option value="Absent">Absent</option>
-                    <option value="On Leave">On Leave</option>
-                    <option value="WFH">Work From Home</option>
-                    <option value="Shift Changed">Shift Changed</option>
-                  </select>
+
 
                   <div style={{ display: "flex", background: THEME.surface, border: `1px solid ${THEME.border}`, borderRadius: "12px", overflow: "hidden", height: "42px" }}>
                     <button
@@ -1086,6 +1403,53 @@ const ManagerDashboardPage = () => {
             </div>
 
             <div style={{ padding: "24px" }}>
+              {/* Breadcrumbs for manager team hierarchy */}
+              {managerPath.length > 1 && (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "20px",
+                  fontSize: "14px",
+                  color: THEME.textSoft,
+                  background: THEME.surfaceSoft,
+                  padding: "10px 18px",
+                  borderRadius: "12px",
+                  border: `1px solid ${THEME.border}`,
+                  width: "fit-content"
+                }}>
+                  <UsersIcon style={{ width: "16px", height: "16px", color: THEME.primary }} />
+                  <span style={{ fontWeight: 600, color: THEME.navy }}>Viewing Team:</span>
+                  {managerPath.map((mgr, index) => (
+                    <React.Fragment key={mgr.id}>
+                      {index > 0 && <span style={{ color: THEME.textLight }}>&gt;</span>}
+                      {index === managerPath.length - 1 ? (
+                        <span style={{ fontWeight: 700, color: THEME.primary }}>{mgr.name}</span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            const newPath = managerPath.slice(0, index + 1);
+                            setManagerPath(newPath);
+                          }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: THEME.textSoft,
+                            textDecoration: "underline",
+                            cursor: "pointer",
+                            padding: 0,
+                            font: "inherit",
+                            fontWeight: 500
+                          }}
+                        >
+                          {mgr.name}
+                        </button>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              )}
+
               {teamAttendance.length === 0 ? (
                 <div
                   style={{
@@ -1129,6 +1493,9 @@ const ManagerDashboardPage = () => {
                     display: "grid",
                     gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
                     gap: "18px",
+                    maxHeight: "calc(100vh - 350px)",
+                    overflowY: "auto",
+                    paddingRight: "4px",
                   }}
                 >
                   {scopedTeamMembers
@@ -1143,7 +1510,7 @@ const ManagerDashboardPage = () => {
                       if (attendanceFilter === "All") {
                         matchFilter = true;
                       } else if (attendanceFilter === "Present") {
-                        matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out";
+                        matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out" || m.attendance_status === "Half Day";
                       } else if (attendanceFilter === "Leave") {
                         matchFilter = m.status === "Leave" || m.attendance_status === "On Leave";
                       } else if (attendanceFilter === "WFH") {
@@ -1154,7 +1521,12 @@ const ManagerDashboardPage = () => {
                         matchFilter = m.attendance_status === attendanceFilter;
                       }
 
-                      return matchSearch && matchFilter;
+                      const matchDept = deptFilter === "All" || m.department === deptFilter;
+                      const matchDesig = desigFilter === "All" || m.designation === desigFilter;
+                      const matchMgr = mgrFilter === "All" || m.reporting_manager === mgrFilter;
+                      const matchShift = shiftFilter === "All" || m.shift === shiftFilter;
+
+                      return matchSearch && matchFilter && matchDept && matchDesig && matchMgr && matchShift;
                     })
                     .map((member) => {
                       const status = member.attendance_status;
@@ -1175,7 +1547,7 @@ const ManagerDashboardPage = () => {
                           key={member.id}
                           onMouseEnter={() => setHoveredCardId(member.id)}
                           onMouseLeave={() => setHoveredCardId(null)}
-                          onClick={() => viewEmployeeHistory(member)}
+                          onClick={() => handleMemberClick(member)}
                           style={{
                             background: statusStyle.bg,
                             border: highlightedEmployeeId === member.id ? `2px solid #3b82f6` : `1px solid ${statusStyle.border}`,
@@ -1259,7 +1631,28 @@ const ManagerDashboardPage = () => {
                                   >
                                     {member.name}
                                   </div>
-
+                                  {member.is_reporting_manager && (
+                                    <span
+                                      title={`This employee manages ${member.report_count || 0} team members`}
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        padding: "3px 10px",
+                                        borderRadius: "6px",
+                                        background: "#f0fdf4",
+                                        border: "1px solid #bbf7d0",
+                                        color: "#166534",
+                                        fontSize: "11px",
+                                        fontWeight: 700,
+                                        flexShrink: 0,
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      <span>👥</span>
+                                      <span>People Manager ({member.report_count || 0})</span>
+                                    </span>
+                                  )}
                                   {member.isWfh && (
                                     <span
                                       title={member.isPermanentWfh ? "Permanent Work From Home" : "Work From Home (WFH)"}
@@ -1492,31 +1885,131 @@ const ManagerDashboardPage = () => {
                               </div>
                             </div>
                           )}
+
+                          {/* Action Buttons */}
+                          <div style={{ display: "flex", gap: "8px", marginTop: "14px" }}>
+                            {member.is_reporting_manager && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: "6px 12px",
+                                  borderRadius: "10px",
+                                  border: "none",
+                                  background: THEME.primary,
+                                  color: "#fff",
+                                  fontSize: "12px",
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  textAlign: "center",
+                                }}
+                              >
+                                View Team
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                  e.stopPropagation();
+                                  viewEmployeeHistory(member);
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: "6px 12px",
+                                borderRadius: "10px",
+                                border: `1px solid ${THEME.border}`,
+                                background: "#fff",
+                                color: THEME.textSoft,
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                textAlign: "center",
+                              }}
+                            >
+                              View History
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
                 </div>
               ) : (
-                <div style={{ overflowX: "auto", border: `1px solid ${THEME.border}`, borderRadius: "16px" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", background: THEME.surface }}>
-                    <thead>
-                      <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Employee</th>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Employee ID</th>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Department</th>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Designation</th>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Shift</th>
-                        <th colSpan={3} style={{ padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(37,99,235,0.05)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
-                        <th colSpan={3} style={{ padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(126,34,206,0.05)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
-                        <th rowSpan={2} style={{ padding: "14px 16px" }}>Status</th>
+                <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 380px)", border: `1px solid ${THEME.border}`, borderRadius: "16px" }}>
+                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, textAlign: "left", background: THEME.surface }}>
+                    <thead style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc" }}>
+                      <tr style={{ background: "#f8fafc", borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}` }}>Employee</th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}` }}>Employee ID</th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}` }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span>Department</span>
+                            <CustomSelect
+                              value={deptFilter}
+                              onChange={setDeptFilter}
+                              options={departments}
+                              placeholder="All"
+                            />
+                          </div>
+                        </th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}` }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span>Designation</span>
+                            <CustomSelect
+                              value={desigFilter}
+                              onChange={setDesigFilter}
+                              options={designations}
+                              placeholder="All"
+                            />
+                          </div>
+                        </th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "150px", borderBottom: `1px solid ${THEME.border}` }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span>Reporting Manager</span>
+                            <CustomSelect
+                              value={mgrFilter}
+                              onChange={setMgrFilter}
+                              options={managersList}
+                              placeholder="All"
+                            />
+                          </div>
+                        </th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "130px", borderBottom: `1px solid ${THEME.border}` }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span>Shift</span>
+                            <CustomSelect
+                              value={shiftFilter}
+                              onChange={setShiftFilter}
+                              options={shiftsList}
+                              placeholder="All"
+                            />
+                          </div>
+                        </th>
+                        <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "#eff6ff", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
+                        <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "#faf5ff", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "120px", borderBottom: `1px solid ${THEME.border}` }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span>Status</span>
+                            <CustomSelect
+                              value={attendanceFilter}
+                              onChange={setAttendanceFilter}
+                              options={["All", "Present", "Checked Out", "Absent", "On Leave", "WFH", "Shift Changed"]}
+                              placeholder="All"
+                            />
+                          </div>
+                        </th>
+                        <th rowSpan={2} style={{ padding: "14px 16px", minWidth: "140px", verticalAlign: "middle", textAlign: "center" }}>
+                          Actions
+                        </th>
                       </tr>
-                      <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                        <th style={{ padding: "8px 16px", background: "rgba(37,99,235,0.02)" }}>Check In</th>
-                        <th style={{ padding: "8px 16px", background: "rgba(37,99,235,0.02)" }}>Check Out</th>
-                        <th style={{ padding: "8px 16px", background: "rgba(37,99,235,0.02)", fontWeight: 700 }}>Hours</th>
-                        <th style={{ padding: "8px 16px", background: "rgba(126,34,206,0.02)" }}>Check In</th>
-                        <th style={{ padding: "8px 16px", background: "rgba(126,34,206,0.02)" }}>Check Out</th>
-                        <th style={{ padding: "8px 16px", background: "rgba(126,34,206,0.02)", fontWeight: 700 }}>Hours</th>
+                      <tr style={{ background: "#f8fafc", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}` }}>Check In</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}` }}>Check Out</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, fontWeight: 700 }}>Hours</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}` }}>Check In</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}` }}>Check Out</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}`, fontWeight: 700 }}>Hours</th>
                       </tr>
                     </thead>
                     <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>
@@ -1532,7 +2025,7 @@ const ManagerDashboardPage = () => {
                           if (attendanceFilter === "All") {
                             matchFilter = true;
                           } else if (attendanceFilter === "Present") {
-                            matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out";
+                            matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out" || m.attendance_status === "Half Day";
                           } else if (attendanceFilter === "Leave") {
                             matchFilter = m.status === "Leave" || m.attendance_status === "On Leave";
                           } else if (attendanceFilter === "WFH") {
@@ -1543,7 +2036,12 @@ const ManagerDashboardPage = () => {
                             matchFilter = m.attendance_status === attendanceFilter;
                           }
 
-                          return matchSearch && matchFilter;
+                          const matchDept = deptFilter === "All" || m.department === deptFilter;
+                          const matchDesig = desigFilter === "All" || m.designation === desigFilter;
+                          const matchMgr = mgrFilter === "All" || m.reporting_manager === mgrFilter;
+                          const matchShift = shiftFilter === "All" || m.shift === shiftFilter;
+
+                          return matchSearch && matchFilter && matchDept && matchDesig && matchMgr && matchShift;
                         })
                         .map((member) => {
                           const status = member.attendance_status;
@@ -1570,7 +2068,7 @@ const ManagerDashboardPage = () => {
                               key={member.id}
                               onMouseEnter={() => setHoveredRowId(member.id)}
                               onMouseLeave={() => setHoveredRowId(null)}
-                              onClick={() => viewEmployeeHistory(member)}
+                              onClick={() => handleMemberClick(member)}
                               style={{
                                 borderBottom: `1px solid ${THEME.border}`,
                                 background: highlightedEmployeeId === member.id ? "rgba(59, 130, 246, 0.15)" : (hoveredRowId === member.id ? THEME.surfaceSoft : "transparent"),
@@ -1605,8 +2103,30 @@ const ManagerDashboardPage = () => {
                                       {initials}
                                     </div>
                                   )}
-                                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                                     <span style={{ fontWeight: 700, color: THEME.navy }}>{member.name}</span>
+                                    {member.is_reporting_manager && (
+                                      <span
+                                        title={`This employee manages ${member.report_count || 0} team members`}
+                                        style={{
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "4px",
+                                          padding: "3px 10px",
+                                          borderRadius: "6px",
+                                          background: "#f0fdf4",
+                                          border: "1px solid #bbf7d0",
+                                          color: "#166534",
+                                          fontSize: "11px",
+                                          fontWeight: 700,
+                                          flexShrink: 0,
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        <span>👥</span>
+                                        <span>People Manager ({member.report_count || 0})</span>
+                                      </span>
+                                    )}
                                     {member.isWfh && (
                                       <span
                                         title={member.isPermanentWfh ? "Permanent Work From Home" : "Work From Home (WFH)"}
@@ -1640,6 +2160,7 @@ const ManagerDashboardPage = () => {
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.employee_id || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.department || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.designation || "—"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.reporting_manager || "—"}</td>
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.shift || "General Shift"}</td>
 
                               {/* Web Entry Columns */}
@@ -1670,6 +2191,48 @@ const ManagerDashboardPage = () => {
                                 >
                                   {status}
                                 </span>
+                              </td>
+                              <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                                <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      viewEmployeeHistory(member);
+                                    }}
+                                    style={{
+                                      padding: "6px 12px",
+                                      borderRadius: "6px",
+                                      border: `1px solid ${THEME.border}`,
+                                      background: "#fff",
+                                      color: THEME.textSoft,
+                                      fontSize: "12px",
+                                      fontWeight: 600,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    History
+                                  </button>
+                                  {member.is_reporting_manager && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
+                                      }}
+                                      style={{
+                                        padding: "6px 12px",
+                                        borderRadius: "6px",
+                                        border: "none",
+                                        background: THEME.primary,
+                                        color: "#fff",
+                                        fontSize: "12px",
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Team
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -1735,6 +2298,7 @@ const ManagerDashboardPage = () => {
                       <th style={{ padding: "12px 16px" }}>Check Out</th>
                       <th style={{ padding: "12px 16px" }}>Working Hours</th>
                       <th style={{ padding: "12px 16px" }}>Breaks (L/T)</th>
+                      <th style={{ padding: "12px 16px" }}>Permission</th>
                       <th style={{ padding: "12px 16px" }}>Manager Status</th>
                       <th style={{ padding: "12px 16px", textAlign: "center" }}>Action</th>
                     </tr>
@@ -1793,6 +2357,9 @@ const ManagerDashboardPage = () => {
                           <td style={{ padding: "12px 16px", color: THEME.textSoft }}>
                             {(emp.lunch_minutes > 0 || emp.tea_minutes > 0) ? `${emp.lunch_minutes}m / ${emp.tea_minutes}m` : "—"}
                           </td>
+                          <td style={{ padding: "12px 16px", color: "#0f766e", fontWeight: 700 }}>
+                            {emp.permission_time || "—"}
+                          </td>
                           <td style={{ padding: "12px 16px" }}>
                             <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: msBg, color: msColor, fontSize: "11px", fontWeight: 800 }}>{managerStatus}</span>
                           </td>
@@ -1801,7 +2368,7 @@ const ManagerDashboardPage = () => {
                           <td style={{ padding: "12px 16px", textAlign: "center", minWidth: "160px" }}>
 
                             {/* LEAVE — read-only, only Confirm Leave */}
-                            {category === "leave" && managerStatus !== "Approved" && (
+                            {category === "leave" && managerStatus !== "Approved" && !(managerStatus === "Need Clarification" && employeeReplied) && (
                               <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
                                 <span style={{ fontSize: "11px", color: "#92400e", fontWeight: 600, background: "#fef3c7", padding: "2px 8px", borderRadius: "6px" }}>On Leave</span>
                                 <button
@@ -1871,7 +2438,7 @@ const ManagerDashboardPage = () => {
                             )}
 
                             {/* ABSENT — Need Clarification sent, employee chose Leave */}
-                            {category === "absent" && managerStatus === "Need Clarification" && status === "Leave" && employeeReplied && (
+                            {category === "leave" && managerStatus === "Need Clarification" && employeeReplied && (
                               <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
                                 <span style={{ fontSize: "10px", color: "#92400e", fontWeight: 600, background: "#fef3c7", padding: "2px 8px", borderRadius: "6px" }}>Applied {emp.leave_type || "Leave"}</span>
                                 <button
@@ -1901,7 +2468,6 @@ const ManagerDashboardPage = () => {
           </section>
         </div>
       )}
-
 
       {/* Attendance History Modal */}
       {historyModalUser && (
@@ -2014,9 +2580,33 @@ const ManagerDashboardPage = () => {
 
             {/* Modal Body */}
             <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
-              <h4 style={{ fontSize: "13px", fontWeight: 700, color: THEME.navy, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "16px" }}>
-                30-Day Attendance History
-              </h4>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
+                <h4 style={{ fontSize: "13px", fontWeight: 700, color: THEME.navy, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
+                  Attendance History
+                </h4>
+                <div style={{ width: "260px" }}>
+                  <select
+                    value={selectedCycle}
+                    onChange={(e) => handleCycleChange(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "4px 8px",
+                      borderRadius: "6px",
+                      border: "1px solid #cbd5e1",
+                      background: "#fff",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#334155",
+                      outline: "none",
+                      cursor: "pointer"
+                    }}
+                  >
+                    {generatePayrollCycles().map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
               {loadingHistory ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "60px 0", gap: "12px" }}>
@@ -2063,6 +2653,12 @@ const ManagerDashboardPage = () => {
                         } else if (status === "Absent") {
                           pillBg = THEME.dangerBg;
                           pillText = THEME.danger;
+                        } else if (status === "Week Off") {
+                          pillBg = "rgba(148, 163, 184, 0.15)";
+                          pillText = "#64748b";
+                        } else if (status === "Holiday") {
+                          pillBg = "rgba(124, 58, 237, 0.15)";
+                          pillText = "#7c3aed";
                         }
 
                         // Format date nicely

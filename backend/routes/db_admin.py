@@ -10,7 +10,7 @@ db_admin_bp = Blueprint('db_admin', __name__)
 def check_is_admin():
     user_id = get_jwt_identity()
     user = User.query.get(int(user_id))
-    if not user or not user.role or user.role.name.lower() not in ["admin", "hr", "s4c"]:
+    if not user or not user.role or user.role.name.lower() not in ["admin"]:
         return False
     return True
 

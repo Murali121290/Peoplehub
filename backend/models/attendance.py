@@ -22,7 +22,8 @@ class Attendance(db.Model):
 
     user_id = db.Column(
         db.Integer,
-        nullable=False
+        nullable=False,
+        index=True
     )
 
     # Check In / Check Out
@@ -106,13 +107,18 @@ class Attendance(db.Model):
 
     attendance_date = db.Column(
         db.Date,
-        default=get_ist_today
+        default=get_ist_today,
+        index=True
     )
 
     status = db.Column(
     db.String(20),
     default="Absent"
 )
+
+    __table_args__ = (
+        db.Index("ix_attendance_user_id_attendance_date", "user_id", "attendance_date"),
+    )
     shift_timing = db.Column(
     db.String(50),
     default="General Shift"

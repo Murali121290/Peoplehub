@@ -12,6 +12,15 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       port: port
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vendor: ['react', 'react-dom', 'react-router-dom', 'axios', 'framer-motion', 'socket.io-client']
+          }
+        }
+      }
     }
   }
 })

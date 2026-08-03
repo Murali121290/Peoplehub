@@ -66,6 +66,7 @@ const DEFAULT_NEW_EMP = {
   joining_date: "",
   salary: "",
   shift_timing: "",
+  work_mode: "Office",
   status: "Active",
 };
 
@@ -133,9 +134,13 @@ export default function HRAdminDashboard() {
   // --- API Calls ---
   const fetchEmployees = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/employees/`);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${BASE_URL}/employees/`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const data = await response.json();
-      const nonAdmins = (data || []).filter((emp: any) => {
+      const dataList = Array.isArray(data) ? data : [];
+      const nonAdmins = dataList.filter((emp: any) => {
         const isNotAdmin = emp.access_level?.toLowerCase() !== 'admin';
         const isActive = emp.status?.toLowerCase() !== 'inactive';
         return isNotAdmin && isActive;
@@ -143,24 +148,33 @@ export default function HRAdminDashboard() {
       setEmployees(nonAdmins);
     } catch (error) {
       console.error(error);
+      setEmployees([]);
     }
   };
 
   const fetchAttendance = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/attendance/`);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${BASE_URL}/attendance/`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const data = await response.json();
-      setAttendance(data || []);
+      setAttendance(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Attendance Error:", error);
+      setAttendance([]);
     }
   };
 
   const fetchLeaveRequests = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/leaves/`);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${BASE_URL}/leaves/`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const data = await response.json();
-      const formatted = data.map((leave: any) => {
+      const dataList = Array.isArray(data) ? data : [];
+      const formatted = dataList.map((leave: any) => {
         const isPermission = leave.request_type === "Permission";
 
         const formatTime = (timeStr: string) => {
@@ -201,16 +215,21 @@ export default function HRAdminDashboard() {
       setLeaves(formatted);
     } catch (error) {
       console.error("Leave Fetch Error:", error);
+      setLeaves([]);
     }
   };
 
   const fetchShiftRequests = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/shifts/`);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${BASE_URL}/shifts/`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const data = await response.json();
-      setShifts(data || []);
+      setShifts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Shift Fetch Error:", error);
+      setShifts([]);
     }
   };
 
@@ -375,18 +394,23 @@ export default function HRAdminDashboard() {
 
     let today_shift = emp.shift_timing || "General Shift";
     let today_shift_type: "permanent" | "wfh" | "changed" = "permanent";
+
     if (approvedShiftReq) {
-      const rt = (approvedShiftReq.request_type || "").toUpperCase();
-      if (rt === "WFH") {
-        today_shift = "WFH";
-        today_shift_type = "wfh";
-      } else {
-        today_shift = approvedShiftReq.requested_shift || today_shift;
+      if (approvedShiftReq.requested_shift && approvedShiftReq.requested_shift !== "WFH") {
+        today_shift = approvedShiftReq.requested_shift;
         today_shift_type = "changed";
       }
-    } else if ((emp.shift_timing || "").toUpperCase() === "WFH") {
-      today_shift = "WFH";
+    }
+
+    const isWfhToday = approvedShiftReq
+      ? (approvedShiftReq.requested_work_mode === "WFH" || approvedShiftReq.request_type === "WFH" || approvedShiftReq.requested_shift === "WFH")
+      : (emp.work_mode === "WFH" || (emp.shift_timing || "").toUpperCase() === "WFH");
+
+    if (isWfhToday) {
       today_shift_type = "wfh";
+      if (today_shift === "WFH") {
+        today_shift = "General Shift";
+      }
     }
 
     return { ...emp, today_status, today_shift, today_shift_type };
@@ -500,6 +524,10 @@ export default function HRAdminDashboard() {
         "shift_timing",
         newEmp.shift_timing || ""
       );
+      formData.append(
+        "work_mode",
+        newEmp.work_mode || "Office"
+      );
 
       if (profileImage) {
         formData.append("profile_image", profileImage);
@@ -558,7 +586,10 @@ export default function HRAdminDashboard() {
     try {
       // Fetch full employee details so all fields (joining_date, designation,
       // reporting_manager, company_email, team_id, etc.) are pre-populated
-      const response = await fetch(`${BASE_URL}/employees/${employee.id}`);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${BASE_URL}/employees/${employee.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const fullEmployee = await response.json();
 
       // The DB stores partial reporting manager names (e.g. "Muthukumar").
@@ -605,7 +636,8 @@ export default function HRAdminDashboard() {
         role_id: fullEmployee.role_id ?? "",
         reporting_manager: resolvedManager,
         access_level: fullEmployee.access_level ?? "",
-        shift_timing: fullEmployee.shift_timing ?? "",
+        shift_timing: (fullEmployee.shift_timing ?? "").toUpperCase() === "WFH" ? "General Shift" : (fullEmployee.shift_timing ?? ""),
+        work_mode: (fullEmployee.shift_timing ?? "").toUpperCase() === "WFH" ? "WFH" : (fullEmployee.work_mode ?? "Office"),
         status: fullEmployee.status ?? "active",
         password: "",   // never pre-fill password
       });
@@ -622,11 +654,15 @@ export default function HRAdminDashboard() {
   const handleProfileComplete = async () => {
     if (!currentEmployee) return;
     try {
+      const token = localStorage.getItem("token");
       const response = await fetch(
         `${BASE_URL}/employees/${currentEmployee.id}`,
         {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
           body: JSON.stringify(profileData),
         },
       );

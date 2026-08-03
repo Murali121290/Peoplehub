@@ -27,6 +27,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const [selectedShift, setSelectedShift] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [availableMonths, setAvailableMonths] = useState<any[]>([]);
+  const [selectedCycle, setSelectedCycle] = useState<string>("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -43,6 +45,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         method: "POST",
         body: formData,
       });
+
 
       const result = await res.json();
       if (res.ok && result.success) {
@@ -78,6 +81,37 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       day: "numeric",
       year: "numeric",
     });
+  };
+
+  const triggerDbSync = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`${BASE_URL}/attendance/trigger-db-sync`, {
+        method: "POST",
+      });
+
+      const result = await res.json();
+      if (res.ok && result.success) {
+        toast.success(result.message || "Attendance synced from Biometric Database successfully!");
+        // Reload attendance data
+        let url = `${BASE_URL}/attendance`;
+        if (attendanceView === "weekly") {
+          url = `${BASE_URL}/attendance/weekly`;
+        } else if (attendanceView === "monthly") {
+          url = `${BASE_URL}/attendance/monthly`;
+        }
+        const response = await fetch(url);
+        const data = await response.json();
+        setAttendanceData(data || []);
+      } else {
+        toast.error(result.error || "Failed to sync from Biometric Database");
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Error triggering database sync");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const updateDateRange = (type: string) => {
@@ -481,17 +515,62 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
     updateDateRange(attendanceView);
   }, [attendanceView, BASE_URL]);
 
+  useEffect(() => {
+    const fetchMonths = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${BASE_URL}/attendance/available-months`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setAvailableMonths(data);
+          setSelectedCycle(`${data[0].month},${data[0].year}`);
+        }
+      } catch (err) {
+        console.error("Failed to load available cycles:", err);
+      }
+    };
+    fetchMonths();
+  }, [BASE_URL]);
+
   const downloadAttendance = async () => {
     try {
-      console.log("BASE_URL =", BASE_URL);
-      console.log(`${BASE_URL}/attendance/export-monthly`);
+      const userId = localStorage.getItem("user_id");
+      const userStr = localStorage.getItem("user");
+      const user = userStr ? JSON.parse(userStr) : null;
+      const userRole = user?.role;
 
-      const response = await fetch(`${BASE_URL}/attendance/export-monthly`);
+      let url = `${BASE_URL}/attendance/export-monthly`;
+      const queryParams: string[] = [];
+
+      if (userRole === "Manager") {
+        queryParams.push(`manager_id=${userId}`);
+      }
+      if (selectedCycle) {
+        const [m, y] = selectedCycle.split(",");
+        queryParams.push(`month=${m}`);
+        queryParams.push(`year=${y}`);
+      }
+
+      if (queryParams.length > 0) {
+        url += `?${queryParams.join("&")}`;
+      }
+
+      console.log("BASE_URL =", BASE_URL);
+      console.log(url);
+
+      const token = localStorage.getItem("token");
+      const response = await fetch(url, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const urlBlob = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = "Attendance_Report.xlsx";
+      a.href = urlBlob;
+      const activeLabel = availableMonths.find((m) => `${m.month},${m.year}` === selectedCycle)?.label || "";
+      const filenameSuffix = activeLabel ? `_${activeLabel.replace(" ", "_")}` : "";
+      a.download = userRole === "Manager" ? `Team_Attendance_Report${filenameSuffix}.xlsx` : `Attendance_Report${filenameSuffix}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -685,6 +764,20 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         </div>
 
         <div className="flex items-center gap-4">
+          {availableMonths.length > 0 && (
+            <select
+              value={selectedCycle}
+              onChange={(e) => setSelectedCycle(e.target.value)}
+              className="px-3 py-1.5 border border-neutral-200 rounded-xl bg-white text-xs font-semibold text-neutral-600 outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-100 cursor-pointer"
+            >
+              {availableMonths.map((m: any) => (
+                <option key={`${m.month}-${m.year}`} value={`${m.month},${m.year}`}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          )}
+
           <Button
             onClick={downloadAttendance}
             variant="success"
@@ -697,6 +790,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             variant="primary"
           >
             Upload Card Excel
+          </Button>
+
+          <Button
+            onClick={triggerDbSync}
+            variant="success"
+            disabled={loading}
+          >
+            {loading ? "Syncing..." : "Link to DB"}
           </Button>
           <input
             type="file"

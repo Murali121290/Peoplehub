@@ -6,6 +6,7 @@ import {
   UserGroupIcon,
   BriefcaseIcon,
   UserIcon,
+  HomeIcon,
 } from '@heroicons/react/24/outline';
 import Panel from '../components/Panel';
 
@@ -163,14 +164,24 @@ const TeamOverviewTab: React.FC<TeamOverviewTabProps> = ({
                                         {getInitials(emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`)}
                                       </div>
                                       <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-semibold text-neutral-900 truncate">
+                                        <p className="text-sm font-semibold text-neutral-900 truncate flex items-center gap-1.5">
                                           {emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim()}
+                                          {emp.is_wfh && (
+                                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                              <HomeIcon className="w-3 h-3 text-blue-500" />
+                                              WFH
+                                            </span>
+                                          )}
                                         </p>
                                         <p className="text-xs text-neutral-500 truncate">
                                           {emp.reporting_manager ? `Reports to: ${emp.reporting_manager}` : 'No reporting manager'}
                                         </p>
                                       </div>
-                                      <UserIcon className="w-4 h-4 text-neutral-400 flex-shrink-0" />
+                                      {emp.is_wfh ? (
+                                        <HomeIcon className="w-4 h-4 text-blue-500 flex-shrink-0 animate-pulse" title="Working from Home" />
+                                      ) : (
+                                        <UserIcon className="w-4 h-4 text-neutral-400 flex-shrink-0" />
+                                      )}
                                     </div>
                                   ))}
                                 </div>

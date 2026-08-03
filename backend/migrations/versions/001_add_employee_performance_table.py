@@ -1,6 +1,6 @@
 """Add employee performance table
 
-Revision ID: 3d2ffc3a8067
+Revision ID: 001
 Revises: None
 Create Date: 2026-07-21 18:02:45.431527
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '3d2ffc3a8067'
+revision: str = '001'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

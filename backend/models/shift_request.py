@@ -22,12 +22,22 @@ class ShiftRequest(db.Model):
 
     current_shift = db.Column(
         db.String(100),
-        nullable=False
+        nullable=True
     )
 
     requested_shift = db.Column(
         db.String(100),
-        nullable=False
+        nullable=True
+    )
+
+    current_work_mode = db.Column(
+        db.String(50),
+        nullable=True
+    )
+
+    requested_work_mode = db.Column(
+        db.String(50),
+        nullable=True
     )
 
 
@@ -116,17 +126,19 @@ class ShiftRequest(db.Model):
             "employee_name": self.employee_name,
             "current_shift": self.current_shift,
             "requested_shift": self.requested_shift,
+            "current_work_mode": self.current_work_mode,
+            "requested_work_mode": self.requested_work_mode,
             "reason": self.reason,
             "reporting_manager": self.reporting_manager,
             "status": self.status,
             "manager_comment": self.manager_comment,
             "created_at": (
-                self.created_at.isoformat()
+                self.created_at.isoformat() + "Z"
                 if self.created_at
                 else None
             ),
             "approved_at": (
-                self.approved_at.isoformat()
+                self.approved_at.isoformat() + "Z"
                 if self.approved_at
                 else None
             ),
@@ -138,7 +150,7 @@ class ShiftRequest(db.Model):
     else None
 ),
             "rejected_at": (
-                self.rejected_at.isoformat()
+                self.rejected_at.isoformat() + "Z"
                 if self.rejected_at
                 else None
             ),

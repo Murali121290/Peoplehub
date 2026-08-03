@@ -294,3 +294,13 @@ body {
   transform: translateY(-2px) scale(1.01);
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
+
+/* Prevent image selection and mobile touch callouts */
+img {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
