@@ -1,7 +1,7 @@
 import os
 import urllib.parse
 # pyrefly: ignore [missing-import]
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Date, Float, LargeBinary, extract, Time, Numeric, text, JSON
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Date, Float, LargeBinary, extract, Time, Numeric, text, JSON, Index
 # pyrefly: ignore [missing-import]
 from sqlalchemy.ext.declarative import declarative_base
 # pyrefly: ignore [missing-import]
@@ -59,6 +59,7 @@ class DbMock:
     Time = Time
     Numeric = Numeric
     JSON = JSON
+    Index = Index
     session = db_session
     extract = extract
 
@@ -95,29 +96,34 @@ def init_db(app=None):
     # Initialize EmployeeLeaveBalance for all existing employees
     from models.employee import Employee
     from models.leave import EmployeeLeaveBalance
-    
+
     employees = db_session.query(Employee).all()
     policies = db_session.query(LeavePolicy).all()
-    
-    for emp in employees:
-        emp.sick_leave = 0.0
-        emp.casual_leave = 0.0
-        emp.privilege_leave = 0.0
+    existing_balances = {
+        (b.employee_id, b.leave_type)
+        for b in db_session.query(EmployeeLeaveBalance).all()
+    }
 
+    db_session.query(Employee).update({
+        Employee.sick_leave: 0.0,
+        Employee.casual_leave: 0.0,
+        Employee.privilege_leave: 0.0
+    })
+
+    for emp in employees:
         for pol in policies:
             emp_gender = (emp.gender or "").strip().lower()
             pol_gender = (pol.applicable_gender or "All").strip().lower()
             is_applicable = (pol_gender == "all") or (emp_gender == pol_gender)
 
-            if is_applicable:
-                balance = db_session.query(EmployeeLeaveBalance).filter_by(employee_id=emp.id, leave_type=pol.leave_type).first()
-                if not balance:
-                    balance = EmployeeLeaveBalance(
-                        employee_id=emp.id,
-                        leave_type=pol.leave_type,
-                        available=pol.yearly_limit
-                    )
-                    db_session.add(balance)
+            if is_applicable and (emp.id, pol.leave_type) not in existing_balances:
+                balance = EmployeeLeaveBalance(
+                    employee_id=emp.id,
+                    leave_type=pol.leave_type,
+                    available=pol.yearly_limit
+                )
+                db_session.add(balance)
+                existing_balances.add((emp.id, pol.leave_type))
     db_session.commit()
 
     return db

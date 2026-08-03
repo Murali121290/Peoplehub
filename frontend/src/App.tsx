@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense, lazy } from 'react';
 
 import {
   BrowserRouter,
@@ -15,21 +15,25 @@ import { useAuthStore } from './store/authStore';
 import DashboardLayout from './layouts/DashboardLayout';
 
 // Pages
-import LoginPage from './pages/LoginPage';
-import SettingsPage from './pages/SettingsPage';
-import HrmsModule from "./pages/hr/HRAdminDashboard";
-import ManagerDashboardPage from './pages/ManagerDashboardPage';
-import EmployeeDashboardPage from './pages/employee/EmployeeDashboardPage';
-import CompleteProfile from './pages/Compeleteprofilepage';
-import AnnouncementsPage from './pages/AnnouncementsPage';
-import TelecomDirectoryPage from "./pages/Telecomdirectory ";
-import MeetingRoomsPage from "./pages/mettingroom/MeetingRooms";
-import AppraisalDashboard from "./pages/appraisal/AppraisalDashboard";
-import DBAdminPage from "./pages/admin/DBAdminPage";
-import LeaveApprovalPage from "./pages/manager/LeaveApprovalPage";
-import ShiftApprovalPage from "./pages/manager/ShiftApprovalPage";
-import PermissionApprovalPage from "./pages/manager/PermissionApprovalPage";
-import WFHApprovalPage from "./pages/manager/WFHApprovalPage";
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const HrmsModule = lazy(() => import("./pages/hr/HRAdminDashboard"));
+const ManagerDashboardPage = lazy(() => import('./pages/ManagerDashboardPage'));
+const EmployeeDashboardPage = lazy(() => import('./pages/employee/EmployeeDashboardPage'));
+const CompleteProfile = lazy(() => import('./pages/Compeleteprofilepage'));
+const AnnouncementsPage = lazy(() => import('./pages/AnnouncementsPage'));
+const TelecomDirectoryPage = lazy(() => import("./pages/Telecomdirectory "));
+const MeetingRoomsPage = lazy(() => import("./pages/mettingroom/MeetingRooms"));
+const AppraisalDashboard = lazy(() => import("./pages/appraisal/AppraisalDashboard"));
+const DBAdminPage = lazy(() => import("./pages/admin/DBAdminPage"));
+const LeaveApprovalPage = lazy(() => import("./pages/manager/LeaveApprovalPage"));
+const ShiftApprovalPage = lazy(() => import("./pages/manager/ShiftApprovalPage"));
+
+const PageLoadingFallback = () => (
+  <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
+    <div className="h-16 w-16 rounded-full border-4 border-primary-200 border-t-primary-500 animate-spin"></div>
+  </div>
+);
 
 
 
@@ -103,6 +107,7 @@ function App() {
 
     {/* Application Routes */}
 
+    <Suspense fallback={<PageLoadingFallback />}>
     <Routes>
 
       {/* Login */}
@@ -286,6 +291,7 @@ function App() {
       />
 
     </Routes>
+    </Suspense>
   </BrowserRouter>
 
   );

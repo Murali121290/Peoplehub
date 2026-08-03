@@ -1,7 +1,7 @@
 """add clarification_history, remove obsolete columns, and expand manager_status in attendance
 
-Revision ID: 5b9f0c2d8e3f
-Revises: 18c479933b1e
+Revision ID: 006
+Revises: 005
 Create Date: 2026-07-28 09:52:00.000000
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '5b9f0c2d8e3f'
-down_revision: Union[str, None] = '18c479933b1e'
+revision: str = '006'
+down_revision: Union[str, None] = '005'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

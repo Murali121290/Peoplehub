@@ -1,4 +1,5 @@
 from utils.compat import Blueprint, request, jsonify
+from utils.jwt_helper import jwt_required, get_jwt_identity
 from models.database import db
 from models.attendance import Attendance
 from datetime import datetime
@@ -48,6 +49,7 @@ def get_ist_today():
 
 
 @attendance_bp.route("/checkin", methods=["POST"])
+@jwt_required()
 def check_in():
 
     try:
@@ -61,6 +63,12 @@ def check_in():
                 "success": False,
                 "message": "User ID is required"
             }), 400
+
+        if str(get_jwt_identity()) != str(user_id):
+            return jsonify({
+                "success": False,
+                "message": "Unauthorized"
+            }), 403
 
         employee = Employee.query.filter_by(
             user_id=user_id
@@ -208,7 +216,7 @@ def check_in():
             attendance_date=today
         ).first()
 
-        if attendance:
+        if attendance and attendance.check_in:
             if not attendance.check_out:
                 return jsonify({
                     "success": False,
@@ -219,6 +227,12 @@ def check_in():
                 "success": False,
                 "message": "You have already checked out for today. You cannot check in again."
             }), 400
+        elif attendance:
+            # =====================================
+            # UPDATE EXISTING PLACEHOLDER ROW
+            # =====================================
+            attendance.check_in = get_ist_now()
+            attendance.status = "Present"
         else:
             # =====================================
             # CREATE ATTENDANCE
@@ -229,7 +243,6 @@ def check_in():
                 check_in=get_ist_now(),
                 status="Present"
             )
-            db.session.add(attendance)
 
         db.session.add(attendance)
 
@@ -319,6 +332,7 @@ def check_in():
 
 
 @attendance_bp.route("/checkout", methods=["POST"])
+@jwt_required()
 def check_out():
 
     try:
@@ -332,6 +346,12 @@ def check_out():
                 "success": False,
                 "error": "User ID is required"
             }), 400
+
+        if str(get_jwt_identity()) != str(user_id):
+            return jsonify({
+                "success": False,
+                "error": "Unauthorized"
+            }), 403
 
         print("CHECKOUT USER ID:", user_id)
 
@@ -648,11 +668,18 @@ def attendance_status(user_id):
     "/lunch-break",
     methods=["POST", "PUT"]
 )
+@jwt_required()
 def lunch_break():
 
     try:
 
         data = request.json
+
+        if str(get_jwt_identity()) != str(data.get("user_id")):
+            return jsonify({
+                "success": False,
+                "error": "Unauthorized"
+            }), 403
 
         attendance = Attendance.query.filter_by(
             user_id=data["user_id"],
@@ -750,11 +777,18 @@ def lunch_break():
     "/tea-break",
     methods=["POST", "PUT"]
 )
+@jwt_required()
 def tea_break():
 
     try:
 
         data = request.json
+
+        if str(get_jwt_identity()) != str(data.get("user_id")):
+            return jsonify({
+                "success": False,
+                "error": "Unauthorized"
+            }), 403
 
         attendance = Attendance.query.filter_by(
             user_id=data["user_id"],

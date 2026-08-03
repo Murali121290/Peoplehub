@@ -8,7 +8,8 @@ class Employee(db.Model):
 
     user_id = db.Column(
         db.Integer,
-        db.ForeignKey("users.id")
+        db.ForeignKey("users.id"),
+        index=True
     )
 
     profile_image = db.Column(
@@ -16,7 +17,7 @@ class Employee(db.Model):
         nullable=True
     )
 
-    employee_id = db.Column(db.String(50))
+    employee_id = db.Column(db.String(50), index=True)
 
     first_name = db.Column(db.String(100))
     last_name = db.Column(db.String(100))
@@ -140,7 +141,7 @@ class Employee(db.Model):
     emergency_contact_relation = db.Column(db.String(50))
 
     # Employee Status
-    status = db.Column(db.String(20))
+    status = db.Column(db.String(20), index=True)
 
     profile_completed = db.Column(
         db.Boolean,
