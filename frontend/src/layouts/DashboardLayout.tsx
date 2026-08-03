@@ -237,7 +237,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
-      const res = await fetch(`${BASE_URL}/birthday-wishes`, {
+      const res = await fetch(`${BASE_URL}/birthday-wishes/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
