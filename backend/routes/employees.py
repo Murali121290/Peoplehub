@@ -1682,20 +1682,31 @@ def get_peers_attendance(user_id):
         
         peers = [p for p in peers if p.reporting_manager and p.reporting_manager.strip().lower() == manager_name]
 
+        # Extract peer IDs for batch fetching
+        peer_user_ids = [p.user_id for p in peers]
+        peer_employee_ids = [str(p.id) for p in peers]
+
+        # Batch fetch attendances
+        attendances = Attendance.query.filter(
+            Attendance.user_id.in_(peer_user_ids),
+            Attendance.attendance_date == today
+        ).all()
+        attendance_by_user = {a.user_id: a for a in attendances}
+
+        # Batch fetch approved leaves
+        from models.leave import LeaveRequest
+        leaves = LeaveRequest.query.filter(
+            LeaveRequest.employee_id.in_(peer_employee_ids),
+            LeaveRequest.status == "Approved",
+            LeaveRequest.from_date <= today,
+            LeaveRequest.to_date >= today
+        ).all()
+        leave_by_employee = {str(l.employee_id): l for l in leaves}
+
         result = []
         for peer in peers:
-            attendance = Attendance.query.filter_by(
-                user_id=peer.user_id,
-                attendance_date=today
-            ).first()
-
-            from models.leave import LeaveRequest
-            leave = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == str(peer.id),
-                LeaveRequest.status == "Approved",
-                LeaveRequest.from_date <= today,
-                LeaveRequest.to_date >= today
-            ).first()
+            attendance = attendance_by_user.get(peer.user_id)
+            leave = leave_by_employee.get(str(peer.id))
 
             status = "Absent"
             if attendance:

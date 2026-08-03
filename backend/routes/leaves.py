@@ -164,12 +164,16 @@ def get_leaves():
                 f"Status: {leave.status}"
             )
 
+        # Batch fetch all employees to avoid N+1 queries
+        all_employees = Employee.query.all()
+        employee_map = {emp.id: emp for emp in all_employees}
+
         leaves_data = []
         for leave in leaves:
             emp_string_id = leave.employee_id
             try:
                 if emp_string_id and str(emp_string_id).isdigit():
-                    emp = Employee.query.get(int(emp_string_id))
+                    emp = employee_map.get(int(emp_string_id))
                     if emp and emp.employee_id:
                         emp_string_id = emp.employee_id
             except:
