@@ -1958,6 +1958,8 @@ def get_team_attendance_by_id(team_id):
                 "permission_to": permission_to,
                 "working_hours": working_hours,
                 "total_hours": total_hours,
+                "leave_type": leave.leave_type if leave else None,
+                "total_days": float(leave.total_days) if leave and leave.total_days is not None else None,
             })
 
         return jsonify(result)
