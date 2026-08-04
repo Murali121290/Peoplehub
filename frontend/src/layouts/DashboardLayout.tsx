@@ -10,6 +10,7 @@ import {
   Bars3Icon,
 } from "@heroicons/react/24/outline";
 import { socket } from "../services/socket";
+import { getEmployees } from "../services/employeesCache";
 
 import Sidebar from "./components/Sidebar";
 import NotificationPanel from "./components/NotificationPanel";
@@ -363,9 +364,8 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
 
   // --- Employees ---
   useEffect(() => {
-    fetch(`${BASE_URL}/employees`)
-      .then((res) => res.json())
-      .then((data) => setEmployees(Array.isArray(data) ? data : []))
+    getEmployees()
+      .then((data) => setEmployees(data))
       .catch((err) => console.error(err));
   }, []);
 

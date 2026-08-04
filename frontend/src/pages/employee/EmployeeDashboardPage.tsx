@@ -2,6 +2,7 @@ import { API_URL } from "../../config/api";
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
+import { getEmployees } from "../../services/employeesCache";
 import {
   HomeIcon,
   CheckCircleIcon,
@@ -1144,8 +1145,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   // --- Effects ---
   useEffect(() => {
-    fetch(`${BASE_URL}/employees/`)
-      .then((res) => res.json())
+    getEmployees()
       .then((data) => setEmployees(data))
       .catch((err) => console.error(err));
     fetchTodayBirthdays();
@@ -1319,8 +1319,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       // If the leave belongs to current user, we should update their leave balance in employees state!
       if (Number(payload.employee_id) === Number(currentEmployee?.id)) {
         // Reload employee details from backend to sync balances
-        fetch(`${BASE_URL}/employees/`)
-          .then((res) => res.json())
+        getEmployees(true)
           .then((data) => setEmployees(data))
           .catch((err) => console.error(err));
       }

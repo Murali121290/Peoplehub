@@ -1,6 +1,7 @@
 import { API_URL } from "../../config/api";
 import React, { useState, useEffect, useMemo } from "react";
 import { apiService } from "../../services/api";
+import { getEmployees } from "../../services/employeesCache";
 import {
   HomeIcon,
   UserGroupIcon,
@@ -132,14 +133,9 @@ export default function HRAdminDashboard() {
   const [isResetting, setIsResetting] = useState(false);
 
   // --- API Calls ---
-  const fetchEmployees = async () => {
+  const fetchEmployees = async (force = false) => {
     try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(`${BASE_URL}/employees/`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const data = await response.json();
-      const dataList = Array.isArray(data) ? data : [];
+      const dataList = await getEmployees(force);
       const nonAdmins = dataList.filter((emp: any) => {
         const isNotAdmin = emp.access_level?.toLowerCase() !== 'admin';
         const isActive = emp.status?.toLowerCase() !== 'inactive';
@@ -567,7 +563,7 @@ export default function HRAdminDashboard() {
 
       toast.success(isEditMode ? "Employee Updated Successfully" : "Employee Added Successfully");
 
-      await fetchEmployees();
+      await fetchEmployees(true);
       await fetchTeams();
       await fetchTeamOverview();
 
