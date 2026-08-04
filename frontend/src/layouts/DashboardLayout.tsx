@@ -22,6 +22,80 @@ import { useIsDesktop } from "./hooks/useIsDesktop";
 
 const BASE_URL = `${API_URL}/api`;
 
+const playBookNotificationSound = () => {
+  try {
+    const sampleRate = 44100;
+    const duration = 0.5;
+    const numSamples = Math.floor(sampleRate * duration);
+    
+    // Header (44 bytes) + Data (numSamples * 2 bytes for 16-bit signed PCM)
+    const buffer = new Uint8Array(44 + numSamples * 2);
+    const view = new DataView(buffer.buffer);
+    
+    const writeString = (offset: number, str: string) => {
+      for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + numSamples * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // Mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true); // ByteRate (44100 * 2 = 88200)
+    view.setUint16(32, 2, true);              // BlockAlign (2)
+    view.setUint16(34, 16, true);             // BitsPerSample (16-bit)
+    writeString(36, 'data');
+    view.setUint32(40, numSamples * 2, true);
+    
+    // Synthesize 16-bit signed PCM audio data (C5 and G5 dual tone)
+    for (let i = 0; i < numSamples; i++) {
+      const t = i / sampleRate;
+      let val = 0;
+      
+      // Tone 1: C5 (523.25 Hz) with fade out
+      if (t >= 0 && t < 0.15) {
+        const fade = (0.15 - t) / 0.15;
+        val = Math.sin(2 * Math.PI * 523.25 * t) * fade;
+      }
+      // Tone 2: G5 (783.99 Hz) with fade out (staggered delay)
+      else if (t >= 0.18 && t < 0.5) {
+        const fade = (0.5 - t) / 0.32;
+        val = Math.sin(2 * Math.PI * 783.99 * (t - 0.18)) * fade;
+      }
+      
+      // Convert to 16-bit signed PCM range (-32768 to 32767)
+      const sampleVal = Math.floor(val * 28000); // 28000 is maximum amplitude (approx 85% volume)
+      view.setInt16(44 + i * 2, sampleVal, true); // true for little-endian
+    }
+    
+    // Convert Uint8Array buffer to Base64
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64String = btoa(binary);
+    
+    // Play the generated sound file using standard HTML5 Audio element
+    const audio = new Audio("data:audio/wav;base64," + base64String);
+    audio.volume = 1.0;
+    audio.play().catch(e => {
+      console.warn("Autoplay blocked announcement chime (requires a click on the page first):", e);
+    });
+  } catch (err) {
+    console.error("Audio generation or playback failed:", err);
+  }
+};
+
+if (typeof window !== "undefined") {
+  (window as any).playBookNotificationSound = playBookNotificationSound;
+}
+
 const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -115,11 +189,20 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       const shownSet = new Set<number>(storedShown);
       let updated = false;
 
+      const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+
       notifications.forEach((item: any) => {
         if (!shownSet.has(item.id)) {
           shownSet.add(item.id);
-          // Display a friendly toast instead of an error toast
-          toast(item.message, { icon: "🔔", duration: 3000 });
+          
+          // Only show toast if notification was created today
+          const itemDateStr = item.created_at ? item.created_at.split("T")[0] : "";
+          const isCreatedToday = itemDateStr === todayStr;
+
+          if (isCreatedToday) {
+            // Display a friendly toast instead of an error toast
+            toast(item.message, { icon: "🔔", duration: 3000 });
+          }
           updated = true;
         }
         // Also ensure shownNotifications ref is synchronized
@@ -540,6 +623,8 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     socket.on("receive_announcement", (data) => {
       setLiveAnnouncements((prev) => [data, ...prev]);
+      playBookNotificationSound();
+      toast(`📢 New Announcement: ${data.title || "Message from HR"}`, { icon: "📢", duration: 4000 });
     });
     socket.on("announcements_seen_update", (data: any) => {
       if (data.seen_announcement_ids) {

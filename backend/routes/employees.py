@@ -253,6 +253,12 @@ def get_employees():
                 emp.privilege_leave,
             "joining_date":
                 emp.joining_date.isoformat() if emp.joining_date else None,
+            "is_active":
+                emp.is_active if hasattr(emp, "is_active") and emp.is_active is not None else True,
+            "deactivation_reason":
+                emp.deactivation_reason if hasattr(emp, "deactivation_reason") else None,
+            "last_working_date":
+                emp.last_working_date.isoformat() if hasattr(emp, "last_working_date") and emp.last_working_date else None,
             "profile_image":
                 base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None
         })
@@ -1468,6 +1474,8 @@ def get_reporting_employees(user_id):
             manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
             reporting_list = [e for e in all_employees if e.user_id != user_id and is_manager_match(e.reporting_manager, manager_full_name)]
 
+        has_any_updates = False
+
         for employee in reporting_list:
 
             attendance = Attendance.query.filter_by(
@@ -1477,6 +1485,11 @@ def get_reporting_employees(user_id):
 
             if attendance and (attendance.manager_status or "").strip().lower() == "approved":
                 continue
+
+            if attendance:
+                from routes.attendance import sync_biometric_to_web_entry
+                if sync_biometric_to_web_entry(attendance):
+                    has_any_updates = True
 
             from models.leave import LeaveRequest
             from sqlalchemy import or_ as sql_or
@@ -1635,6 +1648,13 @@ def get_reporting_employees(user_id):
                     hist
 
             })
+
+        if has_any_updates:
+            try:
+                db.session.commit()
+            except Exception as commit_err:
+                db.session.rollback()
+                print("Error committing copied attendance entries:", commit_err)
 
         result = sorted(result, key=lambda x: (x.get("employee_name") or "").lower())
 
@@ -2213,4 +2233,45 @@ def get_employee_details(employee_id):
         return jsonify({
             "success": False,
             "message": str(e)
+        }), 500
+
+@employees_bp.route("/<int:employee_id>/status", methods=["POST"])
+def update_employee_status(employee_id):
+    try:
+        employee = Employee.query.get(employee_id)
+        if not employee:
+            return jsonify({
+                "success": False,
+                "message": "Employee not found"
+            }), 404
+
+        data = request.get_json() or {}
+        is_active = data.get("is_active", True)
+
+        employee.is_active = is_active
+        if not is_active:
+            employee.deactivation_reason = data.get("deactivation_reason")
+            lwd_str = data.get("last_working_date")
+            if lwd_str:
+                employee.last_working_date = datetime.strptime(lwd_str, "%Y-%m-%d").date()
+        else:
+            employee.deactivation_reason = None
+            employee.last_working_date = None
+
+        # Disable/enable linked User portal access
+        user = User.query.get(employee.user_id)
+        if user:
+            user.is_active = is_active
+            user.status = "active" if is_active else "inactive"
+
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": "Employee status updated successfully"
+        })
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({
+            "success": False,
+            "error": str(err)
         }), 500

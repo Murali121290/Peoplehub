@@ -43,6 +43,8 @@ interface DayDetails {
   badgeEmoji: string;
   checkIn: string;
   checkOut: string;
+  cardCheckIn?: string;
+  cardCheckOut?: string;
   workingHours: number; // in hours float
   workingHoursFormatted: string; // e.g. "9h 13m"
   lunchMinutes: number;
@@ -82,17 +84,30 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const fetchMonthData = async () => {
     setIsLoading(true);
     try {
-      const [attendanceRes, holidaysRes, leavesRes] = await Promise.all([
-        userId ? apiService.get(`/attendance/history/${userId}`).catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+      let prevMonth = selectedMonth - 1;
+      let prevYear = selectedYear;
+      if (prevMonth === 0) {
+        prevMonth = 12;
+        prevYear -= 1;
+      }
+      const startDateStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-25`;
+
+      const [attendanceRes, currentHolidaysRes, prevHolidaysRes, leavesRes] = await Promise.all([
+        userId 
+          ? apiService.get(`/attendance/history/${userId}`, { params: { start_date: startDateStr } }).catch(() => ({ data: [] })) 
+          : Promise.resolve({ data: [] }),
         apiService.get(`/employee/holidays`, { params: { month: selectedMonth, year: selectedYear } }).catch(() => ({ data: {} })),
+        apiService.get(`/employee/holidays`, { params: { month: prevMonth, year: prevYear } }).catch(() => ({ data: {} })),
         apiService.get(`/leaves/`).catch(() => ({ data: [] }))
       ]);
 
       const attData = Array.isArray(attendanceRes.data) ? attendanceRes.data : [];
       setMonthlyAttendance(attData);
 
-      const sched = holidaysRes.data?.current_month_schedule || [];
-      setMonthlySchedule(sched);
+      const currentSched = currentHolidaysRes.data?.current_month_schedule || [];
+      const prevSched = prevHolidaysRes.data?.current_month_schedule || [];
+      const combinedSched = [...prevSched, ...currentSched];
+      setMonthlySchedule(combinedSched);
 
       const allLeaves = Array.isArray(leavesRes.data) ? leavesRes.data : [];
       const myApprovedLeaves = allLeaves.filter((l: any) => {
@@ -171,16 +186,22 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     setSelectedYear(now.getFullYear());
   };
 
-  // Compute all days for the calendar month
-  const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-  const firstDayOfWeek = new Date(selectedYear, selectedMonth - 1, 1).getDay(); // 0 (Sun) - 6 (Sat)
+  // Start date: 25th of previous month
+  const startDate = new Date(selectedYear, selectedMonth - 2, 25);
+  // End date: 24th of current month
+  const endDate = new Date(selectedYear, selectedMonth - 1, 24);
+  const firstDayOfWeek = startDate.getDay();
 
   // Build daily data map
   const daysDataList: DayDetails[] = [];
 
-  for (let day = 1; day <= daysInMonth; day++) {
-    const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const dateObj = new Date(selectedYear, selectedMonth - 1, day);
+  let currentDate = new Date(startDate);
+  while (currentDate <= endDate) {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1; // 1-12
+    const day = currentDate.getDate();
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dateObj = new Date(currentDate);
     const dayOfWeekIdx = dateObj.getDay();
     const dayName = WEEKDAYS[dayOfWeekIdx];
     const fullDayName = FULL_WEEKDAYS[dayOfWeekIdx];
@@ -221,13 +242,15 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     let badgeEmoji = "";
     let checkIn = "-";
     let checkOut = "-";
+    let cardCheckIn = "-";
+    let cardCheckOut = "-";
     let workingHours = 0;
     let workingHoursFormatted = "0h";
     let lunchMinutes = 0;
     let teaMinutes = 0;
     let leaveType = undefined;
     let leaveReason = undefined;
-    let shift = user.shift_timing || "General Shift (09:00 AM - 06:00 PM)";
+    let shift = user.shift_timing || "General Shift";
     let lateBy = "00:00";
     let earlyOut = "00:00";
     let overtime = "00:00";
@@ -237,6 +260,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     if (attRec) {
       checkIn = attRec.checkIn || attRec.check_in || "-";
       checkOut = attRec.checkOut || attRec.check_out || "-";
+      cardCheckIn = attRec.cardCheckIn || attRec.card_check_in || "-";
+      cardCheckOut = attRec.cardCheckOut || attRec.card_check_out || "-";
       workingHours = Number(attRec.workingHours || attRec.working_hours || 0);
       workingHoursFormatted = formatHoursMinutes(workingHours);
       lunchMinutes = Number(attRec.lunchMinutes || attRec.lunch_minutes || 0);
@@ -299,6 +324,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       badgeEmoji,
       checkIn,
       checkOut,
+      cardCheckIn,
+      cardCheckOut,
       workingHours,
       workingHoursFormatted,
       lunchMinutes,
@@ -315,6 +342,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       managerStatus,
       rawAttendanceRecord: attRec
     });
+
+    currentDate.setDate(currentDate.getDate() + 1);
   }
 
   // Monthly Summary Calculations
@@ -329,12 +358,13 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     ? Math.round(((presentCount + (halfDayCount * 0.5)) / totalWorkedAndAbsent) * 100)
     : 100;
 
-  // Filtered Grid View records
+  // Filtered Grid View records (reversed to show newest days first, only up to today's date)
   const filteredGridDays = daysDataList.filter(d => {
+    if (d.dateStr > todayKey) return false;
     if (d.status === "Future") return false;
     if (statusFilter === "All") return true;
     return d.status.toLowerCase() === statusFilter.toLowerCase();
-  });
+  }).reverse();
 
   // Calendar Grid Padding Slots
   const calendarCells: (DayDetails | null)[] = [];
@@ -398,9 +428,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         <div className="p-5 border-b border-neutral-200 bg-neutral-50/50 flex flex-col md:flex-row md:items-center md:justify-between gap-4 rounded-t-2xl">
           {/* Left: Active Month Title */}
           <div className="flex items-center gap-3">
-            <h3 className="text-lg font-bold text-neutral-850">
-              {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-bold text-neutral-850">
+                {new Date(selectedYear, selectedMonth - 2, 25).toLocaleDateString("en-US", { month: "short", day: "numeric" })} - {new Date(selectedYear, selectedMonth - 1, 24).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+              </h3>
+            </div>
             {isLoading && (
               <span className="flex items-center text-xs text-neutral-400 gap-1">
                 <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" /> Syncing...
@@ -565,7 +597,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         <div className="flex items-center justify-between pb-3 border-b border-neutral-100 mb-3">
                           <div>
                             <h5 className="text-[13px] font-extrabold text-neutral-800">
-                              {cell.dayNum} {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+                              {parseInt(cell.dateStr.split('-')[2])} {MONTH_NAMES[parseInt(cell.dateStr.split('-')[1]) - 1]} {cell.dateStr.split('-')[0]}
                             </h5>
                             <p className="text-[10px] text-neutral-500 font-semibold uppercase tracking-wider mt-0.5">{cell.fullDayName}</p>
                           </div>
@@ -654,24 +686,42 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
           </div>
         ) : (
           /* Mode 2: Grid View */
-          <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
+          <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
             <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 z-10 bg-white shadow-sm">
-                <tr className="border-b border-neutral-200 text-neutral-500 text-xs font-bold uppercase tracking-wider">
-                  <th className="p-3.5 pl-6">Date</th>
-                  <th className="p-3.5">Day</th>
-                  <th className="p-3.5">Check-In</th>
-                  <th className="p-3.5">Check-Out</th>
-                  <th className="p-3.5 text-center">Total Hours</th>
-                  <th className="p-3.5 text-center">Working Hours</th>
-                  <th className="p-3.5 text-center">Status</th>
-                  <th className="p-3.5">Shift</th>
-                  <th className="p-3.5 text-center">Late By</th>
-                  <th className="p-3.5 text-center">Early Out</th>
-                  <th className="p-3.5 text-center pr-6">Overtime</th>
+              <thead className="sticky top-0 z-20 bg-white shadow-xs">
+                {/* Group Headers */}
+                <tr className="border-b border-neutral-200 text-neutral-400 text-[10px] font-extrabold uppercase tracking-widest bg-neutral-50/40">
+                  <th rowSpan={2} className="p-3 pl-6 border-r border-neutral-100 text-left">Date</th>
+                  <th rowSpan={2} className="p-3 border-r border-neutral-100 text-left">Day</th>
+                  
+                  <th colSpan={3} className="p-2.5 text-center border-r border-b-2 border-cyan-500 bg-cyan-50/20 text-cyan-700 text-[11px] font-black">
+                    Web Site Entry
+                  </th>
+                  
+                  <th colSpan={2} className="p-2.5 text-center border-r border-b-2 border-violet-500 bg-violet-50/25 text-violet-700 text-[11px] font-black">
+                    Biometric Card Entry
+                  </th>
+                  
+                  <th rowSpan={2} className="p-3 border-r border-neutral-100 text-center text-neutral-600 font-extrabold">
+                    Breaks <div className="text-[9px] text-neutral-400 font-bold normal-case">(L/T)</div>
+                  </th>
+                  
+                  <th rowSpan={2} className="p-3 border-r border-neutral-100 text-center">Status</th>
+                  <th rowSpan={2} className="p-3 border-r border-neutral-100 text-left">Shift</th>
+                  <th rowSpan={2} className="p-3 text-center pr-6">Overtime</th>
+                </tr>
+                {/* Sub Headers */}
+                <tr className="border-b border-neutral-200 text-neutral-500 text-[10px] font-extrabold uppercase tracking-wider bg-white">
+                  {/* Web Site Entry columns */}
+                  <th className="p-2 text-center text-cyan-600">Check-In</th>
+                  <th className="p-2 text-center text-cyan-600">Check-Out</th>
+                  <th className="p-2 text-center text-cyan-600 border-r border-neutral-100">Hours</th>
+                  {/* Biometric Card Entry columns */}
+                  <th className="p-2 text-center text-violet-600">Check-In</th>
+                  <th className="p-2 text-center text-violet-600 border-r border-neutral-100">Check-Out</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100 text-xs font-medium text-neutral-700">
+              <tbody className="divide-y divide-neutral-100 text-xs font-semibold text-neutral-700 bg-white">
                 {filteredGridDays.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
@@ -682,19 +732,29 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                   filteredGridDays.map((dayObj) => (
                     <tr
                       key={dayObj.dateStr}
-                      className="hover:bg-primary-500/5 transition-colors"
+                      className="hover:bg-primary-500/5 transition-colors border-b border-neutral-100"
                     >
-                      <td className="p-3.5 pl-6 font-bold text-neutral-900">{dayObj.dateStr}</td>
-                      <td className="p-3.5 text-neutral-500">{dayObj.dayName}</td>
-                      <td className="p-3.5 font-semibold text-neutral-800">{dayObj.checkIn}</td>
-                      <td className="p-3.5 font-semibold text-neutral-800">{dayObj.checkOut}</td>
-                      <td className="p-3.5 text-center font-bold text-neutral-600">
-                         {formatHoursMinutes(dayObj.workingHours + ((dayObj.lunchMinutes || 0) + (dayObj.teaMinutes || 0)) / 60)}
+                      <td className="p-3 pl-6 font-bold text-neutral-900 border-r border-neutral-100/50">{dayObj.dateStr}</td>
+                      <td className="p-3 text-neutral-500 border-r border-neutral-100/50 font-bold">{dayObj.dayName}</td>
+                      
+                      {/* Web Site Entry */}
+                      <td className="p-3 text-center text-neutral-800 font-bold">{dayObj.checkIn}</td>
+                      <td className="p-3 text-center text-neutral-800 font-bold">{dayObj.checkOut}</td>
+                      <td className="p-3 text-center text-cyan-600 font-black border-r border-neutral-100/50">
+                        {dayObj.status === "Present" || dayObj.status === "Half Day" ? dayObj.workingHoursFormatted : "—"}
                       </td>
-                      <td className="p-3.5 text-center font-bold text-primary-500">
-                        {dayObj.workingHoursFormatted}
+                      
+                      {/* Biometric Card Entry */}
+                      <td className="p-3 text-center text-neutral-800 font-bold">{dayObj.cardCheckIn || "-"}</td>
+                      <td className="p-3 text-center text-neutral-800 font-bold border-r border-neutral-100/50">{dayObj.cardCheckOut || "-"}</td>
+                      
+                      {/* Breaks */}
+                      <td className="p-3 text-center font-bold text-neutral-600 border-r border-neutral-100/50">
+                        {(dayObj.lunchMinutes || dayObj.teaMinutes) ? `${dayObj.lunchMinutes}m / ${dayObj.teaMinutes}m` : "—"}
                       </td>
-                      <td className="p-3.5 text-center">
+                      
+                      {/* Status */}
+                      <td className="p-3 text-center border-r border-neutral-100/50">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${dayObj.status === "Present" ? "bg-emerald-100 text-emerald-800 border-emerald-300" :
                           dayObj.status === "Absent" ? "bg-rose-100 text-rose-800 border-rose-300" :
                             dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
@@ -706,10 +766,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           <span>{dayObj.status}</span>
                         </span>
                       </td>
-                      <td className="p-3.5 text-neutral-600 font-medium truncate max-w-[150px]">{dayObj.shift}</td>
-                      <td className="p-3.5 text-center text-neutral-500">{dayObj.lateBy}</td>
-                      <td className="p-3.5 text-center text-neutral-500">{dayObj.earlyOut}</td>
-                      <td className="p-3.5 text-center pr-6 font-bold text-emerald-700">{dayObj.overtime}</td>
+                      
+                      {/* Shift */}
+                      <td className="p-3 text-neutral-750 font-extrabold border-r border-neutral-100/50 truncate max-w-[170px]">{dayObj.shift}</td>
+                      
+                      {/* Overtime */}
+                      <td className="p-3 text-center pr-6 font-bold text-emerald-700">{dayObj.overtime}</td>
                     </tr>
                   ))
                 )}

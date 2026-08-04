@@ -130,8 +130,8 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   };
 
   const handleSubmit = () => {
-    if (!fromDate || !toDate) {
-      toast.error("Please select dates");
+    if (!fromDate) {
+      toast.error("Please select a date");
       return;
     }
 
@@ -141,7 +141,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       return;
     }
 
-    if (hasLeaveOverlap(fromDate, toDate)) {
+    if (hasLeaveOverlap(fromDate, fromDate)) {
       toast.error("You cannot request a shift change or WFH during your approved leave dates.");
       return;
     }
@@ -559,23 +559,17 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
               )}
             </div>
 
-            {/* Date Range selectors */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Single Date Selector */}
+            <div className="grid grid-cols-1 gap-6">
               <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">From Date <span className="text-danger-500">*</span></label>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Date <span className="text-danger-500">*</span></label>
                 <DatePicker
                   required
                   value={fromDate}
-                  onChange={(val) => setFromDate(val)}
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">To Date <span className="text-danger-500">*</span></label>
-                <DatePicker
-                  required
-                  value={toDate}
-                  onChange={(val) => setToDate(val)}
+                  onChange={(val) => {
+                    setFromDate(val);
+                    setToDate(val);
+                  }}
                 />
               </div>
             </div>

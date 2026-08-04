@@ -63,18 +63,29 @@ const TeamManagementPage: React.FC = () => {
         return isAdmin || checkManagerMatch(req.reporting_manager, user?.full_name);
       };
 
-      // Count pending shift requests (excluding WFH)
-      const shiftCount = allRequests.filter((req: any) =>
-        req.request_type !== "WFH" && filterByManager(req) && req.status === "Pending"
-      ).length;
+      const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
 
-      // Count pending WFH requests
-      const wfhCount = allRequests.filter((req: any) =>
-        req.request_type === "WFH" && filterByManager(req) && req.status === "Pending"
-      ).length;
+      // Count pending shift requests (excluding WFH) where start date is not in the past
+      const shiftCount = allRequests.filter((req: any) => {
+        const isPending = req.request_type !== "WFH" && filterByManager(req) && req.status === "Pending";
+        if (!isPending) return false;
+        const startDate = req.from_date || req.shift_date || req.to_date || "";
+        const isFinished = startDate && startDate < todayStr;
+        return !isFinished;
+      }).length;
+
+      // Count pending WFH requests where start date is not in the past
+      const wfhCount = allRequests.filter((req: any) => {
+        const isPending = req.request_type === "WFH" && filterByManager(req) && req.status === "Pending";
+        if (!isPending) return false;
+        const startDate = req.from_date || req.shift_date || req.to_date || "";
+        const isFinished = startDate && startDate < todayStr;
+        return !isFinished;
+      }).length;
 
       // Fetch leave requests
       let leaveCount = 0;
+      let permissionCount = 0;
       try {
         const leaveResponse = await fetch(`${BASE_URL}/leaves/`, {
           headers: { "Authorization": `Bearer ${token}` }
@@ -82,9 +93,25 @@ const TeamManagementPage: React.FC = () => {
         if (leaveResponse.ok) {
           const leaveData = await leaveResponse.json();
           if (Array.isArray(leaveData)) {
-            leaveCount = leaveData.filter((req: any) =>
-              filterByManager(req) && req.status === "Pending"
-            ).length;
+            // Count pending leave requests (excluding permissions and expired)
+            leaveCount = leaveData.filter((req: any) => {
+              if (req.request_type === "Permission") return false;
+              const isPending = filterByManager(req) && req.status === "Pending";
+              if (!isPending) return false;
+              const startDate = req.from_date || req.permission_date || req.to_date || "";
+              const isFinished = startDate && startDate < todayStr;
+              return !isFinished;
+            }).length;
+
+            // Count pending permission requests (excluding expired)
+            permissionCount = leaveData.filter((req: any) => {
+              if (req.request_type !== "Permission") return false;
+              const isPending = filterByManager(req) && req.status === "Pending";
+              if (!isPending) return false;
+              const startDate = req.permission_date || "";
+              const isFinished = startDate && startDate < todayStr;
+              return !isFinished;
+            }).length;
           }
         }
       } catch (error) {
@@ -95,7 +122,7 @@ const TeamManagementPage: React.FC = () => {
         leave: leaveCount,
         shift: shiftCount,
         wfh: wfhCount,
-        permission: 0
+        permission: permissionCount
       });
     } catch (error) {
       console.error("Failed to fetch notification counts", error);
@@ -140,12 +167,12 @@ const TeamManagementPage: React.FC = () => {
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary-600/10 via-primary-500/5 to-transparent border-b border-neutral-200 sticky top-0 z-40">
+      <div className="bg-gradient-to-r from-red-800/10 via-red-700/5 to-transparent border-b border-neutral-200 sticky top-0 z-40">
 
         {/* Tab Navigation */}
         <div className="border-t border-neutral-200 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
+            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide py-1">
               {TABS.map((tab) => {
                 const isActive = activeTab === tab.id;
                 const pendingCount = getPendingCount(tab.id);
@@ -154,16 +181,20 @@ const TeamManagementPage: React.FC = () => {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`px-4 py-4 text-sm font-semibold whitespace-nowrap border-b-2 transition-all flex items-center gap-2 relative ${
+                    className={`px-5 py-3 text-sm font-bold whitespace-nowrap border-b-2 rounded-t-xl transition-all duration-200 flex items-center gap-2 relative ${
                       isActive
-                        ? "border-primary-600 text-primary-700 bg-primary-50/30"
-                        : "border-transparent text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50/50"
+                        ? "border-red-800 text-red-900 bg-red-50/40 font-extrabold shadow-sm"
+                        : "border-transparent text-neutral-600 hover:text-red-800 hover:bg-red-50/10"
                     }`}
                   >
-                    <span className="text-lg">{tab.icon}</span>
+                    <span className="text-base transition-transform duration-200">{tab.icon}</span>
                     <span>{tab.label}</span>
                     {pendingCount > 0 && (
-                      <span className="ml-2 flex h-6 w-6 items-center justify-center rounded-full bg-danger-500 text-xs font-bold text-white shadow-lg ring-2 ring-white">
+                      <span className={`ml-1.5 flex h-5.5 px-2 min-w-[22px] items-center justify-center rounded-full text-[10px] font-extrabold text-white shadow-md ring-2 transition-all ${
+                        isActive 
+                          ? "bg-red-800 ring-red-100" 
+                          : "bg-red-700 ring-white"
+                      }`}>
                         {pendingCount > 9 ? "9+" : pendingCount}
                       </span>
                     )}

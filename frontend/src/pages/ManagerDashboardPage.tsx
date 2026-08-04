@@ -32,6 +32,7 @@ import { Badge } from "../components/ui/Badge";
 import { StatCard } from "../components/ui/StatCard";
 import { Tabs } from "../components/ui/Tabs";
 import { Input, Select } from "../components/ui/Form";
+import { BookLoader } from "../components/ui/Spinner";
 import type { StatCardColor } from "../components/ui/StatCard";
 import type { BadgeVariant } from "../components/ui/Badge";
 
@@ -282,6 +283,7 @@ const ManagerDashboardPage = () => {
   const [yesterdaySummary, setYesterdaySummary] = useState<any[]>([]);
   const [loadingYesterday, setLoadingYesterday] = useState(false);
   const [yesterdaySummaryDate, setYesterdaySummaryDate] = useState("");
+  const [isPageLoading, setIsPageLoading] = useState(true);
 
   const generatePayrollCycles = () => {
     const today = new Date();
@@ -416,17 +418,27 @@ const ManagerDashboardPage = () => {
   }, [BASE_URL]);
 
   // ==========================
-  // LOAD TEAM MEMBERS & ATTENDANCE
+  // LOAD TEAM MEMBERS & ATTENDANCE & YESTERDAY SUMMARY
   // ==========================
-  useEffect(() => {
-    loadTeamMembers(currentViewedManagerId);
-    loadTeamAttendance(currentViewedManagerId);
-  }, [currentViewedManagerId]);
+  const loadAllManagerData = async () => {
+    setIsPageLoading(true);
+    try {
+      await Promise.all([
+        loadTeamMembers(currentViewedManagerId),
+        loadTeamAttendance(currentViewedManagerId),
+        loadYesterdaySummary()
+      ]);
+      await loadManagerInfo();
+    } catch (err) {
+      console.error("Failed to load manager data:", err);
+    } finally {
+      setIsPageLoading(false);
+    }
+  };
 
   useEffect(() => {
-    loadManagerInfo();
-    loadYesterdaySummary();
-  }, []);
+    loadAllManagerData();
+  }, [currentViewedManagerId]);
 
   useEffect(() => {
     if (teamAttendance.length > 0) {
@@ -926,6 +938,10 @@ const ManagerDashboardPage = () => {
         };
     }
   };
+
+  if (isPageLoading) {
+    return <BookLoader label="Loading manager dashboard..." />;
+  }
 
   return (
     <div
@@ -1511,6 +1527,8 @@ const ManagerDashboardPage = () => {
                         matchFilter = true;
                       } else if (attendanceFilter === "Present") {
                         matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out" || m.attendance_status === "Half Day";
+                      } else if (attendanceFilter === "Not Checked In") {
+                        matchFilter = !m.check_in && !m.card_check_in && m.attendance_status !== "Present" && m.attendance_status !== "Checked Out" && m.attendance_status !== "Half Day";
                       } else if (attendanceFilter === "Leave") {
                         matchFilter = m.status === "Leave" || m.attendance_status === "On Leave";
                       } else if (attendanceFilter === "WFH") {
@@ -2026,6 +2044,8 @@ const ManagerDashboardPage = () => {
                             matchFilter = true;
                           } else if (attendanceFilter === "Present") {
                             matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out" || m.attendance_status === "Half Day";
+                          } else if (attendanceFilter === "Not Checked In") {
+                            matchFilter = !m.check_in && !m.card_check_in && m.attendance_status !== "Present" && m.attendance_status !== "Checked Out" && m.attendance_status !== "Half Day";
                           } else if (attendanceFilter === "Leave") {
                             matchFilter = m.status === "Leave" || m.attendance_status === "On Leave";
                           } else if (attendanceFilter === "WFH") {

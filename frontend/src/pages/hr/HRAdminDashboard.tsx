@@ -141,9 +141,7 @@ export default function HRAdminDashboard() {
       const data = await response.json();
       const dataList = Array.isArray(data) ? data : [];
       const nonAdmins = dataList.filter((emp: any) => {
-        const isNotAdmin = emp.access_level?.toLowerCase() !== 'admin';
-        const isActive = emp.status?.toLowerCase() !== 'inactive';
-        return isNotAdmin && isActive;
+        return emp.access_level?.toLowerCase() !== 'admin';
       });
       setEmployees(nonAdmins);
     } catch (error) {
@@ -770,6 +768,7 @@ export default function HRAdminDashboard() {
               setResetAllOpen(true);
             }}
             BASE_URL={BASE_URL}
+            onStatusChange={fetchEmployees}
           />
         )}
         {nav === "attendance" && (

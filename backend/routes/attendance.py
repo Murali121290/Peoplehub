@@ -449,6 +449,43 @@ def check_out():
             "error": str(e)
         }), 500
 
+def sync_biometric_to_web_entry(attendance):
+    """
+    Sync biometric card punch times to web punch times if they are missing,
+    recalculate total hours & status, and return True if any changes were made.
+    """
+    updated = False
+    if attendance.card_check_in and not attendance.check_in:
+        attendance.check_in = attendance.card_check_in
+        updated = True
+    if attendance.card_check_out and not attendance.check_out:
+        attendance.check_out = attendance.card_check_out
+        updated = True
+
+    if updated:
+        if attendance.check_in and attendance.check_out:
+            total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
+            break_minutes = attendance.total_break_minutes or 0
+            gap_minutes = attendance.total_gap_minutes or 0
+            total_seconds -= (break_minutes + gap_minutes) * 60
+            hours_decimal = max(total_seconds, 0) / 3600
+            attendance.total_hours = int(hours_decimal * 100) / 100
+
+        # Recalculate status
+        web_hrs = attendance.total_hours or 0.0
+        card_hrs = attendance.card_working_hours or 0.0
+        max_hrs = max(web_hrs, card_hrs)
+        if max_hrs >= 8.0:
+            attendance.status = "Present"
+        elif max_hrs >= 4.0:
+            attendance.status = "Half Day"
+        elif attendance.check_in or attendance.card_check_in:
+            attendance.status = "Present"
+        else:
+            attendance.status = "Absent"
+
+    return updated
+
 
 @attendance_bp.route("/sync-logs", methods=["POST"])
 def sync_card_logs():
@@ -550,30 +587,18 @@ def sync_card_logs():
                 attendance.card_working_hours = 0.0
 
             # Sync to web check_in / check_out columns if they are NULL
-            if attendance.card_check_in and not attendance.check_in:
-                attendance.check_in = attendance.card_check_in
-            if attendance.card_check_out and not attendance.check_out:
-                attendance.check_out = attendance.card_check_out
-
-            # Calculate web working hours if both check_in and check_out are present
-            if attendance.check_in and attendance.check_out:
-                total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
-                break_minutes = attendance.total_break_minutes or 0
-                gap_minutes = attendance.total_gap_minutes or 0
-                total_seconds -= break_minutes * 60
-                total_seconds -= gap_minutes * 60
-                hours_decimal = max(total_seconds, 0) / 3600
-                attendance.total_hours = int(hours_decimal * 100) / 100
+            sync_biometric_to_web_entry(attendance)
 
             # Recalculate status
             web_hrs = attendance.total_hours or 0.0
             card_hrs = attendance.card_working_hours or 0.0
             max_hrs = max(web_hrs, card_hrs)
-
-            if max_hrs >= 4.0:
+            if max_hrs >= 8.0:
                 attendance.status = "Present"
-            elif max_hrs > 0.0 or attendance.check_in or attendance.card_check_in:
+            elif max_hrs >= 4.0:
                 attendance.status = "Half Day"
+            elif attendance.check_in or attendance.card_check_in:
+                attendance.status = "Present"
             else:
                 attendance.status = "Absent"
 
@@ -894,6 +919,26 @@ def tea_break():
             "error": str(e)
         }), 500
 
+def is_date_week_off(d):
+    """
+    S4Carlisle week-off rules:
+    - Sundays (weekday == 6) are week-offs
+    - 2nd and 4th Saturdays of the month are week-offs
+    - 1st, 3rd, and 5th Saturdays are working days
+    """
+    if d.weekday() == 6:
+        return True
+    if d.weekday() == 5:
+        # Calculate which Saturday of the month it is
+        sat_count = 0
+        for day_num in range(1, d.day + 1):
+            from datetime import date
+            if date(d.year, d.month, day_num).weekday() == 5:
+                sat_count += 1
+        if sat_count in (2, 4):
+            return True
+    return False
+
 @attendance_bp.route("/history/<int:user_id>")
 def attendance_history(user_id):
 
@@ -938,8 +983,14 @@ def attendance_history(user_id):
     holidays = Holiday.query.filter(Holiday.date >= start_date_val, Holiday.date <= end_date).all()
     overrides = HolidayOverride.query.filter(HolidayOverride.date >= start_date_val, HolidayOverride.date <= end_date).all()
     
-    holiday_dict = {h.date: h.name for h in holidays}
-    override_dict = {o.date: (o.override_type, o.name) for o in overrides}
+    holiday_dict = {
+        (h.date.date() if hasattr(h.date, "date") else h.date): h.name
+        for h in holidays
+    }
+    override_dict = {
+        (o.date.date() if hasattr(o.date, "date") else o.date): (o.override_type, o.name)
+        for o in overrides
+    }
 
     if end_date >= start_date_val:
         num_days = (end_date - start_date_val).days + 1
@@ -981,11 +1032,25 @@ def attendance_history(user_id):
                 else:
                     display_status = base_status
 
+                # Override: if the day is a weekend or holiday and no check-in exists,
+                # show the correct label instead of a stale "Absent" stored in DB.
+                if not record.check_in:
+                    override = override_dict.get(current_date)
+                    if override:
+                        if override[0] == "Holiday":
+                            display_status = "Holiday"
+                        # If override is "Working Day", keep whatever was computed
+                    elif current_date in holiday_dict:
+                        display_status = "Holiday"
+                    elif is_date_week_off(current_date):
+                        display_status = "Week Off"
+
                 result.append({
                     "id": record.id,
                     "date": record.attendance_date.strftime("%Y-%m-%d"),
                     "attendance_date": record.attendance_date.strftime("%Y-%m-%d"),
                     "attendance_date_formatted": record.attendance_date.strftime("%d %b %Y"),
+                    "shift": record.shift_timing or employee.shift_timing or "General Shift",
                     "checkIn": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
                     "check_in": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
                     "checkOut": check_out_str,
@@ -1037,8 +1102,8 @@ def attendance_history(user_id):
                     # 2. Check Holiday table
                     if current_date in holiday_dict:
                         status = "Holiday"
-                    # 3. Check weekend (Saturday=5, Sunday=6)
-                    elif current_date.weekday() in (5, 6):
+                    # 3. Check Saturday/Sunday week-off logic
+                    elif is_date_week_off(current_date):
                         status = "Week Off"
                     # 4. Check approved leaves
                     else:
@@ -1059,6 +1124,7 @@ def attendance_history(user_id):
                     "date": current_date.strftime("%Y-%m-%d"),
                     "attendance_date": current_date.strftime("%Y-%m-%d"),
                     "attendance_date_formatted": current_date.strftime("%d %b %Y"),
+                    "shift": employee.shift_timing or "General Shift",
                     "checkIn": "-",
                     "check_in": "-",
                     "checkOut": "-",
@@ -1796,7 +1862,7 @@ def export_monthly_attendance():
                 else:
                     if d in holiday_dict:
                         is_holiday = True
-                    elif d.weekday() in (5, 6):
+                    elif is_date_week_off(d):
                         is_week_off = True
 
                 # Check if there is an attendance record

@@ -8,10 +8,8 @@ import {
 } from 'react-router-dom';
 
 import { AppToaster } from './components/ui/ToastConfig';
-
-
+import { BookLoader } from './components/ui/Spinner';
 import { useAuthStore } from './store/authStore';
-
 import DashboardLayout from './layouts/DashboardLayout';
 
 // Pages
@@ -111,197 +109,197 @@ function App() {
     {/* Application Routes */}
 
     <Suspense fallback={<PageLoadingFallback />}>
-    <Routes>
+      <Routes>
 
-      {/* Login */}
+        {/* Login */}
 
-      <Route
-        path="/login"
-        element={<LoginPage />}
-      />
-
-
-
-      {/* Settings */}
-
-      <Route
-        path="/settings"
-        element={
-          <ProtectedRoute>
-            <SettingsPage />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Pre Editing */}
+        <Route
+          path="/login"
+          element={<LoginPage />}
+        />
 
 
 
-      {/* Copywriting */}
+        {/* Settings */}
 
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* QA */}
-
-
-      {/* Default Redirect */}
-
-      <Route
-        path="/"
-        element={
-          <Navigate
-            to="/login"
-            replace
-          />
-        }
-      />
-
-      {/* Intercom Directory */}
-
-      <Route
-        path="/telecom-directory"
-        element={
-          <ProtectedRoute>
-            <TelecomDirectoryPage />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Meeting Rooms */}
-
-      <Route
-        path="/meeting-rooms"
-        element={
-          <ProtectedRoute>
-            <MeetingRoomsPage />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/appraisal"
-        element={
-          <ProtectedRoute>
-            <AppraisalDashboard />
-          </ProtectedRoute>
-        }
-      />
+        {/* Pre Editing */}
 
 
 
+        {/* Copywriting */}
 
 
-      <Route
-        path="/manager-dashboard"
-        element={
-          <ProtectedRoute>
-            <ManagerDashboardPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/manager/team-management"
-        element={
-          <ProtectedRoute>
-            <TeamManagementPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/manager/leave-approval"
-        element={
-          <ProtectedRoute>
-            <LeaveApprovalPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/manager/permission-approval"
-        element={
-          <ProtectedRoute>
-            <PermissionApprovalPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/manager/shift-approval"
-        element={
-          <ProtectedRoute>
-            <ShiftApprovalPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/manager/wfh-approval"
-        element={
-          <ProtectedRoute>
-            <WFHApprovalPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/employee-dashboard"
-        element={
-          <ProtectedRoute>
-            <EmployeeDashboardPage />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/announcements"
-        element={
-          <ProtectedRoute>
-            <AnnouncementsPage />
-          </ProtectedRoute>
-
-        }
-      />
+        {/* QA */}
 
 
-      <Route
-        path="/hrms"
-        element={
-          <ProtectedRoute>
-            <HrmsModule />
-          </ProtectedRoute>
-        }
-      />
+        {/* Default Redirect */}
 
-      <Route
-        path="/admin/db"
-        element={
-          <ProtectedRoute>
-            <DBAdminPage />
-          </ProtectedRoute>
-        }
-      />
+        <Route
+          path="/"
+          element={
+            <Navigate
+              to="/login"
+              replace
+            />
+          }
+        />
 
+        {/* Intercom Directory */}
 
-      {/* Complete Profile */}
+        <Route
+          path="/telecom-directory"
+          element={
+            <ProtectedRoute>
+              <TelecomDirectoryPage />
+            </ProtectedRoute>
+          }
+        />
 
-      <Route
-        path="/complete-profile"
-        element={
-          <CompleteProfile />
-        }
-      />
+        {/* Meeting Rooms */}
+
+        <Route
+          path="/meeting-rooms"
+          element={
+            <ProtectedRoute>
+              <MeetingRoomsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/appraisal"
+          element={
+            <ProtectedRoute>
+              <AppraisalDashboard />
+            </ProtectedRoute>
+          }
+        />
 
 
 
-      {/* 404 */}
 
-      <Route
-        path="*"
-        element={
-          <div className="min-h-screen bg-black flex items-center justify-center">
-            <h1 className="text-4xl font-bold text-white">
-              404 - Page Not Found
-            </h1>
-          </div>
-        }
-      />
 
-    </Routes>
+        <Route
+          path="/manager-dashboard"
+          element={
+            <ProtectedRoute>
+              <ManagerDashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/manager/team-management"
+          element={
+            <ProtectedRoute>
+              <TeamManagementPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/manager/leave-approval"
+          element={
+            <ProtectedRoute>
+              <LeaveApprovalPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/manager/permission-approval"
+          element={
+            <ProtectedRoute>
+              <PermissionApprovalPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/manager/shift-approval"
+          element={
+            <ProtectedRoute>
+              <ShiftApprovalPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/manager/wfh-approval"
+          element={
+            <ProtectedRoute>
+              <WFHApprovalPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/employee-dashboard"
+          element={
+            <ProtectedRoute>
+              <EmployeeDashboardPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/announcements"
+          element={
+            <ProtectedRoute>
+              <AnnouncementsPage />
+            </ProtectedRoute>
+
+          }
+        />
+
+
+        <Route
+          path="/hrms"
+          element={
+            <ProtectedRoute>
+              <HrmsModule />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/db"
+          element={
+            <ProtectedRoute>
+              <DBAdminPage />
+            </ProtectedRoute>
+          }
+        />
+
+
+        {/* Complete Profile */}
+
+        <Route
+          path="/complete-profile"
+          element={
+            <CompleteProfile />
+          }
+        />
+
+
+
+        {/* 404 */}
+
+        <Route
+          path="*"
+          element={
+            <div className="min-h-screen bg-black flex items-center justify-center">
+              <h1 className="text-4xl font-bold text-white">
+                404 - Page Not Found
+              </h1>
+            </div>
+          }
+        />
+
+      </Routes>
     </Suspense>
   </BrowserRouter>
 

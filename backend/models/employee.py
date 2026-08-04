@@ -174,152 +174,167 @@ class Employee(db.Model):
     
     # Payroll Fields
 
-branch_code = db.Column(
-    db.String(50),
-    nullable=True
-)
+    branch_code = db.Column(
+        db.String(50),
+        nullable=True
+    )
 
-earned_basic = db.Column(
-    db.Float,
-    nullable=True
-)
+    earned_basic = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-earned_hra = db.Column(
-    db.Float,
-    nullable=True
-)
+    earned_hra = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-earned_lta = db.Column(
-    db.Float,
-    nullable=True
-)
+    earned_lta = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-earned_other_allowance = db.Column(
-    db.Float,
-    nullable=True
-)
+    earned_other_allowance = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-earned_actual_gross = db.Column(
-    db.Float,
-    nullable=True
-)
+    earned_actual_gross = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-attendance_bonus = db.Column(
-    db.Float,
-    nullable=True
-)
+    attendance_bonus = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-odw = db.Column(
-    db.Float,
-    nullable=True
-)
+    odw = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-internet_charges = db.Column(
-    db.Float,
-    nullable=True
-)
+    internet_charges = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-salary_advance = db.Column(
-    db.Float,
-    nullable=True
-)
+    salary_advance = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-pf_wage = db.Column(
-    db.Float,
-    nullable=True
-)
+    pf_wage = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-earned_pf_wage = db.Column(
-    db.Float,
-    nullable=True
-)
+    earned_pf_wage = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-pf_ded_employee = db.Column(
-    db.Float,
-    nullable=True
-)
+    pf_ded_employee = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-pf_ded_employer = db.Column(
-    db.Float,
-    nullable=True
-)
+    pf_ded_employer = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-vpf = db.Column(
-    db.Float,
-    nullable=True
-)
+    vpf = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-pf_vpf_employee = db.Column(
-    db.Float,
-    nullable=True
-)
+    pf_vpf_employee = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-esi_ded_employee = db.Column(
-    db.Float,
-    nullable=True
-)
+    esi_ded_employee = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-esi_ded_employer = db.Column(
-    db.Float,
-    nullable=True
-)
+    esi_ded_employer = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-tds = db.Column(
-    db.Float,
-    nullable=True
-)
+    tds = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-pt = db.Column(
-    db.Float,
-    nullable=True
-)
+    pt = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-lwf = db.Column(
-    db.Float,
-    nullable=True
-)
+    lwf = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-other_deduction = db.Column(
-    db.Float,
-    nullable=True
-)
+    other_deduction = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-total_deduction = db.Column(
-    db.Float,
-    nullable=True
-)
+    total_deduction = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-eps_wage = db.Column(
-    db.Float,
-    nullable=True
-)
+    eps_wage = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-pf_833 = db.Column(
-    db.Float,
-    nullable=True
-)
+    pf_833 = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-pf_367 = db.Column(
-    db.Float,
-    nullable=True
-)
+    pf_367 = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-esi_050 = db.Column(
-    db.Float,
-    nullable=True
-)
+    esi_050 = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-esi_050_employer = db.Column(
-    db.Float,
-    nullable=True
-)
+    esi_050_employer = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-edli_001 = db.Column(
-    db.Float,
-    nullable=True
-)
+    edli_001 = db.Column(
+        db.Float,
+        nullable=True
+    )
 
-bonus = db.Column(
-    db.Float,
-    nullable=True
-)
+    bonus = db.Column(
+        db.Float,
+        nullable=True
+    )
+
+    is_active = db.Column(
+        db.Boolean,
+        default=True
+    )
+
+    deactivation_reason = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    last_working_date = db.Column(
+        db.Date,
+        nullable=True
+    )

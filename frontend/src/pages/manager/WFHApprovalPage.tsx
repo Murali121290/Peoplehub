@@ -292,6 +292,7 @@ const WFHApprovalPage: React.FC = () => {
                 <th className="text-left p-4 pl-6">Employee</th>
                 <th className="text-left p-4">Emp ID</th>
                 <th className="text-left p-4">Request Type</th>
+                <th className="text-left p-4">Requested Shift</th>
                 <th className="text-left p-4">Date Range</th>
                 <th className="text-left p-4">Reason</th>
                 <th className="text-left p-4">Applied At</th>
@@ -303,7 +304,7 @@ const WFHApprovalPage: React.FC = () => {
             <tbody className="divide-y divide-neutral-200/80">
               {safeManagerShiftRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
+                  <td colSpan={10} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
                     <div className="flex flex-col items-center justify-center gap-2 py-4">
                       <CheckIcon className="w-12 h-12 text-success-400" />
                       <p className="text-xs font-bold text-neutral-500">All caught up!</p>
@@ -334,6 +335,9 @@ const WFHApprovalPage: React.FC = () => {
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-blue-50 text-blue-700 border-blue-200">
                             Work From Home
                           </span>
+                        </td>
+                        <td className="p-4 text-xs font-medium text-neutral-800">
+                          {item.requested_shift || "General Shift"}
                         </td>
                         <td className="p-4">
                           <div>
@@ -452,7 +456,7 @@ const WFHApprovalPage: React.FC = () => {
                       </tr>
                       {expandedReasons[item.id] && item.reason && (
                         <tr className="bg-neutral-50/30">
-                          <td colSpan={9} className="p-4 pl-10 pr-6 border-b border-neutral-200">
+                          <td colSpan={10} className="p-4 pl-10 pr-6 border-b border-neutral-200">
                             <div className="text-xs text-neutral-600 bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-inner max-w-3xl">
                               <div className="flex items-center gap-1.5 mb-2 text-neutral-400 font-bold uppercase tracking-wider text-[10px]">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-primary-500">

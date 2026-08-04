@@ -730,7 +730,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       {/* Leave Balance Grid Section */}
       <motion.div
         variants={itemVariants}
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4"
+        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 mb-6"
       >
         {(() => {
           const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
@@ -839,36 +839,37 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             return (
               <Card
                 key={item.label}
-                className="rounded-2xl border border-gray-200 bg-slate-50 p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col"
+                className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm hover:shadow transition-all duration-200 flex items-center justify-between"
+                style={{ minHeight: "84px" }}
               >
-                <div className="flex items-center gap-3 mb-4 w-full">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.iconWrap}`}>
-                    <Icon className={`h-5 w-5 ${item.iconColor}`} />
+                {/* Left Side: Stats info */}
+                <div className="flex flex-col justify-between h-full">
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-400 tracking-wider uppercase leading-none">
+                      {item.label}
+                    </h4>
+                    <div className="flex items-baseline gap-1 mt-1">
+                      <span className={`text-xl font-extrabold tracking-tight ${(item as any).isLopCard ? "text-red-650" : "text-slate-800"}`}>
+                        {(item as any).isLopCard ? item.used : item.value}
+                      </span>
+                      <span className="text-[10px] font-semibold text-slate-400">
+                        {(item as any).isLopCard ? (item.used === 1 ? "day" : "days") : "available"}
+                      </span>
+                    </div>
                   </div>
-                  <h4 className="text-[14px] font-semibold text-slate-800 tracking-wide leading-tight">{item.label}</h4>
+                  
+                  {!(item as any).isLopCard && (
+                    <div className="text-[10px] text-slate-500 font-semibold mt-1 flex items-center gap-1">
+                      <span>Availed: {item.used}</span>
+                      <span className="text-slate-300">•</span>
+                      <span>Total: {item.total}</span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="w-full space-y-1.5 mt-auto px-1">
-                  {(item as any).isLopCard ? (
-                    <div className="flex justify-between items-center text-[14px]">
-                      <span className="text-slate-600 font-medium">Accumulated</span>
-                      <span className="font-semibold text-red-600">{item.used} {item.used === 1 ? "day" : "days"}</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex justify-between items-center text-[14px]">
-                        <span className="text-slate-600 font-medium">Available</span>
-                        <span className="font-semibold text-emerald-600">{item.value}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-[14px]">
-                        <span className="text-slate-600 font-medium">Availed</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-slate-900">{item.used}</span>
-                          <InformationCircleIcon className="w-4 h-4 text-slate-400 cursor-pointer hover:text-slate-600 transition-colors" />
-                        </div>
-                      </div>
-                    </>
-                  )}
+                {/* Right Side: Compact Icon */}
+                <div className={`flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg ${item.iconWrap}`}>
+                  <Icon className={`h-4.5 w-4.5 ${item.iconColor}`} />
                 </div>
               </Card>
             );
