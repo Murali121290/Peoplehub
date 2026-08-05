@@ -610,7 +610,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
               <ul className="space-y-3.5 text-xs font-semibold text-neutral-700">
                 <li className="flex justify-between py-1 border-b border-primary-100">
                   <span>First Shift:</span>
-                  <span className="text-primary-700 font-extrabold">06 AM - 02 PM</span>
+                  <span className="text-primary-700 font-extrabold">07 AM - 04 PM</span>
                 </li>
                 <li className="flex justify-between py-1 border-b border-primary-100">
                   <span>General Shift:</span>

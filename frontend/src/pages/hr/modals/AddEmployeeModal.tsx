@@ -447,6 +447,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
               options={[
                 { label: "Office", value: "Office" },
                 { label: "WFH", value: "WFH" },
+                { label: "Hybrid", value: "Hybrid" },
               ]}
               className={fieldErrors["work_mode"] ? "border-danger-500" : ""}
             />

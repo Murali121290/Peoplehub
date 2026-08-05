@@ -36,8 +36,8 @@ const isHalfDayLeave = (totalDays: any) => Number(totalDays) <= 0.5;
 const checkShiftLock = (shiftName: string) => {
   const currentHour = new Date().getHours();
   const cleanShift = (shiftName || "").trim().toLowerCase();
-  if (cleanShift === "first shift" && currentHour < 6) {
-    return { isLocked: true, timeLabel: "06:00 AM" };
+  if (cleanShift === "first shift" && currentHour < 7) {
+    return { isLocked: true, timeLabel: "07:00 AM" };
   }
   if (cleanShift === "second shift" && currentHour < 12) {
     return { isLocked: true, timeLabel: "12:00 PM" };
@@ -237,7 +237,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const [isPageLoading, setIsPageLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [wantsToChangeMode, setWantsToChangeMode] = useState(false);
-  const [selectedWorkModeOpt, setSelectedWorkModeOpt] = useState<"Office" | "WFH">("Office");
+  const [selectedWorkModeOpt, setSelectedWorkModeOpt] = useState<"Office" | "WFH" | "Hybrid">("Office");
   // Modal state
   const [pendingClarifications, setPendingClarifications] = useState<any[]>([]);
   const [confirmModal, setConfirmModal] = useState(false);
@@ -588,7 +588,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
   const handleCheckInClick = () => {
     setWantsToChangeMode(false);
     const isCurrentlyWFH = todayActiveWorkMode === "WFH";
-    setSelectedWorkModeOpt(isCurrentlyWFH ? "WFH" : "Office");
+    const isCurrentlyHybrid = todayActiveWorkMode === "Hybrid";
+
+    if (isCurrentlyHybrid) {
+      setSelectedWorkModeOpt("Hybrid");
+    } else {
+      setSelectedWorkModeOpt(isCurrentlyWFH ? "WFH" : "Office");
+    }
+
     setSelectedCheckInShift(todayActiveShift || "General Shift");
     setShowCheckInShiftModal(true);
   };
@@ -597,7 +604,10 @@ if (isHalfDayLeave(leave.total_days)) return false;
     setShowCheckInShiftModal(false);
     setIsActionLoading(true);
 
-    if (!wantsToChangeMode) {
+    const isHybrid = (currentEmployee?.work_mode || "").toLowerCase() === "hybrid";
+    const shouldProcessChange = true;
+
+    if (!shouldProcessChange) {
       try {
         const activeShift = todayActiveShift || "General Shift";
         const { isLocked, timeLabel } = checkShiftLock(activeShift);
@@ -618,7 +628,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
     const targetShift = selectedCheckInShift;
     const isShiftChanged = (targetShift || "").trim().toLowerCase() !== (todayActiveShift || "").trim().toLowerCase();
-    const isWorkModeChanged = selectedWorkModeOpt.trim().toLowerCase() !== todayActiveWorkMode.trim().toLowerCase();
+    
+    const targetWorkMode = isHybrid && wantsToChangeMode ? selectedWorkModeOpt : (todayActiveWorkMode || currentEmployee?.work_mode || "Office");
+    const isWorkModeChanged = isHybrid && wantsToChangeMode && (targetWorkMode.trim().toLowerCase() !== todayActiveWorkMode.trim().toLowerCase());
 
     try {
       if (isShiftChanged || isWorkModeChanged) {
@@ -635,8 +647,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
           current_shift: todayActiveShift,
           requested_shift: targetShift,
           current_work_mode: todayActiveWorkMode,
-          requested_work_mode: selectedWorkModeOpt,
-          request_type: selectedWorkModeOpt === "WFH" ? "WFH" : "Shift",
+          requested_work_mode: targetWorkMode,
+          request_type: targetWorkMode === "WFH" ? "WFH" : targetWorkMode === "Hybrid" ? "Hybrid" : "Shift",
           from_date: todayStr,
           to_date: todayStr,
           reporting_manager: currentEmployee.reporting_manager || "Admin",
@@ -1751,7 +1763,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
                 <h3 className="text-lg font-bold text-neutral-800 tracking-tight flex items-center gap-2">
                   <span className="text-[18px]">⚙️</span> Today's Attendance Mode
                 </h3>
-                <p className="text-xs text-neutral-450 font-semibold mt-0.5">Select a shift timing or WFH for today</p>
               </div>
               <button
                 onClick={() => setShowCheckInShiftModal(false)}
@@ -1762,139 +1773,131 @@ if (isHalfDayLeave(leave.total_days)) return false;
                 </svg>
               </button>
             </div>
-
-            {/* Change work mode or shift toggle */}
-            <div className="flex items-center justify-between p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/60 shadow-xs">
-              <div className="flex flex-col gap-0.5 select-none">
-                <span className="text-[12.5px] font-bold text-neutral-800">Change Work Mode or Shift today?</span>
-                <span className="text-[10px] text-neutral-450 font-semibold tracking-wide">Toggle on to request a change for today</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setWantsToChangeMode(!wantsToChangeMode)}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-250 ease-in-out outline-none ${
-                  wantsToChangeMode ? 'bg-primary-500 shadow-sm' : 'bg-neutral-300'
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-250 ease-in-out ${
-                    wantsToChangeMode ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-
-            {/* Grid options - 2 Columns (Compact, No Scroll) */}
-            {wantsToChangeMode ? (
-              <div className="flex flex-col gap-4 transition-all duration-300">
-                {/* Step 1: Work Mode Selector */}
-                <div className="flex flex-col gap-2">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Work Mode</span>
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* Office Option */}
-                    <div
-                      onClick={() => {
-                        setSelectedWorkModeOpt("Office");
-                        setSelectedCheckInShift("General Shift");
-                      }}
-                      className={`flex flex-col items-center justify-center p-4 border rounded-2xl cursor-pointer transition-all duration-200 gap-1.5 ${
-                        selectedWorkModeOpt === "Office"
-                          ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
-                          : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
-                      }`}
-                    >
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-colors ${
-                        selectedWorkModeOpt === "Office" ? "bg-primary-50 text-primary-600 border-primary-100" : "bg-neutral-50 text-neutral-450 border-neutral-100"
-                      }`}>
-                        🏢
+            {/* Conditionally render content based on employee's work mode */}
+            {(() => {
+              const isHybrid = (currentEmployee?.work_mode || "").toLowerCase() === "hybrid";
+                if (isHybrid) {
+                return (
+                  <>
+                    {/* Toggle to change details */}
+                    <div className="flex items-center justify-between p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/60 shadow-xs">
+                      <div className="flex flex-col gap-0.5 select-none">
+                        <span className="text-[12.5px] font-bold text-neutral-800">Request WFH (Work From Home) today?</span>
+                        <span className="text-[10px] text-neutral-450 font-semibold tracking-wide">Toggle on to request WFH for today</span>
                       </div>
-                      <span className="text-[12.5px] font-bold text-neutral-850">Office</span>
-                    </div>
-
-                    {/* WFH Option */}
-                    <div
-                      onClick={() => {
-                        setSelectedWorkModeOpt("WFH");
-                        setSelectedCheckInShift("General Shift");
-                      }}
-                      className={`flex flex-col items-center justify-center p-4 border rounded-2xl cursor-pointer transition-all duration-200 gap-1.5 ${
-                        selectedWorkModeOpt === "WFH"
-                          ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
-                          : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
-                      }`}
-                    >
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-colors ${
-                        selectedWorkModeOpt === "WFH" ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-neutral-50 text-neutral-450 border-neutral-100"
-                      }`}>
-                        🏠
-                      </div>
-                      <span className="text-[12.5px] font-bold text-neutral-850">Work From Home</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Step 2: Shift Selector (Shown for both Office and WFH) */}
-                <div className="flex flex-col gap-2 pt-2 border-t border-neutral-100">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
-                  <div className="grid grid-cols-1 gap-2">
-                    {[
-                      {
-                        name: "General Shift",
-                        time: "09:00 AM - 06:00 PM",
-                        color: "bg-blue-50 text-blue-600 border-blue-100"
-                      },
-                      {
-                        name: "First Shift",
-                        time: "06:00 AM - 02:00 PM",
-                        color: "bg-amber-50 text-amber-600 border-amber-100"
-                      },
-                      {
-                        name: "Second Shift",
-                        time: "12:00 PM - 08:00 PM",
-                        color: "bg-orange-50 text-orange-600 border-orange-100"
-                      }
-                    ].map((opt) => {
-                      const isSelected = selectedCheckInShift === opt.name;
-                      return (
-                        <div
-                          key={opt.name}
-                          onClick={() => setSelectedCheckInShift(opt.name)}
-                          className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all duration-200 ${
-                            isSelected
-                              ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
-                              : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextState = !wantsToChangeMode;
+                          setWantsToChangeMode(nextState);
+                          setSelectedWorkModeOpt(nextState ? "WFH" : "Office");
+                        }}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-250 ease-in-out outline-none ${
+                          wantsToChangeMode ? 'bg-primary-500 shadow-sm' : 'bg-neutral-300'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-250 ease-in-out ${
+                            wantsToChangeMode ? 'translate-x-5' : 'translate-x-0'
                           }`}
-                        >
-                          <div className="min-w-0 flex-1 flex items-center justify-between">
-                            <div>
-                              <span className="text-[13px] font-bold text-neutral-850 block">{opt.name}</span>
-                              <span className="text-[10px] text-neutral-450 font-semibold block mt-0.5">{opt.time}</span>
+                        />
+                      </button>
+                    </div>
+
+                    {/* Helper text indicating active mode */}
+                    {wantsToChangeMode ? (
+                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-emerald-800 text-[12px] font-bold shadow-xs">
+                        <span>🏠</span> You will request Work From Home (WFH) today.
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-primary-50 border border-primary-200 rounded-2xl flex items-center gap-2 text-primary-800 text-[12px] font-bold shadow-xs">
+                        <span>🏢</span> You will check in to Office today.
+                      </div>
+                    )}
+
+                    {/* Select Shift Timing */}
+                    <div className="flex flex-col gap-3 pt-2 border-t border-neutral-100">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { name: "General Shift", time: "09:00 AM - 06:00 PM" },
+                          { name: "First Shift", time: "07:00 AM - 04:00 PM" },
+                          { name: "Second Shift", time: "12:00 PM - 09:00 PM" },
+                        ].map((opt) => {
+                          const isSelected = selectedCheckInShift === opt.name;
+                          return (
+                            <div
+                              key={opt.name}
+                              onClick={() => setSelectedCheckInShift(opt.name)}
+                              className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all duration-200 ${
+                                isSelected
+                                  ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
+                                  : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1 flex items-center justify-between">
+                                <div>
+                                  <span className="text-[13px] font-bold text-neutral-850 block">{opt.name}</span>
+                                  <span className="text-[10px] text-neutral-450 font-semibold block mt-0.5">{opt.time}</span>
+                                </div>
+                                {isSelected && (
+                                  <span className="w-4 h-4 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+                                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            {isSelected && (
-                              <span className="w-4 h-4 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
-                                <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
-                                </svg>
-                              </span>
-                            )}
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                );
+              } else {
+                // Non-Hybrid Employees: Only show the three shifts directly
+                return (
+                  <div className="flex flex-col gap-3">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
+                    <div className="grid grid-cols-1 gap-2">
+                      {[
+                        { name: "General Shift", time: "09:00 AM - 06:00 PM" },
+                        { name: "First Shift", time: "07:00 AM - 04:00 PM" },
+                        { name: "Second Shift", time: "12:00 PM - 09:00 PM" },
+                      ].map((opt) => {
+                        const isSelected = selectedCheckInShift === opt.name;
+                        return (
+                          <div
+                            key={opt.name}
+                            onClick={() => setSelectedCheckInShift(opt.name)}
+                            className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all duration-200 ${
+                              isSelected
+                                ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
+                                : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1 flex items-center justify-between">
+                              <div>
+                                <span className="text-[13px] font-bold text-neutral-850 block">{opt.name}</span>
+                                <span className="text-[10px] text-neutral-450 font-semibold block mt-0.5">{opt.time}</span>
+                              </div>
+                              {isSelected && (
+                                <span className="w-4 h-4 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+                                  <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
+                                  </svg>
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center p-5 bg-primary-500/5 border border-primary-100/60 rounded-2xl text-center gap-1.5 transition-all duration-300">
-                <span className="text-xl">🏢</span>
-                <div className="text-[12.5px] font-semibold text-neutral-600 leading-relaxed">
-                  You will check in to your active shift:
-                  <div className="text-[13.5px] font-extrabold text-primary-650 mt-1 uppercase tracking-wider">
-                    {todayActiveShift || "General Shift"}
-                  </div>
-                </div>
-              </div>
-            )}
+                );
+              }
+            })()}
 
             {/* Actions */}
             <div className="flex gap-3 pt-3 border-t border-neutral-100">

@@ -110,7 +110,7 @@ def check_in():
         # Use IST time for shift validation (not server UTC)
         current_time = datetime.now(ZoneInfo("Asia/Kolkata")).time()
 
-        # First Shift (06:00 AM - 02:00 PM)
+        # First Shift (07:00 AM - 04:00 PM)
         if shift_name == "first shift":
             print("================================")
             print("USER ID:", user_id)
@@ -120,7 +120,7 @@ def check_in():
             print("================================")
 
             allowed_time = datetime.strptime(
-                "06:00",
+                "07:00",
                 "%H:%M"
             ).time()
 
@@ -129,7 +129,7 @@ def check_in():
                 return jsonify({
                     "success": False,
                     "message":
-                    "First Shift check-in allowed only after 06:00 AM"
+                    "First Shift check-in allowed only after 07:00 AM"
                 }), 400
 
         # General Shift (09:00 AM - 06:00 PM)

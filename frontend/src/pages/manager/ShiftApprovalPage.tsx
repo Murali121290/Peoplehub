@@ -648,8 +648,8 @@ const ShiftApprovalPage: React.FC = () => {
                     className="w-full p-2.5 border border-neutral-300 rounded-xl text-xs bg-neutral-50/50 focus:outline-none focus:ring-2 focus:ring-primary-500"
                   >
                     <option value="General Shift">General Shift (09:00 AM - 06:00 PM)</option>
-                    <option value="First Shift">First Shift (06:00 AM - 02:30 PM)</option>
-                    <option value="Second Shift">Second Shift (01:30 PM - 10:00 PM)</option>
+                    <option value="First Shift">First Shift (07:00 AM - 04:00 PM)</option>
+                    <option value="Second Shift">Second Shift (12:00 PM - 09:00 PM)</option>
                     <option value="Night Shift">Night Shift (10:00 PM - 06:00 AM)</option>
                   </select>
                 </div>
