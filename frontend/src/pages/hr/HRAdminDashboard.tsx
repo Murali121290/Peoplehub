@@ -33,6 +33,7 @@ import ProfileCompleteModal from "./modals/ProfileCompleteModal";
 import AddTeamModal from "./modals/AddTeamModal";
 import { Tabs } from "../../components/ui/Tabs";
 import ConfirmDialog from "../../components/ui/Modal/ConfirmDialog";
+import { BookLoader } from "../../components/ui/Spinner";
 const NAV = [
   { id: "dashboard", label: "Dashboard" },
   { id: "directory", label: "Employee Directory" },
@@ -109,6 +110,7 @@ const NAV_ICONS: Record<string, React.ElementType> = {
 const BASE_URL = `${API_URL}/api`;
 
 export default function HRAdminDashboard() {
+  const [isPageLoading, setIsPageLoading] = useState(true);
   const [nav, setNav] = useState("dashboard");
   const [search, setSearch] = useState("");
   const [leaves, setLeaves] = useState<any[]>([]);
@@ -259,23 +261,38 @@ export default function HRAdminDashboard() {
   };
 
   useEffect(() => {
-    fetchEmployees();
-    fetchAttendance();
-    fetchLeaveRequests();
-    fetchShiftRequests();
-    fetchTeams();
-    fetchRoles();
-    fetchTeamOverview();
+    const init = async () => {
+      setIsPageLoading(true);
+      try {
+        await Promise.all([
+          fetchEmployees(),
+          fetchAttendance(),
+          fetchLeaveRequests(),
+          fetchShiftRequests(),
+          fetchTeams(),
+          fetchRoles(),
+          fetchTeamOverview(),
+        ]);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+    init();
 
     const handleLeaveUpdate = () => fetchLeaveRequests();
     const handleShiftUpdate = () => fetchShiftRequests();
+    const handleAttendanceUpdate = () => fetchAttendance();
 
     socket.on("leave_update", handleLeaveUpdate);
     socket.on("shift_update", handleShiftUpdate);
+    socket.on("attendance_update", handleAttendanceUpdate);
 
     return () => {
       socket.off("leave_update", handleLeaveUpdate);
       socket.off("shift_update", handleShiftUpdate);
+      socket.off("attendance_update", handleAttendanceUpdate);
     };
   }, []);
 
@@ -679,6 +696,10 @@ export default function HRAdminDashboard() {
     label: item.label,
     icon: NAV_ICONS[item.id],
   }));
+
+  if (isPageLoading) {
+    return <BookLoader label="Loading admin dashboard..." />;
+  }
 
   return (
     <div className="min-h-screen bg-neutral-50 font-sans">

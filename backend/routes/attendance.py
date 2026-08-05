@@ -1186,6 +1186,18 @@ def get_attendance():
                 else "-"
             )
 
+            card_check_in = (
+                attendance.card_check_in.strftime("%H:%M:%S")
+                if attendance.card_check_in
+                else "-"
+            )
+
+            card_check_out = (
+                attendance.card_check_out.strftime("%H:%M:%S")
+                if attendance.card_check_out
+                else "-"
+            )
+
             total_hours = attendance.total_hours or 0.0
 
             # Override to Half Day if checked out with < 4 working hours
@@ -1196,6 +1208,8 @@ def get_attendance():
             status = "Absent"
             check_in = "-"
             check_out = "-"
+            card_check_in = "-"
+            card_check_out = "-"
             total_hours = 0
 
         if status == "Absent":
@@ -1238,6 +1252,10 @@ def get_attendance():
             "designation": employee.designation,
             "check_in": check_in,
             "check_out": check_out,
+            "card_check_in": card_check_in,
+            "card_check_out": card_check_out,
+            "lunch_minutes": attendance.lunch_minutes if attendance else 0,
+            "tea_minutes": attendance.tea_minutes if attendance else 0,
             "total_hours": total_hours,
             "attendance_date": str(today),
             "status": status,
@@ -1327,8 +1345,21 @@ def get_weekly_attendance():
                     total_hours_weekly = attendance.total_hours or 0.0
                     if attendance.check_out and total_hours_weekly < 4.0 and status not in ("Absent", "Leave"):
                         status = "Half Day"
+
+                    card_check_in = (
+                        attendance.card_check_in.strftime("%I:%M %p")
+                        if attendance.card_check_in
+                        else "-"
+                    )
+                    card_check_out = (
+                        attendance.card_check_out.strftime("%I:%M %p")
+                        if attendance.card_check_out
+                        else "-"
+                    )
                 else:
                     status = "Absent"
+                    card_check_in = "-"
+                    card_check_out = "-"
 
                 if status == "Absent":
                     from models.leave import LeaveRequest
@@ -1385,6 +1416,9 @@ def get_weekly_attendance():
                         attendance.check_out.strftime("%I:%M %p")
                         if attendance and attendance.check_out
                         else "-",
+
+                    "card_check_in": card_check_in,
+                    "card_check_out": card_check_out,
 
                     "total_hours":
                         attendance.total_hours

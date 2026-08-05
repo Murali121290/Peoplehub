@@ -871,6 +871,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
   ) => {
 
     e.preventDefault();
+    setIsActionLoading(true);
 
     try {
 
@@ -897,7 +898,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
         handover_to: leaveForm.handoverTo,
 
-        reason: leaveForm.reason,
+        reason: leaveForm.reason + (leaveForm.leaveDuration && leaveForm.leaveDuration !== "Full Day" ? ` (${leaveForm.leaveDuration})` : ""),
       };
 
       if (editingLeave) {
@@ -952,11 +953,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
       toast.error("Server Error");
 
+    } finally {
+      setIsActionLoading(false);
     }
 
   };
 
   const approveLeave = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/leaves/approve/${id}`, {
         method: "PUT",
@@ -971,10 +975,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
       }
     } catch (err) {
       console.log(err);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const rejectLeave = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/leaves/reject/${id}`, {
         method: "PUT",
@@ -989,10 +996,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
       }
     } catch (err) {
       console.log(err);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const cancelLeave = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/leaves/${id}/cancel`, {
         method: "POST",
@@ -1013,11 +1023,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
     } catch (err) {
       console.log(err);
       toast.error("Error cancelling leave");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   // --- Shift Handlers ---
   const submitShiftRequest = async (shiftForm: any) => {
+    setIsActionLoading(true);
     try {
       if (!currentEmployee) {
         toast.error("Employee details not found");
@@ -1063,34 +1076,51 @@ if (isHalfDayLeave(leave.total_days)) return false;
     } catch (err) {
       console.error(err);
       toast.error("Server Error");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const approveShift = async (id: number) => {
-    const response = await fetch(`${BASE_URL}/shifts/approve/${id}`, {
-      method: "PUT",
-    });
-    const data = await response.json();
-    if (data.success) {
-      toast.success("Shift Approved Successfully");
-      loadShiftRequests();
-      loadManagerShiftRequests();
+    setIsActionLoading(true);
+    try {
+      const response = await fetch(`${BASE_URL}/shifts/approve/${id}`, {
+        method: "PUT",
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success("Shift Approved Successfully");
+        loadShiftRequests();
+        loadManagerShiftRequests();
+      }
+    } catch (err) {
+      console.log(err);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const rejectShift = async (id: number) => {
-    const response = await fetch(`${BASE_URL}/shifts/reject/${id}`, {
-      method: "PUT",
-    });
-    const data = await response.json();
-    if (data.success) {
-      toast.success("Shift Rejected");
-      loadShiftRequests();
-      loadManagerShiftRequests();
+    setIsActionLoading(true);
+    try {
+      const response = await fetch(`${BASE_URL}/shifts/reject/${id}`, {
+        method: "PUT",
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success("Shift Rejected");
+        loadShiftRequests();
+        loadManagerShiftRequests();
+      }
+    } catch (err) {
+      console.log(err);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const cancelShiftRequest = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const response = await fetch(`${BASE_URL}/shifts/cancel/${id}`, {
         method: "PUT",
@@ -1110,6 +1140,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
     } catch (err) {
       console.error(err);
       toast.error("Server Error");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 

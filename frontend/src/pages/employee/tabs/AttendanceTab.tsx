@@ -17,6 +17,7 @@ import StatCard from '../components/StatCard';
 import { Attendance } from '../../../types/employee.types';
 import { Card } from '../../../components/ui/Card';
 import apiService from '../../../services/api';
+import { BookLoader } from '../../../components/ui/Spinner';
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -60,6 +61,10 @@ interface DayDetails {
   source: string;
   managerStatus: string;
   rawAttendanceRecord?: any;
+  rawLeaveRecord?: any;
+  baseWorkingHours?: number;
+  rawPermissionRecord?: any;
+  halfDayDuration?: string;
 }
 
 const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAttendanceProp = [], currentEmployee }) => {
@@ -111,7 +116,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
       const allLeaves = Array.isArray(leavesRes.data) ? leavesRes.data : [];
       const myApprovedLeaves = allLeaves.filter((l: any) => {
-        if (l.status !== "Approved" || l.request_type !== "Leave") return false;
+        if (l.status !== "Approved" || (l.request_type !== "Leave" && l.request_type !== "Permission")) return false;
         const leaveEmpId = String(l.employee_id || "");
         
         // Match against database ID, user ID, and company employee_id
@@ -222,8 +227,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
     // 2. Approved Leave
     const matchedLeave = approvedLeaves.find((l: any) => {
-      if (l.request_type === "Permission") return l.permission_date === dateStr;
+      if (l.request_type !== "Leave") return false;
       return l.from_date <= dateStr && l.to_date >= dateStr;
+    });
+
+    // Approved Permission
+    const matchedPermission = approvedLeaves.find((l: any) => {
+      if (l.request_type !== "Permission") return false;
+      return l.permission_date === dateStr;
     });
 
     // 3. Weekly Off (Sunday or Saturday Off)
@@ -245,6 +256,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     let cardCheckIn = "-";
     let cardCheckOut = "-";
     let workingHours = 0;
+    let baseWorkingHours = 0;
     let workingHoursFormatted = "0h";
     let lunchMinutes = 0;
     let teaMinutes = 0;
@@ -256,13 +268,31 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     let overtime = "00:00";
     let source = "Web App";
     let managerStatus = "Approved";
+    let halfDayDuration: string | undefined = undefined;
+
+    let permissionHours = 0;
+    if (matchedPermission && matchedPermission.status === "Approved" && matchedPermission.from_time && matchedPermission.to_time) {
+      const [fH, fM] = matchedPermission.from_time.split(":");
+      const [tH, tM] = matchedPermission.to_time.split(":");
+      const fMins = parseInt(fH) * 60 + parseInt(fM);
+      const tMins = parseInt(tH) * 60 + parseInt(tM);
+      permissionHours = Math.max(0, tMins - fMins) / 60;
+    }
 
     if (attRec) {
       checkIn = attRec.checkIn || attRec.check_in || "-";
       checkOut = attRec.checkOut || attRec.check_out || "-";
       cardCheckIn = attRec.cardCheckIn || attRec.card_check_in || "-";
       cardCheckOut = attRec.cardCheckOut || attRec.card_check_out || "-";
-      workingHours = Number(attRec.workingHours || attRec.working_hours || 0);
+      baseWorkingHours = Number(attRec.workingHours || attRec.working_hours || 0);
+      
+      const hasCheckedIn = checkIn !== "-" && checkIn !== "";
+      if (hasCheckedIn) {
+        workingHours = baseWorkingHours + permissionHours;
+      } else {
+        workingHours = baseWorkingHours;
+      }
+
       workingHoursFormatted = formatHoursMinutes(workingHours);
       lunchMinutes = Number(attRec.lunchMinutes || attRec.lunch_minutes || 0);
       teaMinutes = Number(attRec.teaMinutes || attRec.tea_minutes || 0);
@@ -286,7 +316,22 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       badgeEmoji = "";
     } else if (matchedLeave) {
       status = "Leave";
-      badgeLabel = matchedLeave.leave_type || "Approved Leave";
+      const isHalfDay = matchedLeave.total_days != null && Number(matchedLeave.total_days) <= 0.5;
+      let durationStr = "";
+      halfDayDuration = undefined;
+      if (isHalfDay) {
+        if (matchedLeave.reason?.includes("First Half")) {
+          durationStr = " (First Half)";
+          halfDayDuration = "First Half";
+        } else if (matchedLeave.reason?.includes("Second Half")) {
+          durationStr = " (Second Half)";
+          halfDayDuration = "Second Half";
+        } else {
+          durationStr = " (Half Day)";
+          halfDayDuration = "Half Day";
+        }
+      }
+      badgeLabel = (matchedLeave.leave_type || "Leave") + durationStr;
       badgeEmoji = "";
       leaveType = matchedLeave.leave_type;
       leaveReason = matchedLeave.reason;
@@ -340,7 +385,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       overtime,
       source,
       managerStatus,
-      rawAttendanceRecord: attRec
+      rawAttendanceRecord: attRec,
+      rawLeaveRecord: matchedLeave,
+      baseWorkingHours: baseWorkingHours,
+      rawPermissionRecord: matchedPermission,
+      halfDayDuration
     });
 
     currentDate.setDate(currentDate.getDate() + 1);
@@ -376,7 +425,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {isLoading && <BookLoader />}
       {/* Page Header & View Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-neutral-200 shadow-sm">
         <div className="flex items-center gap-3">
@@ -513,7 +563,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             {/* 7-Column Weekday Header */}
             <div className="grid grid-cols-7 gap-2 mb-2">
               {WEEKDAYS.map((wd) => (
-                <div key={wd} className="py-2 text-center text-[12px] font-bold text-neutral-400 uppercase tracking-widest">
+                <div key={wd} className="py-2 text-center text-[12px] font-bold text-neutral-700 uppercase tracking-widest">
                   {wd}
                 </div>
               ))}
@@ -561,20 +611,25 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     className={`h-[80px] p-2 flex flex-col justify-between rounded-xl border relative group cursor-default transition-all duration-200 hover:z-50 ${cell.isToday
                         ? "border-primary-500 shadow-sm bg-white"
                         : cell.status === "Future"
-                          ? "border-transparent bg-transparent"
-                          : "border-neutral-100 bg-white hover:border-neutral-200 hover:shadow-sm"
+                          ? "border-neutral-200 bg-neutral-50/40"
+                          : "border-neutral-300 bg-white hover:border-neutral-400 hover:shadow-sm"
                       }`}
                   >
                     {/* Top Row: Date Number */}
-                    <div className="flex justify-between items-start">
+                    <div className="flex justify-between items-center w-full">
                       <span className={`text-[12px] font-bold flex items-center justify-center rounded-full ${cell.isToday
                           ? "bg-primary-500 text-white w-6 h-6 shadow-sm"
                           : cell.status === "Future"
-                            ? "text-neutral-300"
-                            : "text-neutral-700"
+                            ? "text-neutral-400"
+                            : "text-neutral-900"
                         }`}>
                         {cell.dayNum}
                       </span>
+                      {cell.halfDayDuration && (
+                        <span className="text-[8px] font-extrabold text-amber-700 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 uppercase tracking-wide shrink-0">
+                          {cell.halfDayDuration === "First Half" ? "1st Half" : cell.halfDayDuration === "Second Half" ? "2nd Half" : "Half"}
+                        </span>
+                      )}
                     </div>
 
                     {/* Status Tag */}
@@ -582,7 +637,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       <div className="mt-1 w-full flex justify-start">
                         <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 w-full ${badgeClass}`}>
                           <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
-                          <span className="truncate">{cell.badgeLabel || cell.status}</span>
+                          <span className="truncate">
+                            {cell.halfDayDuration ? cell.leaveType || "Leave" : cell.badgeLabel || cell.status}
+                          </span>
                         </div>
                       </div>
                     )}
@@ -607,6 +664,24 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         </div>
 
                         {/* Details Breakdown */}
+                        {cell.rawPermissionRecord && (
+                          <div className="space-y-1 bg-purple-50 p-2.5 rounded-xl border border-purple-200 text-purple-700 mb-3">
+                            <span className="text-[9px] uppercase font-bold text-purple-500 block">Approved Permission</span>
+                            {cell.rawPermissionRecord.from_time && cell.rawPermissionRecord.to_time ? (
+                              <p className="font-extrabold text-[12px]">
+                                {cell.rawPermissionRecord.from_time.substring(0, 5)} - {cell.rawPermissionRecord.to_time.substring(0, 5)}
+                              </p>
+                            ) : (
+                              <p className="font-extrabold text-[12px]">Approved (No Time Specified)</p>
+                            )}
+                            {cell.rawPermissionRecord.reason && (
+                              <p className="text-[10px] text-purple-600 font-semibold mt-0.5">
+                                Reason: {cell.rawPermissionRecord.reason}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
                         {cell.status === "Present" || cell.status === "Half Day" ? (
                           <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-2.5 rounded-xl border border-neutral-100">
@@ -635,6 +710,32 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                  {formatHoursMinutes(cell.workingHours + ((cell.lunchMinutes || 0) + (cell.teaMinutes || 0)) / 60)}
                                </span>
                              </div>
+                             
+                             {/* Show breakdown of actual work hours and permission hours if present */}
+                             {cell.rawPermissionRecord && cell.rawPermissionRecord.from_time && cell.rawPermissionRecord.to_time ? (
+                               <>
+                                 <div className="flex justify-between items-center px-1">
+                                   <span className="text-[11px] text-neutral-500 font-bold">Actual Work Hours</span>
+                                   <span className="text-[12px] font-extrabold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded-md">
+                                     {formatHoursMinutes(cell.baseWorkingHours ?? cell.workingHours)}
+                                   </span>
+                                 </div>
+                                 {(() => {
+                                   const [fH, fM] = cell.rawPermissionRecord.from_time.split(":");
+                                   const [tH, tM] = cell.rawPermissionRecord.to_time.split(":");
+                                   const mins = Math.max(0, (parseInt(tH)*60+parseInt(tM)) - (parseInt(fH)*60+parseInt(fM)));
+                                   return (
+                                     <div className="flex justify-between items-center px-1 text-purple-600">
+                                       <span className="text-[11px] font-bold">Permission Hours</span>
+                                       <span className="text-[12px] font-extrabold bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
+                                         +{formatHoursMinutes(mins / 60)}
+                                       </span>
+                                     </div>
+                                   );
+                                 })()}
+                               </>
+                             ) : null}
+
                              <div className="flex justify-between items-center px-1">
                                <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
                                <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
@@ -652,9 +753,45 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             <p className="font-bold text-[13px] text-blue-800">{cell.holidayName}</p>
                           </div>
                         ) : cell.status === "Leave" ? (
-                          <div className="space-y-1 bg-primary-500/10 p-3 rounded-xl border border-primary-500/20 text-primary-500">
-                            <span className="text-[10px] uppercase font-bold text-primary-500 block">Approved Leave</span>
-                            <p className="font-bold text-[13px] text-primary-500">{cell.leaveType}</p>
+                          <div className="space-y-3">
+                            <div className="space-y-1 bg-primary-500/10 p-3 rounded-xl border border-primary-500/20 text-primary-500">
+                              <span className="text-[10px] uppercase font-bold text-primary-500 block">Approved Leave</span>
+                              <p className="font-bold text-[13px] text-primary-500">{cell.leaveType}</p>
+                              {(() => {
+                                const isHalf = cell.rawLeaveRecord?.total_days != null && Number(cell.rawLeaveRecord?.total_days) <= 0.5;
+                                if (isHalf) {
+                                  const isFirst = cell.leaveReason?.includes("First Half") || cell.rawLeaveRecord?.from_time?.startsWith("09:00");
+                                  const isSecond = cell.leaveReason?.includes("Second Half") || cell.rawLeaveRecord?.from_time?.startsWith("13:30");
+                                  const timeString = cell.rawLeaveRecord?.from_time && cell.rawLeaveRecord?.to_time
+                                    ? ` (${cell.rawLeaveRecord.from_time.substring(0, 5)} - ${cell.rawLeaveRecord.to_time.substring(0, 5)})`
+                                    : "";
+                                  return (
+                                    <span className="text-[10px] font-bold block mt-1">
+                                      Session: {isFirst ? "First Half" : isSecond ? "Second Half" : "Half Day"}{timeString}
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
+                            {cell.checkIn !== "-" && cell.checkIn !== "" && (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-2.5 rounded-xl border border-neutral-100">
+                                  <div>
+                                    <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-In</span>
+                                    <span className="font-extrabold text-emerald-600 text-[12px]">{cell.checkIn}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-Out</span>
+                                    <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
+                                  </div>
+                                </div>
+                                <div className="flex justify-between items-center px-1">
+                                  <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
+                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ) : cell.status === "Weekly Off" ? (
                           <div className="text-[12px] text-neutral-500 text-center py-3 bg-neutral-50 rounded-xl font-bold border border-neutral-100">
@@ -690,9 +827,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 z-20 bg-white shadow-xs">
                 {/* Group Headers */}
-                <tr className="border-b border-neutral-200 text-neutral-400 text-[10px] font-extrabold uppercase tracking-widest bg-neutral-50/40">
-                  <th rowSpan={2} className="p-3 pl-6 border-r border-neutral-100 text-left">Date</th>
-                  <th rowSpan={2} className="p-3 border-r border-neutral-100 text-left">Day</th>
+                <tr className="border-b border-neutral-300 text-neutral-500 text-[10px] font-extrabold uppercase tracking-widest bg-neutral-50/40">
+                  <th rowSpan={2} className="p-3 pl-6 border-r border-neutral-300 text-left">Date</th>
+                  <th rowSpan={2} className="p-3 border-r border-neutral-300 text-left">Day</th>
                   
                   <th colSpan={3} className="p-2.5 text-center border-r border-b-2 border-cyan-500 bg-cyan-50/20 text-cyan-700 text-[11px] font-black">
                     Web Site Entry
@@ -702,26 +839,26 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     Biometric Card Entry
                   </th>
                   
-                  <th rowSpan={2} className="p-3 border-r border-neutral-100 text-center text-neutral-600 font-extrabold">
+                  <th rowSpan={2} className="p-3 border-r border-neutral-300 text-center text-neutral-600 font-extrabold">
                     Breaks <div className="text-[9px] text-neutral-400 font-bold normal-case">(L/T)</div>
                   </th>
                   
-                  <th rowSpan={2} className="p-3 border-r border-neutral-100 text-center">Status</th>
-                  <th rowSpan={2} className="p-3 border-r border-neutral-100 text-left">Shift</th>
+                  <th rowSpan={2} className="p-3 border-r border-neutral-300 text-center">Status</th>
+                  <th rowSpan={2} className="p-3 border-r border-neutral-300 text-left">Shift</th>
                   <th rowSpan={2} className="p-3 text-center pr-6">Overtime</th>
                 </tr>
                 {/* Sub Headers */}
-                <tr className="border-b border-neutral-200 text-neutral-500 text-[10px] font-extrabold uppercase tracking-wider bg-white">
+                <tr className="border-b border-neutral-300 text-neutral-500 text-[10px] font-extrabold uppercase tracking-wider bg-white">
                   {/* Web Site Entry columns */}
                   <th className="p-2 text-center text-cyan-600">Check-In</th>
                   <th className="p-2 text-center text-cyan-600">Check-Out</th>
-                  <th className="p-2 text-center text-cyan-600 border-r border-neutral-100">Hours</th>
+                  <th className="p-2 text-center text-cyan-600 border-r border-neutral-300">Hours</th>
                   {/* Biometric Card Entry columns */}
                   <th className="p-2 text-center text-violet-600">Check-In</th>
-                  <th className="p-2 text-center text-violet-600 border-r border-neutral-100">Check-Out</th>
+                  <th className="p-2 text-center text-violet-600 border-r border-neutral-300">Check-Out</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100 text-xs font-semibold text-neutral-700 bg-white">
+              <tbody className="divide-y divide-neutral-300 text-xs font-semibold text-neutral-700 bg-white">
                 {filteredGridDays.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
@@ -732,29 +869,29 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                   filteredGridDays.map((dayObj) => (
                     <tr
                       key={dayObj.dateStr}
-                      className="hover:bg-primary-500/5 transition-colors border-b border-neutral-100"
+                      className="hover:bg-primary-500/5 transition-colors border-b border-neutral-300"
                     >
-                      <td className="p-3 pl-6 font-bold text-neutral-900 border-r border-neutral-100/50">{dayObj.dateStr}</td>
-                      <td className="p-3 text-neutral-500 border-r border-neutral-100/50 font-bold">{dayObj.dayName}</td>
+                      <td className="p-3 pl-6 font-bold text-neutral-900 border-r border-neutral-300">{dayObj.dateStr}</td>
+                      <td className="p-3 text-neutral-500 border-r border-neutral-300 font-bold">{dayObj.dayName}</td>
                       
                       {/* Web Site Entry */}
                       <td className="p-3 text-center text-neutral-800 font-bold">{dayObj.checkIn}</td>
                       <td className="p-3 text-center text-neutral-800 font-bold">{dayObj.checkOut}</td>
-                      <td className="p-3 text-center text-cyan-600 font-black border-r border-neutral-100/50">
+                      <td className="p-3 text-center text-cyan-600 font-black border-r border-neutral-300">
                         {dayObj.status === "Present" || dayObj.status === "Half Day" ? dayObj.workingHoursFormatted : "—"}
                       </td>
                       
                       {/* Biometric Card Entry */}
                       <td className="p-3 text-center text-neutral-800 font-bold">{dayObj.cardCheckIn || "-"}</td>
-                      <td className="p-3 text-center text-neutral-800 font-bold border-r border-neutral-100/50">{dayObj.cardCheckOut || "-"}</td>
+                      <td className="p-3 text-center text-neutral-800 font-bold border-r border-neutral-300">{dayObj.cardCheckOut || "-"}</td>
                       
                       {/* Breaks */}
-                      <td className="p-3 text-center font-bold text-neutral-600 border-r border-neutral-100/50">
+                      <td className="p-3 text-center font-bold text-neutral-600 border-r border-neutral-300">
                         {(dayObj.lunchMinutes || dayObj.teaMinutes) ? `${dayObj.lunchMinutes}m / ${dayObj.teaMinutes}m` : "—"}
                       </td>
                       
                       {/* Status */}
-                      <td className="p-3 text-center border-r border-neutral-100/50">
+                      <td className="p-3 text-center border-r border-neutral-300">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${dayObj.status === "Present" ? "bg-emerald-100 text-emerald-800 border-emerald-300" :
                           dayObj.status === "Absent" ? "bg-rose-100 text-rose-800 border-rose-300" :
                             dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
@@ -768,7 +905,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       </td>
                       
                       {/* Shift */}
-                      <td className="p-3 text-neutral-750 font-extrabold border-r border-neutral-100/50 truncate max-w-[170px]">{dayObj.shift}</td>
+                      <td className="p-3 text-neutral-750 font-extrabold border-r border-neutral-300 truncate max-w-[170px]">{dayObj.shift}</td>
                       
                       {/* Overtime */}
                       <td className="p-3 text-center pr-6 font-bold text-emerald-700">{dayObj.overtime}</td>

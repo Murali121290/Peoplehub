@@ -368,34 +368,40 @@ const ManagerDashboardPage = () => {
   };
 
   const handleApproveToday = async (empUserId: number) => {
+    setIsPageLoading(true);
     try {
       const todayStr = new Date().toISOString().split("T")[0];
       const response = await fetch(`${BASE_URL}/attendance/approve/${empUserId}?date=${todayStr}`, {
         method: "PUT",
       });
       if (response.ok) {
-        loadTeamAttendance();
+        await loadTeamAttendance();
       } else {
         console.error("Failed to approve today's attendance");
       }
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsPageLoading(false);
     }
   };
 
   const handleRejectToday = async (empUserId: number) => {
+    setIsPageLoading(true);
     try {
       const todayStr = new Date().toISOString().split("T")[0];
       const response = await fetch(`${BASE_URL}/attendance/reject/${empUserId}?date=${todayStr}`, {
         method: "PUT",
       });
       if (response.ok) {
-        loadTeamAttendance();
+        await loadTeamAttendance();
       } else {
         console.error("Failed to reject today's attendance");
       }
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsPageLoading(false);
     }
   };
 
@@ -465,39 +471,18 @@ const ManagerDashboardPage = () => {
   }, [teamAttendance]);
 
   useEffect(() => {
-    socket.on("attendance_update", (payload: any) => {
-      setTeamAttendance((prev) => {
-        const exists = prev.some((m) => m.id === payload.id);
-        if (exists) {
-          return prev.map((m) => (m.id === payload.id ? { ...m, ...payload } : m));
-        }
-        return prev;
-      });
-    });
+    const handleRefresh = () => {
+      loadTeamAttendance(currentViewedManagerId);
+      loadYesterdaySummary();
+    };
 
-    socket.on("attendance_approved_all", () => {
-      loadTeamAttendance();
-    });
-
-    socket.on("leave_update", (payload: any) => {
-      if (
-        payload.reporting_manager?.trim().toLowerCase() ===
-        managerName?.trim().toLowerCase()
-      ) {
-        // Also update leave status inside teamAttendance
-        if (payload.status === "Approved") {
-          setTeamAttendance((prev) =>
-            prev.map((m) =>
-              m.id === Number(payload.employee_id)
-                ? { ...m, attendance_status: "On Leave" }
-                : m
-            )
-          );
-        }
-      }
-    });
+    socket.on("attendance_update", handleRefresh);
+    socket.on("attendance_approved_all", handleRefresh);
+    socket.on("leave_update", handleRefresh);
+    socket.on("shift_update", handleRefresh);
 
     socket.on("employee_profile_update", (payload: any) => {
+      handleRefresh();
       setTeamMembers((prev) =>
         prev.map((m) =>
           m.id === payload.id
@@ -510,28 +495,16 @@ const ManagerDashboardPage = () => {
             : m
         )
       );
-      setTeamAttendance((prev) =>
-        prev.map((m) =>
-          m.id === payload.id
-            ? {
-              ...m,
-              designation: payload.designation || m.designation,
-              name: `${payload.first_name} ${payload.last_name}`,
-              email: payload.email,
-              shift: payload.shift,
-            }
-            : m
-        )
-      );
     });
 
     return () => {
-      socket.off("attendance_update");
-      socket.off("attendance_approved_all");
-      socket.off("attendance_approved_all");
+      socket.off("attendance_update", handleRefresh);
+      socket.off("attendance_approved_all", handleRefresh);
+      socket.off("leave_update", handleRefresh);
+      socket.off("shift_update", handleRefresh);
       socket.off("employee_profile_update");
     };
-  }, [managerName]);
+  }, [managerName, currentViewedManagerId]);
 
   const loadManagerInfo = async () => {
     try {
@@ -693,6 +666,10 @@ const ManagerDashboardPage = () => {
         is_reporting_manager: att.is_reporting_manager || match?.is_reporting_manager || false,
         report_count: att.report_count ?? match?.report_count ?? 0,
         reporting_manager: att.reporting_manager || match?.reporting_manager || "",
+        permission_from: att.permission_from,
+        permission_to: att.permission_to,
+        is_permission: att.is_permission,
+        permission_hours: att.permission_hours,
       };
     });
   }, [teamAttendance, teamMembers]);
@@ -1649,6 +1626,26 @@ const ManagerDashboardPage = () => {
                                   >
                                     {member.name}
                                   </div>
+                                  {member.permission_hours > 0 && (
+                                    <span
+                                      title={`Permission: ${member.permission_from} - ${member.permission_to}`}
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "3px",
+                                        padding: "2px 7px",
+                                        borderRadius: "999px",
+                                        background: "#f3e8ff",
+                                        border: "1px solid #d8b4fe",
+                                        color: "#6b21a8",
+                                        fontSize: "10px",
+                                        fontWeight: 800,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      Permission: {member.permission_hours} hr{member.permission_hours !== 1 ? "s" : ""}
+                                    </span>
+                                  )}
                                   {member.is_reporting_manager && (
                                     <span
                                       title={`This employee manages ${member.report_count || 0} team members`}
@@ -2006,6 +2003,7 @@ const ManagerDashboardPage = () => {
                         </th>
                         <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "#eff6ff", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
                         <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "#faf5ff", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}`, color: "#6b21a8", fontWeight: 800, textAlign: "center" }}>Permission</th>
                         <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "120px", borderBottom: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Status</span>
@@ -2125,6 +2123,26 @@ const ManagerDashboardPage = () => {
                                   )}
                                   <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                                     <span style={{ fontWeight: 700, color: THEME.navy }}>{member.name}</span>
+                                    {member.permission_hours > 0 && (
+                                      <span
+                                        title={`Permission: ${member.permission_from} - ${member.permission_to}`}
+                                        style={{
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "3px",
+                                          padding: "2px 8px",
+                                          borderRadius: "999px",
+                                          background: "#f3e8ff",
+                                          border: "1px solid #d8b4fe",
+                                          color: "#6b21a8",
+                                          fontSize: "10px",
+                                          fontWeight: 800,
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        Permission: {member.permission_hours} hr{member.permission_hours !== 1 ? "s" : ""}
+                                      </span>
+                                    )}
                                     {member.is_reporting_manager && (
                                       <span
                                         title={`This employee manages ${member.report_count || 0} team members`}
@@ -2195,6 +2213,9 @@ const ManagerDashboardPage = () => {
                               <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: "#7e22ce", fontWeight: 600 }}>{member.card_check_out || "—"}</td>
                               <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", fontWeight: 700, color: "#7e22ce" }}>
                                 {formatWorkingHours(member.card_working_hours)}
+                              </td>
+                              <td style={{ padding: "12px 16px", color: "#6b21a8", fontWeight: 700, textAlign: "center" }}>
+                                {member.permission_hours ? `${member.permission_hours} hr${member.permission_hours !== 1 ? "s" : ""}` : "—"}
                               </td>
 
                               <td style={{ padding: "12px 16px" }}>
@@ -2378,8 +2399,8 @@ const ManagerDashboardPage = () => {
                             {(emp.lunch_minutes > 0 || emp.tea_minutes > 0) ? `${emp.lunch_minutes}m / ${emp.tea_minutes}m` : "—"}
                           </td>
                           <td style={{ padding: "12px 16px", color: "#0f766e", fontWeight: 700 }}>
-                            {emp.permission_time || "—"}
-                          </td>
+                                    {emp.permission_hours ? `${emp.permission_hours} hr${emp.permission_hours !== 1 ? "s" : ""}` : "—"}
+                                  </td>
                           <td style={{ padding: "12px 16px" }}>
                             <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: msBg, color: msColor, fontSize: "11px", fontWeight: 800 }}>{managerStatus}</span>
                           </td>

@@ -89,6 +89,11 @@ def apply_leave():
 
             leave.total_days = float(data.get("total_days", 0))
 
+            if data.get("from_time"):
+                leave.from_time = datetime.strptime(data.get("from_time"), "%H:%M").time()
+            if data.get("to_time"):
+                leave.to_time = datetime.strptime(data.get("to_time"), "%H:%M").time()
+
         # ===========================
         # PERMISSION REQUEST
         # ===========================
@@ -529,10 +534,16 @@ def update_leave(leave_id):
                 data.get("total_days", 0)
             )
 
-            # Clear permission fields
+            # Clear permission fields but retain/update timing if present
             leave.permission_date = None
-            leave.from_time = None
-            leave.to_time = None
+            if data.get("from_time"):
+                leave.from_time = datetime.strptime(data.get("from_time"), "%H:%M").time()
+            else:
+                leave.from_time = None
+            if data.get("to_time"):
+                leave.to_time = datetime.strptime(data.get("to_time"), "%H:%M").time()
+            else:
+                leave.to_time = None
 
         # ===========================
         # UPDATE PERMISSION

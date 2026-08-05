@@ -538,16 +538,31 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         curr.setDate(curr.getDate() + 1);
       }
 
-      if (leaveForm.leaveDuration === "First Half" || leaveForm.leaveDuration === "Second Half") {
-        totalDays = totalDays > 0 ? 0.5 : 0;
+      let calculatedFromTime = leaveForm.fromTime;
+      let calculatedToTime = leaveForm.toTime;
+      if (leaveForm.requestType === "Leave") {
+        if (leaveForm.leaveDuration === "First Half") {
+          totalDays = totalDays > 0 ? 0.5 : 0;
+          calculatedFromTime = "09:00";
+          calculatedToTime = "13:30";
+        } else if (leaveForm.leaveDuration === "Second Half") {
+          totalDays = totalDays > 0 ? 0.5 : 0;
+          calculatedFromTime = "13:30";
+          calculatedToTime = "18:00";
+        } else {
+          calculatedFromTime = "";
+          calculatedToTime = "";
+        }
       }
 
       setLeaveForm(prev => ({
         ...prev,
-        totalDays: totalDays > 0 ? totalDays : 0
+        totalDays: totalDays > 0 ? totalDays : 0,
+        fromTime: calculatedFromTime,
+        toTime: calculatedToTime
       }));
     }
-  }, [leaveForm.fromDate, leaveForm.toDate, leaveForm.leaveDuration, allYearHolidays]);
+  }, [leaveForm.fromDate, leaveForm.toDate, leaveForm.leaveDuration, leaveForm.requestType, allYearHolidays]);
 
   const resetLeaveForm = () => {
     setLeaveForm({
@@ -568,17 +583,30 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   };
 
   const editLeave = (leave: any) => {
+    let dur = "Full Day";
+    let cleanReason = leave.reason || "";
+    if (leave.total_days != null && Number(leave.total_days) <= 0.5) {
+      if (cleanReason.includes(" (First Half)")) {
+        dur = "First Half";
+        cleanReason = cleanReason.replace(" (First Half)", "");
+      } else if (cleanReason.includes(" (Second Half)")) {
+        dur = "Second Half";
+        cleanReason = cleanReason.replace(" (Second Half)", "");
+      } else {
+        dur = "First Half"; // default fallback
+      }
+    }
     setLeaveForm({
       requestType: (leave.request_type || "Leave") as "Leave" | "Permission",
       leaveType: leave.leave_type || "",
-      leaveDuration: leave.leave_duration || "Full Day",
+      leaveDuration: dur,
       fromDate: leave.from_date || "",
       toDate: leave.to_date || "",
       permissionDate: leave.permission_date || "",
       fromTime: leave.from_time || "",
       toTime: leave.to_time || "",
       totalDays: leave.total_days || 0,
-      reason: leave.reason || "",
+      reason: cleanReason,
       reportingManager: leave.reporting_manager || "",
       handoverTo: leave.handover_to || "",
       attachment: null,
@@ -696,13 +724,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const activeRequests = leaveRequests.filter((req: any) => {
     const isOwner = (String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id));
     if (!isOwner) return false;
-    if (req.status !== "Pending") return false;
-
-    const startDate = req.request_type === "Permission" ? req.permission_date : req.from_date;
-    const todayStr = new Date().toLocaleDateString("en-CA");
-    if (startDate && startDate <= todayStr) return false;
-
-    return true;
+    return req.status === "Pending";
   });
 
   return (
