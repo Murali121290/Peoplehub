@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Coffee, UtensilsCrossed, Home, Clock } from "lucide-react";
 import { API_URL } from "../../../config/api";
+import { socket } from "../../../services/socket";
 
 interface OverviewTabProps {
   currentEmployee: any;
@@ -73,13 +74,13 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
 
   // Fetch team members when selectedTeam changes
   useEffect(() => {
-    const fetchTeamAttendance = async () => {
+    const fetchTeamAttendance = async (showSpinner = true) => {
       if (!selectedTeam) return;
 
       overviewCache.selectedTeam = selectedTeam;
 
       // Only show loading spinner if we don't have cached data for this team
-      if (!overviewCache.teamMembers[selectedTeam]) {
+      if (showSpinner && !overviewCache.teamMembers[selectedTeam]) {
         setLoading(true);
       }
 
@@ -97,20 +98,30 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
       } catch (error) {
         console.error("Failed to fetch team attendance:", error);
       } finally {
-        setLoading(false);
+        if (showSpinner) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchTeamAttendance();
-    const interval = setInterval(fetchTeamAttendance, 60000);
+    fetchTeamAttendance(true);
+    const interval = setInterval(() => fetchTeamAttendance(false), 60000);
 
     // Listen for custom event to instantly refresh
-    const handleRefresh = () => fetchTeamAttendance();
+    const handleRefresh = () => fetchTeamAttendance(false);
     window.addEventListener('refreshTeamStatus', handleRefresh);
+
+    // Listen to socket events for real-time updates
+    socket.on("attendance_update", handleRefresh);
+    socket.on("leave_update", handleRefresh);
+    socket.on("shift_update", handleRefresh);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('refreshTeamStatus', handleRefresh);
+      socket.off("attendance_update", handleRefresh);
+      socket.off("leave_update", handleRefresh);
+      socket.off("shift_update", handleRefresh);
     };
   }, [selectedTeam]);
 

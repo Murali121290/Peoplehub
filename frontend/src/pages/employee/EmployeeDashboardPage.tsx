@@ -766,6 +766,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       toast.error("Check-In Required. Please check in before starting Lunch Break.");
       return;
     }
+    setIsActionLoading(true);
     try {
       const userId = localStorage.getItem("user_id");
       if (!userId) return;
@@ -814,6 +815,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
       }
     } catch (error) {
       toast.error("Something went wrong.");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -826,6 +829,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       return;
     }
 
+    setIsActionLoading(true);
     try {
       if (isTeaBreak) {
         const response = await fetch(`${API_URL}/api/attendance/tea-break`, {
@@ -872,6 +876,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
       }
     } catch (error) {
       toast.error("Something went wrong while handling Tea Break.");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 

@@ -10,7 +10,7 @@ import {
   ExclamationTriangleIcon,
   ChatBubbleLeftEllipsisIcon,
 } from "@heroicons/react/24/outline";
-
+import { BookLoader } from "../../components/ui/Spinner";
 
 const formatWorkingHours = (hoursVal: any) => {
   if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "—";
@@ -47,6 +47,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
   const [rejectReasonModal, setRejectReasonModal] = useState<{ open: boolean; empId?: number; isBulk?: boolean }>({ open: false });
   const [rejectReasonText, setRejectReasonText] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isActionLoading, setIsActionLoading] = useState(false);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -70,15 +71,22 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
     (e) => !e.decision || e.decision === "Pending"
   ).length;
 
-  const handleApproveSingle = (empId: number) => {
-    onApproveEmployee(empId);
-    setEmployees((prev) =>
-      prev.map((e) =>
-        (e.employee_id === empId || e.id === empId)
-          ? { ...e, decision: "Approved" }
-          : e
-      )
-    );
+  const handleApproveSingle = async (empId: number) => {
+    setIsActionLoading(true);
+    try {
+      await onApproveEmployee(empId);
+      setEmployees((prev) =>
+        prev.map((e) =>
+          (e.employee_id === empId || e.id === empId)
+            ? { ...e, decision: "Approved" }
+            : e
+        )
+      );
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
   const openRejectReasonModal = (empId?: number, isBulk: boolean = false) => {
@@ -86,18 +94,21 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
     setRejectReasonModal({ open: true, empId, isBulk });
   };
 
-  const handleConfirmRejectionWithReason = () => {
+  const handleConfirmRejectionWithReason = async () => {
     const reason = rejectReasonText.trim();
-    if (rejectReasonModal.isBulk) {
-      if (onRejectAll) {
-        onRejectAll(reason);
-      } else {
-        const pendingItems = employees.filter(
-          (e) => !e.decision || e.decision === "Pending"
-        );
-        pendingItems.forEach((e) => {
-          onRejectEmployee(e.employee_id || e.id, reason);
-        });
+    setIsActionLoading(true);
+    try {
+      if (rejectReasonModal.isBulk) {
+        if (onRejectAll) {
+          await onRejectAll(reason);
+        } else {
+          const pendingItems = employees.filter(
+            (e) => !e.decision || e.decision === "Pending"
+          );
+          for (const e of pendingItems) {
+            await onRejectEmployee(e.employee_id || e.id, reason);
+          }
+        }
         setEmployees((prev) =>
           prev.map((e) =>
             !e.decision || e.decision === "Pending"
@@ -105,58 +116,69 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
               : e
           )
         );
-      }
-    } else if (rejectReasonModal.empId != null) {
-      const empId = rejectReasonModal.empId;
-      onRejectEmployee(empId, reason);
-      setEmployees((prev) =>
-        prev.map((e) =>
-          (e.employee_id === empId || e.id === empId)
-            ? {
-                ...e,
-                decision: "Need Clarification",
-                manager_status: "Need Clarification",
-                employee_reply: null,
-                clarification_comment: reason,
-                clarification_history: [
-                  ...(e.clarification_history || []),
-                  {
-                    id: `msg_${Date.now()}`,
-                    sender_role: "manager",
-                    sender_name: "Manager",
-                    comment: reason,
-                    timestamp: new Date().toISOString()
-                  }
-                ]
-              }
-            : e
-        )
-      );
-    }
-    setRejectReasonModal({ open: false });
-    setConfirmDialog(null);
-  };
-
-  const handleConfirmAction = () => {
-    if (confirmDialog === "approve") {
-      if (onApproveAll) {
-        onApproveAll();
-      } else {
-        const pendingItems = employees.filter(
-          (e) => !e.decision || e.decision === "Pending"
-        );
-        pendingItems.forEach((e) => {
-          onApproveEmployee(e.employee_id || e.id);
-        });
+      } else if (rejectReasonModal.empId != null) {
+        const empId = rejectReasonModal.empId;
+        await onRejectEmployee(empId, reason);
         setEmployees((prev) =>
           prev.map((e) =>
-            !e.decision || e.decision === "Pending"
-              ? { ...e, decision: "Approved" }
+            (e.employee_id === empId || e.id === empId)
+              ? {
+                  ...e,
+                  decision: "Need Clarification",
+                  manager_status: "Need Clarification",
+                  employee_reply: null,
+                  clarification_comment: reason,
+                  clarification_history: [
+                    ...(e.clarification_history || []),
+                    {
+                      id: `msg_${Date.now()}`,
+                      sender_role: "manager",
+                      sender_name: "Manager",
+                      comment: reason,
+                      timestamp: new Date().toISOString()
+                    }
+                  ]
+                }
               : e
           )
         );
       }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsActionLoading(false);
+      setRejectReasonModal({ open: false });
       setConfirmDialog(null);
+    }
+  };
+
+  const handleConfirmAction = async () => {
+    if (confirmDialog === "approve") {
+      setIsActionLoading(true);
+      try {
+        if (onApproveAll) {
+          await onApproveAll();
+        } else {
+          const pendingItems = employees.filter(
+            (e) => !e.decision || e.decision === "Pending"
+          );
+          for (const e of pendingItems) {
+            await onApproveEmployee(e.employee_id || e.id);
+          }
+          setEmployees((prev) =>
+            prev.map((e) =>
+              !e.decision || e.decision === "Pending"
+                ? { ...e, decision: "Approved" }
+                : e
+            )
+          );
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setIsActionLoading(false);
+        setConfirmDialog(null);
+      }
     } else if (confirmDialog === "reject") {
       setConfirmDialog(null);
       openRejectReasonModal(undefined, true);
@@ -275,6 +297,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-sm flex items-center justify-center z-[70] p-3 md:p-5 transition-all duration-300 overscroll-contain">
+      {isActionLoading && <BookLoader />}
       <div className="bg-white rounded-[20px] shadow-2xl w-[1280px] max-w-[96vw] overflow-hidden border border-neutral-100 flex flex-col max-h-[calc(100vh-60px)] animate-in fade-in zoom-in-95 duration-200">
 
         {/* Modal Header */}
