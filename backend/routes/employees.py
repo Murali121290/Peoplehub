@@ -15,8 +15,25 @@ from models.leave import LeaveRequest
 from models.user import User, Role, Team
 from sqlalchemy import extract, or_
 from sqlalchemy.exc import IntegrityError
+from datetime import time
 
 employees_bp = Blueprint("employees", __name__)
+
+def _parse_time(t_val):
+    if not t_val:
+        return None
+    if isinstance(t_val, time):
+        return t_val
+    if isinstance(t_val, datetime):
+        return t_val.time()
+    if isinstance(t_val, str):
+        t_clean = t_val.strip()
+        for fmt in ("%H:%M:%S", "%H:%M", "%I:%M %p", "%I:%M%p"):
+            try:
+                return datetime.strptime(t_clean, fmt).time()
+            except ValueError:
+                continue
+    return None
 
 @employees_bp.route("/", methods=["POST"])
 def create_employee():
@@ -253,6 +270,12 @@ def get_employees():
                 emp.privilege_leave,
             "joining_date":
                 emp.joining_date.isoformat() if emp.joining_date else None,
+            "is_active":
+                emp.is_active if hasattr(emp, "is_active") and emp.is_active is not None else True,
+            "deactivation_reason":
+                emp.deactivation_reason if hasattr(emp, "deactivation_reason") else None,
+            "last_working_date":
+                emp.last_working_date.isoformat() if hasattr(emp, "last_working_date") and emp.last_working_date else None,
             "profile_image":
                 base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None
         })
@@ -1216,6 +1239,17 @@ def get_team_attendance(user_id):
             manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
             reporting_list = [e for e in all_employees if is_manager_match(e.reporting_manager, manager_full_name)]
 
+        # Batch fetch approved permissions for all reporting employees today
+        permissions = LeaveRequest.query.filter(
+            LeaveRequest.request_type == "Permission",
+            LeaveRequest.status == "Approved",
+            LeaveRequest.permission_date == today
+        ).all()
+
+        permission_by_employee = {}
+        for p in permissions:
+            permission_by_employee[str(p.employee_id)] = p
+
         for emp in reporting_list:
 
             # Today's attendance
@@ -1223,6 +1257,32 @@ def get_team_attendance(user_id):
                 user_id=emp.user_id,
                 attendance_date=today
             ).first()
+
+            # Check if Permission is active now
+            emp_permission = (
+                permission_by_employee.get(str(emp.id)) or 
+                permission_by_employee.get(emp.employee_id) or
+                permission_by_employee.get(str(emp.employee_id))
+            )
+            has_permission_today = emp_permission is not None
+            is_permission_active = False
+
+            f_time = _parse_time(emp_permission.from_time) if has_permission_today else None
+            t_time = _parse_time(emp_permission.to_time) if has_permission_today else None
+
+            if has_permission_today and f_time and t_time:
+                now_ist_time = datetime.now(ZoneInfo("Asia/Kolkata")).time()
+                if f_time <= now_ist_time <= t_time:
+                    is_permission_active = True
+
+            permission_from = f_time.strftime("%I:%M %p") if f_time else None
+            permission_to = t_time.strftime("%I:%M %p") if t_time else None
+
+            permission_hours = 0.0
+            if has_permission_today and f_time and t_time:
+                f_sec = f_time.hour * 3600 + f_time.minute * 60 + f_time.second
+                t_sec = t_time.hour * 3600 + t_time.minute * 60 + t_time.second
+                permission_hours = max(t_sec - f_sec, 0) / 3600.0
 
             # Check leave for today - get latest request if multiple exist
             leave_requests_today = LeaveRequest.query.filter(
@@ -1287,6 +1347,11 @@ def get_team_attendance(user_id):
                     break_secs = (attendance.total_break_minutes or 0) * 60
                     hours_decimal = max(elapsed - break_secs, 0) / 3600
                     working_hours = int(hours_decimal * 100) / 100
+
+                # Add permission hours if checked in
+                if attendance.check_in and permission_hours > 0:
+                    working_hours += permission_hours
+                    working_hours = int(working_hours * 100) / 100
 
                 # Override to Half Day if working hours < 4
                 if att_status not in ("Absent", "On Leave") and working_hours > 0 and working_hours < 4.0:
@@ -1358,13 +1423,19 @@ def get_team_attendance(user_id):
                 "is_reporting_manager": is_reporting_manager,
                 "report_count": report_count,
                 "reporting_manager": emp.reporting_manager,
+                "is_permission": is_permission_active,
+                "permission_from": permission_from,
+                "permission_to": permission_to,
+                "permission_hours": permission_hours,
             })
 
         return jsonify(result)
 
     except Exception as e:
-        print("TEAM ATTENDANCE ERROR:", str(e))
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        tb_str = traceback.format_exc()
+        print("TEAM ATTENDANCE ERROR:", tb_str)
+        return jsonify({"error": str(e), "traceback": tb_str}), 500
 
 
 def check_is_non_working_day(check_date):
@@ -1468,6 +1539,8 @@ def get_reporting_employees(user_id):
             manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
             reporting_list = [e for e in all_employees if e.user_id != user_id and is_manager_match(e.reporting_manager, manager_full_name)]
 
+        has_any_updates = False
+
         for employee in reporting_list:
 
             attendance = Attendance.query.filter_by(
@@ -1477,6 +1550,11 @@ def get_reporting_employees(user_id):
 
             if attendance and (attendance.manager_status or "").strip().lower() == "approved":
                 continue
+
+            if attendance:
+                from routes.attendance import sync_biometric_to_web_entry
+                if sync_biometric_to_web_entry(attendance):
+                    has_any_updates = True
 
             from models.leave import LeaveRequest
             from sqlalchemy import or_ as sql_or
@@ -1515,6 +1593,34 @@ def get_reporting_employees(user_id):
                 leave_type_val = attendance.leave_type
             elif leave:
                 leave_type_val = leave.leave_type
+
+            yesterday_permission = LeaveRequest.query.filter(
+                LeaveRequest.request_type == "Permission",
+                LeaveRequest.status == "Approved",
+                LeaveRequest.permission_date == target_date,
+                sql_or(
+                    LeaveRequest.employee_id == str(employee.id),
+                    LeaveRequest.employee_id == employee.employee_id
+                )
+            ).first()
+
+            permission_time_val = None
+            permission_hours = 0.0
+            if yesterday_permission:
+                f_time = _parse_time(yesterday_permission.from_time)
+                t_time = _parse_time(yesterday_permission.to_time)
+                if f_time and t_time:
+                    permission_time_val = f"{f_time.strftime('%I:%M %p')} - {t_time.strftime('%I:%M %p')}"
+                    f_sec = f_time.hour * 3600 + f_time.minute * 60 + f_time.second
+                    t_sec = t_time.hour * 3600 + t_time.minute * 60 + t_time.second
+                    permission_hours = max(t_sec - f_sec, 0) / 3600.0
+
+            working_hours_val = 0.0
+            if attendance and attendance.total_hours is not None:
+                working_hours_val = float(attendance.total_hours)
+                if attendance.check_in and permission_hours > 0:
+                    working_hours_val += permission_hours
+            working_hours_val = int(working_hours_val * 100) / 100
 
             hist = (attendance.clarification_history if (attendance and isinstance(attendance.clarification_history, list)) else [])
 
@@ -1565,9 +1671,13 @@ def get_reporting_employees(user_id):
                     else None,
 
                 "working_hours":
-                    attendance.total_hours
-                    if (attendance and attendance.total_hours is not None)
-                    else 0.0,
+                    working_hours_val,
+
+                "permission_time":
+                    permission_time_val,
+
+                "permission_hours":
+                    permission_hours,
 
                 "card_check_in":
                     attendance.card_check_in.strftime("%I:%M %p")
@@ -1635,6 +1745,13 @@ def get_reporting_employees(user_id):
                     hist
 
             })
+
+        if has_any_updates:
+            try:
+                db.session.commit()
+            except Exception as commit_err:
+                db.session.rollback()
+                print("Error committing copied attendance entries:", commit_err)
 
         result = sorted(result, key=lambda x: (x.get("employee_name") or "").lower())
 
@@ -1871,15 +1988,16 @@ def get_team_attendance_by_id(team_id):
             has_permission_today = emp_permission is not None
             is_permission_active = False
 
-            if has_permission_today and emp_permission.from_time and emp_permission.to_time:
-                from datetime import datetime
-                from zoneinfo import ZoneInfo
+            f_time = _parse_time(emp_permission.from_time) if has_permission_today else None
+            t_time = _parse_time(emp_permission.to_time) if has_permission_today else None
+
+            if has_permission_today and f_time and t_time:
                 now_ist_time = datetime.now(ZoneInfo("Asia/Kolkata")).time()
-                if emp_permission.from_time <= now_ist_time <= emp_permission.to_time:
+                if f_time <= now_ist_time <= t_time:
                     is_permission_active = True
 
-            permission_from = emp_permission.from_time.strftime("%I:%M %p") if (has_permission_today and emp_permission.from_time) else None
-            permission_to = emp_permission.to_time.strftime("%I:%M %p") if (has_permission_today and emp_permission.to_time) else None
+            permission_from = f_time.strftime("%I:%M %p") if f_time else None
+            permission_to = t_time.strftime("%I:%M %p") if t_time else None
 
             # Calculate working and total hours
             working_hours = 0.0
@@ -1892,8 +2010,6 @@ def get_team_attendance_by_id(team_id):
                     total_hours = working_hours + (break_mins + gap_mins) / 60
                 else:
                     # Still checked in
-                    from datetime import datetime
-                    from zoneinfo import ZoneInfo
                     now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
                     if attendance.check_in:
                         elapsed = (now_ist - attendance.check_in).total_seconds()
@@ -1904,13 +2020,28 @@ def get_team_attendance_by_id(team_id):
                         working_hours = 0.0
                         total_hours = 0.0
                     
+            permission_hours = 0.0
+            if has_permission_today and f_time and t_time:
+                f_sec = f_time.hour * 3600 + f_time.minute * 60 + f_time.second
+                t_sec = t_time.hour * 3600 + t_time.minute * 60 + t_time.second
+                permission_hours = max(t_sec - f_sec, 0) / 3600.0
+
+            if attendance and attendance.check_in and permission_hours > 0:
+                working_hours = working_hours + permission_hours
+                total_hours = total_hours + permission_hours
+
             working_hours = int(working_hours * 100) / 100
             total_hours = int(total_hours * 100) / 100
+
+            is_half_day_leave = leave and leave.total_days is not None and float(leave.total_days) <= 0.5
 
             status = "Absent"
             if attendance:
                 if attendance.check_out:
-                    status = "Checked Out"
+                    if is_half_day_leave:
+                        status = "Leave"
+                    else:
+                        status = "Checked Out"
                 else:
                     status = "Checked In"
             elif leave:
@@ -1936,8 +2067,11 @@ def get_team_attendance_by_id(team_id):
                 "is_permission": is_permission_active,
                 "permission_from": permission_from,
                 "permission_to": permission_to,
+                "permission_hours": permission_hours,
                 "working_hours": working_hours,
                 "total_hours": total_hours,
+                "leave_type": leave.leave_type if leave else None,
+                "total_days": float(leave.total_days) if leave and leave.total_days is not None else None,
             })
 
         return jsonify(result)
@@ -2213,4 +2347,45 @@ def get_employee_details(employee_id):
         return jsonify({
             "success": False,
             "message": str(e)
+        }), 500
+
+@employees_bp.route("/<int:employee_id>/status", methods=["POST"])
+def update_employee_status(employee_id):
+    try:
+        employee = Employee.query.get(employee_id)
+        if not employee:
+            return jsonify({
+                "success": False,
+                "message": "Employee not found"
+            }), 404
+
+        data = request.get_json() or {}
+        is_active = data.get("is_active", True)
+
+        employee.is_active = is_active
+        if not is_active:
+            employee.deactivation_reason = data.get("deactivation_reason")
+            lwd_str = data.get("last_working_date")
+            if lwd_str:
+                employee.last_working_date = datetime.strptime(lwd_str, "%Y-%m-%d").date()
+        else:
+            employee.deactivation_reason = None
+            employee.last_working_date = None
+
+        # Disable/enable linked User portal access
+        user = User.query.get(employee.user_id)
+        if user:
+            user.is_active = is_active
+            user.status = "active" if is_active else "inactive"
+
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": "Employee status updated successfully"
+        })
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({
+            "success": False,
+            "error": str(err)
         }), 500

@@ -6,6 +6,7 @@ import {
   ChatBubbleLeftEllipsisIcon
 } from '@heroicons/react/24/outline';
 import { API_URL } from '../../config/api';
+import { TimePicker } from '../../components/ui/TimePicker';
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -37,6 +38,34 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
   const checkOut = activeItem.check_out || activeItem.checkOut;
   const status = activeItem.status || activeItem.attendance_status;
 
+  // Convert 12-hour (AM/PM) time representation to 24-hour time representation
+  const convertTo24h = (time12h: string): string => {
+    if (!time12h || time12h === "—" || time12h === "-") return "";
+    const cleanTime = time12h.trim();
+    const parts = cleanTime.split(/\s+/);
+    if (parts.length < 2) {
+      return cleanTime;
+    }
+    const [timeStr, modifier] = parts;
+    const timeParts = timeStr.split(":");
+    if (timeParts.length < 2) return "";
+    let hours = parseInt(timeParts[0], 10);
+    const minutes = timeParts[1];
+    if (hours === 12) {
+      hours = 0;
+    }
+    if (modifier && modifier.toUpperCase() === "PM") {
+      hours += 12;
+    }
+    return `${hours.toString().padStart(2, "0")}:${minutes.padStart(2, "0")}`;
+  };
+
+  const isForgotCheckoutRequest = React.useMemo(() => {
+    const hasCheckIn = !!checkIn && checkIn !== "—" && checkIn !== "-";
+    const hasCheckOut = !!checkOut && checkOut !== "—" && checkOut !== "-";
+    return hasCheckIn && !hasCheckOut;
+  }, [checkIn, checkOut]);
+
   // For absent days: show regularization/leave/lop options instead of generic comment
   const isAbsentDay = status === "Absent";
 
@@ -47,12 +76,13 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
     let bodyObj: any = { date: activeItem.attendance_date };
 
     if (mode === 'regularization') {
-      if (!checkInTime || !checkOutTime) {
+      const finalCheckIn = isForgotCheckoutRequest ? convertTo24h(checkIn) : checkInTime;
+      if (!finalCheckIn || !checkOutTime) {
         alert("Please enter both check-in and check-out times.");
         return;
       }
       endpoint = `${BASE_URL}/attendance/submit-regularization/${userId}`;
-      bodyObj.check_in = checkInTime;
+      bodyObj.check_in = finalCheckIn;
       bodyObj.check_out = checkOutTime;
       bodyObj.reason = replyText.trim();
     } else if (mode === 'leave') {
@@ -276,8 +306,63 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
             </div>
           </div>
 
-          {/* ── CONDITIONAL RESOLUTION OPTIONS FOR ABSENT DAY ── */}
-          {isAbsentDay ? (
+          {/* ── CONDITIONAL RESOLUTION OPTIONS ── */}
+          {isForgotCheckoutRequest ? (
+            <div className="space-y-4 pt-3 border-t border-neutral-100 animate-in slide-in-from-bottom-2 duration-200">
+              <span className="text-[11px] font-bold text-neutral-550 uppercase tracking-wider block">
+                Forgot Checkout Punch Resolution
+              </span>
+              <div className="bg-amber-50/75 border border-amber-200 rounded-2xl p-4 space-y-3">
+                <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                  <ClockIcon className="w-4 h-4 text-amber-600 animate-pulse" />
+                  Manager requested your checkout time. Please supply it below:
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-600 mb-1">CHECK-IN TIME (READ-ONLY)</label>
+                    <input
+                      type="text"
+                      disabled
+                      value={checkIn || "—"}
+                      className="w-full p-2 border border-neutral-200 rounded-xl text-xs bg-neutral-100 text-neutral-500 font-semibold cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-700 mb-1">CHECK-OUT TIME *</label>
+                    <TimePicker
+                      required
+                      value={checkOutTime}
+                      onChange={(val) => setCheckOutTime(val)}
+                      className="w-full text-xs"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-neutral-700 mb-1">REASON / REMARK *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Forgot to checkout in portal / card reader issue"
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    className="w-full p-2.5 border border-amber-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white text-neutral-800"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={isSubmitting || !checkOutTime || !replyText.trim()}
+                  onClick={() => handleResolve('regularization')}
+                  className={`w-full py-2.5 text-white rounded-xl text-xs font-bold shadow-md transition-all ${
+                    isSubmitting || !checkOutTime || !replyText.trim()
+                      ? "bg-neutral-300 cursor-not-allowed"
+                      : "bg-amber-600 hover:bg-amber-700"
+                  }`}
+                >
+                  {isSubmitting ? "Submitting..." : "Submit Punch-Out Clarification"}
+                </button>
+              </div>
+            </div>
+          ) : isAbsentDay ? (
             <div className="space-y-4 pt-3 border-t border-neutral-100">
               <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider block">
                 Choose a Resolution Option
@@ -331,22 +416,20 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold text-neutral-600 mb-1">CHECK-IN TIME *</label>
-                          <input
-                            type="time"
+                          <TimePicker
                             required
                             value={checkInTime}
-                            onChange={(e) => setCheckInTime(e.target.value)}
-                            className="w-full p-2 border border-blue-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                            onChange={(val) => setCheckInTime(val)}
+                            className="w-full text-xs"
                           />
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-neutral-600 mb-1">CHECK-OUT TIME *</label>
-                          <input
-                            type="time"
+                          <TimePicker
                             required
                             value={checkOutTime}
-                            onChange={(e) => setCheckOutTime(e.target.value)}
-                            className="w-full p-2 border border-blue-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                            onChange={(val) => setCheckOutTime(val)}
+                            className="w-full text-xs"
                           />
                         </div>
                       </div>
