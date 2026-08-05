@@ -611,6 +611,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       render: (at: any) => at.check_out || "-",
     },
     {
+      key: "card_check_in",
+      header: "Bio Check In",
+      render: (at: any) => at.card_check_in || "-",
+    },
+    {
+      key: "card_check_out",
+      header: "Bio Check Out",
+      render: (at: any) => at.card_check_out || "-",
+    },
+    {
       key: "total_hours",
       header: "Working Hours",
       render: (at: any) => at.total_hours || "-",
@@ -1088,14 +1098,116 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       {/* Loading */}
       {loading ? (
         <div className="text-center p-8">Loading Attendance...</div>
+      ) : attendanceView === "today" ? (
+        <div className="overflow-x-auto overflow-y-auto max-h-[600px] border border-neutral-300 rounded-2xl bg-white shadow-sm">
+          <table className="w-full text-left border-collapse">
+            <thead className="sticky top-0 z-20 bg-white shadow-xs">
+              {/* Group Headers */}
+              <tr className="border-b border-neutral-300 text-neutral-500 text-[10px] font-extrabold uppercase tracking-widest bg-neutral-50/40">
+                <th rowSpan={2} className="p-3 pl-6 border-r border-neutral-300 text-left">Employee</th>
+                <th rowSpan={2} className="p-3 border-r border-neutral-300 text-left">Department</th>
+
+                <th colSpan={3} className="p-2.5 text-center border-r border-b-2 border-cyan-500 bg-cyan-50/20 text-cyan-700 text-[11px] font-black">
+                  Web Site Entry
+                </th>
+
+                <th colSpan={2} className="p-2.5 text-center border-r border-b-2 border-violet-500 bg-violet-50/25 text-violet-700 text-[11px] font-black">
+                  Biometric Card Entry
+                </th>
+
+                <th rowSpan={2} className="p-3 border-r border-neutral-300 text-center text-neutral-600 font-extrabold">
+                  Breaks <div className="text-[9px] text-neutral-400 font-bold normal-case">(L/T)</div>
+                </th>
+
+                <th rowSpan={2} className="p-3 border-r border-neutral-300 text-center">Status</th>
+                <th rowSpan={2} className="p-3 border-r border-neutral-300 text-left">Shift</th>
+                <th rowSpan={2} className="p-3 text-center pr-6">Overtime</th>
+              </tr>
+              {/* Sub Headers */}
+              <tr className="border-b border-neutral-300 text-neutral-500 text-[10px] font-extrabold uppercase tracking-wider bg-white">
+                {/* Web Site Entry columns */}
+                <th className="p-2 text-center text-cyan-600">Check-In</th>
+                <th className="p-2 text-center text-cyan-600">Check-Out</th>
+                <th className="p-2 text-center text-cyan-600 border-r border-neutral-300">Hours</th>
+                {/* Biometric Card Entry columns */}
+                <th className="p-2 text-center text-violet-600">Check-In</th>
+                <th className="p-2 text-center text-violet-600 border-r border-neutral-300">Check-Out</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-300 text-xs font-semibold text-neutral-700 bg-white">
+              {displayData.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
+                    No Attendance Records Found
+                  </td>
+                </tr>
+              ) : (
+                displayData.map((row: any, i: number) => {
+                  const formatHoursMinutes = (hoursDecimal: number): string => {
+                    if (!hoursDecimal || hoursDecimal <= 0) return "—";
+                    const hrs = Math.floor(hoursDecimal);
+                    const mins = Math.round((hoursDecimal - hrs) * 60);
+                    if (mins === 0) return `${hrs}h`;
+                    if (hrs === 0) return `${mins}m`;
+                    return `${hrs}h`;
+                  };
+
+                  const workingHours = Number(row.total_hours || 0);
+                  const workingHoursFormatted = formatHoursMinutes(workingHours);
+
+                  let overtime = "00:00";
+                  if (workingHours > 8) {
+                    const otVal = workingHours - 8;
+                    const otHrs = Math.floor(otVal);
+                    overtime = otHrs > 0 ? `${otHrs}h` : "—";
+                  }
+
+                  return (
+                    <tr key={i} className="hover:bg-primary-500/5 transition-colors border-b border-neutral-300">
+                      <td className="p-3 pl-6 font-bold text-neutral-900 border-r border-neutral-300">{row.employee_name}</td>
+                      <td className="p-3 text-neutral-500 border-r border-neutral-300 font-bold">{row.department || row.team || "-"}</td>
+
+                      {/* Web Site Entry */}
+                      <td className="p-3 text-center text-neutral-800 font-bold">{row.check_in || "-"}</td>
+                      <td className="p-3 text-center text-neutral-800 font-bold">{row.check_out || "-"}</td>
+                      <td className="p-3 text-center text-cyan-600 font-black border-r border-neutral-300">
+                        {row.status === "Present" || row.status === "Half Day" ? workingHoursFormatted : "—"}
+                      </td>
+
+                      {/* Biometric Card Entry */}
+                      <td className="p-3 text-center text-neutral-800 font-bold">{row.card_check_in || "-"}</td>
+                      <td className="p-3 text-center text-neutral-800 font-bold border-r border-neutral-300">{row.card_check_out || "-"}</td>
+
+                      {/* Breaks */}
+                      <td className="p-3 text-center font-bold text-neutral-600 border-r border-neutral-300">
+                        {(row.lunch_minutes || row.tea_minutes) ? `${row.lunch_minutes || 0}m / ${row.tea_minutes || 0}m` : "—"}
+                      </td>
+
+                      {/* Status */}
+                      <td className="p-3 text-center border-r border-neutral-300">
+                        <Chip type={row.status} />
+                      </td>
+
+                      {/* Shift */}
+                      <td className="p-3 text-neutral-750 font-extrabold border-r border-neutral-300 truncate max-w-[170px]">
+                        {row.shift_timing || row.shift || "General Shift"}
+                      </td>
+
+                      {/* Overtime */}
+                      <td className="p-3 text-center pr-6 font-bold text-emerald-700">{overtime}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <Table
           columns={
             attendanceView === "weekly"
               ? weeklyColumns
-              : attendanceView === "monthly"
-                ? monthlyColumns
-                : todayColumns
+              : monthlyColumns
           }
           data={displayData}
           rowKey={(_at, i) => i}

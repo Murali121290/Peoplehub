@@ -16,6 +16,27 @@ interface NotificationPanelProps {
 
 const BASE_URL = `${API_URL}/api`;
 
+const formatNotificationTime = (createdAtStr: string) => {
+  if (!createdAtStr) return "Just now";
+  try {
+    const d = new Date(createdAtStr);
+    if (isNaN(d.getTime())) return "Just now";
+    
+    const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+    const itemDateStr = createdAtStr.split("T")[0];
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    if (itemDateStr === todayStr) {
+      return timeStr;
+    } else {
+      const dateStr = d.toLocaleDateString([], { month: 'short', day: '2-digit' });
+      return `${dateStr}, ${timeStr}`;
+    }
+  } catch (e) {
+    return "Just now";
+  }
+};
+
 const NotificationPanel: React.FC<NotificationPanelProps> = ({
   notifications,
   showNotifications,
@@ -107,7 +128,7 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                           {item.title}
                         </h4>
                         <span className="text-[10px] text-slate-400 whitespace-nowrap">
-                          {item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
+                          {formatNotificationTime(item.created_at)}
                         </span>
                       </div>
 

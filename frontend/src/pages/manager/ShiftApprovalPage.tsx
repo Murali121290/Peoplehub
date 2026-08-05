@@ -298,8 +298,8 @@ const ShiftApprovalPage: React.FC = () => {
                 <th className="text-left p-4 pl-6 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Employee</th>
                 <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Emp ID</th>
                 <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Request Type</th>
-                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Current Shift</th>
-                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Requested Shift</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Current Shift / Mode</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Requested Shift / Mode</th>
                 <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Date Range</th>
                 <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Reason</th>
                 <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Applied At</th>
@@ -315,7 +315,7 @@ const ShiftApprovalPage: React.FC = () => {
                     <div className="flex flex-col items-center justify-center gap-2 py-4">
                       <CheckIcon className="w-12 h-12 text-success-400" />
                       <p className="text-xs font-bold text-neutral-500">All caught up!</p>
-                      <p className="text-[11px] text-neutral-400">There are no pending shift approval requests from your team.</p>
+                      <p className="text-[11px] text-neutral-450">There are no pending shift approval requests from your team.</p>
                     </div>
                   </td>
                 </tr>
@@ -329,13 +329,18 @@ const ShiftApprovalPage: React.FC = () => {
                       <tr className="hover:bg-neutral-50/40 transition-colors">
                         <td className="p-4 pl-6">
                           <div className="flex items-center gap-3">
-                            <div className="w-7 h-7 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-xs">
-                              {item.employee_name?.charAt(0).toUpperCase()}
-                            </div>
-                            <span className="text-xs font-medium text-neutral-800">{item.employee_name}</span>
+                            <img
+                              src={item.profile_image ? `data:image/jpeg;base64,${item.profile_image}` : "/default-avatar.png"}
+                              alt={item.employee_name}
+                              className="w-8 h-8 rounded-full object-cover border border-neutral-100"
+                              onError={(e) => {
+                                e.currentTarget.src = "/default-avatar.png";
+                              }}
+                            />
+                            <span className="font-bold text-neutral-800">{item.employee_name}</span>
                           </div>
                         </td>
-                        <td className="p-4 text-xs font-medium text-neutral-600">
+                        <td className="p-4 text-xs font-semibold text-neutral-600">
                           {item.employee_id || "-"}
                         </td>
                         <td className="p-4 text-xs font-normal">
@@ -353,10 +358,36 @@ const ShiftApprovalPage: React.FC = () => {
                           })()}
                         </td>
                         <td className="p-4 text-xs text-neutral-600">
-                          {item.current_shift || "-"} {(item.current_work_mode || (item.request_type === "Office" ? "WFH" : item.request_type === "WFH" ? "Office" : "")) ? `(${item.current_work_mode || (item.request_type === "Office" ? "WFH" : item.request_type === "WFH" ? "Office" : "")})` : ""}
+                          {(() => {
+                            const curMode = item.current_work_mode || (item.current_shift?.toUpperCase() === "WFH" ? "WFH" : (item.request_type === "Office" ? "WFH" : "Office"));
+                            const showCurSuffix = curMode && item.current_shift?.toUpperCase() !== curMode.toUpperCase();
+                            return (
+                              <>
+                                {item.current_shift || "-"}
+                                {showCurSuffix && (
+                                  <span className="text-[10px] text-blue-500 font-semibold ml-1">
+                                    ({curMode})
+                                  </span>
+                                )}
+                              </>
+                            );
+                          })()}
                         </td>
                         <td className="p-4 text-xs font-medium text-neutral-800">
-                          {(item.request_type === "WFH" ? "General Shift" : (item.requested_shift || "-"))} {(item.requested_work_mode || (item.request_type === "WFH" ? "WFH" : item.request_type === "Office" ? "Office" : "")) ? `(${item.requested_work_mode || (item.request_type === "WFH" ? "WFH" : item.request_type === "Office" ? "Office" : "")})` : ""}
+                          {(() => {
+                            const reqMode = item.requested_work_mode || (item.request_type === "WFH" ? "WFH" : "Office");
+                            const showReqSuffix = reqMode && item.requested_shift?.toUpperCase() !== reqMode.toUpperCase();
+                            return (
+                              <>
+                                {(item.requested_shift || (item.request_type === "WFH" ? "General Shift" : "-"))}
+                                {showReqSuffix && (
+                                  <span className="text-[10px] text-blue-500 font-semibold ml-1">
+                                    ({reqMode})
+                                  </span>
+                                )}
+                              </>
+                            );
+                          })()}
                         </td>
                         <td className="p-4">
                           <div>
@@ -475,7 +506,7 @@ const ShiftApprovalPage: React.FC = () => {
                       </tr>
                       {expandedReasons[item.id] && item.reason && (
                         <tr className="bg-neutral-50/30">
-                          <td colSpan={8} className="p-4 pl-10 pr-6 border-b border-neutral-200">
+                          <td colSpan={11} className="p-4 pl-10 pr-6 border-b border-neutral-200">
                             <div className="text-xs text-neutral-600 bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-inner max-w-3xl">
                               <div className="flex items-center gap-1.5 mb-2 text-neutral-400 font-bold uppercase tracking-wider text-[10px]">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-primary-500">
@@ -617,8 +648,8 @@ const ShiftApprovalPage: React.FC = () => {
                     className="w-full p-2.5 border border-neutral-300 rounded-xl text-xs bg-neutral-50/50 focus:outline-none focus:ring-2 focus:ring-primary-500"
                   >
                     <option value="General Shift">General Shift (09:00 AM - 06:00 PM)</option>
-                    <option value="First Shift">First Shift (06:00 AM - 02:30 PM)</option>
-                    <option value="Second Shift">Second Shift (01:30 PM - 10:00 PM)</option>
+                    <option value="First Shift">First Shift (07:00 AM - 04:00 PM)</option>
+                    <option value="Second Shift">Second Shift (12:00 PM - 09:00 PM)</option>
                     <option value="Night Shift">Night Shift (10:00 PM - 06:00 AM)</option>
                   </select>
                 </div>

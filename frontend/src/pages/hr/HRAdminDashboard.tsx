@@ -34,6 +34,7 @@ import ProfileCompleteModal from "./modals/ProfileCompleteModal";
 import AddTeamModal from "./modals/AddTeamModal";
 import { Tabs } from "../../components/ui/Tabs";
 import ConfirmDialog from "../../components/ui/Modal/ConfirmDialog";
+import { BookLoader } from "../../components/ui/Spinner";
 const NAV = [
   { id: "dashboard", label: "Dashboard" },
   { id: "directory", label: "Employee Directory" },
@@ -110,6 +111,7 @@ const NAV_ICONS: Record<string, React.ElementType> = {
 const BASE_URL = `${API_URL}/api`;
 
 export default function HRAdminDashboard() {
+  const [isPageLoading, setIsPageLoading] = useState(true);
   const [nav, setNav] = useState("dashboard");
   const [search, setSearch] = useState("");
   const [leaves, setLeaves] = useState<any[]>([]);
@@ -131,15 +133,14 @@ export default function HRAdminDashboard() {
   const [resetUserId, setResetUserId] = useState<string | null>(null);
   const [resetAllOpen, setResetAllOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [isActionLoading, setIsActionLoading] = useState(false);
 
   // --- API Calls ---
   const fetchEmployees = async (force = false) => {
     try {
       const dataList = await getEmployees(force);
       const nonAdmins = dataList.filter((emp: any) => {
-        const isNotAdmin = emp.access_level?.toLowerCase() !== 'admin';
-        const isActive = emp.status?.toLowerCase() !== 'inactive';
-        return isNotAdmin && isActive;
+        return emp.access_level?.toLowerCase() !== 'admin';
       });
       setEmployees(nonAdmins);
     } catch (error) {
@@ -257,23 +258,38 @@ export default function HRAdminDashboard() {
   };
 
   useEffect(() => {
-    fetchEmployees();
-    fetchAttendance();
-    fetchLeaveRequests();
-    fetchShiftRequests();
-    fetchTeams();
-    fetchRoles();
-    fetchTeamOverview();
+    const init = async () => {
+      setIsPageLoading(true);
+      try {
+        await Promise.all([
+          fetchEmployees(),
+          fetchAttendance(),
+          fetchLeaveRequests(),
+          fetchShiftRequests(),
+          fetchTeams(),
+          fetchRoles(),
+          fetchTeamOverview(),
+        ]);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+    init();
 
     const handleLeaveUpdate = () => fetchLeaveRequests();
     const handleShiftUpdate = () => fetchShiftRequests();
+    const handleAttendanceUpdate = () => fetchAttendance();
 
     socket.on("leave_update", handleLeaveUpdate);
     socket.on("shift_update", handleShiftUpdate);
+    socket.on("attendance_update", handleAttendanceUpdate);
 
     return () => {
       socket.off("leave_update", handleLeaveUpdate);
       socket.off("shift_update", handleShiftUpdate);
+      socket.off("attendance_update", handleAttendanceUpdate);
     };
   }, []);
 
@@ -418,6 +434,7 @@ export default function HRAdminDashboard() {
 
   // --- Handlers ---
   const handleApproveLeave = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const response = await fetch(`${BASE_URL}/leaves/approve/${id}`, {
         method: "PUT",
@@ -429,10 +446,13 @@ export default function HRAdminDashboard() {
       if (data.success) fetchLeaveRequests();
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleRejectLeave = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const response = await fetch(`${BASE_URL}/leaves/reject/${id}`, {
         method: "PUT",
@@ -444,10 +464,13 @@ export default function HRAdminDashboard() {
       if (data.success) fetchLeaveRequests();
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleApproveShift = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const response = await fetch(`${BASE_URL}/shifts/approve/${id}`, {
         method: "PUT",
@@ -463,10 +486,13 @@ export default function HRAdminDashboard() {
     } catch (error) {
       console.error(error);
       toast.error("Error approving shift request");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleRejectShift = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const response = await fetch(`${BASE_URL}/shifts/reject/${id}`, {
         method: "PUT",
@@ -481,12 +507,14 @@ export default function HRAdminDashboard() {
     } catch (error) {
       console.error(error);
       toast.error("Error rejecting shift request");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleAddEmployee = async (e: any) => {
     e.preventDefault();
-
+    setIsActionLoading(true);
     try {
       console.log("HANDLE ADD EMPLOYEE CALLED");
       console.log("IS EDIT MODE:", isEditMode);
@@ -576,9 +604,12 @@ export default function HRAdminDashboard() {
       console.error(error);
 
       toast.error(error.message || "Error saving employee");
+    } finally {
+      setIsActionLoading(false);
     }
   };
   const handleEditEmployee = async (employee: any) => {
+    setIsActionLoading(true);
     try {
       // Fetch full employee details so all fields (joining_date, designation,
       // reporting_manager, company_email, team_id, etc.) are pre-populated
@@ -644,11 +675,14 @@ export default function HRAdminDashboard() {
     } catch (error) {
       console.error("Failed to fetch employee details for edit:", error);
       toast.error("Could not load employee details. Please try again.");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleProfileComplete = async () => {
     if (!currentEmployee) return;
+    setIsActionLoading(true);
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(
@@ -669,6 +703,8 @@ export default function HRAdminDashboard() {
     } catch (error) {
       console.error(error);
       toast.error("Error completing profile");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -678,8 +714,13 @@ export default function HRAdminDashboard() {
     icon: NAV_ICONS[item.id],
   }));
 
+  if (isPageLoading) {
+    return <BookLoader label="Loading admin dashboard..." />;
+  }
+
   return (
     <div className="min-h-screen bg-neutral-50 font-sans">
+      {isActionLoading && <BookLoader />}
 
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-neutral-200">
@@ -766,6 +807,7 @@ export default function HRAdminDashboard() {
               setResetAllOpen(true);
             }}
             BASE_URL={BASE_URL}
+            onStatusChange={fetchEmployees}
           />
         )}
         {nav === "attendance" && (

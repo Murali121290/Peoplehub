@@ -538,16 +538,31 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         curr.setDate(curr.getDate() + 1);
       }
 
-      if (leaveForm.leaveDuration === "First Half" || leaveForm.leaveDuration === "Second Half") {
-        totalDays = totalDays > 0 ? 0.5 : 0;
+      let calculatedFromTime = leaveForm.fromTime;
+      let calculatedToTime = leaveForm.toTime;
+      if (leaveForm.requestType === "Leave") {
+        if (leaveForm.leaveDuration === "First Half") {
+          totalDays = totalDays > 0 ? 0.5 : 0;
+          calculatedFromTime = "09:00";
+          calculatedToTime = "13:30";
+        } else if (leaveForm.leaveDuration === "Second Half") {
+          totalDays = totalDays > 0 ? 0.5 : 0;
+          calculatedFromTime = "13:30";
+          calculatedToTime = "18:00";
+        } else {
+          calculatedFromTime = "";
+          calculatedToTime = "";
+        }
       }
 
       setLeaveForm(prev => ({
         ...prev,
-        totalDays: totalDays > 0 ? totalDays : 0
+        totalDays: totalDays > 0 ? totalDays : 0,
+        fromTime: calculatedFromTime,
+        toTime: calculatedToTime
       }));
     }
-  }, [leaveForm.fromDate, leaveForm.toDate, leaveForm.leaveDuration, allYearHolidays]);
+  }, [leaveForm.fromDate, leaveForm.toDate, leaveForm.leaveDuration, leaveForm.requestType, allYearHolidays]);
 
   const resetLeaveForm = () => {
     setLeaveForm({
@@ -568,17 +583,30 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   };
 
   const editLeave = (leave: any) => {
+    let dur = "Full Day";
+    let cleanReason = leave.reason || "";
+    if (leave.total_days != null && Number(leave.total_days) <= 0.5) {
+      if (cleanReason.includes(" (First Half)")) {
+        dur = "First Half";
+        cleanReason = cleanReason.replace(" (First Half)", "");
+      } else if (cleanReason.includes(" (Second Half)")) {
+        dur = "Second Half";
+        cleanReason = cleanReason.replace(" (Second Half)", "");
+      } else {
+        dur = "First Half"; // default fallback
+      }
+    }
     setLeaveForm({
       requestType: (leave.request_type || "Leave") as "Leave" | "Permission",
       leaveType: leave.leave_type || "",
-      leaveDuration: leave.leave_duration || "Full Day",
+      leaveDuration: dur,
       fromDate: leave.from_date || "",
       toDate: leave.to_date || "",
       permissionDate: leave.permission_date || "",
       fromTime: leave.from_time || "",
       toTime: leave.to_time || "",
       totalDays: leave.total_days || 0,
-      reason: leave.reason || "",
+      reason: cleanReason,
       reportingManager: leave.reporting_manager || "",
       handoverTo: leave.handover_to || "",
       attachment: null,
@@ -696,13 +724,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const activeRequests = leaveRequests.filter((req: any) => {
     const isOwner = (String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id));
     if (!isOwner) return false;
-    if (req.status !== "Pending") return false;
-
-    const startDate = req.request_type === "Permission" ? req.permission_date : req.from_date;
-    const todayStr = new Date().toLocaleDateString("en-CA");
-    if (startDate && startDate <= todayStr) return false;
-
-    return true;
+    return req.status === "Pending";
   });
 
   return (
@@ -730,7 +752,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       {/* Leave Balance Grid Section */}
       <motion.div
         variants={itemVariants}
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4"
+        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 mb-6"
       >
         {(() => {
           const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
@@ -839,36 +861,37 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             return (
               <Card
                 key={item.label}
-                className="rounded-2xl border border-gray-200 bg-slate-50 p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col"
+                className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm hover:shadow transition-all duration-200 flex items-center justify-between"
+                style={{ minHeight: "84px" }}
               >
-                <div className="flex items-center gap-3 mb-4 w-full">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.iconWrap}`}>
-                    <Icon className={`h-5 w-5 ${item.iconColor}`} />
+                {/* Left Side: Stats info */}
+                <div className="flex flex-col justify-between h-full">
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-400 tracking-wider uppercase leading-none">
+                      {item.label}
+                    </h4>
+                    <div className="flex items-baseline gap-1 mt-1">
+                      <span className={`text-xl font-extrabold tracking-tight ${(item as any).isLopCard ? "text-red-650" : "text-slate-800"}`}>
+                        {(item as any).isLopCard ? item.used : item.value}
+                      </span>
+                      <span className="text-[10px] font-semibold text-slate-400">
+                        {(item as any).isLopCard ? (item.used === 1 ? "day" : "days") : "available"}
+                      </span>
+                    </div>
                   </div>
-                  <h4 className="text-[14px] font-semibold text-slate-800 tracking-wide leading-tight">{item.label}</h4>
+                  
+                  {!(item as any).isLopCard && (
+                    <div className="text-[10px] text-slate-500 font-semibold mt-1 flex items-center gap-1">
+                      <span>Availed: {item.used}</span>
+                      <span className="text-slate-300">•</span>
+                      <span>Total: {item.total}</span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="w-full space-y-1.5 mt-auto px-1">
-                  {(item as any).isLopCard ? (
-                    <div className="flex justify-between items-center text-[14px]">
-                      <span className="text-slate-600 font-medium">Accumulated</span>
-                      <span className="font-semibold text-red-600">{item.used} {item.used === 1 ? "day" : "days"}</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex justify-between items-center text-[14px]">
-                        <span className="text-slate-600 font-medium">Available</span>
-                        <span className="font-semibold text-emerald-600">{item.value}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-[14px]">
-                        <span className="text-slate-600 font-medium">Availed</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-slate-900">{item.used}</span>
-                          <InformationCircleIcon className="w-4 h-4 text-slate-400 cursor-pointer hover:text-slate-600 transition-colors" />
-                        </div>
-                      </div>
-                    </>
-                  )}
+                {/* Right Side: Compact Icon */}
+                <div className={`flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg ${item.iconWrap}`}>
+                  <Icon className={`h-4.5 w-4.5 ${item.iconColor}`} />
                 </div>
               </Card>
             );

@@ -69,6 +69,16 @@ def init_db(app=None):
     """Initialize database and create tables if they do not exist"""
     Base.metadata.create_all(bind=engine)
 
+    # Ensure status, deactivation_reason and last_working_date columns exist in PostgreSQL
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE"))
+            conn.execute(text("ALTER TABLE employees ADD COLUMN IF NOT EXISTS deactivation_reason TEXT"))
+            conn.execute(text("ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_working_date DATE"))
+            conn.commit()
+    except Exception as dberr:
+        print(f"Error checking/adding employee status columns: {dberr}")
+
     # Apply Alembic migrations before querying tables, so the schema
     # (e.g. columns added in later migrations) matches the ORM models.
     try:
