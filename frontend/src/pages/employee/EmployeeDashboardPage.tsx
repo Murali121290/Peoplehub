@@ -2,6 +2,7 @@ import { API_URL } from "../../config/api";
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
+import { getEmployees } from "../../services/employeesCache";
 import {
   HomeIcon,
   CheckCircleIcon,
@@ -27,6 +28,7 @@ import AttendanceTab from "./tabs/AttendanceTab";
 import ProfileTab from "./tabs/ProfileTab";
 import DashboardHeaderActions from "./components/DashboardHeaderActions";
 import NotificationsPanel from "./components/NotificationsPanel";
+import { BookLoader } from "../../components/ui/Spinner";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -35,8 +37,8 @@ const isHalfDayLeave = (totalDays: any) => Number(totalDays) <= 0.5;
 const checkShiftLock = (shiftName: string) => {
   const currentHour = new Date().getHours();
   const cleanShift = (shiftName || "").trim().toLowerCase();
-  if (cleanShift === "first shift" && currentHour < 6) {
-    return { isLocked: true, timeLabel: "06:00 AM" };
+  if (cleanShift === "first shift" && currentHour < 7) {
+    return { isLocked: true, timeLabel: "07:00 AM" };
   }
   if (cleanShift === "second shift" && currentHour < 12) {
     return { isLocked: true, timeLabel: "12:00 PM" };
@@ -233,6 +235,10 @@ const EmployeeDashboardPage: React.FC = () => {
   } | null>(null);
   const [hasCheckedOutToday, setHasCheckedOutToday] = useState(false);
   const [shiftDate, setShiftDate] = useState("");
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [wantsToChangeMode, setWantsToChangeMode] = useState(false);
+  const [selectedWorkModeOpt, setSelectedWorkModeOpt] = useState<"Office" | "WFH" | "Hybrid">("Office");
   // Modal state
   const [pendingClarifications, setPendingClarifications] = useState<any[]>([]);
   const [confirmModal, setConfirmModal] = useState(false);
@@ -338,6 +344,19 @@ if (isHalfDayLeave(leave.total_days)) return false;
       return todayStr >= shift.from_date && todayStr <= shift.to_date;
     });
     return approvedShift ? approvedShift.requested_shift : (currentEmployee.shift_timing || "General Shift");
+  })();
+
+  const todayActiveWorkMode = (() => {
+    if (!currentEmployee) return "Office";
+    const todayStr = new Date().toLocaleDateString("en-CA");
+    const approvedRequest = shiftRequests.find((shift: any) => {
+      if (shift.status !== "Approved") return false;
+      return todayStr >= shift.from_date && todayStr <= shift.to_date;
+    });
+    if (approvedRequest) {
+      return approvedRequest.request_type === "WFH" ? "WFH" : "Office";
+    }
+    return currentEmployee.work_mode || "Office";
   })();
 
   const shiftLockStatus = (() => {
@@ -448,7 +467,11 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   const fetchTodayBirthdays = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/employees/birthdays/today`);
+      const senderId = localStorage.getItem("employee_id");
+      const url = senderId
+        ? `${BASE_URL}/employees/birthdays/today?sender_id=${senderId}`
+        : `${BASE_URL}/employees/birthdays/today`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to load birthdays");
       const data = await res.json();
       setBirthdayEmployees(Array.isArray(data) ? data : []);
@@ -528,6 +551,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   // --- Attendance Handlers ---
   const handleCheckIn = async (selectedShift?: string) => {
+    setIsActionLoading(true);
     try {
       const userId = localStorage.getItem("user_id");
       if (!userId) {
@@ -561,35 +585,75 @@ if (isHalfDayLeave(leave.total_days)) return false;
       setAttendanceData(attendanceHistory);
     } catch (error) {
       toast.error("Something went wrong while checking in.");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleCheckInClick = () => {
+    setWantsToChangeMode(false);
+    const isCurrentlyWFH = todayActiveWorkMode === "WFH";
+    const isCurrentlyHybrid = todayActiveWorkMode === "Hybrid";
+
+    if (isCurrentlyHybrid) {
+      setSelectedWorkModeOpt("Hybrid");
+    } else {
+      setSelectedWorkModeOpt(isCurrentlyWFH ? "WFH" : "Office");
+    }
+
     setSelectedCheckInShift(todayActiveShift || "General Shift");
     setShowCheckInShiftModal(true);
   };
 
   const handleConfirmCheckInShift = async () => {
     setShowCheckInShiftModal(false);
+    setIsActionLoading(true);
 
-    const cleanActive = (todayActiveShift || "").trim().toLowerCase();
-    const cleanSelected = (selectedCheckInShift || "").trim().toLowerCase();
+    const isHybrid = (currentEmployee?.work_mode || "").toLowerCase() === "hybrid";
+    const shouldProcessChange = true;
 
-    if (cleanSelected !== cleanActive) {
+    if (!shouldProcessChange) {
       try {
+        const activeShift = todayActiveShift || "General Shift";
+        const { isLocked, timeLabel } = checkShiftLock(activeShift);
+        if (isLocked) {
+          toast.error(`${activeShift} starts at ${timeLabel}. Check-in is locked until then.`);
+          setIsActionLoading(false);
+          return;
+        }
+        await handleCheckIn(activeShift);
+      } catch (err) {
+        console.error(err);
+        toast.error("Error setting shift timing.");
+      } finally {
+        setIsActionLoading(false);
+      }
+      return;
+    }
+
+    const targetShift = selectedCheckInShift;
+    const isShiftChanged = (targetShift || "").trim().toLowerCase() !== (todayActiveShift || "").trim().toLowerCase();
+    
+    const targetWorkMode = isHybrid && wantsToChangeMode ? selectedWorkModeOpt : (todayActiveWorkMode || currentEmployee?.work_mode || "Office");
+    const isWorkModeChanged = isHybrid && wantsToChangeMode && (targetWorkMode.trim().toLowerCase() !== todayActiveWorkMode.trim().toLowerCase());
+
+    try {
+      if (isShiftChanged || isWorkModeChanged) {
         if (!currentEmployee) {
           toast.error("Employee details not found");
           return;
         }
 
-        const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD local format
+        const todayStr = new Date().toLocaleDateString("en-CA");
 
         const payload = {
           employee_id: currentEmployee.employee_id || currentEmployee.id,
           employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
           current_shift: todayActiveShift,
-          requested_shift: selectedCheckInShift,
-          request_type: selectedCheckInShift === "WFH" ? "WFH" : "Shift",
+          requested_shift: targetShift,
+          current_work_mode: todayActiveWorkMode,
+          requested_work_mode: targetWorkMode,
+          request_type: targetWorkMode === "WFH" ? "WFH" : targetWorkMode === "Hybrid" ? "Hybrid" : "Shift",
           from_date: todayStr,
           to_date: todayStr,
           reporting_manager: currentEmployee.reporting_manager || "Admin",
@@ -599,9 +663,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
         const response = await fetch(`${BASE_URL}/shifts/`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
 
@@ -611,36 +673,35 @@ if (isHalfDayLeave(leave.total_days)) return false;
           return;
         }
 
-        toast.success(`Today's mode changed to ${selectedCheckInShift}.`);
+        toast.success(`Today's mode changed to ${targetShift}.`);
         loadShiftRequests();
         loadManagerShiftRequests();
 
-        // Check timing lock on the newly selected shift
-        const { isLocked, timeLabel } = checkShiftLock(selectedCheckInShift);
-
+        const { isLocked, timeLabel } = checkShiftLock(targetShift);
         if (isLocked) {
-          toast.error(`${selectedCheckInShift} starts at ${timeLabel}. Check-in is locked until then.`);
+          toast.error(`${targetShift} starts at ${timeLabel}. Check-in is locked until then.`);
           return;
         }
 
-        await handleCheckIn(selectedCheckInShift);
-      } catch (err) {
-        console.error(err);
-        toast.error("Error setting shift timing.");
+        await handleCheckIn(targetShift);
+      } else {
+        const { isLocked, timeLabel } = checkShiftLock(targetShift);
+        if (isLocked) {
+          toast.error(`${targetShift} starts at ${timeLabel}. Check-in is locked until then.`);
+          return;
+        }
+        await handleCheckIn(targetShift);
       }
-    } else {
-      const { isLocked, timeLabel } = checkShiftLock(selectedCheckInShift);
-
-      if (isLocked) {
-        toast.error(`${selectedCheckInShift} starts at ${timeLabel}. Check-in is locked until then.`);
-        return;
-      }
-
-      await handleCheckIn(selectedCheckInShift);
+    } catch (err) {
+      console.error(err);
+      toast.error("Error setting shift timing.");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleCheckOut = async () => {
+    setIsActionLoading(true);
     try {
       if (isLunchBreak) {
         toast.error("Lunch Break Active. Please stop lunch break before checkout.");
@@ -700,6 +761,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
       window.dispatchEvent(new Event('refreshTeamStatus'));
     } catch (error) {
       toast.error("Something went wrong while checking out.");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -708,6 +771,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       toast.error("Check-In Required. Please check in before starting Lunch Break.");
       return;
     }
+    setIsActionLoading(true);
     try {
       const userId = localStorage.getItem("user_id");
       if (!userId) return;
@@ -756,6 +820,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
       }
     } catch (error) {
       toast.error("Something went wrong.");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -768,6 +834,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       return;
     }
 
+    setIsActionLoading(true);
     try {
       if (isTeaBreak) {
         const response = await fetch(`${API_URL}/api/attendance/tea-break`, {
@@ -814,6 +881,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
       }
     } catch (error) {
       toast.error("Something went wrong while handling Tea Break.");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -825,6 +894,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
   ) => {
 
     e.preventDefault();
+    setIsActionLoading(true);
 
     try {
 
@@ -851,7 +921,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
         handover_to: leaveForm.handoverTo,
 
-        reason: leaveForm.reason,
+        reason: leaveForm.reason + (leaveForm.leaveDuration && leaveForm.leaveDuration !== "Full Day" ? ` (${leaveForm.leaveDuration})` : ""),
       };
 
       if (editingLeave) {
@@ -906,11 +976,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
       toast.error("Server Error");
 
+    } finally {
+      setIsActionLoading(false);
     }
 
   };
 
   const approveLeave = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/leaves/approve/${id}`, {
         method: "PUT",
@@ -925,10 +998,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
       }
     } catch (err) {
       console.log(err);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const rejectLeave = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/leaves/reject/${id}`, {
         method: "PUT",
@@ -943,10 +1019,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
       }
     } catch (err) {
       console.log(err);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const cancelLeave = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/leaves/${id}/cancel`, {
         method: "POST",
@@ -954,7 +1033,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          employee_id: currentEmployee?.id
+          employee_id: currentEmployee?.employee_id || currentEmployee?.id
         })
       });
       const data = await res.json();
@@ -967,11 +1046,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
     } catch (err) {
       console.log(err);
       toast.error("Error cancelling leave");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   // --- Shift Handlers ---
   const submitShiftRequest = async (shiftForm: any) => {
+    setIsActionLoading(true);
     try {
       if (!currentEmployee) {
         toast.error("Employee details not found");
@@ -1017,34 +1099,51 @@ if (isHalfDayLeave(leave.total_days)) return false;
     } catch (err) {
       console.error(err);
       toast.error("Server Error");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const approveShift = async (id: number) => {
-    const response = await fetch(`${BASE_URL}/shifts/approve/${id}`, {
-      method: "PUT",
-    });
-    const data = await response.json();
-    if (data.success) {
-      toast.success("Shift Approved Successfully");
-      loadShiftRequests();
-      loadManagerShiftRequests();
+    setIsActionLoading(true);
+    try {
+      const response = await fetch(`${BASE_URL}/shifts/approve/${id}`, {
+        method: "PUT",
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success("Shift Approved Successfully");
+        loadShiftRequests();
+        loadManagerShiftRequests();
+      }
+    } catch (err) {
+      console.log(err);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const rejectShift = async (id: number) => {
-    const response = await fetch(`${BASE_URL}/shifts/reject/${id}`, {
-      method: "PUT",
-    });
-    const data = await response.json();
-    if (data.success) {
-      toast.success("Shift Rejected");
-      loadShiftRequests();
-      loadManagerShiftRequests();
+    setIsActionLoading(true);
+    try {
+      const response = await fetch(`${BASE_URL}/shifts/reject/${id}`, {
+        method: "PUT",
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success("Shift Rejected");
+        loadShiftRequests();
+        loadManagerShiftRequests();
+      }
+    } catch (err) {
+      console.log(err);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const cancelShiftRequest = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const response = await fetch(`${BASE_URL}/shifts/cancel/${id}`, {
         method: "PUT",
@@ -1064,6 +1163,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
     } catch (err) {
       console.error(err);
       toast.error("Server Error");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -1135,128 +1236,144 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
 
 
-  useEffect(() => {
-    if (currentEmployee) {
-      loadShiftRequests();
-      loadManagerShiftRequests();
-    }
-  }, [currentEmployee]);
+  const loadAllDashboardData = async () => {
+    setIsPageLoading(true);
+    try {
+      const userId = localStorage.getItem("user_id");
 
-  // --- Effects ---
-  useEffect(() => {
-    fetch(`${BASE_URL}/employees/`)
-      .then((res) => res.json())
-      .then((data) => setEmployees(data))
-      .catch((err) => console.error(err));
-    fetchTodayBirthdays();
-    fetchTodayAnniversaries();
-    loadLeaves();
-  }, []);
+      // 1. Load employees first to extract employee_id
+      const empRes = await fetch(`${BASE_URL}/employees/`);
+      const empData = await empRes.json();
+      setEmployees(empData);
 
-  useEffect(() => {
-    const userId = localStorage.getItem("user_id");
-    if (!userId) return;
-    const savedCheckInDate = localStorage.getItem(`checkInDate_${userId}`);
-    const savedCheckIn = localStorage.getItem(`checkInTime_${userId}`);
-    const todayKey = new Date().toISOString().split("T")[0];
-    if (savedCheckIn && savedCheckInDate === todayKey) {
-      setIsCheckedIn(true);
-      setCheckInTime(new Date(savedCheckIn));
-    } else {
-      localStorage.removeItem(`checkInTime_${userId}`);
-      localStorage.removeItem(`checkInDate_${userId}`);
-    }
-  }, []);
+      const loggedEmp = Array.isArray(empData)
+        ? empData.find((emp: any) => Number(emp.user_id) === Number(user?.id))
+        : null;
 
-  useEffect(() => {
-    const userId = localStorage.getItem("user_id");
-    if (!userId) return;
-    fetch(`${BASE_URL}/attendance/status/${userId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.checked_in) {
-          const checkIn = parseTimeString(data.check_in);
-          const lunchSecs = (data.lunch_minutes || 0) * 60;
-          const teaSecs = (data.tea_minutes || 0) * 60;
-          setIsCheckedIn(true);
-          setCheckInTime(checkIn);
-          setIsLunchBreak(data.lunch_break || false);
-          setIsTeaBreak(data.tea_break || false);
-          if (data.lunch_break && data.lunch_start) {
-            setLunchStartTime(parseTimeString(data.lunch_start));
-          } else {
-            setLunchStartTime(null);
-          }
+      // 2. Load the rest of the queries concurrently
+      const promises = [
+        fetchTodayBirthdays(),
+        fetchTodayAnniversaries(),
+        loadLeaves(),
+      ];
 
-          if (data.tea_break && data.tea_start) {
-            setTeaStartTime(parseTimeString(data.tea_start));
-          } else {
-            setTeaStartTime(null);
-          }
-          setTotalLunchSeconds(lunchSecs);
-          setTotalTeaSeconds(teaSecs);
-          // Immediately show the correct timer on re-login
-          const elapsedSeconds = Math.floor((new Date().getTime() - checkIn.getTime()) / 1000);
-          const workingSeconds = Math.max(elapsedSeconds - lunchSecs - teaSecs, 0);
-          const hrs = Math.floor(workingSeconds / 3600);
-          const mins = Math.floor((workingSeconds % 3600) / 60);
-          const secs = workingSeconds % 60;
-          setTimer(`${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`);
-          clearTodayAttendanceSummary(userId);
-        } else {
-          setIsCheckedIn(false);
-          const summary = loadTodayAttendanceSummary(userId);
-          if (summary) {
-            setTodayAttendanceSummary(summary);
-            setHasCheckedOutToday(true);
-            setTimer(summary.timer);
-            setTotalLunchSeconds(summary.totalLunchSeconds);
-            setTotalTeaSeconds(summary.totalTeaSeconds);
-          }
-        }
-      })
-      .catch((err) => console.error("Attendance Status Error:", err));
-  }, []);
-
-  useEffect(() => {
-    const userId = localStorage.getItem("user_id");
-    if (!userId) return;
-
-    fetch(`${BASE_URL}/attendance/history/${userId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setAttendanceData(data);
-
-        // Find today's attendance
-        const today = new Date().toISOString().split("T")[0];
-
-        const todayRecord = data.find(
-          (record: any) => record.date === today
+      if (loggedEmp) {
+        promises.push(
+          fetch(`${BASE_URL}/shifts/employee/${loggedEmp.employee_id}`)
+            .then((res) => res.json())
+            .then((data) => setShiftRequests(Array.isArray(data) ? data : []))
         );
 
-        // If today's attendance is available and employee has checked out
-        if (
-          todayRecord &&
-          todayRecord.checkOut !== "-" &&
-          todayRecord.workingHours
-        ) {
-          const totalSeconds = Math.floor(
-            Number(todayRecord.workingHours) * 3600
-          );
+        const managerName = `${loggedEmp.first_name} ${loggedEmp.last_name}`.trim();
+        const url = `${BASE_URL}/shifts/approvals/${encodeURIComponent(managerName)}`;
+        promises.push(
+          fetch(url)
+            .then((res) => (res.ok ? res.json() : []))
+            .then((data) => setManagerShiftRequests(Array.isArray(data) ? data : []))
+        );
+      }
 
-          setHasCheckedOutToday(true);
-          setTimer(formatSeconds(totalSeconds));
+      if (userId) {
+        promises.push(
+          fetch(`${BASE_URL}/attendance/status/${userId}`)
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.checked_in) {
+                const checkIn = parseTimeString(data.check_in);
+                const lunchSecs = (data.lunch_minutes || 0) * 60;
+                const teaSecs = (data.tea_minutes || 0) * 60;
+                setIsCheckedIn(true);
+                setCheckInTime(checkIn);
+                setIsLunchBreak(data.lunch_break || false);
+                setIsTeaBreak(data.tea_break || false);
+                if (data.lunch_break && data.lunch_start) {
+                  setLunchStartTime(parseTimeString(data.lunch_start));
+                } else {
+                  setLunchStartTime(null);
+                }
 
-          setTotalLunchSeconds(
-            (todayRecord.lunchMinutes || 0) * 60
-          );
+                if (data.tea_break && data.tea_start) {
+                  setTeaStartTime(parseTimeString(data.tea_start));
+                } else {
+                  setTeaStartTime(null);
+                }
+                setTotalLunchSeconds(lunchSecs);
+                setTotalTeaSeconds(teaSecs);
+                const elapsedSeconds = Math.floor((new Date().getTime() - checkIn.getTime()) / 1000);
+                const workingSeconds = Math.max(elapsedSeconds - lunchSecs - teaSecs, 0);
+                const hrs = Math.floor(workingSeconds / 3600);
+                const mins = Math.floor((workingSeconds % 3600) / 60);
+                const secs = workingSeconds % 60;
+                setTimer(`${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`);
+                clearTodayAttendanceSummary(userId);
+              } else {
+                setIsCheckedIn(false);
+                const summary = loadTodayAttendanceSummary(userId);
+                if (summary) {
+                  setTodayAttendanceSummary(summary);
+                  setHasCheckedOutToday(true);
+                  setTimer(summary.timer);
+                  setTotalLunchSeconds(summary.totalLunchSeconds);
+                  setTotalTeaSeconds(summary.totalTeaSeconds);
+                }
+              }
+            })
+        );
 
-          setTotalTeaSeconds(
-            (todayRecord.teaMinutes || 0) * 60
-          );
-        }
-      })
-      .catch((err) => console.log(err));
+        promises.push(
+          fetch(`${BASE_URL}/attendance/history/${userId}`)
+            .then((res) => res.json())
+            .then((data) => {
+              setAttendanceData(data);
+              const today = new Date().toISOString().split("T")[0];
+              const todayRecord = data.find(
+                (record: any) => record.date === today
+              );
+              if (
+                todayRecord &&
+                todayRecord.checkOut !== "-" &&
+                todayRecord.workingHours
+              ) {
+                const totalSeconds = Math.floor(
+                  Number(todayRecord.workingHours) * 3600
+                );
+                setHasCheckedOutToday(true);
+                setTimer(formatSeconds(totalSeconds));
+                setTotalLunchSeconds(
+                  (todayRecord.lunchMinutes || 0) * 60
+                );
+                setTotalTeaSeconds(
+                  (todayRecord.teaMinutes || 0) * 60
+                );
+              }
+            })
+        );
+      }
+
+      await Promise.all(promises);
+    } catch (err) {
+      console.error("Failed to load dashboard data:", err);
+    } finally {
+      setIsPageLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAllDashboardData();
+
+    const userId = localStorage.getItem("user_id");
+    if (userId) {
+      const savedCheckInDate = localStorage.getItem(`checkInDate_${userId}`);
+      const savedCheckIn = localStorage.getItem(`checkInTime_${userId}`);
+      const todayKey = new Date().toISOString().split("T")[0];
+      if (savedCheckIn && savedCheckInDate === todayKey) {
+        setIsCheckedIn(true);
+        setCheckInTime(new Date(savedCheckIn));
+      } else {
+        localStorage.removeItem(`checkInTime_${userId}`);
+        localStorage.removeItem(`checkInDate_${userId}`);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -1319,8 +1436,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       // If the leave belongs to current user, we should update their leave balance in employees state!
       if (Number(payload.employee_id) === Number(currentEmployee?.id)) {
         // Reload employee details from backend to sync balances
-        fetch(`${BASE_URL}/employees/`)
-          .then((res) => res.json())
+        getEmployees(true)
           .then((data) => setEmployees(data))
           .catch((err) => console.error(err));
       }
@@ -1461,8 +1577,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
     }
   }, [activeTab]);
 
+  if (isPageLoading) {
+    return <BookLoader label="Loading your dashboard..." />;
+  }
+
   return (
     <>
+      {/* Action loading overlay — shown during check-in/check-out API calls */}
+      {isActionLoading && <BookLoader />}
       <ConfirmModal
         isOpen={confirmModal}
         onCancel={() => setConfirmModal(false)}
@@ -1651,7 +1773,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
                 <h3 className="text-lg font-bold text-neutral-800 tracking-tight flex items-center gap-2">
                   <span className="text-[18px]">⚙️</span> Today's Attendance Mode
                 </h3>
-                <p className="text-xs text-neutral-450 font-semibold mt-0.5">Select a shift timing or WFH for today</p>
               </div>
               <button
                 onClick={() => setShowCheckInShiftModal(false)}
@@ -1662,91 +1783,131 @@ if (isHalfDayLeave(leave.total_days)) return false;
                 </svg>
               </button>
             </div>
-
-            {/* Grid options - 2 Columns (Compact, No Scroll) */}
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                {
-                  name: "General Shift",
-                  time: "09:00 AM - 06:00 PM",
-                  icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                    </svg>
-                  ),
-                  color: "bg-blue-50 text-blue-600 border-blue-100",
-                  span: "col-span-1"
-                },
-                {
-                  name: "First Shift",
-                  time: "06:00 AM - 02:00 PM",
-                  icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m11.314 11.314l.707.707M12 7a5 5 0 100 10 5 5 0 000-10z"/>
-                    </svg>
-                  ),
-                  color: "bg-amber-50 text-amber-600 border-amber-100",
-                  span: "col-span-1"
-                },
-                {
-                  name: "Second Shift",
-                  time: "12:00 PM - 08:00 PM",
-                  icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m11.314 11.314l.707.707M12 7a5 5 0 100 10 5 5 0 000-10z"/>
-                    </svg>
-                  ),
-                  color: "bg-orange-50 text-orange-600 border-orange-100",
-                  span: "col-span-1"
-                },
-                {
-                  name: "WFH",
-                  time: "Flexible remote work",
-                  icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-                    </svg>
-                  ),
-                  color: "bg-emerald-50 text-emerald-600 border-emerald-100",
-                  span: "col-span-2"
-                }
-              ].map((opt) => {
-                const isSelected = selectedCheckInShift === opt.name;
+            {/* Conditionally render content based on employee's work mode */}
+            {(() => {
+              const isHybrid = (currentEmployee?.work_mode || "").toLowerCase() === "hybrid";
+                if (isHybrid) {
                 return (
-                  <div
-                    key={opt.name}
-                    onClick={() => setSelectedCheckInShift(opt.name)}
-                    className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all duration-200 group ${opt.span} ${
-                      isSelected
-                        ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
-                        : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
-                    }`}
-                  >
-                    {/* Icon Wrap */}
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-colors flex-shrink-0 ${
-                      isSelected ? opt.color : "bg-neutral-50 text-neutral-450 border-neutral-100"
-                    }`}>
-                      {opt.icon}
-                    </div>
-                    
-                    {/* Details */}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-sm font-bold text-neutral-850 truncate">{opt.name}</span>
-                        {isSelected && (
-                          <span className="w-3.5 h-3.5 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
-                            <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
-                            </svg>
-                          </span>
-                        )}
+                  <>
+                    {/* Toggle to change details */}
+                    <div className="flex items-center justify-between p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/60 shadow-xs">
+                      <div className="flex flex-col gap-0.5 select-none">
+                        <span className="text-[12.5px] font-bold text-neutral-800">Request WFH (Work From Home) today?</span>
+                        <span className="text-[10px] text-neutral-450 font-semibold tracking-wide">Toggle on to request WFH for today</span>
                       </div>
-                      <span className="text-[11px] text-neutral-500 font-semibold truncate block mt-0.5 font-sans">{opt.time}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextState = !wantsToChangeMode;
+                          setWantsToChangeMode(nextState);
+                          setSelectedWorkModeOpt(nextState ? "WFH" : "Office");
+                        }}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-250 ease-in-out outline-none ${
+                          wantsToChangeMode ? 'bg-primary-500 shadow-sm' : 'bg-neutral-300'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-250 ease-in-out ${
+                            wantsToChangeMode ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Helper text indicating active mode */}
+                    {wantsToChangeMode ? (
+                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-emerald-800 text-[12px] font-bold shadow-xs">
+                        <span>🏠</span> You will request Work From Home (WFH) today.
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-primary-50 border border-primary-200 rounded-2xl flex items-center gap-2 text-primary-800 text-[12px] font-bold shadow-xs">
+                        <span>🏢</span> You will check in to Office today.
+                      </div>
+                    )}
+
+                    {/* Select Shift Timing */}
+                    <div className="flex flex-col gap-3 pt-2 border-t border-neutral-100">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { name: "General Shift", time: "09:00 AM - 06:00 PM" },
+                          { name: "First Shift", time: "07:00 AM - 04:00 PM" },
+                          { name: "Second Shift", time: "12:00 PM - 09:00 PM" },
+                        ].map((opt) => {
+                          const isSelected = selectedCheckInShift === opt.name;
+                          return (
+                            <div
+                              key={opt.name}
+                              onClick={() => setSelectedCheckInShift(opt.name)}
+                              className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all duration-200 ${
+                                isSelected
+                                  ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
+                                  : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1 flex items-center justify-between">
+                                <div>
+                                  <span className="text-[13px] font-bold text-neutral-850 block">{opt.name}</span>
+                                  <span className="text-[10px] text-neutral-450 font-semibold block mt-0.5">{opt.time}</span>
+                                </div>
+                                {isSelected && (
+                                  <span className="w-4 h-4 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+                                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                );
+              } else {
+                // Non-Hybrid Employees: Only show the three shifts directly
+                return (
+                  <div className="flex flex-col gap-3">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
+                    <div className="grid grid-cols-1 gap-2">
+                      {[
+                        { name: "General Shift", time: "09:00 AM - 06:00 PM" },
+                        { name: "First Shift", time: "07:00 AM - 04:00 PM" },
+                        { name: "Second Shift", time: "12:00 PM - 09:00 PM" },
+                      ].map((opt) => {
+                        const isSelected = selectedCheckInShift === opt.name;
+                        return (
+                          <div
+                            key={opt.name}
+                            onClick={() => setSelectedCheckInShift(opt.name)}
+                            className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all duration-200 ${
+                              isSelected
+                                ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
+                                : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1 flex items-center justify-between">
+                              <div>
+                                <span className="text-[13px] font-bold text-neutral-850 block">{opt.name}</span>
+                                <span className="text-[10px] text-neutral-450 font-semibold block mt-0.5">{opt.time}</span>
+                              </div>
+                              {isSelected && (
+                                <span className="w-4 h-4 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+                                  <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
+                                  </svg>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );
-              })}
-            </div>
+              }
+            })()}
 
             {/* Actions */}
             <div className="flex gap-3 pt-3 border-t border-neutral-100">

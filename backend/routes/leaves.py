@@ -89,6 +89,11 @@ def apply_leave():
 
             leave.total_days = float(data.get("total_days", 0))
 
+            if data.get("from_time"):
+                leave.from_time = datetime.strptime(data.get("from_time"), "%H:%M").time()
+            if data.get("to_time"):
+                leave.to_time = datetime.strptime(data.get("to_time"), "%H:%M").time()
+
         # ===========================
         # PERMISSION REQUEST
         # ===========================
@@ -529,10 +534,16 @@ def update_leave(leave_id):
                 data.get("total_days", 0)
             )
 
-            # Clear permission fields
+            # Clear permission fields but retain/update timing if present
             leave.permission_date = None
-            leave.from_time = None
-            leave.to_time = None
+            if data.get("from_time"):
+                leave.from_time = datetime.strptime(data.get("from_time"), "%H:%M").time()
+            else:
+                leave.from_time = None
+            if data.get("to_time"):
+                leave.to_time = datetime.strptime(data.get("to_time"), "%H:%M").time()
+            else:
+                leave.to_time = None
 
         # ===========================
         # UPDATE PERMISSION
@@ -605,20 +616,32 @@ def cancel_approved_leave(leave_id):
         from models.employee import Employee
         from sqlalchemy import or_
 
-        employee = Employee.query.filter(
-            or_(
-                Employee.id == employee_id,
-                Employee.employee_id == str(employee_id)
-            )
-        ).first()
+        # Safe integer conversion to avoid db comparison issues with strings
+        emp_id_int = None
+        if isinstance(employee_id, int):
+            emp_id_int = employee_id
+        elif isinstance(employee_id, str) and employee_id.isdigit():
+            emp_id_int = int(employee_id)
+
+        filters = [Employee.employee_id == str(employee_id)]
+        if emp_id_int is not None:
+            filters.append(Employee.id == emp_id_int)
+
+        employee = Employee.query.filter(or_(*filters)).first()
 
         # Check if ownership is valid (matches database ID, employee code, or raw passed ID)
-        valid_ids = [str(employee_id)]
+        valid_ids = {str(employee_id).strip().lower()}
         if employee:
-            valid_ids.append(str(employee.id))
-            valid_ids.append(str(employee.employee_id))
+            if employee.id:
+                valid_ids.add(str(employee.id))
+            if employee.employee_id:
+                valid_ids.add(str(employee.employee_id).strip().lower())
+            if employee.user_id:
+                valid_ids.add(str(employee.user_id))
 
-        if str(leave.employee_id) not in valid_ids:
+        leave_emp_id = str(leave.employee_id).strip().lower() if leave.employee_id else ""
+
+        if leave_emp_id not in valid_ids:
             return jsonify({
                 "success": False,
                 "message": "You do not own this leave request."
@@ -695,8 +718,10 @@ def cancel_approved_leave(leave_id):
             to_date_str = str(leave.to_date)
             msg = f"{leave.employee_name} has cancelled the {previous_status.lower()} leave scheduled from {from_date_str} to {to_date_str}."
 
+        receiver_name = leave.reporting_manager or (employee.reporting_manager if employee else None) or "Admin"
+
         notification = Notification(
-            receiver_name=leave.reporting_manager,
+            receiver_name=receiver_name,
             title="Leave Cancelled",
             message=msg,
             related_id=leave.id,
