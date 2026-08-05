@@ -237,7 +237,11 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   // --- Birthdays ---
   const fetchTodayBirthdays = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/employees/birthdays/today`);
+      const senderId = localStorage.getItem("employee_id");
+      const url = senderId
+        ? `${BASE_URL}/employees/birthdays/today?sender_id=${senderId}`
+        : `${BASE_URL}/employees/birthdays/today`;
+      const res = await fetch(url);
       const data = await res.json();
       setBirthdayEmployees(Array.isArray(data) ? data : []);
     } catch (err) {

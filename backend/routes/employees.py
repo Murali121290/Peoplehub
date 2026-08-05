@@ -989,12 +989,23 @@ print("Employees Blueprint Loaded")
 def today_birthdays():
     try:
         today = date.today()
+        sender_id = request.args.get("sender_id")
 
         employees = Employee.query.filter(
             Employee.dob.isnot(None),
             extract("month", Employee.dob) == today.month,
             extract("day", Employee.dob) == today.day
         ).all()
+
+        already_wished_ids = []
+        if sender_id:
+            from models.birthday_wish import BirthdayWish
+            today_start = datetime.combine(today, datetime.min.time())
+            wishes = BirthdayWish.query.filter(
+                BirthdayWish.sender_id == sender_id,
+                BirthdayWish.created_at >= today_start
+            ).all()
+            already_wished_ids = [w.receiver_id for w in wishes]
 
         return jsonify([
             {
@@ -1006,7 +1017,7 @@ def today_birthdays():
                 "designation": e.designation,
                 "profile_image": base64.b64encode(e.profile_image).decode("utf-8") if e.profile_image else None
             }
-            for e in employees
+            for e in employees if e.id not in already_wished_ids
         ])
     except Exception as err:
         print("ERROR IN TODAY BIRTHDAYS:", str(err))

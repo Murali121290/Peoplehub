@@ -466,7 +466,11 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   const fetchTodayBirthdays = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/employees/birthdays/today`);
+      const senderId = localStorage.getItem("employee_id");
+      const url = senderId
+        ? `${BASE_URL}/employees/birthdays/today?sender_id=${senderId}`
+        : `${BASE_URL}/employees/birthdays/today`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to load birthdays");
       const data = await res.json();
       setBirthdayEmployees(Array.isArray(data) ? data : []);
