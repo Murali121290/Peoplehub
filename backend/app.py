@@ -62,6 +62,14 @@ def create_app():
         finally:
             db_session.remove()
 
+    @fastapi_app.middleware("http")
+    async def force_https_middleware(request: Request, call_next):
+        host = request.headers.get("host", "")
+        proto = request.headers.get("x-forwarded-proto", "")
+        if proto == "https" or ("localhost" not in host and "127.0.0.1" not in host):
+            request.scope["scheme"] = "https"
+        return await call_next(request)
+
     # Register blueprints (routers)
     fastapi_app.include_router(employees_bp, prefix="/api/employees")
     fastapi_app.include_router(meeting_rooms_bp, prefix="/api/meeting-rooms")
