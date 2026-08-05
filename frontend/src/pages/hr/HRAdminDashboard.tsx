@@ -132,6 +132,7 @@ export default function HRAdminDashboard() {
   const [resetUserId, setResetUserId] = useState<string | null>(null);
   const [resetAllOpen, setResetAllOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [isActionLoading, setIsActionLoading] = useState(false);
 
   // --- API Calls ---
   const fetchEmployees = async () => {
@@ -437,6 +438,7 @@ export default function HRAdminDashboard() {
 
   // --- Handlers ---
   const handleApproveLeave = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const response = await fetch(`${BASE_URL}/leaves/approve/${id}`, {
         method: "PUT",
@@ -448,10 +450,13 @@ export default function HRAdminDashboard() {
       if (data.success) fetchLeaveRequests();
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleRejectLeave = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const response = await fetch(`${BASE_URL}/leaves/reject/${id}`, {
         method: "PUT",
@@ -463,10 +468,13 @@ export default function HRAdminDashboard() {
       if (data.success) fetchLeaveRequests();
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleApproveShift = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const response = await fetch(`${BASE_URL}/shifts/approve/${id}`, {
         method: "PUT",
@@ -482,10 +490,13 @@ export default function HRAdminDashboard() {
     } catch (error) {
       console.error(error);
       toast.error("Error approving shift request");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleRejectShift = async (id: number) => {
+    setIsActionLoading(true);
     try {
       const response = await fetch(`${BASE_URL}/shifts/reject/${id}`, {
         method: "PUT",
@@ -500,12 +511,14 @@ export default function HRAdminDashboard() {
     } catch (error) {
       console.error(error);
       toast.error("Error rejecting shift request");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleAddEmployee = async (e: any) => {
     e.preventDefault();
-
+    setIsActionLoading(true);
     try {
       console.log("HANDLE ADD EMPLOYEE CALLED");
       console.log("IS EDIT MODE:", isEditMode);
@@ -595,9 +608,12 @@ export default function HRAdminDashboard() {
       console.error(error);
 
       toast.error(error.message || "Error saving employee");
+    } finally {
+      setIsActionLoading(false);
     }
   };
   const handleEditEmployee = async (employee: any) => {
+    setIsActionLoading(true);
     try {
       // Fetch full employee details so all fields (joining_date, designation,
       // reporting_manager, company_email, team_id, etc.) are pre-populated
@@ -663,11 +679,14 @@ export default function HRAdminDashboard() {
     } catch (error) {
       console.error("Failed to fetch employee details for edit:", error);
       toast.error("Could not load employee details. Please try again.");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleProfileComplete = async () => {
     if (!currentEmployee) return;
+    setIsActionLoading(true);
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(
@@ -688,6 +707,8 @@ export default function HRAdminDashboard() {
     } catch (error) {
       console.error(error);
       toast.error("Error completing profile");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -703,6 +724,7 @@ export default function HRAdminDashboard() {
 
   return (
     <div className="min-h-screen bg-neutral-50 font-sans">
+      {isActionLoading && <BookLoader />}
 
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-neutral-200">
