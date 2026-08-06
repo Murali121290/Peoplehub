@@ -5,6 +5,7 @@ import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
 import { DatePicker } from "../../../components/ui/DatePicker";
+import { ConfirmDialog } from "../../../components/ui/Modal/ConfirmDialog";
 import { 
   CalendarIcon, 
   PlusIcon, 
@@ -18,6 +19,7 @@ const API_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
 
 export const HolidayTab: React.FC = () => {
   const [holidays, setHolidays] = useState<any[]>([]);
+  const [deletingHolidayId, setDeletingHolidayId] = useState<number | null>(null);
   const [overrides, setOverrides] = useState<any[]>([]);
   const [holidayTypes, setHolidayTypes] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -112,11 +114,17 @@ export const HolidayTab: React.FC = () => {
     }
   };
 
-  const handleDeleteHoliday = async (id: number) => {
-    if (!window.confirm("Are you sure you want to delete this holiday?")) return;
+  const handleDeleteHoliday = (id: number) => {
+    setDeletingHolidayId(id);
+  };
+
+  const confirmDeleteHoliday = async () => {
+    if (deletingHolidayId === null) return;
+    const targetId = deletingHolidayId;
+    setDeletingHolidayId(null);
     try {
       const token = localStorage.getItem("token");
-      await axios.delete(`${API_URL}/holidays/${id}`, {
+      await axios.delete(`${API_URL}/holidays/${targetId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       toast.success("Holiday deleted successfully");
@@ -124,6 +132,10 @@ export const HolidayTab: React.FC = () => {
     } catch (err) {
       toast.error("Error deleting holiday");
     }
+  };
+
+  const cancelDeleteHoliday = () => {
+    setDeletingHolidayId(null);
   };
 
   const handlePublishAll = async () => {
@@ -504,6 +516,19 @@ export const HolidayTab: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {deletingHolidayId !== null && (
+        <ConfirmDialog
+          isOpen={deletingHolidayId !== null}
+          title="Delete Holiday?"
+          message="Are you sure you want to delete this holiday?"
+          variant="danger"
+          confirmLabel="Yes, Delete"
+          cancelLabel="Cancel"
+          onConfirm={confirmDeleteHoliday}
+          onCancel={cancelDeleteHoliday}
+        />
+      )}
     </div>
   );
 };

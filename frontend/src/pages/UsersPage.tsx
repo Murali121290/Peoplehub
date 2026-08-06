@@ -14,6 +14,7 @@ import {
 } from '@heroicons/react/24/outline';
 import UserModal from '../modals/UserModal';
 import { User } from '../types/index';
+import { ConfirmDialog } from '../components/ui/Modal/ConfirmDialog';
 
 const roleOptions = [
   'Admin',
@@ -96,16 +97,27 @@ const UsersPage: React.FC = () => {
     setShowModal(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to deactivate this user?')) return;
+  const [deactivatingUserId, setDeactivatingUserId] = useState<number | null>(null);
 
+  const handleDelete = (id: number) => {
+    setDeactivatingUserId(id);
+  };
+
+  const confirmDeactivate = async () => {
+    if (deactivatingUserId === null) return;
+    const targetId = deactivatingUserId;
+    setDeactivatingUserId(null);
     try {
-      await apiService.deleteUser(id);
+      await apiService.deleteUser(targetId);
       toast.success('User deactivated successfully');
       fetchUsers();
     } catch (error) {
       toast.error('Failed to delete user');
     }
+  };
+
+  const cancelDeactivate = () => {
+    setDeactivatingUserId(null);
   };
 
   const handleModalClose = (refresh = false) => {
@@ -469,6 +481,18 @@ const UsersPage: React.FC = () => {
         </div>
 
         {showModal && <UserModal user={editingUser} onClose={handleModalClose} />}
+        {deactivatingUserId !== null && (
+          <ConfirmDialog
+            isOpen={deactivatingUserId !== null}
+            title="Deactivate User?"
+            message="Are you sure you want to deactivate this user?"
+            variant="danger"
+            confirmLabel="Yes, Deactivate"
+            cancelLabel="Cancel"
+            onConfirm={confirmDeactivate}
+            onCancel={cancelDeactivate}
+          />
+        )}
       </div>
     </div>
   );

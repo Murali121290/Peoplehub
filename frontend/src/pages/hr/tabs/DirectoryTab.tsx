@@ -407,7 +407,9 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
                 </td>
                 <td className="px-4 py-3.5 cursor-pointer" onClick={() => onEditEmployee(emp)}>
                   <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-                    emp.work_mode === "WFH" ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-neutral-100 text-neutral-600 border-neutral-200"
+                    emp.work_mode === "WFH" ? "bg-blue-100 text-blue-700 border-blue-200"
+                    : emp.work_mode === "Hybrid" ? "bg-green-100 text-green-700 border-green-200"
+                    : "bg-neutral-100 text-neutral-600 border-neutral-200"
                   }`}>
                     {emp.work_mode || "Office"}
                   </span>

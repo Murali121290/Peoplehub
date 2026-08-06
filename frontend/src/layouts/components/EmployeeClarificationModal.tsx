@@ -7,6 +7,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { API_URL } from '../../config/api';
 import { TimePicker } from '../../components/ui/TimePicker';
+import { toast } from 'react-hot-toast';
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -78,7 +79,7 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
     if (mode === 'regularization') {
       const finalCheckIn = isForgotCheckoutRequest ? convertTo24h(checkIn) : checkInTime;
       if (!finalCheckIn || !checkOutTime) {
-        alert("Please enter both check-in and check-out times.");
+        toast.error("Please enter both check-in and check-out times.");
         return;
       }
       endpoint = `${BASE_URL}/attendance/submit-regularization/${userId}`;
@@ -112,11 +113,11 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
         }
         onSubmitted();
       } else {
-        alert(data.error || "Failed to submit resolution");
+        toast.error(data.error || "Failed to submit resolution");
       }
     } catch (err) {
       console.error("Resolution submit error:", err);
-      alert("An error occurred while submitting.");
+      toast.error("An error occurred while submitting.");
     } finally {
       setIsSubmitting(false);
     }
@@ -148,11 +149,11 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
         }
         onSubmitted();
       } else {
-        alert(data.error || "Failed to submit clarification response");
+        toast.error(data.error || "Failed to submit clarification response");
       }
     } catch (err) {
       console.error("Submit clarification reply error:", err);
-      alert("An error occurred while submitting your reply.");
+      toast.error("An error occurred while submitting your reply.");
     } finally {
       setIsSubmitting(false);
     }

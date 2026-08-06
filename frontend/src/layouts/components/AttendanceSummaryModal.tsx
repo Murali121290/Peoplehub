@@ -28,8 +28,8 @@ interface AttendanceSummaryModalProps {
   onViewEmployee: (emp: any) => void;
   onApproveAll: () => void;
   onRejectAll?: (reason?: string) => void;
-  onApproveEmployee: (employeeId: number) => void;
-  onRejectEmployee: (employeeId: number, reason?: string) => void;
+  onApproveEmployee: (employeeId: number, date?: string) => void;
+  onRejectEmployee: (employeeId: number, reason?: string, date?: string) => void;
   onRefresh?: () => void;
 }
 
@@ -45,7 +45,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 }) => {
   const [employees, setEmployees] = useState<any[]>([]);
   const [confirmDialog, setConfirmDialog] = useState<"approve" | "reject" | null>(null);
-  const [rejectReasonModal, setRejectReasonModal] = useState<{ open: boolean; empId?: number; isBulk?: boolean }>({ open: false });
+  const [rejectReasonModal, setRejectReasonModal] = useState<{ open: boolean; empId?: number; date?: string; isBulk?: boolean }>({ open: false });
   const [rejectReasonText, setRejectReasonText] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -72,13 +72,13 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
     (e) => !e.decision || e.decision === "Pending"
   ).length;
 
-  const handleApproveSingle = async (empId: number) => {
+  const handleApproveSingle = async (empId: number, date?: string) => {
     setIsActionLoading(true);
     try {
-      await onApproveEmployee(empId);
+      await onApproveEmployee(empId, date);
       setEmployees((prev) =>
         prev.map((e) =>
-          (e.employee_id === empId || e.id === empId)
+          (e.employee_id === empId || e.id === empId) && (!date || e.summary_date === date)
             ? { ...e, decision: "Approved" }
             : e
         )
@@ -90,9 +90,9 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
     }
   };
 
-  const openRejectReasonModal = (empId?: number, isBulk: boolean = false) => {
+  const openRejectReasonModal = (empId?: number, isBulk: boolean = false, date?: string) => {
     setRejectReasonText("");
-    setRejectReasonModal({ open: true, empId, isBulk });
+    setRejectReasonModal({ open: true, empId, isBulk, date });
   };
 
   const handleConfirmRejectionWithReason = async () => {
@@ -107,7 +107,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
             (e) => !e.decision || e.decision === "Pending"
           );
           for (const e of pendingItems) {
-            await onRejectEmployee(e.employee_id || e.id, reason);
+            await onRejectEmployee(e.employee_id || e.id, reason, e.summary_date);
           }
         }
         setEmployees((prev) =>
@@ -119,10 +119,11 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
         );
       } else if (rejectReasonModal.empId != null) {
         const empId = rejectReasonModal.empId;
-        await onRejectEmployee(empId, reason);
+        const targetDate = rejectReasonModal.date;
+        await onRejectEmployee(empId, reason, targetDate);
         setEmployees((prev) =>
           prev.map((e) =>
-            (e.employee_id === empId || e.id === empId)
+            (e.employee_id === empId || e.id === empId) && (!targetDate || e.summary_date === targetDate)
               ? {
                   ...e,
                   decision: "Need Clarification",
@@ -290,7 +291,15 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
   const sortedEmployees = React.useMemo(() => {
     return employees
-      .filter((e) => e.decision !== "Approved" && e.manager_status !== "Approved")
+      .filter((e) => e.decision !== "Approved" && e.manager_status !== "Approved" && !e.is_one_day_wages)
+      .sort((a: any, b: any) =>
+        (a.employee_name || "").localeCompare(b.employee_name || "", undefined, { sensitivity: 'base' })
+      );
+  }, [employees]);
+
+  const oneDayWagesEmployees = React.useMemo(() => {
+    return employees
+      .filter((e) => e.decision !== "Approved" && e.manager_status !== "Approved" && e.is_one_day_wages)
       .sort((a: any, b: any) =>
         (a.employee_name || "").localeCompare(b.employee_name || "", undefined, { sensitivity: 'base' })
       );
@@ -412,8 +421,11 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold">
                           {emp.total_break_minutes ? `${emp.total_break_minutes} min` : "0 min"}
                         </td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-teal-700 font-bold">
-                          {emp.permission_time || "—"}
+                        <td 
+                          className="py-3.5 px-3 bg-blue-50/5 text-xs text-teal-700 font-bold"
+                          title={emp.permission_time || undefined}
+                        >
+                          {emp.permission_hours ? `${emp.permission_hours} hr${emp.permission_hours !== 1 ? "s" : ""}` : "—"}
                         </td>
                         <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-400">
                           {formatWorkingHours(
@@ -458,7 +470,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                             {/* Approve Button */}
                             <button
                               disabled={isApproveDisabled}
-                              onClick={() => handleApproveSingle(emp.employee_id || emp.id)}
+                              onClick={() => handleApproveSingle(emp.employee_id || emp.id, emp.summary_date)}
                               title={isNeedClarification ? "Approval disabled while waiting for employee clarification response" : isApproved ? "Approved" : "Approve Attendance"}
                               className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
                                 isApproveDisabled
@@ -473,7 +485,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                             {/* Need Clarification Button */}
                             <button
                               disabled={isClarificationDisabled}
-                              onClick={() => openRejectReasonModal(emp.employee_id || emp.id, false)}
+                              onClick={() => openRejectReasonModal(emp.employee_id || emp.id, false, emp.summary_date)}
                               title={isNeedClarification ? "Clarification request already sent, waiting for employee response" : isApproved ? "Approved" : "Request Need Clarification"}
                               className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
                                 isClarificationDisabled
@@ -492,6 +504,153 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                 )}
               </tbody>
             </table>
+
+            {oneDayWagesEmployees.length > 0 && (
+              <div className="mt-8 border-t border-neutral-200 pt-6">
+                <h3 className="text-sm font-bold text-neutral-850 mb-3 flex items-center gap-2">
+                  <span className="text-base">⭐</span> Weekend / Holiday - One Day Wages Workers
+                </h3>
+                <table className="w-full border-collapse min-w-[1000px] relative">
+                  <thead className="sticky top-0 z-30 bg-neutral-50 shadow-xs">
+                    <tr className="bg-neutral-50 text-neutral-500 text-[11px] font-bold uppercase tracking-wider">
+                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-4 min-w-[160px]">Employee</th>
+                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3 min-w-[120px]">Department</th>
+                      <th colSpan={6} className="bg-blue-100/80 text-blue-800 font-extrabold border-b border-neutral-200 text-center py-2 px-3">Web Site Entry</th>
+                      <th colSpan={3} className="bg-purple-100/80 text-purple-800 font-extrabold border-b border-neutral-200 text-center py-2 px-3">Biometric Card Entry</th>
+                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3">Status</th>
+                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3">Verification</th>
+                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-center py-3.5 px-3 min-w-[290px]">Actions</th>
+                    </tr>
+                    <tr className="bg-neutral-50 text-neutral-500 text-[10px] font-bold uppercase tracking-wider">
+                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check In</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check Out</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Break</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center font-semibold text-teal-800">Permission</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Total Hours</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Working Hours</th>
+                      <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check In</th>
+                      <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check Out</th>
+                      <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Hours</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-150">
+                    {oneDayWagesEmployees.map((emp: any) => {
+                      const isApproved = emp.decision === "Approved";
+                      const isNeedClarification = emp.decision === "Need Clarification" || emp.decision === "Rejected";
+                      const isApproveDisabled = isActionLoading || isApproved || isNeedClarification;
+                      const isClarificationDisabled = isActionLoading || isApproved || isNeedClarification;
+
+                      return (
+                        <tr key={`${emp.id || emp.employee_id}-${emp.summary_date}`} className="hover:bg-neutral-50/50 transition-all duration-150 border-b border-neutral-100">
+                          {/* Employee info */}
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-3">
+                              <img
+                               src={getProfileImageUrl(emp.profile_image, emp.employee_id || emp.id)}
+                               alt={emp.employee_name}
+                               className="w-9 h-9 rounded-full object-cover border border-neutral-200 shadow-xs"
+                               onError={(e) => {
+                                 e.currentTarget.src = "/default-avatar.png";
+                               }}
+                              />
+                              <div>
+                                <span className="font-extrabold text-neutral-800 block text-xs tracking-tight">{emp.employee_name}</span>
+                                <span className="text-[10px] text-neutral-400 font-semibold mt-0.5 block">{emp.employee_code || "—"}</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Department */}
+                          <td className="py-3.5 px-3">
+                            <div className="text-xs text-neutral-600 font-medium">{emp.department || "—"}</div>
+                            <div className="text-[9px] text-neutral-400 mt-0.5">{emp.designation || "—"}</div>
+                          </td>
+
+                          {/* Web Entry Columns */}
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600">{emp.check_in || "—"}</td>
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600">{emp.check_out || "—"}</td>
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600">
+                            {emp.total_break_minutes ? `${emp.total_break_minutes} min` : "0 min"}
+                          </td>
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-teal-700 font-bold">
+                            {emp.permission_hours > 0 ? (
+                              <span className="cursor-pointer underline decoration-dotted decoration-teal-500" title={emp.permission_time}>
+                                {emp.permission_hours} hr{emp.permission_hours > 1 ? "s" : ""}
+                              </span>
+                            ) : "—"}
+                          </td>
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600">
+                            {formatWorkingHours(emp.working_hours)}
+                          </td>
+                          <td className="py-3.5 px-3 bg-blue-50/5 text-xs font-bold text-neutral-800">
+                            {formatWorkingHours(emp.working_hours)}
+                          </td>
+
+                          {/* Card Entry Columns */}
+                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">{emp.card_check_in || "—"}</td>
+                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">{emp.card_check_out || "—"}</td>
+                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">
+                            {formatWorkingHours(emp.card_working_hours)}
+                          </td>
+
+                          {/* Status */}
+                          <td className="py-3.5 px-4">
+                            {getStatusBadge(emp.status)}
+                          </td>
+
+                          {/* Verification Status */}
+                          <td className="py-3.5 px-4">
+                            {getVerificationBadge(emp.employee_reply ? "Clarification Provided" : emp.decision)}
+                          </td>
+
+                          {/* Action Buttons */}
+                          <td className="py-3.5 px-4 text-center">
+                            <div className="flex items-center justify-end gap-1.5 flex-nowrap">
+                              <button
+                                onClick={() => onViewEmployee(emp)}
+                                className="h-8 px-2.5 py-1 border border-neutral-200 text-neutral-600 hover:text-neutral-800 hover:bg-neutral-50 hover:border-neutral-300 rounded-lg text-xs font-semibold transition-all duration-200 hover:-translate-y-0.5 shadow-xs flex items-center gap-1"
+                                title="View Details & Chat History"
+                              >
+                                <EyeIcon className="w-3.5 h-3.5" />
+                                View
+                              </button>
+
+                              <button
+                                disabled={isApproveDisabled}
+                                onClick={() => handleApproveSingle(emp.employee_id || emp.id, emp.summary_date)}
+                                title={isNeedClarification ? "Approval disabled while waiting for employee clarification response" : isApproved ? "Approved" : "Approve Attendance"}
+                                className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
+                                  isApproveDisabled
+                                    ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
+                                    : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 shadow-xs"
+                                }`}
+                              >
+                                <CheckIcon className={`w-3.5 h-3.5 ${isApproveDisabled ? "text-neutral-400" : "text-emerald-700"}`} />
+                                Approve
+                              </button>
+
+                              <button
+                                disabled={isClarificationDisabled}
+                                onClick={() => openRejectReasonModal(emp.employee_id || emp.id, false, emp.summary_date)}
+                                title={isNeedClarification ? "Clarification request already sent, waiting for employee response" : isApproved ? "Approved" : "Request Need Clarification"}
+                                className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
+                                  isClarificationDisabled
+                                    ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
+                                    : "bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 hover:-translate-y-0.5 active:bg-amber-200 shadow-xs"
+                                }`}
+                              >
+                                <ExclamationTriangleIcon className={`w-3.5 h-3.5 ${isClarificationDisabled ? "text-neutral-400" : "text-amber-600"}`} />
+                                Need Clarification
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
 

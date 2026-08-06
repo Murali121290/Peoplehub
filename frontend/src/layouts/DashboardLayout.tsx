@@ -729,9 +729,15 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   const handleApproveAll = async () => {
     try {
       const uid = localStorage.getItem("user_id");
-      await fetch(`${BASE_URL}/attendance/approve-all?manager_id=${uid}`, {
+      const pendingItems = reportingEmployees.filter(
+        (e) => !e.decision || e.decision === "Pending"
+      );
+      for (const e of pendingItems) {
+        const dateParam = e.summary_date ? `?date=${e.summary_date}` : "";
+        await fetch(`${BASE_URL}/attendance/approve/${e.employee_id || e.id}${dateParam}`, {
         method: "PUT",
       });
+      }
 
       // Refetch latest list (backend automatically excludes Approved records)
       const res = await fetch(`${BASE_URL}/employees/reporting-employees/${uid}`);
@@ -751,11 +757,17 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   const handleRejectAll = async (reason?: string) => {
     try {
       const uid = localStorage.getItem("user_id");
-      await fetch(`${BASE_URL}/attendance/reject-all?manager_id=${uid}`, {
+      const pendingItems = reportingEmployees.filter(
+        (e) => !e.decision || e.decision === "Pending"
+      );
+      for (const e of pendingItems) {
+        const dateParam = e.summary_date ? `?date=${e.summary_date}` : "";
+        await fetch(`${BASE_URL}/attendance/reject/${e.employee_id || e.id}${dateParam}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: reason || "" }),
       });
+      }
       setReportingEmployees([]);
       setShowPopup(false);
     } catch (error) {
@@ -763,14 +775,17 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const handleApproveEmployee = async (employeeId: number) => {
+  const handleApproveEmployee = async (employeeId: number, date?: string) => {
     try {
-      await fetch(`${BASE_URL}/attendance/approve/${employeeId}`, {
+      const url = date
+        ? `${BASE_URL}/attendance/approve/${employeeId}?date=${date}`
+        : `${BASE_URL}/attendance/approve/${employeeId}`;
+      await fetch(url, {
         method: "PUT",
       });
       setReportingEmployees((prev) =>
         prev.map((emp) =>
-          emp.employee_id === employeeId || emp.id === employeeId
+          (emp.employee_id === employeeId || emp.id === employeeId) && (!date || emp.summary_date === date)
             ? { ...emp, manager_status: "Approved", decision: "Approved" }
             : emp
         )
@@ -780,16 +795,19 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const handleRejectEmployee = async (employeeId: number, reason?: string) => {
+  const handleRejectEmployee = async (employeeId: number, reason?: string, date?: string) => {
     try {
-      await fetch(`${BASE_URL}/attendance/reject/${employeeId}`, {
+      const url = date
+        ? `${BASE_URL}/attendance/reject/${employeeId}?date=${date}`
+        : `${BASE_URL}/attendance/reject/${employeeId}`;
+      await fetch(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: reason || "" }),
       });
       setReportingEmployees((prev) =>
         prev.map((emp) =>
-          emp.employee_id === employeeId || emp.id === employeeId
+          (emp.employee_id === employeeId || emp.id === employeeId) && (!date || emp.summary_date === date)
             ? { ...emp, manager_status: "Rejected", decision: "Rejected" }
             : emp
         )

@@ -328,27 +328,47 @@ def approve_shift(id):
         start_date = shift.from_date or shift.shift_date
         end_date = shift.to_date or start_date
 
-        if start_date:
-            current_date = start_date
-            while current_date <= end_date:
-                attendance = Attendance.query.filter_by(
-                    user_id=resolved_user_id,
-                    attendance_date=current_date
-                ).first()
+        if shift.request_type == "One Day Wages":
+            if start_date:
+                current_date = start_date
+                while current_date <= end_date:
+                    attendance = Attendance.query.filter_by(
+                        user_id=resolved_user_id,
+                        attendance_date=current_date
+                    ).first()
 
-                # Only update shift_timing on records where the employee
-                # actually checked in. Never create phantom attendance rows
-                # with hardcoded times.
-                if attendance and attendance.check_in is not None:
-                    attendance.shift_timing = shift.requested_shift
+                    if attendance:
+                        # Above 6 hours means fullday (Present), otherwise halfday
+                        total_hrs = float(attendance.total_hours or 0.0)
+                        if total_hrs >= 6.0:
+                            attendance.status = "Present"
+                        else:
+                            attendance.status = "Half Day"
+                        attendance.manager_status = "Approved"
 
-                current_date += timedelta(days=1)
+                    current_date += timedelta(days=1)
+        else:
+            if start_date:
+                current_date = start_date
+                while current_date <= end_date:
+                    attendance = Attendance.query.filter_by(
+                        user_id=resolved_user_id,
+                        attendance_date=current_date
+                    ).first()
 
-        if employee:
-            if shift.requested_shift:
-                employee.shift_timing = shift.requested_shift
-            if shift.requested_work_mode:
-                employee.work_mode = shift.requested_work_mode
+                    # Only update shift_timing on records where the employee
+                    # actually checked in. Never create phantom attendance rows
+                    # with hardcoded times.
+                    if attendance and attendance.check_in is not None:
+                        attendance.shift_timing = shift.requested_shift
+
+                    current_date += timedelta(days=1)
+
+            if employee:
+                if shift.requested_shift:
+                    employee.shift_timing = shift.requested_shift
+                if shift.requested_work_mode:
+                    employee.work_mode = shift.requested_work_mode
 
         shift.status = "Approved"
         shift.approved_by = shift.reporting_manager or "Manager"

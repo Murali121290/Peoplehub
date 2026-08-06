@@ -254,7 +254,7 @@ def check_in():
             # 1. Look up manager's employee details to locate their socket room
             manager_name = employee.reporting_manager.strip().lower() if employee.reporting_manager else ""
             manager_emp = None
-            for e in [e for e in Employee.query.all() if e.is_active != False]:
+            for e in [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]:
                 full_name = f"{e.first_name} {e.last_name}".strip().lower()
                 is_match = (full_name == manager_name) or (len(manager_name.split()) == 1 and full_name.split()[0] == manager_name) or (len(full_name.split()) == 1 and manager_name.split()[0] == full_name)
                 if is_match:
@@ -939,6 +939,56 @@ def is_date_week_off(d):
             return True
     return False
 
+@attendance_bp.route("/check-holiday-or-weekoff", methods=["GET"])
+@jwt_required()
+def check_holiday_or_weekoff():
+    try:
+        from models.employee import Employee
+        user_id = get_jwt_identity()
+        employee = Employee.query.filter_by(user_id=int(user_id)).first()
+        if not employee:
+            return jsonify({"success": False, "message": "Employee not found"}), 404
+            
+        today = get_ist_today()
+        
+        # Check holiday override
+        from models.holiday import Holiday, HolidayOverride
+        override = HolidayOverride.query.filter_by(date=today).first()
+        is_holiday = False
+        is_week_off = False
+        holiday_name = None
+        
+        if override:
+            if override.override_type == "Holiday":
+                is_holiday = True
+                holiday_name = override.name or "Holiday"
+        else:
+            holiday = Holiday.query.filter_by(date=today).first()
+            if holiday:
+                is_holiday = True
+                holiday_name = holiday.name
+            elif is_date_week_off(today):
+                is_week_off = True
+                
+        # Check if already has a pending or approved one day wages request for today
+        from models.shift_request import ShiftRequest
+        existing_wages = ShiftRequest.query.filter(
+            ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
+            ShiftRequest.request_type == "One Day Wages",
+            ShiftRequest.status.in_(["Pending", "Approved"]),
+            ShiftRequest.from_date <= today,
+            ShiftRequest.to_date >= today
+        ).first()
+        
+        return jsonify({
+            "success": True,
+            "is_holiday_or_weekoff": is_holiday or is_week_off,
+            "reason": holiday_name or ("Weekend Weekoff" if is_week_off else None),
+            "already_requested": existing_wages is not None
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @attendance_bp.route("/history/<int:user_id>")
 def attendance_history(user_id):
 
@@ -996,7 +1046,7 @@ def attendance_history(user_id):
         num_days = (end_date - start_date_val).days + 1
         for i in range(num_days):
             current_date = end_date - timedelta(days=i)
-        
+
             # Do not go before joining date if set
             if joining and current_date < joining:
                 break
@@ -1005,6 +1055,16 @@ def attendance_history(user_id):
                 user_id=user_id,
                 attendance_date=current_date
             ).first()
+
+            # Check for One Day Wages request on this date
+            from models.shift_request import ShiftRequest
+            wages_req = ShiftRequest.query.filter(
+                ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
+                ShiftRequest.request_type == "One Day Wages",
+                ShiftRequest.shift_date == current_date
+            ).first()
+            is_one_day_wages = wages_req is not None
+            wages_status = wages_req.status if wages_req else None
 
             if record:
                 is_today = (record.attendance_date == today)
@@ -1074,7 +1134,9 @@ def attendance_history(user_id):
                     "manager_status": record.manager_status or "Pending",
                     "reporting_manager": employee.reporting_manager or "",
                     "clarification_history": record.clarification_history or [],
-                    "last_manager_comment": (record.clarification_history[-1]["comment"] if record.clarification_history and record.clarification_history[-1].get("sender_role") == "manager" else "") or ""
+                    "last_manager_comment": (record.clarification_history[-1]["comment"] if record.clarification_history and record.clarification_history[-1].get("sender_role") == "manager" else "") or "",
+                    "is_one_day_wages": is_one_day_wages,
+                    "wages_status": wages_status
                 })
             else:
                 # Check normal calendar rules for virtual status
@@ -1148,7 +1210,9 @@ def attendance_history(user_id):
                     "manager_status": "Pending",
                     "reporting_manager": employee.reporting_manager or "",
                     "clarification_history": [],
-                    "last_manager_comment": ""
+                    "last_manager_comment": "",
+                    "is_one_day_wages": is_one_day_wages,
+                    "wages_status": wages_status
                 })
 
     return jsonify(result)
@@ -1159,7 +1223,7 @@ def get_attendance():
 
     today = get_ist_today()
 
-    employees = [e for e in Employee.query.all() if e.is_active != False]
+    employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
     attendance_list = []
 
@@ -1323,7 +1387,7 @@ def get_weekly_attendance():
 
         result = []
 
-        employees = [e for e in Employee.query.all() if e.is_active != False]
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         # Today first
         for i in range(7):
@@ -1461,7 +1525,7 @@ def get_monthly_attendance():
 
         result = []
 
-        employees = [e for e in Employee.query.all() if e.is_active != False]
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         # Last 30 days - newest first
         for i in range(30):
@@ -1698,7 +1762,7 @@ def export_monthly_attendance():
         # TITLE
         # =====================================
 
-        ws.merge_cells("A1:L1")
+        ws.merge_cells("A1:M1")
 
         ws["A1"] = "ATTENDANCE REPORT"
 
@@ -1719,7 +1783,7 @@ def export_monthly_attendance():
         # MONTH HEADER
         # =====================================
 
-        ws.merge_cells("A2:L2")
+        ws.merge_cells("A2:M2")
 
         ws["A2"] = (
             f"Attendance Summary "
@@ -1739,7 +1803,7 @@ def export_monthly_attendance():
         # =====================================
 
 
-        ws.merge_cells("A3:L3")
+        ws.merge_cells("A3:M3")
 
         ws["A3"] = (
     f"Attendance Cycle : "
@@ -1771,6 +1835,7 @@ def export_monthly_attendance():
             "Total Days Worked",
             "Total Leaves Taken",
             "LOP/Absent",
+            "One Day Wages",
             "Date Of Leave",
             "Remarks"
         ]
@@ -1813,7 +1878,7 @@ def export_monthly_attendance():
                 manager_full_name = f"{manager_emp.first_name} {manager_emp.last_name}".strip()
                 employees = [
                     e for e in Employee.query.all()
-                    if e.is_active != False
+                    if (e.status or "").lower() != "inactive"
                     and is_manager_match(e.reporting_manager, manager_full_name)
                 ]
             else:
@@ -1825,7 +1890,7 @@ def export_monthly_attendance():
                     manager_full_name = f"{caller_emp.first_name} {caller_emp.last_name}".strip()
                     employees = [
                         e for e in Employee.query.all()
-                        if e.is_active != False
+                        if (e.status or "").lower() != "inactive"
                         and is_manager_match(e.reporting_manager, manager_full_name)
                     ]
                 else:
@@ -1833,7 +1898,7 @@ def export_monthly_attendance():
             else:
                 employees = []
         else:
-            employees = [e for e in Employee.query.all() if e.is_active != False]
+            employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         # Fetch holidays and overrides within range
         from models.holiday import Holiday, HolidayOverride
@@ -1871,6 +1936,16 @@ def export_monthly_attendance():
             total_days_worked = 0.0
             total_leaves_taken = 0.0
             total_lop_days = 0.0
+            total_odw_days = 0.0
+
+            from models.shift_request import ShiftRequest
+            emp_wages = ShiftRequest.query.filter(
+                ShiftRequest.employee_id.in_([employee.employee_id, str(employee.id)]),
+                ShiftRequest.request_type == "One Day Wages",
+                ShiftRequest.status == "Approved",
+                ShiftRequest.from_date <= end_date,
+                ShiftRequest.to_date >= start_date
+            ).all()
 
             leave_dates_list = []
 
@@ -1912,32 +1987,41 @@ def export_monthly_attendance():
                     else:
                         leave_val = 1.0
 
-                if att:
-                    if att.status == "Present":
-                        total_days_worked += 1.0
-                    elif att.status == "Half Day":
-                        total_days_worked += 0.5
-                        if leave_val > 0.0:
-                            total_leaves_taken += min(leave_val, 0.5)
-                        else:
-                            total_lop_days += 0.5
-                    elif att.status == "Leave":
-                        total_leaves_taken += leave_val if leave_val > 0.0 else 1.0
-                    elif att.status == "Absent":
-                        total_lop_days += 1.0
+                # Check if there is an approved one day wages request covering this date
+                day_wages = [w for w in emp_wages if w.from_date <= d and w.to_date >= d]
+                is_odw = len(day_wages) > 0
+                if is_odw:
+                    total_odw_days += 1.0
+
+                if is_odw:
+                    total_days_worked += 1.0
                 else:
-                    if is_holiday or is_week_off:
-                        pass
-                    else:
-                        if leave_val > 0.0:
-                            total_leaves_taken += leave_val
-                            if leave_val < 1.0:
-                                total_lop_days += (1.0 - leave_val)
-                        else:
+                    if att:
+                        if att.status == "Present":
+                            total_days_worked += 1.0
+                        elif att.status == "Half Day":
+                            total_days_worked += 0.5
+                            if leave_val > 0.0:
+                                total_leaves_taken += min(leave_val, 0.5)
+                            else:
+                                total_lop_days += 0.5
+                        elif att.status == "Leave":
+                            total_leaves_taken += leave_val if leave_val > 0.0 else 1.0
+                        elif att.status == "Absent":
                             total_lop_days += 1.0
+                    else:
+                        if is_holiday or is_week_off:
+                            pass
+                        else:
+                            if leave_val > 0.0:
+                                total_leaves_taken += leave_val
+                                if leave_val < 1.0:
+                                    total_lop_days += (1.0 - leave_val)
+                            else:
+                                total_lop_days += 1.0
 
             total_days_cycle = num_days_in_cycle
-            days_payable = total_days_cycle - total_lop_days
+            days_payable = total_days_cycle + total_odw_days - total_lop_days
             leave_dates = ", ".join(leave_dates_list)
 
             ws.cell(
@@ -2008,14 +2092,19 @@ def export_monthly_attendance():
             ws.cell(
             row=row,
             column=11
-            ).value = leave_dates
+            ).value = total_odw_days
 
             ws.cell(
             row=row,
             column=12
+            ).value = leave_dates
+
+            ws.cell(
+            row=row,
+            column=13
             ).value = ""
 
-            for col in range(1, 13):
+            for col in range(1, 14):
 
                 c = ws.cell(
                     row=row,
@@ -2054,7 +2143,7 @@ def export_monthly_attendance():
         # =====================================
 
         ws.auto_filter.ref = (
-            f"A5:K{row}"
+            f"A5:M{row}"
         )
 
         # =====================================
@@ -2095,7 +2184,7 @@ def credit_monthly_leaves():
         current_month = datetime.now().strftime("%B")
         current_year = datetime.now().year
 
-        employees = [e for e in Employee.query.all() if e.is_active != False]
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         for employee in employees:
 
@@ -2327,7 +2416,7 @@ def export_paysheet():
 
             cell.border = thin_border
 
-        employees = [e for e in Employee.query.all() if e.is_active != False]
+        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
 
         row = 4
 
@@ -3313,7 +3402,7 @@ def approve_all_attendance():
             manager = Employee.query.filter_by(user_id=int(manager_id)).first()
             if manager:
                 manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
-                reporting_employees = [e for e in Employee.query.all() if e.is_active != False]
+                reporting_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
                 for employee in reporting_employees:
                     if not employee.reporting_manager:
                         continue
@@ -3393,7 +3482,7 @@ def reject_all_attendance():
             manager = Employee.query.filter_by(user_id=int(manager_id)).first()
             if manager:
                 manager_name = f"{manager.first_name} {manager.last_name}".strip().lower()
-                reporting_employees = [e for e in Employee.query.all() if e.is_active != False]
+                reporting_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
                 for employee in reporting_employees:
                     if not employee.reporting_manager:
                         continue

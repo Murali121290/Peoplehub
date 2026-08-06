@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BookLoader } from "../../components/ui/Spinner";
 import {
   CheckCircleIcon,
   XCircleIcon,
@@ -23,11 +24,14 @@ import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
 import { FormField, Input, Select } from "../../components/ui/Form";
+import { ConfirmDialog } from "../../components/ui/Modal/ConfirmDialog";
 
 type ToastType = "success" | "error" | "info";
 
 const MeetingRooms = () => {
   const [rooms, setRooms] = useState<any[]>([]);
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [bookings, setBookings] = useState<any[]>([]);
   const [selectedRoomForBooking, setSelectedRoomForBooking] = useState<string | number | undefined>(undefined);
 
@@ -58,8 +62,15 @@ const MeetingRooms = () => {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   useEffect(() => {
-    fetchRooms();
-    fetchBookings();
+    const init = async () => {
+      setIsPageLoading(true);
+      try {
+        await Promise.all([fetchRooms(), fetchBookings()]);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+    init();
   }, []);
 
   useEffect(() => {
@@ -187,13 +198,14 @@ const MeetingRooms = () => {
     }
   };
 
-  const handleDeleteRoom = async () => {
+  const handleDeleteRoom = () => {
     if (!editingRoomId) return;
+    setShowDeleteConfirm(true);
+  };
 
-    if (!window.confirm("Are you sure you want to delete this meeting room? This action will remove all associated bookings.")) {
-      return;
-    }
-
+  const confirmDeleteRoom = async () => {
+    if (!editingRoomId) return;
+    setShowDeleteConfirm(false);
     try {
       setIsDeletingRoom(true);
       await deleteRoom(editingRoomId);
@@ -208,6 +220,10 @@ const MeetingRooms = () => {
     } finally {
       setIsDeletingRoom(false);
     }
+  };
+
+  const cancelDeleteRoom = () => {
+    setShowDeleteConfirm(false);
   };
 
   const toastStyles = {
@@ -235,6 +251,10 @@ const MeetingRooms = () => {
     { label: "Board Room", value: "Board Room" },
     { label: "Training Room", value: "Training Room" },
   ];
+
+  if (isPageLoading) {
+    return <BookLoader />;
+  }
 
   return (
     <div className="min-h-screen bg-neutral-50 p-6">
@@ -451,6 +471,19 @@ const MeetingRooms = () => {
           }}
         />
       </Modal>
+
+      {showDeleteConfirm && (
+        <ConfirmDialog
+          isOpen={showDeleteConfirm}
+          title="Delete Meeting Room?"
+          message="Are you sure you want to delete this meeting room? This action will remove all associated bookings."
+          variant="danger"
+          confirmLabel="Yes, Delete"
+          cancelLabel="Cancel"
+          onConfirm={confirmDeleteRoom}
+          onCancel={cancelDeleteRoom}
+        />
+      )}
     </div>
   );
 };
