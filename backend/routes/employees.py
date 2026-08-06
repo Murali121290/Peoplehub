@@ -198,7 +198,7 @@ def create_employee():
 @employees_bp.route("/", methods=["GET"])
 def get_employees():
 
-    employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+    employees = [e for e in Employee.query.all() if e.is_active != False]
 
     today = date.today()
 
@@ -963,7 +963,7 @@ def update_employee_profile(employee_id):
         }), 500 
 @employees_bp.route('/list', methods=['GET'])
 def get_employees_list():
-    employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+    employees = [e for e in Employee.query.all() if e.is_active != False]
 
     return jsonify([
         {
@@ -994,7 +994,8 @@ def today_birthdays():
         employees = Employee.query.filter(
             Employee.dob.isnot(None),
             extract("month", Employee.dob) == today.month,
-            extract("day", Employee.dob) == today.day
+            extract("day", Employee.dob) == today.day,
+            Employee.is_active != False
         ).all()
 
         already_wished_ids = []
@@ -1033,7 +1034,8 @@ def today_anniversaries():
             Employee.joining_date.isnot(None),
             extract("month", Employee.joining_date) == today.month,
             extract("day", Employee.joining_date) == today.day,
-            extract("year", Employee.joining_date) < today.year
+            extract("year", Employee.joining_date) < today.year,
+            Employee.is_active != False
         ).all()
 
         return jsonify([
@@ -1066,7 +1068,7 @@ def get_team_overview():
 
         employees = [e for e in Employee.query.filter_by(
             team_id=team.id
-        ).all() if (e.status or '').lower() != 'inactive']
+        ).all() if e.is_active != False]
 
         employee_list = []
 
@@ -1149,7 +1151,7 @@ def get_my_team(user_id):
     ).all()
 
     result = []
-    all_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+    all_employees = [e for e in Employee.query.all() if e.is_active != False]
 
     for team_user in team_users:
 
@@ -1239,7 +1241,7 @@ def get_team_attendance(user_id):
                 is_admin = True
 
         today = date.today()
-        all_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+        all_employees = [e for e in Employee.query.all() if e.is_active != False]
         result = []
 
         if is_admin:
@@ -1522,7 +1524,7 @@ def get_reporting_employees(user_id):
 
         target_date = get_last_working_day()
 
-        all_employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+        all_employees = [e for e in Employee.query.all() if e.is_active != False]
 
         def _get_last_msg(history_list, role_name):
             if not isinstance(history_list, list):
@@ -1901,8 +1903,11 @@ def get_team_attendance_by_id(team_id):
 
         today = date.today()
         
-        # Get all employee records for these users
-        team_employees = Employee.query.filter(Employee.user_id.in_(user_ids)).all()
+        # Get all employee records for these users (excluding inactive)
+        team_employees = Employee.query.filter(
+            Employee.user_id.in_(user_ids),
+            Employee.is_active != False
+        ).all()
         # Batch fetch attendance for all team users today
         attendances = Attendance.query.filter(
             Attendance.user_id.in_(user_ids),

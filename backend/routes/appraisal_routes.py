@@ -350,8 +350,8 @@ def get_pending_appraisals():
             status="Pending Review"
         ).all()
 
-        # Batch fetch all data to avoid N+3 query loops
-        all_employees = Employee.query.all()
+        # Batch fetch all data to avoid N+3 query loops (exclude inactive)
+        all_employees = [e for e in Employee.query.all() if e.is_active != False]
         employee_map = {emp.id: emp for emp in all_employees}
 
         from models.appraisal import AppraisalCycle

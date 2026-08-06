@@ -964,9 +964,9 @@ def export_leave_report():
         # EMPLOYEE DATA
         # =========================
 
-        employees = Employee.query.order_by(
+        employees = [e for e in Employee.query.order_by(
             Employee.first_name
-        ).all()
+        ).all() if e.is_active != False]
 
         row = 5
 
@@ -1184,7 +1184,7 @@ def create_leave_policy():
         db.session.add(policy)
         db.session.commit()
 
-        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+        employees = [e for e in Employee.query.all() if e.is_active != False]
         for emp in employees:
             emp_gender = (emp.gender or "").strip().lower()
             pol_gender = applicable_gender.strip().lower()
