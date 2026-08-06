@@ -102,12 +102,10 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   }, [newEmp.team_id]);
 
   const validateForm = (e: any) => {
-    console.log("VALIDATE FORM CALLED");
 
     const errors: Record<string, boolean> = {};
 
     for (const field of requiredFields) {
-      console.log(field, "=", newEmp[field]);
 
       if (
         newEmp[field] === undefined ||
@@ -118,7 +116,6 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       }
     }
 
-    console.log("PROFILE IMAGE =", profileImage);
 
 
 
@@ -128,12 +125,10 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       return;
     }
 
-    console.log("ALL VALID");
 
     setFieldErrors({});
     setIsEmptyField(false);
 
-    console.log("NEW EMP =", newEmp);
 
     onSubmit(e);
   };

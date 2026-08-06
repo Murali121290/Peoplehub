@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { API_URL } from "../../config/api";
+import { API_URL, getProfileImageUrl } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
 import { CheckIcon, XMarkIcon, ArrowRightIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { Button } from "../../components/ui/Button";
@@ -330,7 +330,7 @@ const ShiftApprovalPage: React.FC = () => {
                         <td className="p-4 pl-6">
                           <div className="flex items-center gap-3">
                             <img
-                              src={item.profile_image ? `data:image/jpeg;base64,${item.profile_image}` : "/default-avatar.png"}
+                              src={getProfileImageUrl(item.profile_image, item.employee_id)}
                               alt={item.employee_name}
                               className="w-8 h-8 rounded-full object-cover border border-neutral-100"
                               onError={(e) => {

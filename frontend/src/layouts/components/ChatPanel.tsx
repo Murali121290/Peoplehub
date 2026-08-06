@@ -66,9 +66,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               <div
                 key={`emp-${index}`}
                 onClick={() => {
-  console.log(emp);
-  onSelectUser(emp);
-}}
+                  onSelectUser(emp);
+                }}
                 className={`p-3 border-b cursor-pointer hover:bg-gray-100 ${
                   selectedUser?.user_id === emp.user_id
                     ? "bg-blue-50"

@@ -11,6 +11,7 @@ import {
   ChatBubbleLeftEllipsisIcon,
 } from "@heroicons/react/24/outline";
 import { BookLoader } from "../../components/ui/Spinner";
+import { getProfileImageUrl } from "../../config/api";
 
 const formatWorkingHours = (hoursVal: any) => {
   if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "—";
@@ -385,11 +386,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         <td className="py-3.5 px-4">
                           <div className="flex items-center gap-2.5">
                             <img
-                              src={
-                                emp.profile_image
-                                  ? `data:image/jpeg;base64,${emp.profile_image}`
-                                  : "/default-avatar.png"
-                              }
+                              src={getProfileImageUrl(emp.profile_image, emp.employee_id || emp.id)}
                               alt={emp.employee_name}
                               className="w-8 h-8 rounded-full object-cover border border-neutral-200 shadow-sm bg-neutral-50"
                             />

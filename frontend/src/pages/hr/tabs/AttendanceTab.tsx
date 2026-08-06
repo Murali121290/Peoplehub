@@ -503,7 +503,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         const response = await fetch(url);
         const data = await response.json();
         setAttendanceData(data || []);
-        console.log("Attendance Data", data);
       } catch (error) {
         console.error("Attendance Error:", error);
       } finally {
@@ -557,8 +556,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         url += `?${queryParams.join("&")}`;
       }
 
-      console.log("BASE_URL =", BASE_URL);
-      console.log(url);
 
       const token = localStorage.getItem("token");
       const response = await fetch(url, {

@@ -50,10 +50,7 @@ export default function TelecomDirectory() {
       ? JSON.parse(localStorage.getItem("user") || "{}")
       : {};
 
-  // Debug
-  console.log("User Data:", user);
-  console.log("Role:", user?.role);
-  console.log("Access Level:", user?.access_level);
+
 
   // Support both role and access_level
   const isAdmin =
@@ -68,8 +65,7 @@ export default function TelecomDirectory() {
 
   const canEdit = isAdmin || isHR;
 
-  // Temporary testing
-  console.log("Can Edit:", canEdit);
+
 
   const [telecoms, setTelecoms] = useState<TelecomEntry[]>([]);
   const [loading, setLoading] = useState(true);

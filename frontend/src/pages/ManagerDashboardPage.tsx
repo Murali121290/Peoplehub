@@ -1,4 +1,4 @@
-import { API_URL } from "../config/api";
+import { API_URL, getProfileImageUrl } from "../config/api";
 import React, { useEffect, useMemo, useState } from "react";
 import { socket } from "../services/socket";
 import {
@@ -1568,7 +1568,7 @@ const ManagerDashboardPage = () => {
                               <div style={{ position: "relative", flexShrink: 0 }}>
                                 {member.profile_image ? (
                                   <img
-                                    src={`data:image/jpeg;base64,${member.profile_image}`}
+                                    src={getProfileImageUrl(member.profile_image, member.employee_id || member.id)}
                                     alt={member.name}
                                     style={{
                                       width: "52px",
@@ -2099,7 +2099,7 @@ const ManagerDashboardPage = () => {
                                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                                   {member.profile_image ? (
                                     <img
-                                      src={`data:image/jpeg;base64,${member.profile_image}`}
+                                      src={getProfileImageUrl(member.profile_image, member.employee_id || member.id)}
                                       alt={member.name}
                                       style={{ width: "36px", height: "36px", borderRadius: "10px", objectFit: "cover" }}
                                     />
@@ -2555,7 +2555,7 @@ const ManagerDashboardPage = () => {
               <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
                 {historyModalUser.profile_image ? (
                   <img
-                    src={`data:image/jpeg;base64,${historyModalUser.profile_image}`}
+                    src={getProfileImageUrl(historyModalUser.profile_image, historyModalUser.employee_id || historyModalUser.id)}
                     alt={historyModalUser.name}
                     style={{ width: "48px", height: "48px", borderRadius: "14px", objectFit: "cover" }}
                   />

@@ -57,7 +57,6 @@ const UserModal: React.FC<UserModalProps> = ({ user, onClose }) => {
 
       const data = await response.json();
 
-      console.log("Employees:", data);
 
       setEmployees(Array.isArray(data) ? data : []);
     } catch (error) {

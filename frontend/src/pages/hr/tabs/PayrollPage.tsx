@@ -59,7 +59,6 @@ const PayrollPage: React.FC = () => {
 
       setShowModal(true);
     } catch (err) {
-      console.log(err);
     }
   };
 

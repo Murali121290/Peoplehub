@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Coffee, UtensilsCrossed, Home, Clock } from "lucide-react";
-import { API_URL } from "../../../config/api";
+import { API_URL, getProfileImageUrl } from "../../../config/api";
 import { socket } from "../../../services/socket";
 
 interface OverviewTabProps {
@@ -149,19 +149,14 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
     <div className={`flex items-center gap-3 p-3 bg-white/80 hover:bg-white backdrop-blur-sm rounded-xl border shadow-sm transition-all hover:shadow-md ${member.is_shift_changed ? "border-indigo-200 bg-indigo-50/10" : member.is_wfh ? "border-blue-200 bg-blue-50/10" : member.is_permission ? "border-purple-200 bg-purple-50/10" : "border-white/50"}`}>
       <div className="flex-shrink-0">
         <div className="w-10 h-10 rounded-full overflow-hidden border border-gray-200 bg-gray-50">
-          {member.profile_image ? (
-            <img
-              src={`data:image/jpeg;base64,${member.profile_image}`}
-              alt={member.first_name}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <img
-              src="https://cdn-icons-png.flaticon.com/512/149/149071.png"
-              alt={member.first_name}
-              className="w-full h-full object-cover"
-            />
-          )}
+          <img
+            src={getProfileImageUrl(member.profile_image, member.employee_id || member.id)}
+            alt={member.first_name}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+            }}
+          />
         </div>
       </div>
       <div className="min-w-0 flex-1">

@@ -246,7 +246,6 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       const data = await res.json();
       setBirthdayEmployees(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.log(err);
     }
   };
 
@@ -701,7 +700,6 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const handleSelectUser = async (user: any) => {
-    console.log("SELECTED USER FULL:", user);
 
     try {
       setSelectedUser(user);
@@ -711,13 +709,9 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       const chatUserId = Number(
         selectedUser?.id || selectedUser?.user_id || selectedUser?.employee_id,
       );
-      console.log("CHAT USER ID:", chatUserId);
 
-      console.log("MY ID:", myId);
-      console.log("CHAT USER ID:", chatUserId);
 
       if (!selectedUser) {
-        console.log("No user selected");
         return;
       }
       const response = await fetch(

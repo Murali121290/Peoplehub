@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { DatePicker } from "../components/ui/DatePicker";
+import { getProfileImageUrl } from "../config/api";
 
 // ─── Moved OUTSIDE the parent component ───────────────────────────────────────
 
@@ -173,11 +174,7 @@ const Completeprofilepage = () => {
         const data = await res.json();
         setEmployeeInfo(data);
         if (data.profile_image) {
-          setProfilePreview(
-            data.profile_image.startsWith("data:")
-              ? data.profile_image
-              : `data:image/jpeg;base64,${data.profile_image}`
-          );
+          setProfilePreview(getProfileImageUrl(data.profile_image, data.id));
         }
         setFormData((prev) => ({
           ...prev,

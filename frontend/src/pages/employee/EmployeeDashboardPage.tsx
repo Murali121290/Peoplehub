@@ -1,4 +1,4 @@
-import { API_URL } from "../../config/api";
+import { API_URL, getProfileImageUrl } from "../../config/api";
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
@@ -87,7 +87,7 @@ const NewHireTab: React.FC<{ employees: any[] }> = ({ employees }) => {
                 <div className="flex items-center justify-between mb-4">
                   {/* Avatar / Profile Pic */}
                   <img
-                    src={emp.profile_image ? `data:image/jpeg;base64,${emp.profile_image}` : "/default-avatar.png"}
+                    src={getProfileImageUrl(emp.profile_image, emp.employee_id || emp.id)}
                     alt={`${emp.first_name} ${emp.last_name}`}
                     className="w-12 h-12 rounded-2xl object-cover border border-neutral-100 bg-neutral-50"
                     onError={(e) => {
@@ -172,10 +172,6 @@ const EmployeeDashboardPage: React.FC = () => {
   const currentEmployee = Array.isArray(employees)
     ? employees.find((emp: any) => Number(emp.user_id) === Number(user?.id))
     : null;
-  console.log(currentEmployee);
-  console.log("Reporting Manager:", currentEmployee?.reporting_manager);
-  console.log("Access Level:", user?.access_level);
-  console.log("Role:", user?.role);
   const managerName =
     `${currentEmployee?.first_name || ""} ${currentEmployee?.last_name || ""}`
       .trim()
@@ -486,7 +482,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
       const data = await res.json();
       setLeaveRequests(data);
     } catch (err) {
-      console.log(err);
     }
   };
 
@@ -500,14 +495,12 @@ if (isHalfDayLeave(leave.total_days)) return false;
       const data = await res.json();
       setShiftRequests(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.log(err);
     }
   };
 
   const loadManagerShiftRequests = async () => {
 
     if (!currentEmployee) {
-      console.log("Current employee not loaded");
       return;
     }
 
@@ -516,12 +509,10 @@ if (isHalfDayLeave(leave.total_days)) return false;
       const managerName =
         `${currentEmployee.first_name} ${currentEmployee.last_name}`.trim();
 
-      console.log("Logged In Manager:", managerName);
 
       const url =
         `${BASE_URL}/shifts/approvals/${encodeURIComponent(managerName)}`;
 
-      console.log("Request URL:", url);
 
       const res = await fetch(url);
 
@@ -533,7 +524,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
       const data = await res.json();
 
-      console.log("Approval Requests:", data);
 
       setManagerShiftRequests(
         Array.isArray(data) ? data : []
@@ -997,7 +987,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
         loadLeaves();
       }
     } catch (err) {
-      console.log(err);
     } finally {
       setIsActionLoading(false);
     }
@@ -1018,7 +1007,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
         loadLeaves();
       }
     } catch (err) {
-      console.log(err);
     } finally {
       setIsActionLoading(false);
     }
@@ -1044,7 +1032,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
         toast.error(data.message || "Failed to cancel leave");
       }
     } catch (err) {
-      console.log(err);
       toast.error("Error cancelling leave");
     } finally {
       setIsActionLoading(false);
@@ -1060,7 +1047,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
         return;
       }
 
-      console.log("Sending Shift Request:", shiftForm);
 
       const response = await fetch(`${BASE_URL}/shifts/`, {
         method: "POST",
@@ -1084,7 +1070,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
       const data = await response.json();
 
-      console.log(data);
 
       if (!response.ok) {
         toast.error(data.message);
@@ -1117,7 +1102,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
         loadManagerShiftRequests();
       }
     } catch (err) {
-      console.log(err);
     } finally {
       setIsActionLoading(false);
     }
@@ -1136,7 +1120,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
         loadManagerShiftRequests();
       }
     } catch (err) {
-      console.log(err);
     } finally {
       setIsActionLoading(false);
     }

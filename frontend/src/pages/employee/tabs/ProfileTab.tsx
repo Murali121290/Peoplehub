@@ -33,6 +33,7 @@ import Cropper from "react-easy-crop";
 import getCroppedImg from "../../../utils/cropImage";
 
 const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
+import { getProfileImageUrl } from "../../../config/api";
 
 const COUNTRY_CODES = [
   { value: "+91", label: "🇮🇳 IN" },
@@ -427,11 +428,7 @@ const ProfileTab = () => {
         setEmergencyDigits(eDigits);
 
         if (data.profile_image) {
-          setProfilePreview(
-            data.profile_image.startsWith("data:")
-              ? data.profile_image
-              : `data:image/jpeg;base64,${data.profile_image}`
-          );
+          setProfilePreview(getProfileImageUrl(data.profile_image, data.id));
         } else {
           setProfilePreview("");
         }

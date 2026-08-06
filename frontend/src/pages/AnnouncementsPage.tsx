@@ -3,6 +3,7 @@ import { socket } from "../socket";
 import { MegaphoneIcon } from "@heroicons/react/24/outline";
 import { Button } from "../components/ui/Button";
 import EmojiPicker from 'emoji-picker-react';
+import { getProfileImageUrl } from "../config/api";
 
 const AnnouncementsPage = () => {
   const [title, setTitle] = useState("");
@@ -109,11 +110,9 @@ const AnnouncementsPage = () => {
       message: message.trim(),
     };
 
-    console.log("Sending announcement:", announcementData);
 
     try {
       socket.emit("send_announcement", announcementData, (response: any) => {
-        console.log("Announcement response:", response);
       });
 
       setTimeout(() => {
@@ -488,7 +487,7 @@ const AnnouncementsPage = () => {
                         <div key={b.id} className="rounded-xl bg-neutral-50 p-3 hover:bg-neutral-100 transition-colors">
                           <div className="flex items-center gap-3">
                             {b.profile_image ? (
-                              <img src={`data:image/jpeg;base64,${b.profile_image}`} alt={b.first_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                              <img src={getProfileImageUrl(b.profile_image, b.id)} alt={b.first_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
                             ) : (
                               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
                                 {b.first_name?.[0]}
@@ -522,7 +521,7 @@ const AnnouncementsPage = () => {
                         <div key={a.id} className="rounded-xl bg-neutral-50 p-3 hover:bg-neutral-100 transition-colors">
                           <div className="flex items-center gap-3">
                             {a.profile_image ? (
-                              <img src={`data:image/jpeg;base64,${a.profile_image}`} alt={a.first_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                              <img src={getProfileImageUrl(a.profile_image, a.id)} alt={a.first_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
                             ) : (
                               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
                                 {a.first_name?.[0]}
