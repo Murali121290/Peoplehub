@@ -28,8 +28,8 @@ def get_notifications(manager_name):
     from models.birthday_wish import BirthdayWish
     from models.employee import Employee
 
-    # Batch fetch all employees and birthday wishes to prevent N+1 queries
-    all_employees = Employee.query.all()
+    # Batch fetch all employees and birthday wishes to prevent N+1 queries (exclude inactive)
+    all_employees = [e for e in Employee.query.all() if e.is_active != False]
     employee_map = {emp.id: emp for emp in all_employees}
 
     all_wishes = BirthdayWish.query.all()

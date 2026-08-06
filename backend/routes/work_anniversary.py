@@ -17,7 +17,8 @@ def get_today_work_anniversaries():
 
     employees = Employee.query.filter(
     extract("month", Employee.joining_date) == today.month,
-    extract("day", Employee.joining_date) == today.day
+    extract("day", Employee.joining_date) == today.day,
+    Employee.is_active != False
     ).all()
 
     anniversaries = []

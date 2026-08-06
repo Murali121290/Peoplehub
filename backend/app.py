@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 # Import models & database
 from models.database import init_db, engine, db_session
