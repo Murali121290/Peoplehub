@@ -28,6 +28,15 @@ def serialize_leave(leave):
     except:
         pass
 
+    leave_duration = "Full Day"
+    if leave.total_days and leave.total_days <= 0.5:
+        if leave.reason and " (First Half)" in leave.reason:
+            leave_duration = "First Half"
+        elif leave.reason and " (Second Half)" in leave.reason:
+            leave_duration = "Second Half"
+        else:
+            leave_duration = "First Half"
+
     return {
         "id": leave.id,
         "employee_id": emp_string_id,
@@ -36,6 +45,7 @@ def serialize_leave(leave):
         "from_date": str(leave.from_date) if leave.from_date else None,
         "to_date": str(leave.to_date) if leave.to_date else None,
         "total_days": leave.total_days,
+        "leave_duration": leave_duration,
         "reporting_manager": leave.reporting_manager,
         "handover_to": leave.handover_to,
         "emergency_contact": leave.emergency_contact,
@@ -423,7 +433,7 @@ def cancel_leave(leave_id):
         today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
         start_date = leave.permission_date if leave.request_type == "Permission" else leave.from_date
         
-        if start_date and today > start_date:
+        if leave.status == "Approved" and start_date and today > start_date:
             return jsonify({
                 "success": False,
                 "error": "Cannot cancel a leave request from the past."
@@ -664,7 +674,7 @@ def cancel_approved_leave(leave_id):
                 "message": "Leave start date is missing."
             }), 400
 
-        if today >= start_date:
+        if leave.status == "Approved" and today >= start_date:
             return jsonify({
                 "success": False,
                 "message": "Leave cannot be cancelled once the leave start date has begun."
@@ -1304,4 +1314,181 @@ def get_employee_balances(employee_id):
             for b in balances
         ]), 200
     except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@leave_bp.route("/balances/<int:employee_id>", methods=["PUT"])
+def update_employee_balances(employee_id):
+    try:
+        from models.leave import EmployeeLeaveBalance
+        data = request.get_json()
+        
+        for leave_type, available in data.items():
+            balance = EmployeeLeaveBalance.query.filter_by(
+                employee_id=employee_id,
+                leave_type=leave_type
+            ).first()
+            if balance:
+                balance.available = float(available)
+            else:
+                balance = EmployeeLeaveBalance(
+                    employee_id=employee_id,
+                    leave_type=leave_type,
+                    available=float(available)
+                )
+                db.session.add(balance)
+        
+        db.session.commit()
+        return jsonify({"success": True, "message": "Leave balances updated successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@leave_bp.route("/resolve-absent", methods=["POST"])
+def resolve_absent():
+    try:
+        from models.employee import Employee
+        from models.attendance import Attendance
+        from models.leave import EmployeeLeaveBalance, LeaveRequest
+        
+        data = request.get_json()
+        employee_id = data.get("employee_id")
+        date_str = data.get("date")
+        action = data.get("action")
+        reason = data.get("reason", "").strip() or "Applied from Attendance Calendar"
+        
+        employee = Employee.query.get(employee_id)
+        if not employee:
+            return jsonify({"success": False, "error": "Employee not found"}), 404
+            
+        target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        
+        att = Attendance.query.filter_by(
+            user_id=employee.user_id,
+            attendance_date=target_date
+        ).first()
+        
+        now = datetime.utcnow()
+        
+        if action == "LOP":
+            if not att:
+                att = Attendance(
+                    user_id=employee.user_id,
+                    attendance_date=target_date,
+                    status="Absent",
+                    is_lop=True
+                )
+                db.session.add(att)
+            else:
+                att.status = "Absent"
+                att.is_lop = True
+                
+            leave = LeaveRequest(
+                employee_id=employee.id,
+                employee_name=f"{employee.first_name} {employee.last_name}".strip(),
+                request_type="Leave",
+                leave_type="Loss of Pay",
+                from_date=target_date,
+                to_date=target_date,
+                total_days=1.0,
+                status="Approved",
+                reason=reason,
+                reporting_manager=employee.reporting_manager,
+                approved_by="Auto Approved",
+                created_at=now,
+                approved_at=now
+            )
+            db.session.add(leave)
+            db.session.commit()
+            
+            try:
+                from extensions import socketio
+                socketio.emit("leave_update", {
+                    "id": leave.id,
+                    "employee_id": employee.employee_id,
+                    "employee_name": leave.employee_name,
+                    "leave_type": leave.leave_type,
+                    "from_date": str(leave.from_date),
+                    "to_date": str(leave.to_date),
+                    "total_days": leave.total_days,
+                    "status": leave.status
+                })
+            except Exception as se:
+                print("Resolve absent socket emit failed for LOP:", se)
+                
+            return jsonify({"success": True, "message": "Marked as Loss of Pay (LOP) and leave request recorded"}), 200
+            
+        else:
+            leave_type = action.strip()
+            
+            from sqlalchemy import func
+            balance = EmployeeLeaveBalance.query.filter(
+                EmployeeLeaveBalance.employee_id == employee.id,
+                func.lower(EmployeeLeaveBalance.leave_type) == leave_type.lower()
+            ).first()
+            
+            if not balance or balance.available < 1.0:
+                return jsonify({"success": False, "error": "No leave found"}), 400
+                
+            balance.available = max(0.0, balance.available - 1.0)
+            
+            lt_lower = leave_type.lower()
+            if lt_lower == "sick leave":
+                employee.sick_leave = max(0.0, (employee.sick_leave or 0.0) - 1.0)
+            elif lt_lower == "casual leave":
+                employee.casual_leave = max(0.0, (employee.casual_leave or 0.0) - 1.0)
+            elif lt_lower in ["earned leave", "privilege leave"]:
+                employee.privilege_leave = max(0.0, (employee.privilege_leave or 0.0) - 1.0)
+                
+            leave = LeaveRequest(
+                employee_id=employee.id,
+                employee_name=f"{employee.first_name} {employee.last_name}".strip(),
+                request_type="Leave",
+                leave_type=leave_type,
+                from_date=target_date,
+                to_date=target_date,
+                total_days=1.0,
+                status="Approved",
+                reason=reason,
+                reporting_manager=employee.reporting_manager,
+                approved_by="Auto Approved",
+                created_at=now,
+                approved_at=now
+            )
+            db.session.add(leave)
+            
+            if not att:
+                att = Attendance(
+                    user_id=employee.user_id,
+                    attendance_date=target_date,
+                    status="Leave",
+                    leave_type=leave_type,
+                    is_lop=False
+                )
+                db.session.add(att)
+            else:
+                att.status = "Leave"
+                att.leave_type = leave_type
+                att.is_lop = False
+                
+            db.session.commit()
+            
+            try:
+                from extensions import socketio
+                socketio.emit("leave_update", {
+                    "id": leave.id,
+                    "employee_id": employee.employee_id,
+                    "employee_name": leave.employee_name,
+                    "leave_type": leave.leave_type,
+                    "from_date": str(leave.from_date),
+                    "to_date": str(leave.to_date),
+                    "total_days": leave.total_days,
+                    "status": leave.status
+                })
+            except Exception as se:
+                print("Resolve absent socket emit failed:", se)
+                
+            return jsonify({"success": True, "message": f"{leave_type} auto-approved and balance updated"}), 200
+            
+    except Exception as e:
+        db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500

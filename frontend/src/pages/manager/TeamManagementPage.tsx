@@ -167,7 +167,7 @@ const TeamManagementPage: React.FC = () => {
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="bg-gradient-to-r from-red-800/10 via-red-700/5 to-transparent border-b border-neutral-200 sticky top-0 z-40">
+      <div className="bg-gradient-to-r from-primary-800/10 via-primary-700/5 to-transparent border-b border-neutral-200 sticky top-0 z-40">
 
         {/* Tab Navigation */}
         <div className="border-t border-neutral-200 bg-white">
@@ -183,8 +183,8 @@ const TeamManagementPage: React.FC = () => {
                     onClick={() => setActiveTab(tab.id)}
                     className={`px-5 py-3 text-sm font-bold whitespace-nowrap border-b-2 rounded-t-xl transition-all duration-200 flex items-center gap-2 relative ${
                       isActive
-                        ? "border-red-800 text-red-900 bg-red-50/40 font-extrabold shadow-sm"
-                        : "border-transparent text-neutral-600 hover:text-red-800 hover:bg-red-50/10"
+                        ? "border-primary-600 text-primary-700 bg-primary-50/40 font-extrabold shadow-sm"
+                        : "border-transparent text-neutral-600 hover:text-primary-600 hover:bg-primary-50/10"
                     }`}
                   >
                     <span className="text-base transition-transform duration-200">{tab.icon}</span>
@@ -192,8 +192,8 @@ const TeamManagementPage: React.FC = () => {
                     {pendingCount > 0 && (
                       <span className={`ml-1.5 flex h-5.5 px-2 min-w-[22px] items-center justify-center rounded-full text-[10px] font-extrabold text-white shadow-md ring-2 transition-all ${
                         isActive 
-                          ? "bg-red-800 ring-red-100" 
-                          : "bg-red-700 ring-white"
+                          ? "bg-primary-600 ring-primary-100" 
+                          : "bg-primary-500 ring-white"
                       }`}>
                         {pendingCount > 9 ? "9+" : pendingCount}
                       </span>

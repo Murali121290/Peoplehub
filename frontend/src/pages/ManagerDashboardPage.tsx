@@ -319,12 +319,21 @@ const ManagerDashboardPage = () => {
     return cycles;
   };
 
-  const handleMemberClick = (member: any) => {
-    if (member.is_reporting_manager && member.user_id) {
-      setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
-    } else {
-      viewEmployeeHistory(member);
+  const handleMemberClick = async (member: any) => {
+    if (member.is_reporting_manager && member.user_id && member.report_count && member.report_count > 0) {
+      // Verify the employee actually has team members before drilling down
+      try {
+        const res = await fetch(`${BASE_URL}/employees/my-team/${member.user_id}`);
+        const subTeam = await res.json();
+        if (Array.isArray(subTeam) && subTeam.length > 0) {
+          setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
+          return;
+        }
+      } catch (_) {
+        // Fall through to history on error
+      }
     }
+    viewEmployeeHistory(member);
   };
 
   const viewEmployeeHistory = async (member: any) => {
@@ -917,7 +926,7 @@ const ManagerDashboardPage = () => {
   };
 
   if (isPageLoading) {
-    return <BookLoader label="Loading manager dashboard..." />;
+    return <BookLoader />;
   }
 
   return (
@@ -2717,19 +2726,41 @@ const ManagerDashboardPage = () => {
                               {formattedDate}
                             </td>
                             <td style={{ padding: "12px 16px" }}>
-                              <span
-                                style={{
-                                  display: "inline-flex",
-                                  padding: "4px 10px",
-                                  borderRadius: "999px",
-                                  background: pillBg,
-                                  color: pillText,
-                                  fontSize: "11px",
-                                  fontWeight: 800,
-                                }}
-                              >
-                                {status}
-                              </span>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
+                                <span
+                                  style={{
+                                    display: "inline-flex",
+                                    padding: "4px 10px",
+                                    borderRadius: "999px",
+                                    background: pillBg,
+                                    color: pillText,
+                                    fontSize: "11px",
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  {status}
+                                </span>
+                                {record.is_one_day_wages && (
+                                  <span
+                                    title={`One Day Wages: ${record.wages_status || "Pending"}`}
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                      padding: "2px 8px",
+                                      borderRadius: "999px",
+                                      background: record.wages_status === "Approved" ? "#fef3c7" : "#f9fafb",
+                                      border: `1px solid ${record.wages_status === "Approved" ? "#fbbf24" : "#e2e8f0"}`,
+                                      color: record.wages_status === "Approved" ? "#92400e" : "#64748b",
+                                      fontSize: "10px",
+                                      fontWeight: 800,
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    ⭐ ODW: {record.wages_status || "Pending"}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             {/* Web site entry */}
                             <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", color: record.checkIn !== "-" ? THEME.text : THEME.textSoft }}>

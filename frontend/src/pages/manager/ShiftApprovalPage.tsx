@@ -346,10 +346,13 @@ const ShiftApprovalPage: React.FC = () => {
                         <td className="p-4 text-xs font-normal">
                           {(() => {
                             const isWorkMode = item.request_type === "WFH" || item.request_type === "Office";
-                            const label = item.request_type === "WFH" ? "WFH" : item.request_type === "Office" ? "Office" : "Shift";
+                            const isOneDayWages = item.request_type === "One Day Wages";
+                            const label = item.request_type || "Shift";
                             return (
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWorkMode
                                 ? "bg-purple-50 text-purple-700 border-purple-200"
+                                : isOneDayWages
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
                                 : "bg-blue-50 text-blue-700 border-blue-200"
                               }`}>
                                 {label}
@@ -358,7 +361,7 @@ const ShiftApprovalPage: React.FC = () => {
                           })()}
                         </td>
                         <td className="p-4 text-xs text-neutral-600">
-                          {(() => {
+                          {item.request_type === "One Day Wages" ? "—" : (() => {
                             const curMode = item.current_work_mode || (item.current_shift?.toUpperCase() === "WFH" ? "WFH" : (item.request_type === "Office" ? "WFH" : "Office"));
                             const showCurSuffix = curMode && item.current_shift?.toUpperCase() !== curMode.toUpperCase();
                             return (
@@ -374,7 +377,7 @@ const ShiftApprovalPage: React.FC = () => {
                           })()}
                         </td>
                         <td className="p-4 text-xs font-medium text-neutral-800">
-                          {(() => {
+                          {item.request_type === "One Day Wages" ? "One Day Wages" : (() => {
                             const reqMode = item.requested_work_mode || (item.request_type === "WFH" ? "WFH" : "Office");
                             const showReqSuffix = reqMode && item.requested_shift?.toUpperCase() !== reqMode.toUpperCase();
                             return (

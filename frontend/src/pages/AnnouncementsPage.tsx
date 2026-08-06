@@ -4,6 +4,8 @@ import { MegaphoneIcon } from "@heroicons/react/24/outline";
 import { Button } from "../components/ui/Button";
 import EmojiPicker from 'emoji-picker-react';
 import { getProfileImageUrl } from "../config/api";
+import { BookLoader } from "../components/ui/Spinner";
+
 
 const AnnouncementsPage = () => {
   const [title, setTitle] = useState("");
@@ -11,6 +13,7 @@ const AnnouncementsPage = () => {
   const [message, setMessage] = useState("");
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPageLoading, setIsPageLoading] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterRole, setFilterRole] = useState("all");
@@ -46,8 +49,18 @@ const AnnouncementsPage = () => {
   };
 
   useEffect(() => {
-    fetchAnnouncements();
-    fetchCelebrations();
+    const init = async () => {
+      setIsPageLoading(true);
+      try {
+        await Promise.all([fetchAnnouncements(), fetchCelebrations()]);
+      } catch (error) {
+        console.error("Initialization Error:", error);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+    init();
+
     socket.on("receive_announcement", (newAnnouncement) => {
       const userLevel = (user.access_level || "").toLowerCase();
       const target = (newAnnouncement.target_role || "all").toLowerCase();
@@ -227,6 +240,10 @@ const AnnouncementsPage = () => {
     if (!name) return "HR";
     return name.split(" ").map(n => n[0]).join("").toUpperCase().substring(0, 2);
   };
+
+  if (isPageLoading) {
+    return <BookLoader />;
+  }
 
   return (
     <div className="min-h-screen bg-neutral-100 px-4 py-8 md:px-8">
@@ -482,20 +499,20 @@ const AnnouncementsPage = () => {
                       <span className="text-lg">🎂</span>
                       <span>Birthdays Today ({todayBirthdays.length})</span>
                     </h3>
-                    <div className="space-y-3">
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
                       {todayBirthdays.map((b: any) => (
-                        <div key={b.id} className="rounded-xl bg-neutral-50 p-3 hover:bg-neutral-100 transition-colors">
-                          <div className="flex items-center gap-3">
+                        <div key={b.id} className="rounded-xl bg-neutral-50 p-4 hover:bg-neutral-100 transition-colors">
+                          <div className="flex flex-col items-center text-center gap-2.5">
                             {b.profile_image ? (
                               <img src={getProfileImageUrl(b.profile_image, b.id)} alt={b.first_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
                             ) : (
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-white flex items-center justify-center font-bold text-2xl flex-shrink-0 shadow-sm">
                                 {b.first_name?.[0]}
                               </div>
                             )}
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-semibold text-sm text-neutral-900">{b.first_name} {b.last_name}</h4>
-                              {b.department && <p className="text-xs text-neutral-600">{b.department}</p>}
+                            <div className="min-w-0">
+                              <h4 className="font-semibold text-sm text-neutral-900 leading-snug">{b.first_name} {b.last_name}</h4>
+                              {b.department && <p className="text-xs text-neutral-500 font-medium mt-0.5">{b.department}</p>}
                             </div>
                           </div>
                         </div>
@@ -516,20 +533,20 @@ const AnnouncementsPage = () => {
                       <span className="text-lg">🏆</span>
                       <span>Anniversaries ({todayAnniversaries.length})</span>
                     </h3>
-                    <div className="space-y-3">
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
                       {todayAnniversaries.map((a: any) => (
-                        <div key={a.id} className="rounded-xl bg-neutral-50 p-3 hover:bg-neutral-100 transition-colors">
-                          <div className="flex items-center gap-3">
+                        <div key={a.id} className="rounded-xl bg-neutral-50 p-4 hover:bg-neutral-100 transition-colors">
+                          <div className="flex flex-col items-center text-center gap-2.5">
                             {a.profile_image ? (
                               <img src={getProfileImageUrl(a.profile_image, a.id)} alt={a.first_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
                             ) : (
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center font-bold text-2xl flex-shrink-0 shadow-sm">
                                 {a.first_name?.[0]}
                               </div>
                             )}
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-semibold text-sm text-neutral-900">{a.first_name} {a.last_name}</h4>
-                              <p className="text-xs text-amber-700 font-medium">{a.years} {a.years === 1 ? 'Year' : 'Years'} Milestone</p>
+                            <div className="min-w-0">
+                              <h4 className="font-semibold text-sm text-neutral-900 leading-snug">{a.first_name} {a.last_name}</h4>
+                              <p className="text-xs text-amber-700 font-semibold mt-0.5">{a.years} {a.years === 1 ? 'Year' : 'Years'} Milestone</p>
                             </div>
                           </div>
                         </div>

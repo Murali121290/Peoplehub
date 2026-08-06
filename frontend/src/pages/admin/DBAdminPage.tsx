@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import { BuildingOfficeIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { API_URL } from "../../config/api";
+import { ConfirmDialog } from "../../components/ui/Modal/ConfirmDialog";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -10,6 +11,7 @@ export default function DBAdminPage() {
   const [selectedTable, setSelectedTable] = useState<string>('');
   const [tableData, setTableData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [deletingRecordVal, setDeletingRecordVal] = useState<{ idVal: any; pkCol: string } | null>(null);
 
   useEffect(() => {
     fetchTables();
@@ -66,21 +68,22 @@ export default function DBAdminPage() {
     }
   };
 
-  const handleDelete = async (row: any) => {
+  const handleDelete = (row: any) => {
     if (!tableData?.pk_columns?.length) {
       toast.error("Cannot delete from a table without a primary key.");
       return;
     }
-    
-    const pk_col = tableData.pk_columns[0];
-    const id_val = row[pk_col];
+    const pkCol = tableData.pk_columns[0];
+    const idVal = row[pkCol];
+    setDeletingRecordVal({ idVal, pkCol });
+  };
 
-    if (!window.confirm(`Are you sure you want to delete this record (${pk_col}: ${id_val})?`)) {
-      return;
-    }
-
+  const confirmDeleteRecord = async () => {
+    if (!deletingRecordVal) return;
+    const { idVal } = deletingRecordVal;
+    setDeletingRecordVal(null);
     try {
-      const response = await fetch(`${BASE_URL}/admin/db/tables/${selectedTable}/${id_val}`, {
+      const response = await fetch(`${BASE_URL}/admin/db/tables/${selectedTable}/${idVal}`, {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${localStorage.getItem("token")}`
@@ -97,6 +100,10 @@ export default function DBAdminPage() {
       console.error(error);
       toast.error("Error deleting record");
     }
+  };
+
+  const cancelDeleteRecord = () => {
+    setDeletingRecordVal(null);
   };
 
   return (
@@ -174,6 +181,18 @@ export default function DBAdminPage() {
               </tbody>
             </table>
           </div>
+        )}
+        {deletingRecordVal && (
+          <ConfirmDialog
+            isOpen={deletingRecordVal !== null}
+            title="Delete Record?"
+            message={`Are you sure you want to delete this record (${deletingRecordVal.pkCol}: ${deletingRecordVal.idVal})?`}
+            variant="danger"
+            confirmLabel="Yes, Delete"
+            cancelLabel="Cancel"
+            onConfirm={confirmDeleteRecord}
+            onCancel={cancelDeleteRecord}
+          />
         )}
       </div>
     </div>

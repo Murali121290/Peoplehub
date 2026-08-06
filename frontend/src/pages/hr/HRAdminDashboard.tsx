@@ -707,7 +707,7 @@ export default function HRAdminDashboard() {
   }));
 
   if (isPageLoading) {
-    return <BookLoader label="Loading admin dashboard..." />;
+    return <BookLoader />;
   }
 
   return (
@@ -823,7 +823,7 @@ export default function HRAdminDashboard() {
         {nav === "payroll" && <PayrollPage />}
         {nav === "performance" && <PerformanceTab />}
         {nav === "documents" && <DocumentsTab />}
-        {nav === "settings" && <SettingsTab />}
+        {nav === "settings" && <SettingsTab employees={employees} />}
       </main>
 
       {/* Modals */}
