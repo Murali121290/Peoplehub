@@ -1241,7 +1241,8 @@ def get_team_attendance(user_id):
                 is_admin = True
 
         today = date.today()
-        all_employees = [e for e in Employee.query.all() if e.is_active != False]
+        # Filter with database, not in Python
+        all_employees = Employee.query.filter(Employee.is_active != False).all()
         result = []
 
         if is_admin:
@@ -1252,24 +1253,71 @@ def get_team_attendance(user_id):
             manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
             reporting_list = [e for e in all_employees if is_manager_match(e.reporting_manager, manager_full_name)]
 
-        # Batch fetch approved permissions for all reporting employees today
+        # Get list of reporting employee IDs and user IDs for batch queries
+        reporting_emp_ids = [str(e.id) for e in reporting_list] + [e.employee_id for e in reporting_list if e.employee_id]
+        reporting_user_ids = [e.user_id for e in reporting_list]
+
+        # BATCH FETCH: Permissions
         permissions = LeaveRequest.query.filter(
             LeaveRequest.request_type == "Permission",
             LeaveRequest.status == "Approved",
-            LeaveRequest.permission_date == today
+            LeaveRequest.permission_date == today,
+            LeaveRequest.employee_id.in_(reporting_emp_ids)
         ).all()
 
         permission_by_employee = {}
         for p in permissions:
             permission_by_employee[str(p.employee_id)] = p
 
+        # BATCH FETCH: All attendance for reporting employees today
+        attendances = Attendance.query.filter(
+            Attendance.user_id.in_(reporting_user_ids),
+            Attendance.attendance_date == today
+        ).all()
+        attendance_by_user = {a.user_id: a for a in attendances}
+
+        # BATCH FETCH: All leave requests for reporting employees today
+        leave_requests_batch = LeaveRequest.query.filter(
+            LeaveRequest.employee_id.in_(reporting_emp_ids),
+            LeaveRequest.status == "Approved",
+            LeaveRequest.request_type == "Leave",
+            LeaveRequest.from_date <= today,
+            LeaveRequest.to_date >= today
+        ).order_by(LeaveRequest.created_at.desc()).all()
+
+        leave_by_employee = {}
+        for lr in leave_requests_batch:
+            emp_key = str(lr.employee_id)
+            if emp_key not in leave_by_employee:
+                leave_by_employee[emp_key] = lr
+
+        # BATCH FETCH: All shift requests for reporting employees today
+        from models.shift_request import ShiftRequest
+        shift_requests_batch = ShiftRequest.query.filter(
+            ShiftRequest.employee_id.in_(reporting_emp_ids),
+            ShiftRequest.status == "Approved",
+            ShiftRequest.from_date <= today,
+            ShiftRequest.to_date >= today
+        ).order_by(ShiftRequest.created_at.desc()).all()
+
+        shifts_by_employee = {}
+        for sr in shift_requests_batch:
+            emp_key = str(sr.employee_id)
+            if emp_key not in shifts_by_employee:
+                shifts_by_employee[emp_key] = sr
+
+        # Build manager lookup (for reporting manager check)
+        manager_lookup = {}
+        for emp in all_employees:
+            emp_full_name = f"{emp.first_name} {emp.last_name}".strip().lower()
+            if emp_full_name not in manager_lookup:
+                manager_lookup[emp_full_name] = []
+            manager_lookup[emp_full_name].append(emp)
+
         for emp in reporting_list:
 
-            # Today's attendance
-            attendance = Attendance.query.filter_by(
-                user_id=emp.user_id,
-                attendance_date=today
-            ).first()
+            # Get pre-fetched attendance (no query!)
+            attendance = attendance_by_user.get(emp.user_id)
 
             # Check if Permission is active now
             emp_permission = (
@@ -1297,38 +1345,23 @@ def get_team_attendance(user_id):
                 t_sec = t_time.hour * 3600 + t_time.minute * 60 + t_time.second
                 permission_hours = max(t_sec - f_sec, 0) / 3600.0
 
-            # Check leave for today - get latest request if multiple exist
-            leave_requests_today = LeaveRequest.query.filter(
-                or_(
-                    LeaveRequest.employee_id == str(emp.id),
-                    LeaveRequest.employee_id == emp.employee_id
-                ),
-                LeaveRequest.status == "Approved",
-                LeaveRequest.request_type == "Leave",
-                LeaveRequest.from_date <= today,
-                LeaveRequest.to_date >= today
-            ).order_by(LeaveRequest.created_at.desc()).all()
+            # Get pre-fetched leave (no query!)
+            on_leave = leave_by_employee.get(str(emp.id)) or leave_by_employee.get(emp.employee_id)
 
-            # Latest leave request takes precedence
-            on_leave = leave_requests_today[0] if leave_requests_today else None
+            # Get pre-fetched shift request (no query!)
+            latest_request = shifts_by_employee.get(str(emp.id)) or shifts_by_employee.get(emp.employee_id)
 
-            # Check WFH and Shift Change for today
-            from models.shift_request import ShiftRequest
-            emp_ids = [emp.employee_id] if emp.employee_id else []
-
-            # Get ALL approved requests for today, sorted by created_at (latest first)
-            all_requests_today = ShiftRequest.query.filter(
-                ShiftRequest.employee_id.in_(emp_ids),
-                ShiftRequest.status == "Approved",
-                ShiftRequest.from_date <= today,
-                ShiftRequest.to_date >= today
-            ).order_by(ShiftRequest.created_at.desc()).all()
-
-            # The latest request takes precedence
-            latest_request = all_requests_today[0] if all_requests_today else None
-
-            wfh_today = next((r for r in all_requests_today if r.request_type == "WFH"), None)
-            shift_change_today = next((r for r in all_requests_today if r.request_type == "Shift"), None)
+            wfh_today = None
+            shift_change_today = None
+            # Find WFH and Shift from pre-fetched data
+            for sr in shift_requests_batch:
+                if str(sr.employee_id) == str(emp.id) or sr.employee_id == emp.employee_id:
+                    if sr.request_type == "WFH" and not wfh_today:
+                        wfh_today = sr
+                    elif sr.request_type == "Shift" and not shift_change_today:
+                        shift_change_today = sr
+                    if wfh_today and shift_change_today:
+                        break
 
             if attendance:
                 if attendance.check_in or attendance.card_check_in:
@@ -1380,16 +1413,13 @@ def get_team_attendance(user_id):
                 check_out = None
                 working_hours = 0
 
+            # Check if this employee is a reporting manager using pre-built lookup
             emp_full_name = f"{emp.first_name} {emp.last_name}".strip().lower()
             is_reporting_manager = False
             report_count = 0
-            for other in all_employees:
-                if not other.reporting_manager:
-                    continue
-                o_mgr = other.reporting_manager.strip().lower()
-                if (o_mgr == emp_full_name) or (len(o_mgr.split()) == 1 and emp_full_name.split()[0] == o_mgr) or (len(emp_full_name.split()) == 1 and o_mgr.split()[0] == emp_full_name):
-                    is_reporting_manager = True
-                    report_count += 1
+            if emp_full_name in manager_lookup:
+                is_reporting_manager = True
+                report_count = len(manager_lookup[emp_full_name])
 
             result.append({
                 "id": emp.id,
@@ -1926,10 +1956,11 @@ def get_team_attendance_by_id(team_id):
         ).all()
         leave_by_employee = {str(l.employee_id): l for l in leaves}
 
-        # Batch fetch ALL approved shift requests (Shift, WFH, Office) for all team employees today
+        # Batch fetch ALL approved shift requests (Shift, WFH, Office) for TEAM employees today
         # Latest request (by created_at) takes precedence
         from models.shift_request import ShiftRequest
         all_shift_requests = ShiftRequest.query.filter(
+            ShiftRequest.employee_id.in_(employee_ids),
             ShiftRequest.status == "Approved",
             ShiftRequest.from_date <= today,
             ShiftRequest.to_date >= today
