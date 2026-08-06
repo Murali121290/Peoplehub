@@ -196,7 +196,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
         )}
         {member.status === "Leave" && member.total_days != null && member.total_days <= 0.5 && (
           <p className="text-[10px] text-rose-600 font-bold mt-0.5">
-            {member.leave_type?.toLowerCase().includes("first") ? "First Half Leave" : "Second Half Leave"}
+            Leave: {member.leave_duration === "First Half" || member.leave_type?.toLowerCase().includes("first") ? "First Half" : "Second Half"}
           </p>
         )}
       </div>

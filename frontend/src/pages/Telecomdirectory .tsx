@@ -1,4 +1,5 @@
 import { API_URL } from "../config/api";
+import { BookLoader } from "../components/ui/Spinner";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -348,6 +349,10 @@ export default function TelecomDirectory() {
       </svg>
     </span>
   );
+
+  if (loading) {
+    return <BookLoader />;
+  }
 
   return (
     <div className="min-h-screen bg-neutral-100 p-4 sm:p-6">

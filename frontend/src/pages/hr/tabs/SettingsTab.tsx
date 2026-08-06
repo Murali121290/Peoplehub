@@ -9,21 +9,23 @@ import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 const API_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
 
-const SETTINGS = [
-  { label: "System Notifications", sub: "Receive dashboard notifications", default: true },
-  { label: "Email Alerts for Leave Requests", sub: "Get notified when leaves are requested", default: true },
-  { label: "Auto-approve Leaves under 2 days", sub: "Automatically approve short leaves", default: false },
-  { label: "Daily Attendance Report", sub: "Receive daily attendance summary", default: true },
-  { label: "Performance Review Reminders", sub: "Get reminded before review deadlines", default: true },
-];
+interface SettingsTabProps {
+  employees?: any[];
+}
 
-const SettingsTab: React.FC = () => {
+const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
   const [policies, setPolicies] = useState<any[]>([]);
   const [newLeaveType, setNewLeaveType] = useState('');
   const [newLimit, setNewLimit] = useState<number>(0);
   const [newApplicableGender, setNewApplicableGender] = useState('All');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+
+  // Individual employee balance override states
+  const [selectedEmpId, setSelectedEmpId] = useState<string>("");
+  const [balances, setBalances] = useState<any[]>([]);
+  const [isBalancesLoading, setIsBalancesLoading] = useState(false);
+  const [isSavingBalances, setIsSavingBalances] = useState(false);
 
   // Fetch policies on mount
   useEffect(() => {
@@ -90,26 +92,51 @@ const SettingsTab: React.FC = () => {
     setPolicies(policies.map(p => p.id === id ? { ...p, yearly_limit: val } : p));
   };
 
+  // Fetch employee balances when selectedEmpId changes
+  useEffect(() => {
+    if (!selectedEmpId) {
+      setBalances([]);
+      return;
+    }
+    const fetchEmployeeBalances = async () => {
+      setIsBalancesLoading(true);
+      try {
+        const res = await axios.get(`${API_URL}/leaves/balances/${selectedEmpId}`);
+        setBalances(res.data);
+      } catch (err) {
+        toast.error("Failed to load employee leave balances");
+      } finally {
+        setIsBalancesLoading(false);
+      }
+    };
+    fetchEmployeeBalances();
+  }, [selectedEmpId]);
+
+  const handleEmployeeBalanceChange = (leaveType: string, val: number) => {
+    setBalances(prev => prev.map(b => b.leave_type === leaveType ? { ...b, available: val } : b));
+  };
+
+  const handleSaveEmployeeBalances = async () => {
+    if (!selectedEmpId) return;
+    setIsSavingBalances(true);
+    try {
+      const payload = balances.reduce((acc, curr) => {
+        acc[curr.leave_type] = curr.available;
+        return acc;
+      }, {} as Record<string, number>);
+
+      await axios.put(`${API_URL}/leaves/balances/${selectedEmpId}`, payload);
+      toast.success("Employee leave balances updated successfully!");
+    } catch (err) {
+      toast.error("Failed to update employee leave balances");
+    } finally {
+      setIsSavingBalances(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <Panel>
-        <div className="text-[15px] font-extrabold text-neutral-800 mb-5">HR Admin Settings</div>
-        <div className="flex flex-col gap-4">
-          {SETTINGS.map((s) => (
-            <div key={s.label} className="flex items-center justify-between p-4 bg-neutral-50 rounded-[10px]">
-              <div>
-                <div className="text-sm font-semibold text-neutral-800">{s.label}</div>
-                <div className="text-[11px] text-neutral-500">{s.sub}</div>
-              </div>
-              <input type="checkbox" defaultChecked={s.default} className="w-5 h-5 cursor-pointer accent-primary-500" />
-            </div>
-          ))}
-          <div className="flex gap-3 mt-2">
-            <Button fullWidth>Save General Settings</Button>
-          </div>
-        </div>
-      </Panel>
-
+      {/* 1. Manage Leave Policies */}
       <Panel>
         <div className="text-[15px] font-extrabold text-neutral-800 mb-2">Manage Leave Policies (Jan - Dec)</div>
         <p className="text-xs text-neutral-500 mb-5">Configure the annual credit limits for all leave categories.</p>
@@ -136,7 +163,6 @@ const SettingsTab: React.FC = () => {
                   />
                   <span className="text-xs text-neutral-400 font-semibold pr-1">Days</span>
                 </div>
-                {/* Prevent deleting core base categories if you prefer, but allow deletion */}
                 <button
                   type="button"
                   onClick={() => setDeleteTargetId(p.id)}
@@ -198,6 +224,74 @@ const SettingsTab: React.FC = () => {
             </Button>
           </form>
         </Card>
+      </Panel>
+
+      {/* 2. Individual Employee Leave Balances Override */}
+      <Panel>
+        <div className="text-[15px] font-extrabold text-neutral-800 mb-2">Individual Employee Leave Balances</div>
+        <p className="text-xs text-neutral-500 mb-5">Select a specific employee to view and override their remaining Sick, Casual, or Privilege Leave balances.</p>
+
+        <div className="space-y-6">
+          {/* Employee Dropdown Selection */}
+          <div className="max-w-md">
+            <label className="block text-xs font-semibold text-neutral-600 mb-1.5">Select Employee</label>
+            <select
+              value={selectedEmpId}
+              onChange={(e) => setSelectedEmpId(e.target.value)}
+              className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 bg-white font-medium text-neutral-700 cursor-pointer"
+            >
+              <option value="">-- Choose Employee --</option>
+              {employees.map((emp) => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.first_name} {emp.last_name} ({emp.employee_id}) - {emp.designation || "No Designation"}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Balance Adjustment Inputs */}
+          {selectedEmpId && (
+            <div className="border border-neutral-200/80 rounded-2xl p-5 bg-neutral-50/30 space-y-4 max-w-2xl">
+              <div className="text-sm font-bold text-neutral-800 border-b border-neutral-100 pb-2 flex items-center justify-between">
+                <span>Adjust Available Balances</span>
+                {isBalancesLoading && <span className="text-xs text-neutral-400 font-semibold animate-pulse">Loading balances...</span>}
+              </div>
+
+              {!isBalancesLoading && balances.length === 0 && (
+                <p className="text-xs text-neutral-400 font-medium">No leave categories active for this employee.</p>
+              )}
+
+              {!isBalancesLoading && balances.length > 0 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {balances.map((b) => (
+                      <div key={b.leave_type} className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-neutral-600 uppercase tracking-wider">{b.leave_type}</label>
+                        <div className="flex items-center bg-white border border-neutral-200 rounded-lg px-3 py-1 shadow-sm">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={b.available}
+                            onChange={(e) => handleEmployeeBalanceChange(b.leave_type, parseFloat(e.target.value) || 0)}
+                            className="w-full border-none focus:ring-0 text-sm font-bold text-neutral-800 py-1.5"
+                          />
+                          <span className="text-xs text-neutral-450 font-bold shrink-0">Days</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pt-2">
+                    <Button onClick={handleSaveEmployeeBalances} disabled={isSavingBalances}>
+                      {isSavingBalances ? "Saving..." : "Save Employee Balances"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </Panel>
 
       <ConfirmDialog

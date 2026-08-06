@@ -94,7 +94,7 @@ export const Modal: React.FC<ModalProps> = ({
                       {eyebrow.label}
                     </div>
                   )}
-                  {title && <h2 className="text-lg font-bold text-neutral-900">{title}</h2>}
+                  {title && <h2 className="text-lg font-bold text-black">{title}</h2>}
                 </div>
                 <button
                   onClick={onClose}

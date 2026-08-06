@@ -18,6 +18,7 @@ import { Attendance } from '../../../types/employee.types';
 import { Card } from '../../../components/ui/Card';
 import apiService from '../../../services/api';
 import { BookLoader } from '../../../components/ui/Spinner';
+import { toast } from 'react-hot-toast';
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -65,6 +66,8 @@ interface DayDetails {
   baseWorkingHours?: number;
   rawPermissionRecord?: any;
   halfDayDuration?: string;
+  isOneDayWages?: boolean;
+  wagesStatus?: string | null;
 }
 
 const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAttendanceProp = [], currentEmployee }) => {
@@ -79,6 +82,17 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const [monthlySchedule, setMonthlySchedule] = useState<any[]>([]);
   const [approvedLeaves, setApprovedLeaves] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  // Absent day resolution states
+  const [resolvingCell, setResolvingCell] = useState<DayDetails | null>(null);
+  const [isResolving, setIsResolving] = useState<boolean>(false);
+  const [resolverBalances, setResolverBalances] = useState<any[]>([]);
+  const [isBalancesLoading, setIsBalancesLoading] = useState<boolean>(false);
+  const [resolveReason, setResolveReason] = useState<string>("");
+
+  useEffect(() => {
+    setResolveReason("");
+  }, [resolvingCell]);
 
   // Load user info
   const userStr = localStorage.getItem("user");
@@ -148,6 +162,80 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       window.removeEventListener("refreshTeamStatus", handleRefresh);
     };
   }, [selectedMonth, selectedYear, userId]);
+
+  // Fetch balances when cell is selected for resolution
+  useEffect(() => {
+    if (!resolvingCell || !currentEmployee?.id) return;
+    const fetchBalances = async () => {
+      setIsBalancesLoading(true);
+      try {
+        const res = await apiService.get(`/leaves/balances/${currentEmployee.id}`);
+        setResolverBalances(res.data);
+      } catch (err) {
+        console.error("Failed to load balances", err);
+      } finally {
+        setIsBalancesLoading(false);
+      }
+    };
+    fetchBalances();
+  }, [resolvingCell, currentEmployee]);
+
+  const getBalanceForType = (type: string) => {
+    const bal = resolverBalances.find(b => b.leave_type.toLowerCase() === type.toLowerCase());
+    return bal ? bal.available : 0;
+  };
+
+  const submitResolveAbsent = async (action: string) => {
+    if (!resolvingCell || !currentEmployee?.id) return;
+
+    if (!resolveReason.trim()) {
+      toast.error("Please enter a reason for resolving this absent day");
+      return;
+    }
+    
+    if (action !== "LOP") {
+      const balance = getBalanceForType(action);
+      if (balance < 1) {
+        toast.error("No leave found");
+        return;
+      }
+    }
+
+    setIsResolving(true);
+    try {
+      const res = await apiService.post("/leaves/resolve-absent", {
+        employee_id: currentEmployee.id,
+        date: resolvingCell.dateStr,
+        action,
+        reason: resolveReason.trim()
+      });
+      if (res.data.success) {
+        toast.success(res.data.message || "Attendance updated successfully");
+        setResolvingCell(null);
+        fetchMonthData();
+      } else {
+        toast.error(res.data.error || "Failed to resolve absent day");
+      }
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.error || "Error resolving absent day";
+      toast.error(errorMsg);
+    } finally {
+      setIsResolving(false);
+    }
+  };
+
+  const handleCellClick = (cell: DayDetails) => {
+    const today = new Date();
+    const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
+    if (
+      isCurrentPayrollMonthView &&
+      cell.status === "Absent" &&
+      !cell.isToday &&
+      cell.dateStr < todayKey
+    ) {
+      setResolvingCell(cell);
+    }
+  };
 
   // Format decimal hours to "Xh Ym"
   const formatHoursMinutes = (hoursDecimal: number): string => {
@@ -357,6 +445,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       badgeEmoji = "";
     }
 
+    const isOneDayWages = attRec?.is_one_day_wages || false;
+    const wagesStatus = attRec?.wages_status || null;
+
     daysDataList.push({
       dateStr,
       dayNum: day,
@@ -389,7 +480,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       rawLeaveRecord: matchedLeave,
       baseWorkingHours: baseWorkingHours,
       rawPermissionRecord: matchedPermission,
-      halfDayDuration
+      halfDayDuration,
+      isOneDayWages,
+      wagesStatus
     });
 
     currentDate.setDate(currentDate.getDate() + 1);
@@ -605,10 +698,21 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     break;
                 }
 
+                const today = new Date();
+                const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
+                const isClickableAbsent = isCurrentPayrollMonthView &&
+                                          cell.status === "Absent" &&
+                                          !cell.isToday &&
+                                          cell.dateStr < todayKey;
                 return (
                   <div
                     key={cell.dateStr}
-                    className={`h-[80px] p-2 flex flex-col justify-between rounded-xl border relative group cursor-default transition-all duration-200 hover:z-50 ${cell.isToday
+                    onClick={() => handleCellClick(cell)}
+                    className={`h-[80px] p-2 flex flex-col justify-between rounded-xl border relative group transition-all duration-200 hover:z-50 ${
+                      isClickableAbsent
+                        ? "cursor-pointer hover:border-rose-450 hover:shadow-md active:scale-95"
+                        : "cursor-default"
+                    } ${cell.isToday
                         ? "border-primary-500 shadow-sm bg-white"
                         : cell.status === "Future"
                           ? "border-neutral-200 bg-neutral-50/40"
@@ -639,6 +743,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
                           <span className="truncate">
                             {cell.halfDayDuration ? cell.leaveType || "Leave" : cell.badgeLabel || cell.status}
+                            {cell.isOneDayWages && " (Wages)"}
                           </span>
                         </div>
                       </div>
@@ -660,10 +765,19 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           </div>
                           <span className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg ${badgeClass}`}>
                             {cell.badgeLabel || cell.status}
+                            {cell.isOneDayWages && " (Wages)"}
                           </span>
                         </div>
 
                         {/* Details Breakdown */}
+                        {cell.isOneDayWages && (
+                          <div className="space-y-1 bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-amber-700 mb-3">
+                            <span className="text-[9px] uppercase font-bold text-amber-500 block">One Day Wages</span>
+                            <p className="font-extrabold text-[12px]">
+                              Status: {cell.wagesStatus || "Pending"}
+                            </p>
+                          </div>
+                        )}
                         {cell.rawPermissionRecord && (
                           <div className="space-y-1 bg-purple-50 p-2.5 rounded-xl border border-purple-200 text-purple-700 mb-3">
                             <span className="text-[9px] uppercase font-bold text-purple-500 block">Approved Permission</span>
@@ -748,9 +862,29 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             )}
                           </div>
                         ) : cell.status === "Holiday" ? (
-                          <div className="space-y-1 bg-blue-50/50 p-3 rounded-xl border border-blue-100 text-blue-900">
-                            <span className="text-[10px] uppercase font-bold text-blue-500 block">Company Holiday</span>
-                            <p className="font-bold text-[13px] text-blue-800">{cell.holidayName}</p>
+                          <div className="space-y-3">
+                            <div className="space-y-1 bg-blue-50/50 p-3 rounded-xl border border-blue-100 text-blue-900">
+                              <span className="text-[10px] uppercase font-bold text-blue-500 block">Company Holiday</span>
+                              <p className="font-bold text-[13px] text-blue-800">{cell.holidayName}</p>
+                            </div>
+                            {cell.checkIn !== "-" && cell.checkIn !== "" && (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-2.5 rounded-xl border border-neutral-100">
+                                  <div>
+                                    <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-In</span>
+                                    <span className="font-extrabold text-emerald-600 text-[12px]">{cell.checkIn}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-Out</span>
+                                    <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
+                                  </div>
+                                </div>
+                                <div className="flex justify-between items-center px-1">
+                                  <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
+                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ) : cell.status === "Leave" ? (
                           <div className="space-y-3">
@@ -794,8 +928,28 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             )}
                           </div>
                         ) : cell.status === "Weekly Off" ? (
-                          <div className="text-[12px] text-neutral-500 text-center py-3 bg-neutral-50 rounded-xl font-bold border border-neutral-100">
-                            Week Off ({cell.fullDayName})
+                          <div className="space-y-3">
+                            <div className="text-[12px] text-neutral-500 text-center py-3 bg-neutral-50 rounded-xl font-bold border border-neutral-100">
+                              Week Off ({cell.fullDayName})
+                            </div>
+                            {cell.checkIn !== "-" && cell.checkIn !== "" && (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-2.5 rounded-xl border border-neutral-100">
+                                  <div>
+                                    <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-In</span>
+                                    <span className="font-extrabold text-emerald-600 text-[12px]">{cell.checkIn}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-Out</span>
+                                    <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
+                                  </div>
+                                </div>
+                                <div className="flex justify-between items-center px-1">
+                                  <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
+                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="space-y-1 bg-rose-50/50 p-3 rounded-xl border border-rose-100 text-rose-900">
@@ -892,16 +1046,27 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       
                       {/* Status */}
                       <td className="p-3 text-center border-r border-neutral-300">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${dayObj.status === "Present" ? "bg-emerald-100 text-emerald-800 border-emerald-300" :
-                          dayObj.status === "Absent" ? "bg-rose-100 text-rose-800 border-rose-300" :
-                            dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
-                              dayObj.status === "Leave" ? "bg-primary-500/15 text-primary-500 border-primary-500/30" :
-                                dayObj.status === "Holiday" ? "bg-blue-100 text-blue-800 border-blue-300" :
-                                  "bg-neutral-200 text-neutral-700 border-neutral-300"
-                          }`}>
-                          <span>{dayObj.badgeEmoji}</span>
-                          <span>{dayObj.status}</span>
-                        </span>
+                        <div className="flex flex-col items-center gap-1.5 justify-center">
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${dayObj.status === "Present" ? "bg-emerald-100 text-emerald-800 border-emerald-300" :
+                            dayObj.status === "Absent" ? "bg-rose-100 text-rose-800 border-rose-300" :
+                              dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
+                                dayObj.status === "Leave" ? "bg-primary-500/15 text-primary-500 border-primary-500/30" :
+                                  dayObj.status === "Holiday" ? "bg-blue-100 text-blue-800 border-blue-300" :
+                                    "bg-neutral-200 text-neutral-700 border-neutral-300"
+                            }`}>
+                            <span>{dayObj.badgeEmoji}</span>
+                            <span>{dayObj.status}</span>
+                          </span>
+                          {dayObj.isOneDayWages && (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold border ${
+                              dayObj.wagesStatus === "Approved"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-neutral-50 text-neutral-600 border-neutral-200"
+                            }`}>
+                              Wages: {dayObj.wagesStatus || "Pending"}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       
                       {/* Shift */}
@@ -917,6 +1082,90 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
           </div>
         )}
       </Card>
+
+      {/* LOP/Leave Resolver Modal */}
+      {resolvingCell && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-neutral-900/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full border border-neutral-200 shadow-2xl animate-scaleIn">
+            <h3 className="text-[16px] font-extrabold text-neutral-900 mb-2">Resolve Absent Day</h3>
+            <p className="text-xs text-neutral-500 mb-4">
+              Choose how to log your absence on <strong className="text-neutral-850 font-bold">{resolvingCell.dayNum} {MONTH_NAMES[selectedMonth - 1]}</strong>:
+            </p>
+
+            {/* Reason Text Area */}
+            <div className="mb-4 text-left">
+              <label className="block text-xs font-bold text-neutral-700 mb-1">Reason for Absence</label>
+              <textarea
+                value={resolveReason}
+                onChange={(e) => setResolveReason(e.target.value)}
+                placeholder="Enter reason for resolving..."
+                className="w-full px-3 py-2 border border-neutral-300 rounded-xl text-xs focus:ring-1 focus:ring-primary-500 focus:outline-none placeholder-neutral-400 bg-neutral-50/50 font-semibold"
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => submitResolveAbsent("LOP")}
+                disabled={isResolving}
+                className="w-full text-left px-4 py-3 rounded-xl border border-rose-250 bg-rose-50/50 hover:bg-rose-50 text-rose-700 text-xs font-bold transition-all flex justify-between items-center"
+              >
+                <span>Loss of Pay (LOP)</span>
+                <span className="text-[10px] text-rose-500 uppercase tracking-wide">Deducted Pay</span>
+              </button>
+
+              <button
+                onClick={() => submitResolveAbsent("Sick Leave")}
+                disabled={isResolving}
+                className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
+              >
+                <span>Sick Leave</span>
+                {isBalancesLoading ? (
+                  <span className="text-[10px] text-neutral-450 animate-pulse">Loading...</span>
+                ) : (
+                  <span className="text-[10px] text-neutral-500 font-semibold">{getBalanceForType("Sick Leave")} Left</span>
+                )}
+              </button>
+
+              <button
+                onClick={() => submitResolveAbsent("Casual Leave")}
+                disabled={isResolving}
+                className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
+              >
+                <span>Casual Leave</span>
+                {isBalancesLoading ? (
+                  <span className="text-[10px] text-neutral-450 animate-pulse">Loading...</span>
+                ) : (
+                  <span className="text-[10px] text-neutral-500 font-semibold">{getBalanceForType("Casual Leave")} Left</span>
+                )}
+              </button>
+
+              <button
+                onClick={() => submitResolveAbsent("Privilege Leave")}
+                disabled={isResolving}
+                className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
+              >
+                <span>Privilege Leave</span>
+                {isBalancesLoading ? (
+                  <span className="text-[10px] text-neutral-450 animate-pulse">Loading...</span>
+                ) : (
+                  <span className="text-[10px] text-neutral-500 font-semibold">{getBalanceForType("Privilege Leave")} Left</span>
+                )}
+              </button>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setResolvingCell(null)}
+                disabled={isResolving}
+                className="px-4 py-2 border border-neutral-200 rounded-lg text-xs text-neutral-600 font-bold hover:bg-neutral-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

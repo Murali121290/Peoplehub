@@ -60,9 +60,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           <Icon className={cn('h-5 w-5', iconClass)} />
         </div>
         <div>
-          <h3 className="text-base font-semibold text-neutral-800">{title}</h3>
-          <p className="mt-1 text-sm text-neutral-600">{message}</p>
-          {description && <p className="mt-1 text-xs text-neutral-400">{description}</p>}
+          <h3 className="text-base font-bold text-black">{title}</h3>
+          <p className="mt-1.5 text-sm text-neutral-900">{message}</p>
+          {description && <p className="mt-1 text-xs text-neutral-700">{description}</p>}
         </div>
       </div>
     </Modal>

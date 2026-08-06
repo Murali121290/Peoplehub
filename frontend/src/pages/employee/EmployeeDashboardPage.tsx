@@ -29,6 +29,7 @@ import ProfileTab from "./tabs/ProfileTab";
 import DashboardHeaderActions from "./components/DashboardHeaderActions";
 import NotificationsPanel from "./components/NotificationsPanel";
 import { BookLoader } from "../../components/ui/Spinner";
+import { ConfirmDialog } from "../../components/ui/Modal/ConfirmDialog";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -234,6 +235,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const [isPageLoading, setIsPageLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [wantsToChangeMode, setWantsToChangeMode] = useState(false);
+  const [wagesConfirmData, setWagesConfirmData] = useState<{ isOpen: boolean; reason: string } | null>(null);
   const [selectedWorkModeOpt, setSelectedWorkModeOpt] = useState<"Office" | "WFH" | "Hybrid">("Office");
   // Modal state
   const [pendingClarifications, setPendingClarifications] = useState<any[]>([]);
@@ -578,10 +580,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
     } finally {
       setIsActionLoading(false);
     }
-  };
-
-  const handleCheckInClick = () => {
-    setWantsToChangeMode(false);
+  };  const proceedToCheckInModal = () => {
     const isCurrentlyWFH = todayActiveWorkMode === "WFH";
     const isCurrentlyHybrid = todayActiveWorkMode === "Hybrid";
 
@@ -593,6 +592,83 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
     setSelectedCheckInShift(todayActiveShift || "General Shift");
     setShowCheckInShiftModal(true);
+  };
+
+  const handleWagesConfirm = async () => {
+    if (!wagesConfirmData) return;
+    const reason = wagesConfirmData.reason;
+    setWagesConfirmData(null);
+
+    setIsActionLoading(true);
+    try {
+      const todayStr = getTodayKey();
+      const userStr = localStorage.getItem("user");
+      const userObj = userStr ? JSON.parse(userStr) : {};
+      
+      const payload = {
+        employee_id: currentEmployee?.id || localStorage.getItem("employee_id"),
+        employee_name: currentEmployee ? `${currentEmployee.first_name} ${currentEmployee.last_name}` : userObj.name || "Employee",
+        current_shift: currentEmployee?.shift_timing || "General Shift",
+        requested_shift: currentEmployee?.shift_timing || "General Shift",
+        current_work_mode: currentEmployee?.work_mode || "Office",
+        requested_work_mode: currentEmployee?.work_mode || "Office",
+        request_type: "One Day Wages",
+        from_date: todayStr,
+        to_date: todayStr,
+        reporting_manager: currentEmployee?.reporting_manager || "Admin",
+        reason: `Worked on ${reason}`
+      };
+
+      const shiftRes = await fetch(`${BASE_URL}/shifts/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("token")}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const shiftData = await shiftRes.json();
+      if (shiftRes.ok) {
+        toast.success("One Day Wages request submitted for manager approval.");
+        loadManagerShiftRequests();
+      } else {
+        toast.error(shiftData.message || "Failed to submit One Day Wages request");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsActionLoading(false);
+      proceedToCheckInModal();
+    }
+  };
+
+  const handleWagesCancel = () => {
+    setWagesConfirmData(null);
+  };
+
+  const handleCheckInClick = async () => {
+    setWantsToChangeMode(false);
+
+    try {
+      setIsActionLoading(true);
+      const res = await fetch(`${BASE_URL}/attendance/check-holiday-or-weekoff`, {
+        headers: {
+          "Authorization": `Bearer ${localStorage.getItem("token")}`
+        }
+      });
+      const data = await res.json();
+      if (data.success && data.is_holiday_or_weekoff && !data.already_requested) {
+        setIsActionLoading(false);
+        setWagesConfirmData({ isOpen: true, reason: data.reason || "Weekoff/Holiday" });
+        return;
+      }
+    } catch (err) {
+      console.error("Holiday/weekoff check failed", err);
+    } finally {
+      setIsActionLoading(false);
+    }
+
+    proceedToCheckInModal();
   };
 
   const handleConfirmCheckInShift = async () => {
@@ -1561,7 +1637,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
   }, [activeTab]);
 
   if (isPageLoading) {
-    return <BookLoader label="Loading your dashboard..." />;
+    return <BookLoader />;
   }
 
   return (
@@ -1911,6 +1987,18 @@ if (isHalfDayLeave(leave.total_days)) return false;
             </div>
           </div>
         </div>
+      )}
+      {wagesConfirmData && (
+        <ConfirmDialog
+          isOpen={wagesConfirmData.isOpen}
+          title="Consider as One Day Wages?"
+          message={`Today is a ${wagesConfirmData.reason}. Do you want to consider this check-in as One Day Wages?`}
+          variant="info"
+          confirmLabel="Yes, Request"
+          cancelLabel="Cancel"
+          onConfirm={handleWagesConfirm}
+          onCancel={handleWagesCancel}
+        />
       )}
     </>
   );
