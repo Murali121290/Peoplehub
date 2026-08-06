@@ -277,7 +277,7 @@ def get_employees():
             "last_working_date":
                 emp.last_working_date.isoformat() if hasattr(emp, "last_working_date") and emp.last_working_date else None,
             "profile_image":
-                base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None
+                f"/api/employees/image/{emp.id}" if emp.profile_image else None
         })
 
     return jsonify(result)
@@ -368,7 +368,7 @@ def get_employee(employee_id):
     "role": employee.designation,
 
     "profile_image": (
-        base64.b64encode(employee.profile_image).decode("utf-8")
+        f"/api/employees/image/{employee.id}"
         if employee.profile_image
         else None
     ),
@@ -1015,7 +1015,7 @@ def today_birthdays():
                 "user_id": e.user_id,
                 "department": e.department,
                 "designation": e.designation,
-                "profile_image": base64.b64encode(e.profile_image).decode("utf-8") if e.profile_image else None
+                "profile_image": f"/api/employees/image/{e.id}" if e.profile_image else None
             }
             for e in employees if e.id not in already_wished_ids
         ])
@@ -1045,7 +1045,7 @@ def today_anniversaries():
                 "department": e.department,
                 "designation": e.designation,
                 "years": today.year - e.joining_date.year,
-                "profile_image": base64.b64encode(e.profile_image).decode("utf-8") if e.profile_image else None
+                "profile_image": f"/api/employees/image/{e.id}" if e.profile_image else None
             }
             for e in employees
         ])
@@ -1398,7 +1398,7 @@ def get_team_attendance(user_id):
                 "role": emp.designation or "Employee",
                 "designation": emp.designation or "Employee",
                 "department": emp.department,
-                "profile_image": base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None,
+                "profile_image": f"/api/employees/image/{emp.id}" if emp.profile_image else None,
                 "attendance_status": att_status,
                 "check_in": check_in,
                 "check_out": check_out,
@@ -1659,9 +1659,7 @@ def get_reporting_employees(user_id):
                     employee.department or "General",
 
                 "profile_image":
-                    base64.b64encode(
-                        employee.profile_image
-                    ).decode("utf-8")
+                    f"/api/employees/image/{employee.id}"
                     if employee.profile_image
                     else None,
 
@@ -1875,7 +1873,7 @@ def get_peers_attendance(user_id):
                 "first_name": peer.first_name,
                 "last_name": peer.last_name,
                 "role": peer.designation,
-                "profile_image": base64.b64encode(peer.profile_image).decode("utf-8") if peer.profile_image else None,
+                "profile_image": f"/api/employees/image/{peer.id}" if peer.profile_image else None,
                 "status": status,
                 "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
                 "check_out": attendance.check_out.strftime("%I:%M %p") if attendance and attendance.check_out else "-"
@@ -2065,7 +2063,7 @@ def get_team_attendance_by_id(team_id):
                 "last_name": emp.last_name,
                 "role": emp.designation,
                 "designation": emp.designation,
-                "profile_image": base64.b64encode(emp.profile_image).decode("utf-8") if emp.profile_image else None,
+                "profile_image": f"/api/employees/image/{emp.id}" if emp.profile_image else None,
                 "status": status,
                 "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
                 "check_out": attendance.check_out.strftime("%I:%M %p") if attendance and attendance.check_out else "-",

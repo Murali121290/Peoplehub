@@ -45,7 +45,6 @@ export const useAuthStore = create<AuthState>((set) => ({
         password,
       })
 
-      console.log('LOGIN RESPONSE:', response.data)
 
       if (response.data.require_password_change) {
         set({ loading: false })

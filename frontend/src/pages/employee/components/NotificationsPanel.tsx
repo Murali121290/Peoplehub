@@ -1,6 +1,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Gift, CalendarHeart } from "lucide-react";
+import { getProfileImageUrl } from "../../../config/api";
 
 
 interface NotificationsPanelProps {
@@ -85,7 +86,7 @@ const NotificationsPanel: React.FC<NotificationsPanelProps> = ({
                       <div key={emp.id} className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
                         <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden flex-shrink-0">
                           {emp.profile_image ? (
-                            <img src={`data:image/jpeg;base64,${emp.profile_image}`} alt={emp.first_name} className="w-full h-full object-cover" />
+                            <img src={getProfileImageUrl(emp.profile_image, emp.id)} alt={emp.first_name} className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-gray-400">
                               <Gift className="w-5 h-5" />
@@ -135,7 +136,7 @@ const NotificationsPanel: React.FC<NotificationsPanelProps> = ({
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden flex-shrink-0">
                             {emp.profile_image ? (
-                              <img src={`data:image/jpeg;base64,${emp.profile_image}`} alt={emp.first_name} className="w-full h-full object-cover" />
+                              <img src={getProfileImageUrl(emp.profile_image, emp.id)} alt={emp.first_name} className="w-full h-full object-cover" />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-gray-400">
                                 <CalendarHeart className="w-5 h-5" />

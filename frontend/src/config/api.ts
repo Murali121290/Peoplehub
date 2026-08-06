@@ -7,3 +7,32 @@ const getApiUrl = () => {
 };
 
 export const API_URL = getApiUrl();
+
+export const getProfileImageUrl = (profileImage: any, employeeId?: number | string) => {
+  if (!profileImage) {
+    return "/default-avatar.png";
+  }
+  if (typeof profileImage === "string") {
+    if (profileImage.startsWith("/api/")) {
+      return `${API_URL}${profileImage}`;
+    }
+    if (profileImage.startsWith("data:") || profileImage.startsWith("http:") || profileImage.startsWith("https:")) {
+      return profileImage;
+    }
+    if (profileImage === "true" || profileImage === "True" || profileImage === "1") {
+      if (employeeId) {
+        return `${API_URL}/api/employees/image/${employeeId}`;
+      }
+      return "/default-avatar.png";
+    }
+    // raw base64 string
+    return `data:image/jpeg;base64,${profileImage}`;
+  }
+  if (typeof profileImage === "boolean" && profileImage) {
+    if (employeeId) {
+      return `${API_URL}/api/employees/image/${employeeId}`;
+    }
+  }
+  return "/default-avatar.png";
+};
+

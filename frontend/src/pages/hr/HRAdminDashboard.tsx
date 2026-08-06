@@ -516,9 +516,6 @@ export default function HRAdminDashboard() {
     e.preventDefault();
     setIsActionLoading(true);
     try {
-      console.log("HANDLE ADD EMPLOYEE CALLED");
-      console.log("IS EDIT MODE:", isEditMode);
-      console.log(newEmp);
 
       const formData = new FormData();
 
@@ -570,20 +567,15 @@ export default function HRAdminDashboard() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
-      console.log("STATUS:", response.status);
-      console.log("OK:", response.ok);
 
       const text = await response.text();
-      console.log("RAW RESPONSE:", text);
 
       let data: any = {};
       try {
         data = JSON.parse(text);
       } catch (e) {
-        console.log("Not JSON");
       }
 
-      console.log("SERVER RESPONSE:", data);
 
       if (!response.ok) {
         throw new Error(data.message || "Failed to save employee");
