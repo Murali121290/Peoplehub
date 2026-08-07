@@ -25,6 +25,7 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
 
   // Individual employee balance override states
   const [selectedEmpId, setSelectedEmpId] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [balances, setBalances] = useState<any[]>([]);
   const [isBalancesLoading, setIsBalancesLoading] = useState(false);
   const [isSavingBalances, setIsSavingBalances] = useState(false);
@@ -136,6 +137,32 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
     }
   };
 
+  const filteredEmployees = React.useMemo(() => {
+    const sorted = [...employees].sort((a, b) => {
+      const nameA = `${a.first_name || ""} ${a.last_name || ""}`.trim().toLowerCase();
+      const nameB = `${b.first_name || ""} ${b.last_name || ""}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    if (!searchQuery.trim()) return sorted;
+
+    const query = searchQuery.toLowerCase().trim();
+    const matched = sorted.filter((emp) => {
+      const fullName = `${emp.first_name || ""} ${emp.last_name || ""}`.toLowerCase();
+      const empId = String(emp.employee_id || "").toLowerCase();
+      return fullName.includes(query) || empId.includes(query);
+    });
+
+    if (selectedEmpId) {
+      const selectedEmp = sorted.find(emp => String(emp.id) === String(selectedEmpId));
+      if (selectedEmp && !matched.some(emp => String(emp.id) === String(selectedEmpId))) {
+        matched.push(selectedEmp);
+      }
+    }
+
+    return matched;
+  }, [employees, searchQuery, selectedEmpId]);
+
   return (
     <div className="space-y-6">
       {/* 1. Manage Leave Policies */}
@@ -235,20 +262,32 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
 
         <div className="space-y-6">
           {/* Employee Dropdown Selection */}
-          <div className="max-w-md">
-            <label className="block text-xs font-semibold text-neutral-600 mb-1.5">Select Employee</label>
-            <select
-              value={selectedEmpId}
-              onChange={(e) => setSelectedEmpId(e.target.value)}
-              className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 bg-white font-medium text-neutral-700 cursor-pointer"
-            >
-              <option value="">-- Choose Employee --</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.first_name} {emp.last_name} ({emp.employee_id}) - {emp.designation || "No Designation"}
-                </option>
-              ))}
-            </select>
+          <div className="max-w-md space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-neutral-600 mb-1.5">Search Employee (Name / ID)</label>
+              <input
+                type="text"
+                placeholder="Type name or Employee ID to filter..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 font-medium text-neutral-700 bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-neutral-600 mb-1.5">Select Employee</label>
+              <select
+                value={selectedEmpId}
+                onChange={(e) => setSelectedEmpId(e.target.value)}
+                className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 bg-white font-medium text-neutral-700 cursor-pointer"
+              >
+                <option value="">-- Choose Employee --</option>
+                {filteredEmployees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.first_name} {emp.last_name} ({emp.employee_id}) - {emp.designation || "No Designation"}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Balance Adjustment Inputs */}

@@ -34,6 +34,8 @@ import ProfileCompleteModal from "./modals/ProfileCompleteModal";
 import AddTeamModal from "./modals/AddTeamModal";
 import { Tabs } from "../../components/ui/Tabs";
 import ConfirmDialog from "../../components/ui/Modal/ConfirmDialog";
+import { Modal } from "../../components/ui/Modal";
+import { ProfileTab } from "../employee/tabs/ProfileTab";
 import { BookLoader } from "../../components/ui/Spinner";
 const NAV = [
   { id: "dashboard", label: "Dashboard" },
@@ -134,6 +136,8 @@ export default function HRAdminDashboard() {
   const [resetAllOpen, setResetAllOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [detailedEditOpen, setDetailedEditOpen] = useState(false);
+  const [detailedEditEmployeeId, setDetailedEditEmployeeId] = useState<number | null>(null);
 
   // --- API Calls ---
   const fetchEmployees = async (force = false) => {
@@ -603,26 +607,19 @@ export default function HRAdminDashboard() {
   const handleEditEmployee = async (employee: any) => {
     setIsActionLoading(true);
     try {
-      // Fetch full employee details so all fields (joining_date, designation,
-      // reporting_manager, company_email, team_id, etc.) are pre-populated
       const token = localStorage.getItem("token");
       const response = await fetch(`${BASE_URL}/employees/${employee.id}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const fullEmployee = await response.json();
 
-      // The DB stores partial reporting manager names (e.g. "Muthukumar").
-      // The Select dropdown expects the full "FirstName LastName" format.
-      // Resolve by finding the manager whose full name starts with the stored value.
       const storedManager = (fullEmployee.reporting_manager ?? "").trim();
       const resolvedManager = (() => {
         if (!storedManager) return "";
-        // Exact match first
         const exact = employees.find(
           (e) => `${e.first_name} ${e.last_name}`.trim() === storedManager
         );
         if (exact) return `${exact.first_name} ${exact.last_name}`.trim();
-        // Starts-with match (handles "Muthukumar" → "Muthukumar S")
         const partial = employees.find((e) =>
           `${e.first_name} ${e.last_name}`
             .trim()
@@ -630,7 +627,6 @@ export default function HRAdminDashboard() {
             .startsWith(storedManager.toLowerCase())
         );
         if (partial) return `${partial.first_name} ${partial.last_name}`.trim();
-        // Fall back to stored value so we at least show something
         return storedManager;
       })();
 
@@ -658,7 +654,7 @@ export default function HRAdminDashboard() {
         shift_timing: (fullEmployee.shift_timing ?? "").toUpperCase() === "WFH" ? "General Shift" : (fullEmployee.shift_timing ?? ""),
         work_mode: (fullEmployee.shift_timing ?? "").toUpperCase() === "WFH" ? "WFH" : (fullEmployee.work_mode ?? "Office"),
         status: fullEmployee.status ?? "active",
-        password: "",   // never pre-fill password
+        password: "",
       });
 
       setProfileImage(null);
@@ -669,6 +665,13 @@ export default function HRAdminDashboard() {
       toast.error("Could not load employee details. Please try again.");
     } finally {
       setIsActionLoading(false);
+    }
+  };
+
+  const handleEditDetailedProfile = (employee: any) => {
+    if (employee && employee.id) {
+      setDetailedEditEmployeeId(employee.id);
+      setDetailedEditOpen(true);
     }
   };
 
@@ -788,6 +791,7 @@ export default function HRAdminDashboard() {
               setAddEmpOpen(true);
             }}
             onEditEmployee={handleEditEmployee}
+            onEditDetailedProfile={handleEditDetailedProfile}
             onResetPassword={async (userId) => {
               if (!userId) {
                 toast.error("User ID not found for this employee");
@@ -865,6 +869,22 @@ export default function HRAdminDashboard() {
           isEdit={!!editingTeam}
           teamData={editingTeam}
         />
+      )}
+      {detailedEditOpen && detailedEditEmployeeId && (
+        <Modal
+          isOpen={detailedEditOpen}
+          onClose={() => {
+            setDetailedEditOpen(false);
+            setDetailedEditEmployeeId(null);
+            fetchEmployees(true);
+          }}
+          size="full"
+          title="Edit Employee Profile"
+        >
+          <div className="p-1 max-w-[1400px] mx-auto">
+            <ProfileTab employeeId={detailedEditEmployeeId} />
+          </div>
+        </Modal>
       )}
       <ConfirmDialog
         isOpen={!!resetUserId}

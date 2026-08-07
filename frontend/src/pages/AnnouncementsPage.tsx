@@ -504,9 +504,9 @@ const AnnouncementsPage = () => {
                         <div key={b.id} className="rounded-xl bg-neutral-50 p-4 hover:bg-neutral-100 transition-colors">
                           <div className="flex flex-col items-center text-center gap-2.5">
                             {b.profile_image ? (
-                              <img src={getProfileImageUrl(b.profile_image, b.id)} alt={b.first_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                              <img src={getProfileImageUrl(b.profile_image, b.id)} alt={b.first_name} className="w-[150px] h-[150px] rounded-full object-cover flex-shrink-0 shadow-sm border border-neutral-100" />
                             ) : (
-                              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-white flex items-center justify-center font-bold text-2xl flex-shrink-0 shadow-sm">
+                              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-white flex items-center justify-center font-bold text-2xl flex-shrink-0 shadow-sm">
                                 {b.first_name?.[0]}
                               </div>
                             )}
@@ -538,9 +538,9 @@ const AnnouncementsPage = () => {
                         <div key={a.id} className="rounded-xl bg-neutral-50 p-4 hover:bg-neutral-100 transition-colors">
                           <div className="flex flex-col items-center text-center gap-2.5">
                             {a.profile_image ? (
-                              <img src={getProfileImageUrl(a.profile_image, a.id)} alt={a.first_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                              <img src={getProfileImageUrl(a.profile_image, a.id)} alt={a.first_name} className="w-20 h-20 rounded-full object-cover flex-shrink-0 shadow-sm border border-neutral-100" />
                             ) : (
-                              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center font-bold text-2xl flex-shrink-0 shadow-sm">
+                              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center font-bold text-2xl flex-shrink-0 shadow-sm">
                                 {a.first_name?.[0]}
                               </div>
                             )}

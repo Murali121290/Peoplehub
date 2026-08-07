@@ -1091,6 +1091,22 @@ def attendance_history(user_id):
             is_one_day_wages = wages_req is not None
             wages_status = wages_req.status if wages_req else None
 
+            # Determine the effective shift for this date:
+            # Priority: approved ShiftRequest covering date > record.shift_timing > employee.shift_timing
+            approved_shift_req = ShiftRequest.query.filter(
+                ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
+                ShiftRequest.request_type == "Shift",
+                ShiftRequest.status == "Approved",
+                ShiftRequest.from_date <= current_date,
+                ShiftRequest.to_date >= current_date
+            ).order_by(ShiftRequest.created_at.desc()).first()
+            effective_shift = (
+                (approved_shift_req.requested_shift if approved_shift_req and approved_shift_req.requested_shift else None)
+                or (record.shift_timing if record else None)
+                or employee.shift_timing
+                or "General Shift"
+            )
+
             if record:
                 is_today = (record.attendance_date == today)
                 
@@ -1135,7 +1151,7 @@ def attendance_history(user_id):
                     "date": record.attendance_date.strftime("%Y-%m-%d"),
                     "attendance_date": record.attendance_date.strftime("%Y-%m-%d"),
                     "attendance_date_formatted": record.attendance_date.strftime("%d %b %Y"),
-                    "shift": record.shift_timing or employee.shift_timing or "General Shift",
+                    "shift": effective_shift,
                     "checkIn": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
                     "check_in": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
                     "checkOut": check_out_str,
