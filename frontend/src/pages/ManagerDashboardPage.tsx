@@ -2686,7 +2686,7 @@ const ManagerDashboardPage = () => {
                         <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Date</th>
                         <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "2px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Status</th>
                         <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", background: "rgba(37,99,235,0.06)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
-                        <th colSpan={2} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", background: "rgba(126,34,206,0.06)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
+                        <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", background: "rgba(126,34,206,0.06)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
                         <th rowSpan={2} style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0" }}>Breaks (L/T)</th>
                       </tr>
                       <tr style={{ background: "#f8fafc", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
@@ -2694,6 +2694,7 @@ const ManagerDashboardPage = () => {
                         <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #c7d2fe" }}>Check Out</th>
                         <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "2px solid #c7d2fe", fontWeight: 700 }}>Hours</th>
                         <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e9d5ff" }}>Check In</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e9d5ff" }}>Check Out</th>
                         <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "2px solid #e9d5ff", fontWeight: 700 }}>Hours</th>
                       </tr>
                     </thead>
@@ -2784,6 +2785,9 @@ const ManagerDashboardPage = () => {
                             {/* Biometric Card entry */}
                             <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckIn !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff" }}>
                               {record.cardCheckIn}
+                            </td>
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckOut !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff" }}>
+                              {record.cardCheckOut || record.card_check_out || "-"}
                             </td>
                             <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", fontWeight: 700, color: "#7e22ce", borderRight: "2px solid #e9d5ff" }}>
                               {formatWorkingHours(record.cardWorkingHours)}

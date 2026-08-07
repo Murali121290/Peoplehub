@@ -196,6 +196,13 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
           .animate-bg {
             animation: bg-shift 12s ease-in-out infinite;
           }
+          @keyframes emoji-rain {
+            0% { transform: translateY(-40px) rotate(0deg); opacity: 0; }
+            8% { opacity: 0.85; }
+            50% { transform: translateY(50vh) rotate(180deg); opacity: 0.75; }
+            90% { opacity: 0.5; }
+            100% { transform: translateY(105vh) rotate(360deg); opacity: 0; }
+          }
         `}</style>
         <div className="relative w-full min-h-screen overflow-hidden">
           {/* Confetti Rain Layer */}
@@ -229,6 +236,36 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
               />
             );
           })}
+
+          {/* 🎉 Emoji Rain Layer — birthday emojis floating down */}
+          {(() => {
+            const emojiPool = ["🎂", "🎁", "🎈", "🎊", "🥳", "🎉", "🧁", "🍰", "🪅", "💐", "⭐", "🌟"];
+            return Array.from({ length: 18 }).map((_, i) => {
+              const leftPos = 4 + (i * 5.2) + (Math.random() * 3);
+              const emojiDelay = 1 + Math.random() * 10;
+              const emojiDuration = 8 + Math.random() * 7;
+              const emojiSize = 18 + Math.random() * 18;
+              const emoji = emojiPool[i % emojiPool.length];
+              return (
+                <div
+                  key={`emoji-${i}`}
+                  style={{
+                    position: "absolute",
+                    top: -40,
+                    left: `${leftPos}%`,
+                    fontSize: emojiSize,
+                    pointerEvents: "none",
+                    zIndex: 3,
+                    opacity: 0,
+                    animation: `emoji-rain ${emojiDuration}s linear infinite`,
+                    animationDelay: `${emojiDelay}s`,
+                  }}
+                >
+                  {emoji}
+                </div>
+              );
+            });
+          })()}
 
           {/* Close button with premium hover effect */}
           <button
@@ -294,10 +331,10 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
             <div className="relative flex flex-col items-center md:items-start max-w-sm">
               {/* Balloons cluster with float/sway animations */}
               <div className="relative w-full h-56 mb-4 hidden md:block">
-                <Balloon top={10} left={40} width={62} height={78} base="#cfd6e6" highlight="#eef1f7" shadow="#9aa0b8" stringLength={60} stringLeft={30} animation="balloon-sway-1 7s ease-in-out infinite" />
-                <Balloon top={-10} left={120} width={54} height={70} base="#c9cfe0" highlight="#e7eaf3" shadow="#9297ae" stringLength={90} stringLeft={26} animation="balloon-sway-2 8s ease-in-out infinite" />
-                <Balloon top={30} left={190} width={56} height={72} base="#3b3f66" highlight="#6a6f9c" shadow="#24273f" stringLength={70} stringLeft={27} animation="balloon-sway-3 6.5s ease-in-out infinite" />
-                <Balloon top={-30} left={230} width={40} height={54} base="#5b6394" highlight="#8890c2" shadow="#3a3f60" stringLength={110} stringLeft={19} animation="balloon-sway-4 7.5s ease-in-out infinite" />
+                <Balloon top={10} left={40} width={62} height={78} base="#f97316" highlight="#fdba74" shadow="#c2410c" stringLength={60} stringLeft={30} animation="balloon-sway-1 7s ease-in-out infinite" />
+                <Balloon top={-10} left={120} width={54} height={70} base="#0ea5e9" highlight="#7dd3fc" shadow="#0369a1" stringLength={90} stringLeft={26} animation="balloon-sway-2 8s ease-in-out infinite" />
+                <Balloon top={30} left={190} width={56} height={72} base="#f97316" highlight="#fdba74" shadow="#c2410c" stringLength={70} stringLeft={27} animation="balloon-sway-3 6.5s ease-in-out infinite" />
+                <Balloon top={-30} left={230} width={40} height={54} base="#0ea5e9" highlight="#7dd3fc" shadow="#0369a1" stringLength={110} stringLeft={19} animation="balloon-sway-4 7.5s ease-in-out infinite" />
               </div>
 
               <div className="inline-block px-6 py-2.5 rounded-full bg-slate-800 text-white text-sm md:text-base font-bold tracking-wider">
