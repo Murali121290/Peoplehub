@@ -666,6 +666,8 @@ const ManagerDashboardPage = () => {
           profile_image: att.profile_image,
           check_in: att.check_in,
           check_out: att.check_out,
+          check_in_ip: att.check_in_ip,
+          check_out_ip: att.check_out_ip,
           working_hours: att.working_hours,
           card_check_in: att.card_check_in,
           card_check_out: att.card_check_out,

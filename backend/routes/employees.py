@@ -41,9 +41,6 @@ def create_employee():
     try:
         data = request.form
 
-        print("========== CREATE EMPLOYEE ==========")
-        print("FORM DATA:", request.form)
-        print("FILES:", request.files)
 
         # ---------------------------------
         # Profile Image

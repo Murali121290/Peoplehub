@@ -100,9 +100,7 @@ def check_in():
 
         if approved_request:
             shift_name = (approved_request.requested_shift or "").strip().lower()
-            print("================================")
-            print("Approved requested shift active today:", shift_name)
-            print("================================")
+
         else:
             shift_name = (
                 employee.shift_timing or ""
@@ -113,12 +111,7 @@ def check_in():
 
         # First Shift (07:00 AM - 04:00 PM)
         if shift_name == "first shift":
-            print("================================")
-            print("USER ID:", user_id)
-            print("EMPLOYEE:", employee.first_name)
-            print("SHIFT LOWER:", shift_name)
-            print("CURRENT TIME:", current_time)
-            print("================================")
+
 
             allowed_time = datetime.strptime(
                 "07:00",
