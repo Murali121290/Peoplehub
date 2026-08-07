@@ -22,6 +22,7 @@ import PopupModal from "./components/PopupModal";
 import BirthdayModal from "../../layouts/components/BirthdayModal";
 import EmployeeClarificationModal from "../../layouts/components/EmployeeClarificationModal";
 import OverviewTab from "./tabs/OverviewTab";
+import RequestsTab from "./tabs/RequestsTab";
 import LeaveTab from "./tabs/LeaveTab";
 import ShiftTab from "./tabs/ShiftTab";
 import AttendanceTab from "./tabs/AttendanceTab";
@@ -136,8 +137,7 @@ const itemVariants = {
 
 const tabs = [
   { id: "overview", label: "Overview", icon: HomeIcon },
-  { id: "leave", label: "Leave Requests", icon: CalendarDaysIcon },
-  { id: "shift", label: "Shift Request", icon: ClockIcon },
+  { id: "requests", label: "My Requests", icon: CalendarDaysIcon },
   { id: "attendance", label: "Attendance", icon: ClockIcon },
   { id: "new-hire", label: "New Hire", icon: SparklesIcon },
   { id: "profile", label: "Profile", icon: UserCircleIcon },
@@ -1778,29 +1778,23 @@ if (isHalfDayLeave(leave.total_days)) return false;
                 itemVariants={itemVariants}
               />
             )}
-            {activeTab === "leave" && (
-              <LeaveTab
+            {activeTab === "requests" && (
+              <RequestsTab
                 leaveRequests={leaveRequests}
                 currentEmployee={currentEmployee}
                 employees={employees}
                 approvalLeaves={approvalLeaves}
                 totalBalance={totalBalance}
                 itemVariants={itemVariants}
-                onApprove={approveLeave}
-                onReject={rejectLeave}
-                onCancel={cancelLeave}
+                onApproveLeave={approveLeave}
+                onRejectLeave={rejectLeave}
+                onCancelLeave={cancelLeave}
                 onSubmitLeave={handleLeaveSubmit}
-              />
-            )}
-            {activeTab === "shift" && (
-              <ShiftTab
-                currentEmployee={currentEmployee}
                 shiftRequests={shiftRequests}
                 managerShiftRequests={managerShiftRequests}
-                leaveRequests={leaveRequests}
                 onSubmitShift={submitShiftRequest}
-                onApprove={approveShift}
-                onReject={rejectShift}
+                onApproveShift={approveShift}
+                onRejectShift={rejectShift}
                 onCancelShift={cancelShiftRequest}
               />
             )}

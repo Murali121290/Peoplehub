@@ -56,7 +56,11 @@ const COUNTRY_CODES = [
   { value: "+977", label: "🇳🇵 NP" }
 ];
 
-const ProfileTab = () => {
+interface ProfileTabProps {
+  employeeId?: string | number;
+}
+
+export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const { updateUser, logout } = useAuthStore();
   const [profile, setProfile] = useState<any>({});
@@ -360,9 +364,9 @@ const ProfileTab = () => {
 
   const fetchProfile = async () => {
     try {
-      const employeeId = localStorage.getItem("employee_id");
-      if (!employeeId) return;
-      const res = await axios.get(`${BASE_URL}/employees/${employeeId}`);
+      const activeEmpId = employeeId || localStorage.getItem("employee_id");
+      if (!activeEmpId) return;
+      const res = await axios.get(`${BASE_URL}/employees/${activeEmpId}`);
       const data = res.data;
       setProfile(data);
 
@@ -594,11 +598,11 @@ const ProfileTab = () => {
       setProfilePreview(previewUrl);
 
       const token = localStorage.getItem("token");
-      const employeeId = localStorage.getItem("employee_id");
+      const activeEmpId = employeeId || localStorage.getItem("employee_id");
       const payload = new FormData();
       payload.append("profile_image", croppedFile);
 
-      await axios.patch(`${BASE_URL}/employees/${employeeId}`, payload, {
+      await axios.patch(`${BASE_URL}/employees/${activeEmpId}`, payload, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -606,9 +610,12 @@ const ProfileTab = () => {
 
       toast.success("Profile photo updated successfully!", { id: loadingToastId });
       
-      const updatedUserFields: any = {};
-      updatedUserFields.image_version = Date.now();
-      updateUser(updatedUserFields);
+      const isSelf = String(activeEmpId) === String(localStorage.getItem("employee_id"));
+      if (isSelf) {
+        const updatedUserFields: any = {};
+        updatedUserFields.image_version = Date.now();
+        updateUser(updatedUserFields);
+      }
       
       setCropModalOpen(false);
       setImageToCrop(null);
@@ -734,7 +741,7 @@ const ProfileTab = () => {
     setIsSavingAll(true);
     try {
       const token = localStorage.getItem("token");
-      const employeeId = localStorage.getItem("employee_id");
+      const activeEmpId = employeeId || localStorage.getItem("employee_id");
       const payload = new FormData();
 
       Object.entries(formData).forEach(([key, value]) => {
@@ -756,7 +763,7 @@ const ProfileTab = () => {
       if (selectedFiles.pan_file) payload.append("pan_file", selectedFiles.pan_file);
       if (selectedFiles.degree_certificate) payload.append("degree_certificate", selectedFiles.degree_certificate);
 
-      await axios.patch(`${BASE_URL}/employees/${employeeId}`, payload, {
+      await axios.patch(`${BASE_URL}/employees/${activeEmpId}`, payload, {
         headers: {
           Authorization: `Bearer ${token}`
         }

@@ -58,6 +58,7 @@ const permissionReasons = [
 ];
 
 interface LeaveTabProps {
+  mode?: "all" | "leave" | "permission";
   leaveRequests: any[];
   currentEmployee: any;
   employees: any[];
@@ -147,6 +148,7 @@ const getResolvedStatus = (req: any) => {
 };
 
 const LeaveTab: React.FC<LeaveTabProps> = ({
+  mode = "all",
   leaveRequests, currentEmployee, employees, approvalLeaves,
   totalBalance, itemVariants, onApprove, onReject, onCancel, onSubmitLeave,
 }) => {
@@ -201,7 +203,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   }
 
   const [leaveForm, setLeaveForm] = useState<LeaveFormState>({
-    requestType: "Leave",
+    requestType: mode === "permission" ? "Permission" : "Leave",
     leaveType: "",
     leaveDuration: "Full Day",
     fromDate: "",
@@ -215,6 +217,15 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     handoverTo: "",
     attachment: null,
   });
+
+  useEffect(() => {
+    if (!editingLeave) {
+      setLeaveForm((prev) => ({
+        ...prev,
+        requestType: mode === "permission" ? "Permission" : "Leave",
+      }));
+    }
+  }, [mode, showLeaveForm, editingLeave]);
 
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 
@@ -266,8 +277,15 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
   // Filter employee's own leave requests
   const myRequests = React.useMemo(() => {
-    return leaveRequests.filter((req: any) => String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id));
-  }, [leaveRequests, currentEmployee]);
+    const ownerRequests = leaveRequests.filter((req: any) => String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id));
+    if (mode === "leave") {
+      return ownerRequests.filter((req: any) => req.request_type === "Leave");
+    }
+    if (mode === "permission") {
+      return ownerRequests.filter((req: any) => req.request_type === "Permission");
+    }
+    return ownerRequests;
+  }, [leaveRequests, currentEmployee, mode]);
 
   // Collect all dates where the employee already has a pending or approved leave request
   const myAppliedLeaveDates = React.useMemo(() => {
@@ -290,6 +308,20 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     });
     return Array.from(dates);
   }, [myRequests]);
+
+  const activeLeavePolicies = React.useMemo(() => {
+    const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
+    const rawPolicies = leavePolicies.filter(pol => {
+      const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
+      return polGender === "all" || polGender === userGender;
+    });
+
+    const hasClSl = rawPolicies.some(p => p.leave_type.toLowerCase() === "cl/sl");
+    if (hasClSl) {
+      return rawPolicies.filter(p => !["sick leave", "casual leave"].includes(p.leave_type.toLowerCase()));
+    }
+    return rawPolicies;
+  }, [leavePolicies, currentEmployee?.gender]);
 
   // Calculate active permission cycle and balance
   const permissionBalanceInfo = React.useMemo(() => {
@@ -566,7 +598,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
   const resetLeaveForm = () => {
     setLeaveForm({
-      requestType: "Leave" as "Leave" | "Permission",
+      requestType: (mode === "permission" ? "Permission" : "Leave") as "Leave" | "Permission",
       leaveType: "",
       leaveDuration: "Full Day",
       fromDate: "",
@@ -619,12 +651,6 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const getAvailableBalance = (leaveType: string, defaultLimit: number) => {
     const bal = employeeBalances.find(b => b.leave_type.toLowerCase() === leaveType.toLowerCase());
     if (bal !== undefined) return bal.available;
-
-    // Fallback for standard types
-    if (leaveType.toLowerCase() === "sick leave") return currentEmployee?.sick_leave ?? defaultLimit;
-    if (leaveType.toLowerCase() === "casual leave") return currentEmployee?.casual_leave ?? defaultLimit;
-    if (["earned leave", "privilege leave"].includes(leaveType.toLowerCase())) return currentEmployee?.privilege_leave ?? currentEmployee?.earned_leave ?? defaultLimit;
-
     return defaultLimit;
   };
 
@@ -705,6 +731,15 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         return;
       }
 
+      if (requestedMinutes < 30) {
+        setValidationError({
+          type: "insufficient",
+          title: "Minimum Duration Required",
+          message: "Permission duration must be at least 30 minutes."
+        });
+        return;
+      }
+
       // Use cycle-accurate remaining for the selected permission date
       const remainingForDate = permissionBalanceInfo.getRemainingForDate(leaveForm.permissionDate);
       if (requestedMinutes > remainingForDate) {
@@ -724,6 +759,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const activeRequests = leaveRequests.filter((req: any) => {
     const isOwner = (String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id));
     if (!isOwner) return false;
+    if (mode === "leave" && req.request_type !== "Leave") return false;
+    if (mode === "permission" && req.request_type !== "Permission") return false;
     return req.status === "Pending";
   });
 
@@ -733,10 +770,10 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-xl font-bold text-neutral-800 tracking-tight flex items-center gap-2">
-            Leave & Permission Management
+            {mode === "leave" ? "Leave Requests" : mode === "permission" ? "Permission Requests" : "Leave & Permission Management"}
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Apply, track, and manage your leave requests and permission balances
+            {mode === "leave" ? "Apply, track, and manage your leave requests and balances" : mode === "permission" ? "Apply, track, and manage your hourly permission balances" : "Apply, track, and manage your leave requests and permission balances"}
           </p>
         </div>
         <Button
@@ -744,160 +781,200 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           onClick={() => setShowLeaveForm(true)}
           className="bg-primary-600 hover:bg-primary-700 text-white shadow-md hover:shadow-lg transition-all duration-200 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
         >
-          Apply New Request
+          {mode === "leave" ? "Apply Leave" : mode === "permission" ? "Apply Permission" : "Apply New Request"}
         </Button>
       </div>
 
       {/* Leave Balance Grid Section */}
-      {/* Leave Balance Grid Section */}
-      <motion.div
-        variants={itemVariants}
-        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 mb-6"
-      >
-        {(() => {
-          const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
-          const policiesList = leavePolicies.filter(pol => {
-            const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
-            return polGender === "all" || polGender === userGender;
-          });
+      {mode !== "permission" && (
+        <motion.div
+          variants={itemVariants}
+          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 mb-6"
+        >
+          {(() => {
+            const policiesList = activeLeavePolicies;
 
-          const dynamicCards = policiesList.map((pol) => {
-            const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+            const dynamicCards = policiesList.map((pol) => {
+              const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
 
-            const displayAvailable = Math.max(0, available);
+              const displayAvailable = Math.max(0, available);
 
-            // Calculate approved days
-            const approvedDays = myRequests
-              .filter((req: any) =>
-                req.status === "Approved" &&
-                req.request_type === "Leave" &&
-                (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
-              )
-              .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+              // Calculate approved days
+              const approvedDays = myRequests
+                .filter((req: any) =>
+                  req.status === "Approved" &&
+                  req.request_type === "Leave" &&
+                  (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
+                )
+                .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
 
-            // Calculate pending days
-            const pendingDays = myRequests
-              .filter((req: any) =>
-                req.status === "Pending" &&
-                req.request_type === "Leave" &&
-                (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
-              )
-              .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+              // Calculate pending days
+              const pendingDays = myRequests
+                .filter((req: any) =>
+                  req.status === "Pending" &&
+                  req.request_type === "Leave" &&
+                  (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
+                )
+                .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
 
-            // True allocated limit for this employee (handles pro-rated starting balances)
-            const allocatedLimit = available + approvedDays;
+              // True allocated limit for this employee (handles pro-rated starting balances)
+              const allocatedLimit = available + approvedDays;
 
-            const used = approvedDays + pendingDays;
-            const lopForPol = Math.max(0, used - allocatedLimit);
-            const remainingAvailable = Math.max(0, allocatedLimit - used);
+              const used = approvedDays + pendingDays;
+              const lopForPol = Math.max(0, used - allocatedLimit);
+              const remainingAvailable = Math.max(0, allocatedLimit - used);
 
-            let icon = CalendarIcon;
-            let iconWrap = "bg-blue-50";
-            let iconColor = "text-blue-600";
-            let note = "Annual leaves";
+              let icon = CalendarIcon;
+              let iconWrap = "bg-blue-50";
+              let iconColor = "text-blue-600";
+              let note = "Annual leaves";
 
-            if (pol.leave_type.toLowerCase() === "sick leave") {
-              icon = ShieldCheckIcon;
-              iconWrap = "bg-emerald-50";
-              iconColor = "text-emerald-600";
-              note = "For medical recovery";
-            } else if (pol.leave_type.toLowerCase() === "casual leave") {
-              icon = ClockIcon;
-              iconWrap = "bg-amber-50";
-              iconColor = "text-amber-600";
-              note = "For personal work";
-            } else if (["privilege leave", "earned leave"].includes(pol.leave_type.toLowerCase())) {
-              icon = CalendarIcon;
-              iconWrap = "bg-blue-50";
-              iconColor = "text-blue-600";
-              note = "Accrued vacation leaves";
-            }
+              if (pol.leave_type.toLowerCase() === "sick leave") {
+                icon = ShieldCheckIcon;
+                iconWrap = "bg-emerald-50";
+                iconColor = "text-emerald-600";
+                note = "For medical recovery";
+              } else if (pol.leave_type.toLowerCase() === "casual leave") {
+                icon = ClockIcon;
+                iconWrap = "bg-amber-50";
+                iconColor = "text-amber-600";
+                note = "For personal work";
+              } else if (["privilege leave", "earned leave"].includes(pol.leave_type.toLowerCase())) {
+                icon = CalendarIcon;
+                iconWrap = "bg-blue-50";
+                iconColor = "text-blue-600";
+                note = "Accrued vacation leaves";
+              }
 
-            return {
-              label: pol.leave_type,
-              value: displayAvailable,
-              total: allocatedLimit, // Use allocatedLimit instead of yearly_limit to reflect pro-rated
-              used,
-              lopForPol,
-              icon,
-              iconWrap,
-              iconColor,
-              note
-            };
-          });
+              return {
+                label: pol.leave_type,
+                value: displayAvailable,
+                total: allocatedLimit, // Use allocatedLimit instead of yearly_limit to reflect pro-rated
+                used,
+                lopForPol,
+                icon,
+                iconWrap,
+                iconColor,
+                note
+              };
+            });
 
-          const totalAvailable = dynamicCards.reduce((sum, c) => sum + c.value, 0);
-          const totalLimit = dynamicCards.reduce((sum, c) => sum + c.total, 0);
-          const totalUsed = dynamicCards.reduce((sum, c) => sum + c.used, 0);
-          const totalLop = dynamicCards.reduce((sum, c) => sum + c.lopForPol, 0);
+            const totalAvailable = dynamicCards.reduce((sum, c) => sum + c.value, 0);
+            const totalLimit = dynamicCards.reduce((sum, c) => sum + c.total, 0);
+            const totalUsed = dynamicCards.reduce((sum, c) => sum + c.used, 0);
+            const totalLop = dynamicCards.reduce((sum, c) => sum + c.lopForPol, 0);
 
-          const allCards = [
-            ...dynamicCards,
-            {
-              label: "Total Balance",
-              value: totalAvailable,
-              total: totalLimit,
-              used: totalUsed,
-              icon: DocumentTextIcon,
-              iconWrap: "bg-slate-100",
-              iconColor: "text-slate-600",
-              note: "Cumulative leave count"
-            },
-            {
-              label: "Loss of Pay (LOP)",
-              value: 0,
-              total: 0,
-              used: totalLop,
-              icon: UserMinusIcon,
-              iconWrap: "bg-red-50",
-              iconColor: "text-red-600",
-              note: "Excess leave taken",
-              isLopCard: true
-            }
-          ];
+            const allCards = [
+              ...dynamicCards,
+              {
+                label: "Total Balance",
+                value: totalAvailable,
+                total: totalLimit,
+                used: totalUsed,
+                icon: DocumentTextIcon,
+                iconWrap: "bg-slate-100",
+                iconColor: "text-slate-600",
+                note: "Cumulative leave count"
+              },
+              {
+                label: "Loss of Pay (LOP)",
+                value: 0,
+                total: 0,
+                used: totalLop,
+                icon: UserMinusIcon,
+                iconWrap: "bg-red-50",
+                iconColor: "text-red-600",
+                note: "Excess leave taken",
+                isLopCard: true
+              }
+            ];
 
-          return allCards.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Card
-                key={item.label}
-                className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm hover:shadow transition-all duration-200 flex items-center justify-between"
-                style={{ minHeight: "84px" }}
-              >
-                {/* Left Side: Stats info */}
-                <div className="flex flex-col justify-between h-full">
-                  <div>
-                    <h4 className="text-[10px] font-bold text-slate-400 tracking-wider uppercase leading-none">
-                      {item.label}
-                    </h4>
-                    <div className="flex items-baseline gap-1 mt-1">
-                      <span className={`text-xl font-extrabold tracking-tight ${(item as any).isLopCard ? "text-red-650" : "text-slate-800"}`}>
-                        {(item as any).isLopCard ? item.used : item.value}
-                      </span>
-                      <span className="text-[10px] font-semibold text-slate-400">
-                        {(item as any).isLopCard ? (item.used === 1 ? "day" : "days") : "available"}
-                      </span>
+            return allCards.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Card
+                  key={item.label}
+                  className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm hover:shadow transition-all duration-200 flex items-center justify-between"
+                  style={{ minHeight: "84px" }}
+                >
+                  {/* Left Side: Stats info */}
+                  <div className="flex flex-col justify-between h-full">
+                    <div>
+                      <h4 className="text-[10px] font-bold text-slate-400 tracking-wider uppercase leading-none">
+                        {item.label}
+                      </h4>
+                      <div className="flex items-baseline gap-1 mt-1">
+                        <span className={`text-xl font-extrabold tracking-tight ${(item as any).isLopCard ? "text-red-650" : "text-slate-800"}`}>
+                          {(item as any).isLopCard ? item.used : item.value}
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-400">
+                          {(item as any).isLopCard ? (item.used === 1 ? "day" : "days") : "days available"}
+                        </span>
+                      </div>
+                      {!(item as any).isLopCard && (
+                        <div className="text-[10px] text-slate-400 font-semibold mt-1">
+                          Used: {item.used} {item.used === 1 ? "day" : "days"}
+                        </div>
+                      )}
                     </div>
                   </div>
-                  
-                  {!(item as any).isLopCard && (
-                    <div className="text-[10px] text-slate-500 font-semibold mt-1 flex items-center gap-1">
-                      <span>Availed: {item.used}</span>
-                      <span className="text-slate-300">•</span>
-                      <span>Total: {item.total}</span>
-                    </div>
-                  )}
-                </div>
 
-                {/* Right Side: Compact Icon */}
-                <div className={`flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg ${item.iconWrap}`}>
-                  <Icon className={`h-4.5 w-4.5 ${item.iconColor}`} />
-                </div>
-              </Card>
-            );
-          });
-        })()}
-      </motion.div>
+                  {/* Right Side: Compact Icon */}
+                  <div className={`flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg ${item.iconWrap}`}>
+                    <Icon className={`h-4.5 w-4.5 ${item.iconColor}`} />
+                  </div>
+                </Card>
+              );
+            });
+          })()}
+        </motion.div>
+      )}
+
+      {mode === "permission" && (
+        <motion.div
+          variants={itemVariants}
+          className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6"
+        >
+          {/* Card 1: Monthly Limit */}
+          <Card className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm hover:shadow transition-all duration-200 flex items-center justify-between" style={{ minHeight: "84px" }}>
+            <div className="flex flex-col justify-between h-full">
+              <h4 className="text-[10px] font-bold text-slate-400 tracking-wider uppercase leading-none">Monthly Limit</h4>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-xl font-extrabold text-slate-850">{permissionBalanceInfo.limitStr}</span>
+              </div>
+            </div>
+            <div className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+              <ClockIcon className="h-4.5 w-4.5" />
+            </div>
+          </Card>
+
+          {/* Card 2: Approved Permission */}
+          <Card className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm hover:shadow transition-all duration-200 flex items-center justify-between" style={{ minHeight: "84px" }}>
+            <div className="flex flex-col justify-between h-full">
+              <h4 className="text-[10px] font-bold text-slate-400 tracking-wider uppercase leading-none">Approved Permission</h4>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-xl font-extrabold text-slate-850">{permissionBalanceInfo.approvedStr}</span>
+              </div>
+            </div>
+            <div className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+              <ShieldCheckIcon className="h-4.5 w-4.5" />
+            </div>
+          </Card>
+
+          {/* Card 3: Remaining Balance */}
+          <Card className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm hover:shadow transition-all duration-200 flex items-center justify-between" style={{ minHeight: "84px" }}>
+            <div className="flex flex-col justify-between h-full">
+              <h4 className="text-[10px] font-bold text-slate-400 tracking-wider uppercase leading-none">Remaining Balance</h4>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-xl font-extrabold text-violet-700">{permissionBalanceInfo.remainingStr}</span>
+              </div>
+            </div>
+            <div className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+              <ClockIcon className="h-4.5 w-4.5" />
+            </div>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Removed Navigation Tabs (My Requests / Approval Requests) */}
       <>
@@ -1339,12 +1416,12 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
       </>
 
-      {/* Leave Form Modal */}
+       {/* Leave Form Modal */}
       <Modal
         isOpen={showLeaveForm}
         onClose={() => setShowLeaveForm(false)}
         size="xl"
-        title={editingLeave ? "Edit Leave Request" : "Apply Leave / Permission"}
+        title={editingLeave ? (mode === "permission" ? "Edit Permission Request" : "Edit Leave Request") : (mode === "permission" ? "Apply Permission" : "Apply Leave")}
       >
         <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Main Form Fields */}
@@ -1353,28 +1430,37 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               {/* Request Type */}
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Request Type <span className="text-danger-500">*</span></label>
-                <select
-                  value={leaveForm.requestType}
-                  onChange={(e) =>
-                    setLeaveForm((prev) => ({
-                      ...prev,
-                      requestType: e.target.value as "Leave" | "Permission",
-                      reason: "",
-                      leaveType: e.target.value === "Permission" ? "" : prev.leaveType,
-                      leaveDuration: e.target.value === "Permission" ? "Full Day" : prev.leaveDuration,
-                      fromDate: e.target.value === "Permission" ? "" : prev.fromDate,
-                      toDate: e.target.value === "Permission" ? "" : prev.toDate,
-                      totalDays: e.target.value === "Permission" ? 0 : prev.totalDays,
-                      permissionDate: e.target.value === "Leave" ? "" : prev.permissionDate,
-                      fromTime: e.target.value === "Leave" ? "" : prev.fromTime,
-                      toTime: e.target.value === "Leave" ? "" : prev.toTime,
-                    }))
-                  }
-                  className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer font-medium"
-                >
-                  <option value="Leave">Leave Request</option>
-                  <option value="Permission">Hourly Permission</option>
-                </select>
+                {mode !== "all" ? (
+                  <input
+                    type="text"
+                    value={leaveForm.requestType === "Leave" ? "Leave" : "Permission"}
+                    readOnly
+                    className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-neutral-100 text-sm text-neutral-500 font-semibold cursor-not-allowed select-none"
+                  />
+                ) : (
+                  <select
+                    value={leaveForm.requestType}
+                    onChange={(e) =>
+                      setLeaveForm((prev) => ({
+                        ...prev,
+                        requestType: e.target.value as "Leave" | "Permission",
+                        reason: "",
+                        leaveType: e.target.value === "Permission" ? "" : prev.leaveType,
+                        leaveDuration: e.target.value === "Permission" ? "Full Day" : prev.leaveDuration,
+                        fromDate: e.target.value === "Permission" ? "" : prev.fromDate,
+                        toDate: e.target.value === "Permission" ? "" : prev.toDate,
+                        totalDays: e.target.value === "Permission" ? 0 : prev.totalDays,
+                        permissionDate: e.target.value === "Leave" ? "" : prev.permissionDate,
+                        fromTime: e.target.value === "Leave" ? "" : prev.fromTime,
+                        toTime: e.target.value === "Leave" ? "" : prev.toTime,
+                      }))
+                    }
+                    className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer font-medium"
+                  >
+                    <option value="Leave">Leave Request</option>
+                    <option value="Permission">Hourly Permission</option>
+                  </select>
+                )}
               </div>
 
               {/* Leave Type */}
@@ -1388,11 +1474,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer font-medium"
                   >
                     <option value="">Select Leave Type</option>
-                    {leavePolicies.filter(pol => {
-                      const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
-                      const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
-                      return polGender === "all" || polGender === userGender;
-                    }).map(pol => (
+                    {activeLeavePolicies.map(pol => (
                       <option key={pol.id} value={pol.leave_type}>{pol.leave_type}</option>
                     ))}
                   </select>
@@ -1412,7 +1494,14 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         name="leaveDuration"
                         value={dur}
                         checked={leaveForm.leaveDuration === dur}
-                        onChange={(e) => setLeaveForm({ ...leaveForm, leaveDuration: e.target.value })}
+                        onChange={(e) => {
+                          const newDur = e.target.value;
+                          setLeaveForm(prev => ({
+                            ...prev,
+                            leaveDuration: newDur,
+                            toDate: newDur !== "Full Day" ? prev.fromDate : prev.toDate
+                          }));
+                        }}
                         className="w-4 h-4 text-primary-600 focus:ring-primary-100 cursor-pointer"
                       />
                       {dur}
@@ -1424,43 +1513,69 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
             {/* Leave Request Date Range Picker */}
             {leaveForm.requestType === "Leave" && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">From Date <span className="text-danger-500">*</span></label>
-                  <DatePicker
-                    required
-                    value={leaveForm.fromDate}
-                    onChange={(val) => setLeaveForm({ ...leaveForm, fromDate: val })}
-                    disablePast={true}
-                    disableWeekends={true}
-                    disabled={!leaveForm.leaveType}
-                    disabledDates={allYearHolidays.map((h: any) => h.date)}
-                    bookedDates={myAppliedLeaveDates}
-                  />
+              leaveForm.leaveDuration === "Full Day" ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">From Date <span className="text-danger-500">*</span></label>
+                    <DatePicker
+                      required
+                      value={leaveForm.fromDate}
+                      onChange={(val) => setLeaveForm({ ...leaveForm, fromDate: val })}
+                      disablePast={true}
+                      disableWeekends={true}
+                      disabled={!leaveForm.leaveType}
+                      disabledDates={allYearHolidays.map((h: any) => h.date)}
+                      bookedDates={myAppliedLeaveDates}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">To Date <span className="text-danger-500">*</span></label>
+                    <DatePicker
+                      required
+                      value={leaveForm.toDate}
+                      onChange={(val) => setLeaveForm({ ...leaveForm, toDate: val })}
+                      disablePast={true}
+                      disableWeekends={true}
+                      minDate={leaveForm.fromDate}
+                      disabled={!leaveForm.leaveType}
+                      disabledDates={allYearHolidays.map((h: any) => h.date)}
+                      bookedDates={myAppliedLeaveDates}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Total Estimated Days</label>
+                    <input
+                      readOnly
+                      value={leaveForm.totalDays || 0}
+                      className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-neutral-100 text-sm text-neutral-500 font-semibold text-center select-none"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">To Date <span className="text-danger-500">*</span></label>
-                  <DatePicker
-                    required
-                    value={leaveForm.toDate}
-                    onChange={(val) => setLeaveForm({ ...leaveForm, toDate: val })}
-                    disablePast={true}
-                    disableWeekends={true}
-                    minDate={leaveForm.fromDate}
-                    disabled={!leaveForm.leaveType}
-                    disabledDates={allYearHolidays.map((h: any) => h.date)}
-                    bookedDates={myAppliedLeaveDates}
-                  />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Date <span className="text-danger-500">*</span></label>
+                    <DatePicker
+                      required
+                      value={leaveForm.fromDate}
+                      onChange={(val) => setLeaveForm({ ...leaveForm, fromDate: val, toDate: val })}
+                      disablePast={true}
+                      disableWeekends={true}
+                      disabled={!leaveForm.leaveType}
+                      disabledDates={allYearHolidays.map((h: any) => h.date)}
+                      bookedDates={myAppliedLeaveDates}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Total Estimated Days</label>
+                    <input
+                      readOnly
+                      value={0.5}
+                      className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-neutral-100 text-sm text-neutral-500 font-semibold text-center select-none"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Total Estimated Days</label>
-                  <input
-                    readOnly
-                    value={leaveForm.totalDays || 0}
-                    className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-neutral-100 text-sm text-neutral-500 font-semibold text-center select-none"
-                  />
-                </div>
-              </div>
+              )
             )}
 
             {/* Hourly Permission Date/Time Picker */}
@@ -1518,11 +1633,15 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer font-medium"
                   >
                     <option value="">Select Employee</option>
-                    {employees?.map((emp) => (
+                    {employees ? [...employees].sort((a, b) => {
+                      const nameA = `${a.first_name || ""} ${a.last_name || ""}`.trim().toLowerCase();
+                      const nameB = `${b.first_name || ""} ${b.last_name || ""}`.trim().toLowerCase();
+                      return nameA.localeCompare(nameB);
+                    }).map((emp) => (
                       <option key={emp.id} value={`${emp.first_name || ""} ${emp.last_name || ""}`.trim()}>
                         {`${emp.first_name || ""} ${emp.last_name || ""}`.trim()}
                       </option>
-                    ))}
+                    )) : null}
                   </select>
                 </div>
               )}
@@ -1599,165 +1718,204 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             </div>
 
             {/* Form Action Buttons */}
-            <div className="flex gap-3 pt-6 border-t border-neutral-200">
-              <Button type="button" variant="outline" onClick={() => setShowLeaveForm(false)} className="rounded-xl px-5 py-2.5 text-sm font-semibold">
-                Cancel
-              </Button>
-              <Button type="submit" className="bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm shadow-md hover:shadow-lg transition-all duration-200">
-                {editingLeave ? "Update Request" : "Submit Request"}
-              </Button>
-            </div>
-          </div>
+                <div className="flex gap-3 pt-6 border-t border-neutral-200">
+                  <Button type="button" variant="outline" onClick={() => setShowLeaveForm(false)} className="rounded-xl px-5 py-2.5 text-sm font-semibold">
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm shadow-md hover:shadow-lg transition-all duration-200">
+                    {editingLeave ? "Update Request" : "Submit Request"}
+                  </Button>
+                </div>
+              </div>
 
-          {/* Right Policy Side Panel */}
-          <div className="space-y-6">
-            {/* Live Leave Balance list */}
-            <div className="bg-primary-50 border border-primary-200 rounded-2xl p-5 shadow-sm">
-              <h3 className="font-extrabold text-sm mb-4 text-primary-900 flex items-center gap-1.5">
-                <ShieldCheckIcon className="w-4 animate-bounce h-4 text-primary-700" />
-                Leave Balance Summary
-              </h3>
-              <div className="space-y-3.5 text-xs">
-                {(() => {
-                  const validPolicies = leavePolicies.filter(pol => {
-                    const polGender = (pol.applicable_gender || "All").trim().toLowerCase();
-                    const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
-                    return polGender === "all" || polGender === userGender;
-                  });
+              {/* Right Policy Side Panel */}
+              <div className="space-y-6">
+                {/* Live Leave Balance list */}
+                {mode !== "permission" && (
+                  <div className="bg-primary-50 border border-primary-200 rounded-2xl p-5 shadow-sm">
+                    <h3 className="font-extrabold text-sm mb-4 text-primary-900 flex items-center gap-1.5">
+                      <ShieldCheckIcon className="w-4 animate-bounce h-4 text-primary-700" />
+                      Leave Balance Summary
+                    </h3>
+                    <div className="space-y-3.5 text-xs">
+                      {(() => {
+                        const validPolicies = activeLeavePolicies;
+                        const totalAvailable = validPolicies.reduce((sum, pol) => sum + getAvailableBalance(pol.leave_type, pol.yearly_limit), 0);
 
-                  const totalAvailable = validPolicies.reduce((sum, pol) => sum + getAvailableBalance(pol.leave_type, pol.yearly_limit), 0);
+                        const isLeaveRequest = leaveForm.requestType === "Leave";
+                        const activeLeaveType = leaveForm.leaveType;
+                        const requestedDays = isLeaveRequest && activeLeaveType ? (leaveForm.totalDays || 0) : 0;
 
-                  const isLeaveRequest = leaveForm.requestType === "Leave";
-                  const activeLeaveType = leaveForm.leaveType;
-                  const requestedDays = isLeaveRequest && activeLeaveType ? (leaveForm.totalDays || 0) : 0;
+                        let deductionFromTotal = 0;
+                        let lopDays = 0;
 
-                  let deductionFromTotal = 0;
-                  let lopDays = 0;
+                        if (requestedDays > 0 && activeLeaveType) {
+                          const activePol = validPolicies.find(p => p.leave_type === activeLeaveType);
+                          const rawAvail = activePol ? getAvailableBalance(activePol.leave_type, activePol.yearly_limit) : getAvailableBalance(activeLeaveType, 0);
+                          const avail = rawAvail;
 
-                  if (requestedDays > 0 && activeLeaveType) {
-                    const activePol = validPolicies.find(p => p.leave_type === activeLeaveType);
-                    const rawAvail = activePol ? getAvailableBalance(activePol.leave_type, activePol.yearly_limit) : getAvailableBalance(activeLeaveType, 0);
-                    const avail = rawAvail;
+                          if (avail >= requestedDays) {
+                            deductionFromTotal = requestedDays;
+                          } else {
+                            deductionFromTotal = Math.max(0, avail);
+                            lopDays = requestedDays - avail;
+                          }
+                        }
 
-                    deductionFromTotal = Math.min(avail, requestedDays);
-                    if (requestedDays > avail) {
-                      lopDays = requestedDays - avail;
-                    }
-                  }
-
-                  const projectedTotal = totalAvailable - deductionFromTotal;
-
-                  return (
-                    <>
-                      {validPolicies.map((pol) => {
-                        const rawAvail = getAvailableBalance(pol.leave_type, pol.yearly_limit);
-                        const available = rawAvail;
-                        const isActive = isLeaveRequest && pol.leave_type === activeLeaveType;
+                        const projectedTotal = totalAvailable - deductionFromTotal;
 
                         return (
-                          <div key={pol.id} className="flex justify-between items-start py-2 border-b border-primary-100">
-                            <span className="text-neutral-600 font-semibold">{pol.leave_type}</span>
-                            <div className="flex flex-col items-end">
-                              <span className="font-extrabold text-primary-700 text-md">{Math.max(0, available)} days</span>
-                              {isActive && requestedDays > 0 && (
-                                <span className="text-amber-600 font-semibold text-[11px] mt-0.5 whitespace-nowrap">
-                                  Availed {requestedDays} {requestedDays === 1 ? "day" : "days"}{" "}
-                                  <span className="text-primary-700 ml-1">
-                                    {Math.max(0, available - requestedDays)}
-                                  </span>
-                                </span>
-                              )}
+                          <>
+                            {validPolicies.map((pol) => {
+                              const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+                              const isActive = activeLeaveType === pol.leave_type;
+
+                              return (
+                                <div key={pol.leave_type} className="flex justify-between items-start py-1.5 border-b border-primary-100/60 last:border-b-0">
+                                  <div>
+                                    <span className={`font-semibold ${isActive ? "text-primary-850 font-bold" : "text-neutral-600"}`}>
+                                      {pol.leave_type}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-col items-end">
+                                    <span className={`font-extrabold ${isActive ? "text-primary-900" : "text-neutral-700"}`}>
+                                      {available} days
+                                    </span>
+                                    {isActive && requestedDays > 0 && (
+                                      <span className="text-amber-600 font-semibold text-[11px] mt-0.5 whitespace-nowrap">
+                                        Availed {requestedDays} {requestedDays === 1 ? "day" : "days"}{" "}
+                                        <span className="text-primary-700 ml-1">
+                                          {Math.max(0, available - requestedDays)}
+                                        </span>
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            <div className="flex justify-between items-center pt-3 text-sm">
+                              <span className="font-bold text-primary-900">Total Balance</span>
+                              <div className="flex items-center gap-2 font-extrabold text-primary-800">
+                                <span className={requestedDays > 0 ? "line-through opacity-50" : ""}>{Math.max(0, totalAvailable)} days</span>
+                                {requestedDays > 0 && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-primary-700">{Math.max(0, projectedTotal)} days</span>
+                                    {lopDays > 0 && (
+                                      <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded text-[11px]">
+                                        Lop {lopDays}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
+                          </>
                         );
-                      })}
+                      })()}
+                    </div>
+                  </div>
+                )}
 
-                      <div className="flex justify-between items-center pt-3 text-sm">
-                        <span className="font-bold text-primary-900">Total Balance</span>
-                        <div className="flex items-center gap-2 font-extrabold text-primary-800">
-                          <span className={requestedDays > 0 ? "line-through opacity-50" : ""}>{Math.max(0, totalAvailable)} days</span>
-                          {requestedDays > 0 && (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-primary-700">{Math.max(0, projectedTotal)} days</span>
-                              {lopDays > 0 && (
-                                <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded text-[11px]">
-                                  Lop {lopDays}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                {/* Permission Balance Summary card */}
+                {mode !== "leave" && (
+                  <div className="bg-violet-50 border border-violet-200 rounded-2xl p-5 shadow-sm">
+                    <h3 className="font-extrabold text-sm mb-1 text-violet-900 flex items-center gap-1.5">
+                      <ClockIcon className="w-4 h-4 text-violet-700 animate-pulse" />
+                      Permission Balance Summary
+                    </h3>
+                    <p className="text-[10px] text-violet-600 font-bold mb-4">
+                      Cycle: {permissionBalanceInfo.cycleStr}
+                    </p>
+                    <div className="space-y-3 text-xs">
+                      <div className="flex justify-between items-center py-1.5 border-b border-violet-100">
+                        <span className="text-neutral-600 font-semibold">Monthly Limit</span>
+                        <span className="font-extrabold text-violet-850 text-neutral-700">{permissionBalanceInfo.limitStr}</span>
                       </div>
-                    </>
-                  );
-                })()}
+                      <div className="flex justify-between items-center py-1.5 border-b border-violet-100">
+                        <span className="text-neutral-600 font-semibold">Approved Permission</span>
+                        <span className="font-extrabold text-violet-850 text-neutral-700">{permissionBalanceInfo.approvedStr}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2.5 text-sm">
+                        <span className="font-bold text-violet-950">Remaining Balance</span>
+                        <span className="font-extrabold text-violet-900">
+                          {permissionBalanceInfo.remainingStr}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Leave Policy description */}
+                {mode !== "permission" && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 shadow-sm">
+                    <h4 className="font-extrabold text-sm mb-3 text-emerald-900 flex items-center gap-1.5">
+                      <InformationCircleIcon className="w-4 h-4 text-emerald-700" />
+                      Leave Information
+                    </h4>
+                    <ul className="text-[11px] text-neutral-600 space-y-3 font-semibold leading-relaxed">
+                      <li className="flex items-start gap-2">
+                        <span className="text-emerald-500 mt-0.5">•</span>
+                        <span><strong>Privilege Leave:</strong> Planned leaves (vacation, trips) requiring prior scheduling.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-emerald-500 mt-0.5">•</span>
+                        <span><strong>Casual Leave:</strong> Personal work or unplanned immediate events.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-emerald-500 mt-0.5">•</span>
+                        <span><strong>Sick Leave:</strong> Auto-approved or manager-approved medical recoveries.</span>
+                      </li>
+                    </ul>
+                  </div>
+                )}
+
+                {/* Permission Policy description */}
+                {mode === "permission" && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 shadow-sm">
+                    <h4 className="font-extrabold text-sm mb-3 text-emerald-900 flex items-center gap-1.5">
+                      <InformationCircleIcon className="w-4 h-4 text-emerald-700" />
+                      Permission Info
+                    </h4>
+                    <p className="text-[11px] text-neutral-600 font-semibold leading-relaxed">
+                      Permissions are hourly slots designed for short personal outings (emergency or doctor visits).
+                      Up to 2 hours of permission is allowed per monthly cycle (25th to 24th).
+                    </p>
+                  </div>
+                )}
+
+                {/* Guidelines info */}
+                {mode !== "permission" && (
+                  <div className="bg-warning-50 border border-warning-200 rounded-2xl p-5 shadow-sm">
+                    <h4 className="font-extrabold text-sm mb-3 text-warning-900 flex items-center gap-1.5">
+                      <InformationCircleIcon className="w-4 h-4 text-warning-700" />
+                      Quick Guidelines
+                    </h4>
+                    <ul className="text-[11px] text-neutral-600 space-y-2.5 font-semibold leading-relaxed">
+                      <li>• Apply at least 2 days in advance for planned leaves.</li>
+                      <li>• Ensure work handover partner is selected.</li>
+                      <li>• Keep emergency contact up to date.</li>
+                    </ul>
+                  </div>
+                )}
+
+                {/* Permission Guidelines info */}
+                {mode === "permission" && (
+                  <div className="bg-warning-50 border border-warning-200 rounded-2xl p-5 shadow-sm">
+                    <h4 className="font-extrabold text-sm mb-3 text-warning-900 flex items-center gap-1.5">
+                      <InformationCircleIcon className="w-4 h-4 text-warning-700" />
+                      Quick Guidelines
+                    </h4>
+                    <ul className="text-[11px] text-neutral-600 space-y-2.5 font-semibold leading-relaxed">
+                      <li>• Request must be submitted before stepping out.</li>
+                      <li>• Get approval from your reporting manager.</li>
+                      <li>• Limit permission to a maximum of 2 hours.</li>
+                    </ul>
+                  </div>
+                )}
               </div>
-            </div>
-
-            {/* Permission Balance Summary card */}
-            <div className="bg-violet-50 border border-violet-200 rounded-2xl p-5 shadow-sm">
-              <h3 className="font-extrabold text-sm mb-1 text-violet-900 flex items-center gap-1.5">
-                <ClockIcon className="w-4 h-4 text-violet-700 animate-pulse" />
-                Permission Balance Summary
-              </h3>
-              <p className="text-[10px] text-violet-600 font-bold mb-4">
-                Cycle: {permissionBalanceInfo.cycleStr}
-              </p>
-              <div className="space-y-3 text-xs">
-                <div className="flex justify-between items-center py-1.5 border-b border-violet-100">
-                  <span className="text-neutral-600 font-semibold">Monthly Limit</span>
-                  <span className="font-extrabold text-violet-850 text-neutral-700">{permissionBalanceInfo.limitStr}</span>
-                </div>
-                <div className="flex justify-between items-center py-1.5 border-b border-violet-100">
-                  <span className="text-neutral-600 font-semibold">Approved Permission</span>
-                  <span className="font-extrabold text-violet-850 text-neutral-700">{permissionBalanceInfo.approvedStr}</span>
-                </div>
-                <div className="flex justify-between items-center pt-2.5 text-sm">
-                  <span className="font-bold text-violet-950">Remaining Balance</span>
-                  <span className="font-extrabold text-violet-900">
-                    {permissionBalanceInfo.remainingStr}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Leave Policy description */}
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 shadow-sm">
-              <h4 className="font-extrabold text-sm mb-3 text-emerald-900 flex items-center gap-1.5">
-                <InformationCircleIcon className="w-4 h-4 text-emerald-700" />
-                Leave Information
-              </h4>
-              <ul className="text-[11px] text-neutral-600 space-y-3 font-semibold leading-relaxed">
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-500 mt-0.5">•</span>
-                  <span><strong>Privilege Leave:</strong> Planned leaves (vacation, trips) requiring prior scheduling.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-500 mt-0.5">•</span>
-                  <span><strong>Casual Leave:</strong> Personal work or unplanned immediate events.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-500 mt-0.5">•</span>
-                  <span><strong>Sick Leave:</strong> Auto-approved or manager-approved medical recoveries.</span>
-                </li>
-              </ul>
-            </div>
-
-            {/* Guidelines info */}
-            <div className="bg-warning-50 border border-warning-200 rounded-2xl p-5 shadow-sm">
-              <h4 className="font-extrabold text-sm mb-3 text-warning-900 flex items-center gap-1.5">
-                <InformationCircleIcon className="w-4 h-4 text-warning-700" />
-                Quick Guidelines
-              </h4>
-              <ul className="text-[11px] text-neutral-600 space-y-2.5 font-semibold leading-relaxed">
-                <li>• Apply at least 2 days in advance for planned leaves.</li>
-                <li>• Ensure work handover partner is selected.</li>
-                <li>• Keep emergency contact up to date.</li>
-              </ul>
-            </div>
-          </div>
-        </form>
-      </Modal>
+            </form>
+          </Modal>
 
       {/* Leave Balance Validation Modal */}
       <Modal

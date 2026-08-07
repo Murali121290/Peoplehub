@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { MagnifyingGlassIcon, PlusIcon, KeyIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, PlusIcon, KeyIcon, ArrowPathIcon, PencilIcon } from '@heroicons/react/24/outline';
 import Panel from '../components/Panel';
 import Btn from '../components/Btn';
 import { Badge } from '../../../components/ui/Badge';
@@ -10,6 +10,7 @@ interface DirectoryTabProps {
   filteredEmps: any[];
   search: string;
   onEditEmployee: (employee: any) => void;
+  onEditDetailedProfile: (employee: any) => void;
   onSearchChange: (val: string) => void;
   onAddEmployee: () => void;
   onResetPassword: (userId: string) => void;
@@ -74,6 +75,7 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
   search,
   onSearchChange,
   onEditEmployee,
+  onEditDetailedProfile,
   onAddEmployee,
   onResetPassword,
   onResetAllPasswords,
@@ -362,7 +364,7 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
                 </div>
               </th>
 
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[100px]">Actions</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[155px]">Actions</th>
               <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[155px]">
                 <div className="flex flex-col gap-1.5">
                   <span>Employment Status</span>
@@ -444,14 +446,24 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
                   )}
                 </td>
                 <td className="px-4 py-3.5">
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); onResetPassword(emp.user_id); }}
-                    className="flex items-center gap-1 text-red-600 hover:text-red-800 font-medium"
-                    title="Reset Password to Welcome_PeopleHub"
-                  >
-                    <KeyIcon className="w-4 h-4" />
-                    Reset
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onEditDetailedProfile(emp); }}
+                      className="flex items-center gap-1 text-primary-600 hover:text-primary-800 font-semibold"
+                      title="Edit Detailed Profile"
+                    >
+                      <PencilIcon className="w-4 h-4" />
+                      Edit
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onResetPassword(emp.user_id); }}
+                      className="flex items-center gap-1 text-red-650 hover:text-red-800 font-medium"
+                      title="Reset Password to Welcome_PeopleHub"
+                    >
+                      <KeyIcon className="w-4 h-4" />
+                      Reset
+                    </button>
+                  </div>
                 </td>
                 <td className="px-4 py-3.5">
                   <div className="flex items-center" onClick={(e) => e.stopPropagation()}>

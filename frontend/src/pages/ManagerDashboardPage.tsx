@@ -620,66 +620,76 @@ const ManagerDashboardPage = () => {
   // SCOPED TEAM MEMBERS
   // ==========================
   const scopedTeamMembers = useMemo(() => {
+    let list = [];
     if (teamAttendance.length === 0) {
-      return teamMembers;
+      list = teamMembers.map((m: any) => ({
+        ...m,
+        name: m.name || `${m.first_name || ""} ${m.last_name || ""}`.trim()
+      }));
+    } else {
+      list = teamAttendance.map((att: any) => {
+        const match = teamMembers.find(
+          (m) =>
+            (att.id != null && m.id === att.id) ||
+            (att.email && m.email && m.email.toLowerCase() === att.email.toLowerCase()),
+        );
+
+        const isOnLeave = att.attendance_status === "On Leave";
+
+        return {
+          id: att.id ?? match?.id,
+          user_id: att.user_id || match?.user_id || att.id || match?.id,
+          employee_id: att.employee_id || match?.employee_id || (att.id ? `EMP${att.id}` : ""),
+          name: att.name || match?.name || "",
+          email: match?.email || att.email || "",
+          role: att.designation || match?.role || "Employee",
+          designation: att.designation || match?.role || "Employee",
+          department: att.department || "",
+          avatar:
+            match?.avatar ||
+            (att.name
+              ? att.name
+                .split(" ")
+                .map((n: string) => n[0])
+                .join("")
+                .substring(0, 2)
+                .toUpperCase()
+              : "EM"),
+          tasksCompleted: match?.tasksCompleted ?? 0,
+          efficiency: match?.efficiency ?? 0,
+          hoursThisWeek: match?.hoursThisWeek ?? att.working_hours ?? 0,
+          status: isOnLeave ? "Leave" : match?.status || "Active",
+          isWfh: att.is_wfh || false,
+          isPermanentWfh: att.is_permanent_wfh || false,
+          isShiftChanged: att.is_shift_changed || false,
+          attendanceStatus: att.attendance_status || "",
+          profile_image: att.profile_image,
+          check_in: att.check_in,
+          check_out: att.check_out,
+          working_hours: att.working_hours,
+          card_check_in: att.card_check_in,
+          card_check_out: att.card_check_out,
+          card_working_hours: att.card_working_hours,
+          lunch_minutes: att.lunch_minutes,
+          tea_minutes: att.tea_minutes,
+          shift: att.shift,
+          manager_status: att.manager_status,
+          attendance_status: att.attendance_status || "",
+          is_reporting_manager: att.is_reporting_manager || match?.is_reporting_manager || false,
+          report_count: att.report_count ?? match?.report_count ?? 0,
+          reporting_manager: att.reporting_manager || match?.reporting_manager || "",
+          permission_from: att.permission_from,
+          permission_to: att.permission_to,
+          is_permission: att.is_permission,
+          permission_hours: att.permission_hours,
+        };
+      });
     }
 
-    return teamAttendance.map((att: any) => {
-      const match = teamMembers.find(
-        (m) =>
-          (att.id != null && m.id === att.id) ||
-          (att.email && m.email && m.email.toLowerCase() === att.email.toLowerCase()),
-      );
-
-      const isOnLeave = att.attendance_status === "On Leave";
-
-      return {
-        id: att.id ?? match?.id,
-        user_id: att.user_id || match?.user_id || att.id || match?.id,
-        employee_id: att.employee_id || match?.employee_id || (att.id ? `EMP${att.id}` : ""),
-        name: att.name || match?.name || "",
-        email: match?.email || att.email || "",
-        role: att.designation || match?.role || "Employee",
-        designation: att.designation || match?.role || "Employee",
-        department: att.department || "",
-        avatar:
-          match?.avatar ||
-          (att.name
-            ? att.name
-              .split(" ")
-              .map((n: string) => n[0])
-              .join("")
-              .substring(0, 2)
-              .toUpperCase()
-            : "EM"),
-        tasksCompleted: match?.tasksCompleted ?? 0,
-        efficiency: match?.efficiency ?? 0,
-        hoursThisWeek: match?.hoursThisWeek ?? att.working_hours ?? 0,
-        status: isOnLeave ? "Leave" : match?.status || "Active",
-        isWfh: att.is_wfh || false,
-        isPermanentWfh: att.is_permanent_wfh || false,
-        isShiftChanged: att.is_shift_changed || false,
-        attendanceStatus: att.attendance_status || "",
-        profile_image: att.profile_image,
-        check_in: att.check_in,
-        check_out: att.check_out,
-        working_hours: att.working_hours,
-        card_check_in: att.card_check_in,
-        card_check_out: att.card_check_out,
-        card_working_hours: att.card_working_hours,
-        lunch_minutes: att.lunch_minutes,
-        tea_minutes: att.tea_minutes,
-        shift: att.shift,
-        manager_status: att.manager_status,
-        attendance_status: att.attendance_status || "",
-        is_reporting_manager: att.is_reporting_manager || match?.is_reporting_manager || false,
-        report_count: att.report_count ?? match?.report_count ?? 0,
-        reporting_manager: att.reporting_manager || match?.reporting_manager || "",
-        permission_from: att.permission_from,
-        permission_to: att.permission_to,
-        is_permission: att.is_permission,
-        permission_hours: att.permission_hours,
-      };
+    return [...list].sort((a: any, b: any) => {
+      const nameA = (a.name || "").trim().toLowerCase();
+      const nameB = (b.name || "").trim().toLowerCase();
+      return nameA.localeCompare(nameB);
     });
   }, [teamAttendance, teamMembers]);
 
@@ -2540,12 +2550,12 @@ const ManagerDashboardPage = () => {
               background: "#fff",
               borderRadius: "24px",
               width: "100%",
-              maxWidth: "800px",
-              maxHeight: "85vh",
+              maxWidth: "1100px",
+              maxHeight: "88vh",
               display: "flex",
               flexDirection: "column",
               boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.15)",
-              border: "1px solid #f1f5f9",
+              border: "1px solid #e2e8f0",
               animation: "slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
               overflow: "hidden",
             }}
@@ -2672,20 +2682,19 @@ const ManagerDashboardPage = () => {
                 <div style={{ overflowX: "auto", border: "1px solid #f1f5f9", borderRadius: "16px" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                     <thead>
-                      <tr style={{ background: "#f8fafc", borderBottom: "1px solid #f1f5f9", fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                        <th rowSpan={2} style={{ padding: "12px 16px" }}>Date</th>
-                        <th rowSpan={2} style={{ padding: "12px 16px" }}>Status</th>
-                        <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(37,99,235,0.05)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
-                        <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "rgba(126,34,206,0.05)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
-                        <th rowSpan={2} style={{ padding: "12px 16px" }}>Breaks (L/T)</th>
+                      <tr style={{ background: "#f8fafc", fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                        <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Date</th>
+                        <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "2px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Status</th>
+                        <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", background: "rgba(37,99,235,0.06)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
+                        <th colSpan={2} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", background: "rgba(126,34,206,0.06)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
+                        <th rowSpan={2} style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0" }}>Breaks (L/T)</th>
                       </tr>
-                      <tr style={{ background: "#f8fafc", borderBottom: "1px solid #f1f5f9", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.02)" }}>Check In</th>
-                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.02)" }}>Check Out</th>
-                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.02)", fontWeight: 700 }}>Hours</th>
-                        <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.02)" }}>Check In</th>
-                        <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.02)" }}>Check Out</th>
-                        <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.02)", fontWeight: 700 }}>Hours</th>
+                      <tr style={{ background: "#f8fafc", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #c7d2fe" }}>Check In</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #c7d2fe" }}>Check Out</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "2px solid #c7d2fe", fontWeight: 700 }}>Hours</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e9d5ff" }}>Check In</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "2px solid #e9d5ff", fontWeight: 700 }}>Hours</th>
                       </tr>
                     </thead>
                     <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>
@@ -2721,11 +2730,11 @@ const ManagerDashboardPage = () => {
                         });
 
                         return (
-                          <tr key={record.id} style={{ borderBottom: "1px solid #f8fafc" }}>
-                            <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.navy }}>
+                          <tr key={record.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                            <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.navy, borderRight: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>
                               {formattedDate}
                             </td>
-                            <td style={{ padding: "12px 16px" }}>
+                            <td style={{ padding: "12px 16px", borderRight: "2px solid #e2e8f0" }}>
                               <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
                                 <span
                                   style={{
@@ -2763,23 +2772,20 @@ const ManagerDashboardPage = () => {
                               </div>
                             </td>
                             {/* Web site entry */}
-                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", color: record.checkIn !== "-" ? THEME.text : THEME.textSoft }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", color: record.checkIn !== "-" ? THEME.text : THEME.textSoft, borderRight: "1px solid #c7d2fe" }}>
                               {record.checkIn}
                             </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", color: record.checkOut !== "-" ? THEME.text : THEME.textSoft }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", color: record.checkOut !== "-" ? THEME.text : THEME.textSoft, borderRight: "1px solid #c7d2fe" }}>
                               {record.checkOut}
                             </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", fontWeight: 700, color: record.workingHours > 0 ? THEME.primary : THEME.textSoft }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", fontWeight: 700, color: record.workingHours > 0 ? THEME.primary : THEME.textSoft, borderRight: "2px solid #c7d2fe" }}>
                               {formatWorkingHours(record.workingHours)}
                             </td>
                             {/* Biometric Card entry */}
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: record.cardCheckIn !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600 }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckIn !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff" }}>
                               {record.cardCheckIn}
                             </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: record.cardCheckOut !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600 }}>
-                              {record.cardCheckOut}
-                            </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", fontWeight: 700, color: "#7e22ce" }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", fontWeight: 700, color: "#7e22ce", borderRight: "2px solid #e9d5ff" }}>
                               {formatWorkingHours(record.cardWorkingHours)}
                             </td>
                             <td style={{ padding: "12px 16px", color: THEME.textSoft }}>
