@@ -19,8 +19,10 @@ import { Modal } from "../../../components/ui/Modal";
 import { Spinner } from "../../../components/ui/Spinner";
 import { EmptyState } from "../../../components/ui/EmptyState";
 
+import { API_URL } from "../../../config/api";
+
 // Constants
-const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
+const BASE_URL = `${API_URL}/api`;
 
 // TypeScript Interfaces
 interface Employee {

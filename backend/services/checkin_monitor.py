@@ -7,6 +7,7 @@ from models.notification import Notification
 from models.database import db
 from extensions import socketio
 from zoneinfo import ZoneInfo
+from utils.employee_cache import get_all_employees_cached
 
 
 
@@ -25,6 +26,14 @@ def check_missed_checkins():
         ).all()
 
         print(f"Users Found: {len(users)}")
+
+        # Loaded once per run (instead of once per already-checked-in user
+        # below) since this job fires every minute, all day.
+        active_employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
+        manager_by_name = {}
+        for e in active_employees:
+            full_name = f"{e.first_name} {e.last_name}".strip().lower()
+            manager_by_name.setdefault(full_name, e)
 
         for user in users:
             print(f"Checking User: {user.full_name}")
@@ -49,12 +58,7 @@ def check_missed_checkins():
                 print(f"{employee.employee_id} already has attendance today")
 
                 manager_name = employee.reporting_manager.strip().lower()
-                manager_emp = None
-                for e in [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]:
-                    full_name = f"{e.first_name} {e.last_name}".strip().lower()
-                    if full_name == manager_name:
-                        manager_emp = e
-                        break
+                manager_emp = manager_by_name.get(manager_name)
 
                 pending_notifs = Notification.query.filter(
                     Notification.title.in_(["Missed Check In", "⏰ Missed Check In"]),
@@ -146,7 +150,7 @@ def generate_daily_notifications():
 
     try:
         # 1. Fetch all active employees
-        employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+        employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
         print(f"Checking birthdays and anniversaries for {len(employees)} employees...")
 
         for emp in employees:

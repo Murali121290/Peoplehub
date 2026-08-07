@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { DatePicker } from "../components/ui/DatePicker";
-import { getProfileImageUrl } from "../config/api";
+import { getProfileImageUrl, BASE_API_URL } from "../config/api";
 
 // ─── Moved OUTSIDE the parent component ───────────────────────────────────────
 
@@ -151,7 +151,7 @@ const Completeprofilepage = () => {
   const [shiftOptions, setShiftOptions] = useState<string[]>([]);
 
   useEffect(() => {
-    const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+    const apiUrl = `${BASE_API_URL}/api`;
     fetch(`${apiUrl}/shifts/options`)
       .then((res) => res.json())
       .then((data) => {
@@ -167,7 +167,7 @@ const Completeprofilepage = () => {
     if (!employeeId) return;
     const fetchEmployee = async () => {
       try {
-        const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+        const apiUrl = `${BASE_API_URL}/api`;
         const res = await fetch(
           `${apiUrl}/employees/${employeeId}`,
         );
@@ -279,7 +279,7 @@ const Completeprofilepage = () => {
         }
       });
 
-      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const apiUrl = `${BASE_API_URL}/api`;
       const res = await fetch(
         `${apiUrl}/employees/${employeeId}`,
         {

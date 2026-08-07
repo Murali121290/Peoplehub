@@ -663,6 +663,8 @@ const ManagerDashboardPage = () => {
         profile_image: att.profile_image,
         check_in: att.check_in,
         check_out: att.check_out,
+        check_in_ip: att.check_in_ip,
+        check_out_ip: att.check_out_ip,
         working_hours: att.working_hours,
         card_check_in: att.card_check_in,
         card_check_out: att.card_check_out,
@@ -2211,8 +2213,18 @@ const ManagerDashboardPage = () => {
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.shift || "General Shift"}</td>
 
                               {/* Web Entry Columns */}
-                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }}>{member.check_in || "—"}</td>
-                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }}>{member.check_out || "—"}</td>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }} title={member.check_in_ip ? `IP: ${member.check_in_ip}` : undefined}>
+                                <div>{member.check_in || "—"}</div>
+                                {member.check_in_ip && (
+                                  <div style={{ fontSize: "10px", color: THEME.textSoft, marginTop: "2px" }}>{member.check_in_ip}</div>
+                                )}
+                              </td>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }} title={member.check_out_ip ? `IP: ${member.check_out_ip}` : undefined}>
+                                <div>{member.check_out || "—"}</div>
+                                {member.check_out_ip && (
+                                  <div style={{ fontSize: "10px", color: THEME.textSoft, marginTop: "2px" }}>{member.check_out_ip}</div>
+                                )}
+                              </td>
                               <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", fontWeight: 700 }}>
                                 {formatWorkingHours(member.working_hours)}
                               </td>

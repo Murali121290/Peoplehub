@@ -3,6 +3,7 @@ from models.database import db
 from models.leave import LeaveRequest
 from datetime import datetime
 from models.employee import Employee
+from utils.employee_cache import get_all_employees_cached
 from openpyxl import Workbook
 from utils.compat import send_file
 from io import BytesIO
@@ -1194,7 +1195,7 @@ def create_leave_policy():
         db.session.add(policy)
         db.session.commit()
 
-        employees = [e for e in Employee.query.all() if e.is_active != False]
+        employees = [e for e in get_all_employees_cached() if e.is_active != False]
         for emp in employees:
             emp_gender = (emp.gender or "").strip().lower()
             pol_gender = applicable_gender.strip().lower()

@@ -3,7 +3,7 @@ import { socket } from "../socket";
 import { MegaphoneIcon } from "@heroicons/react/24/outline";
 import { Button } from "../components/ui/Button";
 import EmojiPicker from 'emoji-picker-react';
-import { getProfileImageUrl } from "../config/api";
+import { getProfileImageUrl, BASE_API_URL } from "../config/api";
 import { BookLoader } from "../components/ui/Spinner";
 
 
@@ -34,7 +34,7 @@ const AnnouncementsPage = () => {
 
   const fetchCelebrations = async () => {
     try {
-      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const apiUrl = `${BASE_API_URL}/api`;
       const [bRes, aRes] = await Promise.all([
         fetch(`${apiUrl}/employees/birthdays/today`),
         fetch(`${apiUrl}/employees/anniversaries/today`),
@@ -148,7 +148,7 @@ const AnnouncementsPage = () => {
 
   const fetchAnnouncements = async () => {
     try {
-      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const apiUrl = `${BASE_API_URL}/api`;
       const response = await fetch(`${apiUrl}/communications/announcements?role=${user.access_level || ''}`);
       const data = await response.json();
       if (data.success && data.announcements) {
@@ -162,7 +162,7 @@ const AnnouncementsPage = () => {
   const toggleLike = async (messageId: number, reactionEmoji: string = "👍") => {
     if (!currentUserId) return;
     try {
-      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const apiUrl = `${BASE_API_URL}/api`;
       const senderName =
         user.full_name ||
         user.name ||

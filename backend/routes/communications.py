@@ -200,8 +200,8 @@ def get_announcements():
             ).all()
 
         # Map employee IDs to full names for any legacy integer likes
-        from models.employee import Employee
-        all_emps = Employee.query.all()
+        from utils.employee_cache import get_all_employees_cached
+        all_emps = get_all_employees_cached()
         emp_map = {e.id: f"{e.first_name} {e.last_name}".strip() for e in all_emps}
         # Also map user_id if employee.id differs
         for e in all_emps:

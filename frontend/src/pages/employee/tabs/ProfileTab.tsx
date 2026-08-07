@@ -32,8 +32,9 @@ import { DatePicker } from "../../../components/ui/DatePicker";
 import Cropper from "react-easy-crop";
 import getCroppedImg from "../../../utils/cropImage";
 
-const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
-import { getProfileImageUrl } from "../../../config/api";
+import { getProfileImageUrl, BASE_API_URL } from "../../../config/api";
+
+const BASE_URL = `${BASE_API_URL}/api`;
 
 const COUNTRY_CODES = [
   { value: "+91", label: "🇮🇳 IN" },

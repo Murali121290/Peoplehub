@@ -5,6 +5,7 @@ import { User, Role, Team } from "../types/index";
 import { Modal } from "../components/ui/Modal";
 import { Button } from "../components/ui/Button";
 import { FormField, Input, Select } from "../components/ui/Form";
+import { BASE_API_URL } from "../config/api";
 
 interface UserModalProps {
   user: User | null;
@@ -52,7 +53,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, onClose }) => {
 
   const fetchEmployees = async () => {
     try {
-      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const apiUrl = `${BASE_API_URL}/api`;
       const response = await fetch(`${apiUrl}/employees/`);
 
       const data = await response.json();

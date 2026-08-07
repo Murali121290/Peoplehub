@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
+import { BASE_API_URL } from '../../../config/api';
 import {
   PlusIcon,
   CalendarIcon,
@@ -156,7 +157,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const [activeRequestDetails, setActiveRequestDetails] = useState<number | null>(null);
   const [cancelLeaveId, setCancelLeaveId] = useState<number | null>(null);
 
-  const BASE_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
+  const BASE_URL = `${BASE_API_URL}/api`;
 
   const [leavePolicies, setLeavePolicies] = useState<any[]>([]);
   const [employeeBalances, setEmployeeBalances] = useState<any[]>([]);
