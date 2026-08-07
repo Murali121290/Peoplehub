@@ -25,6 +25,7 @@ interface BalloonProps {
   stringLength: number;
   stringLeft: number;
   tilt?: number;
+  animation?: string;
 }
 
 const Balloon: React.FC<BalloonProps> = ({
@@ -38,6 +39,7 @@ const Balloon: React.FC<BalloonProps> = ({
   stringLength,
   stringLeft,
   tilt = 0,
+  animation,
 }) => {
   return (
     <div
@@ -48,6 +50,7 @@ const Balloon: React.FC<BalloonProps> = ({
         width,
         height: height + stringLength,
         transform: `rotate(${tilt}deg)`,
+        animation: animation,
       }}
     >
       <div
@@ -121,28 +124,169 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
     const imageId = myEmployeeData?.id || localStorage.getItem("employee_id");
 
     return (
-      <div className="fixed inset-0 z-[9999] bg-[linear-gradient(135deg,#d3d6ea_0%,#b8bcdb_45%,#9ea5d0_100%)] overflow-y-auto">
+      <div className="fixed inset-0 z-[9999] bg-[linear-gradient(135deg,#d3d6ea_0%,#b8bcdb_45%,#9ea5d0_100%)] overflow-y-auto animate-bg">
+        <style>{`
+          @keyframes float-gentle {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-10px) scale(1.02); }
+          }
+          @keyframes bg-shift {
+            0%, 100% { filter: hue-rotate(0deg); }
+            50% { filter: hue-rotate(30deg); }
+          }
+          @keyframes photo-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-12px); }
+          }
+          @keyframes stick-spin {
+            0%, 100% { transform: rotate(35deg) scale(1); }
+            50% { transform: rotate(50deg) scale(1.15); }
+          }
+          @keyframes stick-spin-reverse {
+            0%, 100% { transform: rotate(-35deg) scale(1); }
+            50% { transform: rotate(-50deg) scale(1.15); }
+          }
+          @keyframes confetti-fall {
+            0% { transform: translateY(-20px) rotate(0deg) translateX(0); opacity: 1; }
+            50% { transform: translateY(50vh) rotate(180deg) translateX(15px); opacity: 0.9; }
+            100% { transform: translateY(105vh) rotate(360deg) translateX(-15px); opacity: 0; }
+          }
+          @keyframes balloon-sway-1 {
+            0%, 100% { transform: translateY(0) translateX(0) rotate(0deg); }
+            50% { transform: translateY(-25px) translateX(12px) rotate(6deg); }
+          }
+          @keyframes balloon-sway-2 {
+            0%, 100% { transform: translateY(0) translateX(0) rotate(0deg); }
+            50% { transform: translateY(-30px) translateX(-18px) rotate(-8deg); }
+          }
+          @keyframes balloon-sway-3 {
+            0%, 100% { transform: translateY(0) translateX(0) rotate(0deg); }
+            50% { transform: translateY(-20px) translateX(15px) rotate(5deg); }
+          }
+          @keyframes balloon-sway-4 {
+            0%, 100% { transform: translateY(0) translateX(0) rotate(0deg); }
+            50% { transform: translateY(-35px) translateX(-10px) rotate(-7deg); }
+          }
+          @keyframes gold-shine {
+            0% { background-position: -200% center; }
+            100% { background-position: 200% center; }
+          }
+          @keyframes sparkle-pulse {
+            0%, 100% { transform: scale(0.7) rotate(0deg); opacity: 0.5; }
+            50% { transform: scale(1.3) rotate(180deg); opacity: 1; }
+          }
+          .animate-float {
+            animation: float-gentle 6s ease-in-out infinite;
+          }
+          .animate-photo {
+            animation: photo-float 5s ease-in-out infinite;
+          }
+          .animate-stick {
+            animation: stick-spin 4s ease-in-out infinite;
+          }
+          .animate-stick-rev {
+            animation: stick-spin-reverse 4.5s ease-in-out infinite;
+          }
+          .animate-shine {
+            animation: gold-shine 6s linear infinite;
+          }
+          .animate-sparkle {
+            animation: sparkle-pulse 2s ease-in-out infinite;
+          }
+          .animate-bg {
+            animation: bg-shift 12s ease-in-out infinite;
+          }
+          @keyframes emoji-rain {
+            0% { transform: translateY(-40px) rotate(0deg); opacity: 0; }
+            8% { opacity: 0.85; }
+            50% { transform: translateY(50vh) rotate(180deg); opacity: 0.75; }
+            90% { opacity: 0.5; }
+            100% { transform: translateY(105vh) rotate(360deg); opacity: 0; }
+          }
+        `}</style>
         <div className="relative w-full min-h-screen overflow-hidden">
-          {/* Close button */}
+          {/* Confetti Rain Layer */}
+          {Array.from({ length: 45 }).map((_, i) => {
+            const left = (i * 2.3) + (Math.random() * 2); // Spread across screen width
+            const delay = Math.random() * 8;
+            const duration = 5 + Math.random() * 6;
+            const size = 6 + Math.random() * 8;
+            const colors = ["#f472b6", "#60a5fa", "#34d399", "#fbbf24", "#a78bfa", "#f87171", "#22d3ee", "#a3e635"];
+            const color = colors[i % colors.length];
+            const shapes = ["50%", "0%", "2px"]; // circles, squares, rounded confetti
+            const borderRadius = shapes[i % shapes.length];
+
+            return (
+              <div
+                key={i}
+                style={{
+                  position: "absolute",
+                  top: -20,
+                  left: `${left}%`,
+                  width: size,
+                  height: size,
+                  backgroundColor: color,
+                  borderRadius: borderRadius,
+                  opacity: 0.8,
+                  pointerEvents: "none",
+                  zIndex: 2,
+                  animation: `confetti-fall ${duration}s linear infinite`,
+                  animationDelay: `${delay}s`,
+                }}
+              />
+            );
+          })}
+
+          {/* 🎉 Emoji Rain Layer — birthday emojis floating down */}
+          {(() => {
+            const emojiPool = ["🎂", "🎁", "🎈", "🎊", "🥳", "🎉", "🧁", "🍰", "🪅", "💐", "⭐", "🌟"];
+            return Array.from({ length: 18 }).map((_, i) => {
+              const leftPos = 4 + (i * 5.2) + (Math.random() * 3);
+              const emojiDelay = 1 + Math.random() * 10;
+              const emojiDuration = 8 + Math.random() * 7;
+              const emojiSize = 18 + Math.random() * 18;
+              const emoji = emojiPool[i % emojiPool.length];
+              return (
+                <div
+                  key={`emoji-${i}`}
+                  style={{
+                    position: "absolute",
+                    top: -40,
+                    left: `${leftPos}%`,
+                    fontSize: emojiSize,
+                    pointerEvents: "none",
+                    zIndex: 3,
+                    opacity: 0,
+                    animation: `emoji-rain ${emojiDuration}s linear infinite`,
+                    animationDelay: `${emojiDelay}s`,
+                  }}
+                >
+                  {emoji}
+                </div>
+              );
+            });
+          })()}
+
+          {/* Close button with premium hover effect */}
           <button
             onClick={onClose}
-            className="absolute top-6 right-6 md:top-8 md:right-10 z-20 w-14 h-14 rounded-full bg-white shadow-xl hover:bg-gray-100 flex items-center justify-center text-3xl font-bold text-gray-700"
+            className="absolute top-6 right-6 md:top-8 md:right-10 z-20 w-14 h-14 rounded-full bg-white shadow-xl flex items-center justify-center text-3xl font-bold text-gray-700 hover:text-rose-500 hover:bg-neutral-50 hover:scale-110 hover:rotate-90 transition-all duration-300 transform active:scale-95"
           >
             ✕
           </button>
 
           {/* Big background circle */}
-          <div className="absolute -top-[120px] -left-[180px] w-[520px] h-[520px] rounded-full border border-white/25 bg-[radial-gradient(circle_at_35%_30%,rgba(178,181,214,0.9),rgba(150,153,196,0.85)_55%,rgba(130,133,182,0.75)_100%)]" />
+          <div className="absolute -top-[120px] -left-[180px] w-[520px] h-[520px] rounded-full border border-white/25 bg-[radial-gradient(circle_at_35%_30%,rgba(178,181,214,0.9),rgba(150,153,196,0.85)_55%,rgba(130,133,182,0.75)_100%)] animate-float" />
 
           {/* Floating dots */}
-          <div className="absolute top-[70px] left-[280px] w-[30px] h-[30px] rounded-full shadow-md bg-pink-300 hidden md:block" />
-          <div className="absolute top-[140px] left-[330px] w-[46px] h-[46px] rounded-full shadow-md bg-indigo-300 hidden md:block" />
-          <div className="absolute top-[220px] left-[250px] w-[20px] h-[20px] rounded-full shadow-md bg-purple-300 hidden md:block" />
+          <div className="absolute top-[70px] left-[280px] w-[30px] h-[30px] rounded-full shadow-md bg-pink-300 hidden md:block animate-float" style={{ animationDelay: "1s" }} />
+          <div className="absolute top-[140px] left-[330px] w-[46px] h-[46px] rounded-full shadow-md bg-indigo-300 hidden md:block animate-float" style={{ animationDelay: "2s" }} />
+          <div className="absolute top-[220px] left-[250px] w-[20px] h-[20px] rounded-full shadow-md bg-purple-300 hidden md:block animate-float" style={{ animationDelay: "0.5s" }} />
 
           {/* Confetti sticks */}
-          <div className="absolute top-[24px] left-[190px] w-[3px] h-7 rounded-sm rotate-[35deg] bg-[linear-gradient(#f4a37b,#e8895f)] hidden md:block" />
-          <div className="absolute top-[12px] left-[220px] w-[3px] h-5 rounded-sm rotate-[35deg] bg-[linear-gradient(#f4a37b,#e8895f)] hidden md:block" />
-          <div className="absolute top-[55px] left-[420px] w-[3px] h-7 rounded-sm rotate-[35deg] bg-[linear-gradient(#f4a37b,#e8895f)] hidden md:block" />
+          <div className="absolute top-[24px] left-[190px] w-[3px] h-7 rounded-sm bg-[linear-gradient(#f4a37b,#e8895f)] hidden md:block animate-stick" />
+          <div className="absolute top-[12px] left-[220px] w-[3px] h-5 rounded-sm bg-[linear-gradient(#f4a37b,#e8895f)] hidden md:block animate-stick-rev" style={{ animationDelay: "0.8s" }} />
+          <div className="absolute top-[55px] left-[420px] w-[3px] h-7 rounded-sm bg-[linear-gradient(#f4a37b,#e8895f)] hidden md:block animate-stick" style={{ animationDelay: "1.5s" }} />
 
           {/* Main content wrapper */}
           <div className="relative z-10 flex flex-col md:flex-row items-center justify-center gap-10 md:gap-16 px-6 md:px-16 pt-28 pb-16 min-h-screen">
@@ -154,15 +298,20 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
               <div className="text-white text-5xl md:text-7xl font-extrabold leading-none drop-shadow-md">
                 BIRTHDAY
               </div>
-              <div className="text-white text-3xl md:text-4xl font-bold mt-4">
+              <div className="text-3xl md:text-5xl font-black mt-4 bg-[linear-gradient(120deg,#ffe066_20%,#f5af19_40%,#ffffff_50%,#f5af19_60%,#ffe066_80%)] bg-[length:200%_auto] bg-clip-text text-transparent drop-shadow-md animate-shine">
                 {user?.full_name}
               </div>
               <div className="mt-4 text-purple-50 text-sm md:text-base font-semibold tracking-[2px]">
                 YOU ARE THE MOST AMAZING
               </div>
 
-              {/* Photo */}
-              <div className="mt-10 w-48">
+              {/* Photo stack with floating animation and sparkling stars */}
+              <div className="mt-10 w-48 animate-photo relative">
+                {/* Magical Sparkles */}
+                <div className="absolute -top-3 -right-2 text-xl animate-sparkle" style={{ animationDelay: "0.2s" }}>✨</div>
+                <div className="absolute top-1/2 -left-6 text-2xl animate-sparkle" style={{ animationDelay: "1.2s", animationDuration: "3s" }}>✨</div>
+                <div className="absolute -bottom-1 right-12 text-lg animate-sparkle" style={{ animationDelay: "0.7s", animationDuration: "2.5s" }}>✨</div>
+
                 <img
                   src={`${BASE_URL}/employees/image/${imageId}`}
                   alt="Birthday"
@@ -180,12 +329,12 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
 
             {/* Right: balloons + message */}
             <div className="relative flex flex-col items-center md:items-start max-w-sm">
-              {/* Balloons cluster */}
+              {/* Balloons cluster with float/sway animations */}
               <div className="relative w-full h-56 mb-4 hidden md:block">
-                <Balloon top={10} left={40} width={62} height={78} base="#cfd6e6" highlight="#eef1f7" shadow="#9aa0b8" stringLength={60} stringLeft={30} />
-                <Balloon top={-10} left={120} width={54} height={70} base="#c9cfe0" highlight="#e7eaf3" shadow="#9297ae" stringLength={90} stringLeft={26} />
-                <Balloon top={30} left={190} width={56} height={72} base="#3b3f66" highlight="#6a6f9c" shadow="#24273f" stringLength={70} stringLeft={27} />
-                <Balloon top={-30} left={230} width={40} height={54} base="#5b6394" highlight="#8890c2" shadow="#3a3f60" stringLength={110} stringLeft={19} />
+                <Balloon top={10} left={40} width={62} height={78} base="#f97316" highlight="#fdba74" shadow="#c2410c" stringLength={60} stringLeft={30} animation="balloon-sway-1 7s ease-in-out infinite" />
+                <Balloon top={-10} left={120} width={54} height={70} base="#0ea5e9" highlight="#7dd3fc" shadow="#0369a1" stringLength={90} stringLeft={26} animation="balloon-sway-2 8s ease-in-out infinite" />
+                <Balloon top={30} left={190} width={56} height={72} base="#f97316" highlight="#fdba74" shadow="#c2410c" stringLength={70} stringLeft={27} animation="balloon-sway-3 6.5s ease-in-out infinite" />
+                <Balloon top={-30} left={230} width={40} height={54} base="#0ea5e9" highlight="#7dd3fc" shadow="#0369a1" stringLength={110} stringLeft={19} animation="balloon-sway-4 7.5s ease-in-out infinite" />
               </div>
 
               <div className="inline-block px-6 py-2.5 rounded-full bg-slate-800 text-white text-sm md:text-base font-bold tracking-wider">

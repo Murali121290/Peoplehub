@@ -230,6 +230,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     if (
       isCurrentPayrollMonthView &&
       cell.status === "Absent" &&
+      !cell.leaveType &&
       !cell.isToday &&
       cell.dateStr < todayKey
     ) {
@@ -403,24 +404,31 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       badgeLabel = "Week Off";
       badgeEmoji = "";
     } else if (matchedLeave) {
-      status = "Leave";
-      const isHalfDay = matchedLeave.total_days != null && Number(matchedLeave.total_days) <= 0.5;
-      let durationStr = "";
-      halfDayDuration = undefined;
-      if (isHalfDay) {
-        if (matchedLeave.reason?.includes("First Half")) {
-          durationStr = " (First Half)";
-          halfDayDuration = "First Half";
-        } else if (matchedLeave.reason?.includes("Second Half")) {
-          durationStr = " (Second Half)";
-          halfDayDuration = "Second Half";
-        } else {
-          durationStr = " (Half Day)";
-          halfDayDuration = "Half Day";
+      const isLopLeave = matchedLeave.leave_type?.toLowerCase() === "loss of pay" || matchedLeave.leave_type?.toLowerCase() === "lop" || matchedLeave.leave_type?.toLowerCase() === "unpaid leave";
+      if (isLopLeave) {
+        status = "Absent";
+        badgeLabel = matchedLeave.leave_type || "Loss of Pay";
+        badgeEmoji = "";
+      } else {
+        status = "Leave";
+        const isHalfDay = matchedLeave.total_days != null && Number(matchedLeave.total_days) <= 0.5;
+        let durationStr = "";
+        halfDayDuration = undefined;
+        if (isHalfDay) {
+          if (matchedLeave.reason?.includes("First Half")) {
+            durationStr = " (First Half)";
+            halfDayDuration = "First Half";
+          } else if (matchedLeave.reason?.includes("Second Half")) {
+            durationStr = " (Second Half)";
+            halfDayDuration = "Second Half";
+          } else {
+            durationStr = " (Half Day)";
+            halfDayDuration = "Half Day";
+          }
         }
+        badgeLabel = (matchedLeave.leave_type || "Leave") + durationStr;
+        badgeEmoji = "";
       }
-      badgeLabel = (matchedLeave.leave_type || "Leave") + durationStr;
-      badgeEmoji = "";
       leaveType = matchedLeave.leave_type;
       leaveReason = matchedLeave.reason;
     } else if (attRec && (attRec.status?.toLowerCase() === "present" || (checkIn !== "-" && checkIn !== ""))) {
@@ -531,29 +539,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             <p className="text-xs text-neutral-500 font-medium mt-0.5">Track daily check-in, check-out, working hours, and monthly attendance timeline</p>
           </div>
         </div>
-
-        {/* View Switcher Toggle */}
-        <div className="flex items-center bg-neutral-100 border border-neutral-200/60 p-1 rounded-xl text-xs font-bold shrink-0">
-          <button
-            onClick={() => setViewMode("calendar")}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all ${viewMode === "calendar"
-              ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
-              : "text-neutral-600 hover:text-neutral-900"
-              }`}
-          >
-            <CalendarIcon className="w-4 h-4" /> Calendar View
-          </button>
-          <button
-            onClick={() => setViewMode("grid")}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all ${viewMode === "grid"
-              ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
-              : "text-neutral-600 hover:text-neutral-900"
-              }`}
-          >
-            <ListBulletIcon className="w-4 h-4" /> Grid View
-          </button>
-        </div>
       </div>
+
 
       {/* Dynamic Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -647,6 +634,28 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               <option value="Holiday">🔵 Holiday</option>
               <option value="Weekly Off">⚫ Weekly Off</option>
             </select>
+
+            {/* View Switcher Toggle */}
+            <div className="flex items-center bg-neutral-100 border border-neutral-200/60 p-1 rounded-xl text-xs font-bold shrink-0">
+              <button
+                onClick={() => setViewMode("calendar")}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all ${viewMode === "calendar"
+                  ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
+                  : "text-neutral-600 hover:text-neutral-900"
+                  }`}
+              >
+                <CalendarIcon className="w-4 h-4" /> Calendar View
+              </button>
+              <button
+                onClick={() => setViewMode("grid")}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all ${viewMode === "grid"
+                  ? "bg-white text-primary-500 shadow-sm border border-neutral-200 font-extrabold"
+                  : "text-neutral-600 hover:text-neutral-900"
+                  }`}
+              >
+                <ListBulletIcon className="w-4 h-4" /> Grid View
+              </button>
+            </div>
           </div>
         </div>
 
@@ -702,6 +711,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                 const isClickableAbsent = isCurrentPayrollMonthView &&
                                           cell.status === "Absent" &&
+                                          !cell.leaveType &&
                                           !cell.isToday &&
                                           cell.dateStr < todayKey;
                 return (

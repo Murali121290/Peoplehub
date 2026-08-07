@@ -22,6 +22,7 @@ import { DatePicker } from "../../../components/ui/DatePicker";
 import { getStatusColor } from '../utils/employeeHelpers';
 
 interface ShiftTabProps {
+  mode?: "all" | "shift" | "wfh";
   currentEmployee: any;
   shiftRequests: any[];
   managerShiftRequests: any[];
@@ -33,6 +34,7 @@ interface ShiftTabProps {
 }
 
 const ShiftTab: React.FC<ShiftTabProps> = ({
+  mode = "all",
   currentEmployee,
   shiftRequests,
   managerShiftRequests,
@@ -42,7 +44,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   onReject,
   onCancelShift,
 }) => {
-  const [requestType, setRequestType] = useState("Shift");
+  const [requestType, setRequestType] = useState(mode === "wfh" ? "WFH" : "Shift");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [shiftTab, setShiftTab] = useState("my");
@@ -51,6 +53,12 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   const [shiftOptions, setShiftOptions] = useState<string[]>([]);
   const [cancelRequestId, setCancelRequestId] = useState<number | null>(null);
   const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    if (showShiftForm) {
+      setRequestType(mode === "wfh" ? "WFH" : "Shift");
+    }
+  }, [mode, showShiftForm]);
 
   const toggleReason = (id: number) => {
     setExpandedReasons(prev => ({
@@ -164,15 +172,24 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
     setShowShiftForm(false);
   };
 
-  const activeShiftRequests = Array.isArray(shiftRequests)
-    ? shiftRequests.filter((req: any) => {
-        if (req.status !== "Pending") return false;
-        const startDate = req.from_date || req.shift_date || req.to_date || "";
-        const todayStr = new Date().toLocaleDateString("en-CA");
-        if (startDate && startDate < todayStr) return false;
-        return true;
-      })
-    : [];
+  const filteredShiftRequests = React.useMemo(() => {
+    const arr = Array.isArray(shiftRequests) ? shiftRequests : [];
+    if (mode === "shift") {
+      return arr.filter((req: any) => req.request_type === "Shift");
+    }
+    if (mode === "wfh") {
+      return arr.filter((req: any) => req.request_type === "WFH" || req.request_type === "Office");
+    }
+    return arr;
+  }, [shiftRequests, mode]);
+
+  const activeShiftRequests = filteredShiftRequests.filter((req: any) => {
+    if (req.status !== "Pending") return false;
+    const startDate = req.from_date || req.shift_date || req.to_date || "";
+    const todayStr = new Date().toLocaleDateString("en-CA");
+    if (startDate && startDate < todayStr) return false;
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -180,10 +197,10 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-xl font-bold text-neutral-800 tracking-tight flex items-center gap-2">
-            Shift & Work Mode Requests
+            {mode === "wfh" ? "WFH Requests" : mode === "shift" ? "Shift Change Requests" : "Shift & Work Mode Requests"}
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Apply and manage shift change logs and Work From Home (WFH) schedules
+            {mode === "wfh" ? "Apply and manage your Work From Home (WFH) schedules" : mode === "shift" ? "Apply and manage your shift change logs" : "Apply and manage shift change logs and Work From Home (WFH) schedules"}
           </p>
         </div>
         <Button
@@ -191,7 +208,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
           onClick={() => setShowShiftForm(true)}
           className="bg-primary-600 hover:bg-primary-700 text-white shadow-md hover:shadow-lg transition-all duration-200 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
         >
-          Request Shift / WFH
+          {mode === "wfh" ? "Request WFH" : mode === "shift" ? "Request Shift Change" : "Request Shift / WFH"}
         </Button>
       </div>
 
@@ -335,18 +352,21 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
           </Card>
         </motion.div>
       )}
-
       {/* Requests History Table */}
       {true && (
         <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
           <div className="px-6 py-5 border-b border-neutral-200 bg-neutral-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h3 className="text-lg font-bold text-neutral-850">Shift Request History</h3>
-              <p className="text-xs text-neutral-400 font-medium mt-0.5">Chronological record of all submitted shift/WFH requests</p>
+              <h3 className="text-lg font-bold text-neutral-850">
+                {mode === "wfh" ? "WFH Request History" : mode === "shift" ? "Shift Request History" : "Shift & WFH History"}
+              </h3>
+              <p className="text-xs text-neutral-450 font-medium mt-0.5">
+                {mode === "wfh" ? "Chronological record of all submitted WFH requests" : mode === "shift" ? "Chronological record of all submitted shift requests" : "Chronological record of all submitted shift/WFH requests"}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200">
-                Total Requests: {Array.isArray(shiftRequests) ? shiftRequests.length : 0}
+                Total Requests: {filteredShiftRequests.length}
               </span>
             </div>
           </div>
@@ -366,18 +386,22 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200/80">
-                {!Array.isArray(shiftRequests) || shiftRequests.length === 0 ? (
+                {filteredShiftRequests.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="p-10 text-center text-neutral-400 font-medium bg-neutral-50/20">
                       <div className="flex flex-col items-center justify-center gap-2 py-4">
                         <CalendarIcon className="w-12 h-12 text-neutral-300" />
-                        <p className="text-xs font-bold text-neutral-500">No shift requests found</p>
-                        <p className="text-[11px] text-neutral-400">Click "Request Shift / WFH" to apply for schedule updates.</p>
+                        <p className="text-xs font-bold text-neutral-500">
+                          {mode === "wfh" ? "No WFH requests found" : mode === "shift" ? "No shift requests found" : "No requests found"}
+                        </p>
+                        <p className="text-[11px] text-neutral-400">
+                          {mode === "wfh" ? 'Click "Request WFH" to apply for schedule updates.' : mode === "shift" ? 'Click "Request Shift Change" to apply for schedule updates.' : 'Click "Request Shift / WFH" to apply for schedule updates.'}
+                        </p>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  shiftRequests.map((item: any) => {
+                  filteredShiftRequests.map((item: any) => {
                     const isApproved = item.status === "Approved";
                     const isRejected = item.status === "Rejected";
                     const isWorkMode = item.request_type === "WFH" || item.request_type === "Office" || item.requested_work_mode === "WFH" || item.requested_work_mode === "Office";
@@ -515,7 +539,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
         isOpen={showShiftForm}
         onClose={handleClose}
         size="xl"
-        title="Apply Shift / WFH Request"
+        title={mode === "shift" ? "Apply Shift Change" : mode === "wfh" ? "Apply WFH Request" : "Apply Shift / WFH Request"}
       >
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Main form side */}
@@ -524,15 +548,28 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
               {/* Request Type Selector */}
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Request Type <span className="text-danger-500">*</span></label>
-                <select
-                  value={requestType}
-                  onChange={(e) => setRequestType(e.target.value)}
-                  className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 cursor-pointer font-medium"
-                >
-                  <option value="Shift">Shift Change</option>
-                  <option value="WFH">Work From Home (WFH)</option>
-                  <option value="Office">Work From Office (Office)</option>
-                </select>
+                {mode !== "all" ? (
+                  <input
+                    type="text"
+                    value={requestType === "Shift" ? "Shift Change" : requestType === "WFH" ? "Work From Home (WFH)" : requestType === "Office" ? "Work From Office (Office)" : requestType}
+                    readOnly
+                    className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-neutral-100 text-sm text-neutral-500 font-semibold cursor-not-allowed select-none"
+                  />
+                ) : (
+                  <select
+                    value={requestType}
+                    onChange={(e) => setRequestType(e.target.value)}
+                    className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 cursor-pointer font-medium"
+                  >
+                    {(mode as string) !== "wfh" && <option value="Shift">Shift Change</option>}
+                    {(mode as string) !== "shift" && (
+                      <>
+                        <option value="WFH">Work From Home (WFH)</option>
+                        <option value="Office">Work From Office (Office)</option>
+                      </>
+                    )}
+                  </select>
+                )}
               </div>
 
               {/* Requested Shift timing Selector */}
@@ -602,38 +639,42 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
 
           {/* Right helper panel */}
           <div className="space-y-6">
-            <div className="bg-primary-50 border border-primary-200 rounded-2xl p-5 shadow-sm">
-              <h3 className="font-extrabold text-sm mb-4 text-primary-900 flex items-center gap-1.5">
-                <InformationCircleIcon className="w-4 h-4 text-primary-700" />
-                Shift Timings Reference
-              </h3>
-              <ul className="space-y-3.5 text-xs font-semibold text-neutral-700">
-                <li className="flex justify-between py-1 border-b border-primary-100">
-                  <span>First Shift:</span>
-                  <span className="text-primary-700 font-extrabold">07 AM - 04 PM</span>
-                </li>
-                <li className="flex justify-between py-1 border-b border-primary-100">
-                  <span>General Shift:</span>
-                  <span className="text-primary-700 font-extrabold">09 AM - 06 PM</span>
-                </li>
-                <li className="flex justify-between py-1 border-b border-primary-100">
-                  <span>Second Shift:</span>
-                  <span className="text-primary-700 font-extrabold">12 PM - 09 PM</span>
-                </li>
-                <li className="flex justify-between py-1 border-b border-primary-100">
-                  <span>Night Shift:</span>
-                  <span className="text-primary-700 font-extrabold">10 PM - 06 AM</span>
-                </li>
-              </ul>
-            </div>
+            {mode !== "wfh" && (
+              <div className="bg-primary-50 border border-primary-200 rounded-2xl p-5 shadow-sm">
+                <h3 className="font-extrabold text-sm mb-4 text-primary-900 flex items-center gap-1.5">
+                  <InformationCircleIcon className="w-4 h-4 text-primary-700" />
+                  Shift Timings Reference
+                </h3>
+                <ul className="space-y-3.5 text-xs font-semibold text-neutral-700">
+                  <li className="flex justify-between py-1 border-b border-primary-100">
+                    <span>First Shift:</span>
+                    <span className="text-primary-700 font-extrabold">07 AM - 04 PM</span>
+                  </li>
+                  <li className="flex justify-between py-1 border-b border-primary-100">
+                    <span>General Shift:</span>
+                    <span className="text-primary-700 font-extrabold">09 AM - 06 PM</span>
+                  </li>
+                  <li className="flex justify-between py-1 border-b border-primary-100">
+                    <span>Second Shift:</span>
+                    <span className="text-primary-700 font-extrabold">12 PM - 09 PM</span>
+                  </li>
+                  <li className="flex justify-between py-1 border-b border-primary-100">
+                    <span>Night Shift:</span>
+                    <span className="text-primary-700 font-extrabold">10 PM - 06 AM</span>
+                  </li>
+                </ul>
+              </div>
+            )}
 
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 shadow-sm">
               <h4 className="font-extrabold text-sm mb-3 text-emerald-900 flex items-center gap-1.5">
                 <InformationCircleIcon className="w-4 h-4 text-emerald-700" />
-                Shift Policy Info
+                {mode === "wfh" ? "WFH Policy Info" : "Shift Policy Info"}
               </h4>
               <p className="text-[11px] text-neutral-600 font-semibold leading-relaxed">
-                All requests require Approval from your designated Reporting Manager. Once approved, timing slots are updated on the system dashboard automatically.
+                {mode === "wfh"
+                  ? "All Work From Home requests require Approval from your designated Reporting Manager. Once approved, work modes are updated on the system dashboard automatically."
+                  : "All requests require Approval from your designated Reporting Manager. Once approved, timing slots are updated on the system dashboard automatically."}
               </p>
             </div>
           </div>
