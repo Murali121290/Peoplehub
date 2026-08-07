@@ -620,68 +620,78 @@ const ManagerDashboardPage = () => {
   // SCOPED TEAM MEMBERS
   // ==========================
   const scopedTeamMembers = useMemo(() => {
+    let list = [];
     if (teamAttendance.length === 0) {
-      return teamMembers;
+      list = teamMembers.map((m: any) => ({
+        ...m,
+        name: m.name || `${m.first_name || ""} ${m.last_name || ""}`.trim()
+      }));
+    } else {
+      list = teamAttendance.map((att: any) => {
+        const match = teamMembers.find(
+          (m) =>
+            (att.id != null && m.id === att.id) ||
+            (att.email && m.email && m.email.toLowerCase() === att.email.toLowerCase()),
+        );
+
+        const isOnLeave = att.attendance_status === "On Leave";
+
+        return {
+          id: att.id ?? match?.id,
+          user_id: att.user_id || match?.user_id || att.id || match?.id,
+          employee_id: att.employee_id || match?.employee_id || (att.id ? `EMP${att.id}` : ""),
+          name: att.name || match?.name || "",
+          email: match?.email || att.email || "",
+          role: att.designation || match?.role || "Employee",
+          designation: att.designation || match?.role || "Employee",
+          department: att.department || "",
+          avatar:
+            match?.avatar ||
+            (att.name
+              ? att.name
+                .split(" ")
+                .map((n: string) => n[0])
+                .join("")
+                .substring(0, 2)
+                .toUpperCase()
+              : "EM"),
+          tasksCompleted: match?.tasksCompleted ?? 0,
+          efficiency: match?.efficiency ?? 0,
+          hoursThisWeek: match?.hoursThisWeek ?? att.working_hours ?? 0,
+          status: isOnLeave ? "Leave" : match?.status || "Active",
+          isWfh: att.is_wfh || false,
+          isPermanentWfh: att.is_permanent_wfh || false,
+          isShiftChanged: att.is_shift_changed || false,
+          attendanceStatus: att.attendance_status || "",
+          profile_image: att.profile_image,
+          check_in: att.check_in,
+          check_out: att.check_out,
+          check_in_ip: att.check_in_ip,
+          check_out_ip: att.check_out_ip,
+          working_hours: att.working_hours,
+          card_check_in: att.card_check_in,
+          card_check_out: att.card_check_out,
+          card_working_hours: att.card_working_hours,
+          lunch_minutes: att.lunch_minutes,
+          tea_minutes: att.tea_minutes,
+          shift: att.shift,
+          manager_status: att.manager_status,
+          attendance_status: att.attendance_status || "",
+          is_reporting_manager: att.is_reporting_manager || match?.is_reporting_manager || false,
+          report_count: att.report_count ?? match?.report_count ?? 0,
+          reporting_manager: att.reporting_manager || match?.reporting_manager || "",
+          permission_from: att.permission_from,
+          permission_to: att.permission_to,
+          is_permission: att.is_permission,
+          permission_hours: att.permission_hours,
+        };
+      });
     }
 
-    return teamAttendance.map((att: any) => {
-      const match = teamMembers.find(
-        (m) =>
-          (att.id != null && m.id === att.id) ||
-          (att.email && m.email && m.email.toLowerCase() === att.email.toLowerCase()),
-      );
-
-      const isOnLeave = att.attendance_status === "On Leave";
-
-      return {
-        id: att.id ?? match?.id,
-        user_id: att.user_id || match?.user_id || att.id || match?.id,
-        employee_id: att.employee_id || match?.employee_id || (att.id ? `EMP${att.id}` : ""),
-        name: att.name || match?.name || "",
-        email: match?.email || att.email || "",
-        role: att.designation || match?.role || "Employee",
-        designation: att.designation || match?.role || "Employee",
-        department: att.department || "",
-        avatar:
-          match?.avatar ||
-          (att.name
-            ? att.name
-              .split(" ")
-              .map((n: string) => n[0])
-              .join("")
-              .substring(0, 2)
-              .toUpperCase()
-            : "EM"),
-        tasksCompleted: match?.tasksCompleted ?? 0,
-        efficiency: match?.efficiency ?? 0,
-        hoursThisWeek: match?.hoursThisWeek ?? att.working_hours ?? 0,
-        status: isOnLeave ? "Leave" : match?.status || "Active",
-        isWfh: att.is_wfh || false,
-        isPermanentWfh: att.is_permanent_wfh || false,
-        isShiftChanged: att.is_shift_changed || false,
-        attendanceStatus: att.attendance_status || "",
-        profile_image: att.profile_image,
-        check_in: att.check_in,
-        check_out: att.check_out,
-        check_in_ip: att.check_in_ip,
-        check_out_ip: att.check_out_ip,
-        working_hours: att.working_hours,
-        card_check_in: att.card_check_in,
-        card_check_out: att.card_check_out,
-        card_working_hours: att.card_working_hours,
-        lunch_minutes: att.lunch_minutes,
-        tea_minutes: att.tea_minutes,
-        shift: att.shift,
-        manager_status: att.manager_status,
-        attendance_status: att.attendance_status || "",
-        is_reporting_manager: att.is_reporting_manager || match?.is_reporting_manager || false,
-        report_count: att.report_count ?? match?.report_count ?? 0,
-        reporting_manager: att.reporting_manager || match?.reporting_manager || "",
-        permission_from: att.permission_from,
-        permission_to: att.permission_to,
-        is_permission: att.is_permission,
-        permission_hours: att.permission_hours,
-      };
+    return [...list].sort((a: any, b: any) => {
+      const nameA = (a.name || "").trim().toLowerCase();
+      const nameB = (b.name || "").trim().toLowerCase();
+      return nameA.localeCompare(nameB);
     });
   }, [teamAttendance, teamMembers]);
 
