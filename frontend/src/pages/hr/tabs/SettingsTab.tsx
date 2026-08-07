@@ -7,7 +7,9 @@ import { Card } from '../../../components/ui/Card';
 import { ConfirmDialog } from '../../../components/ui/Modal';
 import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 
-const API_URL = `${import.meta.env.VITE_API_URL || ""}/api`;
+import { API_URL as CONFIG_API_URL } from '../../../config/api';
+
+const API_URL = `${CONFIG_API_URL}/api`;
 
 interface SettingsTabProps {
   employees?: any[];

@@ -260,28 +260,35 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
               {history.length > 0 ? (
                 history.map((msg: any, idx: number) => {
                   const isManager = msg.sender_role === "manager";
+                  const isSystem = msg.sender_role === "system";
                   return (
                     <div
                       key={msg.id || idx}
                       className={`p-3 rounded-xl border space-y-1 ${
-                        isManager
-                          ? "bg-amber-50/90 border-amber-200 text-amber-950"
-                          : "bg-sky-50/90 border-sky-200 text-sky-950 ml-3"
+                        isSystem
+                          ? "bg-rose-50/90 border-rose-200 text-rose-950"
+                          : isManager
+                            ? "bg-amber-50/90 border-amber-200 text-amber-950"
+                            : "bg-sky-50/90 border-sky-200 text-sky-950 ml-3"
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
-                          {isManager ? (
-                            <ExclamationTriangleIcon className="w-3.5 h-3.5 text-amber-600" />
+                          {isSystem ? (
+                            <ExclamationTriangleIcon className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          ) : isManager ? (
+                            <ExclamationTriangleIcon className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                           ) : (
-                            <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5 text-sky-600" />
+                            <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5 text-sky-600 shrink-0" />
                           )}
-                          <span className={`text-[10px] font-bold uppercase tracking-wider ${isManager ? "text-amber-800" : "text-sky-800"}`}>
-                            {isManager
-                              ? (msg.sender_name && msg.sender_name !== "Manager"
-                                  ? `Manager (${msg.sender_name})`
-                                  : (activeItem.reporting_manager ? `Manager (${activeItem.reporting_manager})` : "Manager"))
-                              : (msg.sender_name && msg.sender_name !== "Employee" ? msg.sender_name : "You")}
+                          <span className={`text-[10px] font-bold uppercase tracking-wider ${isSystem ? "text-rose-800" : isManager ? "text-amber-800" : "text-sky-800"}`}>
+                            {isSystem
+                              ? "System Alert"
+                              : isManager
+                                ? (msg.sender_name && msg.sender_name !== "Manager"
+                                    ? `Manager (${msg.sender_name})`
+                                    : (activeItem.reporting_manager ? `Manager (${activeItem.reporting_manager})` : "Manager"))
+                                : (msg.sender_name && msg.sender_name !== "Employee" ? msg.sender_name : "You")}
                           </span>
                         </div>
                         {msg.timestamp && (

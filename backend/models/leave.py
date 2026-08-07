@@ -6,7 +6,7 @@ class LeaveRequest(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
 
-    employee_id = db.Column(db.String(50))
+    employee_id = db.Column(db.String(50), index=True)
     employee_name = db.Column(db.String(200))
 
     leave_type = db.Column(db.String(100))
@@ -28,7 +28,8 @@ class LeaveRequest(db.Model):
 
     status = db.Column(
         db.String(50),
-        default="Pending"
+        default="Pending",
+        index=True
     )
 
     manager_comment = db.Column(
@@ -94,6 +95,10 @@ class LeaveRequest(db.Model):
     cancellation_reason = db.Column(
         db.Text,
         nullable=True
+    )
+
+    __table_args__ = (
+        db.Index("ix_leave_requests_employee_id_status", "employee_id", "status"),
     )
 
 

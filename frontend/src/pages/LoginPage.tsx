@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import axios from "axios";
 import { useAuthStore } from "../store/authStore";
+import { BASE_API_URL } from "../config/api";
 import {
   LockClosedIcon,
   UserCircleIcon,
@@ -111,7 +112,7 @@ const LoginPage: React.FC = () => {
 
     setPwLoading(true);
     try {
-      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const apiUrl = `${BASE_API_URL}/api`;
       const res = await axios.post(`${apiUrl}/auth/forgot-password/request-otp`, {
         email: pwData.username,
       });
@@ -140,7 +141,7 @@ const LoginPage: React.FC = () => {
 
     setPwLoading(true);
     try {
-      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const apiUrl = `${BASE_API_URL}/api`;
       const res = await axios.post(`${apiUrl}/auth/forgot-password/reset-with-otp`, {
         email: pwData.username,
         otp: pwData.otpCode,
@@ -174,7 +175,7 @@ const LoginPage: React.FC = () => {
     setPwLoading(true);
 
     try {
-      const apiUrl = `${import.meta.env.VITE_API_URL || ""}/api`;
+      const apiUrl = `${BASE_API_URL}/api`;
       const res = await axios.post(
         `${apiUrl}/auth/change-password`,
         {

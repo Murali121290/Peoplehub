@@ -870,6 +870,18 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                 <span className="font-bold text-emerald-600 text-[11px]">+{cell.overtime}</span>
                               </div>
                             )}
+                            {((cell.rawAttendanceRecord?.check_in_ip) || (cell.rawAttendanceRecord?.check_out_ip)) && (
+                              <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-2.5 rounded-xl border border-neutral-100 mt-2 text-[10px]">
+                                <div>
+                                  <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">In IP</span>
+                                  <span className="font-extrabold text-neutral-600 truncate block" title={cell.rawAttendanceRecord.check_in_ip}>{cell.rawAttendanceRecord.check_in_ip || "-"}</span>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Out IP</span>
+                                  <span className="font-extrabold text-neutral-600 truncate block" title={cell.rawAttendanceRecord.check_out_ip}>{cell.rawAttendanceRecord.check_out_ip || "-"}</span>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ) : cell.status === "Holiday" ? (
                           <div className="space-y-3">

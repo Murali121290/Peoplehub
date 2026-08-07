@@ -7,6 +7,7 @@ from models.employee import Employee
 from models.attendance import Attendance
 from models.leave import LeaveRequest
 from middleware.auth import auth_required
+from utils.employee_cache import get_all_employees_cached
 
 payroll_bp = Blueprint(
     "payroll",
@@ -22,7 +23,7 @@ def payroll_summary():
 
     try:
 
-        employees = [e for e in Employee.query.all() if e.is_active != False]
+        employees = [e for e in get_all_employees_cached() if e.is_active != False]
 
         payroll_data = []
 

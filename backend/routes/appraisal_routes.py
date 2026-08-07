@@ -28,6 +28,7 @@ from models.appraisal import (
 from models.notification import Notification
 from models.user import User
 from models.employee import Employee
+from utils.employee_cache import get_all_employees_cached
 
 
 # --------------------------------------------------------------------------
@@ -351,7 +352,7 @@ def get_pending_appraisals():
         ).all()
 
         # Batch fetch all data to avoid N+3 query loops (exclude inactive)
-        all_employees = [e for e in Employee.query.all() if e.is_active != False]
+        all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
         employee_map = {emp.id: emp for emp in all_employees}
 
         from models.appraisal import AppraisalCycle

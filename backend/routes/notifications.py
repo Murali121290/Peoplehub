@@ -26,10 +26,10 @@ def get_notifications(manager_name):
     ).all()
 
     from models.birthday_wish import BirthdayWish
-    from models.employee import Employee
+    from utils.employee_cache import get_all_employees_cached
 
     # Batch fetch all employees and birthday wishes to prevent N+1 queries (exclude inactive)
-    all_employees = [e for e in Employee.query.all() if e.is_active != False]
+    all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
     employee_map = {emp.id: emp for emp in all_employees}
 
     all_wishes = BirthdayWish.query.all()

@@ -169,26 +169,52 @@ def make_compat_wrapper(func):
         if not has_request_param:
             call_kwargs.pop("request", None)
 
-        try:
+        if inspect.iscoroutinefunction(func):
             try:
-                if inspect.iscoroutinefunction(func):
+                try:
                     res = await func(*args, **call_kwargs)
-                else:
-                    res = func(*args, **call_kwargs)
-            except HTTPException as he:
-                raise he
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+                except HTTPException as he:
+                    raise he
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
-            return format_response(res)
-        finally:
+                return format_response(res)
+            finally:
+                from models.database import db_session
+                try:
+                    db_session.remove()
+                except Exception as dbe:
+                    print(f"Error removing db session: {dbe}")
+
+        # Synchronous route functions are offloaded to a worker thread so one
+        # slow/blocking request doesn't stall the single event loop for every
+        # other concurrent user. The DB session cleanup must run in that same
+        # worker thread (scoped_session is thread-local), so it's kept inside
+        # this helper rather than in an outer finally on the event-loop thread.
+        from starlette.concurrency import run_in_threadpool
+
+        def _invoke_and_cleanup():
             from models.database import db_session
             try:
-                db_session.remove()
-            except Exception as dbe:
-                print(f"Error removing db session: {dbe}")
+                try:
+                    res = func(*args, **call_kwargs)
+                except HTTPException as he:
+                    raise he
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+                return format_response(res)
+            finally:
+                try:
+                    db_session.remove()
+                except Exception as dbe:
+                    print(f"Error removing db session: {dbe}")
+
+        return await run_in_threadpool(_invoke_and_cleanup)
 
     # Rewrite signature to include the path parameters and inject the Request object
     parameters = list(sig.parameters.values())
@@ -295,4 +321,21 @@ def upload_file_save_sync(self, destination) -> None:
 
 UploadFile.read = upload_file_read_sync
 UploadFile.save = upload_file_save_sync
+
+
+def get_client_ip():
+    req = _request_var.get()
+    if not req:
+        return "127.0.0.1"
+    
+    x_forwarded_for = req.headers.get("x-forwarded-for")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0].strip()
+        
+    x_real_ip = req.headers.get("x-real-ip")
+    if x_real_ip:
+        return x_real_ip.strip()
+        
+    return req.client.host if req.client else "127.0.0.1"
+
 

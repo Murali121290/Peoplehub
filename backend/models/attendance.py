@@ -179,3 +179,13 @@ class Attendance(db.Model):
         db.String(100),
         nullable=True
     )
+
+    check_in_ip = db.Column(
+        db.String(45),
+        nullable=True
+    )
+
+    check_out_ip = db.Column(
+        db.String(45),
+        nullable=True
+    )

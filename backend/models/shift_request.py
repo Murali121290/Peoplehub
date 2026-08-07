@@ -12,7 +12,8 @@ class ShiftRequest(db.Model):
 
     employee_id = db.Column(
         db.Integer,
-        nullable=False
+        nullable=False,
+        index=True
     )
 
     employee_name = db.Column(
@@ -53,7 +54,8 @@ class ShiftRequest(db.Model):
 
     status = db.Column(
         db.String(30),
-        default="Pending"
+        default="Pending",
+        index=True
     )
 
     manager_comment = db.Column(
@@ -105,9 +107,10 @@ class ShiftRequest(db.Model):
     db.Date,
     nullable=False
 )
-    
 
-
+    __table_args__ = (
+        db.Index("ix_shift_requests_employee_id_status", "employee_id", "status"),
+    )
 
     def to_dict(self):
         emp_string_id = self.employee_id

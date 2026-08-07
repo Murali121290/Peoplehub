@@ -2221,8 +2221,18 @@ const ManagerDashboardPage = () => {
                               <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.shift || "General Shift"}</td>
 
                               {/* Web Entry Columns */}
-                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }}>{member.check_in || "—"}</td>
-                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }}>{member.check_out || "—"}</td>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }} title={member.check_in_ip ? `IP: ${member.check_in_ip}` : undefined}>
+                                <div>{member.check_in || "—"}</div>
+                                {member.check_in_ip && (
+                                  <div style={{ fontSize: "10px", color: THEME.textSoft, marginTop: "2px" }}>{member.check_in_ip}</div>
+                                )}
+                              </td>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }} title={member.check_out_ip ? `IP: ${member.check_out_ip}` : undefined}>
+                                <div>{member.check_out || "—"}</div>
+                                {member.check_out_ip && (
+                                  <div style={{ fontSize: "10px", color: THEME.textSoft, marginTop: "2px" }}>{member.check_out_ip}</div>
+                                )}
+                              </td>
                               <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", fontWeight: 700 }}>
                                 {formatWorkingHours(member.working_hours)}
                               </td>

@@ -1,12 +1,6 @@
-const getBaseUrl = () => {
-  let url = (import.meta.env.VITE_API_URL || "") as string;
-  if (typeof window !== "undefined" && window.location.protocol === "https:" && url.startsWith("http:")) {
-    url = url.replace(/^http:/, "https:");
-  }
-  return `${url}/api`;
-};
+import { BASE_API_URL } from "../../config/api";
 
-export const BASE_URL = getBaseUrl();
+export const BASE_URL = `${BASE_API_URL}/api`;
 
 export const reportLinks = [
   {

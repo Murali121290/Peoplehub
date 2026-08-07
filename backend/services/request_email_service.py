@@ -218,7 +218,8 @@ def send_manager_request_email(request_obj, request_type):
     manager_email = None
     if employee.reporting_manager:
         search_name = employee.reporting_manager.strip().lower()
-        all_emps = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+        from utils.employee_cache import get_all_employees_cached
+        all_emps = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
         matching_manager = None
         for emp in all_emps:
             emp_full_name = f"{emp.first_name or ''} {emp.last_name or ''}".strip().lower()

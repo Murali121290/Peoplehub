@@ -70,6 +70,15 @@ def create_app():
             request.scope["scheme"] = "https"
         return await call_next(request)
 
+    # Sync route handlers run in AnyIO's worker threadpool (see
+    # utils/compat.py's make_compat_wrapper) so match its cap to the DB
+    # connection pool's total capacity (pool_size + max_overflow) - otherwise
+    # requests queue behind the thread limit before ever reaching the DB pool.
+    @fastapi_app.on_event("startup")
+    async def _raise_threadpool_limit():
+        import anyio
+        anyio.to_thread.current_default_thread_limiter().total_tokens = 100
+
     # Register blueprints (routers)
     fastapi_app.include_router(employees_bp, prefix="/api/employees")
     fastapi_app.include_router(meeting_rooms_bp, prefix="/api/meeting-rooms")

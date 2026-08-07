@@ -16,6 +16,7 @@ from models.user import User, Role, Team
 from sqlalchemy import extract, or_
 from sqlalchemy.exc import IntegrityError
 from datetime import time
+from utils.employee_cache import get_all_employees_cached, invalidate_employee_cache
 
 employees_bp = Blueprint("employees", __name__)
 
@@ -153,6 +154,7 @@ def create_employee():
         db.session.add(employee)
 
         db.session.commit()
+        invalidate_employee_cache()
 
         print("User Created :", user.id)
         print("Employee Created :", employee.id)
@@ -198,7 +200,7 @@ def create_employee():
 @employees_bp.route("/", methods=["GET"])
 def get_employees():
 
-    employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+    employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
 
     today = date.today()
 
@@ -928,6 +930,7 @@ def update_employee_profile(employee_id):
                 user.status = data.get("status")
 
         db.session.commit()
+        invalidate_employee_cache()
 
         # Emit employee_profile_update socket event for real-time dashboard updates
         try:
@@ -963,7 +966,7 @@ def update_employee_profile(employee_id):
         }), 500 
 @employees_bp.route('/list', methods=['GET'])
 def get_employees_list():
-    employees = [e for e in Employee.query.all() if (e.status or "").lower() != "inactive"]
+    employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
 
     return jsonify([
         {
@@ -1151,7 +1154,7 @@ def get_my_team(user_id):
     ).all()
 
     result = []
-    all_employees = [e for e in Employee.query.all() if e.is_active != False]
+    all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
 
     for team_user in team_users:
 
@@ -1300,11 +1303,13 @@ def get_team_attendance(user_id):
             ShiftRequest.to_date >= today
         ).order_by(ShiftRequest.created_at.desc()).all()
 
+        # Keep all approved requests per employee (not just the latest) so
+        # WFH-type and Shift-type requests active on the same day aren't
+        # dropped when looked up below.
         shifts_by_employee = {}
         for sr in shift_requests_batch:
             emp_key = str(sr.employee_id)
-            if emp_key not in shifts_by_employee:
-                shifts_by_employee[emp_key] = sr
+            shifts_by_employee.setdefault(emp_key, []).append(sr)
 
         # Build manager lookup: manager_name -> list of employees who report to them
         manager_lookup = {}
@@ -1346,38 +1351,26 @@ def get_team_attendance(user_id):
                 t_sec = t_time.hour * 3600 + t_time.minute * 60 + t_time.second
                 permission_hours = max(t_sec - f_sec, 0) / 3600.0
 
-            # Check leave for today - get latest request if multiple exist
-            leave_requests_today = LeaveRequest.query.filter(
-                or_(
-                    LeaveRequest.employee_id == str(emp.id),
-                    LeaveRequest.employee_id == emp.employee_id
-                ),
-                LeaveRequest.status == "Approved",
-                LeaveRequest.request_type == "Leave",
-                LeaveRequest.from_date <= today,
-                LeaveRequest.to_date >= today
-            ).order_by(LeaveRequest.created_at.desc()).all()
+            # Latest leave request takes precedence (pre-fetched, no query!)
+            on_leave = (
+                leave_by_employee.get(str(emp.id)) or
+                leave_by_employee.get(emp.employee_id) or
+                leave_by_employee.get(str(emp.employee_id))
+            )
 
-            # Latest leave request takes precedence
-            on_leave = leave_requests_today[0] if leave_requests_today else None
-
-            # Check WFH and Shift Change for today
-            from models.shift_request import ShiftRequest
-            emp_ids = [emp.employee_id] if emp.employee_id else []
-
-            # Get ALL approved requests for today, sorted by created_at (latest first)
-            all_requests_today = ShiftRequest.query.filter(
-                ShiftRequest.employee_id.in_(emp_ids),
-                ShiftRequest.status == "Approved",
-                ShiftRequest.from_date <= today,
-                ShiftRequest.to_date >= today
-            ).order_by(ShiftRequest.created_at.desc()).all()
+            # Pre-fetched approved shift/WFH requests for today (no query!)
+            emp_requests_today = (
+                shifts_by_employee.get(str(emp.id)) or
+                shifts_by_employee.get(emp.employee_id) or
+                shifts_by_employee.get(str(emp.employee_id)) or
+                []
+            )
 
             # The latest request takes precedence
-            latest_request = all_requests_today[0] if all_requests_today else None
+            latest_request = emp_requests_today[0] if emp_requests_today else None
 
-            wfh_today = next((r for r in all_requests_today if r.request_type == "WFH"), None)
-            shift_change_today = next((r for r in all_requests_today if r.request_type == "Shift"), None)
+            wfh_today = next((r for r in emp_requests_today if r.request_type == "WFH"), None)
+            shift_change_today = next((r for r in emp_requests_today if r.request_type == "Shift"), None)
 
             if attendance:
                 if attendance.check_in or attendance.card_check_in:
@@ -1450,6 +1443,8 @@ def get_team_attendance(user_id):
                 "attendance_status": att_status,
                 "check_in": check_in,
                 "check_out": check_out,
+                "check_in_ip": attendance.check_in_ip if attendance else None,
+                "check_out_ip": attendance.check_out_ip if attendance else None,
                 "working_hours": working_hours,
                 "card_check_in": attendance.card_check_in.strftime("%I:%M %p") if (attendance and attendance.card_check_in) else None,
                 "card_check_out": attendance.card_check_out.strftime("%I:%M %p") if (attendance and attendance.card_check_out) else None,
@@ -1570,7 +1565,7 @@ def get_reporting_employees(user_id):
 
         target_date = get_last_working_day()
 
-        all_employees = [e for e in Employee.query.all() if e.is_active != False]
+        all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
 
         def _get_last_msg(history_list, role_name):
             if not isinstance(history_list, list):
@@ -1922,21 +1917,13 @@ def get_peers_attendance(user_id):
 
         result = []
         for peer in peers:
-            attendance = Attendance.query.filter_by(
-                user_id=peer.user_id,
-                attendance_date=today
-            ).first()
-
-            from models.leave import LeaveRequest
-            leave = LeaveRequest.query.filter(
-                or_(
-                    LeaveRequest.employee_id == str(peer.id),
-                    LeaveRequest.employee_id == peer.employee_id
-                ),
-                LeaveRequest.status == "Approved",
-                LeaveRequest.from_date <= today,
-                LeaveRequest.to_date >= today
-            ).first()
+            # Pre-fetched attendance/leave (no query!)
+            attendance = attendance_by_user.get(peer.user_id)
+            leave = (
+                leave_by_employee.get(str(peer.id)) or
+                leave_by_employee.get(peer.employee_id) or
+                leave_by_employee.get(str(peer.employee_id))
+            )
 
             status = "Absent"
             if attendance:
@@ -2176,6 +2163,8 @@ def get_team_attendance_by_id(team_id):
                 "status": status,
                 "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
                 "check_out": attendance.check_out.strftime("%I:%M %p") if attendance and attendance.check_out else "-",
+                "check_in_ip": attendance.check_in_ip if attendance else None,
+                "check_out_ip": attendance.check_out_ip if attendance else None,
                 "lunch_break": attendance.lunch_break if attendance else False,
                 "tea_break": attendance.tea_break if attendance else False,
                 "is_shift_changed": is_shift_changed,
@@ -2498,6 +2487,7 @@ def update_employee_status(employee_id):
             user.status = "active" if is_active else "inactive"
 
         db.session.commit()
+        invalidate_employee_cache()
         return jsonify({
             "success": True,
             "message": "Employee status updated successfully"
