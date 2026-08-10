@@ -17,10 +17,10 @@ interface TabConfig {
 
 const TABS: TabConfig[] = [
   { id: "leave", label: "Leave Approval", icon: "📋" },
+  { id: "permission", label: "Permission Approval", icon: "🔐" },
   { id: "shift", label: "Shift Approval", icon: "⏱️" },
-  { id: "odw", label: "ODW Approval", icon: "💰" },
   { id: "wfh", label: "WFH Approval", icon: "🏠" },
-  { id: "permission", label: "Permission Approval", icon: "🔐" }
+  { id: "odw", label: "ODW Approval", icon: "💰" }
 ];
 
 const TeamManagementPage: React.FC = () => {

@@ -1,3 +1,4 @@
+
 # routes/shift_request.py
 
 # pyrefly: ignore [missing-import]
@@ -239,15 +240,38 @@ def get_shift_requests():
 # GET EMPLOYEE REQUESTS
 # ==========================================
 @shift_bp.route(
-    "/employee/<int:employee_id>",
+    "/employee/<employee_id>",
     methods=["GET"]
 )
 def get_employee_requests(
     employee_id
 ):
+    from models.employee import Employee
+    from sqlalchemy import or_
 
-    shift_requests = ShiftRequest.query.filter_by(
-        employee_id=employee_id
+    emp = None
+    try:
+        # Try finding by integer id first, or string employee_id
+        emp = Employee.query.filter(
+            or_(
+                Employee.id == int(employee_id),
+                Employee.employee_id == str(employee_id)
+            )
+        ).first()
+    except ValueError:
+        # If employee_id is a non-integer string, search by employee_id only
+        emp = Employee.query.filter_by(employee_id=str(employee_id)).first()
+
+    if not emp:
+        return jsonify([])
+
+    shift_requests = ShiftRequest.query.filter(
+        or_(
+            ShiftRequest.employee_id == emp.id,
+            ShiftRequest.employee_id == str(emp.id),
+            ShiftRequest.employee_id == emp.employee_id,
+            ShiftRequest.employee_id == str(emp.employee_id)
+        )
     ).order_by(
         ShiftRequest.id.desc()
     ).all()
@@ -593,12 +617,7 @@ def cancel_request(id):
         from zoneinfo import ZoneInfo
         from datetime import datetime
         
-        today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-        if shift.shift_date and today > shift.shift_date:
-            return jsonify({
-                "success": False,
-                "error": "Cannot cancel a shift request from the past."
-            }), 400
+
 
         shift.status = "Cancelled"
         db.session.commit()
