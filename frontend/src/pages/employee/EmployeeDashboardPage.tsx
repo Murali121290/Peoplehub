@@ -1733,11 +1733,11 @@ if (isHalfDayLeave(leave.total_days)) return false;
                   )} */}
                   <div>
                     <div className="flex items-center gap-2.5">
-                      <h1 className="text-xl font-bold text-neutral-800">
+                      <h1 className="text-xl font-bold text-neutral-800" style={{ fontFamily: "'Spectral', serif" }}>
                         Dashboard
                       </h1>
                       <span className="w-px h-5 bg-neutral-200" />
-                      <span className="text-sm select-none" style={{ fontFamily: "'Outfit', sans-serif" }}>
+                      <span className="text-sm select-none font-semibold" style={{ fontFamily: "'Spectral', serif", letterSpacing: "-0.01em" }}>
                         <span className="peoplehub-typed">{welcomeTyped || '\u00A0'}</span>
                         <span className="peoplehub-cursor" aria-hidden="true" />
                       </span>

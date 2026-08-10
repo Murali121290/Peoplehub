@@ -9,8 +9,8 @@ const ApprovalNavigationTabs: React.FC = () => {
     { name: "Leave Approval", path: "/manager/leave-approval" },
     { name: "Permission Approval", path: "/manager/permission-approval" },
     { name: "Shift Approval", path: "/manager/shift-approval" },
-    { name: "ODW Approval", path: "/manager/odw-approval" },
     { name: "WFH Approval", path: "/manager/wfh-approval" },
+    { name: "ODW Approval", path: "/manager/odw-approval" },
   ];
 
   return (
