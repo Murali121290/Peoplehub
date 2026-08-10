@@ -47,7 +47,7 @@ def apply_shift():
         ist_now = datetime.now(ZoneInfo("Asia/Kolkata"))
         ist_today = ist_now.date()
 
-        if req_from < ist_today:
+        if req_from < ist_today and data.get("request_type") != "One Day Wages":
             return jsonify({
                 "success": False,
                 "message": "Cannot apply for a shift change for a past date."
@@ -60,7 +60,7 @@ def apply_shift():
             )
         ).first()
 
-        if req_from == ist_today:
+        if req_from == ist_today and data.get("request_type") != "One Day Wages":
             # Check if employee already checked in today
             resolved_user_id = employee.user_id if employee else data["employee_id"]
             attendance = Attendance.query.filter_by(
@@ -92,19 +92,20 @@ def apply_shift():
                 }), 400
 
             # Check for existing approved Shift/WFH/Office requests in the date range
-            existing_approved_request = ShiftRequest.query.filter(
-                ShiftRequest.employee_id == employee.employee_id,
-                ShiftRequest.status == "Approved",
-                ShiftRequest.from_date <= req_to,
-                ShiftRequest.to_date >= req_from
-            ).first()
+            if data.get("request_type") != "One Day Wages":
+                existing_approved_request = ShiftRequest.query.filter(
+                    ShiftRequest.employee_id == employee.employee_id,
+                    ShiftRequest.status == "Approved",
+                    ShiftRequest.from_date <= req_to,
+                    ShiftRequest.to_date >= req_from
+                ).first()
 
-            if existing_approved_request:
-                req_label = existing_approved_request.request_type or "Shift/WFH"
-                return jsonify({
-                    "success": False,
-                    "message": f"An approved {req_label} request already exists from {existing_approved_request.from_date} to {existing_approved_request.to_date}. Please cancel the active approved request first before applying for a new shift, WFH, or office mode."
-                }), 400
+                if existing_approved_request:
+                    req_label = existing_approved_request.request_type or "Shift/WFH"
+                    return jsonify({
+                        "success": False,
+                        "message": f"An approved {req_label} request already exists from {existing_approved_request.from_date} to {existing_approved_request.to_date}. Please cancel the active approved request first before applying for a new shift, WFH, or office mode."
+                    }), 400
 
         shift_request = ShiftRequest(
             employee_id=data["employee_id"],
@@ -318,6 +319,16 @@ def approve_shift(id):
                 "message": f"Shift Request already {shift.status.lower()}"
             }), 400
 
+        # Check 3-day cutoff limit for One Day Wages requests
+        if shift.request_type == "One Day Wages":
+            if shift.created_at:
+                delta = datetime.utcnow() - shift.created_at
+                if delta.days > 3:
+                    return jsonify({
+                        "success": False,
+                        "message": "This One Day Wages request is Out of Date (older than 3 days) and cannot be approved."
+                    }), 400
+
         # Resolve user_id dynamically
         employee = Employee.query.get(shift.employee_id)
         resolved_user_id = employee.user_id if employee else shift.employee_id
@@ -337,14 +348,40 @@ def approve_shift(id):
                         attendance_date=current_date
                     ).first()
 
-                    if attendance:
-                        # Above 6 hours means fullday (Present), otherwise halfday
-                        total_hrs = float(attendance.total_hours or 0.0)
-                        if total_hrs >= 6.0:
-                            attendance.status = "Present"
-                        else:
-                            attendance.status = "Half Day"
-                        attendance.manager_status = "Approved"
+                    # Calculate total hours and parse times
+                    try:
+                        from datetime import time
+                        from_hour, from_minute = map(int, (shift.current_shift or "09:00").split(":"))
+                        to_hour, to_minute = map(int, (shift.requested_shift or "18:00").split(":"))
+                        
+                        check_in_dt = datetime.combine(current_date, time(from_hour, from_minute))
+                        check_out_dt = datetime.combine(current_date, time(to_hour, to_minute))
+                        
+                        tdelta = check_out_dt - check_in_dt
+                        total_hrs = max(0.0, tdelta.total_seconds() / 3600.0)
+                    except Exception as parse_err:
+                        print("Error parsing One Day Wages times:", str(parse_err))
+                        from datetime import time
+                        check_in_dt = datetime.combine(current_date, time(9, 0))
+                        check_out_dt = datetime.combine(current_date, time(18, 0))
+                        total_hrs = 9.0
+
+                    if not attendance:
+                        attendance = Attendance(
+                            user_id=resolved_user_id,
+                            attendance_date=current_date,
+                            shift_timing=employee.shift_timing if employee else "General Shift"
+                        )
+                        db.session.add(attendance)
+
+                    attendance.check_in = check_in_dt
+                    attendance.check_out = check_out_dt
+                    attendance.total_hours = total_hrs
+                    if total_hrs >= 6.0:
+                        attendance.status = "Present"
+                    else:
+                        attendance.status = "Half Day"
+                    attendance.manager_status = "Approved"
 
                     current_date += timedelta(days=1)
         else:
@@ -447,6 +484,16 @@ def reject_shift(id):
                 "success": False,
                 "message": f"Shift Request already {shift.status.lower()}"
             }), 400
+
+        # Check 3-day cutoff limit for One Day Wages requests
+        if shift.request_type == "One Day Wages":
+            if shift.created_at:
+                delta = datetime.utcnow() - shift.created_at
+                if delta.days > 3:
+                    return jsonify({
+                        "success": False,
+                        "message": "This One Day Wages request is Out of Date (older than 3 days) and cannot be rejected."
+                    }), 400
 
         employee = Employee.query.get(shift.employee_id)
 

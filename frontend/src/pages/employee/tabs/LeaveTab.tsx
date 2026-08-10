@@ -914,7 +914,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                       </div>
                       {!(item as any).isLopCard && (
                         <div className="text-[10px] text-slate-400 font-semibold mt-1">
-                          Used: {item.used} {item.used === 1 ? "day" : "days"}
+                          Availed: {item.used} {item.used === 1 ? "day" : "days"}
                         </div>
                       )}
                     </div>
@@ -1120,10 +1120,14 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           {/* Header & Segmented Tabs */}
           <div className="bg-white p-5 border-b border-neutral-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-primary-500/10 rounded-xl text-primary-500">
+              <div className={`p-2 rounded-xl ${timelineTab === "holidays" ? "bg-amber-500/10 text-amber-500" : "bg-primary-500/10 text-primary-500"}`}>
                 <CalendarIcon className="w-5 h-5" />
               </div>
-              <h3 className="text-[18px] font-bold text-neutral-850">Timeline &amp; Holidays</h3>
+              <h3 className="text-[18px] font-bold text-neutral-850">
+                {timelineTab === "holidays"
+                  ? "Company Holidays"
+                  : mode === "leave" ? "Leave Timeline" : mode === "permission" ? "Permission Timeline" : "Leave Timeline"}
+              </h3>
             </div>
 
             <div className="flex bg-neutral-100 p-1 rounded-xl border border-neutral-200">
@@ -1135,7 +1139,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     : "text-neutral-600 hover:text-neutral-800"
                 }`}
               >
-                📅 Leave &amp; Holiday Timeline ({upcomingLeaves.length + leaveHistoryRequests.length})
+                📅 {mode === "leave" ? "Leave Timeline" : mode === "permission" ? "Permission Timeline" : "Leave & Holiday Timeline"} ({upcomingLeaves.length + leaveHistoryRequests.length})
               </button>
               <button
                 onClick={() => setTimelineTab("holidays")}
@@ -1156,7 +1160,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-[15px] font-bold text-neutral-900 flex items-center gap-2">
-                    <span>📅</span> Planned Leaves &amp; Permissions (Upcoming)
+                    <span>📅</span> {mode === "leave" ? "Upcoming Leave Requests" : mode === "permission" ? "Upcoming Permission Requests" : "Planned Leaves & Permissions (Upcoming)"}
                   </h4>
                   <span className="text-[12px] font-semibold text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded">
                     {upcomingLeaves.length} Planned
@@ -1180,7 +1184,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                       {upcomingLeaves.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="p-6 text-center text-neutral-400 font-medium bg-neutral-50/10 italic">
-                            No upcoming planned leaves or permissions found.
+                            {mode === "leave" ? "No upcoming planned leaves found." : mode === "permission" ? "No upcoming planned permissions found." : "No upcoming planned leaves or permissions found."}
                           </td>
                         </tr>
                       ) : (
@@ -1259,7 +1263,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-[15px] font-bold text-neutral-900 flex items-center gap-2">
-                    <span>📋</span> Employee Leave &amp; Permission History (Past &amp; Today)
+                    <span>📋</span> {mode === "leave" ? "Employee Leave History" : mode === "permission" ? "Employee Permission History" : "Employee Leave & Permission History (Past & Today)"}
                   </h4>
                   <span className="text-[12px] font-semibold text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded">
                     {leaveHistoryRequests.length} Record{leaveHistoryRequests.length === 1 ? "" : "s"}
@@ -1283,7 +1287,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                       {leaveHistoryRequests.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="p-8 text-center text-neutral-400 font-medium bg-neutral-50/10">
-                            No leave or permission history found.
+                            {mode === "leave" ? "No leave history found." : mode === "permission" ? "No permission history found." : "No leave or permission history found."}
                           </td>
                         </tr>
                       ) : (

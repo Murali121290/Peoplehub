@@ -113,16 +113,6 @@ def login():
             if employee:
                 user = User.query.filter(User.id == employee.user_id).first()
 
-        print("================================")
-        print("LOGIN ID:", login_id)
-        print("USER FOUND:", user)
-
-        if user:
-            print("DB EMAIL:", user.email)
-            print("COMPANY EMAIL:", user.company_email)
-        else:
-            print("USER NOT FOUND")
-        print("================================")
 
         if not user:
             return jsonify({

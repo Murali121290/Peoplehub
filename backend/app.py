@@ -79,6 +79,7 @@ def create_app():
         import anyio
         anyio.to_thread.current_default_thread_limiter().total_tokens = 100
 
+
     # Register blueprints (routers)
     fastapi_app.include_router(employees_bp, prefix="/api/employees")
     fastapi_app.include_router(meeting_rooms_bp, prefix="/api/meeting-rooms")

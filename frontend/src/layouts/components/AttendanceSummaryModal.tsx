@@ -349,24 +349,24 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
             <table className="w-full border-collapse min-w-[1000px] relative">
               <thead className="sticky top-0 z-30 bg-neutral-50 shadow-xs">
                 <tr className="bg-neutral-50 text-neutral-500 text-[11px] font-bold uppercase tracking-wider">
-                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-4 min-w-[160px]">Employee</th>
-                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3 min-w-[120px]">Department</th>
-                  <th colSpan={6} className="bg-blue-100/80 text-blue-800 font-extrabold border-b border-neutral-200 text-center py-2 px-3">Web Site Entry</th>
-                  <th colSpan={3} className="bg-purple-100/80 text-purple-800 font-extrabold border-b border-neutral-200 text-center py-2 px-3">Biometric Card Entry</th>
-                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3">Status</th>
-                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3">Verification</th>
+                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 border-r border-neutral-200 text-left py-3.5 px-4 min-w-[160px]">Employee</th>
+                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 border-r border-neutral-200 text-left py-3.5 px-3 min-w-[120px]">Department</th>
+                  <th colSpan={6} className="bg-blue-100/80 text-blue-800 font-extrabold border-b border-neutral-200 border-r-2 border-blue-200 text-center py-2 px-3">Web Site Entry</th>
+                  <th colSpan={3} className="bg-purple-100/80 text-purple-800 font-extrabold border-b border-neutral-200 border-r-2 border-purple-200 text-center py-2 px-3">Biometric Card Entry</th>
+                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 border-r border-neutral-200 text-left py-3.5 px-3">Status</th>
+                  <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 border-r border-neutral-200 text-left py-3.5 px-3">Verification</th>
                   <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-center py-3.5 px-3 min-w-[290px]">Actions</th>
                 </tr>
                 <tr className="bg-neutral-50 text-neutral-500 text-[10px] font-bold uppercase tracking-wider">
-                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check In</th>
-                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check Out</th>
-                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Break</th>
-                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center font-semibold text-teal-800">Permission</th>
-                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Total Hours</th>
-                  <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Working Hours</th>
-                  <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check In</th>
-                  <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check Out</th>
-                  <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Hours</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Check In</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Check Out</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Break</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center font-semibold text-teal-800">Permission</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
+                  <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check In</th>
+                  <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check Out</th>
+                  <th className="bg-purple-50 border-b border-neutral-200 border-r-2 border-purple-200 py-2 px-2.5 text-center">Hours</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 text-sm font-medium">
@@ -392,7 +392,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         className="hover:bg-neutral-50/60 transition-colors"
                       >
                         {/* Employee Info */}
-                        <td className="py-3.5 px-4">
+                        <td className="py-3.5 px-4 border-r border-neutral-100">
                           <div className="flex items-center gap-2.5">
                             <img
                               src={getProfileImageUrl(emp.profile_image, emp.employee_id || emp.id)}
@@ -411,46 +411,46 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         </td>
 
                         {/* Department */}
-                        <td className="py-3.5 px-4 text-neutral-600 text-xs">
+                        <td className="py-3.5 px-4 text-neutral-600 text-xs border-r border-neutral-100">
                           {emp.department || "General"}
                         </td>
 
                         {/* Web Entry Columns */}
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold">{emp.check_in || "—"}</td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold">{emp.check_out || "—"}</td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold">
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold border-r border-blue-100/50">{emp.check_in || "—"}</td>
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold border-r border-blue-100/50">{emp.check_out || "—"}</td>
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold border-r border-blue-100/50">
                           {emp.total_break_minutes ? `${emp.total_break_minutes} min` : "0 min"}
                         </td>
                         <td 
-                          className="py-3.5 px-3 bg-blue-50/5 text-xs text-teal-700 font-bold"
+                          className="py-3.5 px-3 bg-blue-50/5 text-xs text-teal-700 font-bold border-r border-blue-100/50"
                           title={emp.permission_time || undefined}
                         >
                           {emp.permission_hours ? `${emp.permission_hours} hr${emp.permission_hours !== 1 ? "s" : ""}` : "—"}
                         </td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-400">
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-400 border-r border-blue-100/50">
                           {formatWorkingHours(
                             (emp.working_hours || 0) +
                             (emp.total_break_minutes || 0) / 60
                           )}
                         </td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs font-bold text-neutral-800">
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs font-bold text-neutral-800 border-r-2 border-blue-200/50">
                           {formatWorkingHours(emp.working_hours)}
                         </td>
 
                         {/* Card Entry Columns */}
-                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">{emp.card_check_in || "—"}</td>
-                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">{emp.card_check_out || "—"}</td>
-                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">
+                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r border-purple-100/50">{emp.card_check_in || "—"}</td>
+                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r border-purple-100/50">{emp.card_check_out || "—"}</td>
+                        <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r-2 border-purple-200/50">
                           {formatWorkingHours(emp.card_working_hours)}
                         </td>
 
                         {/* Status */}
-                        <td className="py-3.5 px-4">
+                        <td className="py-3.5 px-4 border-r border-neutral-100">
                           {getStatusBadge(emp.status)}
                         </td>
 
                         {/* Verification Status */}
-                        <td className="py-3.5 px-4">
+                        <td className="py-3.5 px-4 border-r border-neutral-100">
                           {getVerificationBadge(emp.employee_reply ? "Clarification Provided" : emp.decision)}
                         </td>
 
@@ -513,24 +513,24 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                 <table className="w-full border-collapse min-w-[1000px] relative">
                   <thead className="sticky top-0 z-30 bg-neutral-50 shadow-xs">
                     <tr className="bg-neutral-50 text-neutral-500 text-[11px] font-bold uppercase tracking-wider">
-                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-4 min-w-[160px]">Employee</th>
-                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3 min-w-[120px]">Department</th>
-                      <th colSpan={6} className="bg-blue-100/80 text-blue-800 font-extrabold border-b border-neutral-200 text-center py-2 px-3">Web Site Entry</th>
-                      <th colSpan={3} className="bg-purple-100/80 text-purple-800 font-extrabold border-b border-neutral-200 text-center py-2 px-3">Biometric Card Entry</th>
-                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3">Status</th>
-                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-left py-3.5 px-3">Verification</th>
+                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 border-r border-neutral-200 text-left py-3.5 px-4 min-w-[160px]">Employee</th>
+                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 border-r border-neutral-200 text-left py-3.5 px-3 min-w-[120px]">Department</th>
+                      <th colSpan={6} className="bg-blue-100/80 text-blue-800 font-extrabold border-b border-neutral-200 border-r-2 border-blue-200 text-center py-2 px-3">Web Site Entry</th>
+                      <th colSpan={3} className="bg-purple-100/80 text-purple-800 font-extrabold border-b border-neutral-200 border-r-2 border-purple-200 text-center py-2 px-3">Biometric Card Entry</th>
+                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 border-r border-neutral-200 text-left py-3.5 px-3">Status</th>
+                      <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 border-r border-neutral-200 text-left py-3.5 px-3">Verification</th>
                       <th rowSpan={2} className="bg-neutral-50 border-b border-neutral-200 text-center py-3.5 px-3 min-w-[290px]">Actions</th>
                     </tr>
                     <tr className="bg-neutral-50 text-neutral-500 text-[10px] font-bold uppercase tracking-wider">
-                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check In</th>
-                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check Out</th>
-                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Break</th>
-                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center font-semibold text-teal-800">Permission</th>
-                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Total Hours</th>
-                      <th className="bg-blue-50 border-b border-neutral-200 py-2 px-2.5 text-center">Working Hours</th>
-                      <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check In</th>
-                      <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Check Out</th>
-                      <th className="bg-purple-50 border-b border-neutral-200 py-2 px-2.5 text-center">Hours</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Check In</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Check Out</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Break</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center font-semibold text-teal-800">Permission</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
+                      <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check In</th>
+                      <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check Out</th>
+                      <th className="bg-purple-50 border-b border-neutral-200 border-r-2 border-purple-200 py-2 px-2.5 text-center">Hours</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-150">
@@ -543,7 +543,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                       return (
                         <tr key={`${emp.id || emp.employee_id}-${emp.summary_date}`} className="hover:bg-neutral-50/50 transition-all duration-150 border-b border-neutral-100">
                           {/* Employee info */}
-                          <td className="py-3.5 px-4">
+                          <td className="py-3.5 px-4 border-r border-neutral-100">
                             <div className="flex items-center gap-3">
                               <img
                                src={getProfileImageUrl(emp.profile_image, emp.employee_id || emp.id)}
@@ -561,45 +561,45 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                           </td>
 
                           {/* Department */}
-                          <td className="py-3.5 px-3">
+                          <td className="py-3.5 px-3 border-r border-neutral-100">
                             <div className="text-xs text-neutral-600 font-medium">{emp.department || "—"}</div>
                             <div className="text-[9px] text-neutral-400 mt-0.5">{emp.designation || "—"}</div>
                           </td>
 
                           {/* Web Entry Columns */}
-                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600">{emp.check_in || "—"}</td>
-                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600">{emp.check_out || "—"}</td>
-                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600">
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r border-blue-100/50">{emp.check_in || "—"}</td>
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r border-blue-100/50">{emp.check_out || "—"}</td>
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r border-blue-100/50">
                             {emp.total_break_minutes ? `${emp.total_break_minutes} min` : "0 min"}
                           </td>
-                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-teal-700 font-bold">
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-teal-700 font-bold border-r border-blue-100/50">
                             {emp.permission_hours > 0 ? (
                               <span className="cursor-pointer underline decoration-dotted decoration-teal-500" title={emp.permission_time}>
                                 {emp.permission_hours} hr{emp.permission_hours > 1 ? "s" : ""}
                               </span>
                             ) : "—"}
                           </td>
-                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600">
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r border-blue-100/50">
                             {formatWorkingHours(emp.working_hours)}
                           </td>
-                          <td className="py-3.5 px-3 bg-blue-50/5 text-xs font-bold text-neutral-800">
+                          <td className="py-3.5 px-3 bg-blue-50/5 text-xs font-bold text-neutral-800 border-r-2 border-blue-200/50">
                             {formatWorkingHours(emp.working_hours)}
                           </td>
 
                           {/* Card Entry Columns */}
-                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">{emp.card_check_in || "—"}</td>
-                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">{emp.card_check_out || "—"}</td>
-                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400">
+                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r border-purple-100/50">{emp.card_check_in || "—"}</td>
+                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r border-purple-100/50">{emp.card_check_out || "—"}</td>
+                          <td className="py-3.5 px-3 bg-purple-50/5 text-xs text-neutral-400 border-r-2 border-purple-200/50">
                             {formatWorkingHours(emp.card_working_hours)}
                           </td>
 
                           {/* Status */}
-                          <td className="py-3.5 px-4">
+                          <td className="py-3.5 px-4 border-r border-neutral-100">
                             {getStatusBadge(emp.status)}
                           </td>
 
                           {/* Verification Status */}
-                          <td className="py-3.5 px-4">
+                          <td className="py-3.5 px-4 border-r border-neutral-100">
                             {getVerificationBadge(emp.employee_reply ? "Clarification Provided" : emp.decision)}
                           </td>
 

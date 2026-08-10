@@ -197,8 +197,8 @@ const LeaveApprovalPage: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 pt-3 pb-1">
-      <div className="mb-3 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3 pb-6">
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Leave Approval Requests</h1>
           <p className="mt-1 text-sm text-neutral-500">Manage and review leave requests from your team members.</p>

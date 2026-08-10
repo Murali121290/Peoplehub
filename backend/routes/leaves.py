@@ -172,16 +172,6 @@ def get_leaves():
             LeaveRequest.id.desc()
         ).all()
 
-        print("========== LEAVE REQUESTS ==========")
-        print(f"Total Leaves: {len(leaves)}")
-
-        for leave in leaves:
-            print(
-                f"ID: {leave.id}, "
-                f"Employee ID: {leave.employee_id}, "
-                f"Employee: {leave.employee_name}, "
-                f"Status: {leave.status}"
-            )
 
         leaves_data = [serialize_leave(leave) for leave in leaves]
         return jsonify(leaves_data), 200

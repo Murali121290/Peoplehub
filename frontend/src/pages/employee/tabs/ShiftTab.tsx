@@ -21,8 +21,23 @@ import { Modal, ConfirmDialog } from "../../../components/ui/Modal";
 import { DatePicker } from "../../../components/ui/DatePicker";
 import { getStatusColor } from '../utils/employeeHelpers';
 
+const convertTo12HourFormat = (time24: string) => {
+  if (!time24) return "";
+  if (time24.includes("AM") || time24.includes("PM")) return time24;
+  const parts = time24.split(":");
+  if (parts.length < 2) return time24;
+  const h = parseInt(parts[0]);
+  const m = parseInt(parts[1]);
+  if (isNaN(h) || isNaN(m)) return time24;
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  const minFormatted = String(m).padStart(2, "0");
+  const hourFormatted = String(h12).padStart(2, "0");
+  return `${hourFormatted}:${minFormatted} ${period}`;
+};
+
 interface ShiftTabProps {
-  mode?: "all" | "shift" | "wfh";
+  mode?: "all" | "shift" | "wfh" | "odw";
   currentEmployee: any;
   shiftRequests: any[];
   managerShiftRequests: any[];
@@ -44,7 +59,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   onReject,
   onCancelShift,
 }) => {
-  const [requestType, setRequestType] = useState(mode === "wfh" ? "WFH" : "Shift");
+  const [requestType, setRequestType] = useState(mode === "wfh" ? "WFH" : mode === "odw" ? "One Day Wages" : "Shift");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [shiftTab, setShiftTab] = useState("my");
@@ -56,7 +71,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
 
   useEffect(() => {
     if (showShiftForm) {
-      setRequestType(mode === "wfh" ? "WFH" : "Shift");
+      setRequestType(mode === "wfh" ? "WFH" : mode === "odw" ? "One Day Wages" : "Shift");
     }
   }, [mode, showShiftForm]);
 
@@ -180,14 +195,22 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
     if (mode === "wfh") {
       return arr.filter((req: any) => req.request_type === "WFH" || req.request_type === "Office");
     }
+    if (mode === "odw") {
+      return arr.filter((req: any) => req.request_type === "One Day Wages");
+    }
     return arr;
   }, [shiftRequests, mode]);
 
   const activeShiftRequests = filteredShiftRequests.filter((req: any) => {
     if (req.status !== "Pending") return false;
-    const startDate = req.from_date || req.shift_date || req.to_date || "";
-    const todayStr = new Date().toLocaleDateString("en-CA");
-    if (startDate && startDate < todayStr) return false;
+    const isOneDayWages = req.request_type === "One Day Wages";
+    const startDate = isOneDayWages
+      ? (req.created_at ? req.created_at.split(/[T ]/)[0] : "")
+      : (req.from_date || req.shift_date || req.to_date || "");
+    const todayDate = new Date();
+    const cutoffDate = new Date(todayDate.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const cutoffStr = cutoffDate.toISOString().split("T")[0];
+    if (startDate && startDate < cutoffStr) return false;
     return true;
   });
 
@@ -197,19 +220,21 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-xl font-bold text-neutral-800 tracking-tight flex items-center gap-2">
-            {mode === "wfh" ? "WFH Requests" : mode === "shift" ? "Shift Change Requests" : "Shift & Work Mode Requests"}
+            {mode === "wfh" ? "WFH Requests" : mode === "shift" ? "Shift Change Requests" : mode === "odw" ? "ODW Requests" : "Shift & Work Mode Requests"}
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            {mode === "wfh" ? "Apply and manage your Work From Home (WFH) schedules" : mode === "shift" ? "Apply and manage your shift change logs" : "Apply and manage shift change logs and Work From Home (WFH) schedules"}
+            {mode === "wfh" ? "Apply and manage your Work From Home (WFH) schedules" : mode === "shift" ? "Apply and manage your shift change logs" : mode === "odw" ? "Track and manage your One Day Wages (ODW) requests" : "Apply and manage shift change logs and Work From Home (WFH) schedules"}
           </p>
         </div>
-        <Button
-          icon={PlusIcon}
-          onClick={() => setShowShiftForm(true)}
-          className="bg-primary-600 hover:bg-primary-700 text-white shadow-md hover:shadow-lg transition-all duration-200 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
-        >
-          {mode === "wfh" ? "Request WFH" : mode === "shift" ? "Request Shift Change" : "Request Shift / WFH"}
-        </Button>
+        {mode !== "odw" && (
+          <Button
+            icon={PlusIcon}
+            onClick={() => setShowShiftForm(true)}
+            className="bg-primary-600 hover:bg-primary-700 text-white shadow-md hover:shadow-lg transition-all duration-200 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
+          >
+            {mode === "wfh" ? "Request WFH" : mode === "shift" ? "Request Shift Change" : "Request Shift / WFH"}
+          </Button>
+        )}
       </div>
 
       {/* Removed Navigation Switch Tabs */}
@@ -229,7 +254,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-warning-500" />
                 </span>
                 <h3 className="text-md font-bold text-neutral-850">
-                  Active Shift / Schedule Tracking ({activeShiftRequests.length})
+                  {mode === "odw" ? `Active ODW Tracking (${activeShiftRequests.length})` : `Active Shift / Schedule Tracking (${activeShiftRequests.length})`}
                 </h3>
               </div>
               <span className="text-xs font-semibold text-neutral-400 bg-neutral-100 px-3 py-1 rounded-full border border-neutral-200">
@@ -241,6 +266,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
               {activeShiftRequests.map((req: any, idx) => {
                 const isWFH = req.request_type === "WFH";
                 const isOffice = req.request_type === "Office";
+                const isOneDayWages = req.request_type === "One Day Wages";
                 const isExpanded = activeRequestDetails === req.id;
                 return (
                   <div key={req.id} className={`${idx > 0 ? "pt-5" : ""}`}>
@@ -248,17 +274,21 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                       <div className="flex items-start gap-4">
                         <div className={`p-2 rounded-xl border ${(isWFH || isOffice)
                             ? "bg-purple-50 border-purple-100 text-purple-600"
+                            : isOneDayWages
+                            ? "bg-amber-50 border-amber-100 text-amber-600"
                             : "bg-blue-50 border-blue-100 text-blue-600"
                           }`}>
-                          {(isWFH || isOffice) ? <HomeIcon className="w-5 h-5" /> : <BriefcaseIcon className="w-5 h-5" />}
+                          {(isWFH || isOffice) ? <HomeIcon className="w-5 h-5" /> : isOneDayWages ? <CalendarIcon className="w-5 h-5" /> : <BriefcaseIcon className="w-5 h-5" />}
                         </div>
                         <div>
                           <p className="text-sm font-bold text-neutral-800">
-                            {isWFH ? "Work From Home Request" : isOffice ? "Work From Office Request" : `Shift Change Request`}
+                            {isWFH ? "Work From Home Request" : isOffice ? "Work From Office Request" : isOneDayWages ? "One Day Wages Request" : `Shift Change Request`}
                           </p>
                           <p className="text-xs text-neutral-500 font-medium mt-0.5 flex items-center gap-1.5">
                             <ClockIcon className="w-3.5 h-3.5 text-neutral-400" />
-                            {(isWFH || isOffice)
+                            {isOneDayWages
+                              ? `Claim for: ${req.from_date}`
+                              : (isWFH || isOffice)
                               ? `Schedule: ${req.from_date} to ${req.to_date}`
                               : `Change: ${req.current_shift} ➔ ${req.requested_shift} (${req.from_date} to ${req.to_date})`
                             }
@@ -358,10 +388,10 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
           <div className="px-6 py-5 border-b border-neutral-200 bg-neutral-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <h3 className="text-lg font-bold text-neutral-850">
-                {mode === "wfh" ? "WFH Request History" : mode === "shift" ? "Shift Request History" : "Shift & WFH History"}
+                {mode === "wfh" ? "WFH Request History" : mode === "shift" ? "Shift Request History" : mode === "odw" ? "ODW Request History" : "Shift & WFH History"}
               </h3>
               <p className="text-xs text-neutral-450 font-medium mt-0.5">
-                {mode === "wfh" ? "Chronological record of all submitted WFH requests" : mode === "shift" ? "Chronological record of all submitted shift requests" : "Chronological record of all submitted shift/WFH requests"}
+                {mode === "wfh" ? "Chronological record of all submitted WFH requests" : mode === "shift" ? "Chronological record of all submitted shift requests" : mode === "odw" ? "Chronological record of all submitted One Day Wages requests" : "Chronological record of all submitted shift/WFH requests"}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -376,8 +406,8 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
               <thead>
                 <tr className="bg-neutral-50/50 border-b border-neutral-200 text-neutral-500 text-[10px] font-semibold uppercase tracking-wider">
                   <th className="text-left p-4 pl-6">Type</th>
-                  <th className="text-left p-4">Current Shift</th>
-                  <th className="text-left p-4">Requested Shift</th>
+                  <th className="text-left p-4">{mode === "odw" ? "From Time" : "Current Shift"}</th>
+                  <th className="text-left p-4">{mode === "odw" ? "To Time" : "Requested Shift"}</th>
                   <th className="text-left p-4">Date Range</th>
                   <th className="text-left p-4">Applied At</th>
                   <th className="text-left p-4">Actioned At</th>
@@ -392,10 +422,10 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                       <div className="flex flex-col items-center justify-center gap-2 py-4">
                         <CalendarIcon className="w-12 h-12 text-neutral-300" />
                         <p className="text-xs font-bold text-neutral-500">
-                          {mode === "wfh" ? "No WFH requests found" : mode === "shift" ? "No shift requests found" : "No requests found"}
+                          {mode === "wfh" ? "No WFH requests found" : mode === "shift" ? "No shift requests found" : mode === "odw" ? "No ODW requests found" : "No requests found"}
                         </p>
                         <p className="text-[11px] text-neutral-400">
-                          {mode === "wfh" ? 'Click "Request WFH" to apply for schedule updates.' : mode === "shift" ? 'Click "Request Shift Change" to apply for schedule updates.' : 'Click "Request Shift / WFH" to apply for schedule updates.'}
+                          {mode === "wfh" ? 'Click "Request WFH" to apply for schedule updates.' : mode === "shift" ? 'Click "Request Shift Change" to apply for schedule updates.' : mode === "odw" ? "To apply for One Day Wages, click a weekend/holiday on your attendance tab." : 'Click "Request Shift / WFH" to apply for schedule updates.'}
                         </p>
                       </div>
                     </td>
@@ -443,20 +473,39 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                       <React.Fragment key={item.id}>
                         <tr className="hover:bg-neutral-50/40 transition-colors">
                           <td className="p-4 pl-6">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWorkMode
-                                ? "bg-purple-50 text-purple-700 border-purple-200"
-                                : "bg-blue-50 text-blue-700 border-blue-200"
-                              }`}>
-                              {item.request_type || "Shift"}
-                            </span>
+                            {(() => {
+                              const isOneDayWages = item.request_type === "One Day Wages";
+                              return (
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWorkMode
+                                    ? "bg-purple-50 text-purple-700 border-purple-200"
+                                    : isOneDayWages
+                                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                                    : "bg-blue-50 text-blue-700 border-blue-200"
+                                  }`}>
+                                  {item.request_type || "Shift"}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="p-4 text-xs font-normal text-neutral-600">
-                            {item.current_shift || "-"}
-                            {item.current_work_mode && <span className="text-[10px] text-blue-500 font-semibold ml-1">({item.current_work_mode})</span>}
+                            {item.request_type === "One Day Wages" ? (
+                              <span className="font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded">{convertTo12HourFormat(item.current_shift) || "—"}</span>
+                            ) : (
+                              <>
+                                {item.current_shift || "-"}
+                                {item.current_work_mode && <span className="text-[10px] text-blue-500 font-semibold ml-1">({item.current_work_mode})</span>}
+                              </>
+                            )}
                           </td>
                           <td className="p-4 text-xs font-medium text-neutral-800">
-                            {item.requested_shift || "-"}
-                            {item.requested_work_mode && <span className="text-[10px] text-blue-500 font-semibold ml-1">({item.requested_work_mode})</span>}
+                            {item.request_type === "One Day Wages" ? (
+                              <span className="font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-100">{convertTo12HourFormat(item.requested_shift) || "—"}</span>
+                            ) : (
+                              <>
+                                {item.requested_shift || "-"}
+                                {item.requested_work_mode && <span className="text-[10px] text-blue-500 font-semibold ml-1">({item.requested_work_mode})</span>}
+                              </>
+                            )}
                           </td>
                           <td className="p-4">
                             <div>

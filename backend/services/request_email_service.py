@@ -41,15 +41,7 @@ def send_email_via_smtp(to_email, subject, html_content):
     mail_password = current_app.config.get("MAIL_PASSWORD")
     mail_sender = current_app.config.get("MAIL_DEFAULT_SENDER", "peoplehub@s4carlisle.com")
 
-    print("========== SMTP DEBUGGING ==========")
-    print(f"SMTP Configured values:")
-    print(f"  - MAIL_SERVER: {mail_server}")
-    print(f"  - MAIL_PORT: {mail_port}")
-    print(f"  - MAIL_USE_TLS: {mail_use_tls}")
-    print(f"  - MAIL_USERNAME: {mail_username}")
-    print(f"  - MAIL_DEFAULT_SENDER: {mail_sender}")
-    print(f"  - Recipient (to_email): {to_email}")
-    print(f"  - Password present: {bool(mail_password)}")
+
 
     # 1. Always log and save a debug file first (so we can view HTML locally)
     try:
@@ -77,7 +69,7 @@ def send_email_via_smtp(to_email, subject, html_content):
 
     if not mail_username or not mail_password:
         print("[SMTP] Mail username or password is not configured in the environment. Skipping actual SMTP mail dispatch.")
-        print("====================================")
+
         return True
 
     try:
@@ -119,15 +111,15 @@ def send_email_via_smtp(to_email, subject, html_content):
 
         # Quit
         server.quit()
-        print("====================================")
+
         return True
     except smtplib.SMTPAuthenticationError as auth_err:
         print(f"[SMTP AUTH ERROR] Authentication failed for user '{mail_username}'. Code: {auth_err.smtp_code}, Message: {auth_err.smtp_error.decode('utf-8', errors='ignore') if isinstance(auth_err.smtp_error, bytes) else auth_err.smtp_error}")
-        print("====================================")
+
         return False
     except smtplib.SMTPConnectError as conn_err:
         print(f"[SMTP CONNECT ERROR] Connection failed to {mail_server}:{mail_port}. Code: {conn_err.smtp_code}, Message: {conn_err.smtp_error}")
-        print("====================================")
+
         return False
     except Exception as smtp_err:
         import traceback
@@ -135,7 +127,7 @@ def send_email_via_smtp(to_email, subject, html_content):
         print(f"Exception Type: {type(smtp_err)}")
         print(f"Exception Message: {str(smtp_err)}")
         traceback.print_exc()
-        print("====================================")
+
         return False
 
 def send_manager_request_email(request_obj, request_type):

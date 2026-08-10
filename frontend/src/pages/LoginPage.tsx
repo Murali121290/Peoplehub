@@ -36,6 +36,48 @@ const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
+  // ---- AI Typewriter for Hero text ----
+  const text1 = "Your workday,";
+  const text2 = "all in one place.";
+  const [typedText1, setTypedText1] = useState("");
+  const [typedText2, setTypedText2] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+
+  React.useEffect(() => {
+    if (isPaused) return;
+
+    const timeout = setTimeout(() => {
+      if (!isDeleting) {
+        if (typedText1.length < text1.length) {
+          setTypedText1(text1.slice(0, typedText1.length + 1));
+        } else if (typedText2.length < text2.length) {
+          setTypedText2(text2.slice(0, typedText2.length + 1));
+        } else {
+          setIsPaused(true);
+          setTimeout(() => {
+            setIsDeleting(true);
+            setIsPaused(false);
+          }, 3000);
+        }
+      } else {
+        if (typedText2.length > 0) {
+          setTypedText2(typedText2.slice(0, typedText2.length - 1));
+        } else if (typedText1.length > 0) {
+          setTypedText1(typedText1.slice(0, typedText1.length - 1));
+        } else {
+          setIsPaused(true);
+          setTimeout(() => {
+            setIsDeleting(false);
+            setIsPaused(false);
+          }, 600);
+        }
+      }
+    }, isDeleting ? 40 : 80);
+
+    return () => clearTimeout(timeout);
+  }, [typedText1, typedText2, isDeleting, isPaused]);
+
   // ---- Forgot / change password form state ----
   const [pwData, setPwData] = useState({
     username: "",
@@ -313,7 +355,7 @@ const LoginPage: React.FC = () => {
           borderBottom: "1px solid rgba(255,255,255,0.06)",
         }}
       >
-        <div className="flex items-center gap-3.5">
+        <div className="flex items-center gap-4.5">
           <img
             src={logo}
             alt="S4Carlisle"
@@ -323,13 +365,15 @@ const LoginPage: React.FC = () => {
             style={{
               fontFamily: "'Outfit', sans-serif",
               fontWeight: 700,
-              fontSize: "20px",
+              fontSize: "32px",
               letterSpacing: "-0.02em",
               textShadow: "0 2px 20px rgba(0,0,0,0.3)",
+              display: "flex",
+              alignItems: "center"
             }}
           >
             <span style={{ color: "#fbbf24" }}>S4</span>
-            <span style={{ color: "#fff" }}>C PeopleHub</span>
+            <span style={{ color: "#ffffff" }}>C PeopleHub</span>
           </span>
         </div>
       </header>
@@ -341,13 +385,19 @@ const LoginPage: React.FC = () => {
 
 
           <h1
-            className="font-extrabold text-[40px] md:text-[64px] leading-[1.05] mb-5 tracking-tight"
+            className="font-extrabold text-[40px] md:text-[64px] leading-[1.05] mb-5 tracking-tight min-h-[90px] md:min-h-[140px]"
             style={{
               fontFamily: "'Outfit', sans-serif",
               textShadow: "0 2px 40px rgba(0,0,0,0.5)",
             }}
           >
-            Your workday,<br />
+            <span className="inline-block relative">
+              {typedText1 || '\u00A0'}
+              {(!isDeleting && typedText1.length < text1.length) || (isDeleting && typedText2.length === 0) ? (
+                <span className="peoplehub-cursor" style={{ background: '#fff', boxShadow: '0 0 5px #fff', marginLeft: '3px' }} aria-hidden="true" />
+              ) : null}
+            </span>
+            <br />
             <span
               style={{
                 background: "linear-gradient(135deg, #fbbf24, #f59e0b)",
@@ -355,8 +405,12 @@ const LoginPage: React.FC = () => {
                 WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
               }}
+              className="inline-block relative"
             >
-              all in one place.
+              {typedText2 || '\u00A0'}
+              {((!isDeleting && typedText1.length === text1.length) || (isDeleting && typedText2.length > 0)) ? (
+                <span className="peoplehub-cursor" style={{ background: '#fbbf24', boxShadow: '0 0 5px #fbbf24', marginLeft: '3px' }} aria-hidden="true" />
+              ) : null}
             </span>
           </h1>
           <p

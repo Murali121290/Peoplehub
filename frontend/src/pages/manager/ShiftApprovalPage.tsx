@@ -41,7 +41,26 @@ const getActionedAtText = (r: any) => {
   return "Pending";
 };
 
-const ShiftApprovalPage: React.FC = () => {
+const convertTo12HourFormat = (time24: string) => {
+  if (!time24) return "";
+  if (time24.includes("AM") || time24.includes("PM")) return time24;
+  const parts = time24.split(":");
+  if (parts.length < 2) return time24;
+  const h = parseInt(parts[0]);
+  const m = parseInt(parts[1]);
+  if (isNaN(h) || isNaN(m)) return time24;
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  const minFormatted = String(m).padStart(2, "0");
+  const hourFormatted = String(h12).padStart(2, "0");
+  return `${hourFormatted}:${minFormatted} ${period}`;
+};
+
+interface ShiftApprovalPageProps {
+  isOdwOnly?: boolean;
+}
+
+const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false }) => {
   const { user, token } = useAuthStore();
   const [shiftRequests, setShiftRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -169,7 +188,11 @@ const ShiftApprovalPage: React.FC = () => {
   };
 
   const safeManagerShiftRequests = shiftRequests.filter((req: any) => {
-    if (req.request_type === "WFH") return false;
+    if (isOdwOnly) {
+      if (req.request_type !== "One Day Wages") return false;
+    } else {
+      if (req.request_type === "One Day Wages" || req.request_type === "WFH") return false;
+    }
 
     const isManager = checkManagerMatch(req.reporting_manager, user?.full_name) ||
       user?.access_level?.toLowerCase() === "admin";
@@ -247,25 +270,33 @@ const ShiftApprovalPage: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 pt-3 pb-1">
-      <div className="mb-3 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3 pb-6">
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Shift Approval Requests</h1>
-          <p className="mt-1 text-sm text-neutral-500">Manage and review shift change applications from your team.</p>
+          <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">
+            {isOdwOnly ? "ODW Approval Requests" : "Shift Approval Requests"}
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            {isOdwOnly
+              ? "Manage and review One Day Wages applications from your team."
+              : "Manage and review shift change applications from your team."}
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <Button
-            variant="primary"
-            onClick={() => {
-              setLogModalType("Shift");
-              setModalRequestType("Shift");
-              setShowManagerLogModal(true);
-            }}
-            className="flex items-center gap-2 font-semibold shadow-md"
-          >
-            + Log Shift Entry
-          </Button>
+          {!isOdwOnly && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                setLogModalType("Shift");
+                setModalRequestType("Shift");
+                setShowManagerLogModal(true);
+              }}
+              className="flex items-center gap-2 font-semibold shadow-md"
+            >
+              + Log Shift Entry
+            </Button>
+          )}
           <div className="relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
             <input
@@ -294,7 +325,7 @@ const ShiftApprovalPage: React.FC = () => {
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-115px)]">
           <table className="w-full border-collapse">
             <thead className="sticky top-0 z-20 bg-neutral-50">
-              <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 text-[10px] font-semibold uppercase tracking-wider">
+              <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 text-xs font-semibold uppercase tracking-wider">
                 <th className="text-left p-4 pl-6 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Employee</th>
                 <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Emp ID</th>
                 <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Request Type</th>
@@ -315,7 +346,11 @@ const ShiftApprovalPage: React.FC = () => {
                     <div className="flex flex-col items-center justify-center gap-2 py-4">
                       <CheckIcon className="w-12 h-12 text-success-400" />
                       <p className="text-xs font-bold text-neutral-500">All caught up!</p>
-                      <p className="text-[11px] text-neutral-450">There are no pending shift approval requests from your team.</p>
+                      <p className="text-[11px] text-neutral-450">
+                        {isOdwOnly
+                          ? "There are no pending ODW approval requests from your team."
+                          : "There are no pending shift approval requests from your team."}
+                      </p>
                     </div>
                   </td>
                 </tr>
@@ -337,19 +372,19 @@ const ShiftApprovalPage: React.FC = () => {
                                 e.currentTarget.src = "/default-avatar.png";
                               }}
                             />
-                            <span className="font-bold text-neutral-800">{item.employee_name}</span>
+                            <span className="text-sm font-bold text-neutral-850">{item.employee_name}</span>
                           </div>
                         </td>
-                        <td className="p-4 text-xs font-semibold text-neutral-600">
+                        <td className="p-4 text-sm text-neutral-600 font-medium">
                           {item.employee_id || "-"}
                         </td>
-                        <td className="p-4 text-xs font-normal">
+                        <td className="p-4 text-sm text-neutral-650 font-normal">
                           {(() => {
                             const isWorkMode = item.request_type === "WFH" || item.request_type === "Office";
                             const isOneDayWages = item.request_type === "One Day Wages";
                             const label = item.request_type || "Shift";
                             return (
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWorkMode
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${isWorkMode
                                 ? "bg-purple-50 text-purple-700 border-purple-200"
                                 : isOneDayWages
                                 ? "bg-amber-50 text-amber-700 border-amber-200"
@@ -360,8 +395,10 @@ const ShiftApprovalPage: React.FC = () => {
                             );
                           })()}
                         </td>
-                        <td className="p-4 text-xs text-neutral-600">
-                          {item.request_type === "One Day Wages" ? "—" : (() => {
+                        <td className="p-4 text-sm text-neutral-600 font-medium">
+                          {item.request_type === "One Day Wages" ? (
+                            <span className="font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded">{convertTo12HourFormat(item.current_shift) || "—"}</span>
+                          ) : (() => {
                             const curMode = item.current_work_mode || (item.current_shift?.toUpperCase() === "WFH" ? "WFH" : (item.request_type === "Office" ? "WFH" : "Office"));
                             const showCurSuffix = curMode && item.current_shift?.toUpperCase() !== curMode.toUpperCase();
                             return (
@@ -376,8 +413,10 @@ const ShiftApprovalPage: React.FC = () => {
                             );
                           })()}
                         </td>
-                        <td className="p-4 text-xs font-medium text-neutral-800">
-                          {item.request_type === "One Day Wages" ? "One Day Wages" : (() => {
+                        <td className="p-4 text-sm font-medium text-neutral-600">
+                          {item.request_type === "One Day Wages" ? (
+                            <span className="font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-100">{convertTo12HourFormat(item.requested_shift) || "—"}</span>
+                          ) : (() => {
                             const reqMode = item.requested_work_mode || (item.request_type === "WFH" ? "WFH" : "Office");
                             const showReqSuffix = reqMode && item.requested_shift?.toUpperCase() !== reqMode.toUpperCase();
                             return (
@@ -392,15 +431,15 @@ const ShiftApprovalPage: React.FC = () => {
                             );
                           })()}
                         </td>
-                        <td className="p-4">
+                        <td className="p-4 text-sm">
                           <div>
-                            <p className="text-xs font-medium text-neutral-800">{item.from_date}</p>
-                            <p className="text-[11px] text-neutral-450 font-normal mt-0.5 flex items-center gap-1">
+                            <p className="font-semibold text-neutral-800">{item.from_date}</p>
+                            <p className="text-xs text-neutral-400 font-semibold mt-0.5 flex items-center gap-1">
                               <ArrowRightIcon className="w-3 h-3 text-neutral-350" /> to {item.to_date}
                             </p>
                           </div>
                         </td>
-                        <td className="p-4 text-xs text-neutral-500 max-w-xs">
+                        <td className="p-4 text-sm text-neutral-500 max-w-xs">
                           {item.reason ? (
                             <button
                               onClick={() => toggleReason(item.id)}
@@ -425,10 +464,10 @@ const ShiftApprovalPage: React.FC = () => {
                             <span className="text-neutral-400">-</span>
                           )}
                         </td>
-                        <td className="p-4 text-xs font-medium text-neutral-600">
+                        <td className="p-4 text-sm font-medium text-neutral-600">
                           {formatDateTime(item.created_at)}
                         </td>
-                        <td className="p-4 text-xs font-medium text-neutral-800">
+                        <td className="p-4 text-sm font-medium text-neutral-600">
                           {getActionedAtText(item)}
                         </td>
                         <td className="p-4 text-center">
@@ -444,9 +483,14 @@ const ShiftApprovalPage: React.FC = () => {
                         <td className="p-4 text-center">
                           {item.status === "Pending" ? (
                             (() => {
-                              const startDate = item.from_date || item.shift_date || item.to_date || "";
-                              const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
-                              const isFinished = startDate && startDate < today;
+                              const isOneDayWages = item.request_type === "One Day Wages";
+                              const startDate = isOneDayWages
+                                ? (item.created_at ? item.created_at.split(/[T ]/)[0] : "")
+                                : (item.from_date || item.shift_date || item.to_date || "");
+                              const todayDate = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000);
+                              const cutoffDate = new Date(todayDate.getTime() - 3 * 24 * 60 * 60 * 1000);
+                              const cutoffStr = cutoffDate.toISOString().split("T")[0];
+                              const isFinished = startDate && startDate < cutoffStr;
 
                               if (isFinished) {
                                 return <span className="text-[10px] font-bold text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded">Out of Date</span>;

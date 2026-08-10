@@ -100,9 +100,7 @@ def check_in():
 
         if approved_request:
             shift_name = (approved_request.requested_shift or "").strip().lower()
-            print("================================")
-            print("Approved requested shift active today:", shift_name)
-            print("================================")
+
         else:
             shift_name = (
                 employee.shift_timing or ""
@@ -113,12 +111,7 @@ def check_in():
 
         # First Shift (07:00 AM - 04:00 PM)
         if shift_name == "first shift":
-            print("================================")
-            print("USER ID:", user_id)
-            print("EMPLOYEE:", employee.first_name)
-            print("SHIFT LOWER:", shift_name)
-            print("CURRENT TIME:", current_time)
-            print("================================")
+
 
             allowed_time = datetime.strptime(
                 "07:00",
@@ -987,6 +980,9 @@ def check_holiday_or_weekoff():
             if override.override_type == "Holiday":
                 is_holiday = True
                 holiday_name = override.name or "Holiday"
+            elif override.override_type == "Weekly Off":
+                is_week_off = True
+                holiday_name = override.name or "Weekly Off"
         else:
             holiday = Holiday.query.filter_by(date=today).first()
             if holiday:
@@ -1086,10 +1082,13 @@ def attendance_history(user_id):
             wages_req = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
                 ShiftRequest.request_type == "One Day Wages",
-                ShiftRequest.shift_date == current_date
+                ShiftRequest.from_date <= current_date,
+                ShiftRequest.to_date >= current_date
             ).first()
-            is_one_day_wages = wages_req is not None
             wages_status = wages_req.status if wages_req else None
+            is_weekend_or_holiday = is_date_week_off(current_date) or (current_date in holiday_dict)
+            is_one_day_wages = (wages_req is not None and wages_req.status == "Approved") or \
+                               (is_weekend_or_holiday and wages_status != "Rejected" and wages_status != "Pending" and record is not None and (record.check_in or record.card_check_in) and record.manager_status == "Approved" and record.status != "Leave")
 
             # Determine the effective shift for this date:
             # Priority: approved ShiftRequest covering date > record.shift_timing > employee.shift_timing
@@ -1935,8 +1934,13 @@ def export_monthly_attendance():
                         f"{cl_start.strftime('%d-%b-%Y')} to {cl_end.strftime('%d-%b-%Y')}"
                     )
 
-            num_days_in_cycle = (end_date - start_date).days + 1
-            for i in range(num_days_in_cycle):
+            effective_end_date = min(end_date, date.today())
+            if start_date > date.today():
+                num_days_to_calculate = 0
+            else:
+                num_days_to_calculate = (effective_end_date - start_date).days + 1
+
+            for i in range(num_days_to_calculate):
                 d = start_date + timedelta(days=i)
                 
                 # Check holiday/weekoff status
@@ -1981,12 +1985,13 @@ def export_monthly_attendance():
                             total_days_worked += 0.5
                             if leave_val > 0.0:
                                 total_leaves_taken += min(leave_val, 0.5)
-                            else:
+                            elif not (is_holiday or is_week_off):
                                 total_lop_days += 0.5
                         elif att.status == "Leave":
                             total_leaves_taken += leave_val if leave_val > 0.0 else 1.0
                         elif att.status == "Absent":
-                            total_lop_days += 1.0
+                            if not (is_holiday or is_week_off):
+                                total_lop_days += 1.0
                     else:
                         if is_holiday or is_week_off:
                             pass
@@ -1998,7 +2003,7 @@ def export_monthly_attendance():
                             else:
                                 total_lop_days += 1.0
 
-            total_days_cycle = num_days_in_cycle
+            total_days_cycle = num_days_to_calculate
             days_payable = total_days_cycle + total_odw_days - total_lop_days
             leave_dates = ", ".join(leave_dates_list)
 

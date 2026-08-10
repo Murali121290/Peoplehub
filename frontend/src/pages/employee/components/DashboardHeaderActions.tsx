@@ -170,7 +170,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
         ) : isCheckedOut ? (
           <>
             <Check className="w-4 h-4 text-emerald-500" />
-            <span className="text-[13px] font-semibold text-emerald-500">Day Complete</span>
+            <span className="text-[13px] font-semibold text-emerald-500">Day Completed</span>
             <div className="w-[1px] h-4 bg-gray-200"></div>
             <span className="font-mono text-[13px] text-gray-500">{timer.includes("NaN") ? "00:00:00" : timer}</span>
           </>

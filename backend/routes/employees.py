@@ -41,9 +41,6 @@ def create_employee():
     try:
         data = request.form
 
-        print("========== CREATE EMPLOYEE ==========")
-        print("FORM DATA:", request.form)
-        print("FILES:", request.files)
 
         # ---------------------------------
         # Profile Image
@@ -53,6 +50,8 @@ def create_employee():
         image_data = None
         if image:
             image_data = image.read()
+            if len(image_data) > 50 * 1024:
+                return jsonify({"success": False, "error": "Profile photo must be less than 50KB"}), 400
 
         # ---------------------------------
         # Joining Date
@@ -611,7 +610,11 @@ def update_employee_profile(employee_id):
         # Profile image
         profile_image = request.files.get("profile_image")
         if profile_image:
-            employee.profile_image = profile_image.read()
+            image_data = profile_image.read()
+            if len(image_data) > 50 * 1024:
+                return jsonify({"success": False, "error": "Profile photo must be less than 50KB"}), 400
+            employee.profile_image = image_data
+
 
         resume = request.files.get("resume_file")
         aadhaar = request.files.get("aadhaar_file")
@@ -1691,9 +1694,12 @@ def get_reporting_employees(user_id):
             wages_req = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
                 ShiftRequest.request_type == "One Day Wages",
-                ShiftRequest.shift_date == date_to_check
+                ShiftRequest.from_date <= date_to_check,
+                ShiftRequest.to_date >= date_to_check
             ).first()
             wages_status = wages_req.status if wages_req else None
+            is_one_day_wages_final = (wages_req is not None and wages_req.status == "Approved") or \
+                                     (is_one_day_wages and wages_status != "Rejected" and wages_status != "Pending" and attendance is not None and (attendance.check_in or attendance.card_check_in) and attendance.manager_status == "Approved" and attendance.status != "Leave")
 
             return {
                 "summary_date":
@@ -1813,7 +1819,7 @@ def get_reporting_employees(user_id):
                     hist,
 
                 "is_one_day_wages":
-                    is_one_day_wages,
+                    is_one_day_wages_final,
 
                 "wages_status":
                     wages_status
@@ -1836,7 +1842,8 @@ def get_reporting_employees(user_id):
                 wages_req = ShiftRequest.query.filter(
                     ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
                     ShiftRequest.request_type == "One Day Wages",
-                    ShiftRequest.shift_date == w_date
+                    ShiftRequest.from_date <= w_date,
+                    ShiftRequest.to_date >= w_date
                 ).first()
 
                 if (w_attendance and (w_attendance.check_in is not None or w_attendance.card_check_in is not None)) or wages_req:

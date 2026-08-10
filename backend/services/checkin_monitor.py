@@ -289,7 +289,7 @@ def generate_daily_notifications():
                                     }, to=str(other_emp.id))
 
         db.session.commit()
-        print("========== DAILY NOTIFICATIONS GENERATOR COMPLETED ==========\n")
+        
     except Exception as e:
         db.session.rollback()
         print("Failed to generate daily notifications:", str(e))
