@@ -1,5 +1,6 @@
 import { API_URL } from "../../../config/api";
 import React, { useState, useEffect } from "react";
+import toast from "react-hot-toast";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { FormField, Input, Select } from "../../../components/ui/Form";
@@ -341,8 +342,17 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
               type="file"
               accept="image/*"
               onChange={(e: any) => {
-                setProfileImage(e.target.files[0]);
-                clearError("profile_image");
+                const file = e.target.files?.[0];
+                if (file) {
+                  if (file.size > 50 * 1024) {
+                    toast.error("Profile photo size must be less than 50KB!");
+                    e.target.value = "";
+                    setProfileImage(null);
+                    return;
+                  }
+                  setProfileImage(file);
+                  clearError("profile_image");
+                }
               }}
               className={fieldErrors["profile_image"] ? "border-danger-500" : ""}
             />

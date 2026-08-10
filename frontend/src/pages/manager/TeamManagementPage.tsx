@@ -5,6 +5,7 @@ import LeaveApprovalPage from "./LeaveApprovalPage";
 import ShiftApprovalPage from "./ShiftApprovalPage";
 import WFHApprovalPage from "./WFHApprovalPage";
 import PermissionApprovalPage from "./PermissionApprovalPage";
+import { socket } from "../../services/socket";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -17,6 +18,7 @@ interface TabConfig {
 const TABS: TabConfig[] = [
   { id: "leave", label: "Leave Approval", icon: "📋" },
   { id: "shift", label: "Shift Approval", icon: "⏱️" },
+  { id: "odw", label: "ODW Approval", icon: "💰" },
   { id: "wfh", label: "WFH Approval", icon: "🏠" },
   { id: "permission", label: "Permission Approval", icon: "🔐" }
 ];
@@ -27,6 +29,7 @@ const TeamManagementPage: React.FC = () => {
   const [notificationCounts, setNotificationCounts] = useState({
     leave: 0,
     shift: 0,
+    odw: 0,
     wfh: 0,
     permission: 0
   });
@@ -63,23 +66,35 @@ const TeamManagementPage: React.FC = () => {
         return isAdmin || checkManagerMatch(req.reporting_manager, user?.full_name);
       };
 
-      const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+      const todayDate = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000);
+      const todayStr = todayDate.toISOString().split("T")[0];
+      const cutoffDate = new Date(todayDate.getTime() - 3 * 24 * 60 * 60 * 1000);
+      const cutoffStr = cutoffDate.toISOString().split("T")[0];
 
-      // Count pending shift requests (excluding WFH) where start date is not in the past
+      // Count pending shift requests (excluding WFH and ODW) where start date is not in the past (3-day cutoff)
       const shiftCount = allRequests.filter((req: any) => {
-        const isPending = req.request_type !== "WFH" && filterByManager(req) && req.status === "Pending";
+        const isPending = req.request_type !== "WFH" && req.request_type !== "One Day Wages" && filterByManager(req) && req.status === "Pending";
         if (!isPending) return false;
         const startDate = req.from_date || req.shift_date || req.to_date || "";
-        const isFinished = startDate && startDate < todayStr;
+        const isFinished = startDate && startDate < cutoffStr;
         return !isFinished;
       }).length;
 
-      // Count pending WFH requests where start date is not in the past
+      // Count pending ODW requests where created date is within 3 days
+      const odwCount = allRequests.filter((req: any) => {
+        const isPending = req.request_type === "One Day Wages" && filterByManager(req) && req.status === "Pending";
+        if (!isPending) return false;
+        const startDate = req.created_at ? req.created_at.split(/[T ]/)[0] : "";
+        const isFinished = startDate && startDate < cutoffStr;
+        return !isFinished;
+      }).length;
+
+      // Count pending WFH requests where start date is not past 3 days
       const wfhCount = allRequests.filter((req: any) => {
         const isPending = req.request_type === "WFH" && filterByManager(req) && req.status === "Pending";
         if (!isPending) return false;
         const startDate = req.from_date || req.shift_date || req.to_date || "";
-        const isFinished = startDate && startDate < todayStr;
+        const isFinished = startDate && startDate < cutoffStr;
         return !isFinished;
       }).length;
 
@@ -121,6 +136,7 @@ const TeamManagementPage: React.FC = () => {
       setNotificationCounts({
         leave: leaveCount,
         shift: shiftCount,
+        odw: odwCount,
         wfh: wfhCount,
         permission: permissionCount
       });
@@ -131,8 +147,20 @@ const TeamManagementPage: React.FC = () => {
 
   useEffect(() => {
     fetchNotificationCounts();
+
+    const handleSocketUpdate = () => {
+      fetchNotificationCounts();
+    };
+
+    socket.on("leave_update", handleSocketUpdate);
+    socket.on("shift_update", handleSocketUpdate);
+
     const interval = setInterval(fetchNotificationCounts, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      socket.off("leave_update", handleSocketUpdate);
+      socket.off("shift_update", handleSocketUpdate);
+    };
   }, [user, token]);
 
   const getTabComponent = () => {
@@ -140,7 +168,9 @@ const TeamManagementPage: React.FC = () => {
       case "leave":
         return <LeaveApprovalPage />;
       case "shift":
-        return <ShiftApprovalPage />;
+        return <ShiftApprovalPage isOdwOnly={false} />;
+      case "odw":
+        return <ShiftApprovalPage isOdwOnly={true} />;
       case "wfh":
         return <WFHApprovalPage />;
       case "permission":

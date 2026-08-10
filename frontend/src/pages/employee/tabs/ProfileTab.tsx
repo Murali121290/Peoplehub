@@ -571,6 +571,11 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
   const handleProfilePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 50 * 1024) {
+        toast.error("Original photo size must be less than 50KB!");
+        e.target.value = '';
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         setImageToCrop(reader.result as string);
@@ -594,6 +599,12 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
     try {
       const croppedFile = await getCroppedImg(imageToCrop, croppedAreaPixels);
       if (!croppedFile) throw new Error("Could not crop image");
+
+      if (croppedFile.size > 50 * 1024) {
+        toast.error("Cropped photo size exceeds 50KB! Please crop a smaller area or upload a smaller file.", { id: loadingToastId });
+        setIsUploadingPhoto(false);
+        return;
+      }
 
       const previewUrl = URL.createObjectURL(croppedFile);
       setProfilePreview(previewUrl);

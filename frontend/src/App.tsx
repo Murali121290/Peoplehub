@@ -224,7 +224,15 @@ function App() {
           path="/manager/shift-approval"
           element={
             <ProtectedRoute>
-              <ShiftApprovalPage />
+              <ShiftApprovalPage isOdwOnly={false} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/manager/odw-approval"
+          element={
+            <ProtectedRoute>
+              <ShiftApprovalPage isOdwOnly={true} />
             </ProtectedRoute>
           }
         />

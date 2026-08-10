@@ -47,19 +47,20 @@ const RequestsTab: React.FC<RequestsTabProps> = ({
   onRejectShift,
   onCancelShift,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<"leave" | "permission" | "shift" | "wfh">("leave");
+  const [activeSubTab, setActiveSubTab] = useState<"leave" | "permission" | "shift" | "wfh" | "odw">("leave");
 
   const subTabs = [
     { id: "leave", label: "Leave Requests", icon: CalendarDaysIcon },
     { id: "permission", label: "Permissions", icon: ShieldCheckIcon },
     { id: "shift", label: "Shift Changes", icon: ClockIcon },
     { id: "wfh", label: "WFH Requests", icon: HomeIcon },
+    { id: "odw", label: "ODW", icon: CalendarDaysIcon },
   ] as const;
 
   return (
     <div className="space-y-6">
       {/* Sub Tab Navigation */}
-      <div className="bg-white border border-neutral-200 rounded-2xl p-2.5 shadow-sm max-w-2xl">
+      <div className="bg-white border border-neutral-200 rounded-2xl p-2.5 shadow-sm max-w-4xl">
         <div className="flex flex-wrap gap-1">
           {subTabs.map((tab) => {
             const Icon = tab.icon;
@@ -130,6 +131,19 @@ const RequestsTab: React.FC<RequestsTabProps> = ({
         {activeSubTab === "wfh" && (
           <ShiftTab
             mode="wfh"
+            currentEmployee={currentEmployee}
+            shiftRequests={shiftRequests}
+            managerShiftRequests={managerShiftRequests}
+            leaveRequests={leaveRequests}
+            onSubmitShift={onSubmitShift}
+            onApprove={onApproveShift}
+            onReject={onRejectShift}
+            onCancelShift={onCancelShift}
+          />
+        )}
+        {activeSubTab === "odw" && (
+          <ShiftTab
+            mode="odw"
             currentEmployee={currentEmployee}
             shiftRequests={shiftRequests}
             managerShiftRequests={managerShiftRequests}
