@@ -13,6 +13,7 @@ class SocketIOCompat:
         cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5555,http://localhost:3000").split(",")
         self.server = socketio_module.AsyncServer(cors_allowed_origins=cors_origins, async_mode="asgi")
         self.asgi_app = None
+        self.main_loop = None
 
     def init_app(self, app):
         self.asgi_app = socketio_module.ASGIApp(self.server, app)
@@ -47,8 +48,13 @@ class SocketIOCompat:
             loop = asyncio.get_running_loop()
             loop.create_task(self.server.emit(event, data, to=target, **kwargs))
         except RuntimeError:
-            # If no running event loop, run synchronously using new event loop
-            asyncio.run(self.server.emit(event, data, to=target, **kwargs))
+            if self.main_loop and self.main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(self.server.emit(event, data, to=target, **kwargs), self.main_loop)
+            else:
+                try:
+                    asyncio.run(self.server.emit(event, data, to=target, **kwargs))
+                except Exception as e:
+                    print(f"Failed to emit socket event from thread: {e}")
 
 socketio = SocketIOCompat()
 
@@ -59,7 +65,13 @@ def join_room(room):
             loop = asyncio.get_running_loop()
             loop.create_task(socketio.server.enter_room(sid, str(room)))
         except RuntimeError:
-            asyncio.run(socketio.server.enter_room(sid, str(room)))
+            if socketio.main_loop and socketio.main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(socketio.server.enter_room(sid, str(room)), socketio.main_loop)
+            else:
+                try:
+                    asyncio.run(socketio.server.enter_room(sid, str(room)))
+                except Exception as e:
+                    print(f"Failed to join room from thread: {e}")
 
 def leave_room(room):
     sid = _socket_sid_var.get()
@@ -68,7 +80,13 @@ def leave_room(room):
             loop = asyncio.get_running_loop()
             loop.create_task(socketio.server.leave_room(sid, str(room)))
         except RuntimeError:
-            asyncio.run(socketio.server.leave_room(sid, str(room)))
+            if socketio.main_loop and socketio.main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(socketio.server.leave_room(sid, str(room)), socketio.main_loop)
+            else:
+                try:
+                    asyncio.run(socketio.server.leave_room(sid, str(room)))
+                except Exception as e:
+                    print(f"Failed to leave room from thread: {e}")
 
 def emit(event, data=None, room=None, to=None, broadcast=True, **kwargs):
     sid = _socket_sid_var.get()
@@ -79,4 +97,10 @@ def emit(event, data=None, room=None, to=None, broadcast=True, **kwargs):
         loop = asyncio.get_running_loop()
         loop.create_task(socketio.server.emit(event, data, to=target, **kwargs))
     except RuntimeError:
-        asyncio.run(socketio.server.emit(event, data, to=target, **kwargs))
+        if socketio.main_loop and socketio.main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(socketio.server.emit(event, data, to=target, **kwargs), socketio.main_loop)
+        else:
+            try:
+                asyncio.run(socketio.server.emit(event, data, to=target, **kwargs))
+            except Exception as e:
+                print(f"Failed to emit socket event from thread: {e}")

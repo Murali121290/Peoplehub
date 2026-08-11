@@ -508,25 +508,21 @@ def get_employee(employee_id):
     methods=["GET"]
 )
 def get_employee_image(employee_id):
+    result = db.session.query(Employee.profile_image).filter_by(id=employee_id).first()
 
-    employee = Employee.query.get(
-        employee_id
-    )
 
-    if not employee:
+    if not result or not result[0]:
         return jsonify({
-            "error": "Employee not found"
+            "error": "Image not found"
         }), 404
 
-    if not employee.profile_image:
-        return jsonify({
-            "error": "No image found"
-        }), 404
-
-    return Response(
-        employee.profile_image,
+    resp = Response(
+        result[0],
         mimetype="image/jpeg"
     )
+    resp.headers["Cache-Control"] = "public, max-age=86400, immutable"
+    return resp
+
 # ======================================
 # EMPLOYEE PROFILE UPDATE
 # ======================================

@@ -162,8 +162,15 @@ def login():
             today_date = datetime.now(tz).date()
 
             # Check if there is an approved shift request for today
+            search_emp_ids = [employee.id]
+            if employee.employee_id:
+                try:
+                    search_emp_ids.append(int(employee.employee_id))
+                except (ValueError, TypeError):
+                    pass
+
             approved_request = ShiftRequest.query.filter(
-                ShiftRequest.employee_id == employee.employee_id,
+                ShiftRequest.employee_id.in_(search_emp_ids),
                 ShiftRequest.status == "Approved",
                 ShiftRequest.from_date <= today_date,
                 ShiftRequest.to_date >= today_date

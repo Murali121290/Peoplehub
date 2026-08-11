@@ -73,6 +73,12 @@ class Notification(db.Model):
         nullable=True
     )
 
+    __table_args__ = (
+        db.Index("ix_notifications_receiver_read", "receiver_name", "is_read"),
+        db.Index("ix_notifications_related", "related_id", "related_type"),
+    )
+
+
     def to_dict(self):
         return {
             "id": self.id,

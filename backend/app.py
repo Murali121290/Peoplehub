@@ -77,7 +77,9 @@ def create_app():
     @fastapi_app.on_event("startup")
     async def _raise_threadpool_limit():
         import anyio
+        import asyncio
         anyio.to_thread.current_default_thread_limiter().total_tokens = 100
+        socketio.main_loop = asyncio.get_running_loop()
 
 
     # Register blueprints (routers)
