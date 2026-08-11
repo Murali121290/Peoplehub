@@ -345,7 +345,10 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
       const res = await axios.get(`${BASE_URL}/users/teams`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setTeams(res.data.teams || []);
+      const sortedTeams = (res.data.teams || []).sort((a: any, b: any) =>
+        (a.name || "").localeCompare(b.name || "")
+      );
+      setTeams(sortedTeams);
     } catch (err) {
       console.error("Failed to fetch teams:", err);
     }
