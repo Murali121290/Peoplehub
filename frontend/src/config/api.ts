@@ -27,7 +27,7 @@ export const getProfileImageUrl = (profileImage: any, employeeId?: number | stri
     return "/default-avatar.png";
   }
   if (typeof profileImage === "string") {
-    if (profileImage.startsWith("/api/")) {
+    if (profileImage.startsWith("/api/") || profileImage.startsWith("/uploads/")) {
       return `${API_URL}${profileImage}`;
     }
     if (profileImage.startsWith("data:") || profileImage.startsWith("http:") || profileImage.startsWith("https:")) {

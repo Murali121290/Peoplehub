@@ -398,13 +398,15 @@ def approve_shift(id):
                         )
                         db.session.add(attendance)
 
-                    attendance.check_in = check_in_dt
-                    attendance.check_out = check_out_dt
-                    attendance.total_hours = total_hrs
-                    if total_hrs >= 6.0:
-                        attendance.status = "Present"
-                    else:
-                        attendance.status = "Half Day"
+                    if attendance.check_in is None:
+                        attendance.check_in = check_in_dt
+                        attendance.check_out = check_out_dt
+                        attendance.total_hours = total_hrs
+                        if total_hrs >= 6.0:
+                            attendance.status = "Present"
+                        else:
+                            attendance.status = "Half Day"
+                    
                     attendance.manager_status = "Approved"
 
                     current_date += timedelta(days=1)

@@ -1737,7 +1737,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
                         Dashboard
                       </h1>
                       <span className="w-px h-5 bg-neutral-200" />
-                      <span className="text-sm font-sans select-none font-semibold" style={{ letterSpacing: "-0.01em" }}>
+                      <span className="text-xl font-sans select-none font-semibold" style={{ letterSpacing: "-0.01em" }}>
                         <span className="peoplehub-typed">{welcomeTyped || '\u00A0'}</span>
                         <span className="peoplehub-cursor" aria-hidden="true" />
                       </span>

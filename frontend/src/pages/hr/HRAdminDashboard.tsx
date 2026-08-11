@@ -237,7 +237,10 @@ export default function HRAdminDashboard() {
   const fetchTeams = async () => {
     try {
       const res = await apiService.getTeams();
-      setTeams(res.data.teams || []);
+      const sortedTeams = (res.data.teams || []).sort((a: any, b: any) =>
+        (a.name || "").localeCompare(b.name || "")
+      );
+      setTeams(sortedTeams);
     } catch (err) {
       console.error(err);
     }

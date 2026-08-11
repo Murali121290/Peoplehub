@@ -17,13 +17,12 @@ export const BookLoader: React.FC<BookLoaderProps> = () => {
         width: '100vw',
         height: '100vh',
         zIndex: 99999,
-        background: 'rgba(15, 23, 42, 0.45)',
+        background: 'transparent',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         gap: '24px',
-        backdropFilter: 'blur(6px)',
       }}
     >
       {/* Morphing & Orbiting Balls SVG */}

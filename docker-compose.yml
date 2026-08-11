@@ -65,6 +65,7 @@ services:
       - "${BACKEND_PORT}:5001"
     volumes:
       - ./backend:/app
+      - uploads_data:/opt/uploads
 
   frontend:
     image: nginx:alpine
@@ -81,3 +82,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:

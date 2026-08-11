@@ -55,8 +55,8 @@ export default {
         surface: '#FFFFFF',
       },
       fontFamily: {
-        sans: ["'Spectral'", "serif"],
-        serif: ["'Spectral'", "serif"],
+        sans: ["'Inter'", "sans-serif"],
+        serif: ["'Inter'", "sans-serif"],
       },
       fontSize: {
         xs: ['0.75rem', { lineHeight: '1rem' }],

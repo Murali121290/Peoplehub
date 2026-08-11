@@ -51,17 +51,20 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
         });
         if (response.ok) {
           const data = await response.json();
-          setTeams(data.teams || []);
-          overviewCache.teams = data.teams || [];
+          const sortedTeams = (data.teams || []).sort((a: any, b: any) =>
+            (a.name || "").localeCompare(b.name || "")
+          );
+          setTeams(sortedTeams);
+          overviewCache.teams = sortedTeams;
 
           // Default to the user's team if available, else first team
           if (!selectedTeam) {
             if (user?.team_id) {
               setSelectedTeam(user.team_id.toString());
               overviewCache.selectedTeam = user.team_id.toString();
-            } else if (data.teams && data.teams.length > 0) {
-              setSelectedTeam(data.teams[0].id.toString());
-              overviewCache.selectedTeam = data.teams[0].id.toString();
+            } else if (sortedTeams.length > 0) {
+              setSelectedTeam(sortedTeams[0].id.toString());
+              overviewCache.selectedTeam = sortedTeams[0].id.toString();
             }
           }
         }

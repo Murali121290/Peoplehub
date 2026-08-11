@@ -296,7 +296,7 @@ def get_roles():
 @users_bp.route('/teams', methods=['GET'])
 def get_teams():
     try:
-        teams = Team.query.all()
+        teams = Team.query.order_by(Team.name.asc()).all()
 
         return jsonify({
             'teams': [
