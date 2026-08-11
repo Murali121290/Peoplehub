@@ -220,10 +220,10 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-xl font-bold text-neutral-800 tracking-tight flex items-center gap-2">
-            {mode === "wfh" ? "WFH Requests" : mode === "shift" ? "Shift Change Requests" : mode === "odw" ? "ODW Requests" : "Shift & Work Mode Requests"}
+            {mode === "wfh" ? "Work Mode Requests" : mode === "shift" ? "Shift Change Requests" : mode === "odw" ? "ODW Requests" : "Shift & Work Mode Requests"}
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            {mode === "wfh" ? "Apply and manage your Work From Home (WFH) schedules" : mode === "shift" ? "Apply and manage your shift change logs" : mode === "odw" ? "Track and manage your One Day Wages (ODW) requests" : "Apply and manage shift change logs and Work From Home (WFH) schedules"}
+            {mode === "wfh" ? "Apply and manage your Work From Home (WFH) or Work From Office schedules" : mode === "shift" ? "Apply and manage your shift change logs" : mode === "odw" ? "Track and manage your One Day Wages (ODW) requests" : "Apply and manage shift change logs, WFH, and Office schedules"}
           </p>
         </div>
         {mode !== "odw" && (
@@ -232,7 +232,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
             onClick={() => setShowShiftForm(true)}
             className="bg-primary-600 hover:bg-primary-700 text-white shadow-md hover:shadow-lg transition-all duration-200 px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
           >
-            {mode === "wfh" ? "Request WFH" : mode === "shift" ? "Request Shift Change" : "Request Shift / WFH"}
+            {mode === "wfh" ? "Request Work Mode" : mode === "shift" ? "Request Shift Change" : "Request Shift / Work Mode"}
           </Button>
         )}
       </div>
@@ -588,7 +588,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
         isOpen={showShiftForm}
         onClose={handleClose}
         size="xl"
-        title={mode === "shift" ? "Apply Shift Change" : mode === "wfh" ? "Apply WFH Request" : "Apply Shift / WFH Request"}
+        title={mode === "shift" ? "Apply Shift Change" : mode === "wfh" ? "Apply Work Mode Request" : "Apply Shift / Work Mode Request"}
       >
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Main form side */}
@@ -597,7 +597,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
               {/* Request Type Selector */}
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Request Type <span className="text-danger-500">*</span></label>
-                {mode !== "all" ? (
+                {mode !== "all" && mode !== "wfh" ? (
                   <input
                     type="text"
                     value={requestType === "Shift" ? "Shift Change" : requestType === "WFH" ? "Work From Home (WFH)" : requestType === "Office" ? "Work From Office (Office)" : requestType}
@@ -610,9 +610,14 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                     onChange={(e) => setRequestType(e.target.value)}
                     className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 cursor-pointer font-medium"
                   >
-                    {(mode as string) !== "wfh" && <option value="Shift">Shift Change</option>}
-                    {(mode as string) !== "shift" && (
+                    {mode === "wfh" ? (
                       <>
+                        <option value="WFH">Work From Home (WFH)</option>
+                        <option value="Office">Work From Office (Office)</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="Shift">Shift Change</option>
                         <option value="WFH">Work From Home (WFH)</option>
                         <option value="Office">Work From Office (Office)</option>
                       </>
