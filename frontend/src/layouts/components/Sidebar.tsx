@@ -26,6 +26,20 @@ const reportLinks = [
   { name: "Team Schedule", icon: ClockIcon, path: "/reports/today-schedule", state: { tab: "today" } },
 ];
 
+const checkManagerMatch = (reportingManager: string | null | undefined, managerFullName: string | null | undefined): boolean => {
+  if (!reportingManager || !managerFullName) return false;
+  const repManagerClean = reportingManager.trim().toLowerCase();
+  const managerName = managerFullName.trim().toLowerCase();
+
+  if (repManagerClean === managerName) return true;
+  const repParts = repManagerClean.split(/\s+/);
+  const mgParts = managerName.split(/\s+/);
+
+  if (repParts.length === 1 && mgParts.length > 0 && mgParts[0] === repParts[0]) return true;
+  if (mgParts.length === 1 && repParts.length > 0 && repParts[0] === mgParts[0]) return true;
+  return false;
+};
+
 const Sidebar: React.FC<SidebarProps> = ({
   sidebarItems,
   showReportMenu,
@@ -42,6 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
   const [pendingShiftCount, setPendingShiftCount] = useState(0);
   const [teamManagementCount, setTeamManagementCount] = useState(0);
+
   const [effectiveShift, setEffectiveShift] = useState<{
     effective_shift: string;
     is_wfh: boolean;
@@ -67,16 +82,51 @@ const Sidebar: React.FC<SidebarProps> = ({
              fetch(`${API_URL}/api/leaves/`, { headers }),
              fetch(`${API_URL}/api/shifts/`, { headers })
           ]);
+
+          const accessClean = user?.access_level?.toLowerCase() || '';
+          const isAdmin = accessClean === 'admin';
+
+          const filterByManager = (req: any): boolean => {
+            return isAdmin || 
+              checkManagerMatch(req.reporting_manager, user?.full_name) ||
+              checkManagerMatch(req.handover_to, user?.full_name);
+          };
+
+          const todayDate = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000);
+          const todayStr = todayDate.toISOString().split("T")[0];
+          const cutoffDate = new Date(todayDate.getTime() - 3 * 24 * 60 * 60 * 1000);
+          const cutoffStr = cutoffDate.toISOString().split("T")[0];
+
+          let leaveCountVal = 0;
+          let shiftCountVal = 0;
+
           if (leaveRes.ok) {
             const leaves = await leaveRes.json();
-            const count = leaves.filter((l: any) => l.status === "Pending" && (l.reporting_manager === user?.full_name || l.handover_to === user?.full_name || access === "admin")).length;
-            setPendingLeaveCount(count);
+            leaveCountVal = leaves.filter((l: any) => {
+              const isPending = filterByManager(l) && l.status === "Pending";
+              if (!isPending) return false;
+              const startDate = l.from_date || l.permission_date || l.to_date || "";
+              const isFinished = startDate && startDate < todayStr;
+              return !isFinished;
+            }).length;
+            setPendingLeaveCount(leaveCountVal);
           }
           if (shiftRes.ok) {
             const shifts = await shiftRes.json();
-            const count = shifts.filter((s: any) => s.status === "Pending" && (s.reporting_manager === user?.full_name || access === "admin")).length;
-            setPendingShiftCount(count);
+            shiftCountVal = shifts.filter((s: any) => {
+              const isPending = filterByManager(s) && s.status === "Pending";
+              if (!isPending) return false;
+              const isOneDayWages = s.request_type === "One Day Wages";
+              const startDate = isOneDayWages
+                ? (s.created_at ? s.created_at.split(/[T ]/)[0] : "")
+                : (s.from_date || s.shift_date || s.to_date || "");
+              const isFinished = startDate && startDate < cutoffStr;
+              return !isFinished;
+            }).length;
+            setPendingShiftCount(shiftCountVal);
           }
+
+          setTeamManagementCount(leaveCountVal + shiftCountVal);
         } catch (e) {
           console.error("Failed to fetch pending counts", e);
         }
@@ -150,10 +200,15 @@ const Sidebar: React.FC<SidebarProps> = ({
       className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-neutral-200 bg-white shadow-sm md:sticky flex flex-col"
     >
       {/* Logo */}
-      <div className="flex justify-center items-center mb-10 mt-2 flex-shrink-0">
+      <div className="flex flex-col items-center mb-6 mt-2 flex-shrink-0">
         <div className="relative w-[180px] h-[95px] bg-gradient-to-br from-white to-slate-50 rounded-3xl border border-white/40 shadow-[0_8px_30px_rgba(0,0,0,0.12)] flex items-center justify-center overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-[0_10px_40px_rgba(59,130,246,0.25)]">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-orange-500/5" />
           <img src={logo} alt="S4 Carlisle" className="relative z-10 w-[150px] h-auto object-contain drop-shadow-sm select-none pointer-events-none" draggable="false" />
+        </div>
+        <div className="mt-3.5 px-4 py-1.5 rounded-full text-center" style={{ background: 'linear-gradient(135deg, #eef1f8, #fff5f3)', border: '1px solid rgba(26,48,96,0.2)' }}>
+          <span className="font-extrabold text-[13.5px] tracking-[0.05em] select-none peoplehub-typed" style={{ fontFamily: "'Outfit', sans-serif" }}>
+            PeopleHub
+          </span>
         </div>
       </div>
 

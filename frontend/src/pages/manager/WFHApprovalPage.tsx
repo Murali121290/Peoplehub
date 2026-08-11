@@ -245,7 +245,7 @@ const WFHApprovalPage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3 pb-6">
       <div className="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">WFH Approval Requests</h1>
@@ -285,20 +285,20 @@ const WFHApprovalPage: React.FC = () => {
       </div>
 
       <Card padding="none" className="overflow-hidden border border-neutral-200 shadow-sm rounded-2xl bg-white">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-115px)]">
           <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-neutral-50/50 border-b border-neutral-200 text-neutral-500 text-[10px] font-semibold uppercase tracking-wider">
-                <th className="text-left p-4 pl-6">Employee</th>
-                <th className="text-left p-4">Emp ID</th>
-                <th className="text-left p-4">Request Type</th>
-                <th className="text-left p-4">Requested Shift</th>
-                <th className="text-left p-4">Date Range</th>
-                <th className="text-left p-4">Reason</th>
-                <th className="text-left p-4">Applied At</th>
-                <th className="text-left p-4">Actioned At</th>
-                <th className="text-center p-4">Status</th>
-                <th className="text-center p-4">Action</th>
+            <thead className="sticky top-0 z-20 bg-neutral-50">
+              <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 text-xs font-semibold uppercase tracking-wider">
+                <th className="text-left p-4 pl-6 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Employee</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Emp ID</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Request Type</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Requested Shift</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Date Range</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Reason</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Applied At</th>
+                <th className="text-left p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Actioned At</th>
+                <th className="text-center p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Status</th>
+                <th className="text-center p-4 sticky top-0 z-20 bg-neutral-50 border-b border-neutral-200">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200/80">
@@ -322,32 +322,32 @@ const WFHApprovalPage: React.FC = () => {
                       <tr className="hover:bg-neutral-50/40 transition-colors">
                         <td className="p-4 pl-6">
                           <div className="flex items-center gap-3">
-                            <div className="w-7 h-7 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-xs">
+                            <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-xs">
                               {item.employee_name?.charAt(0).toUpperCase()}
                             </div>
-                            <span className="text-xs font-medium text-neutral-800">{item.employee_name}</span>
+                            <span className="text-sm font-bold text-neutral-850">{item.employee_name}</span>
                           </div>
                         </td>
-                        <td className="p-4 text-xs font-medium text-neutral-600">
+                        <td className="p-4 text-sm text-neutral-600 font-medium">
                           {item.employee_id || "-"}
                         </td>
-                        <td className="p-4 text-xs font-semibold text-neutral-700">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-blue-50 text-blue-700 border-blue-200">
+                        <td className="p-4 text-sm text-neutral-700 font-semibold">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border bg-blue-50 text-blue-700 border-blue-200">
                             Work From Home
                           </span>
                         </td>
-                        <td className="p-4 text-xs font-medium text-neutral-800">
+                        <td className="p-4 text-sm text-neutral-600 font-medium">
                           {item.requested_shift || "General Shift"}
                         </td>
-                        <td className="p-4">
+                        <td className="p-4 text-sm">
                           <div>
-                            <p className="text-xs font-medium text-neutral-800">{item.from_date}</p>
-                            <p className="text-[11px] text-neutral-450 font-normal mt-0.5 flex items-center gap-1">
+                            <p className="font-semibold text-neutral-800">{item.from_date}</p>
+                            <p className="text-xs text-neutral-400 font-semibold mt-0.5 flex items-center gap-1">
                               <ArrowRightIcon className="w-3 h-3 text-neutral-350" /> to {item.to_date}
                             </p>
                           </div>
                         </td>
-                        <td className="p-4 text-xs text-neutral-500 max-w-xs">
+                        <td className="p-4 text-sm text-neutral-500 max-w-xs">
                           {item.reason ? (
                             <button
                               onClick={() => toggleReason(item.id)}
@@ -372,10 +372,10 @@ const WFHApprovalPage: React.FC = () => {
                             <span className="text-neutral-400">-</span>
                           )}
                         </td>
-                        <td className="p-4 text-xs font-medium text-neutral-600">
+                        <td className="p-4 text-sm font-medium text-neutral-600">
                           {formatDateTime(item.created_at)}
                         </td>
-                        <td className="p-4 text-xs font-medium text-neutral-805">
+                        <td className="p-4 text-sm font-medium text-neutral-600">
                           {getActionedAtText(item)}
                         </td>
                         <td className="p-4 text-center">
@@ -392,8 +392,10 @@ const WFHApprovalPage: React.FC = () => {
                           {item.status === "Pending" ? (
                             (() => {
                               const startDate = item.from_date || item.shift_date || item.to_date || "";
-                              const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
-                              const isFinished = startDate && startDate < today;
+                              const todayDate = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000);
+                              const cutoffDate = new Date(todayDate.getTime() - 3 * 24 * 60 * 60 * 1000);
+                              const cutoffStr = cutoffDate.toISOString().split("T")[0];
+                              const isFinished = startDate && startDate < cutoffStr;
 
                               if (isFinished) {
                                 return <span className="text-[10px] font-bold text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded">Out of Date</span>;

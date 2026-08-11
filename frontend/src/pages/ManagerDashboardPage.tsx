@@ -1031,120 +1031,7 @@ const ManagerDashboardPage = () => {
               })}
             </div>
 
-            <div style={{ position: "relative" }}>
-              <button
-                onClick={() => setShowExportDropdown(!showExportDropdown)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: "9px 16px",
-                  borderRadius: "12px",
-                  border: "none",
-                  background: THEME.navy,
-                  color: "#fff",
-                  fontSize: "13px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  boxShadow: "0 4px 10px rgba(15,23,42,0.15)",
-                  height: "42px",
-                }}
-              >
-                <ArrowDownTrayIcon style={{ width: "16px", height: "16px" }} />
-                Export Team Attendance
-              </button>
 
-              {showExportDropdown && availableMonths.length > 0 && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "100%",
-                    right: 0,
-                    marginTop: "8px",
-                    minWidth: "280px",
-                    borderRadius: "12px",
-                    border: `1px solid ${THEME.border}`,
-                    background: THEME.surface,
-                    boxShadow: "0 12px 32px rgba(15, 23, 42, 0.15)",
-                    zIndex: 50,
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: "10px 12px",
-                      borderBottom: `1px solid ${THEME.border}`,
-                      background: THEME.surfaceSoft,
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: THEME.textSoft,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    Select Month
-                  </div>
-                  {availableMonths.map((m: any) => (
-                    <button
-                      key={`${m.month}-${m.year}`}
-                      onClick={async () => {
-                        setShowExportDropdown(false);
-                        try {
-                          let url = `${BASE_URL}/attendance/export-monthly?manager_id=${userId}`;
-                          url += `&month=${m.month}&year=${m.year}`;
-                          const token = localStorage.getItem("token");
-                          const response = await fetch(url, {
-                            headers: { "Authorization": `Bearer ${token}` }
-                          });
-                          const blob = await response.blob();
-                          const urlBlob = window.URL.createObjectURL(blob);
-                          const a = document.createElement("a");
-                          a.href = urlBlob;
-                          a.download = `Team_Attendance_Report_${m.label.replace(/\s+/g, "_")}.xlsx`;
-                          document.body.appendChild(a);
-                          a.click();
-                          a.remove();
-                        } catch (error) {
-                          console.error("Failed to download team attendance report:", error);
-                        }
-                      }}
-                      style={{
-                        width: "100%",
-                        padding: "12px 16px",
-                        border: "none",
-                        background: "transparent",
-                        color: THEME.text,
-                        fontSize: "13px",
-                        fontWeight: 500,
-                        cursor: "pointer",
-                        textAlign: "left",
-                        transition: "all 0.2s ease",
-                        borderBottom: `1px solid ${THEME.border}`,
-                      }}
-                      onMouseEnter={(e) => {
-                        (e.target as HTMLElement).style.background = THEME.surfaceMuted;
-                      }}
-                      onMouseLeave={(e) => {
-                        (e.target as HTMLElement).style.background = "transparent";
-                      }}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {showExportDropdown && (
-              <div
-                style={{
-                  position: "fixed",
-                  inset: 0,
-                  zIndex: 40,
-                }}
-                onClick={() => setShowExportDropdown(false)}
-              />
-            )}
           </div>
         </div>
       </header>
@@ -1339,6 +1226,129 @@ const ManagerDashboardPage = () => {
                     flexWrap: "wrap",
                   }}
                 >
+                  {/* Export Team Attendance Button & Dropdown */}
+                  <div style={{ position: "relative" }}>
+                    <button
+                      onClick={() => setShowExportDropdown(!showExportDropdown)}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = THEME.primaryDark;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = THEME.primary;
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "9px 16px",
+                        borderRadius: "12px",
+                        border: "none",
+                        background: THEME.primary,
+                        color: "#fff",
+                        fontSize: "13px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        boxShadow: "0 4px 10px rgba(24,99,112,0.15)",
+                        height: "42px",
+                        transition: "background 0.2s ease",
+                      }}
+                    >
+                      <ArrowDownTrayIcon style={{ width: "16px", height: "16px" }} />
+                      Export Team Attendance
+                    </button>
+
+                    {showExportDropdown && availableMonths.length > 0 && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "100%",
+                          left: 0,
+                          marginTop: "8px",
+                          minWidth: "280px",
+                          borderRadius: "12px",
+                          border: `1px solid ${THEME.border}`,
+                          background: THEME.surface,
+                          boxShadow: "0 12px 32px rgba(15, 23, 42, 0.15)",
+                          zIndex: 50,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: "10px 12px",
+                            borderBottom: `1px solid ${THEME.border}`,
+                            background: THEME.surfaceSoft,
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: THEME.textSoft,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                          }}
+                        >
+                          Select Month
+                        </div>
+                        {availableMonths.map((m: any) => (
+                          <button
+                            key={`${m.month}-${m.year}`}
+                            onClick={async () => {
+                              setShowExportDropdown(false);
+                              try {
+                                let url = `${BASE_URL}/attendance/export-monthly?manager_id=${userId}`;
+                                url += `&month=${m.month}&year=${m.year}`;
+                                const token = localStorage.getItem("token");
+                                const response = await fetch(url, {
+                                  headers: { "Authorization": `Bearer ${token}` }
+                                });
+                                const blob = await response.blob();
+                                const urlBlob = window.URL.createObjectURL(blob);
+                                const a = document.createElement("a");
+                                a.href = urlBlob;
+                                a.download = `Team_Attendance_Report_${m.label.replace(/\s+/g, "_")}.xlsx`;
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                              } catch (error) {
+                                console.error("Failed to download team attendance report:", error);
+                              }
+                            }}
+                            style={{
+                              width: "100%",
+                              padding: "12px 16px",
+                              border: "none",
+                              background: "transparent",
+                              color: THEME.text,
+                              fontSize: "13px",
+                              fontWeight: 500,
+                              cursor: "pointer",
+                              textAlign: "left",
+                              transition: "all 0.2s ease",
+                              borderBottom: `1px solid ${THEME.border}`,
+                            }}
+                            onMouseEnter={(e) => {
+                              (e.target as HTMLElement).style.background = THEME.surfaceMuted;
+                            }}
+                            onMouseLeave={(e) => {
+                              (e.target as HTMLElement).style.background = "transparent";
+                            }}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {showExportDropdown && (
+                    <div
+                      style={{
+                        position: "fixed",
+                        inset: 0,
+                        zIndex: 40,
+                      }}
+                      onClick={() => setShowExportDropdown(false)}
+                    />
+                  )}
+
                   <div style={{ position: "relative" }}>
                     <MagnifyingGlassIcon
                       style={{
@@ -1976,9 +1986,9 @@ const ManagerDashboardPage = () => {
                   <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, textAlign: "left", background: THEME.surface }}>
                     <thead style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc" }}>
                       <tr style={{ background: "#f8fafc", borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}` }}>Employee</th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}` }}>Employee ID</th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}` }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}`, minWidth: "260px" }}>Employee</th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}`, minWidth: "110px" }}>Employee ID</th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Department</span>
                             <CustomSelect
@@ -1989,7 +1999,7 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}` }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Designation</span>
                             <CustomSelect
@@ -2000,7 +2010,7 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "150px", borderBottom: `1px solid ${THEME.border}` }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "150px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Reporting Manager</span>
                             <CustomSelect
@@ -2011,7 +2021,7 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "130px", borderBottom: `1px solid ${THEME.border}` }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "130px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Shift</span>
                             <CustomSelect
@@ -2022,10 +2032,11 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "#eff6ff", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
-                        <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, background: "#faf5ff", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}`, color: "#6b21a8", fontWeight: 800, textAlign: "center" }}>Permission</th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "120px", borderBottom: `1px solid ${THEME.border}` }}>
+                        <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", background: "#eff6ff", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
+                        <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", background: "#faf5ff", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}`, color: "#6b21a8", fontWeight: 800, textAlign: "center", borderRight: `1px solid ${THEME.border}` }}>Permission</th>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "120px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
+
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Status</span>
                             <CustomSelect
@@ -2041,12 +2052,12 @@ const ManagerDashboardPage = () => {
                         </th>
                       </tr>
                       <tr style={{ background: "#f8fafc", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}` }}>Check In</th>
-                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}` }}>Check Out</th>
-                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, fontWeight: 700 }}>Hours</th>
-                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}` }}>Check In</th>
-                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}` }}>Check Out</th>
-                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}`, fontWeight: 700 }}>Hours</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "1px solid #c7d2fe", minWidth: "105px" }}>Check In</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "1px solid #c7d2fe", minWidth: "105px" }}>Check Out</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", fontWeight: 700, minWidth: "75px" }}>Hours</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "1px solid #e9d5ff", minWidth: "105px" }}>Check In</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "1px solid #e9d5ff", minWidth: "105px" }}>Check Out</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", fontWeight: 700, minWidth: "75px" }}>Hours</th>
                       </tr>
                     </thead>
                     <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>
@@ -2116,7 +2127,7 @@ const ManagerDashboardPage = () => {
                                 animation: highlightedEmployeeId === member.id ? "pulse 1.5s infinite" : "none",
                               }}
                             >
-                              <td style={{ padding: "12px 16px" }}>
+                              <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                                   {member.profile_image ? (
                                     <img
@@ -2216,40 +2227,40 @@ const ManagerDashboardPage = () => {
                                   </div>
                                 </div>
                               </td>
-                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.employee_id || "—"}</td>
-                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.department || "—"}</td>
-                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.designation || "—"}</td>
-                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.reporting_manager || "—"}</td>
-                              <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{member.shift || "General Shift"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft, borderRight: `1px solid ${THEME.border}` }}>{member.employee_id || "—"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft, borderRight: `1px solid ${THEME.border}` }}>{member.department || "—"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft, borderRight: `1px solid ${THEME.border}` }}>{member.designation || "—"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft, borderRight: `1px solid ${THEME.border}` }}>{member.reporting_manager || "—"}</td>
+                              <td style={{ padding: "12px 16px", color: THEME.textSoft, borderRight: `1px solid ${THEME.border}` }}>{member.shift || "General Shift"}</td>
 
                               {/* Web Entry Columns */}
-                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }} title={member.check_in_ip ? `IP: ${member.check_in_ip}` : undefined}>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", borderRight: "1px solid #c7d2fe", textAlign: "center" }} title={member.check_in_ip ? `IP: ${member.check_in_ip}` : undefined}>
                                 <div>{member.check_in || "—"}</div>
                                 {member.check_in_ip && (
                                   <div style={{ fontSize: "10px", color: THEME.textSoft, marginTop: "2px" }}>{member.check_in_ip}</div>
                                 )}
                               </td>
-                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)" }} title={member.check_out_ip ? `IP: ${member.check_out_ip}` : undefined}>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", borderRight: "1px solid #c7d2fe", textAlign: "center" }} title={member.check_out_ip ? `IP: ${member.check_out_ip}` : undefined}>
                                 <div>{member.check_out || "—"}</div>
                                 {member.check_out_ip && (
                                   <div style={{ fontSize: "10px", color: THEME.textSoft, marginTop: "2px" }}>{member.check_out_ip}</div>
                                 )}
                               </td>
-                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", fontWeight: 700 }}>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", fontWeight: 700, borderRight: "2px solid #c7d2fe", textAlign: "center" }}>
                                 {formatWorkingHours(member.working_hours)}
                               </td>
 
                               {/* Card Entry Columns */}
-                              <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: "#7e22ce", fontWeight: 600 }}>{member.card_check_in || "—"}</td>
-                              <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: "#7e22ce", fontWeight: 600 }}>{member.card_check_out || "—"}</td>
-                              <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", fontWeight: 700, color: "#7e22ce" }}>
+                              <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: "#7e22ce", fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>{member.card_check_in || "—"}</td>
+                              <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", color: "#7e22ce", fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>{member.card_check_out || "—"}</td>
+                              <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", fontWeight: 700, color: "#7e22ce", borderRight: "2px solid #e9d5ff", textAlign: "center" }}>
                                 {formatWorkingHours(member.card_working_hours)}
                               </td>
-                              <td style={{ padding: "12px 16px", color: "#6b21a8", fontWeight: 700, textAlign: "center" }}>
+                              <td style={{ padding: "12px 16px", color: "#6b21a8", fontWeight: 700, textAlign: "center", borderRight: `1px solid ${THEME.border}` }}>
                                 {member.permission_hours ? `${member.permission_hours} hr${member.permission_hours !== 1 ? "s" : ""}` : "—"}
                               </td>
 
-                              <td style={{ padding: "12px 16px" }}>
+                              <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>
                                 <span
                                   style={{
                                     display: "inline-flex",
@@ -2363,15 +2374,15 @@ const ManagerDashboardPage = () => {
                 <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px", color: THEME.text }}>
                   <thead>
                     <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                      <th style={{ padding: "12px 16px" }}>Employee</th>
-                      <th style={{ padding: "12px 16px" }}>Department</th>
-                      <th style={{ padding: "12px 16px" }}>Status</th>
-                      <th style={{ padding: "12px 16px" }}>Check In</th>
-                      <th style={{ padding: "12px 16px" }}>Check Out</th>
-                      <th style={{ padding: "12px 16px" }}>Working Hours</th>
-                      <th style={{ padding: "12px 16px" }}>Breaks (L/T)</th>
-                      <th style={{ padding: "12px 16px" }}>Permission</th>
-                      <th style={{ padding: "12px 16px" }}>Manager Status</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>Employee</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>Department</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>Status</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>Check In</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>Check Out</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>Working Hours</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>Breaks (L/T)</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>Permission</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>Manager Status</th>
                       <th style={{ padding: "12px 16px", textAlign: "center" }}>Action</th>
                     </tr>
                   </thead>
@@ -2408,12 +2419,12 @@ const ManagerDashboardPage = () => {
 
                       return (
                         <tr key={idx} style={{ borderBottom: `1px solid ${THEME.border}`, background: rowBg }}>
-                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.navy }}>
+                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.navy, borderRight: `1px solid ${THEME.border}` }}>
                             <div>{emp.employee_name}</div>
                             <div style={{ fontSize: "11px", color: THEME.textSoft, fontWeight: 500 }}>{emp.designation}</div>
                           </td>
-                          <td style={{ padding: "12px 16px", color: THEME.textSoft }}>{emp.department}</td>
-                          <td style={{ padding: "12px 16px" }}>
+                          <td style={{ padding: "12px 16px", color: THEME.textSoft, borderRight: `1px solid ${THEME.border}` }}>{emp.department}</td>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>
                             <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                               <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: 800 }}>{status}</span>
                               {emp.leave_type && (
@@ -2421,18 +2432,18 @@ const ManagerDashboardPage = () => {
                               )}
                             </div>
                           </td>
-                          <td style={{ padding: "12px 16px" }}>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>
                             {emp.check_in || (category === "leave" ? "—" : <span style={{ color: "#ef4444", fontSize: "11px" }}>No data</span>)}
                           </td>
-                          <td style={{ padding: "12px 16px" }}>{emp.check_out || "—"}</td>
-                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.primary }}>{formatWorkingHours(emp.working_hours)}</td>
-                          <td style={{ padding: "12px 16px", color: THEME.textSoft }}>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>{emp.check_out || "—"}</td>
+                          <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.primary, borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>{formatWorkingHours(emp.working_hours)}</td>
+                          <td style={{ padding: "12px 16px", color: THEME.textSoft, borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>
                             {(emp.lunch_minutes > 0 || emp.tea_minutes > 0) ? `${emp.lunch_minutes}m / ${emp.tea_minutes}m` : "—"}
                           </td>
-                          <td style={{ padding: "12px 16px", color: "#0f766e", fontWeight: 700 }}>
+                          <td style={{ padding: "12px 16px", color: "#0f766e", fontWeight: 700, borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>
                                     {emp.permission_hours ? `${emp.permission_hours} hr${emp.permission_hours !== 1 ? "s" : ""}` : "—"}
                                   </td>
-                          <td style={{ padding: "12px 16px" }}>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>
                             <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: msBg, color: msColor, fontSize: "11px", fontWeight: 800 }}>{managerStatus}</span>
                           </td>
 
@@ -2785,26 +2796,26 @@ const ManagerDashboardPage = () => {
                               </div>
                             </td>
                             {/* Web site entry */}
-                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", color: record.checkIn !== "-" ? THEME.text : THEME.textSoft, borderRight: "1px solid #c7d2fe" }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", color: record.checkIn !== "-" ? THEME.text : THEME.textSoft, borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
                               {record.checkIn}
                             </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", color: record.checkOut !== "-" ? THEME.text : THEME.textSoft, borderRight: "1px solid #c7d2fe" }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", color: record.checkOut !== "-" ? THEME.text : THEME.textSoft, borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
                               {record.checkOut}
                             </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", fontWeight: 700, color: record.workingHours > 0 ? THEME.primary : THEME.textSoft, borderRight: "2px solid #c7d2fe" }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", fontWeight: 700, color: record.workingHours > 0 ? THEME.primary : THEME.textSoft, borderRight: "2px solid #c7d2fe", textAlign: "center" }}>
                               {formatWorkingHours(record.workingHours)}
                             </td>
                             {/* Biometric Card entry */}
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckIn !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff" }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckIn !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>
                               {record.cardCheckIn}
                             </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckOut !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff" }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckOut !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>
                               {record.cardCheckOut || record.card_check_out || "-"}
                             </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", fontWeight: 700, color: "#7e22ce", borderRight: "2px solid #e9d5ff" }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", fontWeight: 700, color: "#7e22ce", borderRight: "2px solid #e9d5ff", textAlign: "center" }}>
                               {formatWorkingHours(record.cardWorkingHours)}
                             </td>
-                            <td style={{ padding: "12px 16px", color: THEME.textSoft }}>
+                            <td style={{ padding: "12px 16px", color: THEME.textSoft, textAlign: "center" }}>
                               {record.lunchMinutes > 0 || record.teaMinutes > 0 ? (
                                 <span>{record.lunchMinutes}m / {record.teaMinutes}m</span>
                               ) : "—"}

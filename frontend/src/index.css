@@ -408,3 +408,31 @@ img {
     transform: rotateY(-180deg);
   }
 }
+
+/* PeopleHub — AI Typewriter effect (S4 Carlisle logo colors) */
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.peoplehub-typed {
+  color: #1e293b;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.peoplehub-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: #475569;
+  margin-left: 2px;
+  vertical-align: middle;
+  border-radius: 1px;
+  animation: cursorBlink 0.8s step-end infinite;
+}
+
+/* Keep .live-shimmer-text as fallback no-op */
+.live-shimmer-text {
+  display: inline-flex;
+}

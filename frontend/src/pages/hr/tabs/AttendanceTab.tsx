@@ -1108,7 +1108,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                   Web Site Entry
                 </th>
 
-                <th colSpan={2} className="p-2.5 text-center border-r border-b-2 border-violet-500 bg-violet-50/25 text-violet-700 text-[11px] font-black">
+                <th colSpan={3} className="p-2.5 text-center border-r border-b-2 border-violet-500 bg-violet-50/25 text-violet-700 text-[11px] font-black">
                   Biometric Card Entry
                 </th>
 
@@ -1128,13 +1128,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                 <th className="p-2 text-center text-cyan-600 border-r border-neutral-300">Hours</th>
                 {/* Biometric Card Entry columns */}
                 <th className="p-2 text-center text-violet-600">Check-In</th>
-                <th className="p-2 text-center text-violet-600 border-r border-neutral-300">Check-Out</th>
+                <th className="p-2 text-center text-violet-600">Check-Out</th>
+                <th className="p-2 text-center text-violet-600 border-r border-neutral-300">Hours</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-300 text-xs font-semibold text-neutral-700 bg-white">
               {displayData.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
+                  <td colSpan={12} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
                     No Attendance Records Found
                   </td>
                 </tr>
@@ -1173,7 +1174,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
                       {/* Biometric Card Entry */}
                       <td className="p-3 text-center text-neutral-800 font-bold">{row.card_check_in || "-"}</td>
-                      <td className="p-3 text-center text-neutral-800 font-bold border-r border-neutral-300">{row.card_check_out || "-"}</td>
+                      <td className="p-3 text-center text-neutral-800 font-bold">{row.card_check_out || "-"}</td>
+                      <td className="p-3 text-center text-violet-600 font-black border-r border-neutral-300">
+                        {row.status === "Present" || row.status === "Half Day" ? formatHoursMinutes(row.card_working_hours || 0) : "—"}
+                      </td>
 
                       {/* Breaks */}
                       <td className="p-3 text-center font-bold text-neutral-600 border-r border-neutral-300">

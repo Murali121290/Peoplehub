@@ -139,6 +139,11 @@ const Completeprofilepage = () => {
   const handleProfilePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 50 * 1024) {
+        toast.error("Profile photo size must be less than 50KB!");
+        e.target.value = '';
+        return;
+      }
       setFormData((prev) => ({ ...prev, profile_image: file }));
       const reader = new FileReader();
       reader.onloadend = () => {

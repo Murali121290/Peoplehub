@@ -251,6 +251,37 @@ const EmployeeDashboardPage: React.FC = () => {
     message: "",
   });
 
+  // AI Typewriter for Welcome greeting
+  const firstName = (user?.full_name || '').split(' ')[0] || 'User';
+  const welcomeText = `👋 Welcome, ${firstName}!`;
+  const [welcomeTyped, setWelcomeTyped] = useState("");
+  const [welcomeDeleting, setWelcomeDeleting] = useState(false);
+  const [welcomePaused, setWelcomePaused] = useState(false);
+  useEffect(() => {
+    if (welcomePaused) return;
+    const speed = welcomeDeleting ? 55 : 100;
+    const timeout = setTimeout(() => {
+      setWelcomeTyped(prev => {
+        if (!welcomeDeleting) {
+          const next = welcomeText.slice(0, prev.length + 1);
+          if (next === welcomeText) {
+            setWelcomePaused(true);
+            setTimeout(() => { setWelcomeDeleting(true); setWelcomePaused(false); }, 2500);
+          }
+          return next;
+        } else {
+          const next = welcomeText.slice(0, prev.length - 1);
+          if (next === "") {
+            setWelcomePaused(true);
+            setTimeout(() => { setWelcomeDeleting(false); setWelcomePaused(false); }, 600);
+          }
+          return next;
+        }
+      });
+    }, speed);
+    return () => clearTimeout(timeout);
+  }, [welcomeTyped, welcomeDeleting, welcomePaused, welcomeText]);
+
   const loadPendingClarifications = async () => {
     if (!user?.id) return;
     try {
@@ -1701,9 +1732,16 @@ if (isHalfDayLeave(leave.total_days)) return false;
                   </div>
                   )} */}
                   <div>
-                    <h1 className="text-xl font-bold text-neutral-800">
-                      Dashboard
-                    </h1>
+                    <div className="flex items-center gap-2.5">
+                      <h1 className="text-xl font-sans font-bold text-neutral-800">
+                        Dashboard
+                      </h1>
+                      <span className="w-px h-5 bg-neutral-200" />
+                      <span className="text-sm font-sans select-none font-semibold" style={{ letterSpacing: "-0.01em" }}>
+                        <span className="peoplehub-typed">{welcomeTyped || '\u00A0'}</span>
+                        <span className="peoplehub-cursor" aria-hidden="true" />
+                      </span>
+                    </div>
                   </div>
                 </div>
 

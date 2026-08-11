@@ -7,8 +7,6 @@ import {
   UserMinusIcon,
   CalendarIcon,
   ListBulletIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
   ClockIcon,
   ArrowPathIcon
 } from '@heroicons/react/24/outline';
@@ -20,6 +18,8 @@ import apiService from '../../../services/api';
 import { BookLoader } from '../../../components/ui/Spinner';
 import { toast } from 'react-hot-toast';
 
+import { TimePicker } from '../../../components/ui/TimePicker';
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
@@ -27,6 +27,19 @@ const MONTH_NAMES = [
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const FULL_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const convertTo12HourFormat = (time24: string) => {
+  if (!time24) return "";
+  const [hStr, mStr] = time24.split(":");
+  const h = parseInt(hStr);
+  const m = parseInt(mStr);
+  if (isNaN(h) || isNaN(m)) return time24;
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  const minFormatted = String(m).padStart(2, "0");
+  const hourFormatted = String(h12).padStart(2, "0");
+  return `${hourFormatted}:${minFormatted} ${period}`;
+};
 
 interface AttendanceTabProps {
   attendanceData?: Attendance[];
@@ -47,6 +60,7 @@ interface DayDetails {
   checkOut: string;
   cardCheckIn?: string;
   cardCheckOut?: string;
+  cardWorkingHours?: number;
   workingHours: number; // in hours float
   workingHoursFormatted: string; // e.g. "9h 13m"
   lunchMinutes: number;
@@ -72,8 +86,23 @@ interface DayDetails {
 
 const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAttendanceProp = [], currentEmployee }) => {
   const today = new Date();
-  const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth() + 1); // 1-12
-  const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
+  const getInitialPayrollMonth = () => {
+    let m = today.getMonth() + 1;
+    if (today.getDate() >= 25) {
+      m += 1;
+    }
+    return m === 13 ? 1 : m;
+  };
+  const getInitialPayrollYear = () => {
+    let y = today.getFullYear();
+    let m = today.getMonth() + 1;
+    if (today.getDate() >= 25 && m === 12) {
+      y += 1;
+    }
+    return y;
+  };
+  const [selectedMonth, setSelectedMonth] = useState<number>(getInitialPayrollMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(getInitialPayrollYear());
   const [viewMode, setViewMode] = useState<"calendar" | "grid">("calendar");
   const [statusFilter, setStatusFilter] = useState<string>("All");
 
@@ -83,16 +112,29 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const [approvedLeaves, setApprovedLeaves] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Absent day resolution states
+   // Absent day resolution states
   const [resolvingCell, setResolvingCell] = useState<DayDetails | null>(null);
   const [isResolving, setIsResolving] = useState<boolean>(false);
   const [resolverBalances, setResolverBalances] = useState<any[]>([]);
   const [isBalancesLoading, setIsBalancesLoading] = useState<boolean>(false);
   const [resolveReason, setResolveReason] = useState<string>("");
 
+  // Weekend / Holiday resolution states (One Day Wages)
+  const [resolvingWeekendCell, setResolvingWeekendCell] = useState<DayDetails | null>(null);
+  const [wagesReason, setWagesReason] = useState<string>("");
+  const [isSubmittingWages, setIsSubmittingWages] = useState<boolean>(false);
+  const [fromTime, setFromTime] = useState<string>("09:00");
+  const [toTime, setToTime] = useState<string>("18:00");
+
   useEffect(() => {
     setResolveReason("");
   }, [resolvingCell]);
+
+  useEffect(() => {
+    setWagesReason("");
+    setFromTime("09:00");
+    setToTime("18:00");
+  }, [resolvingWeekendCell]);
 
   // Load user info
   const userStr = localStorage.getItem("user");
@@ -111,12 +153,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       }
       const startDateStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-25`;
 
-      const [attendanceRes, currentHolidaysRes, prevHolidaysRes, leavesRes] = await Promise.all([
+      const [attendanceRes, currentHolidaysRes, nextHolidaysRes, leavesRes] = await Promise.all([
         userId 
           ? apiService.get(`/attendance/history/${userId}`, { params: { start_date: startDateStr } }).catch(() => ({ data: [] })) 
           : Promise.resolve({ data: [] }),
-        apiService.get(`/employee/holidays`, { params: { month: selectedMonth, year: selectedYear } }).catch(() => ({ data: {} })),
         apiService.get(`/employee/holidays`, { params: { month: prevMonth, year: prevYear } }).catch(() => ({ data: {} })),
+        apiService.get(`/employee/holidays`, { params: { month: selectedMonth, year: selectedYear } }).catch(() => ({ data: {} })),
         apiService.get(`/leaves/`).catch(() => ({ data: [] }))
       ]);
 
@@ -124,8 +166,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       setMonthlyAttendance(attData);
 
       const currentSched = currentHolidaysRes.data?.current_month_schedule || [];
-      const prevSched = prevHolidaysRes.data?.current_month_schedule || [];
-      const combinedSched = [...prevSched, ...currentSched];
+      const nextSched = nextHolidaysRes.data?.current_month_schedule || [];
+      const combinedSched = [...currentSched, ...nextSched];
       setMonthlySchedule(combinedSched);
 
       const allLeaves = Array.isArray(leavesRes.data) ? leavesRes.data : [];
@@ -224,6 +266,59 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     }
   };
 
+  const submitResolveWeekend = async () => {
+    if (!resolvingWeekendCell || !currentEmployee?.id) return;
+
+    if (!fromTime || !toTime) {
+      toast.error("Please enter both check-in (From) and check-out (To) times");
+      return;
+    }
+
+    if (fromTime >= toTime) {
+      toast.error("From Time must be earlier than To Time");
+      return;
+    }
+
+    if (!wagesReason.trim()) {
+      toast.error("Please enter a reason for claiming One Day Wages");
+      return;
+    }
+
+    setIsSubmittingWages(true);
+    try {
+      const userStr = localStorage.getItem("user");
+      const userObj = userStr ? JSON.parse(userStr) : {};
+
+      const payload = {
+        employee_id: currentEmployee.id,
+        employee_name: currentEmployee ? `${currentEmployee.first_name} ${currentEmployee.last_name}` : userObj.name || "Employee",
+        current_shift: fromTime,
+        requested_shift: toTime,
+        current_work_mode: currentEmployee?.work_mode || "Office",
+        requested_work_mode: currentEmployee?.work_mode || "Office",
+        request_type: "One Day Wages",
+        from_date: resolvingWeekendCell.dateStr,
+        to_date: resolvingWeekendCell.dateStr,
+        reporting_manager: currentEmployee?.reporting_manager || "Admin",
+        reason: `[Claimed Hours: ${fromTime} - ${toTime}] | ${wagesReason.trim()}`
+      };
+
+      const res = await apiService.post("/shifts/", payload);
+      if (res.data.success || res.status === 200 || res.status === 201) {
+        toast.success("One Day Wages request submitted for manager approval.");
+        setResolvingWeekendCell(null);
+        fetchMonthData();
+      } else {
+        toast.error(res.data.message || "Failed to submit One Day Wages request");
+      }
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || "Error submitting request";
+      toast.error(errorMsg);
+    } finally {
+      setIsSubmittingWages(false);
+    }
+  };
+
   const handleCellClick = (cell: DayDetails) => {
     const today = new Date();
     const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
@@ -235,6 +330,13 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       cell.dateStr < todayKey
     ) {
       setResolvingCell(cell);
+    } else if (
+      isCurrentPayrollMonthView &&
+      (cell.status === "Weekly Off" || cell.status === "Holiday") &&
+      !cell.isToday &&
+      cell.dateStr <= todayKey
+    ) {
+      setResolvingWeekendCell(cell);
     }
   };
 
@@ -276,8 +378,17 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
   const handleTodayClick = () => {
     const now = new Date();
-    setSelectedMonth(now.getMonth() + 1);
-    setSelectedYear(now.getFullYear());
+    let m = now.getMonth() + 1;
+    let y = now.getFullYear();
+    if (now.getDate() >= 25) {
+      m += 1;
+      if (m === 13) {
+        m = 1;
+        y += 1;
+      }
+    }
+    setSelectedMonth(m);
+    setSelectedYear(y);
   };
 
   // Start date: 25th of previous month
@@ -344,6 +455,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     let checkOut = "-";
     let cardCheckIn = "-";
     let cardCheckOut = "-";
+    let cardWorkingHours = 0;
     let workingHours = 0;
     let baseWorkingHours = 0;
     let workingHoursFormatted = "0h";
@@ -373,6 +485,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       checkOut = attRec.checkOut || attRec.check_out || "-";
       cardCheckIn = attRec.cardCheckIn || attRec.card_check_in || "-";
       cardCheckOut = attRec.cardCheckOut || attRec.card_check_out || "-";
+      cardWorkingHours = Number(attRec.cardWorkingHours || attRec.card_working_hours || 0);
       baseWorkingHours = Number(attRec.workingHours || attRec.working_hours || 0);
       
       const hasCheckedIn = checkIn !== "-" && checkIn !== "";
@@ -395,15 +508,19 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       }
     }
 
-    if (isCompanyHoliday) {
+    const wagesStatus = attRec?.wages_status || null;
+    const hasWorkedAndApproved = (checkIn !== "-" && checkIn !== "") && (managerStatus === "Approved") && (attRec?.status !== "Leave");
+    const isOneDayWages = wagesStatus === "Approved" || ((isWeeklyOff || isCompanyHoliday) && wagesStatus !== "Rejected" && wagesStatus !== "Pending" && hasWorkedAndApproved);
+
+    if (isCompanyHoliday && !isOneDayWages) {
       status = "Holiday";
       badgeLabel = holidayName || "Company Holiday";
       badgeEmoji = "";
-    } else if (isWeeklyOff) {
+    } else if (isWeeklyOff && !isOneDayWages) {
       status = "Weekly Off";
       badgeLabel = "Week Off";
       badgeEmoji = "";
-    } else if (matchedLeave) {
+    } else if (matchedLeave && !isOneDayWages) {
       const isLopLeave = matchedLeave.leave_type?.toLowerCase() === "loss of pay" || matchedLeave.leave_type?.toLowerCase() === "lop" || matchedLeave.leave_type?.toLowerCase() === "unpaid leave";
       if (isLopLeave) {
         status = "Absent";
@@ -453,8 +570,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       badgeEmoji = "";
     }
 
-    const isOneDayWages = attRec?.is_one_day_wages || false;
-    const wagesStatus = attRec?.wages_status || null;
+
 
     daysDataList.push({
       dateStr,
@@ -470,6 +586,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       checkOut,
       cardCheckIn,
       cardCheckOut,
+      cardWorkingHours,
       workingHours,
       workingHoursFormatted,
       lunchMinutes,
@@ -560,7 +677,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-bold text-neutral-850">
-                {new Date(selectedYear, selectedMonth - 2, 25).toLocaleDateString("en-US", { month: "short", day: "numeric" })} - {new Date(selectedYear, selectedMonth - 1, 24).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                {`${startDate.getDate()} ${startDate.toLocaleDateString("en-US", { month: "short" })} - ${endDate.getDate()} ${endDate.toLocaleDateString("en-US", { month: "short" })}, ${endDate.getFullYear()}`}
               </h3>
             </div>
             {isLoading && (
@@ -580,23 +697,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               Today
             </button>
 
-            {/* Prev / Next Month Arrows */}
-            <div className="flex items-center gap-1 bg-white border border-neutral-200 rounded-xl p-0.5 shadow-xs">
-              <button
-                onClick={handlePrevMonth}
-                className="p-1.5 rounded-lg text-neutral-600 hover:bg-neutral-100 transition-colors"
-                title="Previous Month"
-              >
-                <ChevronLeftIcon className="w-4 h-4" />
-              </button>
-              <button
-                onClick={handleNextMonth}
-                className="p-1.5 rounded-lg text-neutral-600 hover:bg-neutral-100 transition-colors"
-                title="Next Month"
-              >
-                <ChevronRightIcon className="w-4 h-4" />
-              </button>
-            </div>
+            {/* Month Selector */}
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(Number(e.target.value))}
+              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
+            >
+              {MONTH_NAMES.map((mName, idx) => (
+                <option key={idx + 1} value={idx + 1}>{mName}</option>
+              ))}
+            </select>
 
             {/* Year Selector */}
             <select
@@ -608,17 +718,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
-
-            {/* Month Selector */}
-            {/* <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
-            >
-              {MONTH_NAMES.map((mName, idx) => (
-                <option key={idx + 1} value={idx + 1}>{mName}</option>
-              ))}
-            </select> */}
 
             {/* Status Filter (for Grid view & highlighting) */}
             <select
@@ -714,13 +813,20 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                           !cell.leaveType &&
                                           !cell.isToday &&
                                           cell.dateStr < todayKey;
+                const isClickableWeekend = isCurrentPayrollMonthView &&
+                                           (cell.status === "Weekly Off" || cell.status === "Holiday") &&
+                                           !cell.isToday &&
+                                           cell.dateStr <= todayKey;
+                const isClickable = isClickableAbsent || isClickableWeekend;
                 return (
                   <div
                     key={cell.dateStr}
                     onClick={() => handleCellClick(cell)}
                     className={`h-[80px] p-2 flex flex-col justify-between rounded-xl border relative group transition-all duration-200 hover:z-50 ${
-                      isClickableAbsent
-                        ? "cursor-pointer hover:border-rose-450 hover:shadow-md active:scale-95"
+                      isClickable
+                        ? `cursor-pointer hover:shadow-md active:scale-95 ${
+                            isClickableAbsent ? "hover:border-rose-450" : "hover:border-primary-400"
+                          }`
                         : "cursor-default"
                     } ${cell.isToday
                         ? "border-primary-500 shadow-sm bg-white"
@@ -1011,7 +1117,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     Web Site Entry
                   </th>
                   
-                  <th colSpan={2} className="p-2.5 text-center border-r border-b-2 border-violet-500 bg-violet-50/25 text-violet-700 text-[11px] font-black">
+                  <th colSpan={3} className="p-2.5 text-center border-r border-b-2 border-violet-500 bg-violet-50/25 text-violet-700 text-[11px] font-black">
                     Biometric Card Entry
                   </th>
                   
@@ -1031,13 +1137,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                   <th className="p-2 text-center text-cyan-600 border-r border-neutral-300">Hours</th>
                   {/* Biometric Card Entry columns */}
                   <th className="p-2 text-center text-violet-600">Check-In</th>
-                  <th className="p-2 text-center text-violet-600 border-r border-neutral-300">Check-Out</th>
+                  <th className="p-2 text-center text-violet-600">Check-Out</th>
+                  <th className="p-2 text-center text-violet-600 border-r border-neutral-300">Hours</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-300 text-xs font-semibold text-neutral-700 bg-white">
                 {filteredGridDays.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
+                    <td colSpan={12} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
                       No attendance records matching status filter "{statusFilter}".
                     </td>
                   </tr>
@@ -1059,7 +1166,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       
                       {/* Biometric Card Entry */}
                       <td className="p-3 text-center text-neutral-800 font-bold">{dayObj.cardCheckIn || "-"}</td>
-                      <td className="p-3 text-center text-neutral-800 font-bold border-r border-neutral-300">{dayObj.cardCheckOut || "-"}</td>
+                      <td className="p-3 text-center text-neutral-800 font-bold">{dayObj.cardCheckOut || "-"}</td>
+                      <td className="p-3 text-center text-violet-650 font-black border-r border-neutral-300">
+                        {dayObj.status === "Present" || dayObj.status === "Half Day" ? formatHoursMinutes(dayObj.cardWorkingHours || 0) : "—"}
+                      </td>
                       
                       {/* Breaks */}
                       <td className="p-3 text-center font-bold text-neutral-600 border-r border-neutral-300">
@@ -1183,6 +1293,68 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 className="px-4 py-2 border border-neutral-200 rounded-lg text-xs text-neutral-600 font-bold hover:bg-neutral-50 transition-colors"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Weekend / Holiday Wages Resolver Modal */}
+      {resolvingWeekendCell && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-neutral-900/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full border border-neutral-200 shadow-2xl animate-scaleIn">
+            <h3 className="text-[16px] font-extrabold text-neutral-900 mb-2">Resolve Weekend / Holiday</h3>
+            <p className="text-xs text-neutral-500 mb-4">
+              Choose how to log <strong className="text-neutral-850 font-bold">{resolvingWeekendCell.dayNum} {MONTH_NAMES[selectedMonth - 1]}</strong>:
+            </p>
+
+            {/* Time Selection Fields */}
+            <div className="grid grid-cols-2 gap-4 mb-4 text-left">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">From Time</label>
+                <TimePicker
+                  value={fromTime}
+                  onChange={(val) => setFromTime(val)}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">To Time</label>
+                <TimePicker
+                  value={toTime}
+                  onChange={(val) => setToTime(val)}
+                  className="w-full"
+                />
+              </div>
+            </div>
+
+            {/* Reason Text Area */}
+            <div className="mb-4 text-left">
+              <label className="block text-xs font-bold text-neutral-700 mb-1">Reason for Claiming One Day Wages</label>
+              <textarea
+                value={wagesReason}
+                onChange={(e) => setWagesReason(e.target.value)}
+                placeholder="Enter justification for working on weekend/holiday..."
+                className="w-full px-3 py-2 border border-neutral-300 rounded-xl text-xs focus:ring-1 focus:ring-primary-500 focus:outline-none placeholder-neutral-400 bg-neutral-50/50 font-semibold"
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={submitResolveWeekend}
+                disabled={isSubmittingWages}
+                className="w-full text-center px-4 py-3 rounded-xl border border-primary-200 bg-primary-50 hover:bg-primary-100 text-primary-700 text-xs font-bold transition-all flex justify-center items-center"
+              >
+                {isSubmittingWages ? "Submitting..." : "Claim One Day Wages"}
+              </button>
+
+              <button
+                onClick={() => setResolvingWeekendCell(null)}
+                disabled={isSubmittingWages}
+                className="w-full text-center px-4 py-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-600 text-xs font-bold transition-all flex justify-center items-center"
+              >
+                Keep as Weekoff / Holiday
               </button>
             </div>
           </div>
