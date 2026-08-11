@@ -49,6 +49,40 @@ def get_ist_today():
     return datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
 
+@attendance_bp.route("/debug-attendance", methods=["GET"])
+def debug_attendance():
+    try:
+        from models.attendance import Attendance
+        from models.employee import Employee
+        import datetime
+        emp = Employee.query.filter(Employee.first_name.like("%Sangeetha%")).first()
+        if emp:
+            start_date = datetime.date(2026, 7, 25)
+            end_date = datetime.date(2026, 8, 24)
+            records = Attendance.query.filter(
+                Attendance.user_id == emp.user_id,
+                Attendance.attendance_date >= start_date,
+                Attendance.attendance_date <= end_date
+            ).all()
+            details = []
+            for r in records:
+                details.append({
+                    "date": str(r.attendance_date),
+                    "type": str(type(r.attendance_date)),
+                    "status": r.status
+                })
+            return jsonify({
+                "success": True,
+                "employee": f"{emp.first_name} {emp.last_name}",
+                "user_id": emp.user_id,
+                "employee_id": emp.employee_id,
+                "records": details
+            })
+        return jsonify({"success": False, "error": "Employee not found"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
 @attendance_bp.route("/checkin", methods=["POST"])
 @jwt_required()
 def check_in():
@@ -1703,6 +1737,11 @@ def export_monthly_attendance():
                 start_date = date(today.year, today.month - 1, 25)
             end_date = date(today.year, today.month, 24)
 
+        def get_ordinal_suffix(day):
+            if 11 <= day <= 13:
+                return "th"
+            return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+
         # =====================================
         # STYLES
         # =====================================
@@ -1739,7 +1778,22 @@ def export_monthly_attendance():
         # TITLE
         # =====================================
 
-        ws.merge_cells("A1:M1")
+        start_day_suff = f"{start_date.day}{get_ordinal_suffix(start_date.day)}"
+        end_day_suff = f"{end_date.day}{get_ordinal_suffix(end_date.day)}"
+        leaves_taken_header = (
+            f"No of Leaves Taken (From "
+            f"{start_day_suff} {start_date.strftime('%b')} "
+            f"to "
+            f"{end_day_suff} {end_date.strftime('%b')} "
+            f"{end_date.strftime('%y')})"
+        )
+        days_in_month_header = f"No of Days in {end_date.strftime('%B %Y')}"
+
+        # =====================================
+        # TITLE
+        # =====================================
+
+        ws.merge_cells("A1:L1")
 
         ws["A1"] = "ATTENDANCE REPORT"
 
@@ -1760,7 +1814,7 @@ def export_monthly_attendance():
         # MONTH HEADER
         # =====================================
 
-        ws.merge_cells("A2:M2")
+        ws.merge_cells("A2:L2")
 
         ws["A2"] = (
             f"Attendance Summary "
@@ -1780,14 +1834,14 @@ def export_monthly_attendance():
         # =====================================
 
 
-        ws.merge_cells("A3:M3")
+        ws.merge_cells("A3:L3")
 
         ws["A3"] = (
-    f"Attendance Cycle : "
-    f"{start_date.strftime('%d-%b-%Y')} "
-    f"to "
-    f"{end_date.strftime('%d-%b-%Y')}"
-)
+            f"Attendance Cycle : "
+            f"{start_date.strftime('%d-%b-%Y')} "
+            f"to "
+            f"{end_date.strftime('%d-%b-%Y')}"
+        )
 
         ws["A3"].fill = yellow_fill
 
@@ -1806,14 +1860,13 @@ def export_monthly_attendance():
             "Emp Code",
             "Emp Name",
             "D.O.J",
-            "Department",
-            "Total Days In Cycle",
-            "Days Payable",
-            "Total Days Worked",
-            "Total Leaves Taken",
-            "LOP/Absent",
-            "One Day Wages",
-            "Date Of Leave",
+            "Designation",
+            "DEPARTMENT",
+            days_in_month_header,
+            "Total No of Days worked",
+            leaves_taken_header,
+            "Absent dates",
+            "Oneday Wages Days (No of Days to be Paid)",
             "Remarks"
         ]
 
@@ -1877,6 +1930,15 @@ def export_monthly_attendance():
         else:
             employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
 
+        # Sort employees by employee code in ascending order
+        def get_emp_code_val(e):
+            code = getattr(e, "employee_id", None) or getattr(e, "user_id", "")
+            try:
+                return int(code)
+            except (ValueError, TypeError):
+                return 999999
+        employees = sorted(employees, key=get_emp_code_val)
+
         # Fetch holidays and overrides within range
         from models.holiday import Holiday, HolidayOverride
         holidays = Holiday.query.filter(Holiday.date >= start_date, Holiday.date <= end_date).all()
@@ -1910,7 +1972,10 @@ def export_monthly_attendance():
                 LeaveRequest.to_date >= start_date
             ).all()
 
-            total_days_worked = 0.0
+            total_working_days = 0.0
+            total_weekoffs = 0.0
+            total_holidays = 0.0
+            total_paid_leaves = 0.0
             total_leaves_taken = 0.0
             total_lop_days = 0.0
             total_odw_days = 0.0
@@ -1924,22 +1989,14 @@ def export_monthly_attendance():
                 ShiftRequest.to_date >= start_date
             ).all()
 
-            leave_dates_list = []
-
-            for leave in emp_leaves:
-                if leave.from_date and leave.to_date:
-                    cl_start = max(leave.from_date, start_date)
-                    cl_end = min(leave.to_date, end_date)
-                    leave_dates_list.append(
-                        f"{cl_start.strftime('%d-%b-%Y')} to {cl_end.strftime('%d-%b-%Y')}"
-                    )
-
-            effective_end_date = min(end_date, date.today())
-            if start_date > date.today():
+            effective_end_date = min(end_date, get_ist_today())
+            if start_date > get_ist_today():
                 num_days_to_calculate = 0
             else:
                 num_days_to_calculate = (effective_end_date - start_date).days + 1
 
+            absent_days_data = []
+            odw_days_list = []
             for i in range(num_days_to_calculate):
                 d = start_date + timedelta(days=i)
                 
@@ -1956,14 +2013,13 @@ def export_monthly_attendance():
                     elif is_date_week_off(d):
                         is_week_off = True
 
-                # Check if there is an attendance record
-                att = attendance_by_date.get(d)
-
                 # Check if there is an approved leave request on this date
                 day_leaves = [l for l in emp_leaves if l.from_date <= d and l.to_date >= d]
                 leave_val = 0.0
+                is_lop_leave = False
                 if day_leaves:
                     first_leave = day_leaves[0]
+                    is_lop_leave = (first_leave.leave_type or "").lower() in ["loss of pay", "lop", "unpaid leave"]
                     if first_leave.total_days is not None and first_leave.total_days <= 0.5:
                         leave_val = 0.5
                     else:
@@ -1974,38 +2030,148 @@ def export_monthly_attendance():
                 is_odw = len(day_wages) > 0
                 if is_odw:
                     total_odw_days += 1.0
+                    odw_days_list.append(d)
+
+                att = attendance_by_date.get(d)
+                lop_val = 0.0
 
                 if is_odw:
-                    total_days_worked += 1.0
-                else:
-                    if att:
-                        if att.status == "Present":
-                            total_days_worked += 1.0
-                        elif att.status == "Half Day":
-                            total_days_worked += 0.5
-                            if leave_val > 0.0:
-                                total_leaves_taken += min(leave_val, 0.5)
-                            elif not (is_holiday or is_week_off):
-                                total_lop_days += 0.5
-                        elif att.status == "Leave":
-                            total_leaves_taken += leave_val if leave_val > 0.0 else 1.0
-                        elif att.status == "Absent":
-                            if not (is_holiday or is_week_off):
-                                total_lop_days += 1.0
+                    # ODW: base holiday/weekoff if falls on one
+                    if is_holiday:
+                        total_holidays += 1.0
+                    elif is_week_off:
+                        total_weekoffs += 1.0
+                elif is_holiday:
+                    # Holiday:
+                    if att and att.status == "Present":
+                        total_working_days += 1.0
                     else:
-                        if is_holiday or is_week_off:
-                            pass
-                        else:
-                            if leave_val > 0.0:
-                                total_leaves_taken += leave_val
-                                if leave_val < 1.0:
-                                    total_lop_days += (1.0 - leave_val)
+                        total_holidays += 1.0
+                elif is_week_off:
+                    # Weekoff:
+                    if att and att.status == "Present":
+                        total_working_days += 1.0
+                    else:
+                        total_weekoffs += 1.0
+                else:
+                    # Normal Weekday:
+                    if att and att.status == "Present":
+                        total_working_days += 1.0
+                    elif att and att.status == "Half Day":
+                        total_working_days += 0.5
+                        if leave_val > 0.0:
+                            total_leaves_taken += min(leave_val, 0.5)
+                            if not is_lop_leave:
+                                total_paid_leaves += min(leave_val, 0.5)
                             else:
-                                total_lop_days += 1.0
+                                total_lop_days += min(leave_val, 0.5)
+                                lop_val = min(leave_val, 0.5)
+                            if leave_val < 0.5:
+                                total_lop_days += (0.5 - leave_val)
+                                lop_val += (0.5 - leave_val)
+                        else:
+                            total_lop_days += 0.5
+                            lop_val = 0.5
+                    elif leave_val > 0.0:
+                        # Approved leave overrides biometric Absent status
+                        total_leaves_taken += leave_val
+                        if not is_lop_leave:
+                            total_paid_leaves += leave_val
+                        else:
+                            total_lop_days += leave_val
+                            lop_val = leave_val
+                        if leave_val < 1.0:
+                            total_lop_days += (1.0 - leave_val)
+                            lop_val += (1.0 - leave_val)
+                    else:
+                        total_lop_days += 1.0
+                        lop_val = 1.0
 
+                if lop_val > 0.0:
+                    absent_days_data.append((d, lop_val))
+
+            total_days_worked = total_working_days + total_weekoffs + total_holidays + total_paid_leaves
             total_days_cycle = num_days_to_calculate
-            days_payable = total_days_cycle + total_odw_days - total_lop_days
-            leave_dates = ", ".join(leave_dates_list)
+
+            # Group absent dates by month
+            from collections import defaultdict
+            grouped_by_month = defaultdict(list)
+            for dt, val in absent_days_data:
+                month_name = dt.strftime("%b")
+                day_str = str(dt.day)
+                if val == 0.5:
+                    day_str += "(Half)"
+                grouped_by_month[month_name].append(day_str)
+
+            seen_months = []
+            for dt, val in absent_days_data:
+                month_name = dt.strftime("%b")
+                if month_name not in seen_months:
+                    seen_months.append(month_name)
+
+            month_parts = []
+            for m_name in seen_months:
+                days_list = grouped_by_month[m_name]
+                month_parts.append(f"{m_name}({', '.join(days_list)})")
+
+            absent_remarks = ", ".join(month_parts)
+
+            # Format leave remarks
+            remarks_list = []
+            for leave in emp_leaves:
+                if leave.from_date and leave.to_date:
+                    cl_start = max(leave.from_date, start_date)
+                    cl_end = min(leave.to_date, end_date)
+                    
+                    is_half_day = leave.total_days is not None and leave.total_days <= 0.5
+                    half_day_suffix = ""
+                    if is_half_day:
+                        reason_text = (leave.reason or "").lower()
+                        if "first half" in reason_text:
+                            half_day_suffix = " (First half)"
+                        elif "second half" in reason_text:
+                            half_day_suffix = " (Second half)"
+                        else:
+                            half_day_suffix = " (Half day)"
+
+                    if cl_start == cl_end:
+                        day_suff = f"{cl_start.day}{get_ordinal_suffix(cl_start.day)}"
+                        month_name = cl_start.strftime("%b")
+                        remarks_list.append(f"leave on {day_suff} {month_name}{half_day_suffix}")
+                    elif (cl_end - cl_start).days == 1:
+                        s_suff = f"{cl_start.day}{get_ordinal_suffix(cl_start.day)}"
+                        e_suff = f"{cl_end.day}{get_ordinal_suffix(cl_end.day)}"
+                        if cl_start.month == cl_end.month:
+                            month_name = cl_start.strftime("%b")
+                            remarks_list.append(f"leave on {s_suff} and {e_suff} {month_name}")
+                        else:
+                            s_month = cl_start.strftime("%b")
+                            e_month = cl_end.strftime("%b")
+                            remarks_list.append(f"leave on {s_suff} {s_month} and {e_suff} {e_month}")
+                    else:
+                        s_suff = f"{cl_start.day}{get_ordinal_suffix(cl_start.day)}"
+                        e_suff = f"{cl_end.day}{get_ordinal_suffix(cl_end.day)}"
+                        if cl_start.month == cl_end.month:
+                            month_name = cl_start.strftime("%b")
+                            remarks_list.append(f"leave from {s_suff} to {e_suff} {month_name}")
+                        else:
+                            s_month = cl_start.strftime("%b")
+                            e_month = cl_end.strftime("%b")
+                            remarks_list.append(f"leave from {s_suff} {s_month} to {e_suff} {e_month}")
+            leave_remarks = ", ".join(remarks_list)
+
+            # Format ODW dates list
+            odw_formatted_list = []
+            for dt in odw_days_list:
+                day_suff = f"{dt.day}{get_ordinal_suffix(dt.day)}"
+                month_name = dt.strftime("%b")
+                odw_formatted_list.append(f"{day_suff} {month_name}")
+            
+            if total_odw_days > 0:
+                odw_count_str = str(int(total_odw_days)) if total_odw_days == int(total_odw_days) else str(total_odw_days)
+                oneday_wages_val = f"{odw_count_str} ({', '.join(odw_formatted_list)})"
+            else:
+                oneday_wages_val = ""
 
             ws.cell(
                 row=row,
@@ -2042,20 +2208,17 @@ def export_monthly_attendance():
             ws.cell(
                 row=row,
                 column=5
-            ).value = (
-                employee.department
-                if employee.department
-                else "-"
-            )
+            ).value = employee.designation or "-"
+
             ws.cell(
-              row=row,
-              column=6
-            ).value = total_days_cycle
+                row=row,
+                column=6
+            ).value = employee.department or "-"
 
             ws.cell(
                row=row,
                column=7
-            ).value = days_payable
+            ).value = total_days_cycle
 
             ws.cell(
                row=row,
@@ -2063,31 +2226,26 @@ def export_monthly_attendance():
             ).value = total_days_worked
 
             ws.cell(
-            row=row,
-            column=9
-            ).value = total_leaves_taken
-
-            ws.cell(
-            row=row,
-            column=10
+                row=row,
+                column=9
             ).value = total_lop_days
 
             ws.cell(
-            row=row,
-            column=11
-            ).value = total_odw_days
+                row=row,
+                column=10
+            ).value = absent_remarks
 
             ws.cell(
-            row=row,
-            column=12
-            ).value = leave_dates
+                row=row,
+                column=11
+            ).value = oneday_wages_val
 
             ws.cell(
-            row=row,
-            column=13
+                row=row,
+                column=12
             ).value = ""
 
-            for col in range(1, 14):
+            for col in range(1, 13):
 
                 c = ws.cell(
                     row=row,
@@ -2126,7 +2284,7 @@ def export_monthly_attendance():
         # =====================================
 
         ws.auto_filter.ref = (
-            f"A5:M{row}"
+            f"A5:L{row}"
         )
 
         # =====================================

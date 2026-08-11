@@ -221,11 +221,13 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
       });
       if (!response.ok) throw new Error("Failed to update status");
 
-      toast.success(`Shift request ${newStatus.toLowerCase()}`);
+      const label = isOdwOnly ? "ODW request" : "Shift request";
+      toast.success(`${label} ${newStatus.toLowerCase()}`);
       fetchShiftRequests();
     } catch (error) {
       console.error(error);
-      toast.error(`Failed to ${newStatus.toLowerCase()} request`);
+      const label = isOdwOnly ? "ODW request" : "shift request";
+      toast.error(`Failed to ${newStatus.toLowerCase()} ${label}`);
     } finally {
       setProcessingId(null);
     }
@@ -246,11 +248,13 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
         throw new Error(err.error || err.message || "Failed to cancel");
       }
 
-      toast.success("Shift request cancelled");
+      const label = isOdwOnly ? "ODW request" : "Shift request";
+      toast.success(`${label} cancelled`);
       fetchShiftRequests();
     } catch (error: any) {
       console.error(error);
-      toast.error(error.message || "Failed to cancel request");
+      const label = isOdwOnly ? "ODW request" : "shift request";
+      toast.error(error.message || `Failed to cancel ${label}`);
     } finally {
       setProcessingId(null);
     }

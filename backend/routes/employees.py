@@ -1066,7 +1066,7 @@ def today_anniversaries():
 @auth_required
 def get_team_overview():
 
-    teams = Team.query.all()
+    teams = Team.query.order_by(Team.name.asc()).all()
 
     result = []
 

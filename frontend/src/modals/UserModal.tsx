@@ -73,7 +73,10 @@ const UserModal: React.FC<UserModalProps> = ({ user, onClose }) => {
         apiService.getTeams(),
       ]);
       setRoles(rolesRes.data.roles);
-      setTeams(teamsRes.data.teams);
+      const sortedTeams = (teamsRes.data.teams || []).sort((a: any, b: any) =>
+        (a.name || "").localeCompare(b.name || "")
+      );
+      setTeams(sortedTeams);
     } catch (error) {
       console.error("Failed to fetch roles/teams");
     }

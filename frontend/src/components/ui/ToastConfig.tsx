@@ -1,5 +1,5 @@
 import React from 'react';
-import { Toaster } from 'react-hot-toast';
+import { Toaster, ToastIcon, toast, resolveValue } from 'react-hot-toast';
 
 export const AppToaster: React.FC = () => (
   <Toaster
@@ -40,7 +40,45 @@ export const AppToaster: React.FC = () => (
         }
       }
     }}
-  />
+  >
+    {(t) => (
+      <div
+        style={{
+          ...t.style,
+          opacity: t.visible ? 1 : 0,
+          transition: 'all 0.2s ease-in-out',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '12px 16px',
+        }}
+      >
+        <ToastIcon toast={t} />
+        <span style={{ flex: 1 }}>{resolveValue(t.message, t)}</span>
+        {t.type !== 'loading' && (
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+              opacity: 0.6,
+              fontSize: '14px',
+              padding: '0 4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.6'; }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+    )}
+  </Toaster>
 );
 
 export default AppToaster;
