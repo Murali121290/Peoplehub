@@ -637,8 +637,6 @@ def get_employee_image(employee_id):
             "error": "Image file not found on disk"
         }), 404
 
-    return Response(
-        employee.profile_image,
     resp = Response(
         result[0],
         mimetype="image/jpeg"
