@@ -111,22 +111,40 @@ def create_app():
     init_db()
 
     # Scheduler configuration
-    scheduler = BackgroundScheduler()
-    def run_checkin_monitor():
-        check_missed_checkins()
+    # Guard: only run background scheduler in ONE worker process when using --workers N.
+    # We use a lock file approach: the first worker to acquire the lock starts the scheduler.
+    import fcntl
+    _scheduler_lock_file = "/tmp/peoplehub_scheduler.lock"
+    _lock_fd = None
+    _is_scheduler_worker = False
+    try:
+        _lock_fd = open(_scheduler_lock_file, "w")
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _is_scheduler_worker = True
+    except (IOError, OSError):
+        _is_scheduler_worker = False
 
-    scheduler.add_job(
-        run_checkin_monitor,
-        "interval",
-        minutes=1
-    )
-    scheduler.add_job(
-        generate_daily_notifications,
-        "cron",
-        hour=0,
-        minute=0
-    )
-    scheduler.start()
+    if _is_scheduler_worker:
+        scheduler = BackgroundScheduler()
+        def run_checkin_monitor():
+            check_missed_checkins()
+
+        scheduler.add_job(
+            run_checkin_monitor,
+            "interval",
+            minutes=1
+        )
+        scheduler.add_job(
+            generate_daily_notifications,
+            "cron",
+            hour=0,
+            minute=0
+        )
+        scheduler.start()
+        print(f"[Scheduler] Started in worker PID {os.getpid()}")
+    else:
+        print(f"[Scheduler] Skipped in worker PID {os.getpid()} (already running in another worker)")
+
 
     # Health check
     @fastapi_app.get('/api/health')

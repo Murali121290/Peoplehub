@@ -10,12 +10,34 @@ notification_bp = Blueprint(
 
 
 from datetime import datetime, date
+import json, os
+
+def _get_redis():
+    """Return a Redis client if REDIS_URL is set, else None."""
+    try:
+        import redis
+        url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+        return redis.from_url(url, decode_responses=True, socket_connect_timeout=1)
+    except Exception:
+        return None
 
 @notification_bp.route(
     "/<manager_name>",
     methods=["GET"]
 )
 def get_notifications(manager_name):
+    CACHE_TTL = 15  # seconds
+
+    # Try Redis cache first
+    r = _get_redis()
+    cache_key = f"notifications:{manager_name}"
+    if r:
+        try:
+            cached = r.get(cache_key)
+            if cached:
+                return jsonify(json.loads(cached))
+        except Exception:
+            pass
 
     today = date.today()
 
@@ -79,6 +101,13 @@ def get_notifications(manager_name):
           "resolved_at": n.resolved_at.isoformat() if n.resolved_at else None
       })
 
+    # Store in Redis cache
+    if r:
+        try:
+            r.setex(cache_key, CACHE_TTL, json.dumps(result))
+        except Exception:
+            pass
+
     return jsonify(result)
 
 
@@ -96,8 +125,17 @@ def delete_notification(id):
             }), 404
 
         from models.database import db
+        receiver_name = notification.receiver_name
         db.session.delete(notification)
         db.session.commit()
+
+        # Invalidate Redis cache for this receiver
+        r = _get_redis()
+        if r:
+            try:
+                r.delete(f"notifications:{receiver_name}")
+            except Exception:
+                pass
 
         return jsonify({
             "success": True,
@@ -109,4 +147,3 @@ def delete_notification(id):
             "success": False,
             "error": str(e)
         }), 500
-
