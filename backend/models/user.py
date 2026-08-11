@@ -139,12 +139,14 @@ class User(db.Model):
     role_id = db.Column(
         db.Integer,
         db.ForeignKey('roles.id'),
-        nullable=False
+        nullable=False,
+        index=True
     )
 
     team_id = db.Column(
         db.Integer,
-        db.ForeignKey('teams.id')
+        db.ForeignKey('teams.id'),
+        index=True
     )
 
     # Relationship with Role
@@ -180,8 +182,10 @@ class User(db.Model):
     )
 
     last_login = db.Column(
-        db.DateTime
+        db.DateTime,
+        index=True
     )
+
 
     seen_announcement_ids = db.Column(
         db.JSON,

@@ -231,7 +231,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     };
     fetchNotifications();
     // Socket handles real-time notifications; poll every 30s as a fallback only
-    const interval = setInterval(fetchNotifications, 30000);
+    const interval = setInterval(fetchNotifications, 60000);
     return () => clearInterval(interval);
   }, [user]);
 
