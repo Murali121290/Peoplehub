@@ -102,8 +102,8 @@ def create_app():
     fastapi_app.include_router(db_admin_bp, prefix="/api/admin/db")
 
     # Mount uploads directory static files
-    os.makedirs("uploads", exist_ok=True)
-    fastapi_app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+    os.makedirs("/opt/uploads", exist_ok=True)
+    fastapi_app.mount("/uploads", StaticFiles(directory="/opt/uploads"), name="uploads")
 
     # Initialize database, apply Alembic migrations, and seed defaults
     init_db()

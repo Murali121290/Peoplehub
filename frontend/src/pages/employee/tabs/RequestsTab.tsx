@@ -53,7 +53,7 @@ const RequestsTab: React.FC<RequestsTabProps> = ({
     { id: "leave", label: "Leave Requests", icon: CalendarDaysIcon },
     { id: "permission", label: "Permissions", icon: ShieldCheckIcon },
     { id: "shift", label: "Shift Changes", icon: ClockIcon },
-    { id: "wfh", label: "WFH Requests", icon: HomeIcon },
+    { id: "wfh", label: "Work Mode", icon: HomeIcon },
     { id: "odw", label: "ODW", icon: CalendarDaysIcon },
   ] as const;
 

@@ -20,6 +20,78 @@ from utils.employee_cache import get_all_employees_cached, invalidate_employee_c
 
 employees_bp = Blueprint("employees", __name__)
 
+import os
+
+def is_image_path(val):
+    if not val:
+        return False
+    try:
+        if isinstance(val, bytes):
+            decoded = val.decode('utf-8')
+        else:
+            decoded = str(val)
+        return decoded.startswith("employees/")
+    except Exception:
+        return False
+
+def get_profile_image_url(emp):
+    if not emp or not emp.profile_image:
+        return None
+    try:
+        if isinstance(emp.profile_image, bytes):
+            decoded = emp.profile_image.decode('utf-8')
+        else:
+            decoded = str(emp.profile_image)
+        if decoded.startswith("employees/"):
+            return f"/uploads/{decoded}"
+    except Exception:
+        pass
+    return f"/api/employees/image/{emp.id}"
+
+def save_profile_image_data(employee_id, filename, image_data):
+    ext = os.path.splitext(filename or "profile.jpg")[1].lower() or ".jpg"
+    if ext not in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
+        ext = ".jpg"
+    
+    target_dir = os.path.join("/opt/uploads", "employees", str(employee_id))
+    os.makedirs(target_dir, exist_ok=True)
+    
+    target_filename = f"profile{ext}"
+    target_path = os.path.join(target_dir, target_filename)
+    
+    with open(target_path, "wb") as f:
+        f.write(image_data)
+        
+    db_path = f"employees/{employee_id}/{target_filename}"
+    return db_path.encode('utf-8')
+
+def is_document_path(val):
+    if not val:
+        return False
+    try:
+        if isinstance(val, bytes):
+            decoded = val.decode('utf-8')
+        else:
+            decoded = str(val)
+        return decoded.startswith("employees/") and not "profile." in decoded
+    except Exception:
+        return False
+
+def save_employee_document_data(employee_id, doc_type, filename, file_data):
+    ext = os.path.splitext(filename or "document.pdf")[1].lower() or ".pdf"
+    
+    target_dir = os.path.join("/opt/uploads", "employees", str(employee_id))
+    os.makedirs(target_dir, exist_ok=True)
+    
+    target_filename = f"{doc_type}{ext}"
+    target_path = os.path.join(target_dir, target_filename)
+    
+    with open(target_path, "wb") as f:
+        f.write(file_data)
+        
+    db_path = f"employees/{employee_id}/{target_filename}"
+    return db_path.encode('utf-8')
+
 def _parse_time(t_val):
     if not t_val:
         return None
@@ -49,9 +121,13 @@ def create_employee():
 
         image_data = None
         if image:
-            image_data = image.read()
-            if len(image_data) > 50 * 1024:
+            image_bytes = image.read()
+            if len(image_bytes) > 50 * 1024:
                 return jsonify({"success": False, "error": "Profile photo must be less than 50KB"}), 400
+            
+            emp_id = data.get("employee_id")
+            if emp_id:
+                image_data = save_profile_image_data(emp_id, image.filename, image_bytes)
 
         # ---------------------------------
         # Joining Date
@@ -278,7 +354,7 @@ def get_employees():
             "last_working_date":
                 emp.last_working_date.isoformat() if hasattr(emp, "last_working_date") and emp.last_working_date else None,
             "profile_image":
-                f"/api/employees/image/{emp.id}" if emp.profile_image else None
+                get_profile_image_url(emp)
         })
 
     return jsonify(result)
@@ -311,6 +387,18 @@ def download_employee_document(employee_id, doc_type):
             
         if not file_data:
             return jsonify({"error": f"{doc_type} not found or not uploaded"}), 404
+
+        if is_document_path(file_data):
+            decoded_path = file_data.decode('utf-8') if isinstance(file_data, bytes) else str(file_data)
+            full_path = os.path.join("/opt/uploads", decoded_path)
+            if os.path.exists(full_path):
+                with open(full_path, "rb") as f:
+                    file_data = f.read()
+                orig_ext = os.path.splitext(full_path)[1]
+                if orig_ext:
+                    file_name = file_name.rsplit(".", 1)[0] + orig_ext
+            else:
+                return jsonify({"error": f"{doc_type} file not found on disk"}), 404
             
         mimetype = "application/octet-stream"
         if file_data.startswith(b"%PDF"):
@@ -368,11 +456,7 @@ def get_employee(employee_id):
     "designation": employee.designation,
     "role": employee.designation,
 
-    "profile_image": (
-        f"/api/employees/image/{employee.id}"
-        if employee.profile_image
-        else None
-    ),
+    "profile_image": get_profile_image_url(employee),
 
     "joining_date": (
         employee.joining_date.isoformat()
@@ -504,14 +588,20 @@ def get_employee(employee_id):
 
 
 @employees_bp.route(
-    "/image/<int:employee_id>",
+    "/image/<string:employee_id>",
     methods=["GET"]
 )
 def get_employee_image(employee_id):
 
-    employee = Employee.query.get(
-        employee_id
-    )
+    employee = None
+    try:
+        emp_id_int = int(employee_id)
+        employee = Employee.query.get(emp_id_int)
+    except (ValueError, TypeError):
+        pass
+
+    if not employee:
+        employee = Employee.query.filter_by(employee_id=str(employee_id)).first()
 
     if not employee:
         return jsonify({
@@ -521,6 +611,18 @@ def get_employee_image(employee_id):
     if not employee.profile_image:
         return jsonify({
             "error": "No image found"
+        }), 404
+
+    if is_image_path(employee.profile_image):
+        decoded_path = employee.profile_image.decode('utf-8') if isinstance(employee.profile_image, bytes) else str(employee.profile_image)
+        full_path = os.path.join("/opt/uploads", decoded_path)
+        if os.path.exists(full_path):
+            from utils.compat import send_file
+            ext = os.path.splitext(full_path)[1].lower()
+            mimetype = "image/png" if ext == ".png" else "image/jpeg"
+            return send_file(full_path, mimetype=mimetype)
+        return jsonify({
+            "error": "Image file not found on disk"
         }), 404
 
     return Response(
@@ -538,19 +640,23 @@ def update_employee_profile(employee_id):
         current_user_id = get_jwt_identity()
         current_user = User.query.get(int(current_user_id))
 
-        employee = Employee.query.get(employee_id)
-
-        if not employee:
-            return jsonify({
-                "error": "Employee not found"
-            }), 404
-
         if not current_user:
             return jsonify({
                 "error": "Current user not found"
             }), 404
 
         is_hr_or_admin = current_user.access_level.lower() in ["admin", "hr"]
+
+        if not is_hr_or_admin:
+            employee = Employee.query.filter_by(user_id=current_user.id).first()
+        else:
+            employee = Employee.query.get(employee_id)
+
+        if not employee:
+            return jsonify({
+                "error": "Employee not found"
+            }), 404
+
         is_self = current_user.id == employee.user_id
 
         if not (is_hr_or_admin or is_self):
@@ -610,10 +716,11 @@ def update_employee_profile(employee_id):
         # Profile image
         profile_image = request.files.get("profile_image")
         if profile_image:
-            image_data = profile_image.read()
-            if len(image_data) > 50 * 1024:
+            image_bytes = profile_image.read()
+            if len(image_bytes) > 50 * 1024:
                 return jsonify({"success": False, "error": "Profile photo must be less than 50KB"}), 400
-            employee.profile_image = image_data
+            emp_id = employee.employee_id or str(employee.id)
+            employee.profile_image = save_profile_image_data(emp_id, profile_image.filename, image_bytes)
 
 
         resume = request.files.get("resume_file")
@@ -895,17 +1002,22 @@ def update_employee_profile(employee_id):
         employee.profile_completed = True
 
         # Documents
+        emp_id = employee.employee_id or str(employee.id)
         if resume:
-            employee.resume_file = resume.read()
+            resume_bytes = resume.read()
+            employee.resume_file = save_employee_document_data(emp_id, "resume_file", resume.filename, resume_bytes)
 
         if aadhaar:
-            employee.aadhaar_file = aadhaar.read()
+            aadhaar_bytes = aadhaar.read()
+            employee.aadhaar_file = save_employee_document_data(emp_id, "aadhaar_file", aadhaar.filename, aadhaar_bytes)
 
         if pan:
-            employee.pan_file = pan.read()
+            pan_bytes = pan.read()
+            employee.pan_file = save_employee_document_data(emp_id, "pan_file", pan.filename, pan_bytes)
 
         if degree:
-            employee.degree_certificate = degree.read()
+            degree_bytes = degree.read()
+            employee.degree_certificate = save_employee_document_data(emp_id, "degree_certificate", degree.filename, degree_bytes)
 
         employee.is_first_login = False
 
@@ -1022,7 +1134,7 @@ def today_birthdays():
                 "user_id": e.user_id,
                 "department": e.department,
                 "designation": e.designation,
-                "profile_image": f"/api/employees/image/{e.id}" if e.profile_image else None
+                "profile_image": get_profile_image_url(e)
             }
             for e in employees if e.id not in already_wished_ids
         ])
@@ -1053,7 +1165,7 @@ def today_anniversaries():
                 "department": e.department,
                 "designation": e.designation,
                 "years": today.year - e.joining_date.year,
-                "profile_image": f"/api/employees/image/{e.id}" if e.profile_image else None
+                "profile_image": get_profile_image_url(e)
             }
             for e in employees
         ])
@@ -1124,7 +1236,7 @@ def get_team_overview():
                 "department": emp.department,
                 "team_id": emp.team_id,
                 "employee_id": emp.employee_id,
-                "profile_image": emp.profile_image is not None,
+                "profile_image": get_profile_image_url(emp),
                 "work_mode": emp.work_mode,
                 "is_wfh": is_wfh
             })
@@ -1442,7 +1554,7 @@ def get_team_attendance(user_id):
                 "role": emp.designation or "Employee",
                 "designation": emp.designation or "Employee",
                 "department": emp.department,
-                "profile_image": f"/api/employees/image/{emp.id}" if emp.profile_image else None,
+                "profile_image": get_profile_image_url(emp),
                 "attendance_status": att_status,
                 "check_in": check_in,
                 "check_out": check_out,
@@ -1724,9 +1836,7 @@ def get_reporting_employees(user_id):
                     employee.department or "General",
 
                 "profile_image":
-                    f"/api/employees/image/{employee.id}"
-                    if employee.profile_image
-                    else None,
+                    get_profile_image_url(employee),
 
                 "status":
                     status,
@@ -1961,7 +2071,7 @@ def get_peers_attendance(user_id):
                 "first_name": peer.first_name,
                 "last_name": peer.last_name,
                 "role": peer.designation,
-                "profile_image": f"/api/employees/image/{peer.id}" if peer.profile_image else None,
+                "profile_image": get_profile_image_url(peer),
                 "status": status,
                 "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
                 "check_out": attendance.check_out.strftime("%I:%M %p") if attendance and attendance.check_out else "-"
@@ -2166,7 +2276,7 @@ def get_team_attendance_by_id(team_id):
                 "last_name": emp.last_name,
                 "role": emp.designation,
                 "designation": emp.designation,
-                "profile_image": f"/api/employees/image/{emp.id}" if emp.profile_image else None,
+                "profile_image": get_profile_image_url(emp),
                 "status": status,
                 "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
                 "check_out": attendance.check_out.strftime("%I:%M %p") if attendance and attendance.check_out else "-",
