@@ -719,6 +719,54 @@ const ManagerDashboardPage = () => {
     }
   };
 
+  const handleApproveHistoryRegularization = async (empId: number, dateStr: string) => {
+    try {
+      const response = await fetch(`${BASE_URL}/attendance/approve/${empId}?date=${dateStr}`, {
+        method: "PUT",
+      });
+      if (response.ok) {
+        toast.success("Time adjustment approved successfully");
+        if (historyModalUser) {
+          const targetUserId = historyModalUser.user_id || historyModalUser.id || historyModalUser.employee_id;
+          const res = await fetch(`${BASE_URL}/attendance/history/${targetUserId}?start_date=${selectedCycle}`);
+          if (res.ok) {
+            const data = await res.json();
+            setHistoryRecords(Array.isArray(data) ? data : []);
+          }
+        }
+      } else {
+        toast.error("Failed to approve adjustment");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Error approving adjustment");
+    }
+  };
+
+  const handleRejectHistoryRegularization = async (empId: number, dateStr: string) => {
+    try {
+      const response = await fetch(`${BASE_URL}/attendance/reject/${empId}?date=${dateStr}`, {
+        method: "PUT",
+      });
+      if (response.ok) {
+        toast.success("Time adjustment rejected successfully");
+        if (historyModalUser) {
+          const targetUserId = historyModalUser.user_id || historyModalUser.id || historyModalUser.employee_id;
+          const res = await fetch(`${BASE_URL}/attendance/history/${targetUserId}?start_date=${selectedCycle}`);
+          if (res.ok) {
+            const data = await res.json();
+            setHistoryRecords(Array.isArray(data) ? data : []);
+          }
+        }
+      } else {
+        toast.error("Failed to reject adjustment");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Error rejecting adjustment");
+    }
+  };
+
 
   // Leave requests logic moved to LeaveApprovalPage
 
@@ -2930,6 +2978,66 @@ const ManagerDashboardPage = () => {
                                   >
                                     🕐 Perm: {record.permission_label}
                                   </span>
+                                )}
+                                {record.is_regularization && record.manager_status === "Clarification Provided" && (
+                                  <div
+                                    style={{
+                                      marginTop: "4px",
+                                      padding: "6px 8px",
+                                      borderRadius: "8px",
+                                      background: "#fffbeb",
+                                      border: "1px solid #fef3c7",
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      gap: "6px",
+                                      maxWidth: "180px",
+                                      textAlign: "left"
+                                    }}
+                                  >
+                                    <div style={{ fontSize: "10px", fontWeight: 700, color: "#b45309" }}>
+                                      🕒 Adjust Requested:
+                                      <div style={{ fontWeight: 800, marginTop: "2px" }}>
+                                        {record.checkIn} – {record.checkOut}
+                                      </div>
+                                      {record.regularization_reason && (
+                                        <div style={{ fontStyle: "italic", color: "#78350f", fontWeight: 500, marginTop: "4px", fontSize: "9px" }}>
+                                          "{record.regularization_reason}"
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div style={{ display: "flex", gap: "4px" }}>
+                                      <button
+                                        onClick={() => handleApproveHistoryRegularization(historyModalUser?.id || historyModalUser?.employee_id, record.date)}
+                                        style={{
+                                          padding: "3px 8px",
+                                          background: "#10b981",
+                                          color: "#fff",
+                                          border: "none",
+                                          borderRadius: "4px",
+                                          fontSize: "10px",
+                                          fontWeight: 700,
+                                          cursor: "pointer"
+                                        }}
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        onClick={() => handleRejectHistoryRegularization(historyModalUser?.id || historyModalUser?.employee_id, record.date)}
+                                        style={{
+                                          padding: "3px 8px",
+                                          background: "#ef4444",
+                                          color: "#fff",
+                                          border: "none",
+                                          borderRadius: "4px",
+                                          fontSize: "10px",
+                                          fontWeight: 700,
+                                          cursor: "pointer"
+                                        }}
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
+                                  </div>
                                 )}
                               </div>
                             </td>

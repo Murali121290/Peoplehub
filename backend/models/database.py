@@ -110,7 +110,7 @@ def init_db(app=None):
     employees = db_session.query(Employee).all()
     policies = db_session.query(LeavePolicy).all()
     existing_balances = {
-        (b.employee_id, b.leave_type)
+        (b.employee_id, (b.leave_type or "").strip().lower())
         for b in db_session.query(EmployeeLeaveBalance).all()
     }
 
@@ -126,14 +126,15 @@ def init_db(app=None):
             pol_gender = (pol.applicable_gender or "All").strip().lower()
             is_applicable = (pol_gender == "all") or (emp_gender == pol_gender)
 
-            if is_applicable and (emp.id, pol.leave_type) not in existing_balances:
+            pol_lt_normalized = (pol.leave_type or "").strip().lower()
+            if is_applicable and (emp.id, pol_lt_normalized) not in existing_balances:
                 balance = EmployeeLeaveBalance(
                     employee_id=emp.id,
-                    leave_type=pol.leave_type,
+                    leave_type=pol.leave_type.strip(),
                     available=pol.yearly_limit
                 )
                 db_session.add(balance)
-                existing_balances.add((emp.id, pol.leave_type))
+                existing_balances.add((emp.id, pol_lt_normalized))
     db_session.commit()
 
     return db
