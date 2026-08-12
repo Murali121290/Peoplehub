@@ -1,5 +1,6 @@
 import { API_URL } from "../../config/api";
 import React, { useState, useEffect, useMemo } from "react";
+import { formatDateStr } from "../../utils/date";
 import { apiService } from "../../services/api";
 import { getEmployees } from "../../services/employeesCache";
 import {
@@ -201,8 +202,8 @@ export default function HRAdminDashboard() {
             ?.join("")
             ?.toUpperCase(),
           type: isPermission ? "Permission" : leave.leave_type,
-          from: isPermission ? leave.permission_date : leave.from_date,
-          to: isPermission ? timeRange : leave.to_date,
+          from: isPermission ? formatDateStr(leave.permission_date) : formatDateStr(leave.from_date),
+          to: isPermission ? timeRange : formatDateStr(leave.to_date),
           days: leave.total_days,
           reason: leave.reason,
           status: leave.status?.toLowerCase(),

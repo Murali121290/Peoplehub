@@ -6,6 +6,7 @@ import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
 import { DatePicker } from "../../../components/ui/DatePicker";
 import { ConfirmDialog } from "../../../components/ui/Modal/ConfirmDialog";
+import { formatDateStr } from "../../../utils/date";
 import { 
   CalendarIcon, 
   PlusIcon, 
@@ -264,7 +265,7 @@ export const HolidayTab: React.FC = () => {
                 ) : (
                   holidays.map(h => (
                     <tr key={h.id} className="hover:bg-neutral-50/50">
-                      <td className="py-3.5 px-4 text-neutral-700 font-medium">{h.date}</td>
+                      <td className="py-3.5 px-4 text-neutral-700 font-medium">{formatDateStr(h.date)}</td>
                       <td className="py-3.5 px-4 text-neutral-500">{h.day}</td>
                       <td className="py-3.5 px-4 text-neutral-800 font-bold">{h.name}</td>
                       <td className="py-3.5 px-4">
@@ -335,7 +336,7 @@ export const HolidayTab: React.FC = () => {
                     </button>
                   </div>
                   <div className="flex justify-between text-[11px] text-neutral-500 font-semibold">
-                    <span>Date: {o.date}</span>
+                    <span>Date: {formatDateStr(o.date)}</span>
                     <span className={`px-2 py-0.5 rounded-full font-bold border ${
                       o.override_type === "Working Day" 
                         ? "bg-amber-50 text-amber-700 border-amber-100" 

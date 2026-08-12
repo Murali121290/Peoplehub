@@ -1,5 +1,7 @@
 import { API_URL, getProfileImageUrl } from "../config/api";
 import React, { useEffect, useMemo, useState } from "react";
+import { toast } from "react-hot-toast";
+import TimePicker from "../components/ui/TimePicker";
 import { socket } from "../services/socket";
 import {
   UsersIcon,
@@ -273,6 +275,110 @@ const ManagerDashboardPage = () => {
   const [historyRecords, setHistoryRecords] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
   const [hoveredRowId, setHoveredRowId] = useState<number | null>(null);
+
+  // Edit Attendance Record States
+  const [editingRecord, setEditingRecord] = useState<any | null>(null);
+  const [savingEdit, setSavingEdit] = useState<boolean>(false);
+  const [editForm, setEditForm] = useState({
+    status: "Present",
+    checkIn: "",
+    checkOut: "",
+    cardCheckIn: "",
+    cardCheckOut: "",
+    lunchMinutes: 0,
+    teaMinutes: 0,
+  });
+
+  const convertTo24Hour = (time12: string) => {
+    if (!time12 || time12 === "-" || time12 === "—") return "";
+    const match = time12.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!match) return "";
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2];
+    const ampm = match[3].toUpperCase();
+    if (ampm === "PM" && hours < 12) hours += 12;
+    if (ampm === "AM" && hours === 12) hours = 0;
+    return `${String(hours).padStart(2, "0")}:${minutes}`;
+  };
+
+  const convertTo12Hour = (time24: string) => {
+    if (!time24) return "";
+    const parts = time24.split(":");
+    if (parts.length < 2) return "";
+    let hours = parseInt(parts[0], 10);
+    const minutes = parts[1];
+    if (isNaN(hours)) return "";
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12;
+    if (hours === 0) hours = 12;
+    return `${String(hours).padStart(2, "0")}:${minutes} ${ampm}`;
+  };
+
+  const handleEditClick = (record: any) => {
+    setEditingRecord(record);
+    setEditForm({
+      status: record.status || "Absent",
+      checkIn: convertTo24Hour(record.checkIn),
+      checkOut: convertTo24Hour(record.checkOut),
+      cardCheckIn: convertTo24Hour(record.cardCheckIn),
+      cardCheckOut: convertTo24Hour(record.cardCheckOut || record.card_check_out),
+      lunchMinutes: record.lunchMinutes || 0,
+      teaMinutes: record.teaMinutes || 0,
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingRecord || !historyModalUser) return;
+    setSavingEdit(true);
+    try {
+      const token = localStorage.getItem("token");
+      const targetEmpId = historyModalUser.id || historyModalUser.employee_id;
+      
+      const payload = {
+        employee_id: targetEmpId,
+        attendance_date: editingRecord.date,
+        status: editForm.status,
+        check_in: convertTo12Hour(editForm.checkIn) || null,
+        check_out: convertTo12Hour(editForm.checkOut) || null,
+        card_check_in: convertTo12Hour(editForm.cardCheckIn) || null,
+        card_check_out: convertTo12Hour(editForm.cardCheckOut) || null,
+        lunch_minutes: Number(editForm.lunchMinutes) || 0,
+        tea_minutes: Number(editForm.teaMinutes) || 0,
+      };
+
+      const response = await fetch(`${BASE_URL}/attendance/update-attendance-record`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to update record");
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success(data.message || "Attendance updated successfully");
+        setEditingRecord(null);
+        if (selectedCycle) {
+          handleCycleChange(selectedCycle);
+        } else {
+          viewEmployeeHistory(historyModalUser);
+        }
+      } else {
+        toast.error(data.error || "Failed to update record");
+      }
+    } catch (error: any) {
+      console.error("Error saving attendance update:", error);
+      toast.error(error.message || "Failed to save changes");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<number | null>(null);
   const [selectedCycle, setSelectedCycle] = useState<string>("");
@@ -312,7 +418,7 @@ const ManagerDashboardPage = () => {
         cycleEndYear += 1;
       }
       const cycleEnd = new Date(cycleEndYear, cycleEndMonth, 24);
-      const label = `${cycleStart.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - ${cycleEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+      const label = `${cycleStart.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })} - ${cycleEnd.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}`;
       const value = `${cycleStart.getFullYear()}-${String(cycleStart.getMonth() + 1).padStart(2, "0")}-25`;
       cycles.push({ label, value });
     }
@@ -2746,7 +2852,7 @@ const ManagerDashboardPage = () => {
 
                         // Format date nicely
                         const dateObj = new Date(record.date);
-                        const formattedDate = dateObj.toLocaleDateString("en-US", {
+                        const formattedDate = dateObj.toLocaleDateString("en-IN", {
                           weekday: "short",
                           month: "short",
                           day: "numeric",
@@ -2755,7 +2861,19 @@ const ManagerDashboardPage = () => {
 
                         return (
                           <tr key={record.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                            <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.navy, borderRight: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>
+                            <td 
+                              onClick={() => handleEditClick(record)}
+                              title="Click to edit attendance"
+                              style={{ 
+                                padding: "12px 16px", 
+                                fontWeight: 700, 
+                                color: THEME.primary, 
+                                borderRight: "1px solid #e2e8f0", 
+                                whiteSpace: "nowrap",
+                                cursor: "pointer",
+                                textDecoration: "underline",
+                              }}
+                            >
                               {formattedDate}
                             </td>
                             <td style={{ padding: "12px 16px", borderRight: "2px solid #e2e8f0" }}>
@@ -2791,6 +2909,26 @@ const ManagerDashboardPage = () => {
                                     }}
                                   >
                                     ⭐ ODW: {record.wages_status || "Pending"}
+                                  </span>
+                                )}
+                                {record.has_permission && (
+                                  <span
+                                    title={`Permission: ${record.permission_label}`}
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                      padding: "2px 8px",
+                                      borderRadius: "999px",
+                                      background: "#fef3c7",
+                                      border: "1px solid #fbbf24",
+                                      color: "#92400e",
+                                      fontSize: "10px",
+                                      fontWeight: 800,
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    🕐 Perm: {record.permission_label}
                                   </span>
                                 )}
                               </div>
@@ -2860,6 +2998,145 @@ const ManagerDashboardPage = () => {
                 }}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Attendance Record Modal */}
+      {editingRecord && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(15, 23, 42, 0.4)",
+            backdropFilter: "blur(4px)",
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "20px",
+              width: "100%",
+              maxWidth: "500px",
+              boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)",
+              border: "1px solid #cbd5e1",
+              overflow: "hidden",
+            }}
+          >
+            {/* Header */}
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc" }}>
+              <h3 style={{ fontSize: "15px", fontWeight: 800, color: THEME.navy, margin: 0 }}>
+                Edit Attendance for {new Date(editingRecord.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+              </h3>
+              <button onClick={() => setEditingRecord(null)} style={{ background: "transparent", border: "none", fontSize: "18px", color: "#94a3b8", cursor: "pointer" }}>✕</button>
+            </div>
+            {/* Form */}
+            <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Status</label>
+                <select
+                  value={editForm.status}
+                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px", color: THEME.text }}
+                >
+                  <option value="Present">Present</option>
+                  <option value="Absent">Absent</option>
+                  <option value="Half Day">Half Day</option>
+                  <option value="Leave">Leave</option>
+                  <option value="Week Off">Week Off</option>
+                  <option value="Holiday">Holiday</option>
+                </select>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Web Check In</label>
+                  <TimePicker
+                    value={editForm.checkIn}
+                    onChange={(val) => setEditForm({ ...editForm, checkIn: val })}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Web Check Out</label>
+                  <TimePicker
+                    value={editForm.checkOut}
+                    onChange={(val) => setEditForm({ ...editForm, checkOut: val })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Card Check In</label>
+                  <TimePicker
+                    value={editForm.cardCheckIn}
+                    onChange={(val) => setEditForm({ ...editForm, cardCheckIn: val })}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Card Check Out</label>
+                  <TimePicker
+                    value={editForm.cardCheckOut}
+                    onChange={(val) => setEditForm({ ...editForm, cardCheckOut: val })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Lunch Break (mins)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editForm.lunchMinutes}
+                    onChange={(e) => setEditForm({ ...editForm, lunchMinutes: parseInt(e.target.value) || 0 })}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px", color: THEME.text }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Tea Break (mins)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editForm.teaMinutes}
+                    onChange={(e) => setEditForm({ ...editForm, teaMinutes: parseInt(e.target.value) || 0 })}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px", color: THEME.text }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: "16px 20px", borderTop: "1px solid #f1f5f9", display: "flex", justifyContent: "end", gap: "12px", background: "#f8fafc" }}>
+              <button
+                onClick={() => setEditingRecord(null)}
+                style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", background: "#fff", fontSize: "12px", fontWeight: 600, color: "#475569", cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={savingEdit}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: THEME.primary,
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "#fff",
+                  cursor: "pointer",
+                  opacity: savingEdit ? 0.7 : 1
+                }}
+              >
+                {savingEdit ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </div>

@@ -1034,7 +1034,7 @@ def export_leave_report():
             ws.cell(row=row, column=2, value=f"{employee.first_name} {employee.last_name}")
             ws.cell(row=row, column=3, value=employee.department)
             ws.cell(row=row, column=4, value=employee.designation)
-            ws.cell(row=row, column=5, value=str(employee.joining_date))
+            ws.cell(row=row, column=5, value=employee.joining_date.strftime("%d-%m-%Y") if employee.joining_date else "")
 
             ws.cell(row=row, column=6, value=opening_cl)
             ws.cell(row=row, column=7, value=opening_sl)
@@ -1417,6 +1417,17 @@ def resolve_absent():
                 func.lower(EmployeeLeaveBalance.leave_type) == leave_type.lower()
             ).first()
             
+            # Fallback for combined CL/SL policy
+            if not balance and leave_type.lower() in ["sick leave", "casual leave"]:
+                # Try finding combined CL/SL record
+                balance = EmployeeLeaveBalance.query.filter(
+                    EmployeeLeaveBalance.employee_id == employee.id,
+                    func.lower(EmployeeLeaveBalance.leave_type).in_(["cl/sl", "cl / sl", "sl/cl", "sl / cl"])
+                ).first()
+                if balance:
+                    # Update actual leave_type to matched combined policy type for deduction
+                    leave_type = balance.leave_type
+            
             if not balance or balance.available < 1.0:
                 return jsonify({"success": False, "error": "No leave found"}), 400
                 
@@ -1427,8 +1438,12 @@ def resolve_absent():
                 employee.sick_leave = max(0.0, (employee.sick_leave or 0.0) - 1.0)
             elif lt_lower == "casual leave":
                 employee.casual_leave = max(0.0, (employee.casual_leave or 0.0) - 1.0)
+            elif lt_lower in ["cl/sl", "cl / sl", "sl/cl", "sl / cl"]:
+                # Combined SL/CL balance on Employee model
+                employee.casual_leave = max(0.0, (employee.casual_leave or 0.0) - 1.0)
             elif lt_lower in ["earned leave", "privilege leave"]:
                 employee.privilege_leave = max(0.0, (employee.privilege_leave or 0.0) - 1.0)
+
                 
             leave = LeaveRequest(
                 employee_id=employee.id,

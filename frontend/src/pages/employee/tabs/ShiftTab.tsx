@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { API_URL } from "../../../config/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "react-hot-toast";
+import { formatDateStr } from "../../../utils/date";
 import {
   PlusIcon,
   CalendarIcon,
@@ -287,10 +288,10 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                           <p className="text-xs text-neutral-500 font-medium mt-0.5 flex items-center gap-1.5">
                             <ClockIcon className="w-3.5 h-3.5 text-neutral-400" />
                             {isOneDayWages
-                              ? `Claim for: ${req.from_date}`
+                              ? `Claim for: ${formatDateStr(req.from_date)}`
                               : (isWFH || isOffice)
-                              ? `Schedule: ${req.from_date} to ${req.to_date}`
-                              : `Change: ${req.current_shift} ➔ ${req.requested_shift} (${req.from_date} to ${req.to_date})`
+                              ? `Schedule: ${formatDateStr(req.from_date)} to ${formatDateStr(req.to_date)}`
+                              : `Change: ${req.current_shift} ➔ ${req.requested_shift} (${formatDateStr(req.from_date)} to ${formatDateStr(req.to_date)})`
                             }
                           </p>
                         </div>
@@ -364,11 +365,11 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                               </div>
                               <div className="flex justify-between py-1 border-b border-neutral-200">
                                 <span className="text-neutral-500 font-medium">From Date:</span>
-                                <span className="text-neutral-800 font-bold">{req.from_date}</span>
+                                <span className="text-neutral-800 font-bold">{formatDateStr(req.from_date)}</span>
                               </div>
                               <div className="flex justify-between py-1 border-b border-neutral-200">
                                 <span className="text-neutral-500 font-medium">To Date:</span>
-                                <span className="text-neutral-800 font-bold">{req.to_date}</span>
+                                <span className="text-neutral-800 font-bold">{formatDateStr(req.to_date)}</span>
                               </div>
                             </div>
                           </div>
@@ -443,13 +444,13 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                         const d = new Date(isoString);
                         if (isNaN(d.getTime())) return "—";
                         if (isMidnight) {
-                          return d.toLocaleDateString("en-US", {
+                          return d.toLocaleDateString("en-IN", {
                             day: "2-digit",
                             month: "short",
                             year: "numeric"
                           });
                         }
-                        return d.toLocaleString("en-US", {
+                        return d.toLocaleString("en-IN", {
                           day: "2-digit",
                           month: "short",
                           year: "numeric",
@@ -509,9 +510,9 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                           </td>
                           <td className="p-4">
                             <div>
-                              <p className="text-xs font-medium text-neutral-800">{item.from_date}</p>
+                              <p className="text-xs font-medium text-neutral-800">{formatDateStr(item.from_date)}</p>
                               <p className="text-[11px] text-neutral-450 font-normal mt-0.5 flex items-center gap-1">
-                                <ArrowRightIcon className="w-3 h-3 text-neutral-350" /> to {item.to_date}
+                                <ArrowRightIcon className="w-3 h-3 text-neutral-350" /> to {formatDateStr(item.to_date)}
                               </p>
                             </div>
                           </td>

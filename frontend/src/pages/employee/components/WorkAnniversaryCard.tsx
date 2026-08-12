@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import { API_URL } from "../../../config/api";
+import { formatDateStr } from "../../../utils/date";
 
 interface AnniversaryEmployee {
   id: number;
@@ -343,7 +344,7 @@ const WorkAnniversaryCard: React.FC = () => {
 
                 <span className="font-semibold text-gray-900">
 
-                  {currentEmployee?.joining_date}
+                  {formatDateStr(currentEmployee?.joining_date)}
 
                 </span>
 

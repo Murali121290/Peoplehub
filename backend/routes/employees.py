@@ -1833,7 +1833,7 @@ def get_reporting_employees(user_id):
                     date_to_check.strftime("%Y-%m-%d"),
 
                 "summary_date_formatted":
-                    date_to_check.strftime("%A, %b %d, %Y"),
+                    date_to_check.strftime("%A, %d %b %Y"),
 
                 "employee_id":
                     employee.id,

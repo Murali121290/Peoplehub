@@ -9,6 +9,7 @@ import Panel from "../components/Panel";
 import Chip from "../components/Chip";
 import { Button } from "../../../components/ui/Button";
 import { Table } from "../../../components/ui/Table";
+import { DatePicker } from "../../../components/ui/DatePicker";
 
 interface AttendanceTabProps {
   attendance: any[];
@@ -29,6 +30,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [availableMonths, setAvailableMonths] = useState<any[]>([]);
   const [selectedCycle, setSelectedCycle] = useState<string>("");
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>(""); // empty = today
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -76,7 +79,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
   // Format Date Range professionally
   const formatReadableDate = (dateObj: Date) => {
-    return dateObj.toLocaleDateString("en-US", {
+    return dateObj.toLocaleDateString("en-IN", {
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -137,7 +140,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       const d = new Date();
       d.setDate(today.getDate() - i);
       if (d.getDay() === dayIndex) {
-        const formattedDate = d.toLocaleDateString("en-US", {
+        const formattedDate = d.toLocaleDateString("en-IN", {
           month: "short",
           day: "numeric",
         });
@@ -492,15 +495,20 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
     const loadAttendance = async () => {
       try {
         setLoading(true);
-        let url = `${BASE_URL}/attendance`;
+        const token = localStorage.getItem("token");
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+        let url = `${BASE_URL}/attendance/`;
 
         if (attendanceView === "weekly") {
           url = `${BASE_URL}/attendance/weekly`;
         } else if (attendanceView === "monthly") {
           url = `${BASE_URL}/attendance/monthly`;
+        } else if (attendanceView === "today" && selectedDate) {
+          url = `${BASE_URL}/attendance/?date=${selectedDate}`;
         }
 
-        const response = await fetch(url);
+        const response = await fetch(url, { headers });
         const data = await response.json();
         setAttendanceData(data || []);
       } catch (error) {
@@ -512,7 +520,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
     loadAttendance();
     updateDateRange(attendanceView);
-  }, [attendanceView, BASE_URL]);
+  }, [attendanceView, BASE_URL, selectedDate]);
 
   useEffect(() => {
     const fetchMonths = async () => {
@@ -757,7 +765,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
           </div>
 
           <div className="text-xs text-neutral-500 mt-1 font-medium">
-            {new Date().toLocaleDateString("en-US", {
+            {new Date().toLocaleDateString("en-IN", {
               month: "long",
               day: "numeric",
               year: "numeric",
@@ -771,26 +779,118 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         </div>
 
         <div className="flex items-center gap-4">
-          {availableMonths.length > 0 && (
-            <select
-              value={selectedCycle}
-              onChange={(e) => setSelectedCycle(e.target.value)}
-              className="px-3 py-1.5 border border-neutral-200 rounded-xl bg-white text-xs font-semibold text-neutral-600 outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-100 cursor-pointer"
+          {/* Export Attendance Dropdown Button */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowExportDropdown(!showExportDropdown)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "8px 16px",
+                borderRadius: "10px",
+                border: "none",
+                background: "#0f766e",
+                color: "#fff",
+                fontSize: "13px",
+                fontWeight: 700,
+                cursor: "pointer",
+                boxShadow: "0 4px 10px rgba(15,118,110,0.18)",
+                height: "38px",
+                transition: "background 0.2s ease",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#0d6561"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#0f766e"; }}
             >
-              {availableMonths.map((m: any) => (
-                <option key={`${m.month}-${m.year}`} value={`${m.month},${m.year}`}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          )}
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Download Excel
+            </button>
 
-          <Button
-            onClick={downloadAttendance}
-            variant="success"
-          >
-            Download Excel
-          </Button>
+            {showExportDropdown && availableMonths.length > 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: 0,
+                  marginTop: "8px",
+                  minWidth: "220px",
+                  borderRadius: "12px",
+                  border: "1px solid #e2e8f0",
+                  background: "#fff",
+                  boxShadow: "0 12px 32px rgba(15, 23, 42, 0.13)",
+                  zIndex: 50,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderBottom: "1px solid #f1f5f9",
+                    background: "#f8fafc",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  Select Month
+                </div>
+                {availableMonths.map((m: any) => (
+                  <button
+                    key={`${m.month}-${m.year}`}
+                    onClick={async () => {
+                      setShowExportDropdown(false);
+                      try {
+                        const token = localStorage.getItem("token");
+                        let url = `${BASE_URL}/attendance/export-monthly?month=${m.month}&year=${m.year}`;
+                        const response = await fetch(url, {
+                          headers: { "Authorization": `Bearer ${token}` }
+                        });
+                        const blob = await response.blob();
+                        const urlBlob = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = urlBlob;
+                        a.download = `Attendance_Report_${m.label.replace(/\s+/g, "_")}.xlsx`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                      } catch (error) {
+                        console.error("Failed to download attendance report:", error);
+                      }
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "11px 16px",
+                      border: "none",
+                      background: "transparent",
+                      color: "#1e293b",
+                      fontSize: "13px",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.15s ease",
+                      borderBottom: "1px solid #f1f5f9",
+                      display: "block",
+                    }}
+                    onMouseEnter={(e) => { (e.target as HTMLElement).style.background = "#f1f5f9"; }}
+                    onMouseLeave={(e) => { (e.target as HTMLElement).style.background = "transparent"; }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {showExportDropdown && (
+              <div
+                style={{ position: "fixed", inset: 0, zIndex: 40 }}
+                onClick={() => setShowExportDropdown(false)}
+              />
+            )}
+          </div>
 
           <Button
             onClick={() => fileInputRef.current?.click()}
@@ -1083,12 +1183,52 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       )}
 
       {/* Title */}
-      <div className="mb-5 flex items-center gap-3">
+      <div className="mb-5 flex items-center gap-3 flex-wrap">
         <h2 className="text-lg font-extrabold text-neutral-800 tracking-tight">
-          {attendanceView === "today" && "Today's Attendance"}
+          {attendanceView === "today" && (
+            selectedDate
+              ? `Attendance for ${new Date(selectedDate + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`
+              : "Today's Attendance"
+          )}
           {attendanceView === "weekly" && "Weekly Attendance"}
           {attendanceView === "monthly" && "Monthly Attendance"}
         </h2>
+
+        {/* Project DatePicker: only show for Today view */}
+        {attendanceView === "today" && (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ width: "180px" }}>
+              <DatePicker
+                value={selectedDate}
+                onChange={(val) => setSelectedDate(val)}
+                placeholder="Pick a date"
+              />
+            </div>
+            {/* Reset to Today pill */}
+            {selectedDate && (
+              <button
+                onClick={() => setSelectedDate("")}
+                style={{
+                  background: "#f0fdf4",
+                  border: "1px solid #bbf7d0",
+                  borderRadius: "20px",
+                  padding: "3px 10px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: "#15803d",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                ✕ Back to Today
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="h-px bg-neutral-200 flex-1"></div>
       </div>
 
@@ -1186,7 +1326,29 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
                       {/* Status */}
                       <td className="p-3 text-center border-r border-neutral-300">
-                        <Chip type={row.status} />
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
+                          <Chip type={row.status} />
+                          {row.has_permission && (
+                            <span
+                              title={`Permission: ${row.permission_label}`}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "3px",
+                                padding: "2px 7px",
+                                borderRadius: "999px",
+                                background: "#fef3c7",
+                                border: "1px solid #fbbf24",
+                                color: "#92400e",
+                                fontSize: "10px",
+                                fontWeight: 800,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              🕐 Perm: {row.permission_label}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Shift */}

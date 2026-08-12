@@ -12,6 +12,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'framer-motion';
 import StatCard from '../components/StatCard';
+import { formatDateStr } from "../../../utils/date";
 import { Attendance } from '../../../types/employee.types';
 import { Card } from '../../../components/ui/Card';
 import apiService from '../../../services/api';
@@ -207,11 +208,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
   // Fetch balances when cell is selected for resolution
   useEffect(() => {
-    if (!resolvingCell || !currentEmployee?.id) return;
+    const targetEmpId = currentEmployee?.id || employeeId;
+    if (!resolvingCell || !targetEmpId) return;
     const fetchBalances = async () => {
       setIsBalancesLoading(true);
       try {
-        const res = await apiService.get(`/leaves/balances/${currentEmployee.id}`);
+        const res = await apiService.get(`/leaves/balances/${targetEmpId}`);
         setResolverBalances(res.data);
       } catch (err) {
         console.error("Failed to load balances", err);
@@ -220,15 +222,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       }
     };
     fetchBalances();
-  }, [resolvingCell, currentEmployee]);
+  }, [resolvingCell, currentEmployee, employeeId]);
 
-  const getBalanceForType = (type: string) => {
-    const bal = resolverBalances.find(b => b.leave_type.toLowerCase() === type.toLowerCase());
-    return bal ? bal.available : 0;
-  };
 
   const submitResolveAbsent = async (action: string) => {
-    if (!resolvingCell || !currentEmployee?.id) return;
+    const targetEmpId = currentEmployee?.id || employeeId;
+    if (!resolvingCell || !targetEmpId) return;
 
     if (!resolveReason.trim()) {
       toast.error("Please enter a reason for resolving this absent day");
@@ -236,9 +235,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     }
     
     if (action !== "LOP") {
-      const balance = getBalanceForType(action);
+      const balObj = resolverBalances.find(b => b.leave_type.toLowerCase() === action.toLowerCase());
+      const balance = balObj ? (balObj.available ?? 0) : 0;
       if (balance < 1) {
-        toast.error("No leave found");
+        toast.error(`No ${action} balance available`);
         return;
       }
     }
@@ -246,7 +246,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     setIsResolving(true);
     try {
       const res = await apiService.post("/leaves/resolve-absent", {
-        employee_id: currentEmployee.id,
+        employee_id: targetEmpId,
         date: resolvingCell.dateStr,
         action,
         reason: resolveReason.trim()
@@ -267,7 +267,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   };
 
   const submitResolveWeekend = async () => {
-    if (!resolvingWeekendCell || !currentEmployee?.id) return;
+    const targetEmpId = currentEmployee?.id || employeeId;
+    if (!resolvingWeekendCell || !targetEmpId) return;
 
     if (!fromTime || !toTime) {
       toast.error("Please enter both check-in (From) and check-out (To) times");
@@ -290,7 +291,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       const userObj = userStr ? JSON.parse(userStr) : {};
 
       const payload = {
-        employee_id: currentEmployee.id,
+        employee_id: targetEmpId,
         employee_name: currentEmployee ? `${currentEmployee.first_name} ${currentEmployee.last_name}` : userObj.name || "Employee",
         current_shift: fromTime,
         requested_shift: toTime,
@@ -549,15 +550,34 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       leaveType = matchedLeave.leave_type;
       leaveReason = matchedLeave.reason;
     } else if (attRec && (attRec.status?.toLowerCase() === "present" || (checkIn !== "-" && checkIn !== ""))) {
-      // Present vs Half Day threshold (4 hrs) — applies to both checked-out and still-active sessions
-      if (workingHours > 0 && workingHours < 4) {
-        status = "Half Day";
-        badgeLabel = "Half Day";
+      // If the database status is explicitly set to something else (e.g. Leave, Absent, Weekly Off, Holiday) by the manager/system, respect it.
+      const dbStatus = attRec.status;
+      if (dbStatus && dbStatus !== "Present" && dbStatus !== "Half Day") {
+        status = dbStatus as any;
+        badgeLabel = dbStatus;
         badgeEmoji = "";
       } else {
-        status = "Present";
-        badgeLabel = "Present";
-        badgeEmoji = "";
+        // Present vs Half Day threshold (4 hrs) — applies to both checked-out and still-active sessions
+        if (workingHours > 0 && workingHours < 4) {
+          status = "Half Day";
+          badgeLabel = "Half Day";
+          badgeEmoji = "";
+        } else if (workingHours >= 4) {
+          status = "Present";
+          badgeLabel = "Present";
+          badgeEmoji = "";
+        } else {
+          // workingHours is 0 (checked in but didn't check out on a past day, or checked in today but has 0 hours so far)
+          if (isToday) {
+            status = "Present";
+            badgeLabel = "Present";
+            badgeEmoji = "";
+          } else {
+            status = (attRec.status === "Present" || attRec.status === "Half Day" || attRec.status === "Absent") ? (attRec.status as any) : "Absent";
+            badgeLabel = status;
+            badgeEmoji = "";
+          }
+        }
       }
     } else if (isFuture) {
       status = "Future";
@@ -677,7 +697,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-bold text-neutral-850">
-                {`${startDate.getDate()} ${startDate.toLocaleDateString("en-US", { month: "short" })} - ${endDate.getDate()} ${endDate.toLocaleDateString("en-US", { month: "short" })}, ${endDate.getFullYear()}`}
+                {`${startDate.getDate()} ${startDate.toLocaleDateString("en-IN", { month: "short" })} - ${endDate.getDate()} ${endDate.toLocaleDateString("en-IN", { month: "short" })}, ${endDate.getFullYear()}`}
               </h3>
             </div>
             {isLoading && (
@@ -1154,7 +1174,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       key={dayObj.dateStr}
                       className="hover:bg-primary-500/5 transition-colors border-b border-neutral-300"
                     >
-                      <td className="p-3 pl-6 font-bold text-neutral-900 border-r border-neutral-300">{dayObj.dateStr}</td>
+                      <td className="p-3 pl-6 font-bold text-neutral-900 border-r border-neutral-300">{formatDateStr(dayObj.dateStr)}</td>
                       <td className="p-3 text-neutral-500 border-r border-neutral-300 font-bold">{dayObj.dayName}</td>
                       
                       {/* Web Site Entry */}
@@ -1236,7 +1256,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               />
             </div>
 
-            <div className="space-y-3">
+             <div className="space-y-3">
               <button
                 onClick={() => submitResolveAbsent("LOP")}
                 disabled={isResolving}
@@ -1246,44 +1266,31 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <span className="text-[10px] text-rose-500 uppercase tracking-wide">Deducted Pay</span>
               </button>
 
-              <button
-                onClick={() => submitResolveAbsent("Sick Leave")}
-                disabled={isResolving}
-                className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
-              >
-                <span>Sick Leave</span>
-                {isBalancesLoading ? (
-                  <span className="text-[10px] text-neutral-450 animate-pulse">Loading...</span>
-                ) : (
-                  <span className="text-[10px] text-neutral-500 font-semibold">{getBalanceForType("Sick Leave")} Left</span>
-                )}
-              </button>
-
-              <button
-                onClick={() => submitResolveAbsent("Casual Leave")}
-                disabled={isResolving}
-                className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
-              >
-                <span>Casual Leave</span>
-                {isBalancesLoading ? (
-                  <span className="text-[10px] text-neutral-450 animate-pulse">Loading...</span>
-                ) : (
-                  <span className="text-[10px] text-neutral-500 font-semibold">{getBalanceForType("Casual Leave")} Left</span>
-                )}
-              </button>
-
-              <button
-                onClick={() => submitResolveAbsent("Privilege Leave")}
-                disabled={isResolving}
-                className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
-              >
-                <span>Privilege Leave</span>
-                {isBalancesLoading ? (
-                  <span className="text-[10px] text-neutral-450 animate-pulse">Loading...</span>
-                ) : (
-                  <span className="text-[10px] text-neutral-500 font-semibold">{getBalanceForType("Privilege Leave")} Left</span>
-                )}
-              </button>
+              {isBalancesLoading ? (
+                <div className="text-center py-4 text-xs text-neutral-450 animate-pulse font-semibold">
+                  Loading available leave categories...
+                </div>
+              ) : resolverBalances.length === 0 ? (
+                <div className="text-center py-2 text-xs text-neutral-500 font-semibold">
+                  No leave balances allocated.
+                </div>
+              ) : (
+                resolverBalances.map((balObj: any) => {
+                  const leaveType = balObj.leave_type;
+                  const availableVal = balObj.available ?? 0;
+                  return (
+                    <button
+                      key={balObj.id || leaveType}
+                      onClick={() => submitResolveAbsent(leaveType)}
+                      disabled={isResolving}
+                      className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
+                    >
+                      <span>{leaveType}</span>
+                      <span className="text-[10px] text-neutral-500 font-semibold">{availableVal} Left</span>
+                    </button>
+                  );
+                })
+              )}
             </div>
 
             <div className="mt-6 flex justify-end">

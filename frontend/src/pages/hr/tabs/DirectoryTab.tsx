@@ -547,7 +547,7 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
       {displayedEmps.length > 0 && (
         <div className="mt-4 flex items-center justify-between text-[13px] text-neutral-500">
           <span>Showing <strong className="text-neutral-800">{displayedEmps.length}</strong> {displayedEmps.length === 1 ? "employee" : "employees"}</span>
-          <span>Last updated: {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+          <span>Last updated: {new Date().toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}</span>
         </div>
       )}
       {deactivateEmp && (

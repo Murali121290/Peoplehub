@@ -2,6 +2,7 @@ import React from "react";
 import Panel from "../components/Panel";
 import Avatar from "../components/Avatar";
 import Chip from "../components/Chip";
+import { formatDateStr } from "../../../utils/date";
 import { Button } from "../../../components/ui/Button";
 
 interface ShiftRequest {
@@ -121,9 +122,9 @@ export const ShiftTab: React.FC<ShiftTabProps> = ({ shifts, onApprove, onReject 
                     </span>
                   </td>
 
-                  <td className="p-3 text-xs font-normal text-neutral-500">{s.from_date || "—"}</td>
+                  <td className="p-3 text-xs font-normal text-neutral-500">{formatDateStr(s.from_date)}</td>
 
-                  <td className="p-3 text-xs font-normal text-neutral-500">{s.to_date || "—"}</td>
+                  <td className="p-3 text-xs font-normal text-neutral-500">{formatDateStr(s.to_date)}</td>
 
                   <td className="p-3 text-xs font-normal text-neutral-500 max-w-[200px] truncate" title={s.reason}>
                     {s.reason}
