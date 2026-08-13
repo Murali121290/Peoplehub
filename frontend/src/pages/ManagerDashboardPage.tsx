@@ -426,20 +426,20 @@ const ManagerDashboardPage = () => {
   };
 
   const handleMemberClick = async (member: any) => {
+    viewEmployeeHistory(member);
+  };
+
+  const handleManagerBadgeClick = async (e: React.MouseEvent, member: any) => {
+    e.stopPropagation();
     if (member.is_reporting_manager && member.user_id && member.report_count && member.report_count > 0) {
-      // Verify the employee actually has team members before drilling down
       try {
         const res = await fetch(`${BASE_URL}/employees/my-team/${member.user_id}`);
         const subTeam = await res.json();
         if (Array.isArray(subTeam) && subTeam.length > 0) {
           setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
-          return;
         }
-      } catch (_) {
-        // Fall through to history on error
-      }
+          } catch (_) {}
     }
-    viewEmployeeHistory(member);
   };
 
   const viewEmployeeHistory = async (member: any) => {
@@ -588,7 +588,7 @@ const ManagerDashboardPage = () => {
   useEffect(() => {
     const handleRefresh = () => {
       loadTeamAttendance(currentViewedManagerId);
-      loadYesterdaySummary();
+      loadYesterdaySummary(true);
     };
 
     socket.on("attendance_update", handleRefresh);
@@ -673,9 +673,9 @@ const ManagerDashboardPage = () => {
     }
   };
 
-  const loadYesterdaySummary = async () => {
+  const loadYesterdaySummary = async (silent = false) => {
     try {
-      setLoadingYesterday(true);
+      if (!silent) setLoadingYesterday(true);
       const response = await fetch(`${BASE_URL}/employees/reporting-employees/${userId}`);
       const data = await response.json();
       if (Array.isArray(data) && data.length > 0) {
@@ -687,7 +687,7 @@ const ManagerDashboardPage = () => {
     } catch (error) {
       console.error("Failed to load yesterday summary", error);
     } finally {
-      setLoadingYesterday(false);
+      if (!silent) setLoadingYesterday(false);
     }
   };
 
@@ -697,7 +697,7 @@ const ManagerDashboardPage = () => {
         method: "PUT",
       });
       if (response.ok) {
-        loadYesterdaySummary();
+        loadYesterdaySummary(true);
       }
     } catch (error) {
       console.error("Approve yesterday failed:", error);
@@ -712,7 +712,7 @@ const ManagerDashboardPage = () => {
         body: JSON.stringify({ reason: "" }),
       });
       if (response.ok) {
-        loadYesterdaySummary();
+        loadYesterdaySummary(true);
       }
     } catch (error) {
       console.error("Need clarification failed:", error);
@@ -1834,7 +1834,9 @@ const ManagerDashboardPage = () => {
                                   {member.is_reporting_manager && (
                                     <span
                                       title={`This employee manages ${member.report_count || 0} team members`}
+                                      onClick={(e) => handleManagerBadgeClick(e, member)}
                                       style={{
+                                        cursor: "pointer",
                                         display: "inline-flex",
                                         alignItems: "center",
                                         gap: "4px",
@@ -2332,7 +2334,9 @@ const ManagerDashboardPage = () => {
                                     {member.is_reporting_manager && (
                                       <span
                                         title={`This employee manages ${member.report_count || 0} team members`}
+                                        onClick={(e) => handleManagerBadgeClick(e, member)}
                                         style={{
+                                          cursor: "pointer",
                                           display: "inline-flex",
                                           alignItems: "center",
                                           gap: "4px",
@@ -2508,7 +2512,7 @@ const ManagerDashboardPage = () => {
                   </div>
                 </div>
                 <button
-                  onClick={loadYesterdaySummary}
+                  onClick={() => loadYesterdaySummary()}
                   style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 16px", borderRadius: "10px", border: `1px solid ${THEME.border}`, background: THEME.surface, color: THEME.textSoft, fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
                 >
                   <ArrowPathIcon style={{ width: "15px", height: "15px" }} />

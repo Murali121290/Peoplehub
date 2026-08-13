@@ -3059,8 +3059,25 @@ def approve_attendance(employee_id):
                     leave_req.approved_by = emp.reporting_manager or "Manager"
                     leave_req.approved_at = datetime.now()
             else:
-                # Normal present record — just flip manager_status, do NOT recalculate hours
+                # Normal present record — just flip manager_status
                 attendance.status = "Present"
+                
+                # If they forgot portal punches but card punches exist, populate them
+                if not attendance.check_in and attendance.card_check_in:
+                    attendance.check_in = attendance.card_check_in
+                if not attendance.check_out and attendance.card_check_out:
+                    attendance.check_out = attendance.card_check_out
+                
+                # Recalculate hours if we now have check-in and check-out
+                if attendance.check_in and attendance.check_out:
+                    total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
+                    break_minutes = attendance.total_break_minutes or 0
+                    if not break_minutes:
+                        break_minutes = (attendance.lunch_minutes or 0) + (attendance.tea_minutes or 0)
+                    gap_minutes = attendance.total_gap_minutes or 0
+                    total_seconds -= (break_minutes + gap_minutes) * 60
+                    hours_decimal = max(total_seconds, 0) / 3600
+                    attendance.total_hours = int(hours_decimal * 100) / 100
 
         db.session.commit()
 
@@ -3438,9 +3455,9 @@ def accept_lop(employee_id):
         target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
 
         from models.employee import Employee
-        emp = Employee.query.filter_by(user_id=employee_id).first()
+        emp = Employee.query.get(employee_id)
         if not emp:
-            emp = Employee.query.get(employee_id)
+            emp = Employee.query.filter_by(user_id=employee_id).first()
         if not emp:
             return jsonify({"success": False, "error": "Employee not found"}), 404
 
@@ -3513,6 +3530,10 @@ def accept_lop(employee_id):
 def reject_attendance(employee_id):
 
     try:
+
+        is_clarification = "need-clarification" in request.url.path
+        target_status = "Need Clarification" if is_clarification else "Rejected"
+        
         target_date_str = request.args.get("date")
         data = request.get_json(silent=True) or {}
         reason = data.get("reason") or request.args.get("reason") or ""
@@ -3548,7 +3569,7 @@ def reject_attendance(employee_id):
                 user_id=target_user_id,
                 attendance_date=target_date,
                 status="Absent",
-                manager_status="Rejected",
+                manager_status=target_status,
                 is_regularization=False,
                 clarification_history=[msg_entry],
                 check_in=None,
@@ -3562,30 +3583,32 @@ def reject_attendance(employee_id):
             db.session.add(attendance)
         else:
             for att in attendances:
-                att.check_in = att.card_check_in
-                att.check_out = att.card_check_out
-                
-                # Recalculate hours based on card check-in/out if present
-                if att.check_in and att.check_out:
-                    total_seconds = (att.check_out - att.check_in).total_seconds()
-                    break_minutes = att.total_break_minutes or 0
-                    if not break_minutes:
-                        break_minutes = (att.lunch_minutes or 0) + (att.tea_minutes or 0)
-                    gap_minutes = att.total_gap_minutes or 0
-                    total_seconds -= (break_minutes + gap_minutes) * 60
-                    hours_decimal = max(total_seconds, 0) / 3600
-                    att.total_hours = int(hours_decimal * 100) / 100
-                    att.status = "Present"
-                else:
-                    att.total_hours = 0.0
-                    if check_is_non_working_day(target_date):
-                        is_weekend = target_date.weekday() in (5, 6)
-                        att.status = "Weekly Off" if is_weekend else "Holiday"
+                if not is_clarification:
+                    att.check_in = att.card_check_in
+                    att.check_out = att.card_check_out
+                    
+                    # Recalculate hours based on card check-in/out if present
+                    if att.check_in and att.check_out:
+                        total_seconds = (att.check_out - att.check_in).total_seconds()
+                        break_minutes = att.total_break_minutes or 0
+                        if not break_minutes:
+                            break_minutes = (att.lunch_minutes or 0) + (att.tea_minutes or 0)
+                        gap_minutes = att.total_gap_minutes or 0
+                        total_seconds -= (break_minutes + gap_minutes) * 60
+                        hours_decimal = max(total_seconds, 0) / 3600
+                        att.total_hours = int(hours_decimal * 100) / 100
+                        att.status = "Present"
                     else:
-                        att.status = "Absent"
+                        att.total_hours = 0.0
+                        if check_is_non_working_day(target_date):
+                            is_weekend = target_date.weekday() in (5, 6)
+                            att.status = "Weekly Off" if is_weekend else "Holiday"
+                        else:
+                            att.status = "Absent"
 
-                att.manager_status = "Rejected"
-                att.is_regularization = False
+                att.manager_status = target_status
+                if not is_clarification:
+                    att.is_regularization = False
                 history = list(att.clarification_history or [])
                 history.append(msg_entry)
                 att.clarification_history = history
@@ -3607,7 +3630,7 @@ def reject_attendance(employee_id):
                     "lunch_minutes": attendance.lunch_minutes or 0,
                     "tea_minutes": attendance.tea_minutes or 0,
                     "shift": emp.shift_timing or "General Shift",
-                    "manager_status": "Rejected",
+                    "manager_status": target_status,
                     "reason": reason,
                     "clarification_history": attendance.clarification_history or [],
                     "checked_in": (attendance and attendance.check_in is not None and attendance.check_out is None),
@@ -3616,11 +3639,12 @@ def reject_attendance(employee_id):
                 }
                 socketio.emit("attendance_update", payload)
         except Exception as socket_err:
-            print("Failed to emit reject socket:", str(socket_err))
+            print("Failed to emit socket:", str(socket_err))
 
+        msg = "Need Clarification request sent successfully" if is_clarification else "Regularization request rejected successfully"
         return jsonify({
             "success": True,
-            "message": "Regularization request rejected successfully",
+            "message": msg,
             "reason": reason
         })
 
@@ -3650,9 +3674,9 @@ def reply_clarification(employee_id):
             target_date = get_last_working_day()
 
         from models.employee import Employee
-        emp = Employee.query.filter_by(user_id=employee_id).first()
+        emp = Employee.query.get(employee_id)
         if not emp:
-            emp = Employee.query.get(employee_id)
+            emp = Employee.query.filter_by(user_id=employee_id).first()
         if not emp:
             return jsonify({"success": False, "error": "Employee not found"}), 404
 
@@ -3724,37 +3748,43 @@ def get_pending_clarifications(user_id):
         need_clarif_records = Attendance.query.filter_by(
             user_id=user_id,
             manager_status="Need Clarification"
-        ).all()
+        ).order_by(Attendance.attendance_date.desc()).all()
         
-        if need_clarif_records:
-            for rec in need_clarif_records:
-                rec.manager_status = "Rejected"
-                rec.is_regularization = False
-                rec.check_in = rec.card_check_in
-                rec.check_out = rec.card_check_out
-                
-                # Recalculate hours based on original biometric card entry if present
-                if rec.check_in and rec.check_out:
-                    total_seconds = (rec.check_out - rec.check_in).total_seconds()
-                    break_minutes = rec.total_break_minutes or 0
-                    if not break_minutes:
-                        break_minutes = (rec.lunch_minutes or 0) + (rec.tea_minutes or 0)
-                    gap_minutes = rec.total_gap_minutes or 0
-                    total_seconds -= (break_minutes + gap_minutes) * 60
-                    hours_decimal = max(total_seconds, 0) / 3600
-                    rec.total_hours = int(hours_decimal * 100) / 100
-                    rec.status = "Present"
-                else:
-                    rec.total_hours = 0.0
-                    if check_is_non_working_day(rec.attendance_date):
-                        is_weekend = rec.attendance_date.weekday() in (5, 6)
-                        rec.status = "Weekly Off" if is_weekend else "Holiday"
-                    else:
-                        rec.status = "Absent"
-            db.session.commit()
+        result = []
+        for rec in need_clarif_records:
+            check_in_time = (
+                rec.check_in.strftime("%I:%M %p")
+                if rec.check_in else "-"
+            )
+            check_out_time = (
+                rec.check_out.strftime("%I:%M %p")
+                if rec.check_out else "-"
+            )
+            card_check_in_time = (
+                rec.card_check_in.strftime("%I:%M %p")
+                if rec.card_check_in else "-"
+            )
+            card_check_out_time = (
+                rec.card_check_out.strftime("%I:%M %p")
+                if rec.card_check_out else "-"
+            )
+            break_str = f"{rec.total_break_minutes} min" if rec.total_break_minutes else "0 min"
 
-        # Rejections do not require employee response modal
-        return jsonify([])
+            result.append({
+                "attendance_date": rec.attendance_date.strftime("%Y-%m-%d"),
+                "check_in": check_in_time,
+                "check_out": check_out_time,
+                "card_check_in": card_check_in_time,
+                "card_check_out": card_check_out_time,
+                "total_hours": rec.total_hours,
+                "card_working_hours": rec.card_working_hours,
+                "break_str": break_str,
+                "total_break_minutes": rec.total_break_minutes or 0,
+                "status": rec.status,
+                "clarification_history": rec.clarification_history or []
+            })
+
+        return jsonify(result)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

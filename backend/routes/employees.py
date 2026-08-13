@@ -1808,9 +1808,15 @@ def get_reporting_employees(user_id):
                     permission_hours = max(t_sec - f_sec, 0) / 3600.0
 
             working_hours_val = 0.0
-            if attendance and attendance.total_hours is not None:
-                working_hours_val = float(attendance.total_hours)
-                if attendance.check_in and permission_hours > 0:
+            if attendance:
+                total_h = attendance.total_hours
+                if (total_h is None or total_h == 0.0) and attendance.card_working_hours:
+                    total_h = attendance.card_working_hours
+                
+                if total_h is not None:
+                    working_hours_val = float(total_h)
+                
+                if (attendance.check_in or attendance.card_check_in) and permission_hours > 0:
                     working_hours_val += permission_hours
             working_hours_val = int(working_hours_val * 100) / 100
 

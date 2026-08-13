@@ -1847,10 +1847,10 @@ if (isHalfDayLeave(leave.total_days)) return false;
         </main>
       </div>
 
-      {pendingClarifications.length > 0 && (
+      {pendingClarifications.length > 0 && currentEmployee && (
         <EmployeeClarificationModal
           pendingItems={pendingClarifications}
-          userId={Number(currentEmployee?.id || user?.id || 0)}
+          userId={Number(currentEmployee.id)}
           onSubmitted={() => loadPendingClarifications()}
         />
       )}
