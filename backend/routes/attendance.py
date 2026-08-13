@@ -4237,7 +4237,7 @@ def update_attendance_record():
 @attendance_bp.route("/trigger-db-sync", methods=["POST"])
 def trigger_db_sync():
     try:
-        mysql_host = os.environ.get("MYSQL_BIOMETRIC_HOST", "10.1.6.157")
+        mysql_host = os.environ.get("MYSQL_BIOMETRIC_HOST", "10.1.8.49")
         mysql_port = int(os.environ.get("MYSQL_BIOMETRIC_PORT", 3306))
         mysql_user = os.environ.get("MYSQL_BIOMETRIC_USER", "Muralibalu")
         mysql_password = os.environ.get("MYSQL_BIOMETRIC_PASSWORD", "Murali@12")
