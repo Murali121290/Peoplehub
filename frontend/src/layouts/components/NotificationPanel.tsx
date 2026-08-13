@@ -29,7 +29,7 @@ const formatNotificationTime = (createdAtStr: string) => {
     if (itemDateStr === todayStr) {
       return timeStr;
     } else {
-      const dateStr = d.toLocaleDateString([], { month: 'short', day: '2-digit' });
+      const dateStr = d.toLocaleDateString("en-IN", { month: 'short', day: '2-digit' });
       return `${dateStr}, ${timeStr}`;
     }
   } catch (e) {

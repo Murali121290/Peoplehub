@@ -1179,6 +1179,42 @@ def attendance_history(user_id):
                     elif is_date_week_off(current_date):
                         display_status = "Week Off"
 
+                # Check for approved Permission on this date
+                from models.leave import LeaveRequest as LR
+                perm_req = LR.query.filter(
+                    or_(
+                        LR.employee_id == str(employee.id),
+                        LR.employee_id == employee.employee_id
+                    ),
+                    LR.request_type == "Permission",
+                    LR.status == "Approved",
+                    LR.permission_date == current_date
+                ).first()
+
+                has_permission = False
+                permission_label = ""
+                actual_working_hours = working_hours
+                if perm_req and perm_req.from_time and perm_req.to_time:
+                    has_permission = True
+                    ft = perm_req.from_time
+                    tt = perm_req.to_time
+                    perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
+                    perm_hours = max(perm_seconds, 0) / 3600
+                    virtual_working_hours = actual_working_hours + perm_hours
+
+                    def _fmt(t):
+                        h = t.hour; ampm = "AM" if h < 12 else "PM"; h12 = h % 12 or 12
+                        return f"{h12:02d}:{t.minute:02d} {ampm}"
+
+                    permission_label = f"{_fmt(ft)} – {_fmt(tt)}"
+
+                    # Re-evaluate display_status after crediting permission hours
+                    if display_status in ("Absent", "Half Day") and virtual_working_hours >= 8.0:
+                        display_status = "Present"
+                    elif display_status == "Absent" and virtual_working_hours >= 4.0:
+                        display_status = "Half Day"
+
+
                 result.append({
                     "id": record.id,
                     "date": record.attendance_date.strftime("%Y-%m-%d"),
@@ -1212,8 +1248,13 @@ def attendance_history(user_id):
                     "clarification_history": record.clarification_history or [],
                     "last_manager_comment": (record.clarification_history[-1]["comment"] if record.clarification_history and record.clarification_history[-1].get("sender_role") == "manager" else "") or "",
                     "is_one_day_wages": is_one_day_wages,
-                    "wages_status": wages_status
+                    "wages_status": wages_status,
+                    "has_permission": has_permission,
+                    "permission_label": permission_label,
+                    "is_regularization": bool(record.is_regularization),
+                    "regularization_reason": record.regularization_reason or "",
                 })
+
             else:
                 # Check normal calendar rules for virtual status
                 status = "Absent"
@@ -1297,7 +1338,15 @@ def attendance_history(user_id):
 @attendance_bp.route("/", methods=["GET"])
 def get_attendance():
 
-    today = get_ist_today()
+    # Allow HR/Managers to query a specific date via ?date=YYYY-MM-DD
+    date_param = request.args.get("date")
+    if date_param:
+        try:
+            today = datetime.strptime(date_param, "%Y-%m-%d").date()
+        except ValueError:
+            today = get_ist_today()
+    else:
+        today = get_ist_today()
 
     employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
 
@@ -1312,7 +1361,32 @@ def get_attendance():
 
         if attendance:
 
-            status = attendance.status or "Present"
+            # Recalculate status from actual data (stored status can be stale for past dates)
+            web_hrs = attendance.total_hours or 0.0
+            card_hrs = attendance.card_working_hours or 0.0
+            max_hrs = max(web_hrs, card_hrs)
+            has_checkin = bool(attendance.check_in or attendance.card_check_in)
+
+            if attendance.status in ("Leave", "LOP", "Holiday", "Week Off", "Half Day"):
+                # Keep manually-set or leave-driven statuses
+                status = attendance.status
+            elif has_checkin:
+                if max_hrs >= 8.0:
+                    status = "Present"
+                elif max_hrs >= 4.0:
+                    status = "Half Day"
+                elif attendance.check_out or attendance.card_check_out:
+                    # Checked in and out but low hours → Half Day
+                    status = "Half Day"
+                else:
+                    # Still checked in (no checkout yet)
+                    status = "Present"
+            else:
+                status = attendance.status or "Absent"
+
+            # Override to Half Day if checked out with < 4 working hours
+            if attendance.check_out and web_hrs < 4.0 and status not in ("Absent", "Leave", "LOP", "Holiday", "Week Off"):
+                status = "Half Day"
 
             check_in = (
                 attendance.check_in.strftime("%H:%M:%S")
@@ -1340,10 +1414,6 @@ def get_attendance():
 
             total_hours = attendance.total_hours or 0.0
 
-            # Override to Half Day if checked out with < 4 working hours
-            if attendance.check_out and total_hours < 4.0 and status not in ("Absent", "Leave"):
-                status = "Half Day"
-
         else:
             status = "Absent"
             check_in = "-"
@@ -1365,6 +1435,47 @@ def get_attendance():
             ).first()
             if leave:
                 status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
+
+        # Check for an approved Permission on this date and credit its hours
+        from models.leave import LeaveRequest as LR
+        from datetime import time as dtime
+        permission_req = LR.query.filter(
+            or_(
+                LR.employee_id == str(employee.id),
+                LR.employee_id == employee.employee_id
+            ),
+            LR.request_type == "Permission",
+            LR.status == "Approved",
+            LR.permission_date == today
+        ).first()
+
+        has_permission = False
+        permission_label = ""
+        actual_hours = total_hours or 0.0
+        if permission_req and permission_req.from_time and permission_req.to_time:
+            has_permission = True
+            # Calculate permission duration in hours
+            ft = permission_req.from_time
+            tt = permission_req.to_time
+            perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
+            perm_hours = max(perm_seconds, 0) / 3600
+            virtual_total_hours = actual_hours + perm_hours
+
+            def fmt_time(t):
+                h = t.hour
+                ampm = "AM" if h < 12 else "PM"
+                h12 = h % 12 or 12
+                return f"{h12:02d}:{t.minute:02d} {ampm}"
+
+            permission_label = f"{fmt_time(ft)} – {fmt_time(tt)}"
+
+            # Re-evaluate status now that hours include permission credit virtually
+            if status in ("Absent", "Half Day") and has_permission:
+                if virtual_total_hours >= 8.0:
+                    status = "Present"
+                elif virtual_total_hours >= 4.0:
+                    status = "Half Day"
+
 
         from models.shift_request import ShiftRequest
         emp_ids = [employee.employee_id] if employee.employee_id else []
@@ -1403,6 +1514,8 @@ def get_attendance():
             "is_shift_changed": bool(shift_change_today),
             "check_in_ip": attendance.check_in_ip if attendance else None,
             "check_out_ip": attendance.check_out_ip if attendance else None,
+            "has_permission": has_permission,
+            "permission_label": permission_label,
 
             "shift_timing": (
                 shift_change_today.requested_shift
@@ -1414,6 +1527,7 @@ def get_attendance():
                 )
             )
         })
+
 
     return jsonify(attendance_list)
 
@@ -1989,8 +2103,9 @@ def export_monthly_attendance():
                 ShiftRequest.to_date >= start_date
             ).all()
 
-            effective_end_date = min(end_date, get_ist_today())
-            if start_date > get_ist_today():
+            yesterday = get_ist_today() - timedelta(days=1)
+            effective_end_date = min(end_date, yesterday)
+            if start_date > yesterday:
                 num_days_to_calculate = 0
             else:
                 num_days_to_calculate = (effective_end_date - start_date).days + 1
@@ -2019,7 +2134,8 @@ def export_monthly_attendance():
                 is_lop_leave = False
                 if day_leaves:
                     first_leave = day_leaves[0]
-                    is_lop_leave = (first_leave.leave_type or "").lower() in ["loss of pay", "lop", "unpaid leave"]
+                    leave_type_lower = (first_leave.leave_type or "").lower()
+                    is_lop_leave = "loss of pay" in leave_type_lower or "lop" in leave_type_lower or "unpaid" in leave_type_lower
                     if first_leave.total_days is not None and first_leave.total_days <= 0.5:
                         leave_val = 0.5
                     else:
@@ -2055,9 +2171,19 @@ def export_monthly_attendance():
                         total_weekoffs += 1.0
                 else:
                     # Normal Weekday:
-                    if att and att.status == "Present":
+                    effective_status = att.status if att else None
+                    if att and att.status == "Leave":
+                        web_hrs = att.total_hours or 0.0
+                        card_hrs = att.card_working_hours or 0.0
+                        max_hrs = max(web_hrs, card_hrs)
+                        if max_hrs >= 8.0:
+                            effective_status = "Present"
+                        elif max_hrs >= 4.0:
+                            effective_status = "Half Day"
+
+                    if att and effective_status == "Present":
                         total_working_days += 1.0
-                    elif att and att.status == "Half Day":
+                    elif att and effective_status == "Half Day":
                         total_working_days += 0.5
                         if leave_val > 0.0:
                             total_leaves_taken += min(leave_val, 0.5)
@@ -2199,7 +2325,7 @@ def export_monthly_attendance():
                 row=row,
                 column=4
             ).value = (
-                str(employee.joining_date)
+                employee.joining_date.strftime("%d-%m-%Y")
                 if hasattr(employee, "joining_date")
                 and employee.joining_date
                 else ""
@@ -2648,7 +2774,7 @@ def export_paysheet():
     employee.department,
     employee.designation,
     employee.email,
-    str(employee.joining_date),
+    employee.joining_date.strftime("%d-%m-%Y") if employee.joining_date else "",
 
     total_days_cycle,
     days_payable,
@@ -2906,6 +3032,8 @@ def approve_attendance(employee_id):
                 if attendance.check_in and attendance.check_out:
                     total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
                     break_minutes = attendance.total_break_minutes or 0
+                    if not break_minutes:
+                        break_minutes = (attendance.lunch_minutes or 0) + (attendance.tea_minutes or 0)
                     gap_minutes = attendance.total_gap_minutes or 0
                     total_seconds -= (break_minutes + gap_minutes) * 60
                     hours_decimal = max(total_seconds, 0) / 3600
@@ -2992,9 +3120,11 @@ def submit_regularization(employee_id):
         target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
 
         from models.employee import Employee
-        emp = Employee.query.filter_by(user_id=employee_id).first()
+        emp = Employee.query.get(employee_id)
         if not emp:
-            emp = Employee.query.get(employee_id)
+            emp = Employee.query.filter_by(employee_id=str(employee_id)).first()
+        if not emp:
+            emp = Employee.query.filter_by(user_id=employee_id).first()
         if not emp:
             return jsonify({"success": False, "error": "Employee not found"}), 404
 
@@ -3017,8 +3147,14 @@ def submit_regularization(employee_id):
             "timestamp": datetime.now().isoformat()
         }
 
-        # Calculate hours decimal based on check-in and check-out
+        # Calculate hours decimal based on check-in and check-out (minus breaks if any)
         total_seconds = (check_out_dt - check_in_dt).total_seconds()
+        break_mins = 0
+        if attendance:
+            break_mins = attendance.total_break_minutes or 0
+            if not break_mins:
+                break_mins = (attendance.lunch_minutes or 0) + (attendance.tea_minutes or 0)
+        total_seconds -= break_mins * 60
         hours_decimal = max(total_seconds, 0) / 3600
         calculated_total_hours = int(hours_decimal * 100) / 100
 
@@ -3070,6 +3206,109 @@ def submit_regularization(employee_id):
 
 
 @attendance_bp.route(
+    "/pending-regularizations/<int:manager_user_id>",
+    methods=["GET"]
+)
+def get_pending_regularizations(manager_user_id):
+    try:
+        from models.employee import Employee
+        from models.attendance import Attendance
+        from models.user import User
+
+        # Find manager employee record
+        manager = Employee.query.filter_by(user_id=manager_user_id).first()
+        
+        # Check if the manager is Admin
+        user = User.query.get(manager_user_id)
+        is_admin = False
+        if user:
+            role_name = (user.role.name or "").lower() if user.role else ""
+            access_level = (user.access_level or "").lower()
+            if "admin" in role_name or "admin" in access_level:
+                is_admin = True
+
+        from routes.employees import get_all_employees_cached, is_manager_match
+
+        all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
+
+        if is_admin:
+            reporting_employees = all_employees
+        else:
+            if not manager:
+                return jsonify([])
+            manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
+            reporting_employees = [e for e in all_employees if is_manager_match(e.reporting_manager, manager_full_name)]
+
+        reporting_user_ids = [e.user_id for e in reporting_employees if e.user_id]
+        if not reporting_user_ids:
+            return jsonify([])
+
+        # Query Attendance table for pending regularizations
+        pending_records = Attendance.query.filter(
+            Attendance.user_id.in_(reporting_user_ids),
+            Attendance.is_regularization == True
+        ).order_by(Attendance.attendance_date.desc()).all()
+
+        # Auto-fix any stuck records: is_regularization=True but already Rejected
+        # These have the regularization times still saved; revert them to card times
+        needs_commit = False
+        for rec in pending_records:
+            if rec.manager_status == "Rejected":
+                rec.check_in = rec.card_check_in
+                rec.check_out = rec.card_check_out
+                rec.is_regularization = False
+                if rec.check_in and rec.check_out:
+                    total_seconds = (rec.check_out - rec.check_in).total_seconds()
+                    break_minutes = (rec.lunch_minutes or 0) + (rec.tea_minutes or 0)
+                    total_seconds -= break_minutes * 60
+                    rec.total_hours = max(int((total_seconds / 3600) * 100) / 100, 0.0)
+                    rec.status = "Present"
+                else:
+                    rec.total_hours = 0.0
+                    if check_is_non_working_day(rec.attendance_date):
+                        is_weekend = rec.attendance_date.weekday() in (5, 6)
+                        rec.status = "Weekly Off" if is_weekend else "Holiday"
+                    else:
+                        rec.status = "Absent"
+                needs_commit = True
+        if needs_commit:
+            db.session.commit()
+            # Reload only unrejected records
+            pending_records = Attendance.query.filter(
+                Attendance.user_id.in_(reporting_user_ids),
+                Attendance.is_regularization == True
+            ).order_by(Attendance.attendance_date.desc()).all()
+
+        results = []
+        # Build lookup for employee details
+        emp_lookup = {e.user_id: e for e in reporting_employees if e.user_id}
+
+        for record in pending_records:
+            emp = emp_lookup.get(record.user_id)
+            emp_name = f"{emp.first_name} {emp.last_name}".strip() if emp else "Employee"
+            emp_code = emp.employee_id if emp else "-"
+            
+            results.append({
+                "id": record.id,
+                "employee_id": emp.id if emp else record.user_id,
+                "employee_code": emp_code,
+                "employee_name": emp_name,
+                "date": record.attendance_date.strftime("%Y-%m-%d"),
+                "attendance_date_formatted": record.attendance_date.strftime("%d %b %Y"),
+                "check_in": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
+                "check_out": record.check_out.strftime("%I:%M %p") if record.check_out else "-",
+                "reason": record.regularization_reason or "",
+                "status": record.status or "Absent",
+                "manager_status": record.manager_status
+            })
+
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+
+@attendance_bp.route(
     "/apply-leave/<int:employee_id>",
     methods=["PUT"]
 )
@@ -3086,9 +3325,11 @@ def apply_leave_for_absent_day(employee_id):
         target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
 
         from models.employee import Employee
-        emp = Employee.query.filter_by(user_id=employee_id).first()
+        emp = Employee.query.get(employee_id)
         if not emp:
-            emp = Employee.query.get(employee_id)
+            emp = Employee.query.filter_by(employee_id=str(employee_id)).first()
+        if not emp:
+            emp = Employee.query.filter_by(user_id=employee_id).first()
         if not emp:
             return jsonify({"success": False, "error": "Employee not found"}), 404
 
@@ -3307,16 +3548,44 @@ def reject_attendance(employee_id):
                 user_id=target_user_id,
                 attendance_date=target_date,
                 status="Absent",
-                manager_status="Need Clarification",
+                manager_status="Rejected",
+                is_regularization=False,
                 clarification_history=[msg_entry],
                 check_in=None,
                 check_out=None,
                 total_hours=0.0
             )
+            # Check if this day is a non-working day
+            if check_is_non_working_day(target_date):
+                is_weekend = target_date.weekday() in (5, 6)
+                attendance.status = "Weekly Off" if is_weekend else "Holiday"
             db.session.add(attendance)
         else:
             for att in attendances:
-                att.manager_status = "Need Clarification"
+                att.check_in = att.card_check_in
+                att.check_out = att.card_check_out
+                
+                # Recalculate hours based on card check-in/out if present
+                if att.check_in and att.check_out:
+                    total_seconds = (att.check_out - att.check_in).total_seconds()
+                    break_minutes = att.total_break_minutes or 0
+                    if not break_minutes:
+                        break_minutes = (att.lunch_minutes or 0) + (att.tea_minutes or 0)
+                    gap_minutes = att.total_gap_minutes or 0
+                    total_seconds -= (break_minutes + gap_minutes) * 60
+                    hours_decimal = max(total_seconds, 0) / 3600
+                    att.total_hours = int(hours_decimal * 100) / 100
+                    att.status = "Present"
+                else:
+                    att.total_hours = 0.0
+                    if check_is_non_working_day(target_date):
+                        is_weekend = target_date.weekday() in (5, 6)
+                        att.status = "Weekly Off" if is_weekend else "Holiday"
+                    else:
+                        att.status = "Absent"
+
+                att.manager_status = "Rejected"
+                att.is_regularization = False
                 history = list(att.clarification_history or [])
                 history.append(msg_entry)
                 att.clarification_history = history
@@ -3338,7 +3607,7 @@ def reject_attendance(employee_id):
                     "lunch_minutes": attendance.lunch_minutes or 0,
                     "tea_minutes": attendance.tea_minutes or 0,
                     "shift": emp.shift_timing or "General Shift",
-                    "manager_status": attendance.manager_status or "Need Clarification",
+                    "manager_status": "Rejected",
                     "reason": reason,
                     "clarification_history": attendance.clarification_history or [],
                     "checked_in": (attendance and attendance.check_in is not None and attendance.check_out is None),
@@ -3351,7 +3620,7 @@ def reject_attendance(employee_id):
 
         return jsonify({
             "success": True,
-            "message": "Clarification requested",
+            "message": "Regularization request rejected successfully",
             "reason": reason
         })
 
@@ -3448,78 +3717,45 @@ def reply_clarification(employee_id):
 )
 def get_pending_clarifications(user_id):
     try:
-        attendances = Attendance.query.filter_by(
+        from models.attendance import Attendance
+        
+        # Clean up any remaining 'Need Clarification' records in the database
+        # by converting them to 'Rejected' and reverting the times
+        need_clarif_records = Attendance.query.filter_by(
             user_id=user_id,
             manager_status="Need Clarification"
         ).all()
+        
+        if need_clarif_records:
+            for rec in need_clarif_records:
+                rec.manager_status = "Rejected"
+                rec.is_regularization = False
+                rec.check_in = rec.card_check_in
+                rec.check_out = rec.card_check_out
+                
+                # Recalculate hours based on original biometric card entry if present
+                if rec.check_in and rec.check_out:
+                    total_seconds = (rec.check_out - rec.check_in).total_seconds()
+                    break_minutes = rec.total_break_minutes or 0
+                    if not break_minutes:
+                        break_minutes = (rec.lunch_minutes or 0) + (rec.tea_minutes or 0)
+                    gap_minutes = rec.total_gap_minutes or 0
+                    total_seconds -= (break_minutes + gap_minutes) * 60
+                    hours_decimal = max(total_seconds, 0) / 3600
+                    rec.total_hours = int(hours_decimal * 100) / 100
+                    rec.status = "Present"
+                else:
+                    rec.total_hours = 0.0
+                    if check_is_non_working_day(rec.attendance_date):
+                        is_weekend = rec.attendance_date.weekday() in (5, 6)
+                        rec.status = "Weekly Off" if is_weekend else "Holiday"
+                    else:
+                        rec.status = "Absent"
+            db.session.commit()
 
-        results = []
-        for att in attendances:
-            history = att.clarification_history or []
-            
-            # If employee has already replied, do not show in pending clarifications for employee
-            if history:
-                last_msg = history[-1]
-                if isinstance(last_msg, dict) and last_msg.get("sender_role") == "employee":
-                    continue
+        # Rejections do not require employee response modal
+        return jsonify([])
 
-            last_manager_msg = next((m["comment"] for m in reversed(history) if isinstance(m, dict) and m.get("sender_role") == "manager"), "")
-
-            # Web Site Entry
-            web_in_str = att.check_in.strftime("%I:%M %p") if att.check_in else "—"
-            web_out_str = att.check_out.strftime("%I:%M %p") if att.check_out else "—"
-            web_break_str = f"{att.total_break_minutes} min" if (att.total_break_minutes is not None and att.total_break_minutes > 0) else "0 min"
-
-            web_hours = att.total_hours or 0.0
-            if web_hours > 0:
-                h_int = int(web_hours)
-                m_int = int(round((web_hours - h_int) * 60))
-                if m_int == 60:
-                    h_int += 1
-                    m_int = 0
-                web_hours_str = f"{h_int} h {m_int} m" if m_int > 0 else f"{h_int} h 0 m"
-            else:
-                web_hours_str = "—"
-
-            # Biometric Card Entry
-            card_in = getattr(att, "card_check_in", None)
-            card_out = getattr(att, "card_check_out", None)
-            card_in_str = card_in.strftime("%I:%M %p") if card_in else "-"
-            card_out_str = card_out.strftime("%I:%M %p") if card_out else "-"
-
-            card_hours = getattr(att, "card_working_hours", 0.0) or 0.0
-            if card_hours > 0:
-                ch_int = int(card_hours)
-                cm_int = int(round((card_hours - ch_int) * 60))
-                if cm_int == 60:
-                    ch_int += 1
-                    cm_int = 0
-                card_hours_str = f"{ch_int} h {cm_int} m" if cm_int > 0 else f"{ch_int} h 0 m"
-            else:
-                card_hours_str = "—"
-
-            results.append({
-                "id": att.id,
-                "attendance_date": att.attendance_date.strftime("%Y-%m-%d"),
-                "attendance_date_formatted": att.attendance_date.strftime("%A, %b %d, %Y"),
-                "check_in": web_in_str,
-                "check_out": web_out_str,
-                "total_break_minutes": att.total_break_minutes or 0,
-                "break_str": web_break_str,
-                "total_hours": web_hours_str,
-                "card_check_in": card_in_str,
-                "card_check_out": card_out_str,
-                "card_working_hours": card_hours_str,
-                "manager_status": att.manager_status,
-                "status": att.status or "Absent",
-                "is_regularization": bool(att.is_regularization),
-                "is_lop": bool(att.is_lop),
-                "leave_type": att.leave_type,
-                "last_manager_comment": last_manager_msg,
-                "clarification_history": history
-            })
-
-        return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -3875,6 +4111,127 @@ def upload_attendance_excel():
         db.session.rollback()
         print("EXCEL UPLOAD ERROR:", str(e))
         return jsonify({"success": False, "error": str(e)}), 500
+@attendance_bp.route("/update-attendance-record", methods=["POST"])
+@jwt_required()
+def update_attendance_record():
+    try:
+        from models.attendance import Attendance
+        from models.employee import Employee
+        from models.user import User
+        
+        current_user_id = get_jwt_identity()
+        current_user = User.query.get(int(current_user_id))
+        
+        # Verify if caller is manager/admin/hr
+        if not current_user or current_user.access_level.lower() not in ["manager", "admin", "hr"]:
+            return jsonify({"success": False, "error": "Access denied"}), 403
+            
+        data = request.json
+        employee_id = data.get("employee_id") # can be int id
+        attendance_date_str = data.get("attendance_date") # YYYY-MM-DD
+        status = data.get("status")
+        
+        check_in_str = data.get("check_in") # HH:MM AM/PM or None
+        check_out_str = data.get("check_out") # HH:MM AM/PM or None
+        card_check_in_str = data.get("card_check_in") # HH:MM AM/PM or None
+        card_check_out_str = data.get("card_check_out") # HH:MM AM/PM or None
+        
+        emp = None
+        try:
+            emp = Employee.query.get(int(employee_id))
+        except Exception:
+            pass
+        if not emp:
+            emp = Employee.query.filter_by(employee_id=str(employee_id)).first()
+        if not emp:
+            return jsonify({"success": False, "error": f"Employee not found for ID: {employee_id}"}), 404
+            
+        att_date = datetime.strptime(attendance_date_str, "%Y-%m-%d").date()
+        
+        # Query attendance record for this date
+        attendance = Attendance.query.filter_by(
+            user_id=emp.user_id,
+            attendance_date=att_date
+        ).first()
+        
+        # Parse helper for check-in/out times (HH:MM AM/PM to datetime)
+        def parse_time_str(time_str, base_date):
+            if not time_str or time_str == "-":
+                return None
+            try:
+                # Expecting format like "09:00 AM"
+                t = datetime.strptime(time_str.strip(), "%I:%M %p").time()
+                return datetime.combine(base_date, t)
+            except ValueError:
+                try:
+                    # Fallback to "09:00:00" format
+                    t = datetime.strptime(time_str.strip(), "%H:%M:%S").time()
+                    return datetime.combine(base_date, t)
+                except ValueError:
+                    try:
+                        # Fallback to "09:00" format
+                        t = datetime.strptime(time_str.strip(), "%H:%M").time()
+                        return datetime.combine(base_date, t)
+                    except ValueError:
+                        return None
+
+        parsed_check_in = parse_time_str(check_in_str, att_date)
+        parsed_check_out = parse_time_str(check_out_str, att_date)
+        parsed_card_check_in = parse_time_str(card_check_in_str, att_date)
+        parsed_card_check_out = parse_time_str(card_check_out_str, att_date)
+        
+        lunch_minutes = int(data.get("lunch_minutes") or 0)
+        tea_minutes = int(data.get("tea_minutes") or 0)
+
+        if not attendance:
+            # Create a new attendance record if it doesn't exist
+            attendance = Attendance(
+                user_id=emp.user_id,
+                attendance_date=att_date,
+                status=status,
+                check_in=parsed_check_in,
+                check_out=parsed_check_out,
+                card_check_in=parsed_card_check_in,
+                card_check_out=parsed_card_check_out,
+                lunch_minutes=lunch_minutes,
+                tea_minutes=tea_minutes,
+                total_break_minutes=lunch_minutes + tea_minutes,
+                manager_status="Approved"
+            )
+            db.session.add(attendance)
+        else:
+            # Update existing record
+            attendance.status = status
+            attendance.check_in = parsed_check_in
+            attendance.check_out = parsed_check_out
+            attendance.card_check_in = parsed_card_check_in
+            attendance.card_check_out = parsed_card_check_out
+            attendance.lunch_minutes = lunch_minutes
+            attendance.tea_minutes = tea_minutes
+            attendance.total_break_minutes = lunch_minutes + tea_minutes
+            attendance.manager_status = "Approved"
+
+        # Calculate working hours if both check-in and check-out are present
+        if attendance.check_in and attendance.check_out:
+            diff_seconds = (attendance.check_out - attendance.check_in).total_seconds()
+            break_minutes = attendance.total_break_minutes or 0
+            gap_minutes = attendance.total_gap_minutes or 0
+            diff_seconds -= (break_minutes + gap_minutes) * 60
+            attendance.total_hours = max(0.0, int((diff_seconds / 3600.0) * 100) / 100)
+        else:
+            attendance.total_hours = 0.0
+
+        if attendance.card_check_in and attendance.card_check_out:
+            diff_seconds = (attendance.card_check_out - attendance.card_check_in).total_seconds()
+            attendance.card_working_hours = max(0.0, round(diff_seconds / 3600.0, 2))
+        else:
+            attendance.card_working_hours = 0.0
+            
+        db.session.commit()
+        return jsonify({"success": True, "message": "Attendance record updated successfully"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @attendance_bp.route("/trigger-db-sync", methods=["POST"])
@@ -4060,3 +4417,41 @@ def trigger_db_sync():
             "success": False,
             "error": f"Failed to sync database: {str(e)}"
         }), 500
+
+
+@attendance_bp.route("/db-check", methods=["GET"])
+def db_check_temp():
+    try:
+        from models.employee import Employee
+        from models.attendance import Attendance
+        employees = Employee.query.all()
+        emp_list = []
+        for emp in employees:
+            emp_list.append({
+                "id": emp.id,
+                "user_id": emp.user_id,
+                "name": f"{emp.first_name} {emp.last_name}",
+                "manager": emp.reporting_manager,
+                "employee_id": emp.employee_id
+            })
+        
+        regs = Attendance.query.filter((Attendance.is_regularization == True) | (Attendance.manager_status == "Clarification Provided")).all()
+        reg_list = []
+        for rec in regs:
+            reg_list.append({
+                "id": rec.id,
+                "user_id": rec.user_id,
+                "date": str(rec.attendance_date),
+                "check_in": str(rec.check_in),
+                "check_out": str(rec.check_out),
+                "manager_status": rec.manager_status,
+                "is_regularization": rec.is_regularization,
+                "reason": rec.regularization_reason
+            })
+            
+        return jsonify({
+            "employees": emp_list,
+            "regularizations": reg_list
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

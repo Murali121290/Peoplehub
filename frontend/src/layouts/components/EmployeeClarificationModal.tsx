@@ -8,6 +8,7 @@ import {
 import { API_URL } from '../../config/api';
 import { TimePicker } from '../../components/ui/TimePicker';
 import { toast } from 'react-hot-toast';
+import { formatDateStr } from '../../utils/date';
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -188,7 +189,7 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
               <div className="flex items-center gap-2 text-amber-900">
                 <ClockIcon className="w-4 h-4 text-amber-700" />
                 <span className="text-xs font-bold uppercase tracking-wider">
-                  Date: {activeItem.attendance_date_formatted || activeItem.attendance_date}
+                  Date: {activeItem.attendance_date_formatted || formatDateStr(activeItem.attendance_date)}
                 </span>
               </div>
               <span className="text-[11px] font-bold text-amber-800 bg-amber-100/90 px-2.5 py-0.5 rounded-full border border-amber-300">

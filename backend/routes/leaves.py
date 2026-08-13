@@ -1034,7 +1034,7 @@ def export_leave_report():
             ws.cell(row=row, column=2, value=f"{employee.first_name} {employee.last_name}")
             ws.cell(row=row, column=3, value=employee.department)
             ws.cell(row=row, column=4, value=employee.designation)
-            ws.cell(row=row, column=5, value=str(employee.joining_date))
+            ws.cell(row=row, column=5, value=employee.joining_date.strftime("%d-%m-%Y") if employee.joining_date else "")
 
             ws.cell(row=row, column=6, value=opening_cl)
             ws.cell(row=row, column=7, value=opening_sl)
@@ -1272,6 +1272,31 @@ def get_employee_balances(employee_id):
         from models.leave import EmployeeLeaveBalance
         balances = EmployeeLeaveBalance.query.filter_by(employee_id=employee_id).all()
         
+        # Clean up duplicates in database if they exist
+        seen_types = {}
+        duplicates_to_delete = []
+        for bal in balances:
+            lt_lower = (bal.leave_type or "").strip().lower()
+            if not lt_lower:
+                continue
+            if lt_lower in seen_types:
+                existing = seen_types[lt_lower]
+                # Keep the one with the higher available balance, delete the other duplicate
+                if bal.available > existing.available:
+                    duplicates_to_delete.append(existing)
+                    seen_types[lt_lower] = bal
+                else:
+                    duplicates_to_delete.append(bal)
+            else:
+                seen_types[lt_lower] = bal
+        
+        if duplicates_to_delete:
+            for dup in duplicates_to_delete:
+                db.session.delete(dup)
+            db.session.commit()
+            # Reload balances after deduplication
+            balances = EmployeeLeaveBalance.query.filter_by(employee_id=employee_id).all()
+
         if not balances:
             from models.leave import LeavePolicy
             from models.employee import Employee
@@ -1417,19 +1442,22 @@ def resolve_absent():
                 func.lower(EmployeeLeaveBalance.leave_type) == leave_type.lower()
             ).first()
             
-            if not balance or balance.available < 1.0:
-                return jsonify({"success": False, "error": "No leave found"}), 400
-                
-            balance.available = max(0.0, balance.available - 1.0)
+            # Fallback for combined CL/SL policy
+            if not balance and leave_type.lower() in ["sick leave", "casual leave"]:
+                balance = EmployeeLeaveBalance.query.filter(
+                    EmployeeLeaveBalance.employee_id == employee.id,
+                    func.lower(EmployeeLeaveBalance.leave_type).in_(["cl/sl", "cl / sl", "sl/cl", "sl / cl"])
+                ).first()
+                if balance:
+                    leave_type = balance.leave_type
             
-            lt_lower = leave_type.lower()
-            if lt_lower == "sick leave":
-                employee.sick_leave = max(0.0, (employee.sick_leave or 0.0) - 1.0)
-            elif lt_lower == "casual leave":
-                employee.casual_leave = max(0.0, (employee.casual_leave or 0.0) - 1.0)
-            elif lt_lower in ["earned leave", "privilege leave"]:
-                employee.privilege_leave = max(0.0, (employee.privilege_leave or 0.0) - 1.0)
-                
+            if not balance or balance.available < 1.0:
+                return jsonify({"success": False, "error": "No leave balance available"}), 400
+            
+            # Deduct 1 day from the leave balance immediately (auto-approve)
+            balance.available = max(balance.available - 1.0, 0.0)
+
+            # Create the leave request as already Approved
             leave = LeaveRequest(
                 employee_id=employee.id,
                 employee_name=f"{employee.first_name} {employee.last_name}".strip(),
@@ -1446,21 +1474,27 @@ def resolve_absent():
                 approved_at=now
             )
             db.session.add(leave)
-            
+
+            # Update the attendance record to reflect the leave
             if not att:
                 att = Attendance(
                     user_id=employee.user_id,
                     attendance_date=target_date,
                     status="Leave",
                     leave_type=leave_type,
-                    is_lop=False
+                    check_in=None,
+                    check_out=None,
+                    total_hours=0.0
                 )
                 db.session.add(att)
             else:
                 att.status = "Leave"
                 att.leave_type = leave_type
                 att.is_lop = False
-                
+                att.check_in = None
+                att.check_out = None
+                att.total_hours = 0.0
+
             db.session.commit()
             
             try:
@@ -1478,7 +1512,7 @@ def resolve_absent():
             except Exception as se:
                 print("Resolve absent socket emit failed:", se)
                 
-            return jsonify({"success": True, "message": f"{leave_type} auto-approved and balance updated"}), 200
+            return jsonify({"success": True, "message": f"{leave_type} applied and approved automatically."}), 200
             
     except Exception as e:
         db.session.rollback()

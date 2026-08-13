@@ -13,6 +13,7 @@ import {
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
+import { formatDateStr } from "../../../utils/date";
 import { Table } from "../../../components/ui/Table";
 import type { Column } from "../../../components/ui/Table";
 import { Modal } from "../../../components/ui/Modal";
@@ -486,8 +487,8 @@ const PayrollPage: React.FC = () => {
                         (leave: any, index: number) => (
                           <tr key={index} className="hover:bg-neutral-50">
                             <td className="px-4 py-3">{leave.leave_type}</td>
-                            <td className="px-4 py-3">{leave.from_date}</td>
-                            <td className="px-4 py-3">{leave.to_date}</td>
+                            <td className="px-4 py-3">{formatDateStr(leave.from_date)}</td>
+                            <td className="px-4 py-3">{formatDateStr(leave.to_date)}</td>
                             <td className="px-4 py-3">{leave.total_days}</td>
                             <td className="px-4 py-3">
                               <Badge

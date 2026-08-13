@@ -302,7 +302,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     const monthName = MONTH_NAMES[parsed.getMonth()].slice(0, 3);
     const dayNum = parsed.getDate();
     const yr = parsed.getFullYear();
-    return `${dayName}, ${monthName} ${dayNum}, ${yr}`;
+    return `${dayName}, ${dayNum} ${monthName} ${yr}`;
   };
 
   // Header display string in picker modal
@@ -310,7 +310,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     const dayName = WEEKDAY_NAMES[selectedDate.getDay()];
     const monthName = MONTH_NAMES[selectedDate.getMonth()].slice(0, 3);
     const dayNum = selectedDate.getDate();
-    return `${dayName}, ${monthName} ${dayNum}`;
+    return `${dayName}, ${dayNum} ${monthName}`;
   };
 
   const isSelected = (dayNum: number) => {

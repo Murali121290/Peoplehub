@@ -10,6 +10,7 @@ import {
   XMarkIcon
 } from "@heroicons/react/24/outline";
 import apiService from "../../../services/api";
+import { formatDateStr } from "../../../utils/date";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -342,7 +343,7 @@ export const HolidayCalendarWidget: React.FC = () => {
 
                         return (
                           <tr key={l.id} className="hover:bg-neutral-50/50 transition-colors">
-                            <td className="py-3.5 px-5 font-bold text-neutral-800">{l.from_date}</td>
+                            <td className="py-3.5 px-5 font-bold text-neutral-800">{formatDateStr(l.from_date)}</td>
                             <td className="py-3.5 px-5 font-medium text-neutral-500">{dayName}</td>
                             <td className="py-3.5 px-5 font-medium text-neutral-800">{l.leave_type}</td>
                             <td className="py-3.5 px-5">
@@ -390,7 +391,7 @@ export const HolidayCalendarWidget: React.FC = () => {
                         const dayName = FULL_WEEKDAYS[d.getDay()];
                         return (
                           <tr key={h.date} className="hover:bg-purple-50/20 transition-colors">
-                            <td className="py-3.5 px-5 font-bold text-neutral-800">{h.date}</td>
+                            <td className="py-3.5 px-5 font-bold text-neutral-800">{formatDateStr(h.date)}</td>
                             <td className="py-3.5 px-5 font-medium text-neutral-500">{dayName}</td>
                             <td className="py-3.5 px-5 font-medium text-neutral-800 flex items-center gap-2">
                               {h.name}
@@ -457,7 +458,7 @@ export const HolidayCalendarWidget: React.FC = () => {
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-neutral-400 font-medium">
-                      <span>{item.date} ({item.day})</span>
+                      <span>{formatDateStr(item.date)} ({item.day})</span>
                       <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
                         {item.holiday_type?.replace(" Holiday", "")}
                       </span>

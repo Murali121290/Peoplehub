@@ -74,7 +74,7 @@ const NewHireTab: React.FC<{ employees: any[] }> = ({ employees }) => {
       ) : (
         newJoiners.map((emp) => {
           const joinDate = new Date(emp.joining_date);
-          const formattedJoinDate = joinDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+          const formattedJoinDate = joinDate.toLocaleDateString("en-IN", { month: "short", day: "numeric" });
           const today = new Date();
           const diffDays = Math.floor((today.getTime() - joinDate.getTime()) / (1000 * 60 * 60 * 24));
           const initials = `${(emp.first_name || "").charAt(0)}${(emp.last_name || "").charAt(0)}`.toUpperCase();
@@ -1850,7 +1850,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       {pendingClarifications.length > 0 && (
         <EmployeeClarificationModal
           pendingItems={pendingClarifications}
-          userId={Number(user?.id || currentEmployee?.user_id || currentEmployee?.id || 0)}
+          userId={Number(currentEmployee?.id || user?.id || 0)}
           onSubmitted={() => loadPendingClarifications()}
         />
       )}
