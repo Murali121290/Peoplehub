@@ -62,6 +62,16 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
       setNewLimit(0);
       setNewApplicableGender('All');
       toast.success("Leave category added successfully!");
+
+      // If an employee is currently selected, refresh their balances to include the new policy
+      if (selectedEmpId) {
+        try {
+          const balRes = await axios.get(`${API_URL}/leaves/balances/${selectedEmpId}`);
+          setBalances(balRes.data);
+        } catch (balErr) {
+          console.error("Failed to refresh employee balances after policy creation", balErr);
+        }
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.error || "Failed to create leave category");
     } finally {
@@ -86,6 +96,16 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
       await axios.delete(`${API_URL}/leaves/policies/${id}`);
       setPolicies(policies.filter(p => p.id !== id));
       toast.success("Leave category deleted successfully");
+
+      // If an employee is currently selected, refresh their balances to remove the deleted policy
+      if (selectedEmpId) {
+        try {
+          const balRes = await axios.get(`${API_URL}/leaves/balances/${selectedEmpId}`);
+          setBalances(balRes.data);
+        } catch (balErr) {
+          console.error("Failed to refresh employee balances after policy deletion", balErr);
+        }
+      }
     } catch (err: any) {
       toast.error("Failed to delete leave category");
     }
@@ -188,6 +208,12 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
                     step="0.5"
                     value={p.yearly_limit}
                     onChange={(e) => handleLimitChange(p.id, parseFloat(e.target.value) || 0)}
+                    onBlur={() => handleUpdateLimits()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        (e.target as HTMLInputElement).blur();
+                      }
+                    }}
                     className="w-16 text-center border-none focus:ring-0 text-sm font-medium py-1.5"
                   />
                   <span className="text-xs text-neutral-400 font-semibold pr-1">Days</span>
@@ -202,12 +228,6 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
               </div>
             </div>
           ))}
-
-          {policies.length > 0 && (
-            <Button onClick={handleUpdateLimits} disabled={isSubmitting} className="mt-2">
-              {isSubmitting ? "Updating..." : "Save Leave Limits"}
-            </Button>
-          )}
         </div>
 
         {/* Add New Category form */}
