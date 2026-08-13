@@ -637,8 +637,6 @@ def get_employee_image(employee_id):
             "error": "Image file not found on disk"
         }), 404
 
-    return Response(
-        employee.profile_image,
     resp = Response(
         result[0],
         mimetype="image/jpeg"
@@ -1835,7 +1833,7 @@ def get_reporting_employees(user_id):
                     date_to_check.strftime("%Y-%m-%d"),
 
                 "summary_date_formatted":
-                    date_to_check.strftime("%A, %b %d, %Y"),
+                    date_to_check.strftime("%A, %d %b %Y"),
 
                 "employee_id":
                     employee.id,

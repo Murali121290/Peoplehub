@@ -5,6 +5,8 @@ import { CheckIcon, XMarkIcon, MagnifyingGlassIcon } from "@heroicons/react/24/o
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
+import { BookLoader } from "../../components/ui/Spinner";
+import { formatDateStr } from "../../utils/date";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -15,13 +17,13 @@ const formatDateTime = (isoString: string | null | undefined) => {
     const d = new Date(isoString);
     if (isNaN(d.getTime())) return "—";
     if (isMidnight) {
-      return d.toLocaleDateString("en-US", {
+      return d.toLocaleDateString("en-IN", {
         day: "2-digit",
         month: "short",
         year: "numeric"
       });
     }
-    return d.toLocaleString("en-US", {
+    return d.toLocaleString("en-IN", {
       day: "2-digit",
       month: "short",
       year: "numeric",
@@ -193,7 +195,7 @@ const LeaveApprovalPage: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="p-8 flex justify-center"><div className="h-8 w-8 rounded-full border-4 border-primary-200 border-t-primary-500 animate-spin"></div></div>;
+    return <BookLoader />;
   }
 
   return (
@@ -290,14 +292,14 @@ const LeaveApprovalPage: React.FC = () => {
                           <td className="p-4 text-sm">
                             {isPermission ? (
                               <div>
-                                <p className="font-semibold text-neutral-800">{leave.permission_date || "-"}</p>
+                                <p className="font-semibold text-neutral-800">{formatDateStr(leave.permission_date)}</p>
                                 <p className="text-xs text-neutral-400 font-semibold mt-0.5">
                                   {leave.from_time} to {leave.to_time}
                                 </p>
                               </div>
                             ) : (
                               <div>
-                                <p className="font-semibold text-neutral-800">{leave.from_date || "-"} to {leave.to_date || "-"}</p>
+                                <p className="font-semibold text-neutral-800">{formatDateStr(leave.from_date)} to {formatDateStr(leave.to_date)}</p>
                                 <p className="text-xs text-neutral-400 font-semibold mt-0.5">Duration: {leave.total_days || 0} days</p>
                               </div>
                             )}

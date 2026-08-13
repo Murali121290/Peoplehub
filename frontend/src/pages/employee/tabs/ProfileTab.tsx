@@ -31,6 +31,7 @@ import { Button } from "../../../components/ui/Button";
 import { DatePicker } from "../../../components/ui/DatePicker";
 import Cropper from "react-easy-crop";
 import getCroppedImg from "../../../utils/cropImage";
+import { formatDateStr } from "../../../utils/date";
 
 import { getProfileImageUrl, BASE_API_URL } from "../../../config/api";
 
@@ -1083,7 +1084,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {renderField(PhoneIcon, "Phone Number", profile.phone)}
         {renderField(EnvelopeIcon, "Personal Email", profile.email)}
-        {renderField(CalendarDaysIcon, "Date of Birth", profile.dob)}
+        {renderField(CalendarDaysIcon, "Date of Birth", formatDateStr(profile.dob))}
         {renderField(UserIcon, "Gender", profile.gender)}
         {renderField(UserIcon, "Marital Status", profile.marital_status)}
         {renderField(UserIcon, "Blood Group", profile.blood_group)}

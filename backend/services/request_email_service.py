@@ -258,7 +258,9 @@ def send_manager_request_email(request_obj, request_type):
     send_email_via_smtp(manager_email, subject, html_content)
 
 def send_employee_status_email(request_obj, employee, status, request_type):
-    to_email = employee.email
+    from models.user import User
+    user = User.query.get(employee.user_id)
+    to_email = user.company_email
     if not to_email:
         print(f"No email configured for employee {employee.first_name}, skipping status update email.")
         return

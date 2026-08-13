@@ -5,6 +5,7 @@ import LeaveApprovalPage from "./LeaveApprovalPage";
 import ShiftApprovalPage from "./ShiftApprovalPage";
 import WFHApprovalPage from "./WFHApprovalPage";
 import PermissionApprovalPage from "./PermissionApprovalPage";
+import RegularizationApprovalPage from "./RegularizationApprovalPage";
 import { socket } from "../../services/socket";
 
 const BASE_URL = `${API_URL}/api`;
@@ -20,7 +21,8 @@ const TABS: TabConfig[] = [
   { id: "permission", label: "Permission Approval", icon: "🔐" },
   { id: "shift", label: "Shift Approval", icon: "⏱️" },
   { id: "wfh", label: "WFH Approval", icon: "🏠" },
-  { id: "odw", label: "ODW Approval", icon: "💰" }
+  { id: "odw", label: "ODW Approval", icon: "💰" },
+  { id: "regularization", label: "Regularization Approval", icon: "⏰" }
 ];
 
 const TeamManagementPage: React.FC = () => {
@@ -31,7 +33,8 @@ const TeamManagementPage: React.FC = () => {
     shift: 0,
     odw: 0,
     wfh: 0,
-    permission: 0
+    permission: 0,
+    regularization: 0
   });
 
   const checkManagerMatch = (reportingManager: string | null | undefined, managerFullName: string | null | undefined): boolean => {
@@ -133,12 +136,32 @@ const TeamManagementPage: React.FC = () => {
         console.error("Failed to fetch leave counts", error);
       }
 
+      // Fetch pending regularizations
+      let regularizationCount = 0;
+      try {
+        const regRes = await fetch(`${BASE_URL}/attendance/pending-regularizations/${user?.id}`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (regRes.ok) {
+          const regData = await regRes.json();
+          if (Array.isArray(regData)) {
+            regularizationCount = regData.filter((r: any) => {
+              const status = r.manager_status || "Pending";
+              return status === "Clarification Provided" || status === "Pending";
+            }).length;
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch regularization counts", error);
+      }
+
       setNotificationCounts({
         leave: leaveCount,
         shift: shiftCount,
         odw: odwCount,
         wfh: wfhCount,
-        permission: permissionCount
+        permission: permissionCount,
+        regularization: regularizationCount
       });
     } catch (error) {
       console.error("Failed to fetch notification counts", error);
@@ -154,12 +177,14 @@ const TeamManagementPage: React.FC = () => {
 
     socket.on("leave_update", handleSocketUpdate);
     socket.on("shift_update", handleSocketUpdate);
+    socket.on("attendance_update", handleSocketUpdate);
 
     const interval = setInterval(fetchNotificationCounts, 60000);
     return () => {
       clearInterval(interval);
       socket.off("leave_update", handleSocketUpdate);
       socket.off("shift_update", handleSocketUpdate);
+      socket.off("attendance_update", handleSocketUpdate);
     };
   }, [user, token]);
 
@@ -175,6 +200,8 @@ const TeamManagementPage: React.FC = () => {
         return <WFHApprovalPage />;
       case "permission":
         return <PermissionApprovalPage />;
+      case "regularization":
+        return <RegularizationApprovalPage />;
       default:
         return <LeaveApprovalPage />;
     }

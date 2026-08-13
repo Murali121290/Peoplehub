@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import { BASE_API_URL } from '../../../config/api';
+import { formatDateStr } from '../../../utils/date';
 import {
   PlusIcon,
   CalendarIcon,
@@ -291,7 +292,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   // Collect all dates where the employee already has a pending or approved leave request
   const myAppliedLeaveDates = React.useMemo(() => {
     const dates = new Set<string>();
-    myRequests.forEach((req: any) => {
+    const ownerRequests = leaveRequests.filter((req: any) => String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id));
+    ownerRequests.forEach((req: any) => {
       if (req.status === "Approved" || req.status === "Pending") {
         if (req.request_type === "Leave" && req.from_date && req.to_date) {
           let curr = new Date(req.from_date);
@@ -308,7 +310,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       }
     });
     return Array.from(dates);
-  }, [myRequests]);
+  }, [leaveRequests, currentEmployee]);
 
   const activeLeavePolicies = React.useMemo(() => {
     const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
@@ -357,7 +359,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     };
 
     const formatCycleDate = (d: Date) =>
-      d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      d.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
 
     const limitMinutes = 120;
 
@@ -719,6 +721,15 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         return;
       }
 
+      if (myAppliedLeaveDates.includes(leaveForm.permissionDate)) {
+        setValidationError({
+          type: "insufficient",
+          title: "Already on Leave",
+          message: "You cannot apply for a permission request on a day you already have a pending or approved leave."
+        });
+        return;
+      }
+
       const [fh, fm] = leaveForm.fromTime.split(":").map(Number);
       const [th, tm] = leaveForm.toTime.split(":").map(Number);
       const requestedMinutes = (th * 60 + tm) - (fh * 60 + fm);
@@ -1020,8 +1031,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                             <p className="text-xs text-neutral-500 font-medium mt-0.5 flex items-center gap-1.5">
                               <ClockIcon className="w-3.5 h-3.5 text-neutral-400" />
                               {isPermission
-                                ? `${leave.permission_date} @ ${leave.from_time} - ${leave.to_time}`
-                                : `${leave.from_date} to ${leave.to_date} (${leave.total_days} days)`
+                                ? `${formatDateStr(leave.permission_date)} @ ${leave.from_time} - ${leave.to_time}`
+                                : `${formatDateStr(leave.from_date)} to ${formatDateStr(leave.to_date)} (${leave.total_days} days)`
                               }
                             </p>
                           </div>
@@ -1191,8 +1202,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         upcomingLeaves.map((req: any) => {
                           const isPermission = req.request_type === "Permission";
                           const dateStr = isPermission 
-                            ? `${req.permission_date} @ ${req.from_time} - ${req.to_time}` 
-                            : `${req.from_date} to ${req.to_date}`;
+                            ? `${formatDateStr(req.permission_date)} @ ${req.from_time} - ${req.to_time}` 
+                            : `${formatDateStr(req.from_date)} to ${formatDateStr(req.to_date)}`;
 
                           const formatDateTime = (isoString: string | null | undefined) => {
                             if (!isoString) return "—";
@@ -1201,13 +1212,13 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                               const d = new Date(isoString);
                               if (isNaN(d.getTime())) return "—";
                               if (isMidnight) {
-                                return d.toLocaleDateString("en-US", {
+                                return d.toLocaleDateString("en-IN", {
                                   day: "2-digit",
                                   month: "short",
                                   year: "numeric"
                                 });
                               }
-                              return d.toLocaleString("en-US", {
+                              return d.toLocaleString("en-IN", {
                                 day: "2-digit",
                                 month: "short",
                                 year: "numeric",
@@ -1294,8 +1305,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         leaveHistoryRequests.map((req: any) => {
                           const isPermission = req.request_type === "Permission";
                           const dateStr = isPermission 
-                            ? `${req.permission_date} @ ${req.from_time} - ${req.to_time}` 
-                            : `${req.from_date} to ${req.to_date}`;
+                            ? `${formatDateStr(req.permission_date)} @ ${req.from_time} - ${req.to_time}` 
+                            : `${formatDateStr(req.from_date)} to ${formatDateStr(req.to_date)}`;
                           
                           const resolved = getResolvedStatus(req);
                           
@@ -1313,13 +1324,13 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                               const d = new Date(isoString);
                               if (isNaN(d.getTime())) return "—";
                               if (isMidnight) {
-                                return d.toLocaleDateString("en-US", {
+                                return d.toLocaleDateString("en-IN", {
                                   day: "2-digit",
                                   month: "short",
                                   year: "numeric"
                                 });
                               }
-                              return d.toLocaleString("en-US", {
+                              return d.toLocaleString("en-IN", {
                                 day: "2-digit",
                                 month: "short",
                                 year: "numeric",

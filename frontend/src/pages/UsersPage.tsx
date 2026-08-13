@@ -395,7 +395,7 @@ const UsersPage: React.FC = () => {
 
                           <td className="px-5 py-4 text-sm text-slate-500">
                             {user.last_login
-                              ? new Date(user.last_login).toLocaleDateString()
+                              ? new Date(user.last_login).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
                               : 'Never'}
                           </td>
 
