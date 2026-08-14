@@ -529,10 +529,12 @@ def sync_biometric_to_web_entry(attendance):
         max_hrs = max(web_hrs, card_hrs)
         if max_hrs >= 4.0:
             attendance.status = "Present"
-        elif attendance.check_in or attendance.card_check_in:
+        elif (attendance.check_in or attendance.card_check_in) and not (attendance.check_out or attendance.card_check_out):
             attendance.status = "Present"
-        else:
+        elif attendance.check_in or attendance.card_check_in:
             attendance.status = "Half Day"
+        else:
+            attendance.status = "Absent"
 
     return updated
 
@@ -645,10 +647,12 @@ def sync_card_logs():
             max_hrs = max(web_hrs, card_hrs)
             if max_hrs >= 4.0:
                 attendance.status = "Present"
-            elif attendance.check_in or attendance.card_check_in:
+            elif (attendance.check_in or attendance.card_check_in) and not (attendance.check_out or attendance.card_check_out):
                 attendance.status = "Present"
-            else:
+            elif attendance.check_in or attendance.card_check_in:
                 attendance.status = "Half Day"
+            else:
+                attendance.status = "Absent"
 
             processed_count += 1
 
@@ -4369,10 +4373,12 @@ def trigger_db_sync():
             max_hrs = max(web_hrs, card_hrs)
             if max_hrs >= 4.0:
                 attendance.status = "Present"
-            elif attendance.check_in or attendance.card_check_in:
+            elif (attendance.check_in or attendance.card_check_in) and not (attendance.check_out or attendance.card_check_out):
                 attendance.status = "Present"
-            else:
+            elif attendance.check_in or attendance.card_check_in:
                 attendance.status = "Half Day"
+            else:
+                attendance.status = "Absent"
 
             processed_count += 1
 
