@@ -167,6 +167,22 @@ class Attendance(db.Model):
         nullable=True
     )
 
+    regularization_check_in = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    regularization_check_out = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    regularization_total_hours = db.Column(
+        db.Float,
+        default=0.0,
+        nullable=True
+    )
+
     # Loss of Pay flag
     is_lop = db.Column(
         db.Boolean,

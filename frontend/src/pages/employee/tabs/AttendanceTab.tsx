@@ -640,8 +640,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         } else {
           // workingHours is 0 (checked in but didn't check out on a past day, or checked in today but has 0 hours so far)
           if (isToday) {
-            status = "Present";
-            badgeLabel = "Present";
+            status = "Half Day";
+            badgeLabel = "Half Day";
             badgeEmoji = "";
           } else {
             status = (attRec.status === "Present" || attRec.status === "Half Day" || attRec.status === "Absent") ? (attRec.status as any) : "Absent";

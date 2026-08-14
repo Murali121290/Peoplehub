@@ -811,8 +811,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
               const displayAvailable = Math.max(0, available);
 
-              // Calculate approved days
-              const approvedDays = myRequests
+              // Calculate approved days (paid portion only)
+              const approvedPaidDays = myRequests
                 .filter((req: any) =>
                   req.status === "Approved" &&
                   req.request_type === "Leave" &&
@@ -820,19 +820,30 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                 )
                 .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
 
-              // Calculate pending days
+              // Calculate all approved days (including LOP portion)
+              const approvedAllDays = myRequests
+                .filter((req: any) => {
+                  if (req.status !== "Approved" || req.request_type !== "Leave") return false;
+                  const reqLt = (req.leave_type || "").toLowerCase();
+                  const polLt = pol.leave_type.toLowerCase();
+                  return reqLt === polLt || reqLt.startsWith(polLt + " (");
+                })
+                .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+
+              // Calculate pending days (including LOP portion)
               const pendingDays = myRequests
-                .filter((req: any) =>
-                  req.status === "Pending" &&
-                  req.request_type === "Leave" &&
-                  (req.leave_type || "").toLowerCase() === pol.leave_type.toLowerCase()
-                )
+                .filter((req: any) => {
+                  if (req.status !== "Pending" || req.request_type !== "Leave") return false;
+                  const reqLt = (req.leave_type || "").toLowerCase();
+                  const polLt = pol.leave_type.toLowerCase();
+                  return reqLt === polLt || reqLt.startsWith(polLt + " (");
+                })
                 .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
 
               // True allocated limit for this employee (handles pro-rated starting balances)
-              const allocatedLimit = available + approvedDays;
+              const allocatedLimit = available + approvedPaidDays;
 
-              const used = approvedDays + pendingDays;
+              const used = approvedAllDays + pendingDays;
               const lopForPol = Math.max(0, used - allocatedLimit);
               const remainingAvailable = Math.max(0, allocatedLimit - used);
 

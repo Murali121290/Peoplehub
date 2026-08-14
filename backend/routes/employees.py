@@ -1875,6 +1875,16 @@ def get_reporting_employees(user_id):
                     if (attendance and attendance.check_out)
                     else None,
 
+                "regularization_check_in":
+                    attendance.regularization_check_in.strftime("%I:%M %p")
+                    if (attendance and attendance.regularization_check_in)
+                    else None,
+
+                "regularization_check_out":
+                    attendance.regularization_check_out.strftime("%I:%M %p")
+                    if (attendance and attendance.regularization_check_out)
+                    else None,
+
                 "working_hours":
                     working_hours_val,
 

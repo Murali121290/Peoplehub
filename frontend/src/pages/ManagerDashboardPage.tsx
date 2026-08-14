@@ -2636,9 +2636,9 @@ const ManagerDashboardPage = () => {
                             {/* PRESENT — Need Clarification sent, employee has replied (regularization / leave) */}
                             {category === "present" && managerStatus === "Need Clarification" && employeeReplied && (
                               <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center" }}>
-                                {isRegularization && emp.check_in && (
+                                {isRegularization && emp.regularization_check_in && (
                                   <span style={{ fontSize: "10px", color: "#166534", fontWeight: 600 }}>
-                                    Reg: {emp.check_in} – {emp.check_out || "?"}
+                                    Reg: {emp.regularization_check_in} – {emp.regularization_check_out || "?"}
                                   </span>
                                 )}
                                 <div style={{ display: "flex", gap: "6px" }}>
