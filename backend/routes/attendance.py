@@ -527,14 +527,12 @@ def sync_biometric_to_web_entry(attendance):
         web_hrs = attendance.total_hours or 0.0
         card_hrs = attendance.card_working_hours or 0.0
         max_hrs = max(web_hrs, card_hrs)
-        if max_hrs >= 8.0:
+        if max_hrs >= 4.0:
             attendance.status = "Present"
-        elif max_hrs >= 4.0:
-            attendance.status = "Half Day"
         elif attendance.check_in or attendance.card_check_in:
             attendance.status = "Present"
         else:
-            attendance.status = "Absent"
+            attendance.status = "Half Day"
 
     return updated
 
@@ -645,14 +643,12 @@ def sync_card_logs():
             web_hrs = attendance.total_hours or 0.0
             card_hrs = attendance.card_working_hours or 0.0
             max_hrs = max(web_hrs, card_hrs)
-            if max_hrs >= 8.0:
+            if max_hrs >= 4.0:
                 attendance.status = "Present"
-            elif max_hrs >= 4.0:
-                attendance.status = "Half Day"
             elif attendance.check_in or attendance.card_check_in:
                 attendance.status = "Present"
             else:
-                attendance.status = "Absent"
+                attendance.status = "Half Day"
 
             processed_count += 1
 
@@ -1371,12 +1367,9 @@ def get_attendance():
                 # Keep manually-set or leave-driven statuses
                 status = attendance.status
             elif has_checkin:
-                if max_hrs >= 8.0:
+                if max_hrs >= 4.0:
                     status = "Present"
-                elif max_hrs >= 4.0:
-                    status = "Half Day"
                 elif attendance.check_out or attendance.card_check_out:
-                    # Checked in and out but low hours → Half Day
                     status = "Half Day"
                 else:
                     # Still checked in (no checkout yet)
@@ -1471,9 +1464,9 @@ def get_attendance():
 
             # Re-evaluate status now that hours include permission credit virtually
             if status in ("Absent", "Half Day") and has_permission:
-                if virtual_total_hours >= 8.0:
+                if virtual_total_hours >= 4.0:
                     status = "Present"
-                elif virtual_total_hours >= 4.0:
+                else:
                     status = "Half Day"
 
 
@@ -2176,9 +2169,9 @@ def export_monthly_attendance():
                         web_hrs = att.total_hours or 0.0
                         card_hrs = att.card_working_hours or 0.0
                         max_hrs = max(web_hrs, card_hrs)
-                        if max_hrs >= 8.0:
+                        if max_hrs >= 4.0:
                             effective_status = "Present"
-                        elif max_hrs >= 4.0:
+                        elif max_hrs > 0.0:
                             effective_status = "Half Day"
 
                     if att and effective_status == "Present":
@@ -4374,14 +4367,12 @@ def trigger_db_sync():
             web_hrs = attendance.total_hours or 0.0
             card_hrs = attendance.card_working_hours or 0.0
             max_hrs = max(web_hrs, card_hrs)
-            if max_hrs >= 8.0:
+            if max_hrs >= 4.0:
                 attendance.status = "Present"
-            elif max_hrs >= 4.0:
-                attendance.status = "Half Day"
             elif attendance.check_in or attendance.card_check_in:
                 attendance.status = "Present"
             else:
-                attendance.status = "Absent"
+                attendance.status = "Half Day"
 
             processed_count += 1
 

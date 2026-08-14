@@ -262,10 +262,6 @@ def approve_leave(leave_id):
         # LEAVE REQUEST
         # ===========================
 
-        leave.status = "Approved"
-        leave.approved_by = approver_name
-        leave.approved_at = datetime.utcnow()
-
         leave_type = (leave.leave_type or "").strip().lower()
         leave_days = leave.total_days or 0
 
@@ -277,31 +273,104 @@ def approve_leave(leave_id):
             func.lower(EmployeeLeaveBalance.leave_type) == leave_type
         ).first()
 
-        if balance:
-            balance.available = max(0.0, (balance.available or 0) - leave_days)
+        # For dynamic custom leave categories, check if we found a balance record
+        if leave_type not in ["sick leave", "casual leave", "earned leave", "privilege leave"] and not balance:
+            return jsonify({
+                "success": False,
+                "error": f"Invalid leave type or no balance record found: {leave.leave_type}"
+            }), 400
 
-        if leave_type == "sick leave":
-            employee.sick_leave = max(
-                0,
-                (employee.sick_leave or 0) - leave_days
+        available_balance = 0.0
+        if balance:
+            available_balance = float(balance.available or 0.0)
+
+        lop_leave = None
+
+        if available_balance <= 0.0:
+            # Entire leave is LOP
+            leave.leave_type = "Loss of Pay"
+            leave.status = "Approved"
+            leave.approved_by = approver_name
+            leave.approved_at = datetime.utcnow()
+        elif leave_days > available_balance:
+            # Split the leave request:
+            # 1. First part (Paid): up to available_balance
+            import math
+            from datetime import timedelta
+            paid_days = available_balance
+            lop_days = leave_days - available_balance
+            
+            # Save original to_date
+            original_to_date = leave.to_date
+            
+            # Update current request to represent the paid portion
+            leave.status = "Approved"
+            leave.approved_by = approver_name
+            leave.approved_at = datetime.utcnow()
+            leave.total_days = paid_days
+            
+            paid_days_count = int(math.ceil(paid_days))
+            new_to_date = leave.from_date + timedelta(days=max(0, paid_days_count - 1))
+            if new_to_date > original_to_date:
+                new_to_date = original_to_date
+            leave.to_date = new_to_date
+            
+            # Deduct the balance to 0
+            if balance:
+                balance.available = 0.0
+            if leave_type == "sick leave":
+                employee.sick_leave = 0.0
+            elif leave_type == "casual leave":
+                employee.casual_leave = 0.0
+            elif leave_type in ["earned leave", "privilege leave"]:
+                employee.privilege_leave = 0.0
+                
+            # 2. Second part (LOP): new request for remainder
+            lop_from_date = new_to_date + timedelta(days=1)
+            if lop_from_date > original_to_date:
+                lop_from_date = original_to_date
+                
+            lop_leave = LeaveRequest(
+                employee_id=leave.employee_id,
+                employee_name=leave.employee_name,
+                request_type="Leave",
+                leave_type="Loss of Pay",
+                from_date=lop_from_date,
+                to_date=original_to_date,
+                total_days=lop_days,
+                status="Approved",
+                reason=(leave.reason or "") + " (Loss of Pay split)",
+                reporting_manager=leave.reporting_manager,
+                handover_to=leave.handover_to,
+                emergency_contact=leave.emergency_contact,
+                approved_by=approver_name,
+                approved_at=datetime.utcnow()
             )
-        elif leave_type == "casual leave":
-            employee.casual_leave = max(
-                0,
-                (employee.casual_leave or 0) - leave_days
-            )
-        elif leave_type in ["earned leave", "privilege leave"]:
-            employee.privilege_leave = max(
-                0,
-                (employee.privilege_leave or 0) - leave_days
-            )
+            db.session.add(lop_leave)
         else:
-            # For dynamic custom leave categories, check if we found a balance record
-            if not balance:
-                return jsonify({
-                    "success": False,
-                    "error": f"Invalid leave type or no balance record found: {leave.leave_type}"
-                }), 400
+            # Normal deduction (leave fits within balance)
+            leave.status = "Approved"
+            leave.approved_by = approver_name
+            leave.approved_at = datetime.utcnow()
+
+            if balance:
+                balance.available = max(0.0, (balance.available or 0.0) - leave_days)
+
+            if leave_type == "sick leave":
+                employee.sick_leave = max(
+                    0.0,
+                    (employee.sick_leave or 0.0) - leave_days
+                )
+            elif leave_type == "casual leave":
+                employee.casual_leave = max(
+                    0.0,
+                    (employee.casual_leave or 0.0) - leave_days
+                )
+            elif leave_type in ["earned leave", "privilege leave"]:
+                employee.privilege_leave = max(
+                    0.0,
+                    (employee.privilege_leave or 0.0) - leave_days
+                )
 
         db.session.commit()
 
@@ -309,6 +378,8 @@ def approve_leave(leave_id):
         try:
             from extensions import socketio
             socketio.emit("leave_update", serialize_leave(leave))
+            if lop_leave:
+                socketio.emit("leave_update", serialize_leave(lop_leave))
         except Exception as socket_err:
             print("Failed to emit leave socket:", str(socket_err))
 
