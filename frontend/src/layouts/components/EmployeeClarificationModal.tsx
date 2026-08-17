@@ -32,6 +32,27 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
   const [checkInTime, setCheckInTime] = useState("");
   const [checkOutTime, setCheckOutTime] = useState("");
   const [leaveType, setLeaveType] = useState("Casual Leave");
+  const [balances, setBalances] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    const fetchBalances = async () => {
+      try {
+        const response = await fetch(`${BASE_URL}/leaves/balances/${userId}`);
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setBalances(data);
+          if (data.length > 0) {
+            setLeaveType(data[0].leave_type);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch leave balances in modal:", err);
+      }
+    };
+    if (userId) {
+      fetchBalances();
+    }
+  }, [userId]);
 
   const activeItem = pendingItems[currentIndex] || pendingItems[0];
   if (!activeItem) return null;
@@ -144,6 +165,7 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
 
       const data = await response.json();
       if (data.success) {
+        toast.success(data.message || "Clarification response submitted successfully!");
         setReplyText("");
         if (currentIndex >= pendingItems.length - 1) {
           setCurrentIndex(Math.max(0, pendingItems.length - 2));
@@ -475,9 +497,19 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
                           onChange={(e) => setLeaveType(e.target.value)}
                           className="w-full p-2 border border-amber-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
                         >
-                          <option value="Casual Leave">Casual Leave</option>
-                          <option value="Sick Leave">Sick Leave</option>
-                          <option value="Privilege Leave">Privilege Leave</option>
+                          {balances.length > 0 ? (
+                            balances.map((b) => (
+                              <option key={b.id} value={b.leave_type}>
+                                {b.leave_type} (Available: {b.available})
+                              </option>
+                            ))
+                          ) : (
+                            <>
+                              <option value="Casual Leave">Casual Leave</option>
+                              <option value="Sick Leave">Sick Leave</option>
+                              <option value="Privilege Leave">Privilege Leave</option>
+                            </>
+                          )}
                         </select>
                       </div>
                       <div>

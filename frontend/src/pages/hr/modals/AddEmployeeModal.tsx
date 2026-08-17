@@ -247,6 +247,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
           <FormField label={getLabel("team_id", "Team")}>
             <Select
+              id="select-team"
               value={newEmp.team_id || ""}
               onChange={(value) => {
                 const selectedTeam = teams.find(
@@ -272,6 +273,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
           <FormField label={getLabel("reporting_manager", "REPORTING MANAGER")}>
             <Select
+              id="select-manager"
               value={newEmp.reporting_manager}
               onChange={(value) => {
                 setNewEmp({ ...newEmp, reporting_manager: value });
@@ -296,6 +298,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
           <FormField label={getLabel("designation", "Designation")}>
             <Select
+              id="select-designation"
               value={newEmp.role}
               onChange={(value) => {
                 const selectedRole = filteredRoles.find(
@@ -322,6 +325,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
           <FormField label={getLabel("status", "STATUS")}>
             <Select
+              id="select-status"
               value={newEmp.status}
               onChange={(value) => {
                 setNewEmp({ ...newEmp, status: value });
@@ -393,6 +397,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
           <FormField label={getLabel("access_level", "Access Level")}>
             <Select
+              id="select-access-level"
               value={newEmp.access_level || ""}
               onChange={(value) => {
                 setNewEmp({
@@ -415,6 +420,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
           <FormField label={getLabel("shift_timing", "Shift")}>
             <Select
+              id="select-shift"
               value={newEmp.shift_timing || ""}
               onChange={(value) => {
                 setNewEmp({
@@ -441,6 +447,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
           <FormField label={getLabel("work_mode", "Work Mode")}>
             <Select
+              id="select-work-mode"
               value={newEmp.work_mode || "Office"}
               onChange={(value) => {
                 setNewEmp({

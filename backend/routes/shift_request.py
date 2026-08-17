@@ -704,14 +704,20 @@ def get_shift_options():
         # Pull distinct shift_timing from Employee table
         emp_shifts = db.session.query(Employee.shift_timing).distinct().all()
         for s in emp_shifts:
-            if s[0] and s[0].strip():
-                shifts_set.add(s[0].strip())
+            val = s[0]
+            if val and val.strip():
+                val_clean = val.strip()
+                if ":" not in val_clean and val_clean.upper() not in ("WFH", "OFFICE", "WORK FROM HOME", "WORK FROM OFFICE", "ONE DAY WAGES"):
+                    shifts_set.add(val_clean)
 
         # Pull distinct requested_shift from ShiftRequest table
         req_shifts = db.session.query(ShiftRequest.requested_shift).distinct().all()
         for s in req_shifts:
-            if s[0] and s[0].strip():
-                shifts_set.add(s[0].strip())
+            val = s[0]
+            if val and val.strip():
+                val_clean = val.strip()
+                if ":" not in val_clean and val_clean.upper() not in ("WFH", "OFFICE", "WORK FROM HOME", "WORK FROM OFFICE", "ONE DAY WAGES"):
+                    shifts_set.add(val_clean)
 
         return jsonify(sorted(list(shifts_set)))
     except Exception as e:

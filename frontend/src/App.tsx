@@ -40,15 +40,18 @@ const PageLoadingFallback = () => (
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  allowedAccessLevels?: string[];
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
+  allowedAccessLevels,
 }) => {
   const {
     isAuthenticated,
     checkAuth,
     loading,
+    user,
   } = useAuthStore();
 
   useEffect(() => {
@@ -56,20 +59,28 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }, [checkAuth]);
 
   // Loading Screen
-
   if (loading) {
     return (<div className="min-h-screen bg-neutral-50 flex items-center justify-center"> <div className="h-16 w-16 rounded-full border-4 border-primary-200 border-t-primary-500 animate-spin"></div> </div>
     );
   }
 
   // Redirect if not authenticated
-
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  // Render protected layout
+  // Redirect if role not allowed
+  if (allowedAccessLevels && allowedAccessLevels.length > 0) {
+    const userRole = (user?.role || '').toLowerCase();
+    const userAccessLevel = (user?.access_level || '').toLowerCase();
+    const allowed = allowedAccessLevels.map((l) => l.toLowerCase());
+    const isAllowed = allowed.includes(userRole) || allowed.includes(userAccessLevel);
+    if (!isAllowed) {
+      return <Navigate to="/employee-dashboard" replace />;
+    }
+  }
 
+  // Render protected layout
   return (<DashboardLayout>
     {children} </DashboardLayout>
   );
@@ -191,7 +202,7 @@ function App() {
         <Route
           path="/manager-dashboard"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedAccessLevels={['Manager', 'HR', 'Admin']}>
               <ManagerDashboardPage />
             </ProtectedRoute>
           }
@@ -199,7 +210,7 @@ function App() {
         <Route
           path="/manager/team-management"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedAccessLevels={['Manager', 'HR', 'Admin']}>
               <TeamManagementPage />
             </ProtectedRoute>
           }
@@ -207,7 +218,7 @@ function App() {
         <Route
           path="/manager/leave-approval"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedAccessLevels={['Manager', 'HR', 'Admin']}>
               <LeaveApprovalPage />
             </ProtectedRoute>
           }
@@ -215,7 +226,7 @@ function App() {
         <Route
           path="/manager/permission-approval"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedAccessLevels={['Manager', 'HR', 'Admin']}>
               <PermissionApprovalPage />
             </ProtectedRoute>
           }
@@ -223,7 +234,7 @@ function App() {
         <Route
           path="/manager/shift-approval"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedAccessLevels={['Manager', 'HR', 'Admin']}>
               <ShiftApprovalPage isOdwOnly={false} />
             </ProtectedRoute>
           }
@@ -231,7 +242,7 @@ function App() {
         <Route
           path="/manager/odw-approval"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedAccessLevels={['Manager', 'HR', 'Admin']}>
               <ShiftApprovalPage isOdwOnly={true} />
             </ProtectedRoute>
           }
@@ -239,7 +250,7 @@ function App() {
         <Route
           path="/manager/wfh-approval"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedAccessLevels={['Manager', 'HR', 'Admin']}>
               <WFHApprovalPage />
             </ProtectedRoute>
           }
@@ -267,7 +278,7 @@ function App() {
         <Route
           path="/hrms"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedAccessLevels={['HR', 'Admin']}>
               <HrmsModule />
             </ProtectedRoute>
           }
@@ -276,7 +287,7 @@ function App() {
         <Route
           path="/admin/db"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedAccessLevels={['Admin']}>
               <DBAdminPage />
             </ProtectedRoute>
           }

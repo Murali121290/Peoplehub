@@ -1,14 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   CheckCircleIcon,
-  CalendarDaysIcon,
-  ChartBarIcon,
-  XMarkIcon,
   UserMinusIcon,
   CalendarIcon,
   ListBulletIcon,
-  ClockIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  CalendarDaysIcon
 } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'framer-motion';
 import StatCard from '../components/StatCard';
@@ -643,8 +640,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         } else {
           // workingHours is 0 (checked in but didn't check out on a past day, or checked in today but has 0 hours so far)
           if (isToday) {
-            status = "Present";
-            badgeLabel = "Present";
+            status = "Half Day";
+            badgeLabel = "Half Day";
             badgeEmoji = "";
           } else {
             status = (attRec.status === "Present" || attRec.status === "Half Day" || attRec.status === "Absent") ? (attRec.status as any) : "Absent";
@@ -708,12 +705,15 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   }
 
   // Monthly Summary Calculations
-  const presentCount = daysDataList.filter(d => d.status === "Present").length;
-  const absentCount = daysDataList.filter(d => d.status === "Absent").length;
-  const leaveCount = daysDataList.filter(d => d.status === "Leave").length;
-  const halfDayCount = daysDataList.filter(d => d.status === "Half Day").length;
-  const weeklyOffCount = daysDataList.filter(d => d.status === "Weekly Off").length;
-  const holidayCount = daysDataList.filter(d => d.status === "Holiday").length;
+  const presentCount = daysDataList.filter(d => d.status === "Present" && d.dateStr <= todayKey).length;
+  const absentCount = daysDataList.filter(d => d.status === "Absent" && d.dateStr <= todayKey).length;
+  const leaveCount = daysDataList.filter(d => d.status === "Leave" && d.dateStr <= todayKey).length;
+  const halfDayCount = daysDataList.filter(d => d.status === "Half Day" && d.dateStr <= todayKey).length;
+  const weeklyOffCount = daysDataList.filter(d => d.status === "Weekly Off" && d.dateStr <= todayKey).length;
+  const holidayCount = daysDataList.filter(d => d.status === "Holiday" && d.dateStr <= todayKey).length;
+  
+  const totalPresentDays = presentCount + leaveCount + (halfDayCount * 0.5) + weeklyOffCount + holidayCount;
+  
   const totalWorkedAndAbsent = presentCount + halfDayCount + absentCount;
   const attendancePercentage = totalWorkedAndAbsent > 0
     ? Math.round(((presentCount + (halfDayCount * 0.5)) / totalWorkedAndAbsent) * 100)
@@ -754,13 +754,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
 
       {/* Dynamic Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatCard icon={CheckCircleIcon} title="Present Days" value={presentCount} subtitle="" trend="normal" color="green" />
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-3xl">
+        <StatCard icon={CheckCircleIcon} title="Present Days" value={totalPresentDays} subtitle="" trend="normal" color="green" />
         <StatCard icon={UserMinusIcon} title="Absent Days (LOP)" value={absentCount} subtitle="" trend="normal" color="red" />
         <StatCard icon={CalendarDaysIcon} title="Paid Leave" value={leaveCount} subtitle="" trend="normal" color="purple" />
-        <StatCard icon={ClockIcon} title="Half Days" value={halfDayCount} subtitle="" trend="normal" color="yellow" />
-        <StatCard icon={CheckCircleIcon} title="Holidays" value={holidayCount} subtitle="" trend="normal" color="blue" />
-        <StatCard icon={CalendarDaysIcon} title="Weekends" value={weeklyOffCount} subtitle="" trend="normal" color="gray" />
       </div>
 
       {/* Main Content Card */}
