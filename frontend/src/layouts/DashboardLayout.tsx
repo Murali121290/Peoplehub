@@ -817,6 +817,28 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const handleNeedClarificationEmployee = async (employeeId: number, reason?: string, date?: string) => {
+    try {
+      const url = date
+        ? `${BASE_URL}/attendance/need-clarification/${employeeId}?date=${date}`
+        : `${BASE_URL}/attendance/need-clarification/${employeeId}`;
+      await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason || "" }),
+      });
+      setReportingEmployees((prev) =>
+        prev.map((emp) =>
+          (emp.employee_id === employeeId || emp.id === employeeId) && (!date || emp.summary_date === date)
+            ? { ...emp, manager_status: "Need Clarification", decision: "Need Clarification" }
+            : emp
+        )
+      );
+    } catch (error) {
+      console.error("Need Clarification Employee Error:", error);
+    }
+  };
+
   const dismissNotification = async (id: number) => {
     try {
       await fetch(`${BASE_URL}/notifications/${id}`, {
@@ -980,6 +1002,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
           onRejectAll={handleRejectAll}
           onApproveEmployee={handleApproveEmployee}
           onRejectEmployee={handleRejectEmployee}
+          onNeedClarification={handleNeedClarificationEmployee}
           onRefresh={loadReportingEmployees}
         />
       )}

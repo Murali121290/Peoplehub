@@ -262,10 +262,6 @@ def approve_leave(leave_id):
         # LEAVE REQUEST
         # ===========================
 
-        leave.status = "Approved"
-        leave.approved_by = approver_name
-        leave.approved_at = datetime.utcnow()
-
         leave_type = (leave.leave_type or "").strip().lower()
         leave_days = leave.total_days or 0
 
@@ -277,31 +273,104 @@ def approve_leave(leave_id):
             func.lower(EmployeeLeaveBalance.leave_type) == leave_type
         ).first()
 
-        if balance:
-            balance.available = max(0.0, (balance.available or 0) - leave_days)
+        # For dynamic custom leave categories, check if we found a balance record
+        if leave_type not in ["sick leave", "casual leave", "earned leave", "privilege leave"] and not balance:
+            return jsonify({
+                "success": False,
+                "error": f"Invalid leave type or no balance record found: {leave.leave_type}"
+            }), 400
 
-        if leave_type == "sick leave":
-            employee.sick_leave = max(
-                0,
-                (employee.sick_leave or 0) - leave_days
+        available_balance = 0.0
+        if balance:
+            available_balance = float(balance.available or 0.0)
+
+        lop_leave = None
+
+        if available_balance <= 0.0:
+            # Entire leave is LOP
+            leave.leave_type = f"{leave.leave_type} (Loss of Pay)"
+            leave.status = "Approved"
+            leave.approved_by = approver_name
+            leave.approved_at = datetime.utcnow()
+        elif leave_days > available_balance:
+            # Split the leave request:
+            # 1. First part (Paid): up to available_balance
+            import math
+            from datetime import timedelta
+            paid_days = available_balance
+            lop_days = leave_days - available_balance
+            
+            # Save original to_date
+            original_to_date = leave.to_date
+            
+            # Update current request to represent the paid portion
+            leave.status = "Approved"
+            leave.approved_by = approver_name
+            leave.approved_at = datetime.utcnow()
+            leave.total_days = paid_days
+            
+            paid_days_count = int(math.ceil(paid_days))
+            new_to_date = leave.from_date + timedelta(days=max(0, paid_days_count - 1))
+            if new_to_date > original_to_date:
+                new_to_date = original_to_date
+            leave.to_date = new_to_date
+            
+            # Deduct the balance to 0
+            if balance:
+                balance.available = 0.0
+            if leave_type == "sick leave":
+                employee.sick_leave = 0.0
+            elif leave_type == "casual leave":
+                employee.casual_leave = 0.0
+            elif leave_type in ["earned leave", "privilege leave"]:
+                employee.privilege_leave = 0.0
+                
+            # 2. Second part (LOP): new request for remainder
+            lop_from_date = new_to_date + timedelta(days=1)
+            if lop_from_date > original_to_date:
+                lop_from_date = original_to_date
+                
+            lop_leave = LeaveRequest(
+                employee_id=leave.employee_id,
+                employee_name=leave.employee_name,
+                request_type="Leave",
+                leave_type=f"{leave.leave_type} (Loss of Pay)",
+                from_date=lop_from_date,
+                to_date=original_to_date,
+                total_days=lop_days,
+                status="Approved",
+                reason=(leave.reason or "") + " (Loss of Pay split)",
+                reporting_manager=leave.reporting_manager,
+                handover_to=leave.handover_to,
+                emergency_contact=leave.emergency_contact,
+                approved_by=approver_name,
+                approved_at=datetime.utcnow()
             )
-        elif leave_type == "casual leave":
-            employee.casual_leave = max(
-                0,
-                (employee.casual_leave or 0) - leave_days
-            )
-        elif leave_type in ["earned leave", "privilege leave"]:
-            employee.privilege_leave = max(
-                0,
-                (employee.privilege_leave or 0) - leave_days
-            )
+            db.session.add(lop_leave)
         else:
-            # For dynamic custom leave categories, check if we found a balance record
-            if not balance:
-                return jsonify({
-                    "success": False,
-                    "error": f"Invalid leave type or no balance record found: {leave.leave_type}"
-                }), 400
+            # Normal deduction (leave fits within balance)
+            leave.status = "Approved"
+            leave.approved_by = approver_name
+            leave.approved_at = datetime.utcnow()
+
+            if balance:
+                balance.available = max(0.0, (balance.available or 0.0) - leave_days)
+
+            if leave_type == "sick leave":
+                employee.sick_leave = max(
+                    0.0,
+                    (employee.sick_leave or 0.0) - leave_days
+                )
+            elif leave_type == "casual leave":
+                employee.casual_leave = max(
+                    0.0,
+                    (employee.casual_leave or 0.0) - leave_days
+                )
+            elif leave_type in ["earned leave", "privilege leave"]:
+                employee.privilege_leave = max(
+                    0.0,
+                    (employee.privilege_leave or 0.0) - leave_days
+                )
 
         db.session.commit()
 
@@ -309,6 +378,8 @@ def approve_leave(leave_id):
         try:
             from extensions import socketio
             socketio.emit("leave_update", serialize_leave(leave))
+            if lop_leave:
+                socketio.emit("leave_update", serialize_leave(lop_leave))
         except Exception as socket_err:
             print("Failed to emit leave socket:", str(socket_err))
 
@@ -453,7 +524,6 @@ def cancel_leave(leave_id):
                     employee.casual_leave = (employee.casual_leave or 0) + leave_days
                 elif leave_type in ["earned leave", "privilege leave"]:
                     employee.privilege_leave = (employee.privilege_leave or 0) + leave_days
-
                 # Restore EmployeeLeaveBalance
                 from models.leave import EmployeeLeaveBalance
                 from sqlalchemy import func
@@ -463,6 +533,102 @@ def cancel_leave(leave_id):
                 ).first()
                 if balance:
                     balance.available = (balance.available or 0) + leave_days
+
+                # Restore attendance records for dates covered by the leave
+                if leave.from_date and leave.to_date:
+                    from models.attendance import Attendance
+                    from routes.attendance import sync_biometric_to_web_entry
+                    from datetime import timedelta
+
+                    curr_date = leave.from_date
+                    while curr_date <= leave.to_date:
+                        att = Attendance.query.filter_by(
+                            user_id=employee.user_id,
+                            attendance_date=curr_date
+                        ).first()
+                        if att and att.status == "Leave":
+                            has_punches = bool(att.check_in or att.card_check_in or att.check_out or att.card_check_out)
+                            if not has_punches:
+                                db.session.delete(att)
+                            else:
+                                att.status = "Absent"
+                                att.leave_type = None
+                                sync_biometric_to_web_entry(att)
+                        curr_date += timedelta(days=1)
+
+                # Check if there is a related split request and cancel it too
+                from datetime import timedelta
+                related_split = None
+                if leave.reason and " (Loss of Pay split)" in leave.reason:
+                    paid_reason = leave.reason.replace(" (Loss of Pay split)", "")
+                    related_split = LeaveRequest.query.filter(
+                        LeaveRequest.employee_id == leave.employee_id,
+                        LeaveRequest.to_date == leave.from_date - timedelta(days=1),
+                        LeaveRequest.reason == paid_reason,
+                        LeaveRequest.status.in_(["Approved", "Pending"])
+                    ).first()
+                elif leave.reason:
+                    lop_reason = leave.reason + " (Loss of Pay split)"
+                    related_split = LeaveRequest.query.filter(
+                        LeaveRequest.employee_id == leave.employee_id,
+                        LeaveRequest.from_date == leave.to_date + timedelta(days=1),
+                        LeaveRequest.reason == lop_reason,
+                        LeaveRequest.status.in_(["Approved", "Pending"])
+                    ).first()
+
+                if related_split:
+                    prev_status_related = related_split.status
+                    related_split.status = "Cancelled"
+                    related_split.cancelled_by = "Manager"
+                    related_split.cancelled_at = datetime.now(ZoneInfo("Asia/Kolkata"))
+
+                    # Restore balance for the related split request if it was Approved
+                    if prev_status_related == "Approved" and related_split.request_type == "Leave":
+                        related_type = (related_split.leave_type or "").strip().lower()
+                        related_days = related_split.total_days or 0
+
+                        if "loss of pay" not in related_type and "lop" not in related_type:
+                            if related_type == "sick leave":
+                                employee.sick_leave = (employee.sick_leave or 0) + related_days
+                            elif related_type == "casual leave":
+                                employee.casual_leave = (employee.casual_leave or 0) + related_days
+                            elif related_type in ["earned leave", "privilege leave"]:
+                                employee.privilege_leave = (employee.privilege_leave or 0) + related_days
+
+                            # Restore EmployeeLeaveBalance
+                            from models.leave import EmployeeLeaveBalance
+                            from sqlalchemy import func
+                            bal_related = EmployeeLeaveBalance.query.filter(
+                                EmployeeLeaveBalance.employee_id == employee.id,
+                                func.lower(EmployeeLeaveBalance.leave_type) == related_type
+                            ).first()
+                            if bal_related:
+                                bal_related.available = (bal_related.available or 0) + related_days
+
+                    # Restore attendance records for the related split request
+                    if related_split.from_date and related_split.to_date:
+                        curr_date = related_split.from_date
+                        while curr_date <= related_split.to_date:
+                            att = Attendance.query.filter_by(
+                                user_id=employee.user_id,
+                                attendance_date=curr_date
+                            ).first()
+                            if att and att.status == "Leave":
+                                has_punches = bool(att.check_in or att.card_check_in or att.check_out or att.card_check_out)
+                                if not has_punches:
+                                    db.session.delete(att)
+                                else:
+                                    att.status = "Absent"
+                                    att.leave_type = None
+                                    sync_biometric_to_web_entry(att)
+                            curr_date += timedelta(days=1)
+
+                    # Emit SocketIO update for the related request
+                    try:
+                        from extensions import socketio
+                        socketio.emit("leave_update", serialize_leave(related_split))
+                    except Exception as socket_err:
+                        print("Failed to emit related leave socket:", str(socket_err))
 
         db.session.commit()
 
@@ -709,6 +875,113 @@ def cancel_approved_leave(leave_id):
                     "success": False,
                     "message": f"Invalid leave type for balance restoration: {leave.leave_type}"
                 }), 400
+
+            # Restore EmployeeLeaveBalance
+            from models.leave import EmployeeLeaveBalance
+            from sqlalchemy import func
+            balance = EmployeeLeaveBalance.query.filter(
+                EmployeeLeaveBalance.employee_id == employee.id,
+                func.lower(EmployeeLeaveBalance.leave_type) == leave_type
+            ).first()
+            if balance:
+                balance.available = (balance.available or 0) + leave_days
+
+            # Restore attendance records for dates covered by the leave
+            if leave.from_date and leave.to_date:
+                from models.attendance import Attendance
+                from routes.attendance import sync_biometric_to_web_entry
+                from datetime import timedelta
+
+                curr_date = leave.from_date
+                while curr_date <= leave.to_date:
+                    att = Attendance.query.filter_by(
+                        user_id=employee.user_id,
+                        attendance_date=curr_date
+                    ).first()
+                    if att and att.status == "Leave":
+                        has_punches = bool(att.check_in or att.card_check_in or att.check_out or att.card_check_out)
+                        if not has_punches:
+                            db.session.delete(att)
+                        else:
+                            att.status = "Absent"
+                            att.leave_type = None
+                            sync_biometric_to_web_entry(att)
+                    curr_date += timedelta(days=1)
+
+            # Check if there is a related split request and cancel it too
+            from datetime import timedelta
+            related_split = None
+            if leave.reason and " (Loss of Pay split)" in leave.reason:
+                paid_reason = leave.reason.replace(" (Loss of Pay split)", "")
+                related_split = LeaveRequest.query.filter(
+                    LeaveRequest.employee_id == leave.employee_id,
+                    LeaveRequest.to_date == leave.from_date - timedelta(days=1),
+                    LeaveRequest.reason == paid_reason,
+                    LeaveRequest.status.in_(["Approved", "Pending"])
+                ).first()
+            elif leave.reason:
+                lop_reason = leave.reason + " (Loss of Pay split)"
+                related_split = LeaveRequest.query.filter(
+                    LeaveRequest.employee_id == leave.employee_id,
+                    LeaveRequest.from_date == leave.to_date + timedelta(days=1),
+                    LeaveRequest.reason == lop_reason,
+                    LeaveRequest.status.in_(["Approved", "Pending"])
+                ).first()
+
+            if related_split:
+                prev_status_related = related_split.status
+                related_split.status = "Cancelled"
+                related_split.cancelled_by = "Employee"
+                related_split.cancelled_at = datetime.now(ZoneInfo("Asia/Kolkata"))
+                related_split.cancellation_reason = leave.cancellation_reason
+
+                # Restore balance for the related split request if it was Approved
+                if prev_status_related == "Approved" and related_split.request_type == "Leave":
+                    related_type = (related_split.leave_type or "").strip().lower()
+                    related_days = related_split.total_days or 0
+
+                    if "loss of pay" not in related_type and "lop" not in related_type:
+                        if related_type == "sick leave":
+                            employee.sick_leave = (employee.sick_leave or 0) + related_days
+                        elif related_type == "casual leave":
+                            employee.casual_leave = (employee.casual_leave or 0) + related_days
+                        elif related_type in ["earned leave", "privilege leave"]:
+                            employee.privilege_leave = (employee.privilege_leave or 0) + related_days
+
+                        # Restore EmployeeLeaveBalance
+                        from models.leave import EmployeeLeaveBalance
+                        from sqlalchemy import func
+                        bal_related = EmployeeLeaveBalance.query.filter(
+                            EmployeeLeaveBalance.employee_id == employee.id,
+                            func.lower(EmployeeLeaveBalance.leave_type) == related_type
+                        ).first()
+                        if bal_related:
+                            bal_related.available = (bal_related.available or 0) + related_days
+
+                # Restore attendance records for the related split request
+                if related_split.from_date and related_split.to_date:
+                    curr_date = related_split.from_date
+                    while curr_date <= related_split.to_date:
+                        att = Attendance.query.filter_by(
+                            user_id=employee.user_id,
+                            attendance_date=curr_date
+                        ).first()
+                        if att and att.status == "Leave":
+                            has_punches = bool(att.check_in or att.card_check_in or att.check_out or att.card_check_out)
+                            if not has_punches:
+                                db.session.delete(att)
+                            else:
+                                att.status = "Absent"
+                                att.leave_type = None
+                                sync_biometric_to_web_entry(att)
+                        curr_date += timedelta(days=1)
+
+                # Emit SocketIO update for the related request
+                try:
+                    from extensions import socketio
+                    socketio.emit("leave_update", serialize_leave(related_split))
+                except Exception as socket_err:
+                    print("Failed to emit related leave socket:", str(socket_err))
 
         # 6. Create manager notification
         if leave.request_type == "Permission":

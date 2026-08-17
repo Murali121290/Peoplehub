@@ -30,6 +30,7 @@ interface AttendanceSummaryModalProps {
   onRejectAll?: (reason?: string) => void;
   onApproveEmployee: (employeeId: number, date?: string) => void;
   onRejectEmployee: (employeeId: number, reason?: string, date?: string) => void;
+  onNeedClarification?: (employeeId: number, reason?: string, date?: string) => void;
   onRefresh?: () => void;
 }
 
@@ -41,6 +42,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
   onRejectAll,
   onApproveEmployee,
   onRejectEmployee,
+  onNeedClarification,
   onRefresh,
 }) => {
   const [employees, setEmployees] = useState<any[]>([]);
@@ -120,7 +122,11 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
       } else if (rejectReasonModal.empId != null) {
         const empId = rejectReasonModal.empId;
         const targetDate = rejectReasonModal.date;
-        await onRejectEmployee(empId, reason, targetDate);
+        if (onNeedClarification) {
+          await onNeedClarification(empId, reason, targetDate);
+        } else {
+          await onRejectEmployee(empId, reason, targetDate);
+        }
         setEmployees((prev) =>
           prev.map((e) =>
             (e.employee_id === empId || e.id === empId) && (!targetDate || e.summary_date === targetDate)

@@ -54,6 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const accessToken = response.data.access_token
       const userData = {
   ...response.data.user,
+  role: response.data.role,          // top-level role name e.g. 'Manager', 'Employee'
   profile_completed: response.data.profile_completed,
   is_first_login: response.data.is_first_login,
 }
