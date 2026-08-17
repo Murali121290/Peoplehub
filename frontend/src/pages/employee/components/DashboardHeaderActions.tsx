@@ -131,6 +131,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
       />
 
       <motion.button
+        data-testid="attendance-action-btn"
         onHoverStart={() => setIsHoveringCheck(true)}
         onHoverEnd={() => setIsHoveringCheck(false)}
         whileHover={(!isLoading && !isCheckedOut && !isOnLeave) ? { scale: 1.02 } : {}}

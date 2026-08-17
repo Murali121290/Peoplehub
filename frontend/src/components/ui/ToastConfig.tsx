@@ -6,7 +6,7 @@ export const AppToaster: React.FC = () => (
     position="top-right"
     containerStyle={{ zIndex: 999999 }}
     toastOptions={{
-      duration: 4000,
+      duration: 5000,
       style: {
         background: '#FFFFFF',
         color: '#1E293B',
@@ -43,6 +43,9 @@ export const AppToaster: React.FC = () => (
   >
     {(t) => (
       <div
+        role="status"
+        data-testid="toast"
+        data-toast-visible={t.visible ? 'true' : 'false'}
         style={{
           ...t.style,
           opacity: t.visible ? 1 : 0,
