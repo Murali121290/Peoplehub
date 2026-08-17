@@ -124,7 +124,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
     const imageId = myEmployeeData?.id || localStorage.getItem("employee_id");
 
     return (
-      <div className="fixed inset-0 z-[9999] bg-[linear-gradient(135deg,#d3d6ea_0%,#b8bcdb_45%,#9ea5d0_100%)] overflow-y-auto animate-bg">
+      <div className="fixed inset-0 z-[9999] bg-[linear-gradient(135deg,#d3d6ea_0%,#b8bcdb_45%,#9ea5d0_100%)] overflow-hidden animate-bg">
         <style>{`
           @keyframes float-gentle {
             0%, 100% { transform: translateY(0) scale(1); }
@@ -204,7 +204,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
             100% { transform: translateY(105vh) rotate(360deg); opacity: 0; }
           }
         `}</style>
-        <div className="relative w-full min-h-screen overflow-hidden">
+        <div className="relative w-full h-screen overflow-hidden">
           {/* Confetti Rain Layer */}
           {Array.from({ length: 45 }).map((_, i) => {
             const left = (i * 2.3) + (Math.random() * 2); // Spread across screen width
@@ -289,10 +289,10 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
           <div className="absolute top-[55px] left-[420px] w-[3px] h-7 rounded-sm bg-[linear-gradient(#f4a37b,#e8895f)] hidden md:block animate-stick" style={{ animationDelay: "1.5s" }} />
 
           {/* Main content wrapper */}
-          <div className="relative z-10 flex flex-col md:flex-row items-center justify-center gap-10 md:gap-16 px-6 md:px-16 pt-28 pb-16 min-h-screen">
-            {/* Left: photo + name */}
-            <div className="flex flex-col items-center md:items-start text-center md:text-left max-w-md">
-              <div className="text-pink-400 text-xl md:text-2xl font-bold tracking-[6px] mb-2">
+          <div className="relative z-10 flex flex-col items-center justify-start px-6 md:px-16 pt-16 pb-8 h-screen w-full max-w-[1440px] mx-auto overflow-hidden">
+            {/* 1. Centered Greeting Text Block (Spans full width, centered on page) */}
+            <div className="flex flex-col items-center text-center w-full select-none mb-8">
+              <div className="text-white text-xl md:text-2xl font-bold tracking-[6px] mb-2">
                 HAPPY
               </div>
               <div className="text-white text-5xl md:text-7xl font-extrabold leading-none drop-shadow-md">
@@ -304,46 +304,52 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
               <div className="mt-4 text-purple-50 text-sm md:text-base font-semibold tracking-[2px]">
                 YOU ARE THE MOST AMAZING
               </div>
-
-              {/* Photo stack with floating animation and sparkling stars */}
-              <div className="mt-10 w-48 animate-photo relative">
-                {/* Magical Sparkles */}
-                <div className="absolute -top-3 -right-2 text-xl animate-sparkle" style={{ animationDelay: "0.2s" }}>✨</div>
-                <div className="absolute top-1/2 -left-6 text-2xl animate-sparkle" style={{ animationDelay: "1.2s", animationDuration: "3s" }}>✨</div>
-                <div className="absolute -bottom-1 right-12 text-lg animate-sparkle" style={{ animationDelay: "0.7s", animationDuration: "2.5s" }}>✨</div>
-
-                <img
-                  src={`${BASE_URL}/employees/image/${imageId}`}
-                  alt="Birthday"
-                  onError={(e) => {
-                    e.currentTarget.src =
-                      "https://cdn-icons-png.flaticon.com/512/149/149071.png";
-                  }}
-                  className="w-40 h-40 rounded-full object-cover border-4 border-white shadow-xl mx-auto md:mx-0 -mb-8 relative z-10"
-                />
-                <div className="w-48 h-9 rounded-full shadow-sm bg-[linear-gradient(#ffffff,#f1f1f6)]" />
-                <div className="w-48 h-20 -mt-3 rounded-b-lg bg-[linear-gradient(#f2f2f7,#e2e2ea)]" />
-                <div className="w-48 h-6 mt-1 rounded-full opacity-50 blur-[1px] bg-[linear-gradient(rgba(255,255,255,0.35),rgba(255,255,255,0))]" />
-              </div>
             </div>
 
-            {/* Right: balloons + message */}
-            <div className="relative flex flex-col items-center md:items-start max-w-sm">
-              {/* Balloons cluster with float/sway animations */}
-              <div className="relative w-full h-56 mb-4 hidden md:block">
-                <Balloon top={10} left={40} width={62} height={78} base="#f97316" highlight="#fdba74" shadow="#c2410c" stringLength={60} stringLeft={30} animation="balloon-sway-1 7s ease-in-out infinite" />
-                <Balloon top={-10} left={120} width={54} height={70} base="#0ea5e9" highlight="#7dd3fc" shadow="#0369a1" stringLength={90} stringLeft={26} animation="balloon-sway-2 8s ease-in-out infinite" />
-                <Balloon top={30} left={190} width={56} height={72} base="#f97316" highlight="#fdba74" shadow="#c2410c" stringLength={70} stringLeft={27} animation="balloon-sway-3 6.5s ease-in-out infinite" />
-                <Balloon top={-30} left={230} width={40} height={54} base="#0ea5e9" highlight="#7dd3fc" shadow="#0369a1" stringLength={110} stringLeft={19} animation="balloon-sway-4 7.5s ease-in-out infinite" />
+            {/* 2. Sub-wrapper layout: Photo stack on Left, Balloons + Card on Right */}
+            <div className="flex flex-col md:flex-row items-center md:items-start justify-between w-full gap-10 md:gap-16 mt-2">
+              {/* Left Column: photo stack */}
+              <div className="flex flex-col items-start justify-start w-full md:w-auto">
+                {/* Photo stack with floating animation and sparkling stars - BIG SIZE */}
+                <div className="w-80 md:w-96 animate-photo relative flex flex-col items-center mx-0 self-start">
+                  {/* Magical Sparkles */}
+                  <div className="absolute -top-4 -right-4 text-3xl animate-sparkle" style={{ animationDelay: "0.2s" }}>✨</div>
+                  <div className="absolute top-1/2 -left-8 text-4xl animate-sparkle" style={{ animationDelay: "1.2s", animationDuration: "3s" }}>✨</div>
+                  <div className="absolute -bottom-2 right-16 text-2xl animate-sparkle" style={{ animationDelay: "0.7s", animationDuration: "2.5s" }}>✨</div>
+
+                  <img
+                    src={`${BASE_URL}/employees/image/${imageId}`}
+                    alt="Birthday"
+                    onError={(e) => {
+                      e.currentTarget.src =
+                        "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+                    }}
+                    className="w-72 h-72 md:w-80 md:h-80 rounded-full object-cover border-6 border-white shadow-2xl -mb-12 relative z-20"
+                  />
+                  <div className="w-80 md:w-96 h-14 rounded-full shadow-lg bg-[linear-gradient(#ffffff,#f1f1f6)] z-10" />
+                  <div className="w-80 md:w-96 h-28 -mt-5 rounded-b-xl bg-[linear-gradient(#f2f2f7,#e2e2ea)] z-10" />
+                  <div className="w-80 md:w-96 h-10 mt-1 rounded-full opacity-50 blur-[2px] bg-[linear-gradient(rgba(255,255,255,0.35),rgba(255,255,255,0))]" />
+                </div>
               </div>
 
-              <div className="inline-block px-6 py-2.5 rounded-full bg-slate-800 text-white text-sm md:text-base font-bold tracking-wider">
-                🎂 HAPPY BIRTHDAY
-              </div>
-              <div className="mt-6 text-slate-700 text-base md:text-lg leading-relaxed text-center md:text-left">
-                We hope you always stay happy and all your dreams come true.
-                Wishing you success, prosperity, good health and happiness
-                throughout the year.
+              {/* Right Column: balloons + message */}
+              <div className="relative flex flex-col items-center md:items-start max-w-sm mt-10 md:mt-0 w-full md:w-auto">
+                {/* Balloons cluster with float/sway animations */}
+                <div className="relative w-full h-56 mb-4 hidden md:block">
+                  <Balloon top={10} left={40} width={62} height={78} base="#f97316" highlight="#fdba74" shadow="#c2410c" stringLength={60} stringLeft={30} animation="balloon-sway-1 7s ease-in-out infinite" />
+                  <Balloon top={-10} left={120} width={54} height={70} base="#0ea5e9" highlight="#7dd3fc" shadow="#0369a1" stringLength={90} stringLeft={26} animation="balloon-sway-2 8s ease-in-out infinite" />
+                  <Balloon top={30} left={190} width={56} height={72} base="#f97316" highlight="#fdba74" shadow="#c2410c" stringLength={70} stringLeft={27} animation="balloon-sway-3 6.5s ease-in-out infinite" />
+                  <Balloon top={-30} left={230} width={40} height={54} base="#0ea5e9" highlight="#7dd3fc" shadow="#0369a1" stringLength={110} stringLeft={19} animation="balloon-sway-4 7.5s ease-in-out infinite" />
+                </div>
+
+                <div className="inline-block px-6 py-2.5 rounded-full bg-slate-800 text-white text-sm md:text-base font-bold tracking-wider">
+                  🎂 HAPPY BIRTHDAY
+                </div>
+                <div className="mt-6 text-slate-700 text-base md:text-lg leading-relaxed text-center md:text-left">
+                  We hope you always stay happy and all your dreams come true.
+                  Wishing you success, prosperity, good health and happiness
+                  throughout the year.
+                </div>
               </div>
             </div>
           </div>
@@ -404,11 +410,10 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
                     key={idx}
                     type="button"
                     onClick={() => setWishMessage(msg)}
-                    className={`text-left text-sm px-4 py-2.5 rounded-lg border transition-all ${
-                      wishMessage === msg
-                        ? "border-primary-500 bg-primary-50 text-primary-800 font-semibold"
-                        : "border-neutral-200 hover:bg-neutral-50 text-neutral-700"
-                    }`}
+                    className={`text-left text-sm px-4 py-2.5 rounded-lg border transition-all ${wishMessage === msg
+                      ? "border-primary-500 bg-primary-50 text-primary-800 font-semibold"
+                      : "border-neutral-200 hover:bg-neutral-50 text-neutral-700"
+                      }`}
                   >
                     {msg}
                   </button>
