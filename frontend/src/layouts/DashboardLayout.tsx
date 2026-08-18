@@ -733,10 +733,20 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         (e) => !e.decision || e.decision === "Pending"
       );
       for (const e of pendingItems) {
+        // Skip if missing Web Site check-in or check-out timings (unless on Leave)
+        const isLeave = e.status === "Leave" || e.attendance_status === "Leave";
+        const checkIn = e.check_in;
+        const checkOut = e.check_out;
+        const hasCheckIn = checkIn && checkIn !== "-" && checkIn !== "—";
+        const hasCheckOut = checkOut && checkOut !== "-" && checkOut !== "—";
+        if (!isLeave && (!hasCheckIn || !hasCheckOut)) {
+          continue;
+        }
+
         const dateParam = e.summary_date ? `?date=${e.summary_date}` : "";
         await fetch(`${BASE_URL}/attendance/approve/${e.employee_id || e.id}${dateParam}`, {
-        method: "PUT",
-      });
+          method: "PUT",
+        });
       }
 
       // Refetch latest list (backend automatically excludes Approved records)

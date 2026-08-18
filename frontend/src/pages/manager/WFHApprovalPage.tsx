@@ -392,51 +392,37 @@ const WFHApprovalPage: React.FC = () => {
                         </td>
                         <td className="p-4 text-center">
                           {item.status === "Pending" ? (
-                            (() => {
-                              const startDate = item.from_date || item.shift_date || item.to_date || "";
-                              const todayDate = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000);
-                              const cutoffDate = new Date(todayDate.getTime() - 3 * 24 * 60 * 60 * 1000);
-                              const cutoffStr = cutoffDate.toISOString().split("T")[0];
-                              const isFinished = startDate && startDate < cutoffStr;
-
-                              if (isFinished) {
-                                return <span className="text-[10px] font-bold text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded">Out of Date</span>;
-                              }
-
-                              return (
-                                <div className="flex items-center justify-center gap-2">
-                                  <Button
-                                    variant="primary"
-                                    size="sm"
-                                    onClick={() => handleUpdateShiftStatus(item.id, "Approved")}
-                                    disabled={processingId === item.id}
-                                    className="!py-1 !px-2.5 !text-[10px] shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
-                                  >
-                                    {processingId === item.id ? (
-                                      <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                                    ) : (
-                                      <CheckIcon className="w-3 h-3 mr-1" />
-                                    )}
-                                    Approve
-                                  </Button>
-                                  <Button
-                                    variant="danger"
-                                    size="sm"
-                                    onClick={() => handleUpdateShiftStatus(item.id, "Rejected")}
-                                    disabled={processingId === item.id}
-                                    className="!py-1 !px-2.5 !text-[10px] shadow-sm"
-                                  >
-                                    {processingId === item.id ? (
-                                      <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                                    ) : (
-                                      <XMarkIcon className="w-3 h-3 mr-1" />
-                                    )}
-                                    Reject
-                                  </Button>
-                                </div>
-                              );
-                            })()
-                          ) : item.status === "Approved" && ((item.shift_date || "") >= new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]) ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleUpdateShiftStatus(item.id, "Approved")}
+                                disabled={processingId === item.id}
+                                className="!py-1 !px-2.5 !text-[10px] shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
+                              >
+                                {processingId === item.id ? (
+                                  <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                ) : (
+                                  <CheckIcon className="w-3 h-3 mr-1" />
+                                )}
+                                Approve
+                              </Button>
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => handleUpdateShiftStatus(item.id, "Rejected")}
+                                disabled={processingId === item.id}
+                                className="!py-1 !px-2.5 !text-[10px] shadow-sm"
+                              >
+                                {processingId === item.id ? (
+                                  <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                ) : (
+                                  <XMarkIcon className="w-3 h-3 mr-1" />
+                                )}
+                                Reject
+                              </Button>
+                            </div>
+                          ) : (item.status === "Approved" || item.status === "Rejected") ? (
                             <div className="flex items-center justify-center gap-2">
                               <Button
                                 variant="danger"

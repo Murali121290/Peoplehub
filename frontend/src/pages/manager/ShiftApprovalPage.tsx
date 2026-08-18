@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { API_URL, getProfileImageUrl } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
-import { CheckIcon, XMarkIcon, ArrowRightIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { CheckIcon, XMarkIcon, ArrowRightIcon, MagnifyingGlassIcon, PaperClipIcon } from "@heroicons/react/24/outline";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
@@ -446,29 +446,42 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
                           </div>
                         </td>
                         <td className="p-4 text-sm text-neutral-500 max-w-xs">
-                          {item.reason ? (
-                            <button
-                              onClick={() => toggleReason(item.id)}
-                              className="text-left text-neutral-600 hover:text-primary-600 transition-colors duration-150 flex items-center gap-1 focus:outline-none group/reason w-full"
-                            >
-                              <span className="truncate max-w-[150px]">{item.reason}</span>
-                              {item.reason.length > 20 && (
-                                <span className="text-primary-500 group-hover/reason:text-primary-600 text-[10px] font-semibold flex items-center gap-0.5 shrink-0 ml-1">
-                                  {expandedReasons[item.id] ? "Collapse" : "Expand"}
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 20 20"
-                                    fill="currentColor"
-                                    className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedReasons[item.id] ? "rotate-180" : ""}`}
-                                  >
-                                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                                  </svg>
-                                </span>
-                              )}
-                            </button>
-                          ) : (
-                            <span className="text-neutral-400">-</span>
-                          )}
+                          <div className="flex flex-col gap-1">
+                            {item.reason ? (
+                              <button
+                                onClick={() => toggleReason(item.id)}
+                                className="text-left text-neutral-600 hover:text-primary-600 transition-colors duration-150 flex items-center gap-1 focus:outline-none group/reason w-full"
+                              >
+                                <span className="truncate max-w-[150px]">{item.reason}</span>
+                                {item.reason.length > 20 && (
+                                  <span className="text-primary-500 group-hover/reason:text-primary-600 text-[10px] font-semibold flex items-center gap-0.5 shrink-0 ml-1">
+                                    {expandedReasons[item.id] ? "Collapse" : "Expand"}
+                                    <svg
+                                      xmlns="http://www.w3.org/2000/svg"
+                                      viewBox="0 0 20 20"
+                                      fill="currentColor"
+                                      className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedReasons[item.id] ? "rotate-180" : ""}`}
+                                    >
+                                      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                    </svg>
+                                  </span>
+                                )}
+                              </button>
+                            ) : (
+                              <span className="text-neutral-400">-</span>
+                            )}
+                            {item.supportive_document && (
+                              <a
+                                href={`${BASE_URL}/shifts/${item.id}/document`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[11px] font-bold text-primary-600 hover:text-primary-700 flex items-center gap-1 self-start mt-0.5"
+                              >
+                                <PaperClipIcon className="w-3.5 h-3.5 text-neutral-500" />
+                                View Attachment
+                              </a>
+                            )}
+                          </div>
                         </td>
                         <td className="p-4 text-sm font-medium text-neutral-600">
                           {formatDateTime(item.created_at)}
@@ -488,54 +501,37 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
                         </td>
                         <td className="p-4 text-center">
                           {item.status === "Pending" ? (
-                            (() => {
-                              const isOneDayWages = item.request_type === "One Day Wages";
-                              const startDate = isOneDayWages
-                                ? (item.created_at ? item.created_at.split(/[T ]/)[0] : "")
-                                : (item.from_date || item.shift_date || item.to_date || "");
-                              const todayDate = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000);
-                              const cutoffDate = new Date(todayDate.getTime() - 3 * 24 * 60 * 60 * 1000);
-                              const cutoffStr = cutoffDate.toISOString().split("T")[0];
-                              const isFinished = startDate && startDate < cutoffStr;
-
-                              if (isFinished) {
-                                return <span className="text-[10px] font-bold text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded">Out of Date</span>;
-                              }
-
-                              return (
-                                <div className="flex items-center justify-center gap-2">
-                                  <Button
-                                    variant="primary"
-                                    size="sm"
-                                    onClick={() => handleUpdateShiftStatus(item.id, "Approved")}
-                                    disabled={processingId === item.id}
-                                    className="!py-1 !px-2.5 !text-[10px] shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
-                                  >
-                                    {processingId === item.id ? (
-                                      <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                                    ) : (
-                                      <CheckIcon className="w-3 h-3 mr-1" />
-                                    )}
-                                    Approve
-                                  </Button>
-                                  <Button
-                                    variant="danger"
-                                    size="sm"
-                                    onClick={() => handleUpdateShiftStatus(item.id, "Rejected")}
-                                    disabled={processingId === item.id}
-                                    className="!py-1 !px-2.5 !text-[10px] shadow-sm"
-                                  >
-                                    {processingId === item.id ? (
-                                      <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                                    ) : (
-                                      <XMarkIcon className="w-3 h-3 mr-1" />
-                                    )}
-                                    Reject
-                                  </Button>
-                                </div>
-                              );
-                            })()
-                          ) : item.status === "Approved" && ((item.shift_date || "") >= new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]) ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleUpdateShiftStatus(item.id, "Approved")}
+                                disabled={processingId === item.id}
+                                className="!py-1 !px-2.5 !text-[10px] shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
+                              >
+                                {processingId === item.id ? (
+                                  <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                ) : (
+                                  <CheckIcon className="w-3 h-3 mr-1" />
+                                )}
+                                Approve
+                              </Button>
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => handleUpdateShiftStatus(item.id, "Rejected")}
+                                disabled={processingId === item.id}
+                                className="!py-1 !px-2.5 !text-[10px] shadow-sm"
+                              >
+                                {processingId === item.id ? (
+                                  <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                ) : (
+                                  <XMarkIcon className="w-3 h-3 mr-1" />
+                                )}
+                                Reject
+                              </Button>
+                            </div>
+                          ) : (item.status === "Approved" || item.status === "Rejected") ? (
                             <div className="flex items-center justify-center gap-2">
                               <Button
                                 variant="danger"

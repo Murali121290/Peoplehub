@@ -1157,29 +1157,51 @@ if (isHalfDayLeave(leave.total_days)) return false;
         return;
       }
 
+      const hasFile = shiftForm.supportive_document instanceof File;
 
-      const response = await fetch(`${BASE_URL}/shifts/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          employee_id: shiftForm.employee_id,
-          employee_name: shiftForm.employee_name,
-          current_shift: shiftForm.current_shift,
-          requested_shift: shiftForm.requested_shift,
-          current_work_mode: shiftForm.current_work_mode,
-          requested_work_mode: shiftForm.requested_work_mode,
-          request_type: shiftForm.request_type,
-          from_date: shiftForm.from_date,
-          to_date: shiftForm.to_date,
-          reporting_manager: shiftForm.reporting_manager,
-          reason: shiftForm.reason,
-        }),
-      });
+      let response: Response;
+      if (hasFile) {
+        const fd = new FormData();
+        fd.append("employee_id", String(shiftForm.employee_id));
+        fd.append("employee_name", shiftForm.employee_name);
+        fd.append("current_shift", shiftForm.current_shift || "");
+        fd.append("requested_shift", shiftForm.requested_shift || "");
+        fd.append("current_work_mode", shiftForm.current_work_mode || "");
+        fd.append("requested_work_mode", shiftForm.requested_work_mode || "");
+        fd.append("request_type", shiftForm.request_type || "Shift");
+        fd.append("from_date", shiftForm.from_date);
+        fd.append("to_date", shiftForm.to_date);
+        fd.append("reporting_manager", shiftForm.reporting_manager || "");
+        fd.append("reason", shiftForm.reason || "");
+        fd.append("supportive_document", shiftForm.supportive_document);
+
+        response = await fetch(`${BASE_URL}/shifts/`, {
+          method: "POST",
+          body: fd,
+        });
+      } else {
+        response = await fetch(`${BASE_URL}/shifts/`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            employee_id: shiftForm.employee_id,
+            employee_name: shiftForm.employee_name,
+            current_shift: shiftForm.current_shift,
+            requested_shift: shiftForm.requested_shift,
+            current_work_mode: shiftForm.current_work_mode,
+            requested_work_mode: shiftForm.requested_work_mode,
+            request_type: shiftForm.request_type,
+            from_date: shiftForm.from_date,
+            to_date: shiftForm.to_date,
+            reporting_manager: shiftForm.reporting_manager,
+            reason: shiftForm.reason,
+          }),
+        });
+      }
 
       const data = await response.json();
-
 
       if (!response.ok) {
         toast.error(data.message);

@@ -628,12 +628,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         badgeLabel = dbStatus;
         badgeEmoji = "";
       } else {
-        // Present vs Half Day threshold (4 hrs) — applies to both checked-out and still-active sessions
+        // Present vs Half Day vs Absent thresholds — applies to both checked-out and still-active sessions
         if (workingHours > 0 && workingHours < 4) {
+          status = "Absent";
+          badgeLabel = "Absent";
+          badgeEmoji = "";
+        } else if (workingHours >= 4 && workingHours < 8) {
           status = "Half Day";
           badgeLabel = "Half Day";
           badgeEmoji = "";
-        } else if (workingHours >= 4) {
+        } else if (workingHours >= 8) {
           status = "Present";
           badgeLabel = "Present";
           badgeEmoji = "";
