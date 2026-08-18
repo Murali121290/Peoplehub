@@ -32,7 +32,8 @@ CACHE_FIELDS = [
     "department", "designation", "reporting_manager", "shift_timing", "work_mode",
     "salary", "sick_leave", "casual_leave", "privilege_leave", "joining_date",
     "is_active", "status", "deactivation_reason", "last_working_date", "dob",
-    "gender", "team_id", "pf_number", "uan_number", "esi_number", "account_number",
+    "gender", "team_id", "pf_number", "uan_number", "esi_number", "bank_name", "account_number",
+    "ifsc_code", "branch_code", "basic", "hra", "lta", "other_allowance",
     "salary_paid", "salary_paid_date",
 ]
 

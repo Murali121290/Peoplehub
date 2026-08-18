@@ -89,6 +89,19 @@ def init_db(app=None):
         from alembic import command as alembic_command
         alembic_cfg = AlembicConfig("alembic.ini")
         alembic_command.upgrade(alembic_cfg, "head")
+        
+        # Regularize employee_id in payment_details from internal PK to employee_id code
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    UPDATE payment_details
+                    SET employee_id = e.employee_id
+                    FROM employees e
+                    WHERE payment_details.employee_id ~ '^[0-9]+$' AND payment_details.employee_id::integer = e.id
+                """))
+                conn.commit()
+        except Exception as data_err:
+            print(f"Error regularizing payment_details employee_id: {data_err}")
     except Exception as e:
         print(f"Error running Alembic migrations: {e}")
 

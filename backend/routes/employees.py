@@ -365,7 +365,15 @@ def get_employees():
             "last_working_date":
                 emp.last_working_date.isoformat() if hasattr(emp, "last_working_date") and emp.last_working_date else None,
             "profile_image":
-                get_profile_image_url(emp)
+                get_profile_image_url(emp),
+            "basic": emp.basic,
+            "hra": emp.hra,
+            "lta": emp.lta,
+            "other_allowance": emp.other_allowance,
+            "bank_name": emp.bank_name,
+            "account_number": emp.account_number,
+            "ifsc_code": emp.ifsc_code,
+            "branch_code": emp.branch_code
         })
 
     return jsonify(result)
@@ -507,6 +515,11 @@ def get_employee(employee_id):
     "bank_name": employee.bank_name,
     "account_number": employee.account_number,
     "ifsc_code": employee.ifsc_code,
+    "branch_code": employee.branch_code,
+    "basic": employee.basic,
+    "hra": employee.hra,
+    "lta": employee.lta,
+    "other_allowance": employee.other_allowance,
 
     "pan_number": employee.pan_number,
     "aadhaar_number": employee.aadhaar_number,
@@ -843,6 +856,31 @@ def update_employee_profile(employee_id):
         employee.ifsc_code = data.get(
             "ifsc_code",
             employee.ifsc_code
+        )
+
+        employee.branch_code = data.get(
+            "branch_code",
+            employee.branch_code
+        )
+
+        employee.basic = data.get(
+            "basic",
+            employee.basic
+        )
+
+        employee.hra = data.get(
+            "hra",
+            employee.hra
+        )
+
+        employee.lta = data.get(
+            "lta",
+            employee.lta
+        )
+
+        employee.other_allowance = data.get(
+            "other_allowance",
+            employee.other_allowance
         )
 
         # Identity

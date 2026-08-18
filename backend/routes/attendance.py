@@ -16,6 +16,7 @@ from openpyxl.styles import PatternFill
 from utils.compat import send_file
 from zoneinfo import ZoneInfo
 from models.leave import LeaveRequest, LeaveLedger
+from models.payment_details import PaymentDetails
 from io import BytesIO
 import os
 import pymysql
@@ -2571,46 +2572,24 @@ def credit_monthly_leaves():
 def export_paysheet():
 
     try:
+        today = date.today()
+        # Accept month/year filters from query params (defaults to current month/year)
+        month = request.args.get("month", type=int, default=today.month)
+        year  = request.args.get("year",  type=int, default=today.year)
+
+        # Determine the payroll period for the requested month
+        if month == 1:
+            start_date = date(year - 1, 12, 25)
+        else:
+            start_date = date(year, month - 1, 25)
+        end_date = date(year, month, 24)
 
         wb = Workbook()
-
         ws = wb.active
-
         ws.title = "Paysheet"
 
-        today = date.today()
-
-        if today.month == 1:
-
-            start_date = date(
-                today.year - 1,
-                12,
-                25
-            )
-
-        else:
-
-            start_date = date(
-                today.year,
-                today.month - 1,
-                25
-            )
-
-        end_date = date(
-            today.year,
-            today.month,
-            24
-        )
-
-        header_fill = PatternFill(
-            fill_type="solid",
-            fgColor="D9A066"
-        )
-
-        header_font = Font(
-            bold=True
-        )
-
+        header_fill = PatternFill(fill_type="solid", fgColor="D9A066")
+        header_font = Font(bold=True)
         thin_border = Border(
             left=Side(style="thin"),
             right=Side(style="thin"),
@@ -2618,328 +2597,280 @@ def export_paysheet():
             bottom=Side(style="thin")
         )
 
+        import calendar
+        month_label = f"{calendar.month_name[month]} {year}"
+
         ws.merge_cells("A1:BE1")
-
-        ws["A1"] = "PAYSHEET REPORT"
-
-        ws["A1"].font = Font(
-            bold=True,
-            size=16
-        )
-
-        ws["A1"].alignment = Alignment(
-            horizontal="center"
-        )
+        ws["A1"] = f"PAYSHEET REPORT - {month_label}"
+        ws["A1"].font = Font(bold=True, size=16)
+        ws["A1"].alignment = Alignment(horizontal="center")
 
         headers = [
-    "S.No",
-    "EMP NO",
-    "Gender",
-    "PF No",
-    "UAN No",
-    "ESI No",
-    "Employee Name",
-    "Department",
-    "Designation",
-    "Mail ID",
-    "DOJ",
-    "No Of Days In Month",
-    "Days Payable",
-    "Basic",
-    "HRA",
-    "LTA",
-    "Other Allowance",
-    "Gross Salary",
+            "S.No",
+            "EMP NO",
+            "Gender",
+            "PF No",
+            "UAN No",
+            "ESI No",
+            "Employee Name",
+            "Department",
+            "Designation",
+            "Mail ID",
+            "DOJ",
+            "No Of Days In Month",
+            "Days Payable",
+            "Basic",
+            "HRA",
+            "LTA",
+            "Other Allowance",
+            "Gross Salary",
+            "Earned Basic",
+            "Earned HRA",
+            "Earned LTA",
+            "Earned Other Allowance",
+            "Earned Actual Gross",
+            "Attendance Bonus",
+            "ODW",
+            "Total",
+            "Internet Charges",
+            "Gross Earned Salary",
+            "Earned PF Wages",
+            "PF Ded Employee",
+            "PF Ded Employer",
+            "VPF",
+            "PF & VPF Ded Employee",
+            "ESI Ded Employee",
+            "ESI Ded Employer",
+            "Salary Advance",
+            "TDS",
+            "LWF",
+            "PT",
+            "Other Deduction",
+            "Total Deduction",
+            "Net Transfer",
+            "Account No",
+            "IFSC Code",
+            "Branch Code",
+            "PF Wage",
+            "PF",
+            "EPS Wage",
+            "8.33 %",
+            "3.67 %",
+            "0.50 %",
+            "0.50 % Employer",
+            "0.01 %",
+            "Bonus",
+            "Actual Month CTC",
+            "Earned Month CTC",
+            "Remarks"
+        ]
 
-    "Earned Basic",
-    "Earned HRA",
-    "Earned LTA",
-    "Earned Other Allowance",
-    "Earned Actual Gross",
-
-    "Attendance Bonus",
-    "ODW",
-    "Total",
-
-    "Internet Charges",
-
-    "Gross Earned Salary",
-    "Earned PF Wages",
-
-    "PF Ded Employee",
-    "PF Ded Employer",
-
-    "VPF",
-
-    "PF & VPF Ded Employee",
-
-    "ESI Ded Employee",
-    "ESI Ded Employer",
-
-    "Salary Advance",
-
-    "TDS",
-    "LWF",
-    "PT",
-
-    "Other Deduction",
-
-    "Total Deduction",
-
-    "Net Transfer",
-
-    "Account No",
-    "IFSC Code",
-    "Branch Code",
-
-    "PF Wage",
-    "PF",
-
-    "EPS Wage",
-
-    "8.33 %",
-    "3.67 %",
-    "0.50 %",
-    "0.50 % Employer",
-    "0.01 %",
-
-    "Bonus",
-
-    "Actual Month CTC",
-    "Earned Month CTC",
-
-    "Remarks"
-]
-
-        for col_num, header in enumerate(
-            headers,
-            start=1
-        ):
-
-            cell = ws.cell(
-                row=3,
-                column=col_num
-            )
-
+        for col_num, header in enumerate(headers, start=1):
+            cell = ws.cell(row=3, column=col_num)
             cell.value = header
-
             cell.fill = header_fill
-
             cell.font = header_font
-
             cell.border = thin_border
 
+        # Fetch all PaymentDetails records for this payroll period
+        pay_records = PaymentDetails.query.filter_by(
+            payroll_period_start=start_date,
+            payroll_period_end=end_date
+        ).all()
+
+        # Build a lookup: alphanumeric employee_id -> PaymentDetails record
+        pay_lookup = {r.employee_id: r for r in pay_records}
+
+        # Get all active employees
         employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
 
+        # Sort employees by employee code in ascending order (handling prefixes like EMP)
+        def get_emp_code_val(e):
+            code = getattr(e, "employee_id", None) or ""
+            import re
+            nums = re.findall(r'\d+', str(code))
+            if nums:
+                try:
+                    return int(nums[0])
+                except ValueError:
+                    pass
+            try:
+                return int(code)
+            except (ValueError, TypeError):
+                return 999999
+        employees = sorted(employees, key=get_emp_code_val)
+
         row = 4
+        for index, employee in enumerate(employees, start=1):
+            rec = pay_lookup.get(employee.employee_id)
 
-        for index, employee in enumerate(
-            employees,
-            start=1
-        ):
-
-            attendance_records = Attendance.query.filter(
-                Attendance.user_id == employee.user_id,
-                Attendance.attendance_date >= start_date,
-                Attendance.attendance_date <= end_date
-            ).all()
-
-            leave_requests = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == employee.employee_id,
-                LeaveRequest.status == "Approved"
-            ).all()
-
-            total_leaves = sum(
-                leave.total_days or 0
-                for leave in leave_requests
-            )
-
-            total_days_cycle = (
-                end_date - start_date
-            ).days + 1
-
-            days_payable = (
-                total_days_cycle -
-                total_leaves
-            )
-
-            salary = (
-                employee.salary or 0
-            )
-
-            hra = 0
-            lta = 0
-            other_allowance = 0
-
-            pf_deduction = 0
-            esi_deduction = 0
-            tds = 0
-            pt = 0
-            lwf = 0
-
-            bonus = 0
-
-            internet_charges = 0
-
-            salary_advance = 0
-
-            actual_ctc = salary
-
-            earned_ctc = round(
-                (
-                    salary /
-                    total_days_cycle
-                ) *
-                days_payable,
-                2
-            )
-
-            net_transfer = round(
-                earned_ctc -
-                (
-                    pf_deduction +
-                    esi_deduction +
-                    tds +
-                    pt +
-                    lwf +
-                    salary_advance
-                ),
-                2
-            )
+            # Use saved payroll record if exists, else fall back to employee defaults
+            if rec:
+                no_of_days       = rec.no_of_days
+                days_payable     = rec.days_payable
+                basic            = rec.basic
+                hra              = rec.hra
+                lta              = rec.lta
+                other_allowance  = rec.other_allowance
+                gross_salary     = rec.gross_salary
+                earned_basic     = rec.earned_basic
+                earned_hra       = rec.earned_hra
+                earned_lta       = rec.earned_lta
+                earned_other     = rec.earned_other_allowance
+                earned_actual_gross = rec.earned_actual_gross
+                attendance_bonus = rec.attendance_bonus
+                odw              = rec.odw
+                total            = rec.total
+                internet_charges = rec.internet_charges
+                gross_earned     = rec.gross_earned_salary
+                earned_pf_wages  = rec.earned_pf_wages
+                pf_ded_employee  = rec.pf_ded_employee
+                pf_ded_employer  = rec.pf  # pf field = employer PF
+                vpf              = rec.vpf
+                pf_vpf_ded       = rec.pf_vpf_ded_employee
+                esi_employee     = rec.esi_ded_employee
+                esi_employer     = rec.esi_ded_employer
+                salary_advance   = rec.salary_advance
+                tds              = rec.tds
+                lwf              = rec.lwf
+                pt               = rec.pt
+                other_deduction  = rec.other_deduction
+                total_deduction  = rec.total_deduction
+                net_transfer     = rec.net_transfer
+                account_number   = rec.account_number or employee.account_number or ""
+                ifsc_code        = rec.ifsc_code or employee.ifsc_code or ""
+                branch_code      = rec.branch_code or ""
+                pf_wage          = rec.pf_wage
+                pf               = rec.pf
+                eps_wage         = rec.eps_wage
+                pf_8_33          = rec.pf_8_33
+                pf_3_67          = rec.pf_3_67
+                pf_0_50_pf       = rec.pf_0_50_pf_wage
+                pf_0_50_eps      = rec.pf_0_50_eps_wage
+                pf_0_01          = rec.pf_0_01
+                bonus            = rec.bonus
+                actual_ctc       = rec.actual_monthly_ctc
+                earned_ctc       = rec.earned_monthly_ctc
+                remarks          = rec.payment_status
+            else:
+                # No saved payroll record for this period — show zeroes / blanks
+                total_days_cycle = (end_date - start_date).days + 1
+                no_of_days       = total_days_cycle
+                days_payable     = total_days_cycle
+                salary           = employee.salary or 0
+                basic            = round(salary * 0.50, 2)
+                hra              = round(salary * 0.25, 2)
+                lta              = round(salary * 0.05, 2)
+                other_allowance  = round(salary * 0.20, 2)
+                gross_salary     = salary
+                earned_basic = earned_hra = earned_lta = earned_other = 0
+                earned_actual_gross = 0
+                attendance_bonus = odw = total = 0
+                internet_charges = 0
+                gross_earned = earned_pf_wages = 0
+                pf_ded_employee = pf_ded_employer = vpf = pf_vpf_ded = 0
+                esi_employee = esi_employer = 0
+                salary_advance = tds = lwf = pt = other_deduction = total_deduction = 0
+                net_transfer     = 0
+                account_number   = employee.account_number or ""
+                ifsc_code        = employee.ifsc_code or ""
+                branch_code      = ""
+                pf_wage = pf = eps_wage = 0
+                pf_8_33 = pf_3_67 = pf_0_50_pf = pf_0_50_eps = pf_0_01 = 0
+                bonus            = 0
+                actual_ctc = earned_ctc = 0
+                remarks          = "Not Processed"
 
             data = [
-    index,
-    employee.employee_id,
-    employee.gender,
-    employee.pf_number,
-    employee.uan_number,
-    employee.esi_number,
+                index,
+                employee.employee_id,
+                employee.gender,
+                employee.pf_number,
+                employee.uan_number,
+                employee.esi_number,
+                f"{employee.first_name} {employee.last_name}",
+                employee.department,
+                employee.designation,
+                employee.email,
+                employee.joining_date.strftime("%d-%m-%Y") if employee.joining_date else "",
+                no_of_days,
+                days_payable,
+                basic,
+                hra,
+                lta,
+                other_allowance,
+                gross_salary,
+                earned_basic,
+                earned_hra,
+                earned_lta,
+                earned_other,
+                earned_actual_gross,
+                attendance_bonus,
+                odw,
+                total,
+                internet_charges,
+                gross_earned,
+                earned_pf_wages,
+                pf_ded_employee,
+                pf_ded_employer,
+                vpf,
+                pf_vpf_ded,
+                esi_employee,
+                esi_employer,
+                salary_advance,
+                tds,
+                lwf,
+                pt,
+                other_deduction,
+                total_deduction,
+                net_transfer,
+                account_number,
+                ifsc_code,
+                branch_code,
+                pf_wage,
+                pf,
+                eps_wage,
+                pf_8_33,
+                pf_3_67,
+                pf_0_50_pf,
+                pf_0_50_eps,
+                pf_0_01,
+                bonus,
+                actual_ctc,
+                earned_ctc,
+                remarks
+            ]
 
-    f"{employee.first_name} {employee.last_name}",
-
-    employee.department,
-    employee.designation,
-    employee.email,
-    employee.joining_date.strftime("%d-%m-%Y") if employee.joining_date else "",
-
-    total_days_cycle,
-    days_payable,
-
-    salary,
-    hra,
-    lta,
-    other_allowance,
-    salary,
-
-    "",  # Earned Basic
-    "",  # Earned HRA
-    "",  # Earned LTA
-    "",  # Earned Other Allowance
-    "",  # Earned Actual Gross
-
-    "",  # Attendance Bonus
-    "",  # ODW
-    "",  # Total
-
-    internet_charges,
-
-    earned_ctc,
-
-    "",  # Earned PF Wages
-
-    pf_deduction,
-    "",  # PF Ded Employer
-
-    "",  # VPF
-
-    "",  # PF & VPF Ded Employee
-
-    esi_deduction,
-    "",  # ESI Ded Employer
-
-    salary_advance,
-
-    tds,
-    lwf,
-    pt,
-
-    "",  # Other Deduction
-
-    "",  # Total Deduction
-
-    net_transfer,
-
-    employee.account_number,
-    employee.ifsc_code,
-    "",  # Branch Code
-
-    "",  # PF Wage
-    "",  # PF
-
-    "",  # EPS Wage
-
-    "",  # 8.33%
-    "",  # 3.67%
-    "",  # 0.50%
-    "",  # 0.50% Employer
-    "",  # 0.01%
-
-    bonus,
-
-    actual_ctc,
-    earned_ctc,
-
-    ""
-]
-
-            for col_num, value in enumerate(
-                data,
-                start=1
-            ):
-
-                cell = ws.cell(
-                    row=row,
-                    column=col_num,
-                    value=value
-                )
-
+            for col_num, value in enumerate(data, start=1):
+                cell = ws.cell(row=row, column=col_num, value=value)
                 cell.border = thin_border
                 if value is not None and value != "":
-                    if isinstance(value, (int, float, date, datetime)) or (isinstance(value, str) and (value.isdigit() or value.startswith("EMP"))):
+                    if isinstance(value, (int, float, date, datetime)) or (
+                        isinstance(value, str) and (value.isdigit() or value.startswith("EMP"))
+                    ):
                         cell.alignment = Alignment(horizontal="center")
 
             row += 1
 
         for column_cells in ws.columns:
-
             try:
-
                 length = max(
-                    len(str(cell.value))
-                    if cell.value
-                    else 0
+                    len(str(cell.value)) if cell.value else 0
                     for cell in column_cells
                 )
-
-                ws.column_dimensions[
-                    get_column_letter(
-                        column_cells[0].column
-                    )
-                ].width = length + 5
-
+                ws.column_dimensions[get_column_letter(column_cells[0].column)].width = length + 5
             except:
                 pass
 
         output = BytesIO()
-
         wb.save(output)
-
         output.seek(0)
 
+        filename = f"Paysheet_{calendar.month_name[month]}_{year}.xlsx"
         return send_file(
             output,
             as_attachment=True,
-            download_name="Paysheet_Report.xlsx",
+            download_name=filename,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 

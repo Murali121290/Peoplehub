@@ -179,6 +179,26 @@ class Employee(db.Model):
         nullable=True
     )
 
+    basic = db.Column(
+        db.Float,
+        nullable=True
+    )
+
+    hra = db.Column(
+        db.Float,
+        nullable=True
+    )
+
+    lta = db.Column(
+        db.Float,
+        nullable=True
+    )
+
+    other_allowance = db.Column(
+        db.Float,
+        nullable=True
+    )
+
     earned_basic = db.Column(
         db.Float,
         nullable=True

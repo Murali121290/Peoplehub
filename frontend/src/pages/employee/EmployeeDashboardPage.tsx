@@ -11,6 +11,7 @@ import {
   ChartBarIcon,
   UserCircleIcon,
   SparklesIcon,
+  BanknotesIcon,
 } from "@heroicons/react/24/outline";
 import { motion } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
@@ -27,6 +28,7 @@ import LeaveTab from "./tabs/LeaveTab";
 import ShiftTab from "./tabs/ShiftTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import ProfileTab from "./tabs/ProfileTab";
+import EmployeePayrollTab from "./tabs/EmployeePayrollTab";
 import DashboardHeaderActions from "./components/DashboardHeaderActions";
 import NotificationsPanel from "./components/NotificationsPanel";
 import { BookLoader } from "../../components/ui/Spinner";
@@ -139,6 +141,7 @@ const tabs = [
   { id: "overview", label: "Overview", icon: HomeIcon },
   { id: "requests", label: "My Requests", icon: CalendarDaysIcon },
   { id: "attendance", label: "Attendance", icon: ClockIcon },
+  { id: "payroll", label: "Payroll", icon: BanknotesIcon },
   { id: "new-hire", label: "New Hire", icon: SparklesIcon },
   { id: "profile", label: "Profile", icon: UserCircleIcon },
 ];
@@ -1843,6 +1846,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
               <NewHireTab employees={employees} />
             )}
             {activeTab === "profile" && <ProfileTab />}
+            {activeTab === "payroll" && <EmployeePayrollTab />}
           </motion.div>
         </main>
       </div>

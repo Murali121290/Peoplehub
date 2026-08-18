@@ -158,8 +158,13 @@ def make_compat_wrapper(func):
 
         # Set up JWT Identity context
         auth_header = req.headers.get("Authorization")
+        token = None
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
+        elif req.query_params.get("token"):
+            token = req.query_params.get("token")
+
+        if token:
             decode_and_set_jwt_context(token)
         else:
             _jwt_identity_var.set(None)
