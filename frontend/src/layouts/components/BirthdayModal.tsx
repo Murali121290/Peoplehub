@@ -124,7 +124,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
     const imageId = myEmployeeData?.id || localStorage.getItem("employee_id");
 
     return (
-      <div className="fixed inset-0 z-[9999] bg-[linear-gradient(135deg,#d3d6ea_0%,#b8bcdb_45%,#9ea5d0_100%)] overflow-hidden animate-bg">
+      <div className="fixed inset-0 z-[9999] bg-[linear-gradient(135deg,#d3d6ea_0%,#b8bcdb_45%,#9ea5d0_100%)] overflow-y-auto overflow-x-hidden animate-bg">
         <style>{`
           @keyframes float-gentle {
             0%, 100% { transform: translateY(0) scale(1); }
@@ -204,7 +204,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
             100% { transform: translateY(105vh) rotate(360deg); opacity: 0; }
           }
         `}</style>
-        <div className="relative w-full h-screen overflow-hidden">
+        <div className="relative w-full min-h-screen overflow-hidden">
           {/* Confetti Rain Layer */}
           {Array.from({ length: 45 }).map((_, i) => {
             const left = (i * 2.3) + (Math.random() * 2); // Spread across screen width
@@ -289,7 +289,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
           <div className="absolute top-[55px] left-[420px] w-[3px] h-7 rounded-sm bg-[linear-gradient(#f4a37b,#e8895f)] hidden md:block animate-stick" style={{ animationDelay: "1.5s" }} />
 
           {/* Main content wrapper */}
-          <div className="relative z-10 flex flex-col items-center justify-start px-6 md:px-16 pt-16 pb-8 h-screen w-full max-w-[1440px] mx-auto overflow-hidden">
+          <div className="relative z-10 flex flex-col items-center justify-start px-6 md:px-16 pt-16 pb-12 min-h-screen w-full max-w-[1440px] mx-auto">
             {/* 1. Centered Greeting Text Block (Spans full width, centered on page) */}
             <div className="flex flex-col items-center text-center w-full select-none mb-8">
               <div className="text-white text-xl md:text-2xl font-bold tracking-[6px] mb-2">
@@ -350,13 +350,13 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
                   Wishing you success, prosperity, good health and happiness
                   throughout the year.
                 </div>
+                
+                {/* Signature */}
+                <div className="mt-6 md:mt-8 text-slate-800 text-xs md:text-sm font-bold tracking-wide z-10 text-center md:text-right w-full">
+                  — S4 CARLISLE PUBLISHING SERVICES
+                </div>
               </div>
             </div>
-          </div>
-
-          {/* Signature */}
-          <div className="absolute bottom-4 right-6 md:right-10 text-slate-800 text-xs md:text-sm font-bold tracking-wide z-10">
-            — S4 CARLISLE PUBLISHING SERVICES
           </div>
         </div>
       </div>
