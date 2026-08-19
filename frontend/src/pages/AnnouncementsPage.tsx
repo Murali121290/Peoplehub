@@ -19,6 +19,7 @@ const AnnouncementsPage = () => {
   const [filterRole, setFilterRole] = useState("all");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [sidebarTopOffset, setSidebarTopOffset] = useState("8.5rem");
+  const [activeReactionPostId, setActiveReactionPostId] = useState<number | null>(null);
 
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -87,6 +88,10 @@ const AnnouncementsPage = () => {
     const handleClickOutside = (event: MouseEvent) => {
       if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
         setShowEmojiPicker(false);
+      }
+      const target = event.target as HTMLElement;
+      if (!target.closest(".reaction-container")) {
+        setActiveReactionPostId(null);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -413,10 +418,13 @@ const AnnouncementsPage = () => {
                       </div>
 
                       <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between gap-4 flex-wrap">
-                        {/* Multi-Emoji Picker Bar on Hover/Click */}
-                        <div className="relative group flex items-center gap-2">
+                        {/* Multi-Emoji Picker Bar on Click */}
+                        <div className="relative flex items-center gap-2 reaction-container">
                           <button
-                            onClick={() => toggleLike(item.id, myReaction?.reaction || "👍")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveReactionPostId(activeReactionPostId === item.id ? null : item.id);
+                            }}
                             className={`flex items-center gap-2 text-sm font-semibold transition-all px-3 py-1.5 rounded-full border ${
                               hasReacted
                                 ? "text-primary-700 bg-primary-50 border-primary-200 shadow-xs"
@@ -426,20 +434,25 @@ const AnnouncementsPage = () => {
                             <span>{myReaction?.reaction || "👍"}</span>
                             <span>{hasReacted ? "Reacted" : "React"}</span>
                           </button>
-
-                          {/* Hover Emoji Reaction Bar */}
-                          <div className="absolute left-0 bottom-full mb-1 hidden group-hover:flex items-center gap-1.5 p-1.5 bg-white border border-neutral-200 shadow-xl rounded-full z-30 transition-all animate-fadeIn">
-                            {REACTION_OPTIONS.map((opt) => (
-                              <button
-                                key={opt.emoji}
-                                onClick={() => toggleLike(item.id, opt.emoji)}
-                                className="w-8 h-8 flex items-center justify-center text-lg hover:scale-125 transition-transform rounded-full hover:bg-neutral-100"
-                                title={opt.label}
-                              >
-                                {opt.emoji}
-                              </button>
-                            ))}
-                          </div>
+ 
+                          {/* Click Emoji Reaction Bar */}
+                          {activeReactionPostId === item.id && (
+                            <div className="absolute left-0 bottom-full mb-1 flex items-center gap-1.5 p-1.5 bg-white border border-neutral-200 shadow-xl rounded-full z-30 transition-all animate-fadeIn">
+                              {REACTION_OPTIONS.map((opt) => (
+                                <button
+                                  key={opt.emoji}
+                                  onClick={() => {
+                                    toggleLike(item.id, opt.emoji);
+                                    setActiveReactionPostId(null);
+                                  }}
+                                  className="w-8 h-8 flex items-center justify-center text-lg hover:scale-125 transition-transform rounded-full hover:bg-neutral-100"
+                                  title={opt.label}
+                                >
+                                  {opt.emoji}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
 
                         {/* Reaction Badges with Hover Tooltip of Names */}

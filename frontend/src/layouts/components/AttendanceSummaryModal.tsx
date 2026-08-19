@@ -51,6 +51,8 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
   const [rejectReasonText, setRejectReasonText] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [regularizationPopup, setRegularizationPopup] = useState<any | null>(null);
+  const [missingTimingPopup, setMissingTimingPopup] = useState<any | null>(null);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -74,7 +76,33 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
     (e) => !e.decision || e.decision === "Pending"
   ).length;
 
-  const handleApproveSingle = async (empId: number, date?: string) => {
+  const handleApproveSingle = async (empId: number, date?: string, isConfirmedRegularization: boolean = false) => {
+    const emp = employees.find(
+      (e) => (e.employee_id === empId || e.id === empId) && (!date || e.summary_date === date)
+    );
+    if (!emp) return;
+
+    // Check if regularization is pending (employee proposed check-in/out)
+    const isPendingRegularization = emp.is_regularization && emp.decision !== "Approved" && emp.decision !== "Rejected" && emp.decision !== "Need Clarification";
+    if (isPendingRegularization && !isConfirmedRegularization) {
+      setRegularizationPopup(emp);
+      return;
+    }
+
+    // Only check for missing timings if they are NOT regularizing and NOT on Leave
+    const isLeave = emp.status === "Leave" || emp.attendance_status === "Leave";
+    if (!isPendingRegularization && !isLeave) {
+      const checkIn = emp.check_in;
+      const checkOut = emp.check_out;
+      const hasCheckIn = checkIn && checkIn !== "-" && checkIn !== "—";
+      const hasCheckOut = checkOut && checkOut !== "-" && checkOut !== "—";
+
+      if ((!hasCheckIn || !hasCheckOut) && !missingTimingPopup) {
+        setMissingTimingPopup(emp);
+        return;
+      }
+    }
+
     setIsActionLoading(true);
     try {
       await onApproveEmployee(empId, date);
@@ -171,14 +199,28 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
             (e) => !e.decision || e.decision === "Pending"
           );
           for (const e of pendingItems) {
+            const isLeave = e.status === "Leave" || e.attendance_status === "Leave";
+            const checkIn = e.check_in;
+            const checkOut = e.check_out;
+            const hasCheckIn = checkIn && checkIn !== "-" && checkIn !== "—";
+            const hasCheckOut = checkOut && checkOut !== "-" && checkOut !== "—";
+            if (!isLeave && (!hasCheckIn || !hasCheckOut)) {
+              continue;
+            }
             await onApproveEmployee(e.employee_id || e.id);
           }
           setEmployees((prev) =>
-            prev.map((e) =>
-              !e.decision || e.decision === "Pending"
-                ? { ...e, decision: "Approved" }
-                : e
-            )
+            prev.map((e) => {
+              const isLeave = e.status === "Leave" || e.attendance_status === "Leave";
+              const checkIn = e.check_in;
+              const checkOut = e.check_out;
+              const hasCheckIn = checkIn && checkIn !== "-" && checkIn !== "—";
+              const hasCheckOut = checkOut && checkOut !== "-" && checkOut !== "—";
+              if (!isLeave && (!hasCheckIn || !hasCheckOut)) {
+                return e;
+              }
+              return (!e.decision || e.decision === "Pending") ? { ...e, decision: "Approved" } : e;
+            })
           );
         }
       } catch (error) {
@@ -422,8 +464,22 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         </td>
 
                         {/* Web Entry Columns */}
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold border-r border-blue-100/50">{emp.check_in || "—"}</td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold border-r border-blue-100/50">{emp.check_out || "—"}</td>
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold border-r border-blue-100/50">
+                          {emp.check_in && emp.check_in !== "-" ? emp.check_in : "—"}
+                          {emp.is_regularization && emp.regularization_check_in && (
+                            <span className="block text-[10px] text-amber-600 bg-amber-50 px-1 py-0.5 rounded mt-1 border border-amber-200">
+                              Proposed: {emp.regularization_check_in}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold border-r border-blue-100/50">
+                          {emp.check_out && emp.check_out !== "-" ? emp.check_out : "—"}
+                          {emp.is_regularization && emp.regularization_check_out && (
+                            <span className="block text-[10px] text-amber-600 bg-amber-50 px-1 py-0.5 rounded mt-1 border border-amber-200">
+                              Proposed: {emp.regularization_check_out}
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold border-r border-blue-100/50">
                           {emp.total_break_minutes ? `${emp.total_break_minutes} min` : "0 min"}
                         </td>
@@ -775,6 +831,91 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                   className="py-2.5 px-4 rounded-xl text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-all shadow-xs"
                 >
                   Submit Request
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Regularization Approval Modal */}
+        {regularizationPopup && (
+          <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center z-[80] p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-neutral-100 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-3 text-amber-600">
+                <ExclamationTriangleIcon className="w-6 h-6" />
+                <h3 className="text-lg font-bold text-neutral-900">Clarification Approval</h3>
+              </div>
+              <div className="text-sm text-neutral-600 flex flex-col gap-2">
+                <p className="font-medium text-xs">Employee <strong>{regularizationPopup.employee_name}</strong> has proposed the following check-in/out times:</p>
+                <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-200 flex flex-col gap-1 text-xs">
+                  <div><span className="font-bold text-neutral-700">Proposed Check-in:</span> {regularizationPopup.regularization_check_in || "—"}</div>
+                  <div><span className="font-bold text-neutral-700">Proposed Check-out:</span> {regularizationPopup.regularization_check_out || "—"}</div>
+                  <div><span className="font-bold text-neutral-700">Reason:</span> {regularizationPopup.regularization_reason || regularizationPopup.employee_reply || "No reason provided"}</div>
+                </div>
+                <p className="text-[11px] text-neutral-500 mt-1">Do you want to approve this timing or request reclarification?</p>
+              </div>
+              <div className="flex justify-end gap-2.5 mt-2">
+                <button
+                  onClick={() => setRegularizationPopup(null)}
+                  className="py-2 px-3 border border-neutral-200 text-neutral-600 hover:bg-neutral-50 rounded-xl text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    const emp = regularizationPopup;
+                    setRegularizationPopup(null);
+                    openRejectReasonModal(emp.employee_id || emp.id, false, emp.summary_date);
+                  }}
+                  className="py-2 px-3 border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 rounded-xl text-xs font-semibold transition"
+                >
+                  Need Reclarification
+                </button>
+                 <button
+                  onClick={async () => {
+                    const emp = regularizationPopup;
+                    setRegularizationPopup(null);
+                    await handleApproveSingle(emp.employee_id || emp.id, emp.summary_date, true);
+                  }}
+                  className="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                >
+                  Approve
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Missing Timing Warning Modal */}
+        {missingTimingPopup && (
+          <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center z-[80] p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-neutral-100 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-3 text-rose-500">
+                <ExclamationTriangleIcon className="w-6 h-6" />
+                <h3 className="text-lg font-bold text-neutral-900">Missing Timing Warning</h3>
+              </div>
+              <p className="text-xs text-neutral-650">
+                Employee <strong>{missingTimingPopup.employee_name}</strong> is missing check-in or check-out times. You cannot approve this directly.
+              </p>
+              <p className="text-[11px] text-neutral-500">
+                Would you like to request clarification from the employee?
+              </p>
+              <div className="flex justify-end gap-2.5 mt-2">
+                <button
+                  onClick={() => setMissingTimingPopup(null)}
+                  className="py-2 px-3 border border-neutral-200 text-neutral-600 hover:bg-neutral-50 rounded-xl text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    const emp = missingTimingPopup;
+                    setMissingTimingPopup(null);
+                    openRejectReasonModal(emp.employee_id || emp.id, false, emp.summary_date);
+                  }}
+                  className="py-2 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                >
+                  Request Clarification
                 </button>
               </div>
             </div>

@@ -14,7 +14,8 @@ import {
   BriefcaseIcon,
   HomeIcon,
   InformationCircleIcon,
-  ArrowRightIcon
+  ArrowRightIcon,
+  PaperClipIcon
 } from "@heroicons/react/24/outline";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
@@ -69,6 +70,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   const [shiftOptions, setShiftOptions] = useState<string[]>([]);
   const [cancelRequestId, setCancelRequestId] = useState<number | null>(null);
   const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
+  const [attachment, setAttachment] = useState<File | null>(null);
 
   useEffect(() => {
     if (showShiftForm) {
@@ -117,6 +119,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       requestedShift: "General Shift",
       reason: "",
     });
+    setAttachment(null);
   };
 
   const handleClose = () => {
@@ -182,6 +185,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       from_date: fromDate,
       to_date: toDate,
       reason: shiftForm.reason,
+      supportive_document: attachment,
     });
 
     resetForm();
@@ -294,6 +298,17 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                               : `Change: ${req.current_shift} ➔ ${req.requested_shift} (${formatDateStr(req.from_date)} to ${formatDateStr(req.to_date)})`
                             }
                           </p>
+                          {req.supportive_document && (
+                            <a
+                              href={`${API_URL}/api/shifts/${req.id}/document`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] font-bold text-primary-600 hover:text-primary-700 flex items-center gap-1 mt-1.5"
+                            >
+                              <PaperClipIcon className="w-3.5 h-3.5 text-neutral-500" />
+                              View Attachment
+                            </a>
+                          )}
                         </div>
                       </div>
 
@@ -523,29 +538,42 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                             {getActionedAtText(item)}
                           </td>
                           <td className="p-4 text-xs text-neutral-500 max-w-xs">
-                            {item.reason ? (
-                              <button
-                                onClick={() => toggleReason(item.id)}
-                                className="text-left text-neutral-600 hover:text-primary-600 transition-colors duration-150 flex items-center gap-1 focus:outline-none group/reason w-full"
-                              >
-                                <span className="truncate max-w-[150px]">{item.reason}</span>
-                                {item.reason.length > 20 && (
-                                  <span className="text-primary-500 group-hover/reason:text-primary-600 text-[10px] font-semibold flex items-center gap-0.5 shrink-0 ml-1">
-                                    {expandedReasons[item.id] ? "Collapse" : "Expand"}
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      viewBox="0 0 20 20"
-                                      fill="currentColor"
-                                      className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedReasons[item.id] ? "rotate-180" : ""}`}
-                                    >
-                                      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                                    </svg>
-                                  </span>
-                                )}
-                              </button>
-                            ) : (
-                              <span className="text-neutral-400">-</span>
-                            )}
+                            <div className="flex flex-col gap-1">
+                              {item.reason ? (
+                                <button
+                                  onClick={() => toggleReason(item.id)}
+                                  className="text-left text-neutral-600 hover:text-primary-600 transition-colors duration-150 flex items-center gap-1 focus:outline-none group/reason w-full"
+                                >
+                                  <span className="truncate max-w-[150px]">{item.reason}</span>
+                                  {item.reason.length > 20 && (
+                                    <span className="text-primary-500 group-hover/reason:text-primary-600 text-[10px] font-semibold flex items-center gap-0.5 shrink-0 ml-1">
+                                      {expandedReasons[item.id] ? "Collapse" : "Expand"}
+                                      <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        viewBox="0 0 20 20"
+                                        fill="currentColor"
+                                        className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedReasons[item.id] ? "rotate-180" : ""}`}
+                                      >
+                                        <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                      </svg>
+                                    </span>
+                                  )}
+                                </button>
+                              ) : (
+                                <span className="text-neutral-400">-</span>
+                              )}
+                              {item.supportive_document && (
+                                <a
+                                  href={`${API_URL}/api/shifts/${item.id}/document`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[11px] font-bold text-primary-600 hover:text-primary-700 flex items-center gap-1 self-start mt-0.5"
+                                >
+                                  <PaperClipIcon className="w-3.5 h-3.5 text-neutral-500" />
+                                  Attachment
+                                </a>
+                              )}
+                            </div>
                           </td>
                           <td className="p-4 text-center">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getStatusColor(item.status)}`}>
@@ -677,9 +705,53 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                 }
                 rows={4}
                 required
-                className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-primary-100 focus:border-primary-400 focus:outline-none placeholder-neutral-400 font-medium text-sm text-neutral-600"
+                className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-primary-100 focus:border-primary-400 focus:outline-none placeholder-neutral-400 font-medium text-sm text-neutral-600 animate-fade-in"
               />
             </div>
+
+            {/* Attachment for Work Mode Requests */}
+            {(requestType === "WFH" || requestType === "Office") && (
+              <div className="space-y-2 animate-fade-in">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                  Supportive Document / Attachment
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="file"
+                    id="supportive-doc"
+                    className="hidden"
+                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setAttachment(e.target.files[0]);
+                      }
+                    }}
+                  />
+                  <label
+                    htmlFor="supportive-doc"
+                    className="flex items-center gap-2 px-4 py-2.5 border border-neutral-250 rounded-xl bg-white text-xs font-bold text-neutral-700 hover:bg-neutral-50 cursor-pointer shadow-sm transition-all duration-200"
+                  >
+                    <PlusIcon className="w-4 h-4 text-neutral-500" />
+                    {attachment ? "Change Document" : "Choose File"}
+                  </label>
+                  {attachment && (
+                    <div className="flex items-center gap-1.5 text-xs text-neutral-600 bg-neutral-100 px-3 py-1.5 rounded-xl border border-neutral-200 max-w-xs">
+                      <span className="truncate font-semibold">{attachment.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setAttachment(null)}
+                        className="text-neutral-400 hover:text-rose-500 transition-colors shrink-0 ml-1"
+                      >
+                        <XMarkIcon className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-neutral-400 font-medium mt-1">
+                  Supported formats: PDF, Images (PNG, JPG), Word (DOC, DOCX). Max size 5MB.
+                </p>
+              </div>
+            )}
 
             {/* Modal Actions */}
             <div className="flex gap-3 pt-6 border-t border-neutral-200">

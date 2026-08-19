@@ -89,26 +89,27 @@ def init_db(app=None):
         from alembic import command as alembic_command
         alembic_cfg = AlembicConfig("alembic.ini")
         alembic_command.upgrade(alembic_cfg, "head")
+        
+        # Regularize employee_id in payment_details from internal PK to employee_id code
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    UPDATE payment_details
+                    SET employee_id = e.employee_id
+                    FROM employees e
+                    WHERE payment_details.employee_id ~ '^[0-9]+$' AND payment_details.employee_id::integer = e.id
+                """))
+                conn.commit()
+        except Exception as data_err:
+            print(f"Error regularizing payment_details employee_id: {data_err}")
     except Exception as e:
         print(f"Error running Alembic migrations: {e}")
 
-    # Seed default policies
-    from models.leave import LeavePolicy
-    defaults = [
-        ("Sick Leave", 0.0),
-        ("Casual Leave", 0.0),
-        ("Privilege Leave", 0.0)
-    ]
-    for leave_type, limit in defaults:
-        policy = db_session.query(LeavePolicy).filter_by(leave_type=leave_type).first()
-        if not policy:
-            policy = LeavePolicy(leave_type=leave_type, yearly_limit=limit, applicable_gender="All")
-            db_session.add(policy)
-    db_session.commit()
+
 
     # Initialize EmployeeLeaveBalance for all existing employees
     from models.employee import Employee
-    from models.leave import EmployeeLeaveBalance
+    from models.leave import LeavePolicy, EmployeeLeaveBalance
 
     employees = db_session.query(Employee).all()
     policies = db_session.query(LeavePolicy).all()
@@ -116,12 +117,6 @@ def init_db(app=None):
         (b.employee_id, (b.leave_type or "").strip().lower())
         for b in db_session.query(EmployeeLeaveBalance).all()
     }
-
-    db_session.query(Employee).update({
-        Employee.sick_leave: 0.0,
-        Employee.casual_leave: 0.0,
-        Employee.privilege_leave: 0.0
-    })
 
     for emp in employees:
         for pol in policies:
