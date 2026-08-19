@@ -19,6 +19,7 @@ from sqlalchemy import extract, or_
 from sqlalchemy.exc import IntegrityError
 from datetime import time
 from utils.employee_cache import get_all_employees_cached, invalidate_employee_cache
+from utils.uploads import get_upload_path, ensure_upload_dir
 
 def _get_redis():
     """Return a Redis client, or None if Redis is unavailable."""
@@ -64,8 +65,7 @@ def save_profile_image_data(employee_id, filename, image_data):
     if ext not in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
         ext = ".jpg"
     
-    target_dir = os.path.join("/opt/uploads", "employees", str(employee_id))
-    os.makedirs(target_dir, exist_ok=True)
+    target_dir = ensure_upload_dir("employees", str(employee_id))
     
     target_filename = f"profile{ext}"
     target_path = os.path.join(target_dir, target_filename)
@@ -91,8 +91,7 @@ def is_document_path(val):
 def save_employee_document_data(employee_id, doc_type, filename, file_data):
     ext = os.path.splitext(filename or "document.pdf")[1].lower() or ".pdf"
     
-    target_dir = os.path.join("/opt/uploads", "employees", str(employee_id))
-    os.makedirs(target_dir, exist_ok=True)
+    target_dir = ensure_upload_dir("employees", str(employee_id))
     
     target_filename = f"{doc_type}{ext}"
     target_path = os.path.join(target_dir, target_filename)
@@ -365,7 +364,15 @@ def get_employees():
             "last_working_date":
                 emp.last_working_date.isoformat() if hasattr(emp, "last_working_date") and emp.last_working_date else None,
             "profile_image":
-                get_profile_image_url(emp)
+                get_profile_image_url(emp),
+            "basic": emp.basic,
+            "hra": emp.hra,
+            "lta": emp.lta,
+            "other_allowance": emp.other_allowance,
+            "bank_name": emp.bank_name,
+            "account_number": emp.account_number,
+            "ifsc_code": emp.ifsc_code,
+            "branch_code": emp.branch_code
         })
 
     return jsonify(result)
@@ -401,7 +408,7 @@ def download_employee_document(employee_id, doc_type):
 
         if is_document_path(file_data):
             decoded_path = file_data.decode('utf-8') if isinstance(file_data, bytes) else str(file_data)
-            full_path = os.path.join("/opt/uploads", decoded_path)
+            full_path = get_upload_path(decoded_path)
             if os.path.exists(full_path):
                 with open(full_path, "rb") as f:
                     file_data = f.read()
@@ -507,6 +514,11 @@ def get_employee(employee_id):
     "bank_name": employee.bank_name,
     "account_number": employee.account_number,
     "ifsc_code": employee.ifsc_code,
+    "branch_code": employee.branch_code,
+    "basic": employee.basic,
+    "hra": employee.hra,
+    "lta": employee.lta,
+    "other_allowance": employee.other_allowance,
 
     "pan_number": employee.pan_number,
     "aadhaar_number": employee.aadhaar_number,
@@ -627,7 +639,7 @@ def get_employee_image(employee_id):
 
     if is_image_path(employee.profile_image):
         decoded_path = employee.profile_image.decode('utf-8') if isinstance(employee.profile_image, bytes) else str(employee.profile_image)
-        full_path = os.path.join("/opt/uploads", decoded_path)
+        full_path = get_upload_path(decoded_path)
         if os.path.exists(full_path):
             from utils.compat import send_file
             ext = os.path.splitext(full_path)[1].lower()
@@ -843,6 +855,31 @@ def update_employee_profile(employee_id):
         employee.ifsc_code = data.get(
             "ifsc_code",
             employee.ifsc_code
+        )
+
+        employee.branch_code = data.get(
+            "branch_code",
+            employee.branch_code
+        )
+
+        employee.basic = data.get(
+            "basic",
+            employee.basic
+        )
+
+        employee.hra = data.get(
+            "hra",
+            employee.hra
+        )
+
+        employee.lta = data.get(
+            "lta",
+            employee.lta
+        )
+
+        employee.other_allowance = data.get(
+            "other_allowance",
+            employee.other_allowance
         )
 
         # Identity
@@ -1538,9 +1575,12 @@ def get_team_attendance(user_id):
                     working_hours += permission_hours
                     working_hours = int(working_hours * 100) / 100
 
-                # Override to Half Day if working hours < 4
-                if att_status not in ("Absent", "On Leave") and working_hours > 0 and working_hours < 4.0:
-                    att_status = "Half Day"
+                # Override status based on working hours
+                if att_status not in ("Absent", "On Leave") and working_hours > 0:
+                    if working_hours < 4.0:
+                        att_status = "Absent"
+                    elif working_hours < 8.0:
+                        att_status = "Half Day"
             elif on_leave:
                 att_status = "On Leave"
                 check_in = None
@@ -1766,9 +1806,29 @@ def get_reporting_employees(user_id):
 
             if attendance:
                 status = attendance.status
-                total_hours_val = attendance.total_hours or 0.0
-                if attendance.check_out and total_hours_val > 0 and total_hours_val < 4.0 and status not in ("Absent", "Leave"):
-                    status = "Half Day"
+                eff_in = attendance.check_in or attendance.card_check_in
+                eff_out = attendance.check_out or attendance.card_check_out
+                if eff_in and eff_out:
+                    gross_sec = (eff_out - eff_in).total_seconds()
+                    gross_hours = max(gross_sec, 0) / 3600
+                elif eff_in:
+                    now_time = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
+                    if date_to_check == now_time.date():
+                        gross_sec = (now_time - eff_in).total_seconds()
+                        gross_hours = max(gross_sec, 0) / 3600
+                    else:
+                        gross_hours = 0.0
+                else:
+                    gross_hours = 0.0
+
+                if (attendance.check_out or attendance.card_check_out) and status not in ("Absent", "Leave"):
+                    if gross_hours < 4.0:
+                        status = "Absent"
+                    elif gross_hours < 8.0:
+                        status = "Half Day"
+                    else:
+                        status = "Present"
+
                 if status in ("Present", "Half Day"):
                     employee_category = "present"
                 elif status == "Leave":

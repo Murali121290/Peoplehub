@@ -19,11 +19,25 @@ from models.employee import Employee
 from models.notification import Notification
 # pyrefly: ignore [missing-import]
 from sqlalchemy import func
+from utils.uploads import get_upload_path, ensure_upload_dir
 
 shift_bp = Blueprint(
     "shift_bp",
     __name__
 )
+
+def init_db_columns():
+    try:
+        from sqlalchemy import text
+        with db.engine.begin() as conn:
+            try:
+                conn.execute(text("ALTER TABLE shift_requests ADD COLUMN supportive_document TEXT"))
+            except Exception:
+                pass
+    except Exception as e:
+        print("Error checking/adding column to shift_requests:", e)
+
+init_db_columns()
 
 
 # ==========================================
@@ -32,7 +46,13 @@ shift_bp = Blueprint(
 @shift_bp.route("/", methods=["POST"])
 def apply_shift():
     try:
-        data = request.get_json()
+        # Check if form-data or JSON
+        if request.content_type and "multipart/form-data" in request.content_type:
+            data = request.form.to_dict()
+            file = request.files.get("supportive_document")
+        else:
+            data = request.get_json()
+            file = None
 
         print("SHIFT DATA:", data)
 
@@ -54,16 +74,18 @@ def apply_shift():
                 "message": "Cannot apply for a shift change for a past date."
             }), 400
 
+        emp_id = int(data["employee_id"]) if data.get("employee_id") else None
+
         employee = Employee.query.filter(
             or_(
-                Employee.id == data["employee_id"],
-                Employee.employee_id == str(data["employee_id"])
+                Employee.id == emp_id,
+                Employee.employee_id == str(data.get("employee_id"))
             )
         ).first()
 
         if req_from == ist_today and data.get("request_type") != "One Day Wages":
             # Check if employee already checked in today
-            resolved_user_id = employee.user_id if employee else data["employee_id"]
+            resolved_user_id = employee.user_id if employee else emp_id
             attendance = Attendance.query.filter_by(
                 user_id=resolved_user_id,
                 attendance_date=ist_today
@@ -108,8 +130,23 @@ def apply_shift():
                         "message": f"An approved {req_label} request already exists from {existing_approved_request.from_date} to {existing_approved_request.to_date}. Please cancel the active approved request first before applying for a new shift, WFH, or office mode."
                     }), 400
 
+        # Check if supportive_document was uploaded
+        supportive_document_path = None
+        if file:
+            filename = file.filename
+            if filename:
+                import os
+                ext = os.path.splitext(filename)[1].lower() or ".pdf"
+                # Save to the persistent Docker volume via centralized helper
+                target_dir = ensure_upload_dir("shift_requests")
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                target_filename = f"shift_req_{emp_id}_{timestamp}{ext}"
+                target_path = os.path.join(target_dir, target_filename)
+                file.save(target_path)
+                supportive_document_path = f"shift_requests/{target_filename}"
+
         shift_request = ShiftRequest(
-            employee_id=data["employee_id"],
+            employee_id=emp_id,
             employee_name=data["employee_name"],
             current_shift=data.get("current_shift"),
             requested_shift=data.get("requested_shift"),
@@ -136,6 +173,7 @@ def apply_shift():
 
             reason=data["reason"],
             reporting_manager=data["reporting_manager"],
+            supportive_document=supportive_document_path,
 
             status="Pending"
         )
@@ -897,3 +935,26 @@ def manager_submit_shift():
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+@shift_bp.route("/<int:request_id>/document", methods=["GET"])
+def download_supportive_document(request_id):
+    try:
+        from utils.compat import send_file
+        import os
+        req = ShiftRequest.query.get(request_id)
+        if not req or not req.supportive_document:
+            return jsonify({"error": "Document not found"}), 404
+
+        full_path = get_upload_path(req.supportive_document)
+        if os.path.exists(full_path):
+            filename = os.path.basename(full_path)
+            return send_file(
+                full_path,
+                as_attachment=True,
+                download_name=filename
+            )
+        else:
+            return jsonify({"error": "File not found on disk"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

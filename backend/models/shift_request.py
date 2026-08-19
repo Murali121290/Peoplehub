@@ -47,6 +47,11 @@ class ShiftRequest(db.Model):
         nullable=False
     )
 
+    supportive_document = db.Column(
+        db.Text,
+        nullable=True
+    )
+
     reporting_manager = db.Column(
         db.String(200),
         nullable=False
@@ -135,6 +140,7 @@ class ShiftRequest(db.Model):
             "reporting_manager": self.reporting_manager,
             "status": self.status,
             "manager_comment": self.manager_comment,
+            "supportive_document": self.supportive_document,
             "created_at": (
                 self.created_at.isoformat() + "Z"
                 if self.created_at

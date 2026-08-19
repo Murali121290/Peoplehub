@@ -929,7 +929,7 @@ const ManagerDashboardPage = () => {
     } else if (filterStatus === "Present") {
       matchesFilter = !!member.check_in || !!member.card_check_in || member.attendanceStatus === "Present" || member.attendanceStatus === "Checked Out" || member.attendanceStatus === "Half Day";
     } else if (filterStatus === "Not Checked In") {
-      matchesFilter = !member.check_in && !member.card_check_in && member.attendanceStatus !== "Present" && member.attendanceStatus !== "Checked Out" && member.attendanceStatus !== "Half Day";
+      matchesFilter = !member.check_in && !member.card_check_in && member.attendanceStatus !== "Present" && member.attendanceStatus !== "Checked Out" && member.attendanceStatus !== "Half Day" && member.attendanceStatus !== "On Leave";
     } else if (filterStatus === "Leave") {
       matchesFilter = member.status === "Leave" || member.attendanceStatus === "On Leave";
     } else if (filterStatus === "WFH") {
@@ -959,7 +959,8 @@ const ManagerDashboardPage = () => {
           !m.card_check_in &&
           m.attendance_status !== "Present" &&
           m.attendance_status !== "Checked Out" &&
-          m.attendance_status !== "Half Day",
+          m.attendance_status !== "Half Day" &&
+          m.attendance_status !== "On Leave",
       ).length,
     [teamAttendance],
   );

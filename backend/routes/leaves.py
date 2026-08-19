@@ -495,11 +495,7 @@ def cancel_leave(leave_id):
         today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
         start_date = leave.permission_date if leave.request_type == "Permission" else leave.from_date
         
-        if leave.status == "Approved" and start_date and today > start_date:
-            return jsonify({
-                "success": False,
-                "error": "Cannot cancel a leave request from the past."
-            }), 400
+        # Date constraint bypassed to allow manager cancellations of past/active requests
 
         previous_status = leave.status
         leave.status = "Cancelled"

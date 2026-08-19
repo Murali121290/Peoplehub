@@ -13,6 +13,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 from models.database import init_db, engine, db_session
 # pyrefly: ignore [missing-import]
 from sqlalchemy import text
+from utils.uploads import get_uploads_dir, ensure_upload_dir
 
 # Import routers
 from routes.auth import auth_bp
@@ -103,9 +104,12 @@ def create_app():
     fastapi_app.include_router(appraisal_bp, prefix="/api")
     fastapi_app.include_router(db_admin_bp, prefix="/api/admin/db")
 
-    # Mount uploads directory static files
-    os.makedirs("/opt/uploads", exist_ok=True)
-    fastapi_app.mount("/uploads", StaticFiles(directory="/opt/uploads"), name="uploads")
+    # Mount uploads directory static files (persistent Docker volume at UPLOADS_DIR)
+    uploads_dir = get_uploads_dir()
+    ensure_upload_dir()  # ensure base dir exists
+    ensure_upload_dir("shift_requests")  # pre-create subdirs
+    ensure_upload_dir("employees")
+    fastapi_app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
     # Initialize database, apply Alembic migrations, and seed defaults
     init_db()

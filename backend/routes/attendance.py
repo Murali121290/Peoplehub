@@ -16,6 +16,7 @@ from openpyxl.styles import PatternFill
 from utils.compat import send_file
 from zoneinfo import ZoneInfo
 from models.leave import LeaveRequest, LeaveLedger
+from models.payment_details import PaymentDetails
 from io import BytesIO
 import os
 import pymysql
@@ -447,10 +448,7 @@ def check_out():
         hours_decimal = total_seconds / 3600
         attendance.total_hours = int(hours_decimal * 100) / 100
 
-        if attendance.total_hours >= 4.0:
-            attendance.status = "Present"
-        else:
-            attendance.status = "Half Day"
+        calculate_attendance_status(attendance)
 
         db.session.commit()
 
@@ -501,6 +499,43 @@ def check_out():
             "error": str(e)
         }), 500
 
+def calculate_attendance_status(attendance):
+    """
+    Calculate and update the attendance status (Present, Half Day, Absent)
+    based on the gross duration from check-in to check-out (including breaks).
+    - < 4 hours: Absent
+    - < 8 hours: Half Day
+    - >= 8 hours: Present
+    """
+    # 1. Determine effective check-in and check-out (Web or Card)
+    eff_in = attendance.check_in or attendance.card_check_in
+    eff_out = attendance.check_out or attendance.card_check_out
+
+    if eff_in and eff_out:
+        # If checked out, calculate gross hours from in to out
+        gross_seconds = (eff_out - eff_in).total_seconds()
+        gross_hours = max(gross_seconds, 0) / 3600
+    elif eff_in:
+        # If currently checked in, calculate elapsed gross hours till now (if today)
+        now = get_ist_now()
+        if attendance.attendance_date == now.date():
+            gross_seconds = (now - eff_in).total_seconds()
+            gross_hours = max(gross_seconds, 0) / 3600
+        else:
+            # Past date without check-out
+            gross_hours = 0.0
+    else:
+        gross_hours = 0.0
+
+    # 2. Determine status
+    if gross_hours < 4.0:
+        attendance.status = "Absent"
+    elif gross_hours < 8.0:
+        attendance.status = "Half Day"
+    else:
+        attendance.status = "Present"
+
+
 def sync_biometric_to_web_entry(attendance):
     """
     Sync biometric card punch times to web punch times if they are missing,
@@ -524,27 +559,7 @@ def sync_biometric_to_web_entry(attendance):
             attendance.total_hours = int(hours_decimal * 100) / 100
 
         # Recalculate status
-        web_hrs = attendance.total_hours or 0.0
-        card_hrs = attendance.card_working_hours or 0.0
-        max_hrs = max(web_hrs, card_hrs)
-
-        active_hrs = max_hrs
-        if not (attendance.check_out or attendance.card_check_out):
-            effective_in = attendance.check_in or attendance.card_check_in
-            if effective_in:
-                now = get_ist_now()
-                if attendance.attendance_date == now.date():
-                    elapsed_seconds = (now - effective_in).total_seconds()
-                    break_seconds = (attendance.total_break_minutes or 0) * 60
-                    hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
-                    active_hrs = max(hours_decimal, max_hrs)
-
-        if active_hrs >= 4.0:
-            attendance.status = "Present"
-        elif attendance.check_in or attendance.card_check_in:
-            attendance.status = "Half Day"
-        else:
-            attendance.status = "Absent"
+        calculate_attendance_status(attendance)
 
     return updated
 
@@ -652,27 +667,7 @@ def sync_card_logs():
             sync_biometric_to_web_entry(attendance)
 
             # Recalculate status
-            web_hrs = attendance.total_hours or 0.0
-            card_hrs = attendance.card_working_hours or 0.0
-            max_hrs = max(web_hrs, card_hrs)
-
-            active_hrs = max_hrs
-            if not (attendance.check_out or attendance.card_check_out):
-                effective_in = attendance.check_in or attendance.card_check_in
-                if effective_in:
-                    now = get_ist_now()
-                    if attendance.attendance_date == now.date():
-                        elapsed_seconds = (now - effective_in).total_seconds()
-                        break_seconds = (attendance.total_break_minutes or 0) * 60
-                        hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
-                        active_hrs = max(hours_decimal, max_hrs)
-
-            if active_hrs >= 4.0:
-                attendance.status = "Present"
-            elif attendance.check_in or attendance.card_check_in:
-                attendance.status = "Half Day"
-            else:
-                attendance.status = "Absent"
+            calculate_attendance_status(attendance)
 
             processed_count += 1
 
@@ -1100,8 +1095,9 @@ def attendance_history(user_id):
     else:
         end_date_limit = date(start_date_val.year, start_date_val.month + 1, 24)
 
-    # Limit end_date to today
-    end_date = min(today, end_date_limit)
+    # Limit end_date to yesterday (do not show today's incomplete date in history)
+    yesterday = today - timedelta(days=1)
+    end_date = min(yesterday, end_date_limit)
 
     # Fetch holidays and overrides within range
     from models.holiday import Holiday, HolidayOverride
@@ -1179,11 +1175,28 @@ def attendance_history(user_id):
                     working_hours = record.total_hours or 0.0
                     check_out_str = "-"
 
-                # Derive display status: override to Half Day if < 4 working hours and checked in
+                # Derive display status: override based on working hours if checked in (unless approved by manager)
                 base_status = record.status or "Present"
                 has_checkin = bool(record.check_in or record.card_check_in)
-                if has_checkin and base_status not in ("Absent", "Leave") and working_hours < 4.0:
-                    display_status = "Half Day"
+                if has_checkin and base_status not in ("Absent", "Leave") and record.manager_status != "Approved":
+                    eff_in = record.check_in or record.card_check_in
+                    eff_out = record.check_out or record.card_check_out
+                    if eff_in and eff_out:
+                        gross_sec = (eff_out - eff_in).total_seconds()
+                        gross_hours = max(gross_sec, 0) / 3600
+                    elif eff_in and is_today:
+                        now_time = get_ist_now()
+                        gross_sec = (now_time - eff_in).total_seconds()
+                        gross_hours = max(gross_sec, 0) / 3600
+                    else:
+                        gross_hours = 0.0
+
+                    if gross_hours < 4.0:
+                        display_status = "Absent"
+                    elif gross_hours < 8.0:
+                        display_status = "Half Day"
+                    else:
+                        display_status = "Present"
                 else:
                     display_status = base_status
 
@@ -1409,16 +1422,21 @@ def get_attendance():
                             hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
                             active_hrs = max(hours_decimal, max_hrs)
                 
-                if active_hrs >= 4.0:
-                    status = "Present"
-                else:
+                if active_hrs < 4.0:
+                    status = "Absent"
+                elif active_hrs < 8.0:
                     status = "Half Day"
+                else:
+                    status = "Present"
             else:
                 status = attendance.status or "Absent"
 
-            # Override to Half Day if checked out with < 4 working hours
-            if attendance.check_out and web_hrs < 4.0 and status not in ("Absent", "Leave", "LOP", "Holiday", "Week Off"):
-                status = "Half Day"
+            # Override status based on working hours if checked out
+            if attendance.check_out and status not in ("Absent", "Leave", "LOP", "Holiday", "Week Off"):
+                if web_hrs < 4.0:
+                    status = "Absent"
+                elif web_hrs < 8.0:
+                    status = "Half Day"
 
             check_in = (
                 attendance.check_in.strftime("%H:%M:%S")
@@ -1503,10 +1521,12 @@ def get_attendance():
 
             # Re-evaluate status now that hours include permission credit virtually
             if status in ("Absent", "Half Day") and has_permission:
-                if virtual_total_hours >= 4.0:
-                    status = "Present"
-                else:
+                if virtual_total_hours < 4.0:
+                    status = "Absent"
+                elif virtual_total_hours < 8.0:
                     status = "Half Day"
+                else:
+                    status = "Present"
 
 
         from models.shift_request import ShiftRequest
@@ -1677,10 +1697,13 @@ def _get_period_attendance_records(days_count, include_card_fields=False):
 
             if attendance:
                 status = attendance.status or "Present"
-                # Override to Half Day if checked out with < 4 working hours
+                # Override status if checked out with fewer working hours
                 total_hours_period = attendance.total_hours or 0.0
-                if attendance.check_out and total_hours_period < 4.0 and status not in ("Absent", "Leave"):
-                    status = "Half Day"
+                if attendance.check_out and status not in ("Absent", "Leave"):
+                    if total_hours_period < 4.0:
+                        status = "Absent"
+                    elif total_hours_period < 8.0:
+                        status = "Half Day"
 
                 card_check_in = (
                     attendance.card_check_in.strftime("%I:%M %p")
@@ -2222,9 +2245,9 @@ def export_monthly_attendance():
                         web_hrs = att.total_hours or 0.0
                         card_hrs = att.card_working_hours or 0.0
                         max_hrs = max(web_hrs, card_hrs)
-                        if max_hrs >= 4.0:
+                        if max_hrs >= 8.0:
                             effective_status = "Present"
-                        elif max_hrs > 0.0:
+                        elif max_hrs >= 4.0:
                             effective_status = "Half Day"
 
                     if att and effective_status == "Present":
@@ -2571,46 +2594,24 @@ def credit_monthly_leaves():
 def export_paysheet():
 
     try:
+        today = date.today()
+        # Accept month/year filters from query params (defaults to current month/year)
+        month = request.args.get("month", type=int, default=today.month)
+        year  = request.args.get("year",  type=int, default=today.year)
+
+        # Determine the payroll period for the requested month
+        if month == 1:
+            start_date = date(year - 1, 12, 25)
+        else:
+            start_date = date(year, month - 1, 25)
+        end_date = date(year, month, 24)
 
         wb = Workbook()
-
         ws = wb.active
-
         ws.title = "Paysheet"
 
-        today = date.today()
-
-        if today.month == 1:
-
-            start_date = date(
-                today.year - 1,
-                12,
-                25
-            )
-
-        else:
-
-            start_date = date(
-                today.year,
-                today.month - 1,
-                25
-            )
-
-        end_date = date(
-            today.year,
-            today.month,
-            24
-        )
-
-        header_fill = PatternFill(
-            fill_type="solid",
-            fgColor="D9A066"
-        )
-
-        header_font = Font(
-            bold=True
-        )
-
+        header_fill = PatternFill(fill_type="solid", fgColor="D9A066")
+        header_font = Font(bold=True)
         thin_border = Border(
             left=Side(style="thin"),
             right=Side(style="thin"),
@@ -2618,328 +2619,280 @@ def export_paysheet():
             bottom=Side(style="thin")
         )
 
+        import calendar
+        month_label = f"{calendar.month_name[month]} {year}"
+
         ws.merge_cells("A1:BE1")
-
-        ws["A1"] = "PAYSHEET REPORT"
-
-        ws["A1"].font = Font(
-            bold=True,
-            size=16
-        )
-
-        ws["A1"].alignment = Alignment(
-            horizontal="center"
-        )
+        ws["A1"] = f"PAYSHEET REPORT - {month_label}"
+        ws["A1"].font = Font(bold=True, size=16)
+        ws["A1"].alignment = Alignment(horizontal="center")
 
         headers = [
-    "S.No",
-    "EMP NO",
-    "Gender",
-    "PF No",
-    "UAN No",
-    "ESI No",
-    "Employee Name",
-    "Department",
-    "Designation",
-    "Mail ID",
-    "DOJ",
-    "No Of Days In Month",
-    "Days Payable",
-    "Basic",
-    "HRA",
-    "LTA",
-    "Other Allowance",
-    "Gross Salary",
+            "S.No",
+            "EMP NO",
+            "Gender",
+            "PF No",
+            "UAN No",
+            "ESI No",
+            "Employee Name",
+            "Department",
+            "Designation",
+            "Mail ID",
+            "DOJ",
+            "No Of Days In Month",
+            "Days Payable",
+            "Basic",
+            "HRA",
+            "LTA",
+            "Other Allowance",
+            "Gross Salary",
+            "Earned Basic",
+            "Earned HRA",
+            "Earned LTA",
+            "Earned Other Allowance",
+            "Earned Actual Gross",
+            "Attendance Bonus",
+            "ODW",
+            "Total",
+            "Internet Charges",
+            "Gross Earned Salary",
+            "Earned PF Wages",
+            "PF Ded Employee",
+            "PF Ded Employer",
+            "VPF",
+            "PF & VPF Ded Employee",
+            "ESI Ded Employee",
+            "ESI Ded Employer",
+            "Salary Advance",
+            "TDS",
+            "LWF",
+            "PT",
+            "Other Deduction",
+            "Total Deduction",
+            "Net Transfer",
+            "Account No",
+            "IFSC Code",
+            "Branch Code",
+            "PF Wage",
+            "PF",
+            "EPS Wage",
+            "8.33 %",
+            "3.67 %",
+            "0.50 %",
+            "0.50 % Employer",
+            "0.01 %",
+            "Bonus",
+            "Actual Month CTC",
+            "Earned Month CTC",
+            "Remarks"
+        ]
 
-    "Earned Basic",
-    "Earned HRA",
-    "Earned LTA",
-    "Earned Other Allowance",
-    "Earned Actual Gross",
-
-    "Attendance Bonus",
-    "ODW",
-    "Total",
-
-    "Internet Charges",
-
-    "Gross Earned Salary",
-    "Earned PF Wages",
-
-    "PF Ded Employee",
-    "PF Ded Employer",
-
-    "VPF",
-
-    "PF & VPF Ded Employee",
-
-    "ESI Ded Employee",
-    "ESI Ded Employer",
-
-    "Salary Advance",
-
-    "TDS",
-    "LWF",
-    "PT",
-
-    "Other Deduction",
-
-    "Total Deduction",
-
-    "Net Transfer",
-
-    "Account No",
-    "IFSC Code",
-    "Branch Code",
-
-    "PF Wage",
-    "PF",
-
-    "EPS Wage",
-
-    "8.33 %",
-    "3.67 %",
-    "0.50 %",
-    "0.50 % Employer",
-    "0.01 %",
-
-    "Bonus",
-
-    "Actual Month CTC",
-    "Earned Month CTC",
-
-    "Remarks"
-]
-
-        for col_num, header in enumerate(
-            headers,
-            start=1
-        ):
-
-            cell = ws.cell(
-                row=3,
-                column=col_num
-            )
-
+        for col_num, header in enumerate(headers, start=1):
+            cell = ws.cell(row=3, column=col_num)
             cell.value = header
-
             cell.fill = header_fill
-
             cell.font = header_font
-
             cell.border = thin_border
 
+        # Fetch all PaymentDetails records for this payroll period
+        pay_records = PaymentDetails.query.filter_by(
+            payroll_period_start=start_date,
+            payroll_period_end=end_date
+        ).all()
+
+        # Build a lookup: alphanumeric employee_id -> PaymentDetails record
+        pay_lookup = {r.employee_id: r for r in pay_records}
+
+        # Get all active employees
         employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
 
+        # Sort employees by employee code in ascending order (handling prefixes like EMP)
+        def get_emp_code_val(e):
+            code = getattr(e, "employee_id", None) or ""
+            import re
+            nums = re.findall(r'\d+', str(code))
+            if nums:
+                try:
+                    return int(nums[0])
+                except ValueError:
+                    pass
+            try:
+                return int(code)
+            except (ValueError, TypeError):
+                return 999999
+        employees = sorted(employees, key=get_emp_code_val)
+
         row = 4
+        for index, employee in enumerate(employees, start=1):
+            rec = pay_lookup.get(employee.employee_id)
 
-        for index, employee in enumerate(
-            employees,
-            start=1
-        ):
-
-            attendance_records = Attendance.query.filter(
-                Attendance.user_id == employee.user_id,
-                Attendance.attendance_date >= start_date,
-                Attendance.attendance_date <= end_date
-            ).all()
-
-            leave_requests = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == employee.employee_id,
-                LeaveRequest.status == "Approved"
-            ).all()
-
-            total_leaves = sum(
-                leave.total_days or 0
-                for leave in leave_requests
-            )
-
-            total_days_cycle = (
-                end_date - start_date
-            ).days + 1
-
-            days_payable = (
-                total_days_cycle -
-                total_leaves
-            )
-
-            salary = (
-                employee.salary or 0
-            )
-
-            hra = 0
-            lta = 0
-            other_allowance = 0
-
-            pf_deduction = 0
-            esi_deduction = 0
-            tds = 0
-            pt = 0
-            lwf = 0
-
-            bonus = 0
-
-            internet_charges = 0
-
-            salary_advance = 0
-
-            actual_ctc = salary
-
-            earned_ctc = round(
-                (
-                    salary /
-                    total_days_cycle
-                ) *
-                days_payable,
-                2
-            )
-
-            net_transfer = round(
-                earned_ctc -
-                (
-                    pf_deduction +
-                    esi_deduction +
-                    tds +
-                    pt +
-                    lwf +
-                    salary_advance
-                ),
-                2
-            )
+            # Use saved payroll record if exists, else fall back to employee defaults
+            if rec:
+                no_of_days       = rec.no_of_days
+                days_payable     = rec.days_payable
+                basic            = rec.basic
+                hra              = rec.hra
+                lta              = rec.lta
+                other_allowance  = rec.other_allowance
+                gross_salary     = rec.gross_salary
+                earned_basic     = rec.earned_basic
+                earned_hra       = rec.earned_hra
+                earned_lta       = rec.earned_lta
+                earned_other     = rec.earned_other_allowance
+                earned_actual_gross = rec.earned_actual_gross
+                attendance_bonus = rec.attendance_bonus
+                odw              = rec.odw
+                total            = rec.total
+                internet_charges = rec.internet_charges
+                gross_earned     = rec.gross_earned_salary
+                earned_pf_wages  = rec.earned_pf_wages
+                pf_ded_employee  = rec.pf_ded_employee
+                pf_ded_employer  = rec.pf  # pf field = employer PF
+                vpf              = rec.vpf
+                pf_vpf_ded       = rec.pf_vpf_ded_employee
+                esi_employee     = rec.esi_ded_employee
+                esi_employer     = rec.esi_ded_employer
+                salary_advance   = rec.salary_advance
+                tds              = rec.tds
+                lwf              = rec.lwf
+                pt               = rec.pt
+                other_deduction  = rec.other_deduction
+                total_deduction  = rec.total_deduction
+                net_transfer     = rec.net_transfer
+                account_number   = rec.account_number or employee.account_number or ""
+                ifsc_code        = rec.ifsc_code or employee.ifsc_code or ""
+                branch_code      = rec.branch_code or ""
+                pf_wage          = rec.pf_wage
+                pf               = rec.pf
+                eps_wage         = rec.eps_wage
+                pf_8_33          = rec.pf_8_33
+                pf_3_67          = rec.pf_3_67
+                pf_0_50_pf       = rec.pf_0_50_pf_wage
+                pf_0_50_eps      = rec.pf_0_50_eps_wage
+                pf_0_01          = rec.pf_0_01
+                bonus            = rec.bonus
+                actual_ctc       = rec.actual_monthly_ctc
+                earned_ctc       = rec.earned_monthly_ctc
+                remarks          = rec.payment_status
+            else:
+                # No saved payroll record for this period — show zeroes / blanks
+                total_days_cycle = (end_date - start_date).days + 1
+                no_of_days       = total_days_cycle
+                days_payable     = total_days_cycle
+                salary           = employee.salary or 0
+                basic            = round(salary * 0.50, 2)
+                hra              = round(salary * 0.25, 2)
+                lta              = round(salary * 0.05, 2)
+                other_allowance  = round(salary * 0.20, 2)
+                gross_salary     = salary
+                earned_basic = earned_hra = earned_lta = earned_other = 0
+                earned_actual_gross = 0
+                attendance_bonus = odw = total = 0
+                internet_charges = 0
+                gross_earned = earned_pf_wages = 0
+                pf_ded_employee = pf_ded_employer = vpf = pf_vpf_ded = 0
+                esi_employee = esi_employer = 0
+                salary_advance = tds = lwf = pt = other_deduction = total_deduction = 0
+                net_transfer     = 0
+                account_number   = employee.account_number or ""
+                ifsc_code        = employee.ifsc_code or ""
+                branch_code      = ""
+                pf_wage = pf = eps_wage = 0
+                pf_8_33 = pf_3_67 = pf_0_50_pf = pf_0_50_eps = pf_0_01 = 0
+                bonus            = 0
+                actual_ctc = earned_ctc = 0
+                remarks          = "Not Processed"
 
             data = [
-    index,
-    employee.employee_id,
-    employee.gender,
-    employee.pf_number,
-    employee.uan_number,
-    employee.esi_number,
+                index,
+                employee.employee_id,
+                employee.gender,
+                employee.pf_number,
+                employee.uan_number,
+                employee.esi_number,
+                f"{employee.first_name} {employee.last_name}",
+                employee.department,
+                employee.designation,
+                employee.email,
+                employee.joining_date.strftime("%d-%m-%Y") if employee.joining_date else "",
+                no_of_days,
+                days_payable,
+                basic,
+                hra,
+                lta,
+                other_allowance,
+                gross_salary,
+                earned_basic,
+                earned_hra,
+                earned_lta,
+                earned_other,
+                earned_actual_gross,
+                attendance_bonus,
+                odw,
+                total,
+                internet_charges,
+                gross_earned,
+                earned_pf_wages,
+                pf_ded_employee,
+                pf_ded_employer,
+                vpf,
+                pf_vpf_ded,
+                esi_employee,
+                esi_employer,
+                salary_advance,
+                tds,
+                lwf,
+                pt,
+                other_deduction,
+                total_deduction,
+                net_transfer,
+                account_number,
+                ifsc_code,
+                branch_code,
+                pf_wage,
+                pf,
+                eps_wage,
+                pf_8_33,
+                pf_3_67,
+                pf_0_50_pf,
+                pf_0_50_eps,
+                pf_0_01,
+                bonus,
+                actual_ctc,
+                earned_ctc,
+                remarks
+            ]
 
-    f"{employee.first_name} {employee.last_name}",
-
-    employee.department,
-    employee.designation,
-    employee.email,
-    employee.joining_date.strftime("%d-%m-%Y") if employee.joining_date else "",
-
-    total_days_cycle,
-    days_payable,
-
-    salary,
-    hra,
-    lta,
-    other_allowance,
-    salary,
-
-    "",  # Earned Basic
-    "",  # Earned HRA
-    "",  # Earned LTA
-    "",  # Earned Other Allowance
-    "",  # Earned Actual Gross
-
-    "",  # Attendance Bonus
-    "",  # ODW
-    "",  # Total
-
-    internet_charges,
-
-    earned_ctc,
-
-    "",  # Earned PF Wages
-
-    pf_deduction,
-    "",  # PF Ded Employer
-
-    "",  # VPF
-
-    "",  # PF & VPF Ded Employee
-
-    esi_deduction,
-    "",  # ESI Ded Employer
-
-    salary_advance,
-
-    tds,
-    lwf,
-    pt,
-
-    "",  # Other Deduction
-
-    "",  # Total Deduction
-
-    net_transfer,
-
-    employee.account_number,
-    employee.ifsc_code,
-    "",  # Branch Code
-
-    "",  # PF Wage
-    "",  # PF
-
-    "",  # EPS Wage
-
-    "",  # 8.33%
-    "",  # 3.67%
-    "",  # 0.50%
-    "",  # 0.50% Employer
-    "",  # 0.01%
-
-    bonus,
-
-    actual_ctc,
-    earned_ctc,
-
-    ""
-]
-
-            for col_num, value in enumerate(
-                data,
-                start=1
-            ):
-
-                cell = ws.cell(
-                    row=row,
-                    column=col_num,
-                    value=value
-                )
-
+            for col_num, value in enumerate(data, start=1):
+                cell = ws.cell(row=row, column=col_num, value=value)
                 cell.border = thin_border
                 if value is not None and value != "":
-                    if isinstance(value, (int, float, date, datetime)) or (isinstance(value, str) and (value.isdigit() or value.startswith("EMP"))):
+                    if isinstance(value, (int, float, date, datetime)) or (
+                        isinstance(value, str) and (value.isdigit() or value.startswith("EMP"))
+                    ):
                         cell.alignment = Alignment(horizontal="center")
 
             row += 1
 
         for column_cells in ws.columns:
-
             try:
-
                 length = max(
-                    len(str(cell.value))
-                    if cell.value
-                    else 0
+                    len(str(cell.value)) if cell.value else 0
                     for cell in column_cells
                 )
-
-                ws.column_dimensions[
-                    get_column_letter(
-                        column_cells[0].column
-                    )
-                ].width = length + 5
-
+                ws.column_dimensions[get_column_letter(column_cells[0].column)].width = length + 5
             except:
                 pass
 
         output = BytesIO()
-
         wb.save(output)
-
         output.seek(0)
 
+        filename = f"Paysheet_{calendar.month_name[month]}_{year}.xlsx"
         return send_file(
             output,
             as_attachment=True,
-            download_name="Paysheet_Report.xlsx",
+            download_name=filename,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
@@ -3079,16 +3032,9 @@ def approve_attendance(employee_id):
                 attendance.check_out = attendance.regularization_check_out
                 attendance.total_hours = attendance.regularization_total_hours or 0.0
                 
-                if (attendance.total_hours or 0.0) >= 4.0:
-                    attendance.status = "Present"
-                else:
-                    attendance.status = "Half Day"
+                calculate_attendance_status(attendance)
                 
-                # Clear regularization fields
-                attendance.is_regularization = False
-                attendance.regularization_check_in = None
-                attendance.regularization_check_out = None
-                attendance.regularization_total_hours = 0.0
+                # Keep regularization fields populated for history retrieval
             elif attendance.status in ("Leave", "Absent"):
                 # Leave confirmation — find the pending LeaveRequest and approve it
                 from models.leave import LeaveRequest
@@ -3143,12 +3089,12 @@ def approve_attendance(employee_id):
                             hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
                             active_hrs = max(hours_decimal, max_hrs)
 
-                if active_hrs >= 4.0:
-                    attendance.status = "Present"
-                elif attendance.check_in or attendance.card_check_in:
+                if active_hrs < 4.0:
+                    attendance.status = "Absent"
+                elif active_hrs < 8.0:
                     attendance.status = "Half Day"
                 else:
-                    attendance.status = "Absent"
+                    attendance.status = "Present"
 
         db.session.commit()
 
@@ -3339,23 +3285,7 @@ def get_pending_regularizations(manager_user_id):
             Attendance.is_regularization == True
         ).order_by(Attendance.attendance_date.desc()).all()
 
-        # Auto-fix any stuck records: is_regularization=True but already Rejected
-        # These have the regularization times still saved; revert them to card times
-        needs_commit = False
-        for rec in pending_records:
-            if rec.manager_status == "Rejected":
-                rec.is_regularization = False
-                rec.regularization_check_in = None
-                rec.regularization_check_out = None
-                rec.regularization_total_hours = 0.0
-                needs_commit = True
-        if needs_commit:
-            db.session.commit()
-            # Reload only unrejected records
-            pending_records = Attendance.query.filter(
-                Attendance.user_id.in_(reporting_user_ids),
-                Attendance.is_regularization == True
-            ).order_by(Attendance.attendance_date.desc()).all()
+        # Completed/rejected records are kept so they can be viewed in the history tab
 
         results = []
         # Build lookup for employee details
@@ -3668,11 +3598,7 @@ def reject_attendance(employee_id):
                             att.status = "Absent"
 
                 att.manager_status = target_status
-                if not is_clarification:
-                    att.is_regularization = False
-                    att.regularization_check_in = None
-                    att.regularization_check_out = None
-                    att.regularization_total_hours = 0.0
+                # Keep regularization fields populated for history retrieval
                 history = list(att.clarification_history or [])
                 history.append(msg_entry)
                 att.clarification_history = history
@@ -4158,12 +4084,12 @@ def upload_attendance_excel():
                 card_hrs = attendance.card_working_hours or 0.0
                 max_hrs = max(web_hrs, card_hrs)
                 
-                if max_hrs >= 4.0:
-                    attendance.status = "Present"
-                elif max_hrs > 0.0 or attendance.check_in or attendance.card_check_in:
+                if max_hrs < 4.0:
+                    attendance.status = "Absent"
+                elif max_hrs < 8.0:
                     attendance.status = "Half Day"
                 else:
-                    attendance.status = "Absent"
+                    attendance.status = "Present"
                     
                 processed_count += 1
                 
@@ -4331,7 +4257,7 @@ def update_attendance_record():
 @attendance_bp.route("/trigger-db-sync", methods=["POST"])
 def trigger_db_sync():
     try:
-        mysql_host = os.environ.get("MYSQL_BIOMETRIC_HOST", "10.1.8.49")
+        mysql_host = os.environ.get("MYSQL_BIOMETRIC_HOST", "10.1.1.18")
         mysql_port = int(os.environ.get("MYSQL_BIOMETRIC_PORT", 3306))
         mysql_user = os.environ.get("MYSQL_BIOMETRIC_USER", "Muralibalu")
         mysql_password = os.environ.get("MYSQL_BIOMETRIC_PASSWORD", "Murali@12")
@@ -4435,27 +4361,7 @@ def trigger_db_sync():
                 attendance.card_working_hours = 0.0
 
             # Recalculate status
-            web_hrs = attendance.total_hours or 0.0
-            card_hrs = attendance.card_working_hours or 0.0
-            max_hrs = max(web_hrs, card_hrs)
-
-            active_hrs = max_hrs
-            if not (attendance.check_out or attendance.card_check_out):
-                effective_in = attendance.check_in or attendance.card_check_in
-                if effective_in:
-                    now = get_ist_now()
-                    if attendance.attendance_date == now.date():
-                        elapsed_seconds = (now - effective_in).total_seconds()
-                        break_seconds = (attendance.total_break_minutes or 0) * 60
-                        hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
-                        active_hrs = max(hours_decimal, max_hrs)
-
-            if active_hrs >= 4.0:
-                attendance.status = "Present"
-            elif attendance.check_in or attendance.card_check_in:
-                attendance.status = "Half Day"
-            else:
-                attendance.status = "Absent"
+            calculate_attendance_status(attendance)
 
             processed_count += 1
 

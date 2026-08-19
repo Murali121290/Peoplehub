@@ -4,6 +4,10 @@ import Avatar from "../components/Avatar";
 import Chip from "../components/Chip";
 import { formatDateStr } from "../../../utils/date";
 import { Button } from "../../../components/ui/Button";
+import { PaperClipIcon } from "@heroicons/react/24/outline";
+import { API_URL } from "../../../config/api";
+
+const BASE_URL = `${API_URL}/api`;
 
 interface ShiftRequest {
   id: number;
@@ -19,6 +23,7 @@ interface ShiftRequest {
   request_type?: string;
   current_work_mode?: string;
   requested_work_mode?: string;
+  supportive_document?: string | null;
 }
 
 interface ShiftTabProps {
@@ -126,8 +131,21 @@ export const ShiftTab: React.FC<ShiftTabProps> = ({ shifts, onApprove, onReject 
 
                   <td className="p-3 text-xs font-normal text-neutral-500">{formatDateStr(s.to_date)}</td>
 
-                  <td className="p-3 text-xs font-normal text-neutral-500 max-w-[200px] truncate" title={s.reason}>
-                    {s.reason}
+                  <td className="p-3 text-xs font-normal text-neutral-500 max-w-[200px]" title={s.reason}>
+                    <div className="flex flex-col gap-1">
+                      <span className="truncate">{s.reason || "-"}</span>
+                      {(s as any).supportive_document && (
+                        <a
+                          href={`${BASE_URL}/shifts/${s.id}/document`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-bold text-primary-600 hover:text-primary-700 flex items-center gap-1 mt-0.5"
+                        >
+                          <PaperClipIcon className="w-3 h-3 text-neutral-500" />
+                          Attachment
+                        </a>
+                      )}
+                    </div>
                   </td>
 
                   <td className="p-3 text-xs font-normal text-neutral-500">{s.reporting_manager}</td>

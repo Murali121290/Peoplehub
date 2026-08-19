@@ -5,6 +5,7 @@ from .holiday import Holiday, HolidayOverride
 from .leave import LeaveRequest, LeavePolicy, EmployeeLeaveBalance
 from .performance import EmployeePerformance
 from .notification import Notification
+from .payment_details import PaymentDetails
 
 from .attendance import Attendance
 from .shift_request import ShiftRequest
@@ -31,5 +32,6 @@ __all__ = [
     'MeetingRoom',
     'RoomBooking',
     'Communication',
-    'AppraisalCycle', 'AppraisalQuestion', 'AppraisalRequest', 'AppraisalAnswer'
+    'AppraisalCycle', 'AppraisalQuestion', 'AppraisalRequest', 'AppraisalAnswer',
+    'PaymentDetails'
 ]
