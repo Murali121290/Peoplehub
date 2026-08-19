@@ -1540,24 +1540,20 @@ def get_team_attendance(user_id):
             shift_change_today = next((r for r in emp_requests_today if r.request_type == "Shift"), None)
 
             if attendance:
-                if attendance.check_in or attendance.card_check_in:
-                    if attendance.check_in and not attendance.check_out:
-                        att_status = "Present"
-                    elif attendance.check_out or attendance.card_check_out:
-                        is_today = (attendance.attendance_date == today)
-                        if is_today and attendance.card_check_out and not attendance.check_out:
-                            punch_out_hour = attendance.card_check_out.hour
-                            working_hrs = attendance.card_working_hours or 0.0
-                            if punch_out_hour >= 15 or working_hrs >= 4.0:
-                                att_status = "Checked Out"
-                            else:
-                                att_status = "Present"
+                # Start with the database status
+                att_status = attendance.status or "Absent"
+                if att_status == "Leave":
+                    att_status = "On Leave"
+
+                # If they are currently checked in (not checked out), we show "Present"
+                # If they have checked out today, we show "Checked Out"
+                if att_status in ("Present", "Half Day", "Absent"):
+                    if attendance.check_in or attendance.card_check_in:
+                        if not (attendance.check_out or attendance.card_check_out):
+                            att_status = "Present"
                         else:
-                            att_status = "Checked Out"
-                    else:
-                        att_status = "Present"
-                else:
-                    att_status = "Absent"
+                            if att_status == "Present":
+                                att_status = "Checked Out"
 
                 # Web Entry: only show from web columns, do not fallback
                 check_in = attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None
@@ -1574,13 +1570,6 @@ def get_team_attendance(user_id):
                 if attendance.check_in and permission_hours > 0:
                     working_hours += permission_hours
                     working_hours = int(working_hours * 100) / 100
-
-                # Override status based on working hours
-                if att_status not in ("Absent", "On Leave") and working_hours > 0:
-                    if working_hours < 4.0:
-                        att_status = "Absent"
-                    elif working_hours < 8.0:
-                        att_status = "Half Day"
             elif on_leave:
                 att_status = "On Leave"
                 check_in = None
