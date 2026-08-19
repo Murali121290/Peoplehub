@@ -529,6 +529,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     let cardWorkingHours = 0;
     let workingHours = 0;
     let baseWorkingHours = 0;
+    let totalHours = 0;
     let workingHoursFormatted = "0h";
     let lunchMinutes = 0;
     let teaMinutes = 0;
@@ -571,6 +572,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       teaMinutes = Number(attRec.teaMinutes || attRec.tea_minutes || 0);
       if (attRec.shift) shift = attRec.shift;
       if (attRec.managerStatus) managerStatus = attRec.managerStatus;
+
+      // Calculate total/gross hours
+      totalHours = Number(attRec.total_hours || attRec.totalHours || 0);
+      if (totalHours <= 0 && hasCheckedIn) {
+        totalHours = baseWorkingHours + ((lunchMinutes + teaMinutes) / 60) + permissionHours;
+      }
 
       // Overtime calculation sample (>8h)
       if (workingHours > 8) {
@@ -620,39 +627,42 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       }
       leaveType = matchedLeave.leave_type;
       leaveReason = matchedLeave.reason;
-    } else if (attRec && (attRec.status?.toLowerCase() === "present" || (checkIn !== "-" && checkIn !== ""))) {
-      // If the database status is explicitly set to something else (e.g. Leave, Absent, Weekly Off, Holiday) by the manager/system, respect it.
+    } else if (attRec) {
+      // If the database status is explicitly set, respect it completely (Present, Half Day, Absent, Leave, Weekly Off, Holiday, etc.)
       const dbStatus = attRec.status;
-      if (dbStatus && dbStatus !== "Present" && dbStatus !== "Half Day") {
+      if (dbStatus) {
         status = dbStatus as any;
         badgeLabel = dbStatus;
         badgeEmoji = "";
-      } else {
-        // Present vs Half Day vs Absent thresholds — applies to both checked-out and still-active sessions
-        if (workingHours > 0 && workingHours < 4) {
+      } else if (checkIn !== "-" && checkIn !== "") {
+        // Fallback to Present vs Half Day vs Absent thresholds if db status is null/empty
+        if (totalHours > 0 && totalHours < 4) {
           status = "Absent";
           badgeLabel = "Absent";
           badgeEmoji = "";
-        } else if (workingHours >= 4 && workingHours < 8) {
+        } else if (totalHours >= 4 && totalHours < 7) {
           status = "Half Day";
           badgeLabel = "Half Day";
           badgeEmoji = "";
-        } else if (workingHours >= 8) {
+        } else if (totalHours >= 7) {
           status = "Present";
           badgeLabel = "Present";
           badgeEmoji = "";
         } else {
-          // workingHours is 0 (checked in but didn't check out on a past day, or checked in today but has 0 hours so far)
           if (isToday) {
             status = "Half Day";
             badgeLabel = "Half Day";
             badgeEmoji = "";
           } else {
-            status = (attRec.status === "Present" || attRec.status === "Half Day" || attRec.status === "Absent") ? (attRec.status as any) : "Absent";
-            badgeLabel = status;
+            status = "Absent";
+            badgeLabel = "Absent";
             badgeEmoji = "";
           }
         }
+      } else {
+        status = "Absent";
+        badgeLabel = "Absent";
+        badgeEmoji = "";
       }
     } else if (isFuture) {
       status = "Future";
