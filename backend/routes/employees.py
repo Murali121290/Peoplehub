@@ -1565,9 +1565,13 @@ def get_team_attendance(user_id):
                 working_hours = attendance.total_hours or 0.0
                 if attendance.check_in and not attendance.check_out:
                     now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
-                    elapsed = (now_ist - attendance.check_in).total_seconds()
+                    paused_secs = (attendance.paused_minutes or 0) * 60
+                    if attendance.is_paused and attendance.paused_start:
+                        elapsed = (attendance.paused_start - attendance.check_in).total_seconds()
+                    else:
+                        elapsed = (now_ist - attendance.check_in).total_seconds()
                     break_secs = (attendance.total_break_minutes or 0) * 60
-                    hours_decimal = max(elapsed - break_secs, 0) / 3600
+                    hours_decimal = max(elapsed - break_secs - paused_secs, 0) / 3600
                     working_hours = int(hours_decimal * 100) / 100
 
                 # Add permission hours if checked in
@@ -1621,6 +1625,8 @@ def get_team_attendance(user_id):
                 "card_working_hours": attendance.card_working_hours if (attendance and attendance.card_working_hours) else 0.0,
                 "lunch_minutes": attendance.lunch_minutes if attendance else 0,
                 "tea_minutes": attendance.tea_minutes if attendance else 0,
+                "is_paused": attendance.is_paused if attendance else False,
+                "paused_minutes": attendance.paused_minutes if attendance else 0,
                 "shift": (
                     shift_change_today.requested_shift
                     if shift_change_today
