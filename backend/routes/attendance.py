@@ -892,7 +892,9 @@ def lunch_break():
 
         # Emit attendance_update socket event for real-time dashboard updates
         try:
+            from models.employee import Employee
             from extensions import socketio
+            employee = Employee.query.filter_by(user_id=data["user_id"]).first()
             if employee:
                 payload = {
                     "id": employee.id,
@@ -1026,7 +1028,9 @@ def tea_break():
 
         # Emit attendance_update socket event for real-time dashboard updates
         try:
+            from models.employee import Employee
             from extensions import socketio
+            employee = Employee.query.filter_by(user_id=data["user_id"]).first()
             if employee:
                 payload = {
                     "id": employee.id,
@@ -1152,7 +1156,9 @@ def pause_attendance():
 
         # Emit attendance_update socket event for real-time dashboard updates
         try:
+            from models.employee import Employee
             from extensions import socketio
+            employee = Employee.query.filter_by(user_id=data["user_id"]).first()
             if employee:
                 payload = {
                     "id": employee.id,
@@ -1512,7 +1518,12 @@ def attendance_history(user_id):
                             LeaveRequest.from_date <= current_date,
                             LeaveRequest.to_date >= current_date
                         ).first()
-                        status = ("Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave") if leave else "Absent"
+                        
+                        is_cancelled = False
+                        if leave and leave.cancelled_dates:
+                            is_cancelled = current_date.strftime("%Y-%m-%d") in leave.cancelled_dates
+                            
+                        status = ("Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave") if (leave and not is_cancelled) else "Absent"
                 else:
                     # 2. Check Holiday table
                     if current_date in holiday_dict:
@@ -1532,7 +1543,12 @@ def attendance_history(user_id):
                             LeaveRequest.from_date <= current_date,
                             LeaveRequest.to_date >= current_date
                         ).first()
-                        status = ("Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave") if leave else "Absent"
+                        
+                        is_cancelled = False
+                        if leave and leave.cancelled_dates:
+                            is_cancelled = current_date.strftime("%Y-%m-%d") in leave.cancelled_dates
+                            
+                        status = ("Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave") if (leave and not is_cancelled) else "Absent"
 
                 result.append({
                     "id": f"virtual-{current_date.strftime('%Y-%m-%d')}",
@@ -2133,14 +2149,19 @@ def export_monthly_attendance():
         # STYLES
         # =====================================
 
-        purple_fill = PatternFill(
+        sky_blue_fill = PatternFill(
             fill_type="solid",
-            fgColor="B58CE5"
+            fgColor="1F7A8C"  # Brand Primary Blue/Teal
         )
 
         yellow_fill = PatternFill(
             fill_type="solid",
-            fgColor="F7F1A0"
+            fgColor="FBBF24"  # Brand Yellow
+        )
+
+        leave_deduction_fill = PatternFill(
+            fill_type="solid",
+            fgColor="FDE68A"  # Brand Soft Yellow for leave highlight
         )
 
         white_font = Font(
@@ -2168,24 +2189,24 @@ def export_monthly_attendance():
         start_day_suff = f"{start_date.day}{get_ordinal_suffix(start_date.day)}"
         end_day_suff = f"{effective_end_date.day}{get_ordinal_suffix(effective_end_date.day)}"
 
-        # Merged A1:R1 for S4C Period Title
-        ws.merge_cells("A1:R1")
+        # Merged A1:S1 for S4C Period Title
+        ws.merge_cells("A1:S1")
         ws["A1"] = f"S4C - Attendance for the period from {start_day_suff} {start_date.strftime('%B')} {start_date.year} to {end_day_suff} {effective_end_date.strftime('%B')} {effective_end_date.year}"
-        ws["A1"].fill = purple_fill
+        ws["A1"].fill = sky_blue_fill
         ws["A1"].font = Font(bold=True, size=14, color="FFFFFF")
         ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[1].height = 40
 
-        # Merged A2:R2 for Summary Month Subtitle
-        ws.merge_cells("A2:R2")
+        # Merged A2:S2 for Summary Month Subtitle
+        ws.merge_cells("A2:S2")
         ws["A2"] = f"Attendance Summary {effective_end_date.strftime('%B %Y')}"
-        ws["A2"].fill = purple_fill
+        ws["A2"].fill = sky_blue_fill
         ws["A2"].font = Font(bold=True, size=11, color="FFFFFF")
         ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[2].height = 24
 
-        # Merged A3:R3 for Attendance Cycle Date Range
-        ws.merge_cells("A3:R3")
+        # Merged A3:S3 for Attendance Cycle Date Range
+        ws.merge_cells("A3:S3")
         ws["A3"] = f"Attendance Cycle : {start_date.strftime('%d-%b-%Y')} to {effective_end_date.strftime('%d-%b-%Y')}"
         ws["A3"].fill = yellow_fill
         ws["A3"].font = bold_font
@@ -2210,7 +2231,8 @@ def export_monthly_attendance():
             "Paid Leave",
             "LOP",
             "Remarks",
-            "Oneday Wages Days",
+            "Total ODW Days",
+            "ODW Dates",
             "Late Deductions"
         ]
 
@@ -2219,7 +2241,7 @@ def export_monthly_attendance():
         for col_num, header in enumerate(headers, start=1):
             cell = ws.cell(row=5, column=col_num)
             cell.value = header
-            cell.fill = purple_fill
+            cell.fill = sky_blue_fill
             cell.font = white_font
             cell.border = thin_border
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -2600,11 +2622,20 @@ def export_monthly_attendance():
             ws.cell(row=row, column=14).value = total_paid_leaves
             ws.cell(row=row, column=15).value = total_lop_days
             ws.cell(row=row, column=16).value = leave_remarks
-            ws.cell(row=row, column=17).value = oneday_wages_val
-            ws.cell(row=row, column=18).value = late_ded_str
+            ws.cell(row=row, column=17).value = int(total_odw_days) if total_odw_days == int(total_odw_days) else total_odw_days
+            ws.cell(row=row, column=18).value = ", ".join(odw_formatted_list) if odw_formatted_list else "-"
+            ws.cell(row=row, column=19).value = late_ded_str
 
-            # Border and alignment
-            for col in range(1, 19):
+            # Highlight leave fields if leaves were deducted (subtracted)
+            if after_pl < previous_pl:
+                ws.cell(row=row, column=10).fill = leave_deduction_fill
+                ws.cell(row=row, column=11).fill = leave_deduction_fill
+            if after_cl_sl < previous_cl_sl:
+                ws.cell(row=row, column=12).fill = leave_deduction_fill
+                ws.cell(row=row, column=13).fill = leave_deduction_fill
+
+            # Border and alignment (centered)
+            for col in range(1, 20):
                 c = ws.cell(row=row, column=col)
                 c.border = thin_border
                 val = c.value
@@ -2631,7 +2662,6 @@ def export_monthly_attendance():
             ws.column_dimensions[get_column_letter(column_cells[0].column)].width = max(length + 5, 12)
         ws.column_dimensions["A"].width = 6
 
-        # =====================================
         # FREEZE PANES
         # =====================================
         ws.freeze_panes = "A6"
@@ -2639,7 +2669,8 @@ def export_monthly_attendance():
         # =====================================
         # FILTER
         # =====================================
-        ws.auto_filter.ref = f"A5:R{row-1}"
+        # ws.auto_filter.ref = f"A5:R{row-1}"
+        ws.auto_filter.ref = f"A5:S{row-1}"
 
         # =====================================
         # SAVE FILE
@@ -4627,3 +4658,145 @@ def db_check_temp():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Pending Attendance — 25th→24th Cycle
+# ---------------------------------------------------------------------------
+
+@attendance_bp.route("/pending-cycle/<int:manager_user_id>", methods=["GET"])
+def get_pending_cycle_attendance(manager_user_id):
+    """
+    Return all attendance records for the manager's reporting team that are
+    still Pending within the current 25th-of-last-month → 24th-of-this-month
+    payroll cycle (IST timezone).
+    """
+    try:
+        import calendar
+
+        # ── 1. Calculate cycle boundaries in IST (no third-party deps) ──────
+        ist_today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+        y, m, d = ist_today.year, ist_today.month, ist_today.day
+
+        if d >= 25:
+            cycle_start = ist_today.replace(day=25)
+            # 24th of next month
+            if m == 12:
+                cycle_end = ist_today.replace(year=y + 1, month=1, day=24)
+            else:
+                cycle_end = ist_today.replace(month=m + 1, day=24)
+        else:
+            # 25th of previous month
+            if m == 1:
+                cycle_start = ist_today.replace(year=y - 1, month=12, day=25)
+            else:
+                cycle_start = ist_today.replace(month=m - 1, day=25)
+            cycle_end = ist_today.replace(day=24)
+
+        # ── 2. Resolve manager's full name ──────────────────────────────────
+        manager_emp = Employee.query.filter_by(user_id=manager_user_id).first()
+        if not manager_emp:
+            # Try to look up via User table
+            manager_user = User.query.filter_by(id=manager_user_id).first()
+            manager_full_name = manager_user.full_name if manager_user else None
+        else:
+            manager_full_name = f"{manager_emp.first_name} {manager_emp.last_name}".strip()
+
+        if not manager_full_name:
+            return jsonify({"success": False, "error": "Manager not found"}), 404
+
+        # ── 3. Find reporting team (Admins and HR see all, Managers see only their team)
+        user = User.query.get(manager_user_id)
+        is_admin = False
+        if user:
+            role_name = (user.role.name or "").lower() if user.role else ""
+            access_level = (user.access_level or "").lower()
+            if "admin" in role_name or "admin" in access_level or "hr" in role_name or "hr" in access_level:
+                is_admin = True
+
+        from routes.employees import is_manager_match
+        all_employees = Employee.query.all()
+
+        if is_admin:
+            reporting_team = [emp for emp in all_employees if emp.user_id != manager_user_id]
+        else:
+            reporting_team = [
+                emp for emp in all_employees
+                if emp.user_id != manager_user_id and is_manager_match(emp.reporting_manager, manager_full_name)
+            ]
+
+        if not reporting_team:
+            return jsonify({
+                "success": True,
+                "cycle_start": str(cycle_start),
+                "cycle_end": str(cycle_end),
+                "pending_count": 0,
+                "records": []
+            })
+
+        team_user_ids = [emp.user_id for emp in reporting_team if emp.user_id]
+        team_by_user_id = {emp.user_id: emp for emp in reporting_team}
+
+        # Calculate the last working day (yesterday) to exclude it from cycle view (it is shown in Yesterday Summary card)
+        last_working_day = get_last_working_day(ist_today - timedelta(days=1))
+
+        # ── 4. Query pending attendance for the cycle (excluding today's active date and yesterday's summary date)
+        pending_records = Attendance.query.filter(
+            Attendance.user_id.in_(team_user_ids),
+            Attendance.attendance_date <= cycle_end,
+            Attendance.attendance_date < ist_today,
+            Attendance.attendance_date != last_working_day,
+            Attendance.manager_status == "Pending",
+            Attendance.status != "Leave",
+        ).order_by(Attendance.attendance_date.desc()).all()
+
+        # ── 5. Serialise ────────────────────────────────────────────────────
+        def fmt_time(dt):
+            if not dt:
+                return "—"
+            try:
+                return dt.strftime("%I:%M %p")
+            except Exception:
+                return str(dt)
+
+        results = []
+        for rec in pending_records:
+            emp = team_by_user_id.get(rec.user_id)
+            if not emp:
+                continue
+            results.append({
+                "id":                   rec.id,
+                "db_employee_id":       emp.id,
+                "employee_id":          emp.employee_id or "",
+                "employee_name":        f"{emp.first_name} {emp.last_name}".strip(),
+                "department":           emp.department or "",
+                "designation":          emp.designation or "",
+                "attendance_date":      str(rec.attendance_date),
+                "web_checkin":          fmt_time(rec.check_in),
+                "web_checkout":         fmt_time(rec.check_out),
+                "biometric_checkin":    fmt_time(rec.card_check_in),
+                "biometric_checkout":   fmt_time(rec.card_check_out),
+                "working_hours":        round(rec.total_hours or 0, 2),
+                "status":               rec.status or "Absent",
+                "manager_status":       rec.manager_status or "Pending",
+                "check_in":             fmt_time(rec.check_in),
+                "check_out":            fmt_time(rec.check_out),
+                "lunch_minutes":        rec.lunch_minutes or 0,
+                "tea_minutes":          rec.tea_minutes or 0,
+                "total_break_minutes":  rec.total_break_minutes or 0,
+                "clarification_history": rec.clarification_history or [],
+                "reporting_manager":    manager_full_name,
+            })
+
+        return jsonify({
+            "success":      True,
+            "cycle_start":  str(cycle_start),
+            "cycle_end":    str(cycle_end),
+            "pending_count": len(results),
+            "records":      results,
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500

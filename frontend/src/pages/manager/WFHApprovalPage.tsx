@@ -422,23 +422,6 @@ const WFHApprovalPage: React.FC = () => {
                                 Reject
                               </Button>
                             </div>
-                          ) : (item.status === "Approved" || item.status === "Rejected") ? (
-                            <div className="flex items-center justify-center gap-2">
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                onClick={() => handleCancel(item.id)}
-                                disabled={processingId === item.id}
-                                className="!py-1 !px-2.5 !text-[10px] shadow-sm"
-                              >
-                                {processingId === item.id ? (
-                                  <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                                ) : (
-                                  <XMarkIcon className="w-3.5 h-3.5 mr-1" />
-                                )}
-                                Cancel
-                              </Button>
-                            </div>
                           ) : (
                             <span className="text-[10px] font-medium text-neutral-400">No actions required</span>
                           )}

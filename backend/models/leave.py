@@ -97,6 +97,12 @@ class LeaveRequest(db.Model):
         nullable=True
     )
 
+    cancelled_dates = db.Column(
+        db.JSON,
+        nullable=True,
+        default=list
+    )
+
     __table_args__ = (
         db.Index("ix_leave_requests_employee_id_status", "employee_id", "status"),
     )

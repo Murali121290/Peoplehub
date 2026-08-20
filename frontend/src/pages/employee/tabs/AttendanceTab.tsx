@@ -101,7 +101,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   };
   const [selectedMonth, setSelectedMonth] = useState<number>(getInitialPayrollMonth());
   const [selectedYear, setSelectedYear] = useState<number>(getInitialPayrollYear());
-  const [viewMode, setViewMode] = useState<"calendar" | "grid">("calendar");
+  const [viewMode, setViewMode] = useState<"calendar" | "grid">("grid");
   const [statusFilter, setStatusFilter] = useState<string>("All");
 
   // Fetched data
@@ -499,7 +499,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     // 2. Approved Leave
     const matchedLeave = approvedLeaves.find((l: any) => {
       if (l.request_type !== "Leave") return false;
-      return l.from_date <= dateStr && l.to_date >= dateStr;
+      const isCancelled = l.cancelled_dates?.includes(dateStr);
+      return l.from_date <= dateStr && l.to_date >= dateStr && !isCancelled;
     });
 
     // Approved Permission
