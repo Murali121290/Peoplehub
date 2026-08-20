@@ -129,6 +129,8 @@ def check_in():
 
         work_mode = (employee.work_mode or "").strip().lower()
         if work_mode == "office":
+            import os
+            print(f"DEBUG OFFICE CHECK-IN: client_ip={client_ip}, OFFICE_IP_PREFIXES={os.environ.get('OFFICE_IP_PREFIXES')}, request_headers={dict(request.headers)}")
             if not is_office_network(client_ip):
                 return jsonify({
                     "success": False,
@@ -440,6 +442,8 @@ def check_out():
         if employee:
             work_mode = (employee.work_mode or "").strip().lower()
             if work_mode == "office":
+                import os
+                print(f"DEBUG OFFICE CHECK-OUT: checkout_ip={checkout_ip}, OFFICE_IP_PREFIXES={os.environ.get('OFFICE_IP_PREFIXES')}, request_headers={dict(request.headers)}")
                 if not is_office_network(checkout_ip):
                     return jsonify({
                         "success": False,
