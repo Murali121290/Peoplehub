@@ -579,66 +579,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   };
 
-  const getLocalIP = (): Promise<string | null> => {
-    return new Promise((resolve) => {
-      try {
-        const RTCPeerConnection =
-          window.RTCPeerConnection ||
-          (window as any).webkitRTCPeerConnection ||
-          (window as any).mozRTCPeerConnection;
-        if (!RTCPeerConnection) {
-          resolve(null);
-          return;
-        }
-        const pc = new RTCPeerConnection({ iceServers: [] });
-        pc.createDataChannel("");
-        pc.createOffer()
-          .then((offer) => pc.setLocalDescription(offer))
-          .catch(() => {});
-        pc.onicecandidate = (ice) => {
-          if (!ice || !ice.candidate || !ice.candidate.candidate) {
-            return;
-          }
-          const candidate = ice.candidate.candidate;
-          const match = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(candidate);
-          if (match && match[1]) {
-            const ip = match[1];
-            if (ip !== "0.0.0.0" && !ip.startsWith("127.")) {
-              resolve(ip);
-              pc.close();
-            }
-          }
-        };
-        setTimeout(() => {
-          try { pc.close(); } catch {}
-          resolve(null);
-        }, 800);
-      } catch (e) {
-        resolve(null);
-      }
-    });
-  };
-
-  const getClientPublicIp = async (): Promise<string | null> => {
-    try {
-      const localIp = await getLocalIP();
-      if (localIp) {
-        return localIp;
-      }
-    } catch (e) {
-      console.warn("Failed to fetch WebRTC local IP", e);
-    }
-    try {
-      const res = await fetch("https://api.ipify.org?format=json");
-      if (res.ok) {
-        const data = await res.json();
-        return data.ip || null;
-      }
-    } catch (e) {
-      console.warn("Failed to fetch public IP", e);
-    }
-    return null;
-  };
 
   // --- Attendance Handlers ---
   const handleCheckIn = async (selectedShift?: string) => {
@@ -649,14 +589,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
         toast.error("Unable to identify current user.");
         return;
       }
-      const clientIp = await getClientPublicIp();
       const response = await fetch(`${BASE_URL}/attendance/checkin`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-        body: JSON.stringify({ user_id: Number(userId), client_ip: clientIp }),
+        body: JSON.stringify({ user_id: Number(userId) }),
       });
       const data = await response.json();
       if (!data.success) {
@@ -882,14 +821,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
         toast.error("User ID not found.");
         return;
       }
-      const clientIp = await getClientPublicIp();
       const response = await fetch(`${BASE_URL}/attendance/checkout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-        body: JSON.stringify({ user_id: Number(userId), client_ip: clientIp }),
+        body: JSON.stringify({ user_id: Number(userId) }),
       });
       const data = await response.json();
       if (!response.ok) {
