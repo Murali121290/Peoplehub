@@ -580,6 +580,19 @@ if (isHalfDayLeave(leave.total_days)) return false;
   };
 
 
+  const getClientPublicIp = async (): Promise<string | null> => {
+    try {
+      const res = await fetch("https://api.ipify.org?format=json");
+      if (res.ok) {
+        const data = await res.json();
+        return data.ip || null;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch public IP", e);
+    }
+    return null;
+  };
+
   // --- Attendance Handlers ---
   const handleCheckIn = async (selectedShift?: string) => {
     setIsActionLoading(true);
@@ -589,13 +602,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
         toast.error("Unable to identify current user.");
         return;
       }
+      const clientIp = await getClientPublicIp();
       const response = await fetch(`${BASE_URL}/attendance/checkin`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-        body: JSON.stringify({ user_id: Number(userId) }),
+        body: JSON.stringify({ user_id: Number(userId), client_ip: clientIp }),
       });
       const data = await response.json();
       if (!data.success) {
@@ -821,13 +835,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
         toast.error("User ID not found.");
         return;
       }
+      const clientIp = await getClientPublicIp();
       const response = await fetch(`${BASE_URL}/attendance/checkout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-        body: JSON.stringify({ user_id: Number(userId) }),
+        body: JSON.stringify({ user_id: Number(userId), client_ip: clientIp }),
       });
       const data = await response.json();
       if (!response.ok) {
