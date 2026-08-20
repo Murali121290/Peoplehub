@@ -47,8 +47,7 @@ init_db_columns()
 def apply_shift():
     try:
         # Check if form-data or JSON
-        content_type = request.headers.get("content-type")
-        if content_type and "multipart/form-data" in content_type:
+        if request.content_type and "multipart/form-data" in request.content_type:
             data = request.form.to_dict()
             file = request.files.get("supportive_document")
         else:

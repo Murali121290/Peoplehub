@@ -7,7 +7,7 @@ from datetime import datetime
 from models.employee import Employee
 from models.user import User
 from datetime import date
-from sqlalchemy import extract, or_, func
+from sqlalchemy import extract, or_
 from sqlalchemy import extract
 from sqlalchemy.orm.attributes import flag_modified
 from datetime import timedelta
@@ -553,8 +553,8 @@ def calculate_attendance_status(attendance):
     Calculate and update the attendance status (Present, Half Day, Absent)
     based on the gross duration from check-in to check-out (including breaks).
     - < 4 hours: Absent
-    - < 7 hours: Half Day
-    - >= 7 hours: Present
+    - < 8 hours: Half Day
+    - >= 8 hours: Present
     """
     # 1. Determine effective check-in and check-out (Web or Card)
     eff_in = attendance.check_in or attendance.card_check_in
@@ -579,7 +579,7 @@ def calculate_attendance_status(attendance):
     # 2. Determine status
     if gross_hours < 4.0:
         attendance.status = "Absent"
-    elif gross_hours < 7.0:
+    elif gross_hours < 8.0:
         attendance.status = "Half Day"
     else:
         attendance.status = "Present"
@@ -1270,8 +1270,9 @@ def attendance_history(user_id):
     else:
         end_date_limit = date(start_date_val.year, start_date_val.month + 1, 24)
 
-    # Include today's date in the history data
-    end_date = min(today, end_date_limit)
+    # Limit end_date to yesterday (do not show today's incomplete date in history)
+    yesterday = today - timedelta(days=1)
+    end_date = min(yesterday, end_date_limit)
 
     # Fetch holidays and overrides within range
     from models.holiday import Holiday, HolidayOverride
@@ -1349,29 +1350,30 @@ def attendance_history(user_id):
                     working_hours = record.total_hours or 0.0
                     check_out_str = "-"
 
-                # Calculate gross total hours (including breaks)
-                eff_in = record.check_in or record.card_check_in
-                eff_out = record.check_out or record.card_check_out
-                if eff_in and eff_out:
-                    gross_sec = (eff_out - eff_in).total_seconds()
-                    gross_hours = max(gross_sec, 0) / 3600
-                elif eff_in and is_today:
-                    now_time = get_ist_now()
-                    gross_sec = (now_time - eff_in).total_seconds()
-                    gross_hours = max(gross_sec, 0) / 3600
-                else:
-                    gross_hours = 0.0
-                gross_hours = int(gross_hours * 100) / 100
+                # Derive display status: override based on working hours if checked in (unless approved by manager)
+                base_status = record.status or "Present"
+                has_checkin = bool(record.check_in or record.card_check_in)
+                if has_checkin and base_status not in ("Absent", "Leave") and record.manager_status != "Approved":
+                    eff_in = record.check_in or record.card_check_in
+                    eff_out = record.check_out or record.card_check_out
+                    if eff_in and eff_out:
+                        gross_sec = (eff_out - eff_in).total_seconds()
+                        gross_hours = max(gross_sec, 0) / 3600
+                    elif eff_in and is_today:
+                        now_time = get_ist_now()
+                        gross_sec = (now_time - eff_in).total_seconds()
+                        gross_hours = max(gross_sec, 0) / 3600
+                    else:
+                        gross_hours = 0.0
 
-                # Derive display status: strictly use database status directly
-                display_status = record.status
-                if not display_status:
                     if gross_hours < 4.0:
                         display_status = "Absent"
-                    elif gross_hours < 7.0:
+                    elif gross_hours < 8.0:
                         display_status = "Half Day"
                     else:
                         display_status = "Present"
+                else:
+                    display_status = base_status
 
                 # Override: if the day is a weekend or holiday and no check-in exists,
                 # show the correct label instead of a stale "Absent" stored in DB.
@@ -1415,6 +1417,11 @@ def attendance_history(user_id):
 
                     permission_label = f"{_fmt(ft)} – {_fmt(tt)}"
 
+                    # Re-evaluate display_status after crediting permission hours
+                    if display_status in ("Absent", "Half Day") and virtual_working_hours >= 8.0:
+                        display_status = "Present"
+                    elif display_status == "Absent" and virtual_working_hours >= 4.0:
+                        display_status = "Half Day"
 
 
                 result.append({
@@ -1429,8 +1436,7 @@ def attendance_history(user_id):
                     "check_out": check_out_str,
                     "workingHours": working_hours,
                     "working_hours": working_hours,
-                    "total_hours": gross_hours,
-                    "totalHours": gross_hours,
+                    "total_hours": working_hours,
                     "cardCheckIn": record.card_check_in.strftime("%I:%M %p") if record.card_check_in else "-",
                     "card_check_in": record.card_check_in.strftime("%I:%M %p") if record.card_check_in else "-",
                     "cardCheckOut": record.card_check_out.strftime("%I:%M %p") if record.card_check_out else "-",
@@ -1569,31 +1575,43 @@ def get_attendance():
         ).first()
 
         if attendance:
-            status = attendance.status
-            if not status:
-                # Fallback to gross hours threshold check
-                eff_in = attendance.check_in or attendance.card_check_in
-                eff_out = attendance.check_out or attendance.card_check_out
-                if eff_in and eff_out:
-                    gross_sec = (eff_out - eff_in).total_seconds()
-                    gross_hours = max(gross_sec, 0) / 3600
-                elif eff_in and today == get_ist_today():
-                    now = get_ist_now()
-                    gross_sec = (now - eff_in).total_seconds()
-                    gross_hours = max(gross_sec, 0) / 3600
-                else:
-                    gross_hours = 0.0
-                
-                if gross_hours < 4.0:
-                    status = "Absent"
-                elif gross_hours < 7.0:
-                    status = "Half Day"
-                else:
-                    status = "Present"
 
+            # Recalculate status from actual data (stored status can be stale for past dates)
             web_hrs = attendance.total_hours or 0.0
             card_hrs = attendance.card_working_hours or 0.0
             max_hrs = max(web_hrs, card_hrs)
+            has_checkin = bool(attendance.check_in or attendance.card_check_in)
+
+            if attendance.status in ("Leave", "LOP", "Holiday", "Week Off", "Half Day"):
+                # Keep manually-set or leave-driven statuses
+                status = attendance.status
+            elif has_checkin:
+                active_hrs = max_hrs
+                if not (attendance.check_out or attendance.card_check_out):
+                    effective_in = attendance.check_in or attendance.card_check_in
+                    if effective_in:
+                        now = get_ist_now()
+                        if attendance.attendance_date == now.date():
+                            elapsed_seconds = (now - effective_in).total_seconds()
+                            break_seconds = (attendance.total_break_minutes or 0) * 60
+                            hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
+                            active_hrs = max(hours_decimal, max_hrs)
+                
+                if active_hrs < 4.0:
+                    status = "Absent"
+                elif active_hrs < 8.0:
+                    status = "Half Day"
+                else:
+                    status = "Present"
+            else:
+                status = attendance.status or "Absent"
+
+            # Override status based on working hours if checked out
+            if attendance.check_out and status not in ("Absent", "Leave", "LOP", "Holiday", "Week Off"):
+                if web_hrs < 4.0:
+                    status = "Absent"
+                elif web_hrs < 8.0:
+                    status = "Half Day"
 
             check_in = (
                 attendance.check_in.strftime("%H:%M:%S")
@@ -1853,27 +1871,14 @@ def _get_period_attendance_records(days_count, include_card_fields=False):
             attendance = attendance_by_key.get((employee.user_id, current_date))
 
             if attendance:
-                status = attendance.status
-                if not status:
-                    # Fallback to gross hours threshold check
-                    eff_in = attendance.check_in or attendance.card_check_in
-                    eff_out = attendance.check_out or attendance.card_check_out
-                    if eff_in and eff_out:
-                        gross_sec = (eff_out - eff_in).total_seconds()
-                        gross_hours = max(gross_sec, 0) / 3600
-                    elif eff_in and current_date == date.today():
-                        now = get_ist_now()
-                        gross_sec = (now - eff_in).total_seconds()
-                        gross_hours = max(gross_sec, 0) / 3600
-                    else:
-                        gross_hours = 0.0
-                    
-                    if gross_hours < 4.0:
+                status = attendance.status or "Present"
+                # Override status if checked out with fewer working hours
+                total_hours_period = attendance.total_hours or 0.0
+                if attendance.check_out and status not in ("Absent", "Leave"):
+                    if total_hours_period < 4.0:
                         status = "Absent"
-                    elif gross_hours < 7.0:
+                    elif total_hours_period < 8.0:
                         status = "Half Day"
-                    else:
-                        status = "Present"
 
                 card_check_in = (
                     attendance.card_check_in.strftime("%I:%M %p")
@@ -2088,11 +2093,7 @@ def export_monthly_attendance():
                 start_date = date(today.year - 1, 12, 25)
             else:
                 start_date = date(today.year, today.month - 1, 25)
-                end_date = date(today.year, today.month, 24)
-
-        today_ist = get_ist_today()
-        yesterday_ist = today_ist - timedelta(days=1)
-        effective_end_date = min(end_date, yesterday_ist)
+            end_date = date(today.year, today.month, 24)
 
         def get_ordinal_suffix(day):
             if 11 <= day <= 13:
@@ -2116,19 +2117,19 @@ def export_monthly_attendance():
         white_font = Font(
             bold=True,
             color="FFFFFF",
-            size=11
+            size=12
         )
 
         bold_font = Font(
             bold=True,
-            size=11
+            size=12
         )
 
         thin_border = Border(
-            left=Side(style="thin", color="CBD5E1"),
-            right=Side(style="thin", color="CBD5E1"),
-            top=Side(style="thin", color="CBD5E1"),
-            bottom=Side(style="thin", color="CBD5E1")
+            left=Side(style="thin"),
+            right=Side(style="thin"),
+            top=Side(style="thin"),
+            bottom=Side(style="thin")
         )
 
         # =====================================
@@ -2136,63 +2137,118 @@ def export_monthly_attendance():
         # =====================================
 
         start_day_suff = f"{start_date.day}{get_ordinal_suffix(start_date.day)}"
-        end_day_suff = f"{effective_end_date.day}{get_ordinal_suffix(effective_end_date.day)}"
+        end_day_suff = f"{end_date.day}{get_ordinal_suffix(end_date.day)}"
+        leaves_taken_header = (
+            f"No of Leaves Taken (From "
+            f"{start_day_suff} {start_date.strftime('%b')} "
+            f"to "
+            f"{end_day_suff} {end_date.strftime('%b')} "
+            f"{end_date.strftime('%y')})"
+        )
+        days_in_month_header = f"No of Days in {end_date.strftime('%B %Y')}"
 
-        # Merged A1:R1 for S4C Period Title
-        ws.merge_cells("A1:R1")
-        ws["A1"] = f"S4C - Attendance for the period from {start_day_suff} {start_date.strftime('%B')} {start_date.year} to {end_day_suff} {effective_end_date.strftime('%B')} {effective_end_date.year}"
+        # =====================================
+        # TITLE
+        # =====================================
+
+        ws.merge_cells("A1:L1")
+
+        ws["A1"] = "ATTENDANCE REPORT"
+
         ws["A1"].fill = purple_fill
-        ws["A1"].font = Font(bold=True, size=14, color="FFFFFF")
-        ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[1].height = 40
 
-        # Merged A2:R2 for Summary Month Subtitle
-        ws.merge_cells("A2:R2")
-        ws["A2"] = f"Attendance Summary {effective_end_date.strftime('%B %Y')}"
+        ws["A1"].font = Font(
+            bold=True,
+            size=16,
+            color="FFFFFF"
+        )
+
+        ws["A1"].alignment = Alignment(
+            horizontal="center",
+            vertical="center"
+        )
+
+        # =====================================
+        # MONTH HEADER
+        # =====================================
+
+        ws.merge_cells("A2:L2")
+
+        ws["A2"] = (
+            f"Attendance Summary "
+            f"{date.today().strftime('%B %Y')}"
+        )
+
         ws["A2"].fill = purple_fill
-        ws["A2"].font = Font(bold=True, size=11, color="FFFFFF")
-        ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[2].height = 24
 
-        # Merged A3:R3 for Attendance Cycle Date Range
-        ws.merge_cells("A3:R3")
-        ws["A3"] = f"Attendance Cycle : {start_date.strftime('%d-%b-%Y')} to {effective_end_date.strftime('%d-%b-%Y')}"
+        ws["A2"].font = white_font
+
+        ws["A2"].alignment = Alignment(
+            horizontal="center"
+        )
+
+        # =====================================
+        # DATE RANGE
+        # =====================================
+
+
+        ws.merge_cells("A3:L3")
+
+        ws["A3"] = (
+            f"Attendance Cycle : "
+            f"{start_date.strftime('%d-%b-%Y')} "
+            f"to "
+            f"{end_date.strftime('%d-%b-%Y')}"
+        )
+
         ws["A3"].fill = yellow_fill
-        ws["A3"].font = bold_font
-        ws["A3"].alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[3].height = 24
 
-        # Column headers (Row 5)
+        ws["A3"].font = bold_font
+
+        ws["A3"].alignment = Alignment(
+            horizontal="center"
+        )
+
+        # =====================================
+        # COLUMN HEADERS
+        # =====================================
+
         headers = [
             "S.No",
             "Emp Code",
             "Emp Name",
             "D.O.J",
             "Designation",
-            "Department",
-            "No of Days in Cycle",
-            "Total No of Days Worked",
-            "No of Leaves Taken",
-            "Previous PL",
-            "After PL",
-            "Previous CL/SL",
-            "After CL/SL",
-            "Paid Leave",
-            "LOP",
-            "Remarks",
-            "Oneday Wages Days",
-            "Late Deductions"
+            "DEPARTMENT",
+            days_in_month_header,
+            "Total No of Days worked",
+            leaves_taken_header,
+            "Absent dates",
+            "Oneday Wages Days (No of Days to be Paid)",
+            "Remarks"
         ]
 
-        ws.row_dimensions[5].height = 28
+        for col_num, header in enumerate(
+            headers,
+            start=1
+        ):
 
-        for col_num, header in enumerate(headers, start=1):
-            cell = ws.cell(row=5, column=col_num)
+            cell = ws.cell(
+                row=5,
+                column=col_num
+            )
+
             cell.value = header
+
             cell.fill = purple_fill
+
             cell.font = white_font
+
             cell.border = thin_border
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+            cell.alignment = Alignment(
+                horizontal="center"
+            )
 
         # =====================================
         # EMPLOYEE DATA
@@ -2251,25 +2307,18 @@ def export_monthly_attendance():
 
         row = 6
 
-        def get_shift_start_time(shift_name):
-            s = (shift_name or "").lower().strip()
-            if "first" in s:
-                return datetime.strptime("07:00", "%H:%M").time()
-            elif "second" in s:
-                return datetime.strptime("12:00", "%H:%M").time()
-            elif "night" in s:
-                return datetime.strptime("22:00", "%H:%M").time()
-            else:
-                return datetime.strptime("09:00", "%H:%M").time()
-
-        for index, employee in enumerate(employees, start=1):
+        for index, employee in enumerate(
+            employees,
+            start=1
+        ):
 
             attendance_records = Attendance.query.filter(
                 Attendance.user_id == employee.user_id,
                 Attendance.attendance_date >= start_date,
-                Attendance.attendance_date <= effective_end_date
+                Attendance.attendance_date <= end_date
             ).all()
 
+            # Map attendance records by date
             attendance_by_date = {a.attendance_date: a for a in attendance_records}
 
             # Map approved leaves covering the dates
@@ -2277,78 +2326,36 @@ def export_monthly_attendance():
                 LeaveRequest.employee_id.in_([employee.employee_id, str(employee.id)]),
                 LeaveRequest.status == "Approved",
                 LeaveRequest.request_type == "Leave",
-                LeaveRequest.from_date <= effective_end_date,
+                LeaveRequest.from_date <= end_date,
                 LeaveRequest.to_date >= start_date
             ).all()
-
-            # Retrieve employee's live leave balances from DB
-            from models.leave import EmployeeLeaveBalance
-            cl_sl_bal_recs = EmployeeLeaveBalance.query.filter(
-                EmployeeLeaveBalance.employee_id == employee.id,
-                func.lower(EmployeeLeaveBalance.leave_type).in_(["cl/sl", "cl / sl", "sl/cl", "sl / cl"])
-            ).all()
-            pl_bal_recs = EmployeeLeaveBalance.query.filter(
-                EmployeeLeaveBalance.employee_id == employee.id,
-                func.lower(EmployeeLeaveBalance.leave_type).in_(["pl", "privilege leave"])
-            ).all()
-            
-            current_cl_sl_bal = sum(r.available or 0.0 for r in cl_sl_bal_recs)
-            current_pl_bal = sum(r.available or 0.0 for r in pl_bal_recs)
-
-            # Find all approved leaves starting from start_date (to reconstruct previous balance)
-            future_leaves = LeaveRequest.query.filter(
-                LeaveRequest.employee_id.in_([employee.employee_id, str(employee.id)]),
-                LeaveRequest.status == "Approved",
-                LeaveRequest.request_type == "Leave",
-                LeaveRequest.from_date >= start_date
-            ).all()
-
-            future_cl_sl_taken = 0.0
-            future_pl_taken = 0.0
-            for l in future_leaves:
-                l_type = (l.leave_type or "").lower()
-                if "loss of pay" in l_type or "lop" in l_type or "unpaid" in l_type:
-                    continue
-                is_cl_sl = "casual" in l_type or "sick" in l_type or "cl/sl" in l_type or "cl / sl" in l_type
-                is_pl = "privilege" in l_type or "pl" in l_type
-                if is_cl_sl:
-                    future_cl_sl_taken += l.total_days or 0.0
-                elif is_pl:
-                    future_pl_taken += l.total_days or 0.0
-
-            previous_cl_sl = current_cl_sl_bal + future_cl_sl_taken
-            previous_pl = current_pl_bal + future_pl_taken
 
             total_working_days = 0.0
             total_weekoffs = 0.0
             total_holidays = 0.0
+            total_paid_leaves = 0.0
+            total_leaves_taken = 0.0
+            total_lop_days = 0.0
             total_odw_days = 0.0
-
-            cl_sl_taken = 0.0
-            pl_taken = 0.0
-            lop_leave_taken = 0.0
-            unauthorized_absences = 0.0
-            late_count = 0
-
-            leave_dates = []
-            absent_dates = []
 
             from models.shift_request import ShiftRequest
             emp_wages = ShiftRequest.query.filter(
                 ShiftRequest.employee_id.in_([employee.employee_id, str(employee.id)]),
                 ShiftRequest.request_type == "One Day Wages",
                 ShiftRequest.status == "Approved",
-                ShiftRequest.from_date <= effective_end_date,
+                ShiftRequest.from_date <= end_date,
                 ShiftRequest.to_date >= start_date
             ).all()
 
-            if start_date > effective_end_date:
+            yesterday = get_ist_today() - timedelta(days=1)
+            effective_end_date = min(end_date, yesterday)
+            if start_date > yesterday:
                 num_days_to_calculate = 0
             else:
                 num_days_to_calculate = (effective_end_date - start_date).days + 1
 
+            absent_days_data = []
             odw_days_list = []
-
             for i in range(num_days_to_calculate):
                 d = start_date + timedelta(days=i)
                 
@@ -2368,17 +2375,11 @@ def export_monthly_attendance():
                 # Check if there is an approved leave request on this date
                 day_leaves = [l for l in emp_leaves if l.from_date <= d and l.to_date >= d]
                 leave_val = 0.0
-                is_cl_sl_leave = False
-                is_pl_leave = False
                 is_lop_leave = False
-
                 if day_leaves:
                     first_leave = day_leaves[0]
                     leave_type_lower = (first_leave.leave_type or "").lower()
-                    is_cl_sl_leave = "casual" in leave_type_lower or "sick" in leave_type_lower or "cl/sl" in leave_type_lower or "cl / sl" in leave_type_lower
-                    is_pl_leave = "privilege" in leave_type_lower or "pl" in leave_type_lower
                     is_lop_leave = "loss of pay" in leave_type_lower or "lop" in leave_type_lower or "unpaid" in leave_type_lower
-                    
                     if first_leave.total_days is not None and first_leave.total_days <= 0.5:
                         leave_val = 0.5
                     else:
@@ -2392,150 +2393,142 @@ def export_monthly_attendance():
                     odw_days_list.append(d)
 
                 att = attendance_by_date.get(d)
-                
-                # Late check-in detection
-                if att:
-                    eff_check_in = att.check_in or att.card_check_in
-                    if eff_check_in:
-                        # Determine shift timing for this day
-                        approved_shift_req = ShiftRequest.query.filter(
-                            ShiftRequest.employee_id.in_([employee.employee_id, str(employee.id)]),
-                            ShiftRequest.request_type == "Shift",
-                            ShiftRequest.status == "Approved",
-                            ShiftRequest.from_date <= d,
-                            ShiftRequest.to_date >= d
-                        ).order_by(ShiftRequest.created_at.desc()).first()
-                        
-                        effective_shift = (
-                            (approved_shift_req.requested_shift if approved_shift_req and approved_shift_req.requested_shift else None)
-                            or att.shift_timing
-                            or employee.shift_timing
-                            or "General Shift"
-                        )
-                        
-                        shift_start = get_shift_start_time(effective_shift)
-                        start_dt = datetime.combine(eff_check_in.date(), shift_start)
-                        grace_dt = start_dt + timedelta(minutes=15)
-                        if eff_check_in > grace_dt:
-                            late_count += 1
+                lop_val = 0.0
 
                 if is_odw:
+                    # ODW: base holiday/weekoff if falls on one
                     if is_holiday:
                         total_holidays += 1.0
                     elif is_week_off:
                         total_weekoffs += 1.0
                 elif is_holiday:
+                    # Holiday:
                     if att and att.status == "Present":
                         total_working_days += 1.0
                     else:
                         total_holidays += 1.0
                 elif is_week_off:
+                    # Weekoff:
                     if att and att.status == "Present":
                         total_working_days += 1.0
                     else:
                         total_weekoffs += 1.0
                 else:
-                    # Normal working day
+                    # Normal Weekday:
                     effective_status = att.status if att else None
+                    if att and att.status == "Leave":
+                        web_hrs = att.total_hours or 0.0
+                        card_hrs = att.card_working_hours or 0.0
+                        max_hrs = max(web_hrs, card_hrs)
+                        if max_hrs >= 8.0:
+                            effective_status = "Present"
+                        elif max_hrs >= 4.0:
+                            effective_status = "Half Day"
+
                     if att and effective_status == "Present":
                         total_working_days += 1.0
                     elif att and effective_status == "Half Day":
                         total_working_days += 0.5
                         if leave_val > 0.0:
-                            needed_leave = min(leave_val, 0.5)
-                            if is_cl_sl_leave:
-                                cl_sl_taken += needed_leave
-                            elif is_pl_leave:
-                                pl_taken += needed_leave
-                            elif is_lop_leave:
-                                lop_leave_taken += needed_leave
-                            
-                            leave_dates.append((d, True))
-                            if needed_leave < 0.5:
-                                unauthorized_absences += (0.5 - needed_leave)
-                                absent_dates.append((d, True))
+                            total_leaves_taken += min(leave_val, 0.5)
+                            if not is_lop_leave:
+                                total_paid_leaves += min(leave_val, 0.5)
+                            else:
+                                total_lop_days += min(leave_val, 0.5)
+                                lop_val = min(leave_val, 0.5)
+                            if leave_val < 0.5:
+                                total_lop_days += (0.5 - leave_val)
+                                lop_val += (0.5 - leave_val)
                         else:
-                            unauthorized_absences += 0.5
-                            absent_dates.append((d, True))
+                            total_lop_days += 0.5
+                            lop_val = 0.5
+                    elif leave_val > 0.0:
+                        # Approved leave overrides biometric Absent status
+                        total_leaves_taken += leave_val
+                        if not is_lop_leave:
+                            total_paid_leaves += leave_val
+                        else:
+                            total_lop_days += leave_val
+                            lop_val = leave_val
+                        if leave_val < 1.0:
+                            total_lop_days += (1.0 - leave_val)
+                            lop_val += (1.0 - leave_val)
                     else:
-                        # Absent/No check-in
-                        if leave_val > 0.0:
-                            if is_cl_sl_leave:
-                                cl_sl_taken += leave_val
-                            elif is_pl_leave:
-                                pl_taken += leave_val
-                            elif is_lop_leave:
-                                lop_leave_taken += leave_val
-                            
-                            leave_dates.append((d, leave_val == 0.5))
-                            if leave_val < 1.0:
-                                unauthorized_absences += (1.0 - leave_val)
-                                absent_dates.append((d, True))
-                        else:
-                            unauthorized_absences += 1.0
-                            absent_dates.append((d, False))
+                        total_lop_days += 1.0
+                        lop_val = 1.0
 
-            # Apply leave balance caps and split into paid vs unpaid LOP
-            # CL/SL:
-            if cl_sl_taken > previous_cl_sl:
-                paid_cl_sl = previous_cl_sl
-                lop_cl_sl = cl_sl_taken - previous_cl_sl
-            else:
-                paid_cl_sl = cl_sl_taken
-                lop_cl_sl = 0.0
-            
-            # PL:
-            if pl_taken > previous_pl:
-                paid_pl = previous_pl
-                lop_pl = pl_taken - previous_pl
-            else:
-                paid_pl = pl_taken
-                lop_pl = 0.0
-
-            after_cl_sl = max(previous_cl_sl - paid_cl_sl, 0.0)
-            after_pl = max(previous_pl - paid_pl, 0.0)
-            
-            total_leaves_taken = cl_sl_taken + pl_taken + lop_leave_taken
-            total_paid_leaves = paid_cl_sl + paid_pl
-            total_lop_days = unauthorized_absences + lop_cl_sl + lop_pl + lop_leave_taken
+                if lop_val > 0.0:
+                    absent_days_data.append((d, lop_val))
 
             total_days_worked = total_working_days + total_weekoffs + total_holidays + total_paid_leaves
-            total_days_cycle = (effective_end_date - start_date).days + 1
+            total_days_cycle = num_days_to_calculate
 
-            # Format leave and absent remarks dynamically
+            # Group absent dates by month
             from collections import defaultdict
-            def format_days_for_remarks(day_tuples):
-                if not day_tuples:
-                    return ""
-                
-                # Group by month
-                by_month = defaultdict(list)
-                for dt, is_half in day_tuples:
-                    month_name = dt.strftime("%b")
-                    suffix = " (Half)" if is_half else ""
-                    day_suff = f"{dt.day}{get_ordinal_suffix(dt.day)}{suffix}"
-                    by_month[month_name].append(day_suff)
-                    
-                month_parts = []
-                for month_name, days in by_month.items():
-                    if len(days) == 1:
-                        month_parts.append(f"{days[0]} {month_name}")
-                    elif len(days) == 2:
-                        month_parts.append(f"{days[0]} and {days[1]} {month_name}")
-                    else:
-                        month_parts.append(f"{', '.join(days[:-1])} and {days[-1]} {month_name}")
-                
-                return " and ".join(month_parts)
+            grouped_by_month = defaultdict(list)
+            for dt, val in absent_days_data:
+                month_name = dt.strftime("%b")
+                day_str = str(dt.day)
+                if val == 0.5:
+                    day_str += "(Half)"
+                grouped_by_month[month_name].append(day_str)
 
-            remark_parts = []
-            if leave_dates:
-                sorted_leaves = sorted(leave_dates, key=lambda x: x[0])
-                remark_parts.append(f"Leave on {format_days_for_remarks(sorted_leaves)}")
-            if absent_dates:
-                sorted_absences = sorted(absent_dates, key=lambda x: x[0])
-                remark_parts.append(f"Absent on {format_days_for_remarks(sorted_absences)}")
-            
-            leave_remarks = "; ".join(remark_parts)
+            seen_months = []
+            for dt, val in absent_days_data:
+                month_name = dt.strftime("%b")
+                if month_name not in seen_months:
+                    seen_months.append(month_name)
+
+            month_parts = []
+            for m_name in seen_months:
+                days_list = grouped_by_month[m_name]
+                month_parts.append(f"{m_name}({', '.join(days_list)})")
+
+            absent_remarks = ", ".join(month_parts)
+
+            # Format leave remarks
+            remarks_list = []
+            for leave in emp_leaves:
+                if leave.from_date and leave.to_date:
+                    cl_start = max(leave.from_date, start_date)
+                    cl_end = min(leave.to_date, end_date)
+                    
+                    is_half_day = leave.total_days is not None and leave.total_days <= 0.5
+                    half_day_suffix = ""
+                    if is_half_day:
+                        reason_text = (leave.reason or "").lower()
+                        if "first half" in reason_text:
+                            half_day_suffix = " (First half)"
+                        elif "second half" in reason_text:
+                            half_day_suffix = " (Second half)"
+                        else:
+                            half_day_suffix = " (Half day)"
+
+                    if cl_start == cl_end:
+                        day_suff = f"{cl_start.day}{get_ordinal_suffix(cl_start.day)}"
+                        month_name = cl_start.strftime("%b")
+                        remarks_list.append(f"leave on {day_suff} {month_name}{half_day_suffix}")
+                    elif (cl_end - cl_start).days == 1:
+                        s_suff = f"{cl_start.day}{get_ordinal_suffix(cl_start.day)}"
+                        e_suff = f"{cl_end.day}{get_ordinal_suffix(cl_end.day)}"
+                        if cl_start.month == cl_end.month:
+                            month_name = cl_start.strftime("%b")
+                            remarks_list.append(f"leave on {s_suff} and {e_suff} {month_name}")
+                        else:
+                            s_month = cl_start.strftime("%b")
+                            e_month = cl_end.strftime("%b")
+                            remarks_list.append(f"leave on {s_suff} {s_month} and {e_suff} {e_month}")
+                    else:
+                        s_suff = f"{cl_start.day}{get_ordinal_suffix(cl_start.day)}"
+                        e_suff = f"{cl_end.day}{get_ordinal_suffix(cl_end.day)}"
+                        if cl_start.month == cl_end.month:
+                            month_name = cl_start.strftime("%b")
+                            remarks_list.append(f"leave from {s_suff} to {e_suff} {month_name}")
+                        else:
+                            s_month = cl_start.strftime("%b")
+                            e_month = cl_end.strftime("%b")
+                            remarks_list.append(f"leave from {s_suff} {s_month} to {e_suff} {e_month}")
+            leave_remarks = ", ".join(remarks_list)
 
             # Format ODW dates list
             odw_formatted_list = []
@@ -2548,84 +2541,143 @@ def export_monthly_attendance():
                 odw_count_str = str(int(total_odw_days)) if total_odw_days == int(total_odw_days) else str(total_odw_days)
                 oneday_wages_val = f"{odw_count_str} ({', '.join(odw_formatted_list)})"
             else:
-                oneday_wages_val = "0"
+                oneday_wages_val = ""
 
-            # Set late deductions to 0 by default
-            late_ded_str = "0"
+            ws.cell(
+                row=row,
+                column=1
+            ).value = index
 
-            # Populate cells
-            ws.cell(row=row, column=1).value = index
-            ws.cell(row=row, column=2).value = employee.employee_id or employee.user_id
-            ws.cell(row=row, column=3).value = f"{employee.first_name} {employee.last_name}"
-            ws.cell(row=row, column=4).value = employee.joining_date.strftime("%d-%m-%Y") if employee.joining_date else ""
-            ws.cell(row=row, column=5).value = employee.designation or "-"
-            ws.cell(row=row, column=6).value = employee.department or "-"
-            ws.cell(row=row, column=7).value = total_days_cycle
-            ws.cell(row=row, column=8).value = total_days_worked
-            ws.cell(row=row, column=9).value = total_leaves_taken
-            ws.cell(row=row, column=10).value = previous_pl
-            ws.cell(row=row, column=11).value = after_pl
-            ws.cell(row=row, column=12).value = previous_cl_sl
-            ws.cell(row=row, column=13).value = after_cl_sl
-            ws.cell(row=row, column=14).value = total_paid_leaves
-            ws.cell(row=row, column=15).value = total_lop_days
-            ws.cell(row=row, column=16).value = leave_remarks
-            ws.cell(row=row, column=17).value = oneday_wages_val
-            ws.cell(row=row, column=18).value = late_ded_str
+            ws.cell(
+                row=row,
+                column=2
+            ).value = (
+                employee.employee_id
+                if hasattr(employee, "employee_id")
+                else employee.user_id
+            )
 
-            # Border and alignment
-            for col in range(1, 19):
-                c = ws.cell(row=row, column=col)
+            ws.cell(
+                row=row,
+                column=3
+            ).value = (
+                f"{employee.first_name} "
+                f"{employee.last_name}"
+            )
+
+            ws.cell(
+                row=row,
+                column=4
+            ).value = (
+                employee.joining_date.strftime("%d-%m-%Y")
+                if hasattr(employee, "joining_date")
+                and employee.joining_date
+                else ""
+            )
+
+            ws.cell(
+                row=row,
+                column=5
+            ).value = employee.designation or "-"
+
+            ws.cell(
+                row=row,
+                column=6
+            ).value = employee.department or "-"
+
+            ws.cell(
+               row=row,
+               column=7
+            ).value = total_days_cycle
+
+            ws.cell(
+               row=row,
+               column=8
+            ).value = total_days_worked
+
+            ws.cell(
+                row=row,
+                column=9
+            ).value = total_lop_days
+
+            ws.cell(
+                row=row,
+                column=10
+            ).value = absent_remarks
+
+            ws.cell(
+                row=row,
+                column=11
+            ).value = oneday_wages_val
+
+            ws.cell(
+                row=row,
+                column=12
+            ).value = ""
+
+            for col in range(1, 13):
+
+                c = ws.cell(
+                    row=row,
+                    column=col
+                )
                 c.border = thin_border
                 val = c.value
                 if val is not None and val != "":
                     if isinstance(val, (int, float, date, datetime)) or (isinstance(val, str) and (val.isdigit() or val.startswith("EMP"))):
-                        c.alignment = Alignment(horizontal="center", vertical="center")
-                    else:
-                        c.alignment = Alignment(vertical="center")
-                else:
-                    c.alignment = Alignment(horizontal="center", vertical="center")
+                        c.alignment = Alignment(horizontal="center")
 
             row += 1
 
         # =====================================
         # AUTO WIDTH
         # =====================================
+
         for column_cells in ws.columns:
+
             length = max(
                 len(str(cell.value))
                 if cell.value
                 else 0
                 for cell in column_cells
             )
-            ws.column_dimensions[get_column_letter(column_cells[0].column)].width = max(length + 5, 12)
-        ws.column_dimensions["A"].width = 6
 
-        # =====================================
-        # FREEZE PANES
-        # =====================================
-        ws.freeze_panes = "A6"
+            ws.column_dimensions[
+                get_column_letter(
+                    column_cells[0].column
+                )
+            ].width = length + 5
+            ws.column_dimensions["A"].width = 6
 
         # =====================================
         # FILTER
         # =====================================
-        ws.auto_filter.ref = f"A5:R{row-1}"
+
+        ws.auto_filter.ref = (
+            f"A5:L{row}"
+        )
 
         # =====================================
         # SAVE FILE
         # =====================================
+
         output = BytesIO()
+
         wb.save(output)
+
         output.seek(0)
 
         return send_file(
             output,
             as_attachment=True,
             download_name="Attendance_Report.xlsx",
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mimetype=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
         )
 
     except Exception as e:
+
         return jsonify({
             "success": False,
             "message": str(e)
