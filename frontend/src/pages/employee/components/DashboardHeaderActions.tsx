@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { UtensilsCrossed, Coffee, BellOff, Clock3, ChevronDown, Check, LogOut, Pause, Play } from "lucide-react";
+import { UtensilsCrossed, Coffee, BellOff, Clock3, ChevronDown, Check, LogOut } from "lucide-react";
 
 interface DashboardHeaderActionsProps {
   isCheckedIn: boolean;
@@ -21,10 +21,6 @@ interface DashboardHeaderActionsProps {
   onLunchBreak: () => void;
   onTeaBreak: () => void;
   onOpenNotifications: () => void;
-  isHybrid?: boolean;
-  isPaused?: boolean;
-  pausedTimer?: string;
-  onPauseToggle?: () => void;
 }
 
 const BreakButton: React.FC<{
@@ -81,10 +77,6 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
   onLunchBreak,
   onTeaBreak,
   onOpenNotifications,
-  isHybrid = false,
-  isPaused = false,
-  pausedTimer = "",
-  onPauseToggle,
 }) => {
   const [isHoveringCheck, setIsHoveringCheck] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -105,8 +97,8 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
   // Derived states
   const isCheckedOut = hasCheckedOutToday || (!isCheckedIn && timer !== "00:00:00");
   const lunchDone = !isLunchBreak && totalLunchSeconds > 0;
-  const teaBreakDisabled = !isCheckedIn || isLunchBreak || isPaused;
-  const lunchBreakDisabled = !isCheckedIn || isTeaBreak || lunchDone || isPaused;
+  const teaBreakDisabled = !isCheckedIn || isLunchBreak;
+  const lunchBreakDisabled = !isCheckedIn || isTeaBreak || lunchDone;
   const teaDone = !isTeaBreak && totalTeaSeconds > 0;
 
   const handleCheckAction = async () => {
@@ -137,18 +129,6 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
         activeBg="bg-yellow-50"
         inactiveIconColor="text-amber-500"
       />
-      {isHybrid && (
-        <BreakButton
-          icon={isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-          durationText={isPaused && pausedTimer ? pausedTimer : isPaused ? "Paused" : "Pause Work"}
-          isActive={isPaused}
-          disabled={!isCheckedIn || isLunchBreak || isTeaBreak}
-          onClick={onPauseToggle || (() => {})}
-          activeColor="border-blue-400 text-blue-700"
-          activeBg="bg-blue-50"
-          inactiveIconColor="text-blue-500"
-        />
-      )}
 
       <motion.button
         data-testid="attendance-action-btn"

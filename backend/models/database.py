@@ -78,9 +78,6 @@ def init_db(app=None):
             conn.execute(text("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS regularization_check_in TIMESTAMP"))
             conn.execute(text("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS regularization_check_out TIMESTAMP"))
             conn.execute(text("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS regularization_total_hours FLOAT DEFAULT 0.0"))
-            conn.execute(text("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS is_paused BOOLEAN DEFAULT FALSE"))
-            conn.execute(text("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS paused_start TIMESTAMP"))
-            conn.execute(text("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS paused_minutes INTEGER DEFAULT 0"))
             conn.commit()
     except Exception as dberr:
         print(f"Error checking/adding employee status columns: {dberr}")

@@ -84,14 +84,6 @@ def debug_attendance():
         return jsonify({"success": False, "error": str(e)})
 
 
-def is_office_network(ip_address: str) -> bool:
-    import os
-    if not ip_address:
-        return False
-    prefixes = os.environ.get("OFFICE_IP_PREFIXES", "10.,172.18.,127.0.0.1,::1").split(",")
-    return any(ip_address.startswith(prefix.strip()) for prefix in prefixes if prefix.strip())
-
-
 @attendance_bp.route("/checkin", methods=["POST"])
 @jwt_required()
 def check_in():
@@ -123,18 +115,6 @@ def check_in():
                 "success": False,
                 "message": "Employee not found"
             }), 404
-
-        payload_ip = (data.get("client_ip") or "").strip()
-        client_ip = payload_ip if payload_ip else get_client_ip()
-
-        work_mode = (employee.work_mode or "").strip().lower()
-        if work_mode == "office":
-            if not is_office_network(client_ip):
-                return jsonify({
-                    "success": False,
-                    "message": "Check-in is only allowed from the office network for employees in Office mode."
-                }), 400
-
 
         # =====================================
         # SHIFT VALIDATION
@@ -281,7 +261,7 @@ def check_in():
             # UPDATE EXISTING PLACEHOLDER ROW
             # =====================================
             attendance.check_in = get_ist_now()
-            attendance.check_in_ip = client_ip
+            attendance.check_in_ip = get_client_ip()
             attendance.status = "Half Day"
         else:
             # =====================================
@@ -291,7 +271,7 @@ def check_in():
                 user_id=user_id,
                 attendance_date=today,
                 check_in=get_ist_now(),
-                check_in_ip=client_ip,
+                check_in_ip=get_client_ip(),
                 status="Half Day"
             )
 
@@ -360,10 +340,7 @@ def check_in():
                 "manager_status": attendance.manager_status or "Pending",
                 "checked_in": True,
                 "lunch_break": False,
-                "tea_break": False,
-                "is_paused": False,
-                "paused_start": None,
-                "paused_minutes": 0
+                "tea_break": False
             }
             socketio.emit("attendance_update", payload)
         except Exception as socket_err:
@@ -433,19 +410,7 @@ def check_out():
 
         attendance.check_out = get_ist_now()
 
-        employee = Employee.query.filter_by(user_id=user_id).first()
-        payload_ip = (data.get("client_ip") or "").strip()
-        checkout_ip = payload_ip if payload_ip else get_client_ip()
-
-        if employee:
-            work_mode = (employee.work_mode or "").strip().lower()
-            if work_mode == "office":
-                if not is_office_network(checkout_ip):
-                    return jsonify({
-                        "success": False,
-                        "error": "Check-out is only allowed from the office network for employees in Office mode."
-                    }), 400
-
+        checkout_ip = get_client_ip()
         attendance.check_out_ip = checkout_ip
 
         # IP Mismatch check (Option B)
@@ -464,14 +429,6 @@ def check_out():
             attendance.clarification_history = history
             flag_modified(attendance, "clarification_history")
 
-        if attendance.is_paused:
-            attendance.is_paused = False
-            paused_end = get_ist_now()
-            if attendance.paused_start:
-                added_mins = int((paused_end - attendance.paused_start).total_seconds() / 60)
-                attendance.paused_minutes = (attendance.paused_minutes or 0) + added_mins
-                attendance.paused_start = None
-
         total_seconds = (
             attendance.check_out -
             attendance.check_in
@@ -485,13 +442,8 @@ def check_out():
             attendance.total_gap_minutes or 0
         )
 
-        paused_minutes = (
-            attendance.paused_minutes or 0
-        )
-
         total_seconds -= break_minutes * 60
         total_seconds -= gap_minutes * 60
-        total_seconds -= paused_minutes * 60
 
         hours_decimal = total_seconds / 3600
         attendance.total_hours = int(hours_decimal * 100) / 100
@@ -502,7 +454,9 @@ def check_out():
 
         # Emit attendance_update socket event for real-time dashboard updates
         try:
+            from models.employee import Employee
             from extensions import socketio
+            employee = Employee.query.filter_by(user_id=user_id).first()
             if employee:
                 payload = {
                     "id": employee.id,
@@ -517,10 +471,7 @@ def check_out():
                     "manager_status": attendance.manager_status or "Pending",
                     "checked_in": False,
                     "lunch_break": False,
-                    "tea_break": False,
-                    "is_paused": False,
-                    "paused_start": None,
-                    "paused_minutes": attendance.paused_minutes or 0
+                    "tea_break": False
                 }
                 socketio.emit("attendance_update", payload)
         except Exception as socket_err:
@@ -603,8 +554,7 @@ def sync_biometric_to_web_entry(attendance):
             total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
             break_minutes = attendance.total_break_minutes or 0
             gap_minutes = attendance.total_gap_minutes or 0
-            paused_minutes = attendance.paused_minutes or 0
-            total_seconds -= (break_minutes + gap_minutes + paused_minutes) * 60
+            total_seconds -= (break_minutes + gap_minutes) * 60
             hours_decimal = max(total_seconds, 0) / 3600
             attendance.total_hours = int(hours_decimal * 100) / 100
 
@@ -800,10 +750,7 @@ def attendance_status(user_id):
         "tea_start": attendance.tea_start.isoformat() if attendance.tea_start else None,
         "lunch_minutes": attendance.lunch_minutes or 0,
         "tea_minutes": attendance.tea_minutes or 0,
-        "total_break_minutes": attendance.total_break_minutes or 0,
-        "is_paused": attendance.is_paused or False,
-        "paused_start": attendance.paused_start.isoformat() if attendance.paused_start else None,
-        "paused_minutes": attendance.paused_minutes or 0
+        "total_break_minutes": attendance.total_break_minutes or 0
     })
 
 
@@ -899,10 +846,7 @@ def lunch_break():
                     "lunch_break": attendance.lunch_break or False,
                     "tea_break": attendance.tea_break or False,
                     "lunch_start": attendance.lunch_start.isoformat() if attendance.lunch_start else None,
-                    "lunch_end": attendance.lunch_end.isoformat() if attendance.lunch_end else None,
-                    "is_paused": attendance.is_paused or False,
-                    "paused_start": attendance.paused_start.isoformat() if attendance.paused_start else None,
-                    "paused_minutes": attendance.paused_minutes or 0
+                    "lunch_end": attendance.lunch_end.isoformat() if attendance.lunch_end else None
                 }
                 socketio.emit("attendance_update", payload)
         except Exception as socket_err:
@@ -1023,10 +967,7 @@ def tea_break():
                     "lunch_break": attendance.lunch_break or False,
                     "tea_break": attendance.tea_break or False,
                     "tea_start": attendance.tea_start.isoformat() if attendance.tea_start else None,
-                    "tea_end": attendance.tea_end.isoformat() if attendance.tea_end else None,
-                    "is_paused": attendance.is_paused or False,
-                    "paused_start": attendance.paused_start.isoformat() if attendance.paused_start else None,
-                    "paused_minutes": attendance.paused_minutes or 0
+                    "tea_end": attendance.tea_end.isoformat() if attendance.tea_end else None
                 }
                 socketio.emit("attendance_update", payload)
         except Exception as socket_err:
@@ -1039,122 +980,6 @@ def tea_break():
     except Exception as e:
 
         print("TEA BREAK ERROR:", str(e))
-
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-@attendance_bp.route(
-    "/pause",
-    methods=["POST", "PUT"]
-)
-@jwt_required()
-def pause_attendance():
-
-    try:
-
-        data = request.json
-
-        if str(get_jwt_identity()) != str(data.get("user_id")):
-            return jsonify({
-                "success": False,
-                "error": "Unauthorized"
-            }), 403
-
-        attendance = Attendance.query.filter_by(
-            user_id=data["user_id"],
-            attendance_date=get_ist_today()
-        ).order_by(
-            Attendance.id.desc()
-        ).first()
-
-        if not attendance:
-            return jsonify({
-                "success": False,
-                "error": "Attendance not found"
-            }), 404
-
-        # Verify they are currently checked in (web active or card active)
-        web_active = (attendance.check_in is not None) and (attendance.check_out is None)
-        card_active = (attendance.card_check_in is not None) and (attendance.card_check_out is None)
-        if not (web_active or card_active):
-            return jsonify({
-                "success": False,
-                "error": "User is not checked in or has already checked out."
-            }), 400
-
-        action = data.get("action")
-
-        if action == "start":
-            if attendance.lunch_break or attendance.tea_break:
-                return jsonify({
-                    "success": False,
-                    "error": "Cannot pause while on active break (lunch/tea)."
-                }), 400
-            if attendance.is_paused:
-                return jsonify({
-                    "success": False,
-                    "error": "Timesheet is already paused."
-                }), 400
-
-            attendance.is_paused = True
-            attendance.paused_start = get_ist_now()
-
-        elif action == "stop":
-            if not attendance.is_paused:
-                return jsonify({
-                    "success": False,
-                    "error": "Timesheet is not currently paused."
-                }), 400
-
-            attendance.is_paused = False
-            paused_end = get_ist_now()
-
-            if attendance.paused_start:
-                added_mins = int((paused_end - attendance.paused_start).total_seconds() / 60)
-                attendance.paused_minutes = (attendance.paused_minutes or 0) + added_mins
-                attendance.paused_start = None
-
-        db.session.commit()
-
-        # Emit attendance_update socket event for real-time dashboard updates
-        try:
-            from models.employee import Employee
-            from extensions import socketio
-            employee = Employee.query.filter_by(user_id=data["user_id"]).first()
-            if employee:
-                payload = {
-                    "id": employee.id,
-                    "user_id": employee.user_id,
-                    "attendance_status": "Present" if not attendance.check_out else "Checked Out",
-                    "check_in": attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None,
-                    "check_out": attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None,
-                    "working_hours": attendance.total_hours or 0.0,
-                    "lunch_minutes": attendance.lunch_minutes or 0,
-                    "tea_minutes": attendance.tea_minutes or 0,
-                    "paused_minutes": attendance.paused_minutes or 0,
-                    "shift": employee.shift_timing or "General Shift",
-                    "manager_status": attendance.manager_status or "Pending",
-                    "checked_in": True if not attendance.check_out else False,
-                    "lunch_break": attendance.lunch_break or False,
-                    "tea_break": attendance.tea_break or False,
-                    "is_paused": attendance.is_paused or False,
-                    "paused_start": attendance.paused_start.isoformat() if attendance.paused_start else None
-                }
-                socketio.emit("attendance_update", payload)
-        except Exception as socket_err:
-            print("Failed to emit pause socket:", str(socket_err))
-
-        return jsonify({
-            "success": True,
-            "is_paused": attendance.is_paused,
-            "paused_minutes": attendance.paused_minutes
-        })
-
-    except Exception as e:
-
-        print("PAUSE ATTENDANCE ERROR:", str(e))
 
         return jsonify({
             "success": False,
@@ -3244,8 +3069,7 @@ def approve_attendance(employee_id):
                     if not break_minutes:
                         break_minutes = (attendance.lunch_minutes or 0) + (attendance.tea_minutes or 0)
                     gap_minutes = attendance.total_gap_minutes or 0
-                    paused_minutes = attendance.paused_minutes or 0
-                    total_seconds -= (break_minutes + gap_minutes + paused_minutes) * 60
+                    total_seconds -= (break_minutes + gap_minutes) * 60
                     hours_decimal = max(total_seconds, 0) / 3600
                     attendance.total_hours = int(hours_decimal * 100) / 100
 
@@ -3260,13 +3084,9 @@ def approve_attendance(employee_id):
                     if effective_in:
                         now = get_ist_now()
                         if attendance.attendance_date == now.date():
-                            paused_seconds = (attendance.paused_minutes or 0) * 60
-                            if attendance.is_paused and attendance.paused_start:
-                                elapsed_seconds = (attendance.paused_start - effective_in).total_seconds()
-                            else:
-                                elapsed_seconds = (now - effective_in).total_seconds()
+                            elapsed_seconds = (now - effective_in).total_seconds()
                             break_seconds = (attendance.total_break_minutes or 0) * 60
-                            hours_decimal = max(elapsed_seconds - break_seconds - paused_seconds, 0) / 3600
+                            hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
                             active_hrs = max(hours_decimal, max_hrs)
 
                 if active_hrs < 4.0:
@@ -4382,7 +4202,6 @@ def update_attendance_record():
         
         lunch_minutes = int(data.get("lunch_minutes") or 0)
         tea_minutes = int(data.get("tea_minutes") or 0)
-        paused_minutes = int(data.get("paused_minutes") or 0)
 
         if not attendance:
             # Create a new attendance record if it doesn't exist
@@ -4396,7 +4215,6 @@ def update_attendance_record():
                 card_check_out=parsed_card_check_out,
                 lunch_minutes=lunch_minutes,
                 tea_minutes=tea_minutes,
-                paused_minutes=paused_minutes,
                 total_break_minutes=lunch_minutes + tea_minutes,
                 manager_status="Approved"
             )
@@ -4410,7 +4228,6 @@ def update_attendance_record():
             attendance.card_check_out = parsed_card_check_out
             attendance.lunch_minutes = lunch_minutes
             attendance.tea_minutes = tea_minutes
-            attendance.paused_minutes = paused_minutes
             attendance.total_break_minutes = lunch_minutes + tea_minutes
             attendance.manager_status = "Approved"
 
@@ -4419,8 +4236,7 @@ def update_attendance_record():
             diff_seconds = (attendance.check_out - attendance.check_in).total_seconds()
             break_minutes = attendance.total_break_minutes or 0
             gap_minutes = attendance.total_gap_minutes or 0
-            paused_minutes = attendance.paused_minutes or 0
-            diff_seconds -= (break_minutes + gap_minutes + paused_minutes) * 60
+            diff_seconds -= (break_minutes + gap_minutes) * 60
             attendance.total_hours = max(0.0, int((diff_seconds / 3600.0) * 100) / 100)
         else:
             attendance.total_hours = 0.0
