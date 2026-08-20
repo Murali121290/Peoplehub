@@ -828,6 +828,8 @@ const ManagerDashboardPage = () => {
           card_working_hours: att.card_working_hours,
           lunch_minutes: att.lunch_minutes,
           tea_minutes: att.tea_minutes,
+          is_paused: att.is_paused || false,
+          paused_minutes: att.paused_minutes || 0,
           shift: att.shift,
           manager_status: att.manager_status,
           attendance_status: att.attendance_status || "",
@@ -1883,6 +1885,26 @@ const ManagerDashboardPage = () => {
                                       />
                                     </span>
                                   )}
+                                  {member.is_paused && (
+                                    <span
+                                      title="Timesheet paused (Commute / Transit)"
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        padding: "2px 7px",
+                                        borderRadius: "999px",
+                                        background: "#fffbeb",
+                                        border: "1px solid #fde68a",
+                                        color: "#b45309",
+                                        fontSize: "10px",
+                                        fontWeight: 800,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <span>⏸️ Paused</span>
+                                    </span>
+                                  )}
                                 </div>
 
                                 <div
@@ -2381,6 +2403,26 @@ const ManagerDashboardPage = () => {
                                             height: "13px",
                                           }}
                                         />
+                                      </span>
+                                    )}
+                                    {member.is_paused && (
+                                      <span
+                                        title="Timesheet paused (Commute / Transit)"
+                                        style={{
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "4px",
+                                          padding: "2px 7px",
+                                          borderRadius: "999px",
+                                          background: "#fffbeb",
+                                          border: "1px solid #fde68a",
+                                          color: "#b45309",
+                                          fontSize: "10px",
+                                          fontWeight: 800,
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        <span>⏸️ Paused</span>
                                       </span>
                                     )}
                                   </div>

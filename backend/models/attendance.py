@@ -196,6 +196,23 @@ class Attendance(db.Model):
         nullable=True
     )
 
+    is_paused = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=True
+    )
+
+    paused_start = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    paused_minutes = db.Column(
+        db.Integer,
+        default=0,
+        nullable=True
+    )
+
     check_in_ip = db.Column(
         db.String(45),
         nullable=True
