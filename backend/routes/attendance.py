@@ -826,6 +826,18 @@ def lunch_break():
                 "error": "Unauthorized"
             }), 403
 
+        employee = Employee.query.filter_by(user_id=data.get("user_id")).first()
+        if employee:
+            work_mode = (employee.work_mode or "").strip().lower()
+            if work_mode == "office":
+                payload_ip = (data.get("client_ip") or "").strip()
+                client_ip = payload_ip if payload_ip else get_client_ip()
+                if not is_office_network(client_ip):
+                    return jsonify({
+                        "success": False,
+                        "error": "Lunch break actions are only allowed from the office network for employees in Office mode."
+                    }), 400
+
         attendance = Attendance.query.filter_by(
             user_id=data["user_id"],
             attendance_date=get_ist_today()
@@ -937,6 +949,18 @@ def tea_break():
                 "success": False,
                 "error": "Unauthorized"
             }), 403
+
+        employee = Employee.query.filter_by(user_id=data.get("user_id")).first()
+        if employee:
+            work_mode = (employee.work_mode or "").strip().lower()
+            if work_mode == "office":
+                payload_ip = (data.get("client_ip") or "").strip()
+                client_ip = payload_ip if payload_ip else get_client_ip()
+                if not is_office_network(client_ip):
+                    return jsonify({
+                        "success": False,
+                        "error": "Tea break actions are only allowed from the office network for employees in Office mode."
+                    }), 400
 
         attendance = Attendance.query.filter_by(
             user_id=data["user_id"],
@@ -1061,6 +1085,18 @@ def pause_attendance():
                 "success": False,
                 "error": "Unauthorized"
             }), 403
+
+        employee = Employee.query.filter_by(user_id=data.get("user_id")).first()
+        if employee:
+            work_mode = (employee.work_mode or "").strip().lower()
+            if work_mode == "office":
+                payload_ip = (data.get("client_ip") or "").strip()
+                client_ip = payload_ip if payload_ip else get_client_ip()
+                if not is_office_network(client_ip):
+                    return jsonify({
+                        "success": False,
+                        "error": "Timesheet pause/resume is only allowed from the office network for employees in Office mode."
+                    }), 400
 
         attendance = Attendance.query.filter_by(
             user_id=data["user_id"],
