@@ -892,9 +892,7 @@ def lunch_break():
 
         # Emit attendance_update socket event for real-time dashboard updates
         try:
-            from models.employee import Employee
             from extensions import socketio
-            employee = Employee.query.filter_by(user_id=data["user_id"]).first()
             if employee:
                 payload = {
                     "id": employee.id,
@@ -1028,9 +1026,7 @@ def tea_break():
 
         # Emit attendance_update socket event for real-time dashboard updates
         try:
-            from models.employee import Employee
             from extensions import socketio
-            employee = Employee.query.filter_by(user_id=data["user_id"]).first()
             if employee:
                 payload = {
                     "id": employee.id,
@@ -1156,9 +1152,7 @@ def pause_attendance():
 
         # Emit attendance_update socket event for real-time dashboard updates
         try:
-            from models.employee import Employee
             from extensions import socketio
-            employee = Employee.query.filter_by(user_id=data["user_id"]).first()
             if employee:
                 payload = {
                     "id": employee.id,
