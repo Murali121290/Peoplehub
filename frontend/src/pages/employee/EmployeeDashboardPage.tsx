@@ -227,6 +227,10 @@ const EmployeeDashboardPage: React.FC = () => {
   const [teaStartTime, setTeaStartTime] = useState<Date | null>(null);
   const [totalLunchSeconds, setTotalLunchSeconds] = useState(0);
   const [totalTeaSeconds, setTotalTeaSeconds] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [pausedStartTime, setPausedStartTime] = useState<Date | null>(null);
+  const [totalPausedSeconds, setTotalPausedSeconds] = useState(0);
+  const [pausedTimer, setPausedTimer] = useState("");
   const [todayAttendanceSummary, setTodayAttendanceSummary] = useState<{
     date: string;
     timer: string;
@@ -354,7 +358,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
       if (!leave.from_date || !leave.to_date) return false;
       const from = new Date(leave.from_date);
       const to = new Date(leave.to_date);
-      return todayDate >= from && todayDate <= to;
+      const isCancelled = leave.cancelled_dates?.includes(todayStr);
+      return todayDate >= from && todayDate <= to && !isCancelled;
     });
   })();
 
@@ -575,6 +580,20 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   };
 
+
+  const getClientPublicIp = async (): Promise<string | null> => {
+    try {
+      const res = await fetch("https://api.ipify.org?format=json");
+      if (res.ok) {
+        const data = await res.json();
+        return data.ip || null;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch public IP", e);
+    }
+    return null;
+  };
+
   // --- Attendance Handlers ---
   const handleCheckIn = async (selectedShift?: string) => {
     setIsActionLoading(true);
@@ -584,13 +603,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
         toast.error("Unable to identify current user.");
         return;
       }
+      const clientIp = await getClientPublicIp();
       const response = await fetch(`${BASE_URL}/attendance/checkin`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-        body: JSON.stringify({ user_id: Number(userId) }),
+        body: JSON.stringify({ user_id: Number(userId), client_ip: clientIp }),
       });
       const data = await response.json();
       if (!data.success) {
@@ -816,13 +836,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
         toast.error("User ID not found.");
         return;
       }
+      const clientIp = await getClientPublicIp();
       const response = await fetch(`${BASE_URL}/attendance/checkout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-        body: JSON.stringify({ user_id: Number(userId) }),
+        body: JSON.stringify({ user_id: Number(userId), client_ip: clientIp }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -856,7 +877,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
       setHasCheckedOutToday(true);
       setCheckInTime(null);
       setTimer(formattedTimer);
+      setIsPaused(false);
+      setPausedStartTime(null);
+      setTotalPausedSeconds(0);
+      setPausedTimer("");
       localStorage.removeItem(`checkInTime_${userId}`);
+      localStorage.removeItem(`isPaused_${userId}`);
+      localStorage.removeItem(`pausedStartTime_${userId}`);
+      localStorage.removeItem(`totalPausedSeconds_${userId}`);
       toast.success("You have checked out successfully.");
       window.dispatchEvent(new Event('refreshTeamStatus'));
     } catch (error) {
@@ -981,6 +1009,64 @@ if (isHalfDayLeave(leave.total_days)) return false;
       }
     } catch (error) {
       toast.error("Something went wrong while handling Tea Break.");
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handlePauseToggle = async () => {
+    if (!isCheckedIn) {
+      toast.error("Check-In Required. Please check in before pausing.");
+      return;
+    }
+    if (isLunchBreak || isTeaBreak) {
+      toast.error("Active Break. Please stop your break before pausing.");
+      return;
+    }
+    const currentUserId = localStorage.getItem("user_id");
+    if (!currentUserId) return;
+
+    setIsActionLoading(true);
+    try {
+      const action = isPaused ? "stop" : "start";
+      const response = await fetch(`${BASE_URL}/attendance/pause`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ user_id: Number(currentUserId), action }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        toast.error(data.error || `Failed to ${action} pause`);
+        return;
+      }
+
+      if (action === "start") {
+        setPausedStartTime(new Date());
+        setIsPaused(true);
+        localStorage.setItem(`isPaused_${currentUserId}`, "true");
+        localStorage.setItem(`pausedStartTime_${currentUserId}`, new Date().toISOString());
+        toast.success("Timesheet paused successfully.");
+      } else {
+        if (pausedStartTime) {
+          const seconds = Math.max(
+            0,
+            Math.floor((new Date().getTime() - pausedStartTime.getTime()) / 1000)
+          );
+          setTotalPausedSeconds((prev) => prev + seconds);
+        }
+        setIsPaused(false);
+        setPausedStartTime(null);
+        setPausedTimer("");
+        localStorage.setItem(`isPaused_${currentUserId}`, "false");
+        localStorage.removeItem(`pausedStartTime_${currentUserId}`);
+        toast.success("Timesheet resumed successfully.");
+      }
+      window.dispatchEvent(new Event('refreshTeamStatus'));
+    } catch (error) {
+      toast.error("Something went wrong while toggling timesheet pause.");
     } finally {
       setIsActionLoading(false);
     }
@@ -1414,8 +1500,18 @@ if (isHalfDayLeave(leave.total_days)) return false;
                 }
                 setTotalLunchSeconds(lunchSecs);
                 setTotalTeaSeconds(teaSecs);
+                
+                const pauseSecs = (data.paused_minutes || 0) * 60;
+                setIsPaused(data.is_paused || false);
+                if (data.is_paused && data.paused_start) {
+                  setPausedStartTime(parseTimeString(data.paused_start));
+                } else {
+                  setPausedStartTime(null);
+                }
+                setTotalPausedSeconds(pauseSecs);
+
                 const elapsedSeconds = Math.floor((new Date().getTime() - checkIn.getTime()) / 1000);
-                const workingSeconds = Math.max(elapsedSeconds - lunchSecs - teaSecs, 0);
+                const workingSeconds = Math.max(elapsedSeconds - lunchSecs - teaSecs - pauseSecs, 0);
                 const hrs = Math.floor(workingSeconds / 3600);
                 const mins = Math.floor((workingSeconds % 3600) / 60);
                 const secs = workingSeconds % 60;
@@ -1515,6 +1611,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
         }
         setTotalLunchSeconds((payload.lunch_minutes || 0) * 60);
         setTotalTeaSeconds((payload.tea_minutes || 0) * 60);
+        setIsPaused(payload.is_paused || false);
+        if (payload.paused_start) {
+          setPausedStartTime(parseTimeString(payload.paused_start));
+        } else {
+          setPausedStartTime(null);
+        }
+        setTotalPausedSeconds((payload.paused_minutes || 0) * 60);
 
         const userId = localStorage.getItem("user_id");
         if (userId) {
@@ -1549,11 +1652,26 @@ if (isHalfDayLeave(leave.total_days)) return false;
       });
 
       // If the leave belongs to current user, we should update their leave balance in employees state!
-      if (Number(payload.employee_id) === Number(currentEmployee?.id)) {
+      const isCurrentUser = 
+        payload.employee_id && (
+          String(payload.employee_id) === String(currentEmployee?.id) ||
+          String(payload.employee_id) === String(currentEmployee?.employee_id)
+        );
+
+      if (isCurrentUser) {
         // Reload employee details from backend to sync balances
         getEmployees(true)
           .then((data) => setEmployees(data))
           .catch((err) => console.error(err));
+
+        // Reload attendance history to sync cancelled/updated leave dates
+        const userId = localStorage.getItem("user_id");
+        if (userId) {
+          fetch(`${BASE_URL}/attendance/history/${userId}`)
+            .then((res) => res.json())
+            .then((data) => setAttendanceData(data))
+            .catch((err) => console.error(err));
+        }
       }
     });
 
@@ -1639,9 +1757,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
           isTeaBreak && teaStartTime
             ? Math.max(0, Math.floor((now - teaStartTime.getTime()) / 1000))
             : 0;
+        const runningPause =
+          isPaused && pausedStartTime
+            ? Math.max(0, Math.floor((now - pausedStartTime.getTime()) / 1000))
+            : 0;
 
         const workingSeconds = Math.max(
-          elapsed - totalLunchSeconds - runningLunch - totalTeaSeconds - runningTea,
+          elapsed - totalLunchSeconds - runningLunch - totalTeaSeconds - runningTea - totalPausedSeconds - runningPause,
           0,
         );
         const hrs = Math.floor(workingSeconds / 3600);
@@ -1669,6 +1791,15 @@ if (isHalfDayLeave(leave.total_days)) return false;
           setTeaTimer("");
         }
 
+        if (isPaused && pausedStartTime) {
+          const pHrs = Math.floor(runningPause / 3600);
+          const pMins = Math.floor((runningPause % 3600) / 60);
+          const pSecs = runningPause % 60;
+          setPausedTimer(`${pHrs > 0 ? String(pHrs).padStart(2, "0") + ":" : ""}${String(pMins).padStart(2, "0")}:${String(pSecs).padStart(2, "0")}`);
+        } else {
+          setPausedTimer("");
+        }
+
       }, 1000);
     }
     return () => {
@@ -1683,6 +1814,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
     teaStartTime,
     totalLunchSeconds,
     totalTeaSeconds,
+    isPaused,
+    pausedStartTime,
+    totalPausedSeconds,
   ]);
 
   useEffect(() => {
@@ -1790,6 +1924,10 @@ if (isHalfDayLeave(leave.total_days)) return false;
                     onCheckInOut={() => isCheckedIn ? setConfirmModal(true) : handleCheckInClick()}
                     onLunchBreak={handleLunchBreak}
                     onTeaBreak={handleTeaBreak}
+                    isHybrid={(currentEmployee?.work_mode || "").toLowerCase() === "hybrid"}
+                    isPaused={isPaused}
+                    pausedTimer={pausedTimer}
+                    onPauseToggle={handlePauseToggle}
                     onOpenNotifications={() => setShowNotificationsPanel(true)}
                   />
                 </div>

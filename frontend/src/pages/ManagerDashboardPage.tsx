@@ -1,5 +1,6 @@
 import { API_URL, getProfileImageUrl } from "../config/api";
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import TimePicker from "../components/ui/TimePicker";
 import { socket } from "../services/socket";
@@ -37,6 +38,8 @@ import { Input, Select } from "../components/ui/Form";
 import { BookLoader } from "../components/ui/Spinner";
 import type { StatCardColor } from "../components/ui/StatCard";
 import type { BadgeVariant } from "../components/ui/Badge";
+import AttendanceDetailModal from "../layouts/components/AttendanceDetailModal";
+import { ConfirmDialog } from "../components/ui/Modal/ConfirmDialog";
 
 const CustomSelect: React.FC<{
   value: string;
@@ -247,7 +250,19 @@ const NOTIFICATION_STYLES: Record<string, string> = {
 };
 
 const ManagerDashboardPage = () => {
+  const navigate = useNavigate();
   const userId = localStorage.getItem("user_id");
+
+  // Pending Cycle Attendance States
+  const [pendingCycleSummary, setPendingCycleSummary] = useState<any[]>([]);
+  const [loadingPendingCycle, setLoadingPendingCycle] = useState(false);
+  const [pendingCycleStart, setPendingCycleStart] = useState("");
+  const [pendingCycleEnd, setPendingCycleEnd] = useState("");
+  const [approvingPendingId, setApprovingPendingId] = useState<number | null>(null);
+  const [selectedPendingRecord, setSelectedPendingRecord] = useState<any>(null);
+  const [showPendingDetailModal, setShowPendingDetailModal] = useState(false);
+  const [showConfirmApproveAll, setShowConfirmApproveAll] = useState(false);
+  const [approvingAllPending, setApprovingAllPending] = useState(false);
 
   const [managerPath, setManagerPath] = useState<{ id: number; name: string }[]>([
     { id: Number(userId) || 0, name: "My Team" }
@@ -547,7 +562,8 @@ const ManagerDashboardPage = () => {
       await Promise.all([
         loadTeamMembers(currentViewedManagerId),
         loadTeamAttendance(currentViewedManagerId),
-        loadYesterdaySummary()
+        loadYesterdaySummary(),
+        loadPendingCycleSummary()
       ]);
       await loadManagerInfo();
     } catch (err) {
@@ -589,6 +605,7 @@ const ManagerDashboardPage = () => {
     const handleRefresh = () => {
       loadTeamAttendance(currentViewedManagerId);
       loadYesterdaySummary(true);
+      loadPendingCycleSummary(true);
     };
 
     socket.on("attendance_update", handleRefresh);
@@ -689,6 +706,67 @@ const ManagerDashboardPage = () => {
     } finally {
       if (!silent) setLoadingYesterday(false);
     }
+  };
+
+  const loadPendingCycleSummary = async (silent = false) => {
+    try {
+      if (!silent) setLoadingPendingCycle(true);
+      const response = await fetch(`${BASE_URL}/attendance/pending-cycle/${userId}`);
+      const data = await response.json();
+      if (data.success) {
+        setPendingCycleSummary(data.records ?? []);
+        setPendingCycleStart(data.cycle_start ?? "");
+        setPendingCycleEnd(data.cycle_end ?? "");
+      } else {
+        setPendingCycleSummary([]);
+      }
+    } catch (error) {
+      console.error("Failed to load pending cycle summary", error);
+    } finally {
+      if (!silent) setLoadingPendingCycle(false);
+    }
+  };
+
+  const handleApprovePendingCycle = async (rec: any) => {
+    setApprovingPendingId(rec.id);
+    try {
+      const url = `${BASE_URL}/attendance/approve/${rec.db_employee_id}?date=${rec.attendance_date}`;
+      const res = await fetch(url, { method: "PUT" });
+      if (!res.ok) throw new Error();
+      toast.success(`Approved — ${rec.employee_name}`);
+      await loadPendingCycleSummary(true);
+    } catch {
+      toast.error("Failed to approve. Please try again.");
+    } finally {
+      setApprovingPendingId(null);
+    }
+  };
+
+  const handleApproveAllPendingCycle = async () => {
+    if (!pendingCycleSummary.length) return;
+    setShowConfirmApproveAll(true);
+  };
+
+  const executeApproveAllPendingCycle = async () => {
+    setApprovingAllPending(true);
+    let failed = 0;
+    for (const rec of pendingCycleSummary) {
+      try {
+        const url = `${BASE_URL}/attendance/approve/${rec.db_employee_id}?date=${rec.attendance_date}`;
+        await fetch(url, { method: "PUT" });
+      } catch {
+        failed++;
+      }
+    }
+
+    if (failed > 0) {
+      toast.error(`${failed} record(s) failed to approve`);
+    } else {
+      toast.success("All records approved!");
+    }
+    await loadPendingCycleSummary(true);
+    setApprovingAllPending(false);
+    setShowConfirmApproveAll(false);
   };
 
   const handleApproveYesterday = async (empId: number, dateStr: string) => {
@@ -828,6 +906,8 @@ const ManagerDashboardPage = () => {
           card_working_hours: att.card_working_hours,
           lunch_minutes: att.lunch_minutes,
           tea_minutes: att.tea_minutes,
+          is_paused: att.is_paused || false,
+          paused_minutes: att.paused_minutes || 0,
           shift: att.shift,
           manager_status: att.manager_status,
           attendance_status: att.attendance_status || "",
@@ -1883,6 +1963,26 @@ const ManagerDashboardPage = () => {
                                       />
                                     </span>
                                   )}
+                                  {member.is_paused && (
+                                    <span
+                                      title="Timesheet paused (Commute / Transit)"
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        padding: "2px 7px",
+                                        borderRadius: "999px",
+                                        background: "#fffbeb",
+                                        border: "1px solid #fde68a",
+                                        color: "#b45309",
+                                        fontSize: "10px",
+                                        fontWeight: 800,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <span>⏸️ Paused</span>
+                                    </span>
+                                  )}
                                 </div>
 
                                 <div
@@ -2383,6 +2483,26 @@ const ManagerDashboardPage = () => {
                                         />
                                       </span>
                                     )}
+                                    {member.is_paused && (
+                                      <span
+                                        title="Timesheet paused (Commute / Transit)"
+                                        style={{
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "4px",
+                                          padding: "2px 7px",
+                                          borderRadius: "999px",
+                                          background: "#fffbeb",
+                                          border: "1px solid #fde68a",
+                                          color: "#b45309",
+                                          fontSize: "10px",
+                                          fontWeight: 800,
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        <span>⏸️ Paused</span>
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </td>
@@ -2710,6 +2830,162 @@ const ManagerDashboardPage = () => {
           </section>
         </div>
       )}
+
+      {/* Pending Attendance (Current Cycle) */}
+      {pendingCycleSummary.length > 0 && (
+        <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0 24px 40px" }}>
+          <section style={{
+            background: "#fff",
+            borderRadius: "24px",
+            border: `1px solid ${THEME.border}`,
+            boxShadow: THEME.shadow,
+            overflow: "hidden",
+          }}>
+            {/* Header */}
+            <div style={{ padding: "24px", borderBottom: `1px solid ${THEME.border}`, background: "linear-gradient(180deg,#fff 0%,#fbfdff 100%)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                  <div style={{ width: "46px", height: "46px", borderRadius: "14px", background: "#ffedd5", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <ClockIcon style={{ width: "22px", height: "22px", color: "#f97316" }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "18px", fontWeight: 800, color: THEME.navy }}>Pending Cycle Attendance</div>
+                    <div style={{ fontSize: "13px", color: THEME.textSoft, marginTop: "2px" }}>
+                      {pendingCycleStart && pendingCycleEnd ? `Cycle: ${new Date(pendingCycleStart).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' })} – ${new Date(pendingCycleEnd).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}` : "Current Payroll Cycle"} — {pendingCycleSummary.length} pending approval
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <button
+                    onClick={() => handleApproveAllPendingCycle()}
+                    style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 16px", borderRadius: "10px", border: "none", background: "#f97316", color: "#fff", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+                  >
+                    Approve All ({pendingCycleSummary.length})
+                  </button>
+                  <button
+                    onClick={() => loadPendingCycleSummary()}
+                    style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 16px", borderRadius: "10px", border: `1px solid ${THEME.border}`, background: THEME.surface, color: THEME.textSoft, fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+                  >
+                    <ArrowPathIcon style={{ width: "15px", height: "15px" }} />
+                    Refresh
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Table */}
+            {loadingPendingCycle ? (
+              <div style={{ padding: "48px", textAlign: "center", color: THEME.textSoft }}>
+                <div style={{ width: "28px", height: "28px", border: `3px solid ${THEME.border}`, borderTop: `3px solid ${THEME.primary}`, borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
+                <p style={{ fontSize: "13px", fontWeight: 500 }}>Loading pending cycle attendance...</p>
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px", color: THEME.text }}>
+                  <thead>
+                    <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>Employee</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>ID</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>Department</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>Date</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>Web In/Out</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>Biometric In/Out</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>Working Hours</th>
+                      <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>Status</th>
+                      <th style={{ padding: "12px 16px", textAlign: "center" }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingCycleSummary.map((rec, idx) => {
+                      const status = rec.status || "Absent";
+                      let statusBg = "#fee2e2"; let statusColor = "#b91c1c";
+                      if (status === "Present") { statusBg = "#dcfce7"; statusColor = "#166534"; }
+                      else if (status === "Leave") { statusBg = "#fef3c7"; statusColor = "#92400e"; }
+                      else if (status === "Half Day") { statusBg = "#f3e8ff"; statusColor = "#7e22ce"; }
+
+                      return (
+                        <tr key={idx} style={{ borderBottom: `1px solid ${THEME.border}` }}>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                              <div style={{ width: "32px", height: "32px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "#f97316", fontWeight: 700, fontSize: "13px", background: "#ffedd5" }}>
+                                {rec.employee_name ? rec.employee_name[0].toUpperCase() : "E"}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 600, color: THEME.navy }}>{rec.employee_name}</div>
+                                <div style={{ fontSize: "11px", color: THEME.textSoft }}>{rec.designation}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, color: THEME.textSoft }}>{rec.employee_id || "—"}</td>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, color: THEME.textSoft }}>{rec.department || "—"}</td>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, fontWeight: 600, color: THEME.navy }}>
+                            {new Date(rec.attendance_date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </td>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>
+                            {rec.web_checkin} – {rec.web_checkout}
+                          </td>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>
+                            {rec.biometric_checkin} – {rec.biometric_checkout}
+                          </td>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}`, textAlign: "center", fontWeight: 700, color: rec.working_hours >= 8 ? "#166534" : rec.working_hours >= 4 ? "#854d0e" : "#b91c1c" }}>
+                            {rec.working_hours > 0 ? `${rec.working_hours}h` : "—"}
+                          </td>
+                          <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>
+                            <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: 800 }}>{status}</span>
+                          </td>
+                          <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                            <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                              <button
+                                onClick={() => {
+                                  setSelectedPendingRecord(rec);
+                                  setShowPendingDetailModal(true);
+                                }}
+                                style={{ padding: "6px 12px", borderRadius: "8px", border: `1px solid ${THEME.border}`, background: THEME.surface, color: THEME.textSoft, fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                              >
+                                View
+                              </button>
+                              <button
+                                disabled={approvingPendingId === rec.id}
+                                onClick={() => handleApprovePendingCycle(rec)}
+                                style={{ padding: "6px 12px", borderRadius: "8px", border: "none", background: "#dcfce7", color: "#166534", fontSize: "12px", fontWeight: 700, cursor: "pointer", opacity: approvingPendingId === rec.id ? 0.5 : 1 }}
+                              >
+                                {approvingPendingId === rec.id ? "…" : "Approve"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {showPendingDetailModal && selectedPendingRecord && (
+        <AttendanceDetailModal
+          selectedEmployee={selectedPendingRecord}
+          onClose={() => {
+            setShowPendingDetailModal(false);
+            setSelectedPendingRecord(null);
+          }}
+        />
+      )}
+
+      <ConfirmDialog
+        isOpen={showConfirmApproveAll}
+        title="Approve All Pending Cycle Attendance"
+        message={`Are you sure you want to approve all ${pendingCycleSummary.length} pending attendance records for the current cycle?`}
+        description="This action will mark all currently displayed pending cycle records as Approved."
+        variant="warning"
+        confirmLabel="Approve All"
+        cancelLabel="Cancel"
+        onConfirm={executeApproveAllPendingCycle}
+        onCancel={() => setShowConfirmApproveAll(false)}
+        loading={approvingAllPending}
+      />
 
       {/* Attendance History Modal */}
       {historyModalUser && (

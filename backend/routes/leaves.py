@@ -19,6 +19,52 @@ leave_bp = Blueprint(
     __name__
 )
 
+def is_date_week_off(d):
+    if d.weekday() == 6:
+        return True
+    if d.weekday() == 5:
+        sat_count = 0
+        for day_num in range(1, d.day + 1):
+            from datetime import date
+            if date(d.year, d.month, day_num).weekday() == 5:
+                sat_count += 1
+        if sat_count in (2, 4):
+            return True
+    return False
+
+def get_cancellable_dates(from_date, to_date):
+    from models.holiday import Holiday, HolidayOverride
+    from datetime import timedelta
+    
+    # Pre-fetch overrides and published holidays
+    overrides = {o.date: o.override_type for o in HolidayOverride.query.filter(HolidayOverride.date >= from_date, HolidayOverride.date <= to_date).all()}
+    holidays = {h.date for h in Holiday.query.filter(Holiday.date >= from_date, Holiday.date <= to_date, Holiday.is_published == True).all()}
+    
+    valid_dates = []
+    curr = from_date
+    while curr <= to_date:
+        override_type = overrides.get(curr)
+        is_holiday = False
+        is_week_off = False
+        
+        if override_type:
+            if override_type == "Holiday":
+                is_holiday = True
+            elif override_type == "Weekly Off":
+                is_week_off = True
+        else:
+            if curr in holidays:
+                is_holiday = True
+            elif is_date_week_off(curr):
+                is_week_off = True
+                
+        if not (is_holiday or is_week_off):
+            valid_dates.append(curr.strftime("%Y-%m-%d"))
+            
+        curr += timedelta(days=1)
+        
+    return valid_dates
+
 def serialize_leave(leave):
     emp_string_id = leave.employee_id
     try:
@@ -62,6 +108,8 @@ def serialize_leave(leave):
         "created_at": leave.created_at.isoformat() + "Z" if hasattr(leave, "created_at") and leave.created_at else None,
         "approved_at": leave.approved_at.isoformat() + "Z" if hasattr(leave, "approved_at") and leave.approved_at else None,
         "rejected_at": leave.rejected_at.isoformat() + "Z" if hasattr(leave, "rejected_at") and leave.rejected_at else None,
+        "cancelled_dates": leave.cancelled_dates or [],
+        "cancellable_dates": get_cancellable_dates(leave.from_date, leave.to_date) if (leave.request_type == "Leave" and leave.from_date and leave.to_date) else [],
     }
 
 @leave_bp.route("/", methods=["POST"])
@@ -632,6 +680,8 @@ def cancel_leave(leave_id):
         try:
             from extensions import socketio
             socketio.emit("leave_update", serialize_leave(leave))
+            if employee and employee.user_id:
+                socketio.emit("attendance_update", {"user_id": employee.user_id})
         except Exception as socket_err:
             print("Failed to emit leave socket:", str(socket_err))
 
@@ -650,7 +700,258 @@ def cancel_leave(leave_id):
             "success": False,
             "error": str(e)
         }), 500
-    
+
+
+@leave_bp.route(
+    "/cancel-date/<int:leave_id>",
+    methods=["PUT"]
+)
+@jwt_required()
+def cancel_leave_date(leave_id):
+    try:
+        from zoneinfo import ZoneInfo
+        from datetime import datetime, date, timedelta
+        from sqlalchemy.orm.attributes import flag_modified
+        from models.leave import LeaveRequest, EmployeeLeaveBalance, LeaveAuditLog
+        from models.employee import Employee
+        from models.user import User
+        from models.attendance import Attendance
+        from routes.attendance import sync_biometric_to_web_entry
+
+        leave = LeaveRequest.query.get(leave_id)
+        if not leave:
+            return jsonify({
+                "success": False,
+                "error": "Leave not found"
+            }), 404
+
+        # Validate request is approved
+        if leave.status != "Approved":
+            return jsonify({
+                "success": False,
+                "error": "Only approved leave requests can be cancelled date-wise"
+            }), 400
+
+        # Validate that it is of request_type "Leave"
+        if leave.request_type != "Leave":
+            return jsonify({
+                "success": False,
+                "error": "Only leave requests can be cancelled date-wise"
+            }), 400
+
+        data = request.get_json() or {}
+        dates_list = data.get("dates")
+        
+        # Backwards compatibility for single "date" parameter
+        if not dates_list:
+            single_date = (data.get("date") or "").strip()
+            if single_date:
+                dates_list = [single_date]
+                
+        if not dates_list or not isinstance(dates_list, list):
+            return jsonify({
+                "success": False,
+                "error": "At least one date is required in 'dates' list"
+            }), 400
+
+        # Parse and validate dates
+        parsed_dates = []
+        for date_str in dates_list:
+            date_str = date_str.strip()
+            if not date_str:
+                continue
+            try:
+                d_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+                parsed_dates.append((date_str, d_obj))
+            except ValueError:
+                return jsonify({
+                    "success": False,
+                    "error": f"Invalid date format: {date_str}. Expected YYYY-MM-DD"
+                }), 400
+
+        if not parsed_dates:
+            return jsonify({
+                "success": False,
+                "error": "No valid dates provided"
+            }), 400
+
+        # Get current date in Asia/Kolkata
+        tz = ZoneInfo("Asia/Kolkata")
+        today = datetime.now(tz).date()
+
+        # Backend constraint validation: selected_date >= current_date, in request range, not already cancelled
+        cancelled_dates = leave.cancelled_dates or []
+        for date_str, selected_date in parsed_dates:
+            if selected_date < today:
+                return jsonify({
+                    "success": False,
+                    "error": f"Cannot cancel leave date {date_str} in the past. Date must be today or in the future."
+                }), 400
+
+            if not (leave.from_date <= selected_date <= leave.to_date):
+                return jsonify({
+                    "success": False,
+                    "error": f"Date {date_str} is not within the approved leave request range."
+                }), 400
+
+            if date_str in cancelled_dates:
+                return jsonify({
+                    "success": False,
+                    "error": f"Date {date_str} has already been cancelled"
+                }), 400
+
+        # Validate manager authorization
+        user_id = get_jwt_identity()
+        approver = User.query.get(int(user_id)) if user_id else None
+        if not approver:
+            return jsonify({
+                "success": False,
+                "error": "Approver user not found"
+            }), 404
+
+        employee = Employee.query.filter(
+            (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
+        ).first()
+
+        if not employee:
+            return jsonify({
+                "success": False,
+                "error": "Employee associated with leave request not found"
+            }), 404
+
+        # Check if the manager is authorized
+        approver_name = approver.full_name or "Manager"
+        
+        def is_manager_match(manager_field, approver_name_str):
+            if not manager_field:
+                return False
+            m_field = manager_field.strip().lower()
+            a_name = approver_name_str.strip().lower()
+            if m_field == a_name:
+                return True
+            m_parts = m_field.split()
+            a_parts = a_name.split()
+            if len(m_parts) == 1 and len(a_parts) > 0 and a_parts[0] == m_parts[0]:
+                return True
+            if len(a_parts) == 1 and len(m_parts) > 0 and m_parts[0] == a_parts[0]:
+                return True
+            return False
+
+        is_authorized = (
+            approver.access_level.lower() == "admin" or
+            is_manager_match(employee.reporting_manager, approver_name) or
+            is_manager_match(leave.reporting_manager, approver_name) or
+            is_manager_match(leave.handover_to, approver_name)
+        )
+
+        if not is_authorized:
+            return jsonify({
+                "success": False,
+                "error": "Unauthorized. You are not authorized to cancel this employee's leave."
+            }), 403
+
+        # Process cancellation for each selected date
+        if leave.cancelled_dates is None:
+            leave.cancelled_dates = []
+
+        total_days_restored = 0.0
+
+        for date_str, selected_date in parsed_dates:
+            leave.cancelled_dates.append(date_str)
+            
+            # Determine days to restore for this date
+            if leave.from_date == leave.to_date and leave.total_days == 0.5:
+                days_to_restore = 0.5
+            else:
+                days_to_restore = 1.0
+            
+            total_days_restored += days_to_restore
+
+            # Delete/update Attendance for that date
+            att = Attendance.query.filter_by(
+                user_id=employee.user_id,
+                attendance_date=selected_date
+            ).first()
+            if att and att.status == "Leave":
+                has_punches = bool(att.check_in or att.card_check_in or att.check_out or att.card_check_out)
+                if not has_punches:
+                    db.session.delete(att)
+                else:
+                    att.status = "Absent"
+                    att.leave_type = None
+                    sync_biometric_to_web_entry(att)
+
+            # Log Leave Audit
+            audit = LeaveAuditLog(
+                leave_id=leave.id,
+                employee_name=leave.employee_name,
+                action=f"Manager cancelled leave date: {date_str}",
+                previous_status="Approved",
+                new_status="Approved",
+                cancelled_at=datetime.utcnow(),
+                cancelled_by=approver_name
+            )
+            db.session.add(audit)
+
+        flag_modified(leave, "cancelled_dates")
+
+        # Deduct total days from request
+        leave.total_days = max(0.0, (leave.total_days or 0) - total_days_restored)
+
+        # Restore balance on Employee & EmployeeLeaveBalance
+        leave_type = (leave.leave_type or "").strip().lower()
+        if leave_type == "sick leave":
+            employee.sick_leave = (employee.sick_leave or 0) + total_days_restored
+        elif leave_type == "casual leave":
+            employee.casual_leave = (employee.casual_leave or 0) + total_days_restored
+        elif leave_type in ["earned leave", "privilege leave"]:
+            employee.privilege_leave = (employee.privilege_leave or 0) + total_days_restored
+
+        from sqlalchemy import func
+        balance = EmployeeLeaveBalance.query.filter(
+            EmployeeLeaveBalance.employee_id == employee.id,
+            func.lower(EmployeeLeaveBalance.leave_type) == leave_type
+        ).first()
+        if balance:
+            balance.available = (balance.available or 0) + total_days_restored
+
+        # If all dates of range are cancelled, mark the entire request as Cancelled
+        cancellable_dates_in_range = get_cancellable_dates(leave.from_date, leave.to_date)
+        all_cancellable_cancelled = all(d in leave.cancelled_dates for d in cancellable_dates_in_range)
+        
+        if all_cancellable_cancelled or leave.total_days <= 0:
+            leave.status = "Cancelled"
+            leave.cancelled_by = approver_name
+            leave.cancelled_at = datetime.utcnow()
+            leave.cancellation_reason = f"All dates cancelled by manager. Last cancelled: {', '.join(dates_list)}"
+
+        db.session.commit()
+
+        # Emit update
+        try:
+            from extensions import socketio
+            socketio.emit("leave_update", serialize_leave(leave))
+            if employee and employee.user_id:
+                socketio.emit("attendance_update", {"user_id": employee.user_id})
+        except Exception as socket_err:
+            print("Failed to emit leave socket:", str(socket_err))
+
+        return jsonify({
+            "success": True,
+            "message": f"Successfully cancelled leaves for {', '.join(dates_list)}",
+            "leave": serialize_leave(leave)
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 @leave_bp.route(
     "/update/<int:leave_id>",
     methods=["PUT"]

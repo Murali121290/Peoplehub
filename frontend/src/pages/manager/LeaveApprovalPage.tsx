@@ -7,6 +7,7 @@ import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
 import { BookLoader } from "../../components/ui/Spinner";
 import { formatDateStr } from "../../utils/date";
+import { Modal, ConfirmDialog } from "../../components/ui/Modal";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -51,6 +52,74 @@ const LeaveApprovalPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
+
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [selectedLeaveForCancel, setSelectedLeaveForCancel] = useState<any>(null);
+  const [selectedDatesToCancel, setSelectedDatesToCancel] = useState<string[]>([]);
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+
+  const handleOpenCancelModal = (leave: any) => {
+    setSelectedLeaveForCancel(leave);
+    setSelectedDatesToCancel([]);
+    setIsCancelModalOpen(true);
+  };
+
+  const getDatesInRange = (startDateStr: string, endDateStr: string) => {
+    const dates = [];
+    const start = new Date(startDateStr);
+    const end = new Date(endDateStr);
+    let curr = new Date(start);
+    while (curr <= end) {
+      dates.push(new Date(curr));
+      curr.setDate(curr.getDate() + 1);
+    }
+    return dates;
+  };
+
+  const getKolkataTodayString = () => {
+    const options = { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" } as const;
+    const formatter = new Intl.DateTimeFormat("en-CA", options);
+    return formatter.format(new Date());
+  };
+
+  const getKolkataDateType = (dateObj: Date, todayStr: string) => {
+    const options = { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" } as const;
+    const formatter = new Intl.DateTimeFormat("en-CA", options);
+    const dateStr = formatter.format(dateObj);
+
+    if (dateStr < todayStr) return "Past";
+    if (dateStr === todayStr) return "Today";
+    return "Future";
+  };
+
+  const submitCancellation = async () => {
+    if (!selectedLeaveForCancel || selectedDatesToCancel.length === 0) return;
+    try {
+      setIsSubmittingCancel(true);
+      const res = await fetch(`${BASE_URL}/leaves/cancel-date/${selectedLeaveForCancel.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ dates: selectedDatesToCancel })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || "Leave dates cancelled successfully");
+        setIsConfirmDialogOpen(false);
+        setIsCancelModalOpen(false);
+        fetchLeaves();
+      } else {
+        toast.error(data.error || "Failed to cancel leave dates");
+      }
+    } catch (error) {
+      toast.error("Error cancelling leave dates");
+    } finally {
+      setIsSubmittingCancel(false);
+    }
+  };
 
   const toggleReason = (id: number) => {
     setExpandedReasons(prev => ({
@@ -381,20 +450,16 @@ const LeaveApprovalPage: React.FC = () => {
                                   Reject
                                 </Button>
                               </div>
-                            ) : (leave.status === "Approved" || leave.status === "Rejected") ? (
+                            ) : (leave.status === "Approved" && leave.request_type === "Leave") ? (
                               <div className="flex items-center justify-center gap-2">
                                 <Button
                                   variant="danger"
                                   size="sm"
-                                  onClick={() => handleCancel(leave.id)}
+                                  onClick={() => handleOpenCancelModal(leave)}
                                   disabled={processingId === leave.id}
                                   className="!py-1.5 !px-3 !text-xs shadow-sm"
                                 >
-                                  {processingId === leave.id ? (
-                                    <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                                  ) : (
-                                    <XMarkIcon className="w-3.5 h-3.5 mr-1" />
-                                  )}
+                                  <XMarkIcon className="w-3.5 h-3.5 mr-1" />
                                   Cancel
                                 </Button>
                               </div>
@@ -428,6 +493,153 @@ const LeaveApprovalPage: React.FC = () => {
           </table>
         </div>
       </Card>
+
+      {/* Date-wise Leave Cancellation Modal */}
+      {selectedLeaveForCancel && (
+        <Modal
+          isOpen={isCancelModalOpen}
+          onClose={() => setIsCancelModalOpen(false)}
+          title="Cancel Leave Date"
+          size="md"
+          footer={
+            <div className="flex justify-end gap-3 w-full">
+              <Button
+                variant="outline"
+                onClick={() => setIsCancelModalOpen(false)}
+              >
+                Close
+              </Button>
+              <Button
+                variant="danger"
+                disabled={selectedDatesToCancel.length === 0}
+                onClick={() => setIsConfirmDialogOpen(true)}
+              >
+                Cancel Selected Date
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-100 space-y-2">
+              <p className="text-sm font-semibold text-neutral-500 uppercase tracking-wider text-[10px]">Leave Request Details</p>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-neutral-500 font-medium text-xs">Employee:</span>
+                  <p className="font-bold text-neutral-800">{selectedLeaveForCancel.employee_name}</p>
+                </div>
+                <div>
+                  <span className="text-neutral-500 font-medium text-xs">Leave Type:</span>
+                  <p className="font-bold text-neutral-800">{selectedLeaveForCancel.leave_type}</p>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-neutral-500 font-medium text-xs">Approved Leave Period:</span>
+                  <p className="font-bold text-neutral-800">
+                    {new Date(selectedLeaveForCancel.from_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} – {new Date(selectedLeaveForCancel.to_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-bold text-neutral-800 mb-2">Select date to cancel:</p>
+              <div className="border border-neutral-200 rounded-xl divide-y divide-neutral-200 max-h-60 overflow-y-auto bg-white">
+                {(selectedLeaveForCancel.cancellable_dates || []).map((dateStr: string) => {
+                  const todayStr = getKolkataTodayString();
+                  const parts = dateStr.split("-");
+                  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+
+                  const isAlreadyCancelled = selectedLeaveForCancel.cancelled_dates?.includes(dateStr);
+                  const dateType = getKolkataDateType(d, todayStr);
+                  const isDisabled = dateType === "Past" || isAlreadyCancelled;
+                  const isSelected = selectedDatesToCancel.includes(dateStr);
+
+                  const dateLabel = d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+
+                  return (
+                    <label
+                      key={dateStr}
+                      className={`flex items-center justify-between p-3.5 text-sm transition-colors cursor-pointer ${isDisabled
+                          ? "bg-neutral-50/50 cursor-not-allowed opacity-75"
+                          : isSelected
+                            ? "bg-primary-50/30"
+                            : "hover:bg-neutral-50/30"
+                        }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          name="cancel-date-selection"
+                          value={dateStr}
+                          disabled={isDisabled}
+                          checked={isSelected}
+                          onChange={() => {
+                            if (isSelected) {
+                              setSelectedDatesToCancel(prev => prev.filter(item => item !== dateStr));
+                            } else {
+                              setSelectedDatesToCancel(prev => [...prev, dateStr]);
+                            }
+                          }}
+                          className="h-4 w-4 text-danger-600 focus:ring-danger-500 border-neutral-300 rounded disabled:opacity-50"
+                        />
+                        <span className={`font-semibold ${isDisabled ? "text-neutral-400 line-through" : "text-neutral-850"}`}>
+                          {dateLabel}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {isAlreadyCancelled ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-neutral-400">
+                            Already Cancelled ❌
+                          </span>
+                        ) : dateType === "Past" ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-neutral-400">
+                            Past ❌
+                          </span>
+                        ) : dateType === "Today" ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-success-700 bg-success-50 border border-success-200 px-2 py-0.5 rounded-full">
+                            Today ✅
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-primary-700 bg-primary-50 border border-primary-200 px-2 py-0.5 rounded-full">
+                            Future ✅
+                          </span>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+                {(selectedLeaveForCancel.cancellable_dates || []).length === 0 && (
+                  <div className="p-4 text-center text-neutral-450 text-xs">
+                    No weekdays available for cancellation.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Confirmation Dialog */}
+      {selectedLeaveForCancel && selectedDatesToCancel.length > 0 && (
+        <ConfirmDialog
+          isOpen={isConfirmDialogOpen}
+          title="Cancel Leave Date"
+          variant="warning"
+          message={`Are you sure you want to cancel the leave for ${selectedDatesToCancel
+            .map(dateStr => {
+              const parts = dateStr.split("-");
+              const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+              return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+            })
+            .join(", ")} for ${selectedLeaveForCancel.employee_name}?`}
+          description="This will restore the applicable leave balance."
+          confirmLabel="Confirm Cancellation"
+          cancelLabel="Close"
+          loading={isSubmittingCancel}
+          onConfirm={submitCancellation}
+          onCancel={() => setIsConfirmDialogOpen(false)}
+        />
+      )}
     </div>
   );
 };
