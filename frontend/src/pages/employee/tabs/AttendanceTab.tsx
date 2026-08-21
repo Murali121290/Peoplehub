@@ -51,7 +51,7 @@ interface DayDetails {
   fullDayName: string;
   isCurrentMonth: boolean;
   isToday: boolean;
-  status: "Holiday" | "Leave" | "Weekly Off" | "Present" | "Half Day" | "Absent" | "Future";
+  status: "Holiday" | "Leave" | "Weekly Off" | "Present" | "Half Day" | "Absent" | "Future" | "Check-In";
   badgeLabel: string;
   badgeEmoji: string;
   checkIn: string;
@@ -591,7 +591,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     const hasWorkedAndApproved = (checkIn !== "-" && checkIn !== "") && (managerStatus === "Approved") && (attRec?.status !== "Leave");
     const isOneDayWages = wagesStatus === "Approved" || ((isWeeklyOff || isCompanyHoliday) && wagesStatus !== "Rejected" && wagesStatus !== "Pending" && hasWorkedAndApproved);
 
-    if (isCompanyHoliday && !isOneDayWages) {
+    const isCheckedInActive = isToday && (
+      (checkIn !== "-" && checkIn !== "" && (checkOut === "-" || checkOut === "")) ||
+      (cardCheckIn !== "-" && cardCheckIn !== "" && (cardCheckOut === "-" || cardCheckOut === ""))
+    );
+
+    if (isCheckedInActive) {
+      status = "Check-In";
+      badgeLabel = "Check-In";
+      badgeEmoji = "";
+    } else if (isCompanyHoliday && !isOneDayWages) {
       status = "Holiday";
       badgeLabel = holidayName || "Company Holiday";
       badgeEmoji = "";
@@ -720,7 +729,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   }
 
   // Monthly Summary Calculations
-  const presentCount = daysDataList.filter(d => d.status === "Present" && d.dateStr <= todayKey).length;
+  const presentCount = daysDataList.filter(d => (d.status === "Present" || d.status === "Check-In") && d.dateStr <= todayKey).length;
   const absentCount = daysDataList.filter(d => d.status === "Absent" && d.dateStr <= todayKey).length;
   const leaveCount = daysDataList.filter(d => d.status === "Leave" && d.dateStr <= todayKey).length;
   const halfDayCount = daysDataList.filter(d => d.status === "Half Day" && d.dateStr <= todayKey).length;
@@ -739,6 +748,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     if (d.dateStr > todayKey) return false;
     if (d.status === "Future") return false;
     if (statusFilter === "All") return true;
+    if (statusFilter === "Present" && d.status === "Check-In") return true;
     return d.status.toLowerCase() === statusFilter.toLowerCase();
   }).reverse();
 
@@ -898,6 +908,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                   case "Half Day":
                     badgeClass = "bg-amber-50 text-amber-700 border-amber-200";
                     break;
+                  case "Check-In":
+                    badgeClass = "bg-teal-50 text-teal-750 border-teal-200";
+                    break;
                   case "Leave":
                     badgeClass = "bg-primary-500/10 text-primary-500 border-primary-500/20";
                     break;
@@ -962,7 +975,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     {cell.status !== "Future" && (
                       <div className="mt-1 w-full flex justify-start">
                         <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 w-full ${badgeClass}`}>
-                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
+                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("teal") ? "bg-teal-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
                           <span className="truncate">
                             {cell.halfDayDuration ? cell.leaveType || "Leave" : cell.badgeLabel || cell.status}
                             {cell.isOneDayWages && " (Wages)"}
@@ -1018,7 +1031,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           </div>
                         )}
 
-                        {cell.status === "Present" || cell.status === "Half Day" ? (
+                        {cell.status === "Present" || cell.status === "Half Day" || cell.status === "Check-In" ? (
                           <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-2.5 rounded-xl border border-neutral-100">
                               <div>
@@ -1109,7 +1122,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                     <span className="font-extrabold text-emerald-600 text-[12px]">{cell.checkIn}</span>
                                   </div>
                                   <div>
-                                    <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-Out</span>
                                     <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
                                   </div>
                                 </div>
@@ -1386,7 +1398,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                   dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
                                     dayObj.status === "Leave" ? "bg-primary-500/15 text-primary-500 border-primary-500/30" :
                                       dayObj.status === "Holiday" ? `bg-blue-100 text-blue-800 border-blue-300 ${isClickable ? "hover:border-blue-450 hover:bg-blue-150" : ""}` :
-                                        `bg-neutral-200 text-neutral-700 border-neutral-300 ${isClickable ? "hover:border-neutral-400 hover:bg-neutral-250" : ""}`
+                                        dayObj.status === "Check-In" ? "bg-teal-100 text-teal-800 border-teal-300" :
+                                          `bg-neutral-200 text-neutral-700 border-neutral-300 ${isClickable ? "hover:border-neutral-400 hover:bg-neutral-250" : ""}`
                                 }`}>
                                 <span>{dayObj.badgeEmoji}</span>
                                 <span>{dayObj.badgeLabel || dayObj.status}</span>

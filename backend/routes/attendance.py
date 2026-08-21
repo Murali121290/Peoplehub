@@ -2134,7 +2134,7 @@ def export_monthly_attendance():
                 start_date = date(today.year - 1, 12, 25)
             else:
                 start_date = date(today.year, today.month - 1, 25)
-                end_date = date(today.year, today.month, 24)
+            end_date = date(today.year, today.month, 24)
 
         today_ist = get_ist_today()
         yesterday_ist = today_ist - timedelta(days=1)
@@ -2489,43 +2489,45 @@ def export_monthly_attendance():
                 else:
                     # Normal working day
                     effective_status = att.status if att else None
-                    if att and effective_status == "Present":
-                        total_working_days += 1.0
-                    elif att and effective_status == "Half Day":
-                        total_working_days += 0.5
-                        if leave_val > 0.0:
-                            needed_leave = min(leave_val, 0.5)
-                            if is_cl_sl_leave:
-                                cl_sl_taken += needed_leave
-                            elif is_pl_leave:
-                                pl_taken += needed_leave
-                            elif is_lop_leave:
-                                lop_leave_taken += needed_leave
-                            
-                            leave_dates.append((d, True))
-                            if needed_leave < 0.5:
-                                unauthorized_absences += (0.5 - needed_leave)
-                                absent_dates.append((d, True))
-                        else:
-                            unauthorized_absences += 0.5
-                            absent_dates.append((d, True))
+                    if leave_val > 0.0:
+                        # Prioritize approved leave
+                        needed_leave = min(leave_val, 1.0)
+                        is_half_leave = (needed_leave <= 0.5)
+                        if is_lop_leave:
+                            lop_leave_taken += needed_leave
+                            if (d, is_half_leave) not in absent_dates:
+                                absent_dates.append((d, is_half_leave))
+                        elif is_cl_sl_leave:
+                            cl_sl_taken += needed_leave
+                            if (d, is_half_leave) not in leave_dates:
+                                leave_dates.append((d, is_half_leave))
+                        elif is_pl_leave:
+                            pl_taken += needed_leave
+                            if (d, is_half_leave) not in leave_dates:
+                                leave_dates.append((d, is_half_leave))
+                        
+                        # Process remaining day portion with attendance
+                        remaining_day = 1.0 - needed_leave
+                        if remaining_day > 0.0:
+                            if att and effective_status in ["Present", "Half Day"]:
+                                total_working_days += remaining_day
+                            else:
+                                unauthorized_absences += remaining_day
+                                if (d, True) not in absent_dates:
+                                    absent_dates.append((d, True))
                     else:
-                        # Absent/No check-in
-                        if leave_val > 0.0:
-                            if is_cl_sl_leave:
-                                cl_sl_taken += leave_val
-                            elif is_pl_leave:
-                                pl_taken += leave_val
-                            elif is_lop_leave:
-                                lop_leave_taken += leave_val
-                            
-                            leave_dates.append((d, leave_val == 0.5))
-                            if leave_val < 1.0:
-                                unauthorized_absences += (1.0 - leave_val)
+                        # No approved leave
+                        if att and effective_status == "Present":
+                            total_working_days += 1.0
+                        elif att and effective_status == "Half Day":
+                            total_working_days += 0.5
+                            unauthorized_absences += 0.5
+                            if (d, True) not in absent_dates:
                                 absent_dates.append((d, True))
                         else:
                             unauthorized_absences += 1.0
-                            absent_dates.append((d, False))
+                            if (d, False) not in absent_dates:
+                                absent_dates.append((d, False))
 
             # Apply leave balance caps and split into paid vs unpaid LOP
             # CL/SL:
@@ -2660,11 +2662,16 @@ def export_monthly_attendance():
                 for cell in column_cells
             )
             ws.column_dimensions[get_column_letter(column_cells[0].column)].width = max(length + 5, 12)
-        ws.column_dimensions["A"].width = 6
+
+        # Override specific columns with minimized compact widths
+        ws.column_dimensions["A"].width = 6    # S.No
+        ws.column_dimensions["B"].width = 10   # Emp Code
+        ws.column_dimensions["C"].width = 20   # Emp Name
+        ws.column_dimensions["P"].width = 25   # Remarks
 
         # FREEZE PANES
         # =====================================
-        ws.freeze_panes = "A6"
+        ws.freeze_panes = "D6"
 
         # =====================================
         # FILTER
