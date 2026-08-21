@@ -1608,6 +1608,9 @@ def get_attendance():
     attendance_list = []
 
     for employee in employees:
+        # Skip if date is prior to date of joining (D.O.J)
+        if employee.joining_date and today < employee.joining_date:
+            continue
 
         attendance = Attendance.query.filter_by(
             user_id=employee.user_id,
@@ -1812,6 +1815,10 @@ def generate_daily_attendance():
     count = 0
 
     for user in users:
+        # Check if the employee joining date is set and in the future
+        emp = Employee.query.filter_by(user_id=user.id).first()
+        if emp and emp.joining_date and today < emp.joining_date:
+            continue
 
         existing = Attendance.query.filter_by(
             user_id=user.id,
@@ -1895,6 +1902,9 @@ def _get_period_attendance_records(days_count, include_card_fields=False):
         current_date = end_date - timedelta(days=i)
 
         for employee in employees:
+            # Skip if date is prior to date of joining (D.O.J)
+            if employee.joining_date and current_date < employee.joining_date:
+                continue
 
             attendance = attendance_by_key.get((employee.user_id, current_date))
 
@@ -2236,7 +2246,7 @@ def export_monthly_attendance():
             "Late Deductions"
         ]
 
-        ws.row_dimensions[5].height = 28
+        ws.row_dimensions[5].height = 87
 
         for col_num, header in enumerate(headers, start=1):
             cell = ws.cell(row=5, column=col_num)
@@ -2404,6 +2414,10 @@ def export_monthly_attendance():
             for i in range(num_days_to_calculate):
                 d = start_date + timedelta(days=i)
                 
+                # Skip days prior to the employee's date of joining (D.O.J)
+                if employee.joining_date and d < employee.joining_date:
+                    continue
+                
                 # Check holiday/weekoff status
                 is_holiday = False
                 is_week_off = False
@@ -2554,7 +2568,11 @@ def export_monthly_attendance():
             total_lop_days = unauthorized_absences + lop_cl_sl + lop_pl + lop_leave_taken
 
             total_days_worked = total_working_days + total_weekoffs + total_holidays + total_paid_leaves
-            total_days_cycle = (effective_end_date - start_date).days + 1
+            effective_start = max(start_date, employee.joining_date) if employee.joining_date else start_date
+            if effective_start > effective_end_date:
+                total_days_cycle = 0
+            else:
+                total_days_cycle = (effective_end_date - effective_start).days + 1
 
             # Format leave and absent remarks dynamically
             from collections import defaultdict
@@ -2645,7 +2663,10 @@ def export_monthly_attendance():
                     if isinstance(val, (int, float, date, datetime)) or (isinstance(val, str) and (val.isdigit() or val.startswith("EMP"))):
                         c.alignment = Alignment(horizontal="center", vertical="center")
                     else:
-                        c.alignment = Alignment(vertical="center")
+                        if col in [5, 6, 16, 18]:  # Designation (E), Department (F), Remarks (P), ODW Dates (R)
+                            c.alignment = Alignment(vertical="center", wrap_text=True)
+                        else:
+                            c.alignment = Alignment(vertical="center")
                 else:
                     c.alignment = Alignment(horizontal="center", vertical="center")
 
@@ -2667,11 +2688,28 @@ def export_monthly_attendance():
         ws.column_dimensions["A"].width = 6    # S.No
         ws.column_dimensions["B"].width = 10   # Emp Code
         ws.column_dimensions["C"].width = 20   # Emp Name
+        ws.column_dimensions["E"].width = 20   # Designation
+        ws.column_dimensions["F"].width = 15   # Department
         ws.column_dimensions["P"].width = 25   # Remarks
+        ws.column_dimensions["R"].width = 23   # ODW Dates
+
+        # Numeric columns set to width 7
+        numeric_cols = ["G", "H", "I", "J", "K", "L", "M", "N", "O", "Q", "S"]
+        for col_let in numeric_cols:
+            ws.column_dimensions[col_let].width = 7
 
         # FREEZE PANES
         # =====================================
-        ws.freeze_panes = "D6"
+        ws.freeze_panes = "A6"
+
+        # Hide empty columns T, U, V
+        for col_let in ["T", "U", "V"]:
+            ws.column_dimensions[col_let].hidden = True
+
+        # Page Setup: Fit to 1 page wide
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
 
         # =====================================
         # FILTER

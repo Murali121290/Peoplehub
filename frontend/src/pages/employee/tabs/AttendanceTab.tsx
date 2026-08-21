@@ -51,7 +51,7 @@ interface DayDetails {
   fullDayName: string;
   isCurrentMonth: boolean;
   isToday: boolean;
-  status: "Holiday" | "Leave" | "Weekly Off" | "Present" | "Half Day" | "Absent" | "Future" | "Check-In";
+  status: "Holiday" | "Leave" | "Weekly Off" | "Present" | "Half Day" | "Absent" | "Future" | "Check-In" | "Not Joined";
   badgeLabel: string;
   badgeEmoji: string;
   checkIn: string;
@@ -483,6 +483,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     const fullDayName = FULL_WEEKDAYS[dayOfWeekIdx];
     const isToday = dateStr === todayKey;
     const isFuture = dateStr > todayKey;
+    const joiningDateStr = currentEmployee?.joining_date || user?.joining_date;
+    const isBeforeJoining = joiningDateStr && dateStr < joiningDateStr.split("T")[0];
 
     // Check Priority Rules:
     const schedDay = monthlySchedule.find((s: any) => s.date === dateStr);
@@ -596,7 +598,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       (cardCheckIn !== "-" && cardCheckIn !== "" && (cardCheckOut === "-" || cardCheckOut === ""))
     );
 
-    if (isCheckedInActive) {
+    if (isBeforeJoining && !attRec) {
+      status = "Not Joined";
+      badgeLabel = "Not Joined";
+      badgeEmoji = "";
+    } else if (isCheckedInActive) {
       status = "Check-In";
       badgeLabel = "Check-In";
       badgeEmoji = "";
@@ -746,7 +752,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   // Filtered Grid View records (reversed to show newest days first, only up to today's date)
   const filteredGridDays = daysDataList.filter(d => {
     if (d.dateStr > todayKey) return false;
-    if (d.status === "Future") return false;
+    if (d.status === "Future" || d.status === "Not Joined") return false;
     if (statusFilter === "All") return true;
     if (statusFilter === "Present" && d.status === "Check-In") return true;
     return d.status.toLowerCase() === statusFilter.toLowerCase();
@@ -923,6 +929,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                   case "Future":
                     badgeClass = "bg-white text-neutral-300 border-neutral-100";
                     break;
+                  case "Not Joined":
+                    badgeClass = "bg-neutral-105 text-neutral-500 border-neutral-205";
+                    break;
                 }
 
                 const today = new Date();
@@ -949,7 +958,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         : "cursor-default"
                     } ${cell.isToday
                         ? "border-primary-500 shadow-sm bg-white"
-                        : cell.status === "Future"
+                        : cell.status === "Future" || cell.status === "Not Joined"
                           ? "border-neutral-200 bg-neutral-50/40"
                           : "border-neutral-300 bg-white hover:border-neutral-400 hover:shadow-sm"
                       }`}
@@ -958,7 +967,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     <div className="flex justify-between items-center w-full">
                       <span className={`text-[12px] font-bold flex items-center justify-center rounded-full ${cell.isToday
                           ? "bg-primary-500 text-white w-6 h-6 shadow-sm"
-                          : cell.status === "Future"
+                          : cell.status === "Future" || cell.status === "Not Joined"
                             ? "text-neutral-400"
                             : "text-neutral-900"
                         }`}>
@@ -1196,6 +1205,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                 </div>
                               </div>
                             )}
+                          </div>
+                        ) : cell.status === "Not Joined" ? (
+                          <div className="space-y-3">
+                            <div className="text-[12px] text-neutral-500 text-center py-3 bg-neutral-50 rounded-xl font-bold border border-neutral-100">
+                              Not Joined (Prior to Joining Date)
+                            </div>
                           </div>
                         ) : (
                           <div className="space-y-1 bg-rose-50/50 p-3 rounded-xl border border-rose-100 text-rose-900">
