@@ -857,22 +857,31 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
     if (!joiningDateStr) return "N/A";
     try {
       const joinDate = new Date(joiningDateStr);
-      const windowDate = new Date();
-      const diffTime = Math.abs(windowDate.getTime() - joinDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const today = new Date();
       
-      if (diffDays < 30) {
-        return `${diffDays} days`;
-      } else {
-        const months = Math.floor(diffDays / 30);
-        if (months < 12) {
-          return `${months} month${months > 1 ? 's' : ''}`;
-        } else {
-          const years = Math.floor(months / 12);
-          const remainingMonths = months % 12;
-          return `${years} year${years > 1 ? 's' : ''}${remainingMonths > 0 ? `, ${remainingMonths} month${remainingMonths > 1 ? 's' : ''}` : ''}`;
-        }
+      let years = today.getFullYear() - joinDate.getFullYear();
+      let months = today.getMonth() - joinDate.getMonth();
+      let days = today.getDate() - joinDate.getDate();
+
+      if (days < 0) {
+        months--;
       }
+      if (months < 0) {
+        years--;
+        months += 12;
+      }
+
+      if (years === 0 && months === 0) {
+        const diffTime = Math.abs(today.getTime() - joinDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return `${diffDays} day${diffDays !== 1 ? 's' : ''}`;
+      }
+
+      if (years === 0) {
+        return `${months} month${months !== 1 ? 's' : ''}`;
+      }
+
+      return `${years} year${years !== 1 ? 's' : ''}${months > 0 ? `, ${months} month${months !== 1 ? 's' : ''}` : ''}`;
     } catch (e) {
       return "N/A";
     }
