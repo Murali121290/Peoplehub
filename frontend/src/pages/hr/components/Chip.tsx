@@ -18,6 +18,8 @@ const STATUS_MAP: Record<string, BadgeStatus> = {
   cancelled: 'inactive',
   half_day: 'halfDay',
   'half day': 'halfDay',
+  check_in: 'checkIn',
+  'check in': 'checkIn',
 };
 
 const LABELS: Record<string, string> = {
@@ -32,6 +34,8 @@ const LABELS: Record<string, string> = {
   cancelled: 'CANCELLED',
   half_day: 'HALF DAY',
   'half day': 'HALF DAY',
+  check_in: 'CHECK IN',
+  'check in': 'CHECK IN',
 };
 
 const Chip: React.FC<ChipProps> = ({ type }) => {

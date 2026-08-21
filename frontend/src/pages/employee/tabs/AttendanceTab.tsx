@@ -1469,40 +1469,48 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             </div>
 
              <div className="space-y-3">
-              <button
-                onClick={() => submitResolveAbsent("LOP")}
-                disabled={isResolving}
-                className="w-full text-left px-4 py-3 rounded-xl border border-rose-250 bg-rose-50/50 hover:bg-rose-50 text-rose-700 text-xs font-bold transition-all flex justify-between items-center"
-              >
-                <span>Loss of Pay (LOP)</span>
-                <span className="text-[10px] text-rose-500 uppercase tracking-wide">Deducted Pay</span>
-              </button>
+              {/* LOP is always shown; paid leave buttons only shown if available > 0 */}
+              {(() => {
+                const availableBalances = resolverBalances.filter((b: any) => (b.available ?? 0) > 0);
+                const hasPaidLeave = !isBalancesLoading && availableBalances.length > 0;
+                return (
+                  <>
+                    {/* Only show LOP when loading OR when no paid leave is available */}
+                    {(!hasPaidLeave) && (
+                      <button
+                        onClick={() => submitResolveAbsent("LOP")}
+                        disabled={isResolving}
+                        className="w-full text-left px-4 py-3 rounded-xl border border-rose-250 bg-rose-50/50 hover:bg-rose-50 text-rose-700 text-xs font-bold transition-all flex justify-between items-center"
+                      >
+                        <span>Loss of Pay (LOP)</span>
+                        <span className="text-[10px] text-rose-500 uppercase tracking-wide">Deducted Pay</span>
+                      </button>
+                    )}
 
-              {isBalancesLoading ? (
-                <div className="text-center py-4 text-xs text-neutral-450 animate-pulse font-semibold">
-                  Loading available leave categories...
-                </div>
-              ) : resolverBalances.length === 0 ? (
-                <div className="text-center py-2 text-xs text-neutral-500 font-semibold">
-                  No leave balances allocated.
-                </div>
-              ) : (
-                resolverBalances.map((balObj: any) => {
-                  const leaveType = balObj.leave_type;
-                  const availableVal = balObj.available ?? 0;
-                  return (
-                    <button
-                      key={balObj.id || leaveType}
-                      onClick={() => submitResolveAbsent(leaveType)}
-                      disabled={isResolving}
-                      className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
-                    >
-                      <span>{leaveType}</span>
-                      <span className="text-[10px] text-neutral-500 font-semibold">{availableVal} Left</span>
-                    </button>
-                  );
-                })
-              )}
+                    {isBalancesLoading ? (
+                      <div className="text-center py-4 text-xs text-neutral-450 animate-pulse font-semibold">
+                        Loading available leave categories...
+                      </div>
+                    ) : hasPaidLeave ? (
+                      availableBalances.map((balObj: any) => {
+                        const leaveType = balObj.leave_type;
+                        const availableVal = balObj.available ?? 0;
+                        return (
+                          <button
+                            key={balObj.id || leaveType}
+                            onClick={() => submitResolveAbsent(leaveType)}
+                            disabled={isResolving}
+                            className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
+                          >
+                            <span>{leaveType}</span>
+                            <span className="text-[10px] text-emerald-600 font-bold">{availableVal} Left</span>
+                          </button>
+                        );
+                      })
+                    ) : null}
+                  </>
+                );
+              })()}
             </div>
 
             <div className="mt-6 flex justify-end">

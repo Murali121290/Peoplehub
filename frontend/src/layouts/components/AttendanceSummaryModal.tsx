@@ -73,7 +73,13 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
   const approvedCount = employees.filter((e) => e.decision === "Approved").length;
   const rejectedCount = employees.filter((e) => e.decision === "Rejected").length;
   const pendingCount = employees.filter(
-    (e) => !e.decision || e.decision === "Pending"
+    (e) => (!e.decision || e.decision === "Pending") && !e.employee_reply
+  ).length;
+  const clarificationProvidedCount = employees.filter(
+    (e) => e.decision === "Clarification Provided" || !!e.employee_reply
+  ).length;
+  const needClarificationCount = employees.filter(
+    (e) => (e.decision === "Need Clarification" || e.decision === "Rejected") && !e.employee_reply
   ).length;
 
   const handleApproveSingle = async (empId: number, date?: string, isConfirmedRegularization: boolean = false) => {
@@ -730,7 +736,12 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
           <div className="flex items-center gap-4 bg-white px-4 py-2 rounded-full border border-neutral-200 shadow-xs text-xs font-bold">
             <span className="text-amber-800 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-amber-500" />
-              Need Clarification : {employees.filter((e) => e.decision === "Need Clarification" || e.decision === "Rejected").length}
+              Need Clarification : {needClarificationCount}
+            </span>
+            <span className="text-neutral-300">|</span>
+            <span className="text-sky-850 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-sky-400" />
+              Clarification Provided : {clarificationProvidedCount}
             </span>
             <span className="text-neutral-300">|</span>
             <span className="text-blue-700 flex items-center gap-1.5">

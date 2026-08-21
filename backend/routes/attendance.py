@@ -282,7 +282,7 @@ def check_in():
             # =====================================
             attendance.check_in = get_ist_now()
             attendance.check_in_ip = client_ip
-            attendance.status = "Half Day"
+            attendance.status = "Check In"
         else:
             # =====================================
             # CREATE ATTENDANCE
@@ -292,7 +292,7 @@ def check_in():
                 attendance_date=today,
                 check_in=get_ist_now(),
                 check_in_ip=client_ip,
-                status="Half Day"
+                status="Check In"
             )
 
         db.session.add(attendance)
@@ -577,6 +577,17 @@ def calculate_attendance_status(attendance):
         gross_hours = 0.0
 
     # 2. Determine status
+    if eff_in and not eff_out:
+        # Checked in but not yet checked out
+        now = get_ist_now()
+        if attendance.attendance_date == now.date():
+            # Still live session today — mark as Check In
+            attendance.status = "Check In"
+            return
+        # Past date without checkout — treat as Absent
+        attendance.status = "Absent"
+        return
+
     if gross_hours < 4.0:
         attendance.status = "Absent"
     elif gross_hours < 7.0:
@@ -1409,6 +1420,10 @@ def attendance_history(user_id):
                     else:
                         display_status = "Present"
 
+                # If employee has checked in but not checked out today, keep 'Check In'
+                if record.check_in and not record.check_out and not record.card_check_out and is_today:
+                    display_status = "Check In"
+
                 # Override: if the day is a weekend or holiday and no check-in exists,
                 # show the correct label instead of a stale "Absent" stored in DB.
                 if not record.check_in:
@@ -1640,8 +1655,16 @@ def get_attendance():
                 else:
                     status = "Present"
 
+            # Override: if checked in but not yet checked out today, show 'Check In'
+            if (attendance.check_in and not attendance.check_out
+                    and not attendance.card_check_out
+                    and today == get_ist_today()):
+                status = "Check In"
+
+
             web_hrs = attendance.total_hours or 0.0
             card_hrs = attendance.card_working_hours or 0.0
+
             max_hrs = max(web_hrs, card_hrs)
 
             check_in = (
