@@ -144,6 +144,22 @@ def create_app():
             hour=0,
             minute=0
         )
+
+        # Auto-credit leaves on the 25th of every month at 00:01 AM
+        def run_monthly_leave_credit():
+            from services.leave_balance_service import update_all_employee_leave_balances
+            with fastapi_app.app_context():
+                result = update_all_employee_leave_balances()
+                print(f"[Scheduler] Monthly leave credit: {result}")
+
+        scheduler.add_job(
+            run_monthly_leave_credit,
+            "cron",
+            day=25,
+            hour=0,
+            minute=1
+        )
+
         scheduler.start()
         print(f"[Scheduler] Started in worker PID {os.getpid()}")
     else:

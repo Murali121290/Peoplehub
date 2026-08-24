@@ -15,6 +15,14 @@ const RegularizationApprovalPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
+
+  const toggleReason = (id: number) => {
+    setExpandedReasons((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
 
   const fetchRequests = async () => {
     try {
@@ -171,82 +179,123 @@ const RegularizationApprovalPage: React.FC = () => {
                   const isPending = !req.manager_status || req.manager_status === "Clarification Provided" || req.manager_status === "Pending";
 
                   return (
-                    <tr key={req.id} className="hover:bg-neutral-50/40 transition-colors">
-                      <td className="p-4 pl-6">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-xs">
-                            {req.employee_name?.charAt(0).toUpperCase()}
+                    <React.Fragment key={req.id}>
+                      <tr className="hover:bg-neutral-50/40 transition-colors">
+                        <td className="p-4 pl-6">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-xs">
+                              {req.employee_name?.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="text-sm font-bold text-neutral-850">{req.employee_name}</span>
                           </div>
-                          <span className="text-sm font-bold text-neutral-850">{req.employee_name}</span>
-                        </div>
-                      </td>
+                        </td>
 
-                      <td className="p-4 text-sm text-neutral-600 font-medium">
-                        {req.employee_code || "-"}
-                      </td>
+                        <td className="p-4 text-sm text-neutral-600 font-medium">
+                          {req.employee_code || "-"}
+                        </td>
 
-                      <td className="p-4 text-sm text-neutral-800 font-bold">
-                        {req.attendance_date_formatted}
-                      </td>
+                        <td className="p-4 text-sm text-neutral-800 font-bold">
+                          {req.attendance_date_formatted}
+                        </td>
 
-                      <td className="p-4 text-sm">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border bg-amber-50 text-amber-700 border-amber-200">
-                          {req.check_in} to {req.check_out}
-                        </span>
-                      </td>
+                        <td className="p-4 text-sm">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border bg-amber-50 text-amber-700 border-amber-200">
+                            {req.check_in} to {req.check_out}
+                          </span>
+                        </td>
 
-                      <td className="p-4 text-sm text-neutral-500 max-w-xs truncate" title={req.reason}>
-                        {req.reason || <span className="text-neutral-400">—</span>}
-                      </td>
-
-                      <td className="p-4 text-center">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(req.manager_status)}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${
-                            resolvedStatus === "Approved" ? "bg-success-600" :
-                            (resolvedStatus === "Returned" || resolvedStatus === "Rejected") ? "bg-danger-600" :
-                            "bg-warning-500 animate-pulse"
-                          }`} />
-                          {resolvedStatus}
-                        </span>
-                      </td>
-
-                      <td className="p-4 text-center">
-                        {isPending ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => handleApprove(req)}
-                              disabled={processingId === req.id}
-                              className="!py-1.5 !px-3 !text-xs shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
+                        <td className="p-4 text-sm text-neutral-500 max-w-xs">
+                          {req.reason ? (
+                            <button
+                              onClick={() => toggleReason(req.id)}
+                              className="text-left text-neutral-600 hover:text-primary-600 transition-colors duration-150 flex items-center gap-1 focus:outline-none group/reason w-full"
                             >
-                              {processingId === req.id ? (
-                                <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                              ) : (
-                                <CheckIcon className="w-3.5 h-3.5 mr-1" />
+                              <span className="truncate max-w-[150px]">{req.reason}</span>
+                              {req.reason.length > 20 && (
+                                <span className="text-primary-500 group-hover/reason:text-primary-600 text-[10px] font-semibold flex items-center gap-0.5 shrink-0 ml-1">
+                                  {expandedReasons[req.id] ? "Collapse" : "Expand"}
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 20 20"
+                                    fill="currentColor"
+                                    className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedReasons[req.id] ? "rotate-180" : ""}`}
+                                  >
+                                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                  </svg>
+                                </span>
                               )}
-                              Approve
-                            </Button>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={() => handleReject(req)}
-                              disabled={processingId === req.id}
-                              className="!py-1.5 !px-3 !text-xs shadow-sm"
-                            >
-                              {processingId === req.id ? (
-                                <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                              ) : (
-                                <XMarkIcon className="w-3.5 h-3.5 mr-1" />
-                              )}
-                              Reject
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] font-medium text-neutral-400">No actions required</span>
-                        )}
-                      </td>
-                    </tr>
+                            </button>
+                          ) : (
+                            <span className="text-neutral-400">—</span>
+                          )}
+                        </td>
+
+                        <td className="p-4 text-center">
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(req.manager_status)}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${
+                              resolvedStatus === "Approved" ? "bg-success-600" :
+                              (resolvedStatus === "Returned" || resolvedStatus === "Rejected") ? "bg-danger-600" :
+                              "bg-warning-500 animate-pulse"
+                            }`} />
+                            {resolvedStatus}
+                          </span>
+                        </td>
+
+                        <td className="p-4 text-center">
+                          {isPending ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleApprove(req)}
+                                disabled={processingId === req.id}
+                                className="!py-1.5 !px-3 !text-xs shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
+                              >
+                                {processingId === req.id ? (
+                                  <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                ) : (
+                                  <CheckIcon className="w-3.5 h-3.5 mr-1" />
+                                )}
+                                Approve
+                              </Button>
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => handleReject(req)}
+                                disabled={processingId === req.id}
+                                className="!py-1.5 !px-3 !text-xs shadow-sm"
+                              >
+                                {processingId === req.id ? (
+                                  <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                ) : (
+                                  <XMarkIcon className="w-3.5 h-3.5 mr-1" />
+                                )}
+                                Reject
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] font-medium text-neutral-400">No actions required</span>
+                          )}
+                        </td>
+                      </tr>
+                      {expandedReasons[req.id] && req.reason && (
+                        <tr className="bg-neutral-50/30">
+                          <td colSpan={7} className="p-4 pl-10 pr-6 border-b border-neutral-200">
+                            <div className="text-xs text-neutral-600 bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-inner max-w-3xl">
+                              <div className="flex items-center gap-1.5 mb-2 text-neutral-400 font-bold uppercase tracking-wider text-[10px]">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-primary-500">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+                                </svg>
+                                <span>Reason for Regularization Request</span>
+                              </div>
+                              <p className="whitespace-pre-wrap leading-relaxed text-neutral-700 font-medium pl-5">
+                                {req.reason}
+                              </p>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })
               )}

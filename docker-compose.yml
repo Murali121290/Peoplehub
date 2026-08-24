@@ -13,16 +13,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     command: >
-      postgres
-      -c shared_buffers=512MB
-      -c effective_cache_size=2GB
-      -c work_mem=16MB
-      -c maintenance_work_mem=256MB
-      -c max_connections=100
-      -c checkpoint_completion_target=0.9
-      -c wal_buffers=16MB
-      -c random_page_cost=1.1
-      -c log_min_duration_statement=1000
+      postgres -c shared_buffers=512MB -c effective_cache_size=2GB -c work_mem=16MB -c maintenance_work_mem=256MB -c max_connections=100 -c checkpoint_completion_target=0.9 -c wal_buffers=16MB -c random_page_cost=1.1 -c log_min_duration_statement=1000
 
   redis:
     image: redis:7-alpine
@@ -61,11 +52,20 @@ services:
       EMAILJS_SERVICE_ID: ${EMAILJS_SERVICE_ID}
       EMAILJS_TEMPLATE_ID: ${EMAILJS_TEMPLATE_ID}
       EMAILJS_PUBLIC_KEY: ${EMAILJS_PUBLIC_KEY}
+      OFFICE_IP_PREFIXES: ${OFFICE_IP_PREFIXES}
+      MYSQL_BIOMETRIC_HOST: ${MYSQL_BIOMETRIC_HOST}
+      MYSQL_BIOMETRIC_PORT: ${MYSQL_BIOMETRIC_PORT}
+      MYSQL_BIOMETRIC_USER: ${MYSQL_BIOMETRIC_USER}
+      MYSQL_BIOMETRIC_PASSWORD: ${MYSQL_BIOMETRIC_PASSWORD}
+      MYSQL_BIOMETRIC_DB: ${MYSQL_BIOMETRIC_DB}
+      SYNC_API_SECRET: ${SYNC_API_SECRET}
+      CMS_SYNC_URL: ${CMS_SYNC_URL}
     ports:
       - "${BACKEND_PORT}:5001"
     volumes:
       - ./backend:/app
-      - uploads_data:/opt/uploads
+      # Mount NFS directory for uploads
+      - ./data/uploads:/opt/uploads
 
   frontend:
     image: nginx:alpine
@@ -82,4 +82,3 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  uploads_data:

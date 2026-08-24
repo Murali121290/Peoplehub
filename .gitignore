@@ -23,5 +23,6 @@ build/
 
 # Uploads
 backend/uploads/
+data/
 
 backend/debug_emails

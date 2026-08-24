@@ -351,19 +351,6 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
                 </div>
               </th>
 
-              {/* Status Filter */}
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[120px]">
-                <div className="flex flex-col gap-1.5">
-                  <span>Status</span>
-                  <CustomSelect
-                    value={statusFilter}
-                    onChange={setStatusFilter}
-                    options={uniqueStatuses}
-                    placeholder="All"
-                  />
-                </div>
-              </th>
-
               <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[155px]">Actions</th>
               <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide min-w-[155px]">
                 <div className="flex flex-col gap-1.5">
@@ -437,13 +424,6 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
                       </span>
                     );
                   })()}
-                </td>
-                <td className="px-4 py-3.5 cursor-pointer" onClick={() => onEditEmployee(emp)}>
-                  {emp.status === "Present" ? (
-                    <Badge variant="success">Present</Badge>
-                  ) : (
-                    <Badge variant="danger">Absent</Badge>
-                  )}
                 </td>
                 <td className="px-4 py-3.5">
                   <div className="flex items-center gap-3">
