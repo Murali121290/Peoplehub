@@ -80,6 +80,8 @@ interface DayDetails {
   halfDayDuration?: string;
   isOneDayWages?: boolean;
   wagesStatus?: string | null;
+  isWeeklyOff?: boolean;
+  isCompanyHoliday?: boolean;
 }
 
 const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAttendanceProp = [], currentEmployee }) => {
@@ -137,8 +139,27 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
   useEffect(() => {
     setWagesReason("");
-    setFromTime("09:00");
-    setToTime("18:00");
+    if (resolvingWeekendCell) {
+      const parseTimeTo24h = (timeStr: string, defaultTime: string) => {
+        if (!timeStr || timeStr === "-" || timeStr === "—") return defaultTime;
+        const trimStr = timeStr.trim();
+        const matches = trimStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+        if (!matches) return defaultTime;
+        let hrs = parseInt(matches[1], 10);
+        const mins = matches[2];
+        const ampm = matches[3];
+        if (ampm) {
+          if (ampm.toUpperCase() === "PM" && hrs < 12) hrs += 12;
+          if (ampm.toUpperCase() === "AM" && hrs === 12) hrs = 0;
+        }
+        return `${String(hrs).padStart(2, "0")}:${mins}`;
+      };
+      setFromTime(parseTimeTo24h(resolvingWeekendCell.checkIn, "09:00"));
+      setToTime(parseTimeTo24h(resolvingWeekendCell.checkOut, "18:00"));
+    } else {
+      setFromTime("09:00");
+      setToTime("18:00");
+    }
   }, [resolvingWeekendCell]);
 
   useEffect(() => {
@@ -403,7 +424,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       setResolvingCell(cell);
     } else if (
       isCurrentPayrollMonthView &&
-      (cell.status === "Weekly Off" || cell.status === "Holiday") &&
+      (cell.status === "Weekly Off" || cell.status === "Holiday" || ((cell.isWeeklyOff || cell.isCompanyHoliday) && !cell.wagesStatus)) &&
       !cell.isToday &&
       cell.dateStr <= todayKey
     ) {
@@ -728,7 +749,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       rawPermissionRecord: matchedPermission,
       halfDayDuration,
       isOneDayWages,
-      wagesStatus
+      wagesStatus,
+      isWeeklyOff,
+      isCompanyHoliday
     });
 
     currentDate.setDate(currentDate.getDate() + 1);
@@ -987,7 +1010,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("teal") ? "bg-teal-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
                           <span className="truncate">
                             {cell.halfDayDuration ? cell.leaveType || "Leave" : cell.badgeLabel || cell.status}
-                            {cell.isOneDayWages && " (Wages)"}
+                            {cell.isOneDayWages && cell.wagesStatus && " (Wages)"}
                           </span>
                         </div>
                       </div>
@@ -1009,16 +1032,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           </div>
                           <span className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg ${badgeClass}`}>
                             {cell.badgeLabel || cell.status}
-                            {cell.isOneDayWages && " (Wages)"}
+                            {cell.isOneDayWages && cell.wagesStatus && " (Wages)"}
                           </span>
                         </div>
 
                         {/* Details Breakdown */}
-                        {cell.isOneDayWages && (
+                        {cell.isOneDayWages && cell.wagesStatus && (
                           <div className="space-y-1 bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-amber-700 mb-3">
                             <span className="text-[9px] uppercase font-bold text-amber-500 block">One Day Wages</span>
                             <p className="font-extrabold text-[12px]">
-                              Status: {cell.wagesStatus || "Pending"}
+                              Status: {cell.wagesStatus}
                             </p>
                           </div>
                         )}
@@ -1346,7 +1369,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                                     !dayObj.isToday &&
                                                     dayObj.dateStr < todayKey;
                           const isClickableWeekend = isCurrentPayrollMonthView &&
-                                                     (dayObj.status === "Weekly Off" || dayObj.status === "Holiday") &&
+                                                     (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
                                                      !dayObj.isToday &&
                                                      dayObj.dateStr <= todayKey;
                           if (isClickableAbsent || isClickableWeekend) {
@@ -1363,7 +1386,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                                       !dayObj.isToday &&
                                                       dayObj.dateStr < todayKey;
                             const isClickableWeekend = isCurrentPayrollMonthView &&
-                                                       (dayObj.status === "Weekly Off" || dayObj.status === "Holiday") &&
+                                                       (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
                                                        !dayObj.isToday &&
                                                        dayObj.dateStr <= todayKey;
                             if (isClickableAbsent) return "Click to apply leave / regularize absent day";
@@ -1381,7 +1404,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                                       !dayObj.isToday &&
                                                       dayObj.dateStr < todayKey;
                             const isClickableWeekend = isCurrentPayrollMonthView &&
-                                                       (dayObj.status === "Weekly Off" || dayObj.status === "Holiday") &&
+                                                       (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
                                                        !dayObj.isToday &&
                                                        dayObj.dateStr <= todayKey;
                             const isClickable = isClickableAbsent || isClickableWeekend;
@@ -1421,13 +1444,13 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               </span>
                             );
                           })()}
-                          {dayObj.isOneDayWages && (
+                          {dayObj.isOneDayWages && dayObj.wagesStatus && (
                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold border ${
                               dayObj.wagesStatus === "Approved"
                                 ? "bg-amber-50 text-amber-700 border-amber-200"
                                 : "bg-neutral-50 text-neutral-600 border-neutral-200"
                             }`}>
-                              Wages: {dayObj.wagesStatus || "Pending"}
+                              Wages: {dayObj.wagesStatus}
                             </span>
                           )}
                         </div>
