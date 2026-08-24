@@ -51,7 +51,7 @@ interface DayDetails {
   fullDayName: string;
   isCurrentMonth: boolean;
   isToday: boolean;
-  status: "Holiday" | "Leave" | "Weekly Off" | "Present" | "Half Day" | "Absent" | "Future";
+  status: "Holiday" | "Leave" | "Weekly Off" | "Present" | "Half Day" | "Absent" | "Future" | "Check-In" | "Not Joined";
   badgeLabel: string;
   badgeEmoji: string;
   checkIn: string;
@@ -101,7 +101,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   };
   const [selectedMonth, setSelectedMonth] = useState<number>(getInitialPayrollMonth());
   const [selectedYear, setSelectedYear] = useState<number>(getInitialPayrollYear());
-  const [viewMode, setViewMode] = useState<"calendar" | "grid">("calendar");
+  const [viewMode, setViewMode] = useState<"calendar" | "grid">("grid");
   const [statusFilter, setStatusFilter] = useState<string>("All");
 
   // Fetched data
@@ -483,6 +483,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     const fullDayName = FULL_WEEKDAYS[dayOfWeekIdx];
     const isToday = dateStr === todayKey;
     const isFuture = dateStr > todayKey;
+    const joiningDateStr = currentEmployee?.joining_date || user?.joining_date;
+    const isBeforeJoining = joiningDateStr && dateStr < joiningDateStr.split("T")[0];
 
     // Check Priority Rules:
     const schedDay = monthlySchedule.find((s: any) => s.date === dateStr);
@@ -499,7 +501,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     // 2. Approved Leave
     const matchedLeave = approvedLeaves.find((l: any) => {
       if (l.request_type !== "Leave") return false;
-      return l.from_date <= dateStr && l.to_date >= dateStr;
+      const isCancelled = l.cancelled_dates?.includes(dateStr);
+      return l.from_date <= dateStr && l.to_date >= dateStr && !isCancelled;
     });
 
     // Approved Permission
@@ -590,7 +593,20 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     const hasWorkedAndApproved = (checkIn !== "-" && checkIn !== "") && (managerStatus === "Approved") && (attRec?.status !== "Leave");
     const isOneDayWages = wagesStatus === "Approved" || ((isWeeklyOff || isCompanyHoliday) && wagesStatus !== "Rejected" && wagesStatus !== "Pending" && hasWorkedAndApproved);
 
-    if (isCompanyHoliday && !isOneDayWages) {
+    const isCheckedInActive = isToday && (
+      (checkIn !== "-" && checkIn !== "" && (checkOut === "-" || checkOut === "")) ||
+      (cardCheckIn !== "-" && cardCheckIn !== "" && (cardCheckOut === "-" || cardCheckOut === ""))
+    );
+
+    if (isBeforeJoining && !attRec) {
+      status = "Not Joined";
+      badgeLabel = "Not Joined";
+      badgeEmoji = "";
+    } else if (isCheckedInActive) {
+      status = "Check-In";
+      badgeLabel = "Check-In";
+      badgeEmoji = "";
+    } else if (isCompanyHoliday && !isOneDayWages) {
       status = "Holiday";
       badgeLabel = holidayName || "Company Holiday";
       badgeEmoji = "";
@@ -719,7 +735,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   }
 
   // Monthly Summary Calculations
-  const presentCount = daysDataList.filter(d => d.status === "Present" && d.dateStr <= todayKey).length;
+  const presentCount = daysDataList.filter(d => (d.status === "Present" || d.status === "Check-In") && d.dateStr <= todayKey).length;
   const absentCount = daysDataList.filter(d => d.status === "Absent" && d.dateStr <= todayKey).length;
   const leaveCount = daysDataList.filter(d => d.status === "Leave" && d.dateStr <= todayKey).length;
   const halfDayCount = daysDataList.filter(d => d.status === "Half Day" && d.dateStr <= todayKey).length;
@@ -736,8 +752,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   // Filtered Grid View records (reversed to show newest days first, only up to today's date)
   const filteredGridDays = daysDataList.filter(d => {
     if (d.dateStr > todayKey) return false;
-    if (d.status === "Future") return false;
+    if (d.status === "Future" || d.status === "Not Joined") return false;
     if (statusFilter === "All") return true;
+    if (statusFilter === "Present" && d.status === "Check-In") return true;
     return d.status.toLowerCase() === statusFilter.toLowerCase();
   }).reverse();
 
@@ -897,6 +914,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                   case "Half Day":
                     badgeClass = "bg-amber-50 text-amber-700 border-amber-200";
                     break;
+                  case "Check-In":
+                    badgeClass = "bg-teal-50 text-teal-750 border-teal-200";
+                    break;
                   case "Leave":
                     badgeClass = "bg-primary-500/10 text-primary-500 border-primary-500/20";
                     break;
@@ -908,6 +928,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     break;
                   case "Future":
                     badgeClass = "bg-white text-neutral-300 border-neutral-100";
+                    break;
+                  case "Not Joined":
+                    badgeClass = "bg-neutral-105 text-neutral-500 border-neutral-205";
                     break;
                 }
 
@@ -935,7 +958,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         : "cursor-default"
                     } ${cell.isToday
                         ? "border-primary-500 shadow-sm bg-white"
-                        : cell.status === "Future"
+                        : cell.status === "Future" || cell.status === "Not Joined"
                           ? "border-neutral-200 bg-neutral-50/40"
                           : "border-neutral-300 bg-white hover:border-neutral-400 hover:shadow-sm"
                       }`}
@@ -944,7 +967,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     <div className="flex justify-between items-center w-full">
                       <span className={`text-[12px] font-bold flex items-center justify-center rounded-full ${cell.isToday
                           ? "bg-primary-500 text-white w-6 h-6 shadow-sm"
-                          : cell.status === "Future"
+                          : cell.status === "Future" || cell.status === "Not Joined"
                             ? "text-neutral-400"
                             : "text-neutral-900"
                         }`}>
@@ -961,7 +984,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     {cell.status !== "Future" && (
                       <div className="mt-1 w-full flex justify-start">
                         <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 w-full ${badgeClass}`}>
-                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
+                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("teal") ? "bg-teal-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
                           <span className="truncate">
                             {cell.halfDayDuration ? cell.leaveType || "Leave" : cell.badgeLabel || cell.status}
                             {cell.isOneDayWages && " (Wages)"}
@@ -1017,7 +1040,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           </div>
                         )}
 
-                        {cell.status === "Present" || cell.status === "Half Day" ? (
+                        {cell.status === "Present" || cell.status === "Half Day" || cell.status === "Check-In" ? (
                           <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-2.5 rounded-xl border border-neutral-100">
                               <div>
@@ -1108,7 +1131,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                     <span className="font-extrabold text-emerald-600 text-[12px]">{cell.checkIn}</span>
                                   </div>
                                   <div>
-                                    <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">Check-Out</span>
                                     <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
                                   </div>
                                 </div>
@@ -1183,6 +1205,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                 </div>
                               </div>
                             )}
+                          </div>
+                        ) : cell.status === "Not Joined" ? (
+                          <div className="space-y-3">
+                            <div className="text-[12px] text-neutral-500 text-center py-3 bg-neutral-50 rounded-xl font-bold border border-neutral-100">
+                              Not Joined (Prior to Joining Date)
+                            </div>
                           </div>
                         ) : (
                           <div className="space-y-1 bg-rose-50/50 p-3 rounded-xl border border-rose-100 text-rose-900">
@@ -1385,7 +1413,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                   dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
                                     dayObj.status === "Leave" ? "bg-primary-500/15 text-primary-500 border-primary-500/30" :
                                       dayObj.status === "Holiday" ? `bg-blue-100 text-blue-800 border-blue-300 ${isClickable ? "hover:border-blue-450 hover:bg-blue-150" : ""}` :
-                                        `bg-neutral-200 text-neutral-700 border-neutral-300 ${isClickable ? "hover:border-neutral-400 hover:bg-neutral-250" : ""}`
+                                        dayObj.status === "Check-In" ? "bg-teal-100 text-teal-800 border-teal-300" :
+                                          `bg-neutral-200 text-neutral-700 border-neutral-300 ${isClickable ? "hover:border-neutral-400 hover:bg-neutral-250" : ""}`
                                 }`}>
                                 <span>{dayObj.badgeEmoji}</span>
                                 <span>{dayObj.badgeLabel || dayObj.status}</span>
@@ -1440,40 +1469,48 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             </div>
 
              <div className="space-y-3">
-              <button
-                onClick={() => submitResolveAbsent("LOP")}
-                disabled={isResolving}
-                className="w-full text-left px-4 py-3 rounded-xl border border-rose-250 bg-rose-50/50 hover:bg-rose-50 text-rose-700 text-xs font-bold transition-all flex justify-between items-center"
-              >
-                <span>Loss of Pay (LOP)</span>
-                <span className="text-[10px] text-rose-500 uppercase tracking-wide">Deducted Pay</span>
-              </button>
+              {/* LOP is always shown; paid leave buttons only shown if available > 0 */}
+              {(() => {
+                const availableBalances = resolverBalances.filter((b: any) => (b.available ?? 0) > 0);
+                const hasPaidLeave = !isBalancesLoading && availableBalances.length > 0;
+                return (
+                  <>
+                    {/* Only show LOP when loading OR when no paid leave is available */}
+                    {(!hasPaidLeave) && (
+                      <button
+                        onClick={() => submitResolveAbsent("LOP")}
+                        disabled={isResolving}
+                        className="w-full text-left px-4 py-3 rounded-xl border border-rose-250 bg-rose-50/50 hover:bg-rose-50 text-rose-700 text-xs font-bold transition-all flex justify-between items-center"
+                      >
+                        <span>Loss of Pay (LOP)</span>
+                        <span className="text-[10px] text-rose-500 uppercase tracking-wide">Deducted Pay</span>
+                      </button>
+                    )}
 
-              {isBalancesLoading ? (
-                <div className="text-center py-4 text-xs text-neutral-450 animate-pulse font-semibold">
-                  Loading available leave categories...
-                </div>
-              ) : resolverBalances.length === 0 ? (
-                <div className="text-center py-2 text-xs text-neutral-500 font-semibold">
-                  No leave balances allocated.
-                </div>
-              ) : (
-                resolverBalances.map((balObj: any) => {
-                  const leaveType = balObj.leave_type;
-                  const availableVal = balObj.available ?? 0;
-                  return (
-                    <button
-                      key={balObj.id || leaveType}
-                      onClick={() => submitResolveAbsent(leaveType)}
-                      disabled={isResolving}
-                      className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
-                    >
-                      <span>{leaveType}</span>
-                      <span className="text-[10px] text-neutral-500 font-semibold">{availableVal} Left</span>
-                    </button>
-                  );
-                })
-              )}
+                    {isBalancesLoading ? (
+                      <div className="text-center py-4 text-xs text-neutral-450 animate-pulse font-semibold">
+                        Loading available leave categories...
+                      </div>
+                    ) : hasPaidLeave ? (
+                      availableBalances.map((balObj: any) => {
+                        const leaveType = balObj.leave_type;
+                        const availableVal = balObj.available ?? 0;
+                        return (
+                          <button
+                            key={balObj.id || leaveType}
+                            onClick={() => submitResolveAbsent(leaveType)}
+                            disabled={isResolving}
+                            className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
+                          >
+                            <span>{leaveType}</span>
+                            <span className="text-[10px] text-emerald-600 font-bold">{availableVal} Left</span>
+                          </button>
+                        );
+                      })
+                    ) : null}
+                  </>
+                );
+              })()}
             </div>
 
             <div className="mt-6 flex justify-end">

@@ -225,7 +225,8 @@ export const HolidayCalendarWidget: React.FC = () => {
                 // Leaves on this date
                 const leavesOnDate = employeeLeaves.filter((l: any) => {
                   if (l.request_type === "Permission") return l.permission_date === day.date;
-                  return l.from_date <= day.date && l.to_date >= day.date;
+                  const isCancelled = l.cancelled_dates?.includes(day.date);
+                  return l.from_date <= day.date && l.to_date >= day.date && !isCancelled;
                 });
 
                 return (

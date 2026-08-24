@@ -358,7 +358,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
       if (!leave.from_date || !leave.to_date) return false;
       const from = new Date(leave.from_date);
       const to = new Date(leave.to_date);
-      return todayDate >= from && todayDate <= to;
+      const isCancelled = leave.cancelled_dates?.includes(todayStr);
+      return todayDate >= from && todayDate <= to && !isCancelled;
     });
   })();
 
@@ -1651,11 +1652,26 @@ if (isHalfDayLeave(leave.total_days)) return false;
       });
 
       // If the leave belongs to current user, we should update their leave balance in employees state!
-      if (Number(payload.employee_id) === Number(currentEmployee?.id)) {
+      const isCurrentUser = 
+        payload.employee_id && (
+          String(payload.employee_id) === String(currentEmployee?.id) ||
+          String(payload.employee_id) === String(currentEmployee?.employee_id)
+        );
+
+      if (isCurrentUser) {
         // Reload employee details from backend to sync balances
         getEmployees(true)
           .then((data) => setEmployees(data))
           .catch((err) => console.error(err));
+
+        // Reload attendance history to sync cancelled/updated leave dates
+        const userId = localStorage.getItem("user_id");
+        if (userId) {
+          fetch(`${BASE_URL}/attendance/history/${userId}`)
+            .then((res) => res.json())
+            .then((data) => setAttendanceData(data))
+            .catch((err) => console.error(err));
+        }
       }
     });
 

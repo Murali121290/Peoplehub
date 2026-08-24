@@ -330,7 +330,9 @@ def get_employees():
                 emp.work_mode,
 
             "status":
-                attendance.status
+                "Not Joined"
+                if emp.joining_date and today < emp.joining_date
+                else (attendance.status
                 if attendance
                  else ("Leave" if LeaveRequest.query.filter(
                      or_(
@@ -340,7 +342,7 @@ def get_employees():
                      LeaveRequest.status == "Approved",
                      LeaveRequest.from_date <= today,
                      LeaveRequest.to_date >= today
-                 ).first() else "Absent"),
+                 ).first() else "Absent")),
 
             "salary":
                 emp.salary,

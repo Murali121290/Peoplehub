@@ -448,6 +448,13 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
     }
   ).length;
 
+  const totalCheckInCount = attendanceData.filter(
+    (emp) => {
+      const s = (emp.status || "").toLowerCase();
+      return s === "check in" || s === "check_in";
+    }
+  ).length;
+
   const filteredAttendance = attendanceData.filter((emp) => {
     // 1. Shift / Operational category filter
     const matchesShift =
@@ -472,6 +479,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         matchesStatus = status === "on_leave" || status === "leave" || status === "on leave";
       } else if (statusFilter === "Half Day") {
         matchesStatus = status === "half day" || status === "half_day";
+      } else if (statusFilter === "Check In") {
+        matchesStatus = status === "check in" || status === "check_in";
       }
     }
 
@@ -1032,6 +1041,25 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             {totalHalfDayCount}
           </div>
         </div>
+
+        {totalCheckInCount > 0 && (
+          <div
+            onClick={() => setStatusFilter(statusFilter === "Check In" ? "All" : "Check In")}
+            className={
+              "cursor-pointer rounded-[10px] p-4 text-center transition-all " +
+              (statusFilter === "Check In"
+                ? "bg-teal-100 border-2 border-teal-500 text-teal-800"
+                : "bg-teal-50/50 border border-teal-100 text-teal-700 hover:bg-teal-50")
+            }
+          >
+            <div className="text-[11px] font-semibold mb-1.5 uppercase">
+              Check In
+            </div>
+            <div className="text-[22px] font-bold">
+              {totalCheckInCount}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Shift Distribution Cards */}
