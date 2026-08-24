@@ -304,6 +304,42 @@ const ManagerDashboardPage = () => {
     teaMinutes: 0,
   });
 
+  // Auto-calculate status based on check-in and check-out times inside edit modal
+  useEffect(() => {
+    if (!editForm.checkIn || !editForm.checkOut) {
+      setEditForm(prev => ({ ...prev, status: "Absent" }));
+      return;
+    }
+
+    const [inHours, inMins] = editForm.checkIn.split(":").map(Number);
+    const [outHours, outMins] = editForm.checkOut.split(":").map(Number);
+
+    if (isNaN(inHours) || isNaN(inMins) || isNaN(outHours) || isNaN(outMins)) return;
+
+    let diffMinutes = (outHours * 60 + outMins) - (inHours * 60 + inMins);
+    if (diffMinutes < 0) {
+      diffMinutes += 24 * 60;
+    }
+
+    const totalBreaks = (Number(editForm.lunchMinutes) || 0) + (Number(editForm.teaMinutes) || 0);
+    const workedMinutes = Math.max(0, diffMinutes - totalBreaks);
+    const workedHours = workedMinutes / 60.0;
+
+    let computedStatus = "Absent";
+    if (workedHours >= 7.0) {
+      computedStatus = "Present";
+    } else if (workedHours >= 4.0) {
+      computedStatus = "Half Day";
+    }
+
+    setEditForm(prev => {
+      if (prev.status !== computedStatus) {
+        return { ...prev, status: computedStatus };
+      }
+      return prev;
+    });
+  }, [editForm.checkIn, editForm.checkOut, editForm.lunchMinutes, editForm.teaMinutes]);
+
   const convertTo24Hour = (time12: string) => {
     if (!time12 || time12 === "-" || time12 === "—") return "";
     const match = time12.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -2666,7 +2702,11 @@ const ManagerDashboardPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {yesterdaySummary.map((emp, idx) => {
+                    {[...yesterdaySummary].sort((a, b) => {
+                      const aOdw = a.is_one_day_wages ? 1 : 0;
+                      const bOdw = b.is_one_day_wages ? 1 : 0;
+                      return aOdw - bOdw;
+                    }).map((emp, idx) => {
                       const status = emp.status || "Absent";
                       // Determine category based on status
                       let category = "absent";
@@ -2701,13 +2741,38 @@ const ManagerDashboardPage = () => {
                           <td style={{ padding: "12px 16px", fontWeight: 700, color: THEME.navy, borderRight: `1px solid ${THEME.border}` }}>
                             <div>{emp.employee_name}</div>
                             <div style={{ fontSize: "11px", color: THEME.textSoft, fontWeight: 500 }}>{emp.designation}</div>
+                            {emp.is_one_day_wages && (
+                              <div style={{ fontSize: "11px", color: "#4f46e5", fontWeight: 700, marginTop: "4px" }}>
+                                {emp.summary_date_formatted}
+                              </div>
+                            )}
                           </td>
                           <td style={{ padding: "12px 16px", color: THEME.textSoft, borderRight: `1px solid ${THEME.border}` }}>{emp.department}</td>
                           <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>
-                            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
                               <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: 800 }}>{status}</span>
                               {emp.leave_type && (
                                 <span style={{ fontSize: "10px", color: THEME.textSoft }}>{emp.leave_type}</span>
+                              )}
+                              {emp.is_one_day_wages && emp.wages_status && (
+                                <span
+                                  title={`One Day Wages: ${emp.wages_status}`}
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "4px",
+                                    padding: "2px 8px",
+                                    borderRadius: "999px",
+                                    background: emp.wages_status === "Approved" ? "#fef3c7" : "#f9fafb",
+                                    border: `1px solid ${emp.wages_status === "Approved" ? "#fbbf24" : "#e2e8f0"}`,
+                                    color: emp.wages_status === "Approved" ? "#92400e" : "#64748b",
+                                    fontSize: "10px",
+                                    fontWeight: 800,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  ⭐ ODW: {emp.wages_status}
+                                </span>
                               )}
                             </div>
                           </td>
@@ -2931,7 +2996,29 @@ const ManagerDashboardPage = () => {
                             {rec.working_hours > 0 ? `${rec.working_hours}h` : "—"}
                           </td>
                           <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>
-                            <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: 800 }}>{status}</span>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
+                              <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: 800 }}>{status}</span>
+                              {rec.is_one_day_wages && rec.wages_status && (
+                                <span
+                                  title={`One Day Wages: ${rec.wages_status}`}
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "4px",
+                                    padding: "2px 8px",
+                                    borderRadius: "999px",
+                                    background: rec.wages_status === "Approved" ? "#fef3c7" : "#f9fafb",
+                                    border: `1px solid ${rec.wages_status === "Approved" ? "#fbbf24" : "#e2e8f0"}`,
+                                    color: rec.wages_status === "Approved" ? "#92400e" : "#64748b",
+                                    fontSize: "10px",
+                                    fontWeight: 800,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  ⭐ ODW: {rec.wages_status}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td style={{ padding: "12px 16px", textAlign: "center" }}>
                             <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>

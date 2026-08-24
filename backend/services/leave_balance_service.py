@@ -87,6 +87,18 @@ def update_leave_balance(employee):
         if pl_balance:
             pl_balance.available = (pl_balance.available or 0) + 15
 
+    # ── Permission balance (resets to 2 hours every month) ───────────────────
+    perm_balance = _find_balance(employee.id, ["permission"])
+    if perm_balance:
+        perm_balance.available = 2.0
+    else:
+        perm_balance = EmployeeLeaveBalance(
+            employee_id=employee.id,
+            leave_type="permission",
+            available=2.0
+        )
+        db.session.add(perm_balance)
+
     # Mark this month as credited
     employee.last_leave_reset_month = str(current_month)
     employee.last_leave_reset_year  = current_year

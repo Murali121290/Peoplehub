@@ -743,11 +743,11 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         return;
       }
 
-      if (requestedMinutes < 30) {
+      if (requestedMinutes < 60) {
         setValidationError({
           type: "insufficient",
           title: "Minimum Duration Required",
-          message: "Permission duration must be at least 30 minutes."
+          message: "Permission duration must be at least 1 hour."
         });
         return;
       }
@@ -1501,9 +1501,13 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer font-medium"
                   >
                     <option value="">Select Leave Type</option>
-                    {activeLeavePolicies.map(pol => (
-                      <option key={pol.id} value={pol.leave_type}>{pol.leave_type}</option>
-                    ))}
+                    {activeLeavePolicies.map(pol => {
+                      const avail = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+                      const displayLabel = avail <= 0 ? `${pol.leave_type} (Loss of Pay)` : pol.leave_type;
+                      return (
+                        <option key={pol.id} value={pol.leave_type}>{displayLabel}</option>
+                      );
+                    })}
                   </select>
                 </div>
               )}

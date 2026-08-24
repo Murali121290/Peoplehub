@@ -4515,6 +4515,14 @@ def update_attendance_record():
             paused_minutes = attendance.paused_minutes or 0
             diff_seconds -= (break_minutes + gap_minutes + paused_minutes) * 60
             attendance.total_hours = max(0.0, int((diff_seconds / 3600.0) * 100) / 100)
+            
+            # Auto-calculate status based on hours
+            if attendance.total_hours >= 7.0:
+                attendance.status = "Present"
+            elif attendance.total_hours >= 4.0:
+                attendance.status = "Half Day"
+            else:
+                attendance.status = "Absent"
         else:
             attendance.total_hours = 0.0
 
@@ -4848,6 +4856,17 @@ def get_pending_cycle_attendance(manager_user_id):
             emp = team_by_user_id.get(rec.user_id)
             if not emp:
                 continue
+
+            from models.shift_request import ShiftRequest
+            wages_req = ShiftRequest.query.filter(
+                ShiftRequest.employee_id.in_([emp.id, emp.employee_id]),
+                ShiftRequest.request_type == "One Day Wages",
+                ShiftRequest.from_date <= rec.attendance_date,
+                ShiftRequest.to_date >= rec.attendance_date
+            ).first()
+            wages_status = wages_req.status if wages_req else None
+            is_one_day_wages_final = (wages_req is not None)
+
             results.append({
                 "id":                   rec.id,
                 "db_employee_id":       emp.id,
@@ -4870,6 +4889,8 @@ def get_pending_cycle_attendance(manager_user_id):
                 "total_break_minutes":  rec.total_break_minutes or 0,
                 "clarification_history": rec.clarification_history or [],
                 "reporting_manager":    manager_full_name,
+                "is_one_day_wages":     is_one_day_wages_final,
+                "wages_status":         wages_status,
             })
 
         return jsonify({

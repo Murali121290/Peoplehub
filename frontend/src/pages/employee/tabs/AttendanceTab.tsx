@@ -116,6 +116,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const [resolvingCell, setResolvingCell] = useState<DayDetails | null>(null);
   const [isResolving, setIsResolving] = useState<boolean>(false);
   const [resolverBalances, setResolverBalances] = useState<any[]>([]);
+  const [leavePolicies, setLeavePolicies] = useState<any[]>([]);
   const [isBalancesLoading, setIsBalancesLoading] = useState<boolean>(false);
   const [resolveReason, setResolveReason] = useState<string>("");
 
@@ -254,17 +255,26 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     };
   }, [selectedMonth, selectedYear, userId]);
 
-  // Fetch balances when cell is selected for resolution
   useEffect(() => {
     const targetEmpId = currentEmployee?.id || employeeId;
     if (!resolvingCell || !targetEmpId) return;
     const fetchBalances = async () => {
       setIsBalancesLoading(true);
       try {
-        const res = await apiService.get(`/leaves/balances/${targetEmpId}`);
-        setResolverBalances(res.data);
+        const [resBal, resPol] = await Promise.all([
+          apiService.get(`/leaves/balances/${targetEmpId}`),
+          apiService.get("/leaves/policies")
+        ]);
+        setResolverBalances(resBal.data);
+
+        const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
+        const activePols = resPol.data.filter((p: any) => {
+          const polGender = (p.applicable_gender || "All").trim().toLowerCase();
+          return polGender === "all" || polGender === userGender;
+        });
+        setLeavePolicies(activePols);
       } catch (err) {
-        console.error("Failed to load balances", err);
+        console.error("Failed to load balances or policies", err);
       } finally {
         setIsBalancesLoading(false);
       }
@@ -1494,7 +1504,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
              <div className="space-y-3">
               {/* LOP is always shown; paid leave buttons only shown if available > 0 */}
               {(() => {
-                const availableBalances = resolverBalances.filter((b: any) => (b.available ?? 0) > 0);
+                const activePolicyNames = leavePolicies.map((p: any) => p.leave_type.toLowerCase().trim());
+                const availableBalances = resolverBalances.filter((b: any) => {
+                  const lt = (b.leave_type || "").toLowerCase().trim();
+                  return activePolicyNames.includes(lt) && (b.available ?? 0) > 0;
+                });
                 const hasPaidLeave = !isBalancesLoading && availableBalances.length > 0;
                 return (
                   <>
