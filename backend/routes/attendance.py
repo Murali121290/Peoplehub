@@ -2283,13 +2283,29 @@ def export_monthly_attendance():
         current_user = User.query.get(int(current_user_id)) if current_user_id else None
         is_hr_or_admin = current_user and current_user.access_level.lower() in ["admin", "hr"]
 
+        def is_employee_valid_for_report(e):
+            fname = (e.first_name or "").lower()
+            lname = (e.last_name or "").lower()
+            full_name = f"{fname} {lname}".strip()
+            
+            if "test" in fname or "test" in lname or full_name == "hr admin":
+                return False
+
+            if (e.status or "").lower() == "inactive":
+                return False
+            if e.is_active is False and e.last_working_date:
+                lwd = e.last_working_date.date() if isinstance(e.last_working_date, datetime) else e.last_working_date
+                if lwd < start_date:
+                    return False
+            return True
+
         if manager_id:
             manager_emp = Employee.query.filter_by(user_id=int(manager_id)).first()
             if manager_emp:
                 manager_full_name = f"{manager_emp.first_name} {manager_emp.last_name}".strip()
                 employees = [
                     e for e in get_all_employees_cached()
-                    if (e.status or "").lower() != "inactive"
+                    if is_employee_valid_for_report(e)
                     and is_manager_match(e.reporting_manager, manager_full_name)
                 ]
             else:
@@ -2301,7 +2317,7 @@ def export_monthly_attendance():
                     manager_full_name = f"{caller_emp.first_name} {caller_emp.last_name}".strip()
                     employees = [
                         e for e in get_all_employees_cached()
-                        if (e.status or "").lower() != "inactive"
+                        if is_employee_valid_for_report(e)
                         and is_manager_match(e.reporting_manager, manager_full_name)
                     ]
                 else:
@@ -2309,7 +2325,7 @@ def export_monthly_attendance():
             else:
                 employees = []
         else:
-            employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
+            employees = [e for e in get_all_employees_cached() if is_employee_valid_for_report(e)]
 
         # Sort employees by employee code in ascending order
         def get_emp_code_val(e):
@@ -2421,10 +2437,16 @@ def export_monthly_attendance():
                 ShiftRequest.to_date >= start_date
             ).all()
 
-            if start_date > effective_end_date:
+            emp_effective_end = effective_end_date
+            if employee.is_active is False and employee.last_working_date:
+                lwd = employee.last_working_date.date() if isinstance(employee.last_working_date, datetime) else employee.last_working_date
+                if lwd < effective_end_date:
+                    emp_effective_end = lwd
+
+            if start_date > emp_effective_end:
                 num_days_to_calculate = 0
             else:
-                num_days_to_calculate = (effective_end_date - start_date).days + 1
+                num_days_to_calculate = (emp_effective_end - start_date).days + 1
 
             odw_days_list = []
 
@@ -2586,10 +2608,10 @@ def export_monthly_attendance():
 
             total_days_worked = total_working_days + total_weekoffs + total_holidays + total_paid_leaves
             effective_start = max(start_date, employee.joining_date) if employee.joining_date else start_date
-            if effective_start > effective_end_date:
+            if effective_start > emp_effective_end:
                 total_days_cycle = 0
             else:
-                total_days_cycle = (effective_end_date - effective_start).days + 1
+                total_days_cycle = (emp_effective_end - effective_start).days + 1
 
             # Format leave and absent remarks dynamically
             from collections import defaultdict
