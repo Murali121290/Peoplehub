@@ -3220,9 +3220,9 @@ const ManagerDashboardPage = () => {
                                 >
                                   {status}
                                 </span>
-                                {record.is_one_day_wages && (
+                                {record.is_one_day_wages && record.wages_status && (
                                   <span
-                                    title={`One Day Wages: ${record.wages_status || "Pending"}`}
+                                    title={`One Day Wages: ${record.wages_status}`}
                                     style={{
                                       display: "inline-flex",
                                       alignItems: "center",
@@ -3237,7 +3237,7 @@ const ManagerDashboardPage = () => {
                                       whiteSpace: "nowrap",
                                     }}
                                   >
-                                    ⭐ ODW: {record.wages_status || "Pending"}
+                                    ⭐ ODW: {record.wages_status}
                                   </span>
                                 )}
                                 {record.has_permission && (
