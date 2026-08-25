@@ -404,16 +404,18 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       }
     });
 
-    // Use the latest approved permission date's cycle for display if it's different from today's cycle
+    // Use the latest approved permission date's cycle for display if it's in the future
     let displayCycleStart = todayCycleStart;
     let displayCycleEnd = todayCycleEnd;
     if (latestPermDate) {
       const { cycleStart: lpCycleStart, cycleEnd: lpCycleEnd } = getCycleBounds(latestPermDate);
-      // Show the latest permission's cycle if it has any approved minutes (even if future)
-      const lpMins = calcApprovedMinutes(lpCycleStart, lpCycleEnd);
-      if (lpMins > 0) {
-        displayCycleStart = lpCycleStart;
-        displayCycleEnd = lpCycleEnd;
+      // Only switch if this cycle is strictly in the future compared to today's cycle
+      if (lpCycleStart > todayCycleStart) {
+        const lpMins = calcApprovedMinutes(lpCycleStart, lpCycleEnd);
+        if (lpMins > 0) {
+          displayCycleStart = lpCycleStart;
+          displayCycleEnd = lpCycleEnd;
+        }
       }
     }
 
