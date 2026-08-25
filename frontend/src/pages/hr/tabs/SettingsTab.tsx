@@ -408,7 +408,6 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
                 Trigger Monthly Credit (CL/SL)
               </Button>
               <Button
-                variant="outline"
                 onClick={async () => {
                   try {
                     const res = await axios.post(`${API_URL}/leaves/trigger-yearly-credit`);
@@ -431,7 +430,6 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
                 Trigger Yearly PL Credit
               </Button>
               <Button
-                variant="outline"
                 onClick={async () => {
                   try {
                     const res = await axios.post(`${API_URL}/leaves/trigger-monthly-permission-reset`);
@@ -502,9 +500,9 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
             ) : creditHistory.length === 0 ? (
               <div className="text-sm text-neutral-500">No history available yet.</div>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-neutral-200">
+              <div className="overflow-x-auto overflow-y-auto max-h-[190px] rounded-lg border border-neutral-200">
                 <table className="min-w-full text-sm text-left text-neutral-600">
-                  <thead className="text-xs text-neutral-500 uppercase bg-neutral-50">
+                  <thead className="text-xs text-neutral-500 uppercase bg-neutral-50 sticky top-0 z-10">
                     <tr>
                       <th className="px-4 py-3">Run Date</th>
                       <th className="px-4 py-3">Type</th>
