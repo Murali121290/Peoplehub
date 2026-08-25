@@ -170,3 +170,14 @@ class EmployeeLeaveBalance(db.Model):
     leave_type = db.Column(db.String(100), nullable=False)
     available = db.Column(db.Float, nullable=False, default=0.0)
 
+class LeaveCreditHistory(db.Model):
+    __tablename__ = "leave_credit_history"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    run_date = db.Column(db.DateTime, default=datetime.utcnow)
+    month = db.Column(db.Integer, nullable=False)
+    year = db.Column(db.Integer, nullable=False)
+    credit_type = db.Column(db.String(20), nullable=False, default="month")
+    employees_updated = db.Column(db.Integer, default=0)
+    employee_details_json = db.Column(db.Text)
+
