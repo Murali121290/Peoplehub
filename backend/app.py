@@ -148,14 +148,34 @@ def create_app():
         # Auto-credit leaves on the 25th of every month at 00:01 AM
         def run_monthly_leave_credit():
             from services.leave_balance_service import update_all_employee_leave_balances
-            with fastapi_app.app_context():
+            try:
                 result = update_all_employee_leave_balances()
                 print(f"[Scheduler] Monthly leave credit: {result}")
+            except Exception as e:
+                print(f"[Scheduler] Monthly leave credit error: {e}")
 
         scheduler.add_job(
             run_monthly_leave_credit,
             "cron",
             day=25,
+            hour=0,
+            minute=1
+        )
+
+        # Auto-credit PL on Jan 1st at 00:01 AM
+        def run_yearly_pl_credit():
+            from services.leave_balance_service import update_all_employee_pl_balances
+            try:
+                result = update_all_employee_pl_balances()
+                print(f"[Scheduler] Yearly PL credit: {result}")
+            except Exception as e:
+                print(f"[Scheduler] Yearly PL credit error: {e}")
+
+        scheduler.add_job(
+            run_yearly_pl_credit,
+            "cron",
+            month=1,
+            day=1,
             hour=0,
             minute=1
         )
