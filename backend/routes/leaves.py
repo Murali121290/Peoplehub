@@ -2108,6 +2108,16 @@ def trigger_yearly_credit():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@leave_bp.route("/trigger-monthly-permission-reset", methods=["POST"])
+def trigger_monthly_permission_reset():
+    try:
+        from services.leave_balance_service import update_all_employee_permission_balances
+        result = update_all_employee_permission_balances()
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @leave_bp.route("/monthly-credit-history", methods=["GET"])
 def get_monthly_credit_history():
     try:

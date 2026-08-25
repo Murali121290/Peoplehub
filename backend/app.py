@@ -162,6 +162,23 @@ def create_app():
             minute=1
         )
 
+        # Auto-reset permissions on the 25th of every month at 00:01 AM
+        def run_monthly_permission_reset():
+            from services.leave_balance_service import update_all_employee_permission_balances
+            try:
+                result = update_all_employee_permission_balances()
+                print(f"[Scheduler] Monthly permission reset: {result}")
+            except Exception as e:
+                print(f"[Scheduler] Monthly permission reset error: {e}")
+
+        scheduler.add_job(
+            run_monthly_permission_reset,
+            "cron",
+            day=25,
+            hour=0,
+            minute=1
+        )
+
         # Auto-credit PL on Jan 1st at 00:01 AM
         def run_yearly_pl_credit():
             from services.leave_balance_service import update_all_employee_pl_balances

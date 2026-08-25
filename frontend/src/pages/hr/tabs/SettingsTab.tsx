@@ -430,6 +430,29 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
               >
                 Trigger Yearly PL Credit
               </Button>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const res = await axios.post(`${API_URL}/leaves/trigger-monthly-permission-reset`);
+                    if (res.data.employees_updated > 0) {
+                      toast.success(`Successfully reset permission balances for ${res.data.employees_updated} employees!`);
+                      if (res.data.updated_details) {
+                        setUpdatedDetails(res.data.updated_details);
+                        setUpdatedType('permission');
+                        setShowUpdatedDetails(true);
+                      }
+                      fetchCreditHistory(); // Refresh history
+                    } else {
+                      toast.success(res.data.message || "Permission balances are already reset for this month.");
+                    }
+                  } catch (err: any) {
+                    toast.error("Failed to trigger monthly permission reset");
+                  }
+                }}
+              >
+                Trigger Monthly Permission Reset
+              </Button>
             </div>
             
             {updatedDetails.length > 0 && (
@@ -450,8 +473,8 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
                         <tr>
                           <th className="px-3 py-2">Name</th>
                           <th className="px-3 py-2">DOJ</th>
-                          <th className="px-3 py-2">Previous Balance ({updatedType === 'month' ? 'CL/SL' : 'PL'})</th>
-                          <th className="px-3 py-2">New Balance ({updatedType === 'month' ? 'CL/SL' : 'PL'})</th>
+                          <th className="px-3 py-2">Previous Balance ({updatedType === 'month' ? 'CL/SL' : updatedType === 'year' ? 'PL' : 'Permission'})</th>
+                          <th className="px-3 py-2">New Balance ({updatedType === 'month' ? 'CL/SL' : updatedType === 'year' ? 'PL' : 'Permission'})</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -528,8 +551,8 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
               <tr>
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">DOJ</th>
-                <th className="px-3 py-2">Previous Balance ({selectedHistoryRun?.credit_type === 'month' ? 'CL/SL' : 'PL'})</th>
-                <th className="px-3 py-2">New Balance ({selectedHistoryRun?.credit_type === 'month' ? 'CL/SL' : 'PL'})</th>
+                <th className="px-3 py-2">Previous Balance ({selectedHistoryRun?.credit_type === 'month' ? 'CL/SL' : selectedHistoryRun?.credit_type === 'year' ? 'PL' : 'Permission'})</th>
+                <th className="px-3 py-2">New Balance ({selectedHistoryRun?.credit_type === 'month' ? 'CL/SL' : selectedHistoryRun?.credit_type === 'year' ? 'PL' : 'Permission'})</th>
               </tr>
             </thead>
             <tbody>
