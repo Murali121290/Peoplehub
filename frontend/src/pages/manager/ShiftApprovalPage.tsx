@@ -3,6 +3,7 @@ import { API_URL, getProfileImageUrl } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
 import { CheckIcon, XMarkIcon, ArrowRightIcon, MagnifyingGlassIcon, PaperClipIcon } from "@heroicons/react/24/outline";
 import { Button } from "../../components/ui/Button";
+import { ConfirmDialog } from "../../components/ui/Modal";
 import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
 import { BookLoader } from "../../components/ui/Spinner";
@@ -70,6 +71,10 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
+
+  // Shift/ODW Cancellation Confirmation State
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [cancelTargetId, setCancelTargetId] = useState<number | null>(null);
 
   // Direct Manager Log Modal State
   const [showManagerLogModal, setShowManagerLogModal] = useState(false);
@@ -260,6 +265,11 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
     } finally {
       setProcessingId(null);
     }
+  };
+
+  const handleCancelClick = (id: number) => {
+    setCancelTargetId(id);
+    setIsConfirmOpen(true);
   };
 
   const getStatusColor = (status: string) => {
@@ -524,11 +534,24 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
                                 className="!py-1 !px-2.5 !text-[10px] shadow-sm"
                               >
                                 {processingId === item.id ? (
-                                  <span className="w-3 h-3 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                  <span className="w-3.5 h-3.5 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
                                 ) : (
                                   <XMarkIcon className="w-3 h-3 mr-1" />
                                 )}
                                 Reject
+                              </Button>
+                            </div>
+                          ) : item.status === "Approved" ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => handleCancelClick(item.id)}
+                                disabled={processingId === item.id}
+                                className="!py-1 !px-2.5 !text-[10px] shadow-sm"
+                              >
+                                <XMarkIcon className="w-3 h-3 mr-1" />
+                                Cancel
                               </Button>
                             </div>
                           ) : (
@@ -754,6 +777,26 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
           </div>
         </div>
       )}
+      {/* Shift/ODW Cancellation Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        title="Confirm Cancellation"
+        message={isOdwOnly ? "Are you sure you want to cancel this approved ODW request?" : "Are you sure you want to cancel this approved Shift Change request?"}
+        onConfirm={async () => {
+          setIsConfirmOpen(false);
+          if (cancelTargetId !== null) {
+            await handleCancel(cancelTargetId);
+          }
+          setCancelTargetId(null);
+        }}
+        onCancel={() => {
+          setIsConfirmOpen(false);
+          setCancelTargetId(null);
+        }}
+        variant="danger"
+        confirmLabel="Yes, Cancel"
+        cancelLabel="No, Keep"
+      />
     </div>
   );
 };

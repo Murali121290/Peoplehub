@@ -1324,34 +1324,47 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       <td className="p-3 text-neutral-500 border-r border-neutral-300 font-bold">{dayObj.dayName}</td>
                       
                       {/* Web Site Entry */}
-                      <td
-                        onClick={() => {
-                          const cellDate = new Date(dayObj.dateStr + "T00:00:00");
-                          const todayMidnight = new Date();
-                          todayMidnight.setHours(23, 59, 59, 999);
-                          if (cellDate <= todayMidnight) {
-                            setRegularizingCell(dayObj);
-                          }
-                        }}
-                        title="Click to request time adjustment"
-                        className="p-3 text-center text-neutral-800 font-bold cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 transition-all underline decoration-dotted decoration-cyan-500/60"
-                      >
-                        {dayObj.checkIn}
-                      </td>
-                      <td
-                        onClick={() => {
-                          const cellDate = new Date(dayObj.dateStr + "T00:00:00");
-                          const todayMidnight = new Date();
-                          todayMidnight.setHours(23, 59, 59, 999);
-                          if (cellDate <= todayMidnight) {
-                            setRegularizingCell(dayObj);
-                          }
-                        }}
-                        title="Click to request time adjustment"
-                        className="p-3 text-center text-neutral-800 font-bold cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 transition-all underline decoration-dotted decoration-cyan-500/60"
-                      >
-                        {dayObj.checkOut}
-                      </td>
+                      {!(dayObj.checkIn && dayObj.checkIn !== "-" && dayObj.checkIn !== "—" && dayObj.checkOut && dayObj.checkOut !== "-" && dayObj.checkOut !== "—") ? (
+                        <>
+                          <td
+                            onClick={() => {
+                              const cellDate = new Date(dayObj.dateStr + "T00:00:00");
+                              const todayMidnight = new Date();
+                              todayMidnight.setHours(23, 59, 59, 999);
+                              if (cellDate <= todayMidnight) {
+                                setRegularizingCell(dayObj);
+                              }
+                            }}
+                            title="Click to request time adjustment"
+                            className="p-3 text-center text-neutral-800 font-bold cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 transition-all underline decoration-dotted decoration-cyan-500/60"
+                          >
+                            {dayObj.checkIn}
+                          </td>
+                          <td
+                            onClick={() => {
+                              const cellDate = new Date(dayObj.dateStr + "T00:00:00");
+                              const todayMidnight = new Date();
+                              todayMidnight.setHours(23, 59, 59, 999);
+                              if (cellDate <= todayMidnight) {
+                                setRegularizingCell(dayObj);
+                              }
+                            }}
+                            title="Click to request time adjustment"
+                            className="p-3 text-center text-neutral-800 font-bold cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 transition-all underline decoration-dotted decoration-cyan-500/60"
+                          >
+                            {dayObj.checkOut}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="p-3 text-center text-neutral-800 font-bold">
+                            {dayObj.checkIn}
+                          </td>
+                          <td className="p-3 text-center text-neutral-800 font-bold">
+                            {dayObj.checkOut}
+                          </td>
+                        </>
+                      )}
                       <td className="p-3 text-center text-cyan-600 font-black border-r border-neutral-300">
                         {(dayObj.checkIn !== "-" && dayObj.checkOut !== "-") ? dayObj.workingHoursFormatted : "—"}
                       </td>
@@ -1641,6 +1654,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <TimePicker
                   value={regCheckIn}
                   onChange={(val) => setRegCheckIn(val)}
+                  disabled={!!(regularizingCell.checkIn && regularizingCell.checkIn !== "-" && regularizingCell.checkIn !== "—")}
                   className="w-full"
                 />
               </div>
@@ -1649,6 +1663,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <TimePicker
                   value={regCheckOut}
                   onChange={(val) => setRegCheckOut(val)}
+                  disabled={!!(regularizingCell.checkOut && regularizingCell.checkOut !== "-" && regularizingCell.checkOut !== "—")}
                   className="w-full"
                 />
               </div>

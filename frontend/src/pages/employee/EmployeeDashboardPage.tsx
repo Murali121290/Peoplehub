@@ -634,7 +634,27 @@ if (isHalfDayLeave(leave.total_days)) return false;
     } finally {
       setIsActionLoading(false);
     }
-  };  const proceedToCheckInModal = () => {
+  };  const getAvailableShifts = () => {
+    const shifts = [
+      { name: "General Shift", time: "09:00 AM - 06:00 PM" },
+      { name: "First Shift", time: "07:00 AM - 04:00 PM" },
+      { name: "Second Shift", time: "12:00 PM - 09:00 PM" },
+    ];
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+
+    const isPast9AM = currentHour > 9 || (currentHour === 9 && currentMinute >= 0);
+    const isPast12PM = currentHour >= 12;
+
+    return shifts.filter((s) => {
+      if (s.name === "First Shift" && isPast9AM) return false;
+      if (s.name === "General Shift" && isPast12PM) return false;
+      return true;
+    });
+  };
+
+  const proceedToCheckInModal = () => {
     const isCurrentlyWFH = todayActiveWorkMode === "WFH";
     const isCurrentlyHybrid = todayActiveWorkMode === "Hybrid";
 
@@ -644,7 +664,11 @@ if (isHalfDayLeave(leave.total_days)) return false;
       setSelectedWorkModeOpt(isCurrentlyWFH ? "WFH" : "Office");
     }
 
-    setSelectedCheckInShift(todayActiveShift || "General Shift");
+    const available = getAvailableShifts();
+    const preferred = todayActiveShift || "General Shift";
+    const hasPreferred = available.some(s => s.name === preferred);
+    setSelectedCheckInShift(hasPreferred ? preferred : (available[0]?.name || "General Shift"));
+
     setShowCheckInShiftModal(true);
   };
 
@@ -2096,15 +2120,10 @@ if (isHalfDayLeave(leave.total_days)) return false;
                       </div>
                     )}
 
-                    {/* Select Shift Timing */}
                     <div className="flex flex-col gap-3 pt-2 border-t border-neutral-100">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
                       <div className="grid grid-cols-1 gap-2">
-                        {[
-                          { name: "General Shift", time: "09:00 AM - 06:00 PM" },
-                          { name: "First Shift", time: "07:00 AM - 04:00 PM" },
-                          { name: "Second Shift", time: "12:00 PM - 09:00 PM" },
-                        ].map((opt) => {
+                        {getAvailableShifts().map((opt) => {
                           const isSelected = selectedCheckInShift === opt.name;
                           return (
                             <div
@@ -2142,11 +2161,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
                   <div className="flex flex-col gap-3">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
                     <div className="grid grid-cols-1 gap-2">
-                      {[
-                        { name: "General Shift", time: "09:00 AM - 06:00 PM" },
-                        { name: "First Shift", time: "07:00 AM - 04:00 PM" },
-                        { name: "Second Shift", time: "12:00 PM - 09:00 PM" },
-                      ].map((opt) => {
+                      {getAvailableShifts().map((opt) => {
                         const isSelected = selectedCheckInShift === opt.name;
                         return (
                           <div
