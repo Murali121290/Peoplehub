@@ -903,6 +903,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
     try {
       const userId = localStorage.getItem("user_id");
       if (!userId) return;
+      const clientIp = await getClientPublicIp();
       if (!isLunchBreak) {
         const response = await fetch(`${BASE_URL}/attendance/lunch-break`, {
           method: "POST",
@@ -910,7 +911,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
             "Content-Type": "application/json",
             Authorization: `Bearer ${localStorage.getItem("token")}`,
           },
-          body: JSON.stringify({ user_id: Number(userId), action: "start" }),
+          body: JSON.stringify({ user_id: Number(userId), action: "start", client_ip: clientIp }),
         });
         const data = await response.json();
         if (!response.ok || !data.success) {
@@ -941,6 +942,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
               user_id: Number(userId),
               action: "stop",
               break_seconds: seconds,
+              client_ip: clientIp,
             }),
           });
           window.dispatchEvent(new Event('refreshTeamStatus'));
@@ -964,6 +966,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
     setIsActionLoading(true);
     try {
+      const clientIp = await getClientPublicIp();
       if (isTeaBreak) {
         const response = await fetch(`${API_URL}/api/attendance/tea-break`, {
           method: "POST",
@@ -971,7 +974,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
             "Content-Type": "application/json",
             Authorization: `Bearer ${localStorage.getItem("token")}`,
           },
-          body: JSON.stringify({ user_id: Number(currentUserId), action: "stop" }),
+          body: JSON.stringify({ user_id: Number(currentUserId), action: "stop", client_ip: clientIp }),
         });
         const data = await response.json();
         if (!data.success) {
@@ -996,7 +999,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
             "Content-Type": "application/json",
             Authorization: `Bearer ${localStorage.getItem("token")}`,
           },
-          body: JSON.stringify({ user_id: Number(currentUserId), action: "start" }),
+          body: JSON.stringify({ user_id: Number(currentUserId), action: "start", client_ip: clientIp }),
         });
         const data = await response.json();
         if (!data.success) {
@@ -1029,13 +1032,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
     setIsActionLoading(true);
     try {
       const action = isPaused ? "stop" : "start";
+      const clientIp = await getClientPublicIp();
       const response = await fetch(`${BASE_URL}/attendance/pause`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-        body: JSON.stringify({ user_id: Number(currentUserId), action }),
+        body: JSON.stringify({ user_id: Number(currentUserId), action, client_ip: clientIp }),
       });
       const data = await response.json();
       if (!response.ok || !data.success) {
