@@ -1594,34 +1594,46 @@ if (isHalfDayLeave(leave.total_days)) return false;
   useEffect(() => {
     socket.on("attendance_update", (payload: any) => {
       if (Number(payload.user_id) === Number(user?.id)) {
-        setIsCheckedIn(payload.checked_in);
-        setIsLunchBreak(payload.lunch_break);
-        setIsTeaBreak(payload.tea_break);
-        if (payload.check_in) {
-          setCheckInTime(parseTimeString(payload.check_in));
-        } else {
-          setCheckInTime(null);
-        }
-        if (payload.lunch_break && payload.lunch_start) {
-          setLunchStartTime(parseTimeString(payload.lunch_start));
-        } else {
-          setLunchStartTime(null);
+        if ('checked_in' in payload) setIsCheckedIn(payload.checked_in);
+        if ('lunch_break' in payload) setIsLunchBreak(payload.lunch_break);
+        if ('tea_break' in payload) setIsTeaBreak(payload.tea_break);
+        
+        if ('check_in' in payload) {
+          if (payload.check_in) {
+            setCheckInTime(parseTimeString(payload.check_in));
+          } else {
+            setCheckInTime(null);
+          }
         }
 
-        if (payload.tea_break && payload.tea_start) {
-          setTeaStartTime(parseTimeString(payload.tea_start));
-        } else {
-          setTeaStartTime(null);
+        if ('lunch_start' in payload) {
+          if (payload.lunch_break && payload.lunch_start) {
+            setLunchStartTime(parseTimeString(payload.lunch_start));
+          } else {
+            setLunchStartTime(null);
+          }
         }
-        setTotalLunchSeconds((payload.lunch_minutes || 0) * 60);
-        setTotalTeaSeconds((payload.tea_minutes || 0) * 60);
-        setIsPaused(payload.is_paused || false);
-        if (payload.paused_start) {
-          setPausedStartTime(parseTimeString(payload.paused_start));
-        } else {
-          setPausedStartTime(null);
+
+        if ('tea_start' in payload) {
+          if (payload.tea_break && payload.tea_start) {
+            setTeaStartTime(parseTimeString(payload.tea_start));
+          } else {
+            setTeaStartTime(null);
+          }
         }
-        setTotalPausedSeconds((payload.paused_minutes || 0) * 60);
+        
+        if ('lunch_minutes' in payload) setTotalLunchSeconds((payload.lunch_minutes || 0) * 60);
+        if ('tea_minutes' in payload) setTotalTeaSeconds((payload.tea_minutes || 0) * 60);
+        
+        if ('is_paused' in payload) setIsPaused(payload.is_paused || false);
+        if ('paused_start' in payload) {
+          if (payload.paused_start) {
+            setPausedStartTime(parseTimeString(payload.paused_start));
+          } else {
+            setPausedStartTime(null);
+          }
+        }
+        if ('paused_minutes' in payload) setTotalPausedSeconds((payload.paused_minutes || 0) * 60);
 
         const userId = localStorage.getItem("user_id");
         if (userId) {

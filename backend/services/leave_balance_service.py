@@ -10,6 +10,7 @@ from sqlalchemy import func
 
 CL_SL_NAMES = ["cl/sl", "cl / sl", "sl/cl", "sl / cl", "casual leave", "sick leave"]
 PL_NAMES = ["pl", "privilege leave", "privileged leave", "earned leave"]
+PERMISSION_NAMES = ["permission", "permissions"]
 
 def _find_balance(employee_id: int, name_list: list) -> "EmployeeLeaveBalance | None":
     """Return the first matching EmployeeLeaveBalance row for this employee."""
@@ -235,6 +236,80 @@ def update_all_employee_pl_balances():
         "employees_updated": updated_count,
         "updated_details": updated_details
     }
+
+
+def update_all_employee_permission_balances():
+    """Reset Permission leaves to 2 hours for all active employees and commit once."""
+    today = datetime.today()
+    current_year = today.year
+    current_month = today.month
+
+    # Check if monthly permission has already run this month in LeaveCreditHistory
+    # to prevent double runs
+    existing_run = LeaveCreditHistory.query.filter_by(
+        month=current_month,
+        year=current_year,
+        credit_type="permission"
+    ).first()
+
+    if existing_run:
+        return {
+            "success": False,
+            "message": f"Monthly Permission reset already completed for {current_month}/{current_year}"
+        }
+
+    employees = [
+        e for e in Employee.query.all()
+        if (e.status or "").lower() == "active"
+    ]
+
+    updated_count = 0
+    updated_details = []
+
+    for employee in employees:
+        perm_bal = _find_balance(employee.id, PERMISSION_NAMES)
+        prev_perm = perm_bal.available if perm_bal else 0.0
+
+        if perm_bal:
+            perm_bal.available = 2.0
+        else:
+            new_perm_bal = EmployeeLeaveBalance(
+                employee_id=employee.id,
+                leave_type="Permission",
+                available=2.0
+            )
+            db.session.add(new_perm_bal)
+
+        updated_count += 1
+        
+        doj = str(employee.joining_date) if employee.joining_date else "N/A"
+        name = f"{employee.first_name} {employee.last_name}".strip() or str(employee.employee_id)
+        
+        updated_details.append({
+            "name": name,
+            "doj": doj,
+            "previous_leave": f"Permission: {prev_perm}",
+            "current_leave": f"Permission: 2.0"
+        })
+
+    if updated_count > 0:
+        history = LeaveCreditHistory(
+            month=current_month,
+            year=current_year,
+            credit_type="permission",
+            employees_updated=updated_count,
+            employee_details_json=json.dumps(updated_details)
+        )
+        db.session.add(history)
+
+    db.session.commit()
+
+    return {
+        "success": True,
+        "employees_updated": updated_count,
+        "updated_details": updated_details
+    }
+
 
 
 def update_single_employee_leave_balance(employee_id):

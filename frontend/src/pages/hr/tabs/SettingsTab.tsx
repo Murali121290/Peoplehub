@@ -408,7 +408,6 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
                 Trigger Monthly Credit (CL/SL)
               </Button>
               <Button
-                variant="outline"
                 onClick={async () => {
                   try {
                     const res = await axios.post(`${API_URL}/leaves/trigger-yearly-credit`);
@@ -430,6 +429,28 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
               >
                 Trigger Yearly PL Credit
               </Button>
+              <Button
+                onClick={async () => {
+                  try {
+                    const res = await axios.post(`${API_URL}/leaves/trigger-monthly-permission-reset`);
+                    if (res.data.employees_updated > 0) {
+                      toast.success(`Successfully reset permission balances for ${res.data.employees_updated} employees!`);
+                      if (res.data.updated_details) {
+                        setUpdatedDetails(res.data.updated_details);
+                        setUpdatedType('permission');
+                        setShowUpdatedDetails(true);
+                      }
+                      fetchCreditHistory(); // Refresh history
+                    } else {
+                      toast.success(res.data.message || "Permission balances are already reset for this month.");
+                    }
+                  } catch (err: any) {
+                    toast.error("Failed to trigger monthly permission reset");
+                  }
+                }}
+              >
+                Trigger Monthly Permission Reset
+              </Button>
             </div>
             
             {updatedDetails.length > 0 && (
@@ -450,8 +471,8 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
                         <tr>
                           <th className="px-3 py-2">Name</th>
                           <th className="px-3 py-2">DOJ</th>
-                          <th className="px-3 py-2">Previous Balance ({updatedType === 'month' ? 'CL/SL' : 'PL'})</th>
-                          <th className="px-3 py-2">New Balance ({updatedType === 'month' ? 'CL/SL' : 'PL'})</th>
+                          <th className="px-3 py-2">Previous Balance ({updatedType === 'month' ? 'CL/SL' : updatedType === 'year' ? 'PL' : 'Permission'})</th>
+                          <th className="px-3 py-2">New Balance ({updatedType === 'month' ? 'CL/SL' : updatedType === 'year' ? 'PL' : 'Permission'})</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -479,9 +500,9 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
             ) : creditHistory.length === 0 ? (
               <div className="text-sm text-neutral-500">No history available yet.</div>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-neutral-200">
+              <div className="overflow-x-auto overflow-y-auto max-h-[190px] rounded-lg border border-neutral-200">
                 <table className="min-w-full text-sm text-left text-neutral-600">
-                  <thead className="text-xs text-neutral-500 uppercase bg-neutral-50">
+                  <thead className="text-xs text-neutral-500 uppercase bg-neutral-50 sticky top-0 z-10">
                     <tr>
                       <th className="px-4 py-3">Run Date</th>
                       <th className="px-4 py-3">Type</th>
@@ -528,8 +549,8 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
               <tr>
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">DOJ</th>
-                <th className="px-3 py-2">Previous Balance ({selectedHistoryRun?.credit_type === 'month' ? 'CL/SL' : 'PL'})</th>
-                <th className="px-3 py-2">New Balance ({selectedHistoryRun?.credit_type === 'month' ? 'CL/SL' : 'PL'})</th>
+                <th className="px-3 py-2">Previous Balance ({selectedHistoryRun?.credit_type === 'month' ? 'CL/SL' : selectedHistoryRun?.credit_type === 'year' ? 'PL' : 'Permission'})</th>
+                <th className="px-3 py-2">New Balance ({selectedHistoryRun?.credit_type === 'month' ? 'CL/SL' : selectedHistoryRun?.credit_type === 'year' ? 'PL' : 'Permission'})</th>
               </tr>
             </thead>
             <tbody>
