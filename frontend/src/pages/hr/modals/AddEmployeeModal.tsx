@@ -35,7 +35,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 }) => {
   const [filteredRoles, setFilteredRoles] = useState<any[]>([]);
   const [isEmptyField, setIsEmptyField] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | boolean>>({});
   const [shiftOptions, setShiftOptions] = useState<{ label: string; value: string }[]>([]);
 
   const requiredFields = [
@@ -104,7 +104,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
   const validateForm = (e: any) => {
 
-    const errors: Record<string, boolean> = {};
+    const errors: Record<string, string | boolean> = {};
 
     for (const field of requiredFields) {
 
@@ -115,6 +115,14 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       ) {
         errors[field] = true;
       }
+    }
+
+    if (newEmp.employee_id && !/^\d+$/.test(newEmp.employee_id.toString())) {
+      errors["employee_id"] = "Employee ID must be an integer (digits only).";
+    }
+
+    if (newEmp.salary && !/^\d+$/.test(newEmp.salary.toString())) {
+      errors["salary"] = "Salary must be a valid number.";
     }
 
 
@@ -148,7 +156,9 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   // Small reusable error message shown under an invalid field
   const FieldError = ({ fieldKey }: { fieldKey: string }) =>
     fieldErrors[fieldKey] ? (
-      <p className="text-danger-600 text-xs mt-1">This field is required.</p>
+      <p className="text-danger-600 text-xs mt-1">
+        {typeof fieldErrors[fieldKey] === "string" ? fieldErrors[fieldKey] : "This field is required."}
+      </p>
     ) : null;
 
   return (
@@ -186,7 +196,8 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             {
               label: "EMPLOYEE ID",
               key: "employee_id",
-              placeholder: "e.g., EMP001",
+              placeholder: "e.g., 1001",
+              type: "text",
             },
             {
               label: "FIRST NAME",
@@ -225,7 +236,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                     setNewEmp({ ...newEmp, [field.key]: val });
                     clearError(field.key);
                   }}
-                  error={fieldErrors[field.key]}
+                  error={!!fieldErrors[field.key]}
                   placeholder="YYYY-MM-DD"
                 />
               ) : (

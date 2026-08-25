@@ -2212,3 +2212,63 @@ def resolve_absent():
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@leave_bp.route("/trigger-monthly-credit", methods=["POST"])
+def trigger_monthly_credit():
+    try:
+        from services.leave_balance_service import update_all_employee_leave_balances
+        result = update_all_employee_leave_balances()
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@leave_bp.route("/trigger-yearly-credit", methods=["POST"])
+def trigger_yearly_credit():
+    try:
+        from services.leave_balance_service import update_all_employee_pl_balances
+        result = update_all_employee_pl_balances()
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@leave_bp.route("/trigger-monthly-permission-reset", methods=["POST"])
+def trigger_monthly_permission_reset():
+    try:
+        from services.leave_balance_service import update_all_employee_permission_balances
+        result = update_all_employee_permission_balances()
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@leave_bp.route("/monthly-credit-history", methods=["GET"])
+def get_monthly_credit_history():
+    try:
+        from models.leave import LeaveCreditHistory
+        histories = LeaveCreditHistory.query.order_by(LeaveCreditHistory.run_date.desc()).all()
+        
+        results = []
+        import json
+        for h in histories:
+            details = []
+            if h.employee_details_json:
+                try:
+                    details = json.loads(h.employee_details_json)
+                except:
+                    details = []
+            
+            results.append({
+                "id": h.id,
+                "run_date": h.run_date.isoformat() if h.run_date else None,
+                "month": h.month,
+                "year": h.year,
+                "credit_type": h.credit_type,
+                "employees_updated": h.employees_updated,
+                "employee_details": details
+            })
+            
+        return jsonify(results), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

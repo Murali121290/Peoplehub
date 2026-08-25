@@ -4,7 +4,7 @@ import { toast } from 'react-hot-toast';
 import Panel from '../components/Panel';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
-import { ConfirmDialog } from '../../../components/ui/Modal';
+import { ConfirmDialog, Modal } from '../../../components/ui/Modal';
 import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 import { API_URL as CONFIG_API_URL } from '../../../config/api';
@@ -29,11 +29,31 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
   const [balances, setBalances] = useState<any[]>([]);
   const [isBalancesLoading, setIsBalancesLoading] = useState(false);
   const [isSavingBalances, setIsSavingBalances] = useState(false);
+  const [updatedDetails, setUpdatedDetails] = useState<any[]>([]);
+  const [showUpdatedDetails, setShowUpdatedDetails] = useState(false);
+  
+  const [creditHistory, setCreditHistory] = useState<any[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [selectedHistoryRun, setSelectedHistoryRun] = useState<any | null>(null);
+  const [updatedType, setUpdatedType] = useState<string>('');
 
   // Fetch policies on mount
   useEffect(() => {
     fetchPolicies();
+    fetchCreditHistory();
   }, []);
+
+  const fetchCreditHistory = async () => {
+    try {
+      setIsHistoryLoading(true);
+      const res = await axios.get(`${API_URL}/leaves/monthly-credit-history`);
+      setCreditHistory(res.data);
+    } catch (err: any) {
+      toast.error("Failed to load credit history");
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
 
   const fetchPolicies = async () => {
     try {
@@ -369,6 +389,201 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
           )}
         </div>
       </Panel>
+
+      <Panel>
+        <div className="p-6">
+          <div className="mb-5 border-b border-neutral-100 pb-4">
+            <h3 className="text-base font-bold text-neutral-800">Monthly Leave Automation</h3>
+            <p className="mt-1 text-sm text-neutral-500">
+              The system automatically credits leaves on the 25th of every month. You can manually trigger this process if it was missed or if you need to run it immediately. It is safe to run multiple times, as employees who were already credited this month will be skipped.
+            </p>
+          </div>
+          <div>
+            <div className="flex gap-4">
+              <Button
+                onClick={async () => {
+                  try {
+                    const res = await axios.post(`${API_URL}/leaves/trigger-monthly-credit`);
+                    if (res.data.employees_updated > 0) {
+                      toast.success(`Successfully updated balances for ${res.data.employees_updated} employees!`);
+                      if (res.data.updated_details) {
+                        setUpdatedDetails(res.data.updated_details);
+                        setUpdatedType('month');
+                        setShowUpdatedDetails(true);
+                      }
+                      fetchCreditHistory(); // Refresh history
+                    } else {
+                      toast.success("Balances are already updated for this month.");
+                    }
+                  } catch (err: any) {
+                    toast.error("Failed to trigger monthly leave credit");
+                  }
+                }}
+              >
+                Trigger Monthly Credit (CL/SL)
+              </Button>
+              <Button
+                onClick={async () => {
+                  try {
+                    const res = await axios.post(`${API_URL}/leaves/trigger-yearly-credit`);
+                    if (res.data.employees_updated > 0) {
+                      toast.success(`Successfully updated PL balances for ${res.data.employees_updated} employees!`);
+                      if (res.data.updated_details) {
+                        setUpdatedDetails(res.data.updated_details);
+                        setUpdatedType('year');
+                        setShowUpdatedDetails(true);
+                      }
+                      fetchCreditHistory(); // Refresh history
+                    } else {
+                      toast.success(res.data.message || "PL balances are already updated for this year.");
+                    }
+                  } catch (err: any) {
+                    toast.error("Failed to trigger yearly PL credit");
+                  }
+                }}
+              >
+                Trigger Yearly PL Credit
+              </Button>
+              <Button
+                onClick={async () => {
+                  try {
+                    const res = await axios.post(`${API_URL}/leaves/trigger-monthly-permission-reset`);
+                    if (res.data.employees_updated > 0) {
+                      toast.success(`Successfully reset permission balances for ${res.data.employees_updated} employees!`);
+                      if (res.data.updated_details) {
+                        setUpdatedDetails(res.data.updated_details);
+                        setUpdatedType('permission');
+                        setShowUpdatedDetails(true);
+                      }
+                      fetchCreditHistory(); // Refresh history
+                    } else {
+                      toast.success(res.data.message || "Permission balances are already reset for this month.");
+                    }
+                  } catch (err: any) {
+                    toast.error("Failed to trigger monthly permission reset");
+                  }
+                }}
+              >
+                Trigger Monthly Permission Reset
+              </Button>
+            </div>
+            
+            {updatedDetails.length > 0 && (
+              <div className="mt-4">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowUpdatedDetails(!showUpdatedDetails)}
+                >
+                  {showUpdatedDetails ? "Hide Updated Employees" : `Show ${updatedDetails.length} Updated Employees`}
+                </Button>
+                
+                {showUpdatedDetails && (
+                  <div className="mt-3 p-4 bg-neutral-50 rounded-lg max-h-80 overflow-y-auto border border-neutral-200">
+                    <h4 className="text-sm font-semibold text-neutral-700 mb-2">Employees Updated This Run:</h4>
+                    <table className="min-w-full text-sm text-left text-neutral-600">
+                      <thead className="text-xs text-neutral-500 uppercase bg-neutral-100">
+                        <tr>
+                          <th className="px-3 py-2">Name</th>
+                          <th className="px-3 py-2">DOJ</th>
+                          <th className="px-3 py-2">Previous Balance ({updatedType === 'month' ? 'CL/SL' : updatedType === 'year' ? 'PL' : 'Permission'})</th>
+                          <th className="px-3 py-2">New Balance ({updatedType === 'month' ? 'CL/SL' : updatedType === 'year' ? 'PL' : 'Permission'})</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {updatedDetails.map((emp, idx) => (
+                          <tr key={idx} className="border-b border-neutral-200">
+                            <td className="px-3 py-2 font-medium">{emp.name}</td>
+                            <td className="px-3 py-2">{emp.doj}</td>
+                            <td className="px-3 py-2">{emp.previous_leave}</td>
+                            <td className="px-3 py-2 font-bold text-green-600">{emp.current_leave}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Update History Section */}
+          <div className="mt-8 border-t border-neutral-100 pt-6">
+            <h3 className="text-base font-bold text-neutral-800 mb-4">Leave Credit History</h3>
+            {isHistoryLoading ? (
+              <div className="text-sm text-neutral-500">Loading history...</div>
+            ) : creditHistory.length === 0 ? (
+              <div className="text-sm text-neutral-500">No history available yet.</div>
+            ) : (
+              <div className="overflow-x-auto overflow-y-auto max-h-[190px] rounded-lg border border-neutral-200">
+                <table className="min-w-full text-sm text-left text-neutral-600">
+                  <thead className="text-xs text-neutral-500 uppercase bg-neutral-50 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-4 py-3">Run Date</th>
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">Month/Year</th>
+                      <th className="px-4 py-3">Employees Updated</th>
+                      <th className="px-4 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {creditHistory.map((run) => (
+                      <tr key={run.id} className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50/50">
+                        <td className="px-4 py-3">{new Date(run.run_date).toLocaleString()}</td>
+                        <td className="px-4 py-3 font-semibold text-primary-700 capitalize">{run.credit_type}</td>
+                        <td className="px-4 py-3">{run.month}/{run.year}</td>
+                        <td className="px-4 py-3 font-medium">{run.employees_updated}</td>
+                        <td className="px-4 py-3">
+                          <button 
+                            className="text-primary-600 hover:text-primary-800 font-medium text-xs"
+                            onClick={() => setSelectedHistoryRun(run)}
+                          >
+                            View Details
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </Panel>
+
+      {/* History Details Modal */}
+      <Modal
+        isOpen={selectedHistoryRun !== null}
+        onClose={() => setSelectedHistoryRun(null)}
+        title="Credit Run Details"
+        size="lg"
+      >
+        <div className="mt-4 max-h-96 overflow-y-auto">
+          <table className="min-w-full text-sm text-left text-neutral-600">
+            <thead className="text-xs text-neutral-500 uppercase bg-neutral-100 sticky top-0">
+              <tr>
+                <th className="px-3 py-2">Name</th>
+                <th className="px-3 py-2">DOJ</th>
+                <th className="px-3 py-2">Previous Balance ({selectedHistoryRun?.credit_type === 'month' ? 'CL/SL' : selectedHistoryRun?.credit_type === 'year' ? 'PL' : 'Permission'})</th>
+                <th className="px-3 py-2">New Balance ({selectedHistoryRun?.credit_type === 'month' ? 'CL/SL' : selectedHistoryRun?.credit_type === 'year' ? 'PL' : 'Permission'})</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedHistoryRun?.employee_details?.map((emp: any, idx: number) => (
+                <tr key={idx} className="border-b border-neutral-200">
+                  <td className="px-3 py-2 font-medium">{emp.name}</td>
+                  <td className="px-3 py-2">{emp.doj}</td>
+                  <td className="px-3 py-2">{emp.previous_leave}</td>
+                  <td className="px-3 py-2 font-bold text-green-600">{emp.current_leave}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-6 flex justify-end">
+          <Button onClick={() => setSelectedHistoryRun(null)}>Close</Button>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         isOpen={deleteTargetId !== null}
