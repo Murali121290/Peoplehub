@@ -1656,7 +1656,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   className="w-full px-4 py-2.5 border border-neutral-200 rounded-xl bg-neutral-100 text-sm text-neutral-500 font-medium"
                 />
               </div>
-
+{/* 
               {leaveForm.requestType === "Leave" && (
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Work Handover Partner</label>
@@ -1677,7 +1677,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     )) : null}
                   </select>
                 </div>
-              )}
+              )} */}
             </div>
 
             {/* Reason selection */}
@@ -1926,7 +1926,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     </h4>
                     <ul className="text-[11px] text-neutral-600 space-y-2.5 font-semibold leading-relaxed">
                       <li>• Apply at least 2 days in advance for planned leaves.</li>
-                      <li>• Ensure work handover partner is selected.</li>
+                      {/* <li>• Ensure work handover partner is selected.</li> */}
                       <li>• Keep emergency contact up to date.</li>
                     </ul>
                   </div>
