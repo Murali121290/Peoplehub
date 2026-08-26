@@ -10,6 +10,12 @@ import { BookLoader } from "../../components/ui/Spinner";
 
 const BASE_URL = `${API_URL}/api`;
 
+const getKolkataTodayString = () => {
+  const options = { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" } as const;
+  const formatter = new Intl.DateTimeFormat("en-CA", options);
+  return formatter.format(new Date());
+};
+
 const RegularizationApprovalPage: React.FC = () => {
   const { user, token } = useAuthStore();
   const [requests, setRequests] = useState<any[]>([]);
@@ -306,7 +312,7 @@ const RegularizationApprovalPage: React.FC = () => {
                                 Reject
                               </Button>
                             </div>
-                          ) : resolvedStatus === "Approved" ? (
+                          ) : (resolvedStatus === "Approved" && (!req.date || req.date >= getKolkataTodayString())) ? (
                             <div className="flex items-center justify-center gap-2">
                               <Button
                                 variant="danger"

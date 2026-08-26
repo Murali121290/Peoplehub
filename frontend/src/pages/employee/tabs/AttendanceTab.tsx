@@ -103,6 +103,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   };
   const [selectedMonth, setSelectedMonth] = useState<number>(getInitialPayrollMonth());
   const [selectedYear, setSelectedYear] = useState<number>(getInitialPayrollYear());
+  const currentPayrollMonth = getInitialPayrollMonth();
+  const currentPayrollYear = getInitialPayrollYear();
+  const isCurrentPayrollMonthView = selectedMonth === currentPayrollMonth && selectedYear === currentPayrollYear;
   const [viewMode, setViewMode] = useState<"calendar" | "grid">("grid");
   const [statusFilter, setStatusFilter] = useState<string>("All");
 
@@ -422,8 +425,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
 
   const handleCellClick = (cell: DayDetails) => {
-    const today = new Date();
-    const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
     if (
       isCurrentPayrollMonthView &&
       cell.status === "Absent" &&
@@ -967,8 +968,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     break;
                 }
 
-                const today = new Date();
-                const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                 const isClickableAbsent = isCurrentPayrollMonthView &&
                                           cell.status === "Absent" &&
                                           !cell.leaveType &&
@@ -1384,8 +1383,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       {/* Status */}
                       <td 
                         onClick={() => {
-                          const today = new Date();
-                          const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                           const isClickableAbsent = isCurrentPayrollMonthView &&
                                                     dayObj.status === "Absent" &&
                                                     !dayObj.leaveType &&
@@ -1401,8 +1398,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         }}
                         title={
                           (() => {
-                            const today = new Date();
-                            const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                             const isClickableAbsent = isCurrentPayrollMonthView &&
                                                       dayObj.status === "Absent" &&
                                                       !dayObj.leaveType &&
@@ -1419,8 +1414,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         }
                         className={
                           (() => {
-                            const today = new Date();
-                            const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                             const isClickableAbsent = isCurrentPayrollMonthView &&
                                                       dayObj.status === "Absent" &&
                                                       !dayObj.leaveType &&
@@ -1439,8 +1432,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       >
                         <div className="flex flex-col items-center gap-1.5 justify-center">
                           {(() => {
-                            const today = new Date();
-                            const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                             const isClickableAbsent = isCurrentPayrollMonthView &&
                                                       dayObj.status === "Absent" &&
                                                       !dayObj.leaveType &&

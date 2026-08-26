@@ -44,6 +44,12 @@ const getActionedAtText = (r: any) => {
   return "Pending";
 };
 
+const getKolkataTodayString = () => {
+  const options = { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" } as const;
+  const formatter = new Intl.DateTimeFormat("en-CA", options);
+  return formatter.format(new Date());
+};
+
 const convertTo12HourFormat = (time24: string) => {
   if (!time24) return "";
   if (time24.includes("AM") || time24.includes("PM")) return time24;
@@ -541,7 +547,7 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
                                 Reject
                               </Button>
                             </div>
-                          ) : item.status === "Approved" ? (
+                          ) : (item.status === "Approved" && (!item.to_date || item.to_date >= getKolkataTodayString())) ? (
                             <div className="flex items-center justify-center gap-2">
                               <Button
                                 variant="danger"

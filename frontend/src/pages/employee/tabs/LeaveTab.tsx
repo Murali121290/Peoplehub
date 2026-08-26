@@ -745,11 +745,11 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         return;
       }
 
-      if (requestedMinutes < 60) {
+      if (requestedMinutes !== 60 && requestedMinutes !== 120) {
         setValidationError({
           type: "insufficient",
-          title: "Minimum Duration Required",
-          message: "Permission duration must be at least 1 hour."
+          title: "Invalid Permission Duration",
+          message: "Permission duration must be exactly 1 hour or 2 hours."
         });
         return;
       }

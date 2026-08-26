@@ -44,6 +44,12 @@ const getActionedAtText = (r: any) => {
   return "Pending";
 };
 
+const getKolkataTodayString = () => {
+  const options = { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" } as const;
+  const formatter = new Intl.DateTimeFormat("en-CA", options);
+  return formatter.format(new Date());
+};
+
 const PermissionApprovalPage: React.FC = () => {
   const { user, token } = useAuthStore();
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
@@ -379,7 +385,7 @@ const PermissionApprovalPage: React.FC = () => {
                                   Reject
                                 </Button>
                               </div>
-                            ) : leave.status === "Approved" ? (
+                            ) : (leave.status === "Approved" && (!leave.permission_date || leave.permission_date >= getKolkataTodayString())) ? (
                               <div className="flex items-center justify-center gap-2">
                                 <Button
                                   variant="danger"

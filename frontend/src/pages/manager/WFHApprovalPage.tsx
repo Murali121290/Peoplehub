@@ -44,6 +44,12 @@ const getActionedAtText = (r: any) => {
   return "Pending";
 };
 
+const getKolkataTodayString = () => {
+  const options = { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" } as const;
+  const formatter = new Intl.DateTimeFormat("en-CA", options);
+  return formatter.format(new Date());
+};
+
 const WFHApprovalPage: React.FC = () => {
   const { user, token } = useAuthStore();
   const [shiftRequests, setShiftRequests] = useState<any[]>([]);
@@ -432,7 +438,7 @@ const WFHApprovalPage: React.FC = () => {
                                 Reject
                               </Button>
                             </div>
-                          ) : item.status === "Approved" ? (
+                          ) : (item.status === "Approved" && (!item.to_date || item.to_date >= getKolkataTodayString())) ? (
                             <div className="flex items-center justify-center gap-2">
                               <Button
                                 variant="danger"
