@@ -179,7 +179,8 @@ def apply_leave():
                 available_balance = float(balance.available or 0.0)
 
             if available_balance <= 0.0:
-                leave.leave_type = f"{leave.leave_type} (Loss of Pay)"
+                if "loss of pay" not in leave_type_lower and "lop" not in leave_type_lower:
+                    leave.leave_type = f"{leave.leave_type} (Loss of Pay)"
 
         # ===========================
         # PERMISSION REQUEST
@@ -409,7 +410,7 @@ def approve_leave(leave_id):
         ).first()
 
         # For dynamic custom leave categories, check if we found a balance record
-        if leave_type not in ["sick leave", "casual leave", "earned leave", "privilege leave"] and not balance:
+        if leave_type not in ["sick leave", "casual leave", "earned leave", "privilege leave", "loss of pay", "lop"] and not balance:
             return jsonify({
                 "success": False,
                 "error": f"Invalid leave type or no balance record found: {leave.leave_type}"
@@ -423,7 +424,8 @@ def approve_leave(leave_id):
 
         if available_balance <= 0.0:
             # Entire leave is LOP
-            leave.leave_type = f"{leave.leave_type} (Loss of Pay)"
+            if "loss of pay" not in leave_type and "lop" not in leave_type:
+                leave.leave_type = f"{leave.leave_type} (Loss of Pay)"
             leave.status = "Approved"
             leave.approved_by = approver_name
             leave.approved_at = datetime.utcnow()
@@ -2066,6 +2068,12 @@ def resolve_absent():
         date_str = data.get("date")
         action = data.get("action")
         reason = data.get("reason", "").strip() or "Applied from Attendance Calendar"
+        duration = data.get("duration", "Full Day")
+        
+        days_to_deduct = 0.5 if duration in ["First Half", "Second Half"] else 1.0
+        
+        if duration != "Full Day":
+            reason = f"{reason} ({duration})"
         
         employee = Employee.query.get(employee_id)
         if not employee:
@@ -2100,7 +2108,7 @@ def resolve_absent():
                 leave_type="Loss of Pay",
                 from_date=target_date,
                 to_date=target_date,
-                total_days=1.0,
+                total_days=days_to_deduct,
                 status="Approved",
                 reason=reason,
                 reporting_manager=employee.reporting_manager,
@@ -2146,11 +2154,11 @@ def resolve_absent():
                 if balance:
                     leave_type = balance.leave_type
             
-            if not balance or balance.available < 1.0:
-                return jsonify({"success": False, "error": "No leave balance available"}), 400
+            if not balance or balance.available < days_to_deduct:
+                return jsonify({"success": False, "error": f"Not enough leave balance (need {days_to_deduct})"}), 400
             
-            # Deduct 1 day from the leave balance immediately (auto-approve)
-            balance.available = max(balance.available - 1.0, 0.0)
+            # Deduct from the leave balance immediately (auto-approve)
+            balance.available = max(balance.available - days_to_deduct, 0.0)
 
             # Create the leave request as already Approved
             leave = LeaveRequest(
@@ -2160,7 +2168,7 @@ def resolve_absent():
                 leave_type=leave_type,
                 from_date=target_date,
                 to_date=target_date,
-                total_days=1.0,
+                total_days=days_to_deduct,
                 status="Approved",
                 reason=reason,
                 reporting_manager=employee.reporting_manager,
