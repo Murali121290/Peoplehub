@@ -623,7 +623,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
     const wagesStatus = attRec?.wages_status || null;
     const hasWorkedAndApproved = (checkIn !== "-" && checkIn !== "") && (managerStatus === "Approved") && (attRec?.status !== "Leave");
-    const isOneDayWages = wagesStatus === "Approved" || ((isWeeklyOff || isCompanyHoliday) && wagesStatus !== "Rejected" && wagesStatus !== "Pending" && hasWorkedAndApproved);
+    const isOneDayWages = wagesStatus === "Approved";
 
     const isCheckedInActive = isToday && (
       (checkIn !== "-" && checkIn !== "" && (checkOut === "-" || checkOut === "")) ||
@@ -1019,7 +1019,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("teal") ? "bg-teal-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
                           <span className="truncate">
                             {cell.halfDayDuration ? cell.leaveType || "Leave" : cell.badgeLabel || cell.status}
-                            {cell.isOneDayWages && cell.wagesStatus && " (Wages)"}
+                            {cell.wagesStatus && " (Wages)"}
                           </span>
                         </div>
                       </div>
@@ -1041,12 +1041,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           </div>
                           <span className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg ${badgeClass}`}>
                             {cell.badgeLabel || cell.status}
-                            {cell.isOneDayWages && cell.wagesStatus && " (Wages)"}
+                            {cell.wagesStatus && " (Wages)"}
                           </span>
                         </div>
 
                         {/* Details Breakdown */}
-                        {cell.isOneDayWages && cell.wagesStatus && (
+                        {cell.wagesStatus && (
                           <div className="space-y-1 bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-amber-700 mb-3">
                             <span className="text-[9px] uppercase font-bold text-amber-500 block">One Day Wages</span>
                             <p className="font-extrabold text-[12px]">
@@ -1458,7 +1458,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               </span>
                             );
                           })()}
-                          {dayObj.isOneDayWages && dayObj.wagesStatus && (
+                          {dayObj.wagesStatus && (
                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold border ${
                               dayObj.wagesStatus === "Approved"
                                 ? "bg-amber-50 text-amber-700 border-amber-200"
