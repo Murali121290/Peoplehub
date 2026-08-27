@@ -103,6 +103,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   };
   const [selectedMonth, setSelectedMonth] = useState<number>(getInitialPayrollMonth());
   const [selectedYear, setSelectedYear] = useState<number>(getInitialPayrollYear());
+  const currentPayrollMonth = getInitialPayrollMonth();
+  const currentPayrollYear = getInitialPayrollYear();
+  const isCurrentPayrollMonthView = selectedMonth === currentPayrollMonth && selectedYear === currentPayrollYear;
   const [viewMode, setViewMode] = useState<"calendar" | "grid">("grid");
   const [statusFilter, setStatusFilter] = useState<string>("All");
 
@@ -116,8 +119,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const [resolvingCell, setResolvingCell] = useState<DayDetails | null>(null);
   const [isResolving, setIsResolving] = useState<boolean>(false);
   const [resolverBalances, setResolverBalances] = useState<any[]>([]);
+  const [leavePolicies, setLeavePolicies] = useState<any[]>([]);
   const [isBalancesLoading, setIsBalancesLoading] = useState<boolean>(false);
   const [resolveReason, setResolveReason] = useState<string>("");
+  const [resolveDuration, setResolveDuration] = useState<string>("Full Day");
 
   // Weekend / Holiday resolution states (One Day Wages)
   const [resolvingWeekendCell, setResolvingWeekendCell] = useState<DayDetails | null>(null);
@@ -254,17 +259,26 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     };
   }, [selectedMonth, selectedYear, userId]);
 
-  // Fetch balances when cell is selected for resolution
   useEffect(() => {
     const targetEmpId = currentEmployee?.id || employeeId;
     if (!resolvingCell || !targetEmpId) return;
     const fetchBalances = async () => {
       setIsBalancesLoading(true);
       try {
-        const res = await apiService.get(`/leaves/balances/${targetEmpId}`);
-        setResolverBalances(res.data);
+        const [resBal, resPol] = await Promise.all([
+          apiService.get(`/leaves/balances/${targetEmpId}`),
+          apiService.get("/leaves/policies")
+        ]);
+        setResolverBalances(resBal.data);
+
+        const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
+        const activePols = resPol.data.filter((p: any) => {
+          const polGender = (p.applicable_gender || "All").trim().toLowerCase();
+          return polGender === "all" || polGender === userGender;
+        });
+        setLeavePolicies(activePols);
       } catch (err) {
-        console.error("Failed to load balances", err);
+        console.error("Failed to load balances or policies", err);
       } finally {
         setIsBalancesLoading(false);
       }
@@ -282,11 +296,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       return;
     }
     
+    const durationAmount = resolveDuration === "Full Day" ? 1 : 0.5;
     if (action !== "LOP") {
       const balObj = resolverBalances.find(b => b.leave_type.toLowerCase() === action.toLowerCase());
       const balance = balObj ? (balObj.available ?? 0) : 0;
-      if (balance < 1) {
-        toast.error(`No ${action} balance available`);
+      if (balance < durationAmount) {
+        toast.error(`Not enough ${action} balance (need ${durationAmount})`);
         return;
       }
     }
@@ -297,7 +312,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         employee_id: targetEmpId,
         date: resolvingCell.dateStr,
         action,
-        reason: resolveReason.trim()
+        reason: resolveReason.trim(),
+        duration: resolveDuration
       });
       if (res.data.success) {
         toast.success(res.data.message || "Attendance updated successfully");
@@ -412,15 +428,25 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
 
   const handleCellClick = (cell: DayDetails) => {
-    const today = new Date();
-    const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
+    const noLeaveOrHalf = (!cell.leaveType || cell.halfDayDuration);
     if (
       isCurrentPayrollMonthView &&
-      cell.status === "Absent" &&
-      !cell.leaveType &&
+      (cell.status === "Absent" || cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) &&
+      noLeaveOrHalf &&
       !cell.isToday &&
       cell.dateStr < todayKey
     ) {
+      let dur = "Full Day";
+      if (cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) {
+        if (cell.leaveReason?.includes("First Half") || cell.rawLeaveRecord?.from_time?.startsWith("09:00")) {
+          dur = "Second Half";
+        } else if (cell.leaveReason?.includes("Second Half") || cell.rawLeaveRecord?.from_time?.startsWith("13:30")) {
+          dur = "First Half";
+        } else {
+          dur = "First Half";
+        }
+      }
+      setResolveDuration(dur);
       setResolvingCell(cell);
     } else if (
       isCurrentPayrollMonthView &&
@@ -429,6 +455,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       cell.dateStr <= todayKey
     ) {
       setResolvingWeekendCell(cell);
+    } else if (
+      cell.dateStr < todayKey &&
+      cell.status !== "Future" && 
+      cell.status !== "Not Joined" &&
+      cell.status !== "Present" &&
+      noLeaveOrHalf
+    ) {
+      setRegularizingCell(cell);
     }
   };
 
@@ -519,8 +553,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     const holidayName = isCompanyHoliday ? (schedDay?.name || schedDay?.holiday_name || "Company Holiday") : undefined;
     const holidayType = isCompanyHoliday ? (schedDay?.holiday_type || "Holiday") : undefined;
 
-    // 2. Approved Leave
-    const matchedLeave = approvedLeaves.find((l: any) => {
+    // 2. Approved Leaves (Support multiple half-day leaves on same day)
+    const matchedLeaves = approvedLeaves.filter((l: any) => {
       if (l.request_type !== "Leave") return false;
       const isCancelled = l.cancelled_dates?.includes(dateStr);
       return l.from_date <= dateStr && l.to_date >= dateStr && !isCancelled;
@@ -612,7 +646,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
     const wagesStatus = attRec?.wages_status || null;
     const hasWorkedAndApproved = (checkIn !== "-" && checkIn !== "") && (managerStatus === "Approved") && (attRec?.status !== "Leave");
-    const isOneDayWages = wagesStatus === "Approved" || ((isWeeklyOff || isCompanyHoliday) && wagesStatus !== "Rejected" && wagesStatus !== "Pending" && hasWorkedAndApproved);
+    const isOneDayWages = wagesStatus === "Approved";
 
     const isCheckedInActive = isToday && (
       (checkIn !== "-" && checkIn !== "" && (checkOut === "-" || checkOut === "")) ||
@@ -635,16 +669,26 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       status = "Weekly Off";
       badgeLabel = "Week Off";
       badgeEmoji = "";
-    } else if (matchedLeave && !isOneDayWages) {
-      const isLopLeave = matchedLeave.leave_type?.toLowerCase() === "loss of pay" || matchedLeave.leave_type?.toLowerCase() === "lop" || matchedLeave.leave_type?.toLowerCase() === "unpaid leave";
-      if (isLopLeave) {
-        status = "Absent";
-        badgeLabel = (matchedLeave.leave_type || "Loss of Pay") + (matchedLeave.status === "Pending" ? " (Pending)" : "");
-        badgeEmoji = "";
-      } else {
-        const isPending = matchedLeave.status === "Pending";
+    } else if (matchedLeaves.length > 0 && !isOneDayWages) {
+      if (matchedLeaves.length === 2 && matchedLeaves.every((l: any) => l.total_days != null && Number(l.total_days) <= 0.5)) {
+        const l1 = matchedLeaves[0];
+        const l2 = matchedLeaves[1];
+        
+        const getDur = (l: any) => l.reason?.includes("First Half") ? " (First Half)" : l.reason?.includes("Second Half") ? " (Second Half)" : " (Half)";
+        
         status = "Leave";
+        badgeLabel = `${l1.leave_type || "Leave"}${getDur(l1)}${l1.status === "Pending" ? " (Pending)" : ""} & ${l2.leave_type || "Leave"}${getDur(l2)}${l2.status === "Pending" ? " (Pending)" : ""}`;
+        badgeEmoji = "";
+        leaveType = `${l1.leave_type} & ${l2.leave_type}`;
+        leaveReason = `${l1.reason} & ${l2.reason}`;
+        halfDayDuration = undefined;
+      } else {
+        const matchedLeave = matchedLeaves[0];
+        const leaveTypeLower = matchedLeave.leave_type?.toLowerCase() || "";
+        const isLopLeave = leaveTypeLower.includes("loss of pay") || /\blop\b/.test(leaveTypeLower) || leaveTypeLower.includes("unpaid leave");
+        const isPending = matchedLeave.status === "Pending";
         const isHalfDay = matchedLeave.total_days != null && Number(matchedLeave.total_days) <= 0.5;
+        
         let durationStr = "";
         halfDayDuration = undefined;
         if (isHalfDay) {
@@ -659,11 +703,28 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
             halfDayDuration = "Half Day";
           }
         }
-        badgeLabel = (matchedLeave.leave_type || "Leave") + durationStr + (isPending ? " (Pending)" : "");
-        badgeEmoji = "";
+
+        let otherHalfStatusStr = "";
+        if (isHalfDay && dateStr <= todayKey && !isFuture) {
+          if (totalHours >= 4) {
+            otherHalfStatusStr = "Half Day Present & ";
+          } else if (dateStr < todayKey) {
+            otherHalfStatusStr = "Half Day Absent & ";
+          }
+        }
+
+        if (isLopLeave) {
+          status = isHalfDay ? "Half Day" : "Absent";
+          badgeLabel = otherHalfStatusStr + (matchedLeave.leave_type || "Loss of Pay") + durationStr + (isPending ? " (Pending)" : "");
+          badgeEmoji = "";
+        } else {
+          status = "Leave";
+          badgeLabel = otherHalfStatusStr + (matchedLeave.leave_type || "Leave") + durationStr + (isPending ? " (Pending)" : "");
+          badgeEmoji = "";
+        }
+        leaveType = matchedLeave.leave_type;
+        leaveReason = matchedLeave.reason;
       }
-      leaveType = matchedLeave.leave_type;
-      leaveReason = matchedLeave.reason;
     } else if (attRec) {
       // If the database status is explicitly set, respect it completely (Present, Half Day, Absent, Leave, Weekly Off, Holiday, etc.)
       const dbStatus = attRec.status;
@@ -744,7 +805,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       source,
       managerStatus,
       rawAttendanceRecord: attRec,
-      rawLeaveRecord: matchedLeave,
+      rawLeaveRecord: matchedLeaves.length > 0 ? matchedLeaves[0] : undefined,
       baseWorkingHours: baseWorkingHours,
       rawPermissionRecord: matchedPermission,
       halfDayDuration,
@@ -758,18 +819,47 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   }
 
   // Monthly Summary Calculations
-  const presentCount = daysDataList.filter(d => (d.status === "Present" || d.status === "Check-In") && d.dateStr <= todayKey).length;
-  const absentCount = daysDataList.filter(d => d.status === "Absent" && d.dateStr <= todayKey).length;
-  const leaveCount = daysDataList.filter(d => d.status === "Leave" && d.dateStr <= todayKey).length;
-  const halfDayCount = daysDataList.filter(d => d.status === "Half Day" && d.dateStr <= todayKey).length;
-  const weeklyOffCount = daysDataList.filter(d => d.status === "Weekly Off" && d.dateStr <= todayKey).length;
-  const holidayCount = daysDataList.filter(d => d.status === "Holiday" && d.dateStr <= todayKey).length;
-  
-  const totalPresentDays = presentCount + leaveCount + (halfDayCount * 0.5) + weeklyOffCount + holidayCount;
-  
-  const totalWorkedAndAbsent = presentCount + halfDayCount + absentCount;
+  let presentCount = 0;
+  let absentCount = 0;
+  let leaveCount = 0;
+  let weeklyOffCount = 0;
+  let holidayCount = 0;
+
+  daysDataList.forEach(d => {
+    if (d.dateStr > todayKey) return;
+    
+    if (d.status === "Present" || d.status === "Check-In") {
+      presentCount += 1;
+    } else if (d.status === "Absent") {
+      // Don't penalize today as LOP if they just haven't checked in yet, unless it's explicitly marked in DB
+      if (d.dateStr < todayKey || d.rawAttendanceRecord?.status === "Absent" || d.rawLeaveRecord?.leave_type?.toLowerCase().includes("lop")) {
+        absentCount += 1;
+      }
+    } else if (d.status === "Weekly Off") {
+      weeklyOffCount += 1;
+    } else if (d.status === "Holiday") {
+      holidayCount += 1;
+    } else if (d.status === "Half Day") {
+      presentCount += 0.5;
+      absentCount += 0.5;
+    } else if (d.status === "Leave") {
+      if (d.halfDayDuration) {
+        leaveCount += 0.5;
+        if (d.badgeLabel?.includes("Present")) {
+          presentCount += 0.5;
+        } else {
+          absentCount += 0.5;
+        }
+      } else {
+        leaveCount += 1;
+      }
+    }
+  });
+
+  const totalPresentDays = presentCount + leaveCount + holidayCount + weeklyOffCount;
+  const totalWorkedAndAbsent = presentCount + absentCount;
   const attendancePercentage = totalWorkedAndAbsent > 0
-    ? Math.round(((presentCount + (halfDayCount * 0.5)) / totalWorkedAndAbsent) * 100)
+    ? Math.round((presentCount / totalWorkedAndAbsent) * 100)
     : 100;
 
   // Filtered Grid View records (reversed to show newest days first, only up to today's date)
@@ -957,18 +1047,18 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     break;
                 }
 
-                const today = new Date();
-                const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                 const isClickableAbsent = isCurrentPayrollMonthView &&
-                                          cell.status === "Absent" &&
-                                          !cell.leaveType &&
+                                          (cell.status === "Absent" || cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) &&
+                                          (!cell.leaveType || cell.halfDayDuration) &&
+                                          (!cell.badgeLabel || !cell.badgeLabel.includes("Half Day Present")) &&
                                           !cell.isToday &&
                                           cell.dateStr < todayKey;
                 const isClickableWeekend = isCurrentPayrollMonthView &&
                                            (cell.status === "Weekly Off" || cell.status === "Holiday") &&
                                            !cell.isToday &&
                                            cell.dateStr <= todayKey;
-                const isClickable = isClickableAbsent || isClickableWeekend;
+                const isClickableRegularize = cell.dateStr < todayKey && cell.status !== "Future" && cell.status !== "Not Joined" && cell.status !== "Present" && (!cell.leaveType || cell.halfDayDuration);
+                const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
                 return (
                   <div
                     key={cell.dateStr}
@@ -1010,7 +1100,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("teal") ? "bg-teal-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
                           <span className="truncate">
                             {cell.halfDayDuration ? cell.leaveType || "Leave" : cell.badgeLabel || cell.status}
-                            {cell.isOneDayWages && cell.wagesStatus && " (Wages)"}
+                            {cell.wagesStatus && " (Wages)"}
                           </span>
                         </div>
                       </div>
@@ -1032,12 +1122,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           </div>
                           <span className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg ${badgeClass}`}>
                             {cell.badgeLabel || cell.status}
-                            {cell.isOneDayWages && cell.wagesStatus && " (Wages)"}
+                            {cell.wagesStatus && " (Wages)"}
                           </span>
                         </div>
 
                         {/* Details Breakdown */}
-                        {cell.isOneDayWages && cell.wagesStatus && (
+                        {cell.wagesStatus && (
                           <div className="space-y-1 bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-amber-700 mb-3">
                             <span className="text-[9px] uppercase font-bold text-amber-500 block">One Day Wages</span>
                             <p className="font-extrabold text-[12px]">
@@ -1314,34 +1404,49 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       <td className="p-3 text-neutral-500 border-r border-neutral-300 font-bold">{dayObj.dayName}</td>
                       
                       {/* Web Site Entry */}
-                      <td
-                        onClick={() => {
-                          const cellDate = new Date(dayObj.dateStr + "T00:00:00");
-                          const todayMidnight = new Date();
-                          todayMidnight.setHours(23, 59, 59, 999);
-                          if (cellDate <= todayMidnight) {
-                            setRegularizingCell(dayObj);
-                          }
-                        }}
-                        title="Click to request time adjustment"
-                        className="p-3 text-center text-neutral-800 font-bold cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 transition-all underline decoration-dotted decoration-cyan-500/60"
-                      >
-                        {dayObj.checkIn}
-                      </td>
-                      <td
-                        onClick={() => {
-                          const cellDate = new Date(dayObj.dateStr + "T00:00:00");
-                          const todayMidnight = new Date();
-                          todayMidnight.setHours(23, 59, 59, 999);
-                          if (cellDate <= todayMidnight) {
-                            setRegularizingCell(dayObj);
-                          }
-                        }}
-                        title="Click to request time adjustment"
-                        className="p-3 text-center text-neutral-800 font-bold cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 transition-all underline decoration-dotted decoration-cyan-500/60"
-                      >
-                        {dayObj.checkOut}
-                      </td>
+                      {!(dayObj.checkIn && dayObj.checkIn !== "-" && dayObj.checkIn !== "—" && dayObj.checkOut && dayObj.checkOut !== "-" && dayObj.checkOut !== "—") ? (
+                        <>
+                          <td
+                            onClick={() => {
+                              if (dayObj.dateStr < todayKey && dayObj.status !== "Present" && !dayObj.leaveType) {
+                                setRegularizingCell(dayObj);
+                              }
+                            }}
+                            title={dayObj.dateStr < todayKey && dayObj.status !== "Present" && !dayObj.leaveType ? "Click to request time adjustment" : undefined}
+                            className={`p-3 text-center text-neutral-800 font-bold transition-all ${
+                              dayObj.dateStr < todayKey && dayObj.status !== "Present" && !dayObj.leaveType
+                                ? "cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 underline decoration-dotted decoration-cyan-500/60"
+                                : ""
+                            }`}
+                          >
+                            {dayObj.checkIn}
+                          </td>
+                          <td
+                            onClick={() => {
+                              if (dayObj.dateStr < todayKey && dayObj.status !== "Present" && !dayObj.leaveType) {
+                                setRegularizingCell(dayObj);
+                              }
+                            }}
+                            title={dayObj.dateStr < todayKey && dayObj.status !== "Present" && !dayObj.leaveType ? "Click to request time adjustment" : undefined}
+                            className={`p-3 text-center text-neutral-800 font-bold transition-all ${
+                              dayObj.dateStr < todayKey && dayObj.status !== "Present" && !dayObj.leaveType
+                                ? "cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 underline decoration-dotted decoration-cyan-500/60"
+                                : ""
+                            }`}
+                          >
+                            {dayObj.checkOut}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="p-3 text-center text-neutral-800 font-bold">
+                            {dayObj.checkIn}
+                          </td>
+                          <td className="p-3 text-center text-neutral-800 font-bold">
+                            {dayObj.checkOut}
+                          </td>
+                        </>
+                      )}
                       <td className="p-3 text-center text-cyan-600 font-black border-r border-neutral-300">
                         {(dayObj.checkIn !== "-" && dayObj.checkOut !== "-") ? dayObj.workingHoursFormatted : "—"}
                       </td>
@@ -1361,11 +1466,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       {/* Status */}
                       <td 
                         onClick={() => {
-                          const today = new Date();
-                          const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                           const isClickableAbsent = isCurrentPayrollMonthView &&
-                                                    dayObj.status === "Absent" &&
-                                                    !dayObj.leaveType &&
+                                                    (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
+                                                    (!dayObj.leaveType || dayObj.halfDayDuration) &&
+                                                    (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
                                                     !dayObj.isToday &&
                                                     dayObj.dateStr < todayKey;
                           const isClickableWeekend = isCurrentPayrollMonthView &&
@@ -1378,11 +1482,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         }}
                         title={
                           (() => {
-                            const today = new Date();
-                            const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                             const isClickableAbsent = isCurrentPayrollMonthView &&
-                                                      dayObj.status === "Absent" &&
-                                                      !dayObj.leaveType &&
+                                                      (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
+                                                      (!dayObj.leaveType || dayObj.halfDayDuration) &&
+                                                      (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
                                                       !dayObj.isToday &&
                                                       dayObj.dateStr < todayKey;
                             const isClickableWeekend = isCurrentPayrollMonthView &&
@@ -1396,11 +1499,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         }
                         className={
                           (() => {
-                            const today = new Date();
-                            const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                             const isClickableAbsent = isCurrentPayrollMonthView &&
-                                                      dayObj.status === "Absent" &&
-                                                      !dayObj.leaveType &&
+                                                      (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
+                                                      (!dayObj.leaveType || dayObj.halfDayDuration) &&
+                                                      (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
                                                       !dayObj.isToday &&
                                                       dayObj.dateStr < todayKey;
                             const isClickableWeekend = isCurrentPayrollMonthView &&
@@ -1416,11 +1518,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       >
                         <div className="flex flex-col items-center gap-1.5 justify-center">
                           {(() => {
-                            const today = new Date();
-                            const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                             const isClickableAbsent = isCurrentPayrollMonthView &&
-                                                      dayObj.status === "Absent" &&
-                                                      !dayObj.leaveType &&
+                                                      (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
+                                                      (!dayObj.leaveType || dayObj.halfDayDuration) &&
+                                                      (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
                                                       !dayObj.isToday &&
                                                       dayObj.dateStr < todayKey;
                             const isClickableWeekend = isCurrentPayrollMonthView &&
@@ -1434,7 +1535,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               } ${dayObj.status === "Present" ? "bg-emerald-100 text-emerald-800 border-emerald-300" :
                                 dayObj.status === "Absent" ? `bg-rose-100 text-rose-800 border-rose-300 ${isClickable ? "hover:border-rose-450 hover:bg-rose-150" : ""}` :
                                   dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
-                                    dayObj.status === "Leave" ? "bg-primary-500/15 text-primary-500 border-primary-500/30" :
+                                    dayObj.status === "Leave" ? `bg-primary-500/15 text-primary-500 border-primary-500/30 ${isClickable ? "hover:border-primary-450 hover:bg-primary-500/20" : ""}` :
                                       dayObj.status === "Holiday" ? `bg-blue-100 text-blue-800 border-blue-300 ${isClickable ? "hover:border-blue-450 hover:bg-blue-150" : ""}` :
                                         dayObj.status === "Check-In" ? "bg-teal-100 text-teal-800 border-teal-300" :
                                           `bg-neutral-200 text-neutral-700 border-neutral-300 ${isClickable ? "hover:border-neutral-400 hover:bg-neutral-250" : ""}`
@@ -1444,7 +1545,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               </span>
                             );
                           })()}
-                          {dayObj.isOneDayWages && dayObj.wagesStatus && (
+                          {dayObj.wagesStatus && (
                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold border ${
                               dayObj.wagesStatus === "Approved"
                                 ? "bg-amber-50 text-amber-700 border-amber-200"
@@ -1474,27 +1575,48 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       {resolvingCell && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-neutral-900/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full border border-neutral-200 shadow-2xl animate-scaleIn">
-            <h3 className="text-[16px] font-extrabold text-neutral-900 mb-2">Resolve Absent Day</h3>
+            <h3 className="text-[16px] font-extrabold text-neutral-900 mb-2">Resolve Exception Day</h3>
             <p className="text-xs text-neutral-500 mb-4">
-              Choose how to log your absence on <strong className="text-neutral-850 font-bold">{resolvingCell.dayNum} {MONTH_NAMES[selectedMonth - 1]}</strong>:
+              Choose how to log your time on <strong className="text-neutral-850 font-bold">{resolvingCell.dayNum} {MONTH_NAMES[selectedMonth - 1]}</strong>:
             </p>
 
-            {/* Reason Text Area */}
-            <div className="mb-4 text-left">
-              <label className="block text-xs font-bold text-neutral-700 mb-1">Reason for Absence</label>
-              <textarea
-                value={resolveReason}
-                onChange={(e) => setResolveReason(e.target.value)}
-                placeholder="Enter reason for resolving..."
-                className="w-full px-3 py-2 border border-neutral-300 rounded-xl text-xs focus:ring-1 focus:ring-primary-500 focus:outline-none placeholder-neutral-400 bg-neutral-50/50 font-semibold"
-                rows={3}
-              />
+            <div className="mb-4 text-left flex flex-col gap-3">
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  Duration <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={resolveDuration}
+                  onChange={(e) => setResolveDuration(e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-300 rounded-xl text-xs focus:ring-1 focus:ring-primary-500 focus:outline-none bg-neutral-50/50 font-semibold cursor-pointer"
+                >
+                  <option value="Full Day">Full Day</option>
+                  <option value="First Half">First Half</option>
+                  <option value="Second Half">Second Half</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  Reason for Exception <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  value={resolveReason}
+                  onChange={(e) => setResolveReason(e.target.value)}
+                  placeholder="Enter reason..."
+                  className="w-full px-3 py-2 border border-neutral-300 rounded-xl text-xs focus:ring-1 focus:ring-primary-500 focus:outline-none placeholder-neutral-400 bg-neutral-50/50 font-semibold"
+                  rows={2}
+                />
+              </div>
             </div>
 
              <div className="space-y-3">
               {/* LOP is always shown; paid leave buttons only shown if available > 0 */}
               {(() => {
-                const availableBalances = resolverBalances.filter((b: any) => (b.available ?? 0) > 0);
+                const activePolicyNames = leavePolicies.map((p: any) => p.leave_type.toLowerCase().trim());
+                const availableBalances = resolverBalances.filter((b: any) => {
+                  const lt = (b.leave_type || "").toLowerCase().trim();
+                  return activePolicyNames.includes(lt) && (b.available ?? 0) > 0;
+                });
                 const hasPaidLeave = !isBalancesLoading && availableBalances.length > 0;
                 return (
                   <>
@@ -1536,7 +1658,17 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               })()}
             </div>
 
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex justify-between items-center">
+              <button
+                onClick={() => {
+                  setResolvingCell(null);
+                  setRegularizingCell(resolvingCell);
+                }}
+                disabled={isResolving}
+                className="text-[11px] font-bold text-cyan-600 hover:text-cyan-700 underline decoration-cyan-500/30 hover:decoration-cyan-500/80 transition-all"
+              >
+                Forgot to check-in?
+              </button>
               <button
                 onClick={() => setResolvingCell(null)}
                 disabled={isResolving}
@@ -1627,6 +1759,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <TimePicker
                   value={regCheckIn}
                   onChange={(val) => setRegCheckIn(val)}
+                  disabled={!!(regularizingCell.checkIn && regularizingCell.checkIn !== "-" && regularizingCell.checkIn !== "—")}
                   className="w-full"
                 />
               </div>
@@ -1635,6 +1768,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <TimePicker
                   value={regCheckOut}
                   onChange={(val) => setRegCheckOut(val)}
+                  disabled={!!(regularizingCell.checkOut && regularizingCell.checkOut !== "-" && regularizingCell.checkOut !== "—")}
                   className="w-full"
                 />
               </div>

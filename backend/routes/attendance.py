@@ -787,7 +787,8 @@ def attendance_status(user_id):
 
     if not attendance:
         return jsonify({
-            "checked_in": False
+            "checked_in": False,
+            "checked_out": False
         })
 
     # User is checked in if they have check_in/card_check_in and haven't checked out on those channels
@@ -795,16 +796,16 @@ def attendance_status(user_id):
     card_active = (attendance.card_check_in is not None) and (attendance.card_check_out is None)
     is_checked_in = web_active or card_active
 
-    if not is_checked_in:
-        return jsonify({
-            "checked_in": False
-        })
+    has_checked_out = (attendance.check_in is not None and attendance.check_out is not None) or \
+                      (attendance.card_check_in is not None and attendance.card_check_out is not None)
 
     effective_check_in = attendance.check_in or attendance.card_check_in
 
     return jsonify({
-        "checked_in": True,
+        "checked_in": is_checked_in,
+        "checked_out": has_checked_out,
         "check_in": effective_check_in.isoformat() if effective_check_in else None,
+        "check_out": (attendance.check_out or attendance.card_check_out).isoformat() if (attendance.check_out or attendance.card_check_out) else None,
         "lunch_break": attendance.lunch_break,
         "tea_break": attendance.tea_break,
         "lunch_start": attendance.lunch_start.isoformat() if attendance.lunch_start else None,
@@ -814,7 +815,8 @@ def attendance_status(user_id):
         "total_break_minutes": attendance.total_break_minutes or 0,
         "is_paused": attendance.is_paused or False,
         "paused_start": attendance.paused_start.isoformat() if attendance.paused_start else None,
-        "paused_minutes": attendance.paused_minutes or 0
+        "paused_minutes": attendance.paused_minutes or 0,
+        "working_hours": attendance.total_hours or 0.0
     })
 
 
@@ -1352,8 +1354,7 @@ def attendance_history(user_id):
             ).first()
             wages_status = wages_req.status if wages_req else None
             is_weekend_or_holiday = is_date_week_off(current_date) or (current_date in holiday_dict)
-            is_one_day_wages = (wages_req is not None and wages_req.status == "Approved") or \
-                               (is_weekend_or_holiday and wages_status != "Rejected" and wages_status != "Pending" and record is not None and (record.check_in or record.card_check_in) and record.manager_status == "Approved" and record.status != "Leave")
+            is_one_day_wages = (wages_req is not None and wages_req.status == "Approved")
 
             # Determine the effective shift for this date:
             # Priority: approved ShiftRequest covering date > record.shift_timing > employee.shift_timing
@@ -3378,6 +3379,7 @@ def approve_attendance(employee_id):
                 payload = {
                     "id": emp.id,
                     "user_id": emp.user_id,
+                    "date": attendance.attendance_date.strftime("%Y-%m-%d"),
                     "attendance_status": attendance.status or "Present",
                     "check_in": attendance.check_in.strftime("%I:%M %p") if (attendance and attendance.check_in) else None,
                     "check_out": attendance.check_out.strftime("%I:%M %p") if (attendance and attendance.check_out) else None,
@@ -3503,7 +3505,7 @@ def submit_regularization(employee_id):
 
         try:
             from extensions import socketio
-            socketio.emit("attendance_update", {"user_id": target_user_id, "manager_status": "Clarification Provided"})
+            socketio.emit("attendance_update", {"user_id": target_user_id, "manager_status": "Clarification Provided", "date": attendance.attendance_date.strftime("%Y-%m-%d")})
         except Exception as socket_err:
             print("Failed to emit regularization socket:", str(socket_err))
 
@@ -3692,7 +3694,7 @@ def apply_leave_for_absent_day(employee_id):
 
         try:
             from extensions import socketio
-            socketio.emit("attendance_update", {"user_id": target_user_id, "manager_status": "Clarification Provided"})
+            socketio.emit("attendance_update", {"user_id": target_user_id, "manager_status": "Clarification Provided", "date": attendance.attendance_date.strftime("%Y-%m-%d")})
         except Exception as socket_err:
             print("Failed to emit leave socket:", str(socket_err))
 
@@ -3770,7 +3772,7 @@ def accept_lop(employee_id):
 
         try:
             from extensions import socketio
-            socketio.emit("attendance_update", {"user_id": target_user_id, "manager_status": "Clarification Provided"})
+            socketio.emit("attendance_update", {"user_id": target_user_id, "manager_status": "Clarification Provided", "date": attendance.attendance_date.strftime("%Y-%m-%d")})
         except Exception as socket_err:
             print("Failed to emit LOP socket:", str(socket_err))
 
@@ -3886,6 +3888,7 @@ def reject_attendance(employee_id):
                 payload = {
                     "id": emp.id,
                     "user_id": emp.user_id,
+                    "date": attendance.attendance_date.strftime("%Y-%m-%d"),
                     "attendance_status": attendance.status or "Absent",
                     "check_in": attendance.check_in.strftime("%I:%M %p") if (attendance and attendance.check_in) else None,
                     "check_out": attendance.check_out.strftime("%I:%M %p") if (attendance and attendance.check_out) else None,
@@ -3984,7 +3987,7 @@ def reply_clarification(employee_id):
 
         try:
             from extensions import socketio
-            socketio.emit("attendance_update", {"user_id": emp.user_id, "manager_status": "Clarification Provided"})
+            socketio.emit("attendance_update", {"user_id": emp.user_id, "manager_status": "Clarification Provided", "date": att.attendance_date.strftime("%Y-%m-%d")})
         except Exception as socket_err:
             print("Failed to emit reply socket:", str(socket_err))
 
@@ -4515,6 +4518,14 @@ def update_attendance_record():
             paused_minutes = attendance.paused_minutes or 0
             diff_seconds -= (break_minutes + gap_minutes + paused_minutes) * 60
             attendance.total_hours = max(0.0, int((diff_seconds / 3600.0) * 100) / 100)
+            
+            # Auto-calculate status based on hours
+            if attendance.total_hours >= 7.0:
+                attendance.status = "Present"
+            elif attendance.total_hours >= 4.0:
+                attendance.status = "Half Day"
+            else:
+                attendance.status = "Absent"
         else:
             attendance.total_hours = 0.0
 
@@ -4848,6 +4859,17 @@ def get_pending_cycle_attendance(manager_user_id):
             emp = team_by_user_id.get(rec.user_id)
             if not emp:
                 continue
+
+            from models.shift_request import ShiftRequest
+            wages_req = ShiftRequest.query.filter(
+                ShiftRequest.employee_id.in_([emp.id, emp.employee_id]),
+                ShiftRequest.request_type == "One Day Wages",
+                ShiftRequest.from_date <= rec.attendance_date,
+                ShiftRequest.to_date >= rec.attendance_date
+            ).first()
+            wages_status = wages_req.status if wages_req else None
+            is_one_day_wages_final = (wages_req is not None)
+
             results.append({
                 "id":                   rec.id,
                 "db_employee_id":       emp.id,
@@ -4870,6 +4892,8 @@ def get_pending_cycle_attendance(manager_user_id):
                 "total_break_minutes":  rec.total_break_minutes or 0,
                 "clarification_history": rec.clarification_history or [],
                 "reporting_manager":    manager_full_name,
+                "is_one_day_wages":     is_one_day_wages_final,
+                "wages_status":         wages_status,
             })
 
         return jsonify({

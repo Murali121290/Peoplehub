@@ -204,7 +204,7 @@ const DashboardHeaderActions: React.FC<DashboardHeaderActionsProps> = ({
           </>
         ) : (
           <>
-            <span className="text-[13px] font-medium pl-1">{isShiftChanged ? "Shift Change" : "Check In"}</span>
+            <span className="text-[13px] font-medium pl-1">Check In</span>
             <div className="w-[1px] h-4 bg-gray-200"></div>
             <ChevronDown className="w-4 h-4 text-gray-400" />
           </>

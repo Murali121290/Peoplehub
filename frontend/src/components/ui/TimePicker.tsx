@@ -8,6 +8,7 @@ interface TimePickerProps {
   className?: string;
   name?: string;
   error?: boolean;
+  disabled?: boolean;
 }
 
 export const TimePicker: React.FC<TimePickerProps> = ({
@@ -18,6 +19,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
   className = "",
   name,
   error = false,
+  disabled = false,
 }) => {
   const hourInputRef = useRef<HTMLInputElement>(null);
   const minuteInputRef = useRef<HTMLInputElement>(null);
@@ -193,8 +195,12 @@ export const TimePicker: React.FC<TimePickerProps> = ({
 
   return (
     <div 
-      className={`w-full flex items-center h-[42px] border rounded-xl px-3 bg-white focus-within:ring-2 focus-within:ring-primary-500/20 focus-within:border-primary-500 transition-all ${
+      className={`w-full flex items-center h-[42px] border rounded-xl px-3 transition-all ${
         error ? "border-red-400" : "border-neutral-200"
+      } ${
+        disabled 
+          ? "bg-neutral-100/60 cursor-not-allowed select-none opacity-80" 
+          : "bg-white focus-within:ring-2 focus-within:ring-primary-500/20 focus-within:border-primary-500"
       } ${className}`}
     >
       <input type="hidden" name={name} value={value} required={required} />
@@ -206,7 +212,8 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         onChange={handleHourChange}
         onBlur={handleHourBlur}
         onKeyDown={handleHourKeyDown}
-        className="w-8 text-center font-semibold text-neutral-700 bg-transparent border-none p-0 focus:outline-none focus:ring-0 text-sm placeholder-neutral-300"
+        disabled={disabled}
+        className="w-8 text-center font-semibold text-neutral-700 bg-transparent border-none p-0 focus:outline-none focus:ring-0 text-sm placeholder-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-400"
       />
       <span className="text-neutral-400 font-bold select-none px-0.5">:</span>
       <input
@@ -216,13 +223,15 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         value={minuteVal}
         onChange={handleMinuteChange}
         onBlur={handleMinuteBlur}
-        className="w-8 text-center font-semibold text-neutral-700 bg-transparent border-none p-0 focus:outline-none focus:ring-0 text-sm placeholder-neutral-300"
+        disabled={disabled}
+        className="w-8 text-center font-semibold text-neutral-700 bg-transparent border-none p-0 focus:outline-none focus:ring-0 text-sm placeholder-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-400"
       />
       <div className="w-[1px] h-5 bg-neutral-200 mx-2" />
       <select
         value={periodVal}
         onChange={(e) => handlePeriodChange(e.target.value as "AM" | "PM")}
-        className="text-xs font-bold text-neutral-500 bg-transparent border-none focus:outline-none p-0 focus:ring-0 cursor-pointer uppercase select-none mr-1"
+        disabled={disabled}
+        className="text-xs font-bold text-neutral-500 bg-transparent border-none focus:outline-none p-0 focus:ring-0 cursor-pointer uppercase select-none mr-1 disabled:cursor-not-allowed disabled:text-neutral-400"
       >
         <option value="AM">AM</option>
         <option value="PM">PM</option>

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { API_URL } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
 import { CheckIcon, XMarkIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { ConfirmDialog } from "../../components/ui/Modal";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
@@ -43,6 +44,12 @@ const getActionedAtText = (r: any) => {
   return "Pending";
 };
 
+const getKolkataTodayString = () => {
+  const options = { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" } as const;
+  const formatter = new Intl.DateTimeFormat("en-CA", options);
+  return formatter.format(new Date());
+};
+
 const PermissionApprovalPage: React.FC = () => {
   const { user, token } = useAuthStore();
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
@@ -51,6 +58,10 @@ const PermissionApprovalPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
+
+  // Permission Cancellation Confirmation State
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [cancelTargetId, setCancelTargetId] = useState<number | null>(null);
 
   const toggleReason = (id: number) => {
     setExpandedReasons(prev => ({
@@ -184,6 +195,11 @@ const PermissionApprovalPage: React.FC = () => {
     } finally {
       setProcessingId(null);
     }
+  };
+
+  const handleCancelClick = (id: number) => {
+    setCancelTargetId(id);
+    setIsConfirmOpen(true);
   };
 
   const getStatusColor = (status: string) => {
@@ -369,6 +385,19 @@ const PermissionApprovalPage: React.FC = () => {
                                   Reject
                                 </Button>
                               </div>
+                            ) : (leave.status === "Approved" && (!leave.permission_date || leave.permission_date >= getKolkataTodayString())) ? (
+                              <div className="flex items-center justify-center gap-2">
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  onClick={() => handleCancelClick(leave.id)}
+                                  disabled={processingId === leave.id}
+                                  className="!py-1.5 !px-3 !text-xs shadow-sm"
+                                >
+                                  <XMarkIcon className="w-3.5 h-3.5 mr-1" />
+                                  Cancel
+                                </Button>
+                              </div>
                             ) : (
                               <span className="text-[11px] font-medium text-neutral-400">No actions required</span>
                             )}
@@ -399,6 +428,26 @@ const PermissionApprovalPage: React.FC = () => {
           </table>
         </div>
       </Card>
+      {/* Permission Cancellation Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        title="Confirm Cancellation"
+        message="Are you sure you want to cancel this approved permission request?"
+        onConfirm={async () => {
+          setIsConfirmOpen(false);
+          if (cancelTargetId !== null) {
+            await handleCancel(cancelTargetId);
+          }
+          setCancelTargetId(null);
+        }}
+        onCancel={() => {
+          setIsConfirmOpen(false);
+          setCancelTargetId(null);
+        }}
+        variant="danger"
+        confirmLabel="Yes, Cancel"
+        cancelLabel="No, Keep"
+      />
     </div>
   );
 };

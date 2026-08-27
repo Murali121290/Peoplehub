@@ -634,7 +634,27 @@ if (isHalfDayLeave(leave.total_days)) return false;
     } finally {
       setIsActionLoading(false);
     }
-  };  const proceedToCheckInModal = () => {
+  };  const getAvailableShifts = () => {
+    const shifts = [
+      { name: "General Shift", time: "09:00 AM - 06:00 PM" },
+      { name: "First Shift", time: "07:00 AM - 04:00 PM" },
+      { name: "Second Shift", time: "12:00 PM - 09:00 PM" },
+    ];
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+
+    const isPast9AM = currentHour > 9 || (currentHour === 9 && currentMinute >= 0);
+    const isPast12PM = currentHour >= 12;
+
+    return shifts.filter((s) => {
+      if (s.name === "First Shift" && isPast9AM) return false;
+      if (s.name === "General Shift" && isPast12PM) return false;
+      return true;
+    });
+  };
+
+  const proceedToCheckInModal = () => {
     const isCurrentlyWFH = todayActiveWorkMode === "WFH";
     const isCurrentlyHybrid = todayActiveWorkMode === "Hybrid";
 
@@ -644,7 +664,11 @@ if (isHalfDayLeave(leave.total_days)) return false;
       setSelectedWorkModeOpt(isCurrentlyWFH ? "WFH" : "Office");
     }
 
-    setSelectedCheckInShift(todayActiveShift || "General Shift");
+    const available = getAvailableShifts();
+    const preferred = todayActiveShift || "General Shift";
+    const hasPreferred = available.some(s => s.name === preferred);
+    setSelectedCheckInShift(hasPreferred ? preferred : (available[0]?.name || "General Shift"));
+
     setShowCheckInShiftModal(true);
   };
 
@@ -1521,6 +1545,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
                 const secs = workingSeconds % 60;
                 setTimer(`${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`);
                 clearTodayAttendanceSummary(userId);
+              } else if (data.checked_out) {
+                setIsCheckedIn(false);
+                setHasCheckedOutToday(true);
+                setTotalLunchSeconds((data.lunch_minutes || 0) * 60);
+                setTotalTeaSeconds((data.tea_minutes || 0) * 60);
+                const totalSeconds = Math.floor((data.working_hours || 0) * 3600);
+                setTimer(formatSeconds(totalSeconds));
               } else {
                 setIsCheckedIn(false);
                 const summary = loadTodayAttendanceSummary(userId);
@@ -1540,17 +1571,16 @@ if (isHalfDayLeave(leave.total_days)) return false;
             .then((res) => res.json())
             .then((data) => {
               setAttendanceData(data);
-              const today = new Date().toISOString().split("T")[0];
+              const today = getTodayKey();
               const todayRecord = data.find(
                 (record: any) => record.date === today
               );
               if (
                 todayRecord &&
-                todayRecord.checkOut !== "-" &&
-                todayRecord.workingHours
+                todayRecord.checkOut !== "-"
               ) {
                 const totalSeconds = Math.floor(
-                  Number(todayRecord.workingHours) * 3600
+                  Number(todayRecord.workingHours || 0) * 3600
                 );
                 setHasCheckedOutToday(true);
                 setTimer(formatSeconds(totalSeconds));
@@ -1594,6 +1624,18 @@ if (isHalfDayLeave(leave.total_days)) return false;
   useEffect(() => {
     socket.on("attendance_update", (payload: any) => {
       if (Number(payload.user_id) === Number(user?.id)) {
+        const todayKey = getTodayKey();
+        const payloadDate = payload.date || todayKey;
+        if (payloadDate !== todayKey) {
+          const userId = localStorage.getItem("user_id");
+          if (userId) {
+            fetch(`${BASE_URL}/attendance/history/${userId}`)
+              .then((res) => res.json())
+              .then((data) => setAttendanceData(data));
+          }
+          return;
+        }
+
         if ('checked_in' in payload) setIsCheckedIn(payload.checked_in);
         if ('lunch_break' in payload) setIsLunchBreak(payload.lunch_break);
         if ('tea_break' in payload) setIsTeaBreak(payload.tea_break);
@@ -1639,7 +1681,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
         if (userId) {
           if (!payload.checked_in && payload.check_out) {
             const summary = {
-              date: new Date().toISOString().split("T")[0],
+              date: getTodayKey(),
               timer: formatSeconds(Math.floor((payload.working_hours || 0) * 3600)),
               totalLunchSeconds: (payload.lunch_minutes || 0) * 60,
               totalTeaSeconds: (payload.tea_minutes || 0) * 60,
@@ -1647,6 +1689,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
             saveTodayAttendanceSummary(userId, summary);
             setTodayAttendanceSummary(summary);
             setTimer(summary.timer);
+            setHasCheckedOutToday(true);
           }
           fetch(`${BASE_URL}/attendance/history/${userId}`)
             .then((res) => res.json())
@@ -2096,15 +2139,10 @@ if (isHalfDayLeave(leave.total_days)) return false;
                       </div>
                     )}
 
-                    {/* Select Shift Timing */}
                     <div className="flex flex-col gap-3 pt-2 border-t border-neutral-100">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
                       <div className="grid grid-cols-1 gap-2">
-                        {[
-                          { name: "General Shift", time: "09:00 AM - 06:00 PM" },
-                          { name: "First Shift", time: "07:00 AM - 04:00 PM" },
-                          { name: "Second Shift", time: "12:00 PM - 09:00 PM" },
-                        ].map((opt) => {
+                        {getAvailableShifts().map((opt) => {
                           const isSelected = selectedCheckInShift === opt.name;
                           return (
                             <div
@@ -2142,11 +2180,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
                   <div className="flex flex-col gap-3">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
                     <div className="grid grid-cols-1 gap-2">
-                      {[
-                        { name: "General Shift", time: "09:00 AM - 06:00 PM" },
-                        { name: "First Shift", time: "07:00 AM - 04:00 PM" },
-                        { name: "Second Shift", time: "12:00 PM - 09:00 PM" },
-                      ].map((opt) => {
+                      {getAvailableShifts().map((opt) => {
                         const isSelected = selectedCheckInShift === opt.name;
                         return (
                           <div

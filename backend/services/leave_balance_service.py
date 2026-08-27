@@ -73,6 +73,7 @@ def update_leave_balance(employee):
     if cl_sl_balance:
         cl_sl_balance.available = (cl_sl_balance.available or 0.0) + 1.0
 
+
     # Mark this month as credited
     employee.last_leave_reset_month = str(current_month)
     employee.last_leave_reset_year  = current_year

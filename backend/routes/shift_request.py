@@ -361,6 +361,43 @@ def get_shift_approvals(manager_name):
 ])
 
 
+# Helper to clean up attendance on rejection or cancellation of One Day Wages
+def cleanup_attendance_for_rejected_or_cancelled_wages(shift_request):
+    if shift_request.request_type != "One Day Wages":
+        return
+
+    employee = Employee.query.get(shift_request.employee_id)
+    resolved_user_id = employee.user_id if employee else shift_request.employee_id
+    
+    target_date = shift_request.from_date or shift_request.shift_date
+    if not target_date:
+        return
+        
+    attendance = Attendance.query.filter_by(
+        user_id=resolved_user_id,
+        attendance_date=target_date
+    ).first()
+    
+    if attendance:
+        try:
+            from datetime import time, datetime
+            from_hour, from_minute = map(int, (shift_request.current_shift or "09:00").split(":"))
+            to_hour, to_minute = map(int, (shift_request.requested_shift or "18:00").split(":"))
+            default_in = datetime.combine(target_date, time(from_hour, from_minute))
+            default_out = datetime.combine(target_date, time(to_hour, to_minute))
+        except Exception:
+            default_in = None
+            default_out = None
+            
+        is_real_check_in = (attendance.check_in is not None and attendance.check_in != default_in) or (attendance.card_check_in is not None)
+        
+        if not is_real_check_in:
+            db.session.delete(attendance)
+        else:
+            attendance.manager_status = None
+            attendance.status = None
+
+
 # ==========================================
 # APPROVE SHIFT REQUEST
 # ==========================================
@@ -565,6 +602,7 @@ def reject_shift(id):
         shift.status = "Rejected"
         shift.rejected_by = shift.reporting_manager or "Manager"
         shift.rejected_at = datetime.utcnow()
+        cleanup_attendance_for_rejected_or_cancelled_wages(shift)
 
         # Delete any pending "New Shift Request" notifications for this shift
         try:
@@ -661,6 +699,7 @@ def cancel_request(id):
 
 
         shift.status = "Cancelled"
+        cleanup_attendance_for_rejected_or_cancelled_wages(shift)
         db.session.commit()
 
         try:

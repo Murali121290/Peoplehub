@@ -648,11 +648,6 @@ def delete_payroll_record(record_id):
 # PAYSLIP GENERATION ROUTE (USES DATABASE RECORD)
 # =========================================================================
 
-@payroll_bp.route(
-    "/payslip/<int:employee_id>",
-    methods=["GET"]
-)
-@auth_required
 def generate_payslip_pdf_helper(employee, month, year):
     from reportlab.platypus import (
         SimpleDocTemplate,

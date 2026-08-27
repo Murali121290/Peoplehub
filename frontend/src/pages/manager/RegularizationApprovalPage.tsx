@@ -3,11 +3,18 @@ import { API_URL } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
 import { CheckIcon, XMarkIcon, CalendarDaysIcon } from "@heroicons/react/24/outline";
 import { Button } from "../../components/ui/Button";
+import { ConfirmDialog } from "../../components/ui/Modal";
 import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
 import { BookLoader } from "../../components/ui/Spinner";
 
 const BASE_URL = `${API_URL}/api`;
+
+const getKolkataTodayString = () => {
+  const options = { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" } as const;
+  const formatter = new Intl.DateTimeFormat("en-CA", options);
+  return formatter.format(new Date());
+};
 
 const RegularizationApprovalPage: React.FC = () => {
   const { user, token } = useAuthStore();
@@ -16,6 +23,10 @@ const RegularizationApprovalPage: React.FC = () => {
   const [processingId, setProcessingId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
+
+  // Regularization Cancellation Confirmation State
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<any | null>(null);
 
   const toggleReason = (id: number) => {
     setExpandedReasons((prev) => ({
@@ -89,6 +100,34 @@ const RegularizationApprovalPage: React.FC = () => {
     } finally {
       setProcessingId(null);
     }
+  };
+
+  const handleCancel = async (req: any) => {
+    try {
+      setProcessingId(req.id);
+      const res = await fetch(`${BASE_URL}/attendance/reject/${req.employee_id}?date=${req.date}`, {
+        method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        toast.success(`Time adjustment cancelled for ${req.employee_name}`);
+        fetchRequests();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "Failed to cancel approval");
+      }
+    } catch (error) {
+      toast.error("Error cancelling approval");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleCancelClick = (req: any) => {
+    setCancelTarget(req);
+    setIsConfirmOpen(true);
   };
 
   const getStatusText = (managerStatus: string | null | undefined) => {
@@ -273,6 +312,19 @@ const RegularizationApprovalPage: React.FC = () => {
                                 Reject
                               </Button>
                             </div>
+                          ) : (resolvedStatus === "Approved" && (!req.date || req.date >= getKolkataTodayString())) ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => handleCancelClick(req)}
+                                disabled={processingId === req.id}
+                                className="!py-1.5 !px-3 !text-xs shadow-sm"
+                              >
+                                <XMarkIcon className="w-3.5 h-3.5 mr-1" />
+                                Cancel
+                              </Button>
+                            </div>
                           ) : (
                             <span className="text-[11px] font-medium text-neutral-400">No actions required</span>
                           )}
@@ -303,6 +355,26 @@ const RegularizationApprovalPage: React.FC = () => {
           </table>
         </div>
       </Card>
+      {/* Regularization Cancellation Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        title="Confirm Cancellation"
+        message={`Are you sure you want to cancel this approved regularization request for ${cancelTarget?.employee_name || "this employee"}?`}
+        onConfirm={async () => {
+          setIsConfirmOpen(false);
+          if (cancelTarget !== null) {
+            await handleCancel(cancelTarget);
+          }
+          setCancelTarget(null);
+        }}
+        onCancel={() => {
+          setIsConfirmOpen(false);
+          setCancelTarget(null);
+        }}
+        variant="danger"
+        confirmLabel="Yes, Cancel"
+        cancelLabel="No, Keep"
+      />
     </div>
   );
 };

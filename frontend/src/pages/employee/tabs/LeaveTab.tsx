@@ -112,7 +112,7 @@ const getResolvedStatus = (req: any) => {
   
   if (isCompleted) {
     if (req.status === "Pending") return "Out of Date";
-    if (req.status === "Approved") return "Completed";
+    if (req.status === "Approved") return "Approved";
   }
   
   const checkIsInProgress = () => {
@@ -692,25 +692,26 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       const type = (leaveForm.leaveType || "").trim().toLowerCase();
       const requested = leaveForm.totalDays || 0;
 
-      const matchedPolicy = leavePolicies.find(p => p.leave_type.toLowerCase() === type);
-      const yearlyMax = matchedPolicy ? matchedPolicy.yearly_limit : (type === "privilege leave" || type === "earned leave" ? 15 : 6);
-      const available = getAvailableBalance(leaveForm.leaveType, yearlyMax) - getPendingDays(leaveForm.leaveType);
-      const displayType = matchedPolicy ? matchedPolicy.leave_type : leaveForm.leaveType;
+      if (type !== "loss of pay") {
+        const matchedPolicy = leavePolicies.find(p => p.leave_type.toLowerCase() === type);
+        const yearlyMax = matchedPolicy ? matchedPolicy.yearly_limit : (type === "privilege leave" || type === "earned leave" ? 15 : 6);
+        const available = getAvailableBalance(leaveForm.leaveType, yearlyMax) - getPendingDays(leaveForm.leaveType);
 
-      if (type) {
-        const activeAvailable = Math.max(0, available);
-        if (requested > activeAvailable || available <= 0) {
-          const lop = requested - activeAvailable;
-          setValidationError({
-            type: "confirm",
-            title: available <= 0 ? "Leave Limit Reached" : "Insufficient Leave Balance",
-            message: `Requested: ${requested} Days, Available: ${activeAvailable} Days. So ${lop} day${lop > 1 ? "s are" : " is"} LOP. Are you sure you want to apply for leave?`,
-            onConfirm: () => {
-              setValidationError(null);
-              submitPayload();
-            }
-          });
-          return;
+        if (type) {
+          const activeAvailable = Math.max(0, available);
+          if (requested > activeAvailable || available <= 0) {
+            const lop = requested - activeAvailable;
+            setValidationError({
+              type: "confirm",
+              title: available <= 0 ? "Leave Limit Reached" : "Insufficient Leave Balance",
+              message: `Requested: ${requested} Days, Available: ${activeAvailable} Days. So ${lop} day${lop > 1 ? "s are" : " is"} LOP. Are you sure you want to apply for leave?`,
+              onConfirm: () => {
+                setValidationError(null);
+                submitPayload();
+              }
+            });
+            return;
+          }
         }
       }
     } else if (leaveForm.requestType === "Permission") {
@@ -745,11 +746,11 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         return;
       }
 
-      if (requestedMinutes < 30) {
+      if (requestedMinutes !== 60 && requestedMinutes !== 120) {
         setValidationError({
           type: "insufficient",
-          title: "Minimum Duration Required",
-          message: "Permission duration must be at least 30 minutes."
+          title: "Invalid Permission Duration",
+          message: "Permission duration must be exactly 1 hour or 2 hours."
         });
         return;
       }
@@ -887,7 +888,16 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             const totalAvailable = dynamicCards.reduce((sum, c) => sum + c.value, 0);
             const totalLimit = dynamicCards.reduce((sum, c) => sum + c.total, 0);
             const totalUsed = dynamicCards.reduce((sum, c) => sum + c.used, 0);
-            const totalLop = dynamicCards.reduce((sum, c) => sum + c.lopForPol, 0);
+            const nativeLopDays = myRequests
+              .filter((req: any) => {
+                if (req.request_type !== "Leave") return false;
+                if (req.status === "Rejected" || req.status === "Cancelled") return false;
+                const reqLt = (req.leave_type || "").toLowerCase();
+                return reqLt === "loss of pay" || reqLt === "lop";
+              })
+              .reduce((sum: number, req: any) => sum + (Number(req.total_days) || 0), 0);
+
+            const totalLop = dynamicCards.reduce((sum, c) => sum + c.lopForPol, 0) + nativeLopDays;
 
             const allCards = [
               ...dynamicCards,
@@ -1503,9 +1513,16 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer font-medium"
                   >
                     <option value="">Select Leave Type</option>
-                    {activeLeavePolicies.map(pol => (
-                      <option key={pol.id} value={pol.leave_type}>{pol.leave_type}</option>
-                    ))}
+                    {activeLeavePolicies.map(pol => {
+                      const avail = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+                      if (avail > 0) {
+                        return (
+                          <option key={pol.id} value={pol.leave_type}>{pol.leave_type}</option>
+                        );
+                      }
+                      return null;
+                    })}
+                    <option value="Loss of Pay">Loss of Pay (LOP)</option>
                   </select>
                 </div>
               )}
@@ -1652,7 +1669,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   className="w-full px-4 py-2.5 border border-neutral-200 rounded-xl bg-neutral-100 text-sm text-neutral-500 font-medium"
                 />
               </div>
-
+{/* 
               {leaveForm.requestType === "Leave" && (
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Work Handover Partner</label>
@@ -1673,7 +1690,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     )) : null}
                   </select>
                 </div>
-              )}
+              )} */}
             </div>
 
             {/* Reason selection */}
@@ -1922,7 +1939,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     </h4>
                     <ul className="text-[11px] text-neutral-600 space-y-2.5 font-semibold leading-relaxed">
                       <li>• Apply at least 2 days in advance for planned leaves.</li>
-                      <li>• Ensure work handover partner is selected.</li>
+                      {/* <li>• Ensure work handover partner is selected.</li> */}
                       <li>• Keep emergency contact up to date.</li>
                     </ul>
                   </div>
