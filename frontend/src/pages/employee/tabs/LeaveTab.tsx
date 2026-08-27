@@ -745,11 +745,11 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         return;
       }
 
-      if (requestedMinutes < 30) {
+      if (requestedMinutes !== 60 && requestedMinutes !== 120) {
         setValidationError({
           type: "insufficient",
-          title: "Minimum Duration Required",
-          message: "Permission duration must be at least 30 minutes."
+          title: "Invalid Permission Duration",
+          message: "Permission duration must be exactly 1 hour or 2 hours."
         });
         return;
       }
@@ -1503,9 +1503,13 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 bg-white text-sm text-neutral-600 placeholder-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 transition-all cursor-pointer font-medium"
                   >
                     <option value="">Select Leave Type</option>
-                    {activeLeavePolicies.map(pol => (
-                      <option key={pol.id} value={pol.leave_type}>{pol.leave_type}</option>
-                    ))}
+                    {activeLeavePolicies.map(pol => {
+                      const avail = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+                      const displayLabel = avail <= 0 ? `${pol.leave_type} (Loss of Pay)` : pol.leave_type;
+                      return (
+                        <option key={pol.id} value={pol.leave_type}>{displayLabel}</option>
+                      );
+                    })}
                   </select>
                 </div>
               )}
@@ -1652,7 +1656,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   className="w-full px-4 py-2.5 border border-neutral-200 rounded-xl bg-neutral-100 text-sm text-neutral-500 font-medium"
                 />
               </div>
-
+{/* 
               {leaveForm.requestType === "Leave" && (
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Work Handover Partner</label>
@@ -1673,7 +1677,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     )) : null}
                   </select>
                 </div>
-              )}
+              )} */}
             </div>
 
             {/* Reason selection */}
@@ -1922,7 +1926,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                     </h4>
                     <ul className="text-[11px] text-neutral-600 space-y-2.5 font-semibold leading-relaxed">
                       <li>• Apply at least 2 days in advance for planned leaves.</li>
-                      <li>• Ensure work handover partner is selected.</li>
+                      {/* <li>• Ensure work handover partner is selected.</li> */}
                       <li>• Keep emergency contact up to date.</li>
                     </ul>
                   </div>

@@ -163,7 +163,11 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
     if (!selectedEmpId) return;
     setIsSavingBalances(true);
     try {
-      const payload = balances.reduce((acc, curr) => {
+      const activePolicyNames = policies.map((p) => (p.leave_type || "").toLowerCase().trim());
+      const filteredBalances = balances.filter((b) =>
+        activePolicyNames.includes((b.leave_type || "").toLowerCase().trim())
+      );
+      const payload = filteredBalances.reduce((acc, curr) => {
         acc[curr.leave_type] = curr.available;
         return acc;
       }, {} as Record<string, number>);
@@ -342,34 +346,45 @@ const SettingsTab: React.FC<SettingsTabProps> = ({ employees = [] }) => {
                 <p className="text-xs text-neutral-400 font-medium">No leave categories active for this employee.</p>
               )}
 
-              {!isBalancesLoading && balances.length > 0 && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {balances.map((b) => (
-                      <div key={b.leave_type} className="flex flex-col gap-1.5">
-                        <label className="text-xs font-bold text-neutral-600 uppercase tracking-wider">{b.leave_type}</label>
-                        <div className="flex items-center bg-white border border-neutral-200 rounded-lg px-3 py-1 shadow-sm">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={b.available}
-                            onChange={(e) => handleEmployeeBalanceChange(b.leave_type, parseFloat(e.target.value) || 0)}
-                            className="w-full border-none focus:ring-0 text-sm font-bold text-neutral-800 py-1.5"
-                          />
-                          <span className="text-xs text-neutral-450 font-bold shrink-0">Days</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+              {!isBalancesLoading && balances.length > 0 && (() => {
+                const activePolicyNames = policies.map((p) => (p.leave_type || "").toLowerCase().trim());
+                const filteredBalances = balances.filter((b) =>
+                  activePolicyNames.includes((b.leave_type || "").toLowerCase().trim())
+                );
 
-                  <div className="pt-2">
-                    <Button onClick={handleSaveEmployeeBalances} disabled={isSavingBalances}>
-                      {isSavingBalances ? "Saving..." : "Save Employee Balances"}
-                    </Button>
+                if (filteredBalances.length === 0) {
+                  return <p className="text-xs text-neutral-400 font-medium">No active leave category balances for this employee.</p>;
+                }
+
+                return (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {filteredBalances.map((b) => (
+                        <div key={b.leave_type} className="flex flex-col gap-1.5">
+                          <label className="text-xs font-bold text-neutral-600 uppercase tracking-wider">{b.leave_type}</label>
+                          <div className="flex items-center bg-white border border-neutral-200 rounded-lg px-3 py-1 shadow-sm">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={b.available}
+                              onChange={(e) => handleEmployeeBalanceChange(b.leave_type, parseFloat(e.target.value) || 0)}
+                              className="w-full border-none focus:ring-0 text-sm font-bold text-neutral-800 py-1.5"
+                            />
+                            <span className="text-xs text-neutral-450 font-bold shrink-0">Days</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="pt-2">
+                      <Button onClick={handleSaveEmployeeBalances} disabled={isSavingBalances}>
+                        {isSavingBalances ? "Saving..." : "Save Employee Balances"}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
         </div>

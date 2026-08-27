@@ -103,6 +103,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   };
   const [selectedMonth, setSelectedMonth] = useState<number>(getInitialPayrollMonth());
   const [selectedYear, setSelectedYear] = useState<number>(getInitialPayrollYear());
+  const currentPayrollMonth = getInitialPayrollMonth();
+  const currentPayrollYear = getInitialPayrollYear();
+  const isCurrentPayrollMonthView = selectedMonth === currentPayrollMonth && selectedYear === currentPayrollYear;
   const [viewMode, setViewMode] = useState<"calendar" | "grid">("grid");
   const [statusFilter, setStatusFilter] = useState<string>("All");
 
@@ -116,6 +119,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const [resolvingCell, setResolvingCell] = useState<DayDetails | null>(null);
   const [isResolving, setIsResolving] = useState<boolean>(false);
   const [resolverBalances, setResolverBalances] = useState<any[]>([]);
+  const [leavePolicies, setLeavePolicies] = useState<any[]>([]);
   const [isBalancesLoading, setIsBalancesLoading] = useState<boolean>(false);
   const [resolveReason, setResolveReason] = useState<string>("");
 
@@ -254,17 +258,26 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     };
   }, [selectedMonth, selectedYear, userId]);
 
-  // Fetch balances when cell is selected for resolution
   useEffect(() => {
     const targetEmpId = currentEmployee?.id || employeeId;
     if (!resolvingCell || !targetEmpId) return;
     const fetchBalances = async () => {
       setIsBalancesLoading(true);
       try {
-        const res = await apiService.get(`/leaves/balances/${targetEmpId}`);
-        setResolverBalances(res.data);
+        const [resBal, resPol] = await Promise.all([
+          apiService.get(`/leaves/balances/${targetEmpId}`),
+          apiService.get("/leaves/policies")
+        ]);
+        setResolverBalances(resBal.data);
+
+        const userGender = (currentEmployee?.gender || "").trim().toLowerCase();
+        const activePols = resPol.data.filter((p: any) => {
+          const polGender = (p.applicable_gender || "All").trim().toLowerCase();
+          return polGender === "all" || polGender === userGender;
+        });
+        setLeavePolicies(activePols);
       } catch (err) {
-        console.error("Failed to load balances", err);
+        console.error("Failed to load balances or policies", err);
       } finally {
         setIsBalancesLoading(false);
       }
@@ -412,8 +425,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
 
   const handleCellClick = (cell: DayDetails) => {
-    const today = new Date();
-    const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
     if (
       isCurrentPayrollMonthView &&
       cell.status === "Absent" &&
@@ -612,7 +623,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
     const wagesStatus = attRec?.wages_status || null;
     const hasWorkedAndApproved = (checkIn !== "-" && checkIn !== "") && (managerStatus === "Approved") && (attRec?.status !== "Leave");
-    const isOneDayWages = wagesStatus === "Approved" || ((isWeeklyOff || isCompanyHoliday) && wagesStatus !== "Rejected" && wagesStatus !== "Pending" && hasWorkedAndApproved);
+    const isOneDayWages = wagesStatus === "Approved";
 
     const isCheckedInActive = isToday && (
       (checkIn !== "-" && checkIn !== "" && (checkOut === "-" || checkOut === "")) ||
@@ -957,8 +968,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     break;
                 }
 
-                const today = new Date();
-                const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                 const isClickableAbsent = isCurrentPayrollMonthView &&
                                           cell.status === "Absent" &&
                                           !cell.leaveType &&
@@ -1010,7 +1019,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("teal") ? "bg-teal-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
                           <span className="truncate">
                             {cell.halfDayDuration ? cell.leaveType || "Leave" : cell.badgeLabel || cell.status}
-                            {cell.isOneDayWages && cell.wagesStatus && " (Wages)"}
+                            {cell.wagesStatus && " (Wages)"}
                           </span>
                         </div>
                       </div>
@@ -1032,12 +1041,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           </div>
                           <span className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg ${badgeClass}`}>
                             {cell.badgeLabel || cell.status}
-                            {cell.isOneDayWages && cell.wagesStatus && " (Wages)"}
+                            {cell.wagesStatus && " (Wages)"}
                           </span>
                         </div>
 
                         {/* Details Breakdown */}
-                        {cell.isOneDayWages && cell.wagesStatus && (
+                        {cell.wagesStatus && (
                           <div className="space-y-1 bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-amber-700 mb-3">
                             <span className="text-[9px] uppercase font-bold text-amber-500 block">One Day Wages</span>
                             <p className="font-extrabold text-[12px]">
@@ -1314,34 +1323,47 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       <td className="p-3 text-neutral-500 border-r border-neutral-300 font-bold">{dayObj.dayName}</td>
                       
                       {/* Web Site Entry */}
-                      <td
-                        onClick={() => {
-                          const cellDate = new Date(dayObj.dateStr + "T00:00:00");
-                          const todayMidnight = new Date();
-                          todayMidnight.setHours(23, 59, 59, 999);
-                          if (cellDate <= todayMidnight) {
-                            setRegularizingCell(dayObj);
-                          }
-                        }}
-                        title="Click to request time adjustment"
-                        className="p-3 text-center text-neutral-800 font-bold cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 transition-all underline decoration-dotted decoration-cyan-500/60"
-                      >
-                        {dayObj.checkIn}
-                      </td>
-                      <td
-                        onClick={() => {
-                          const cellDate = new Date(dayObj.dateStr + "T00:00:00");
-                          const todayMidnight = new Date();
-                          todayMidnight.setHours(23, 59, 59, 999);
-                          if (cellDate <= todayMidnight) {
-                            setRegularizingCell(dayObj);
-                          }
-                        }}
-                        title="Click to request time adjustment"
-                        className="p-3 text-center text-neutral-800 font-bold cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 transition-all underline decoration-dotted decoration-cyan-500/60"
-                      >
-                        {dayObj.checkOut}
-                      </td>
+                      {!(dayObj.checkIn && dayObj.checkIn !== "-" && dayObj.checkIn !== "—" && dayObj.checkOut && dayObj.checkOut !== "-" && dayObj.checkOut !== "—") ? (
+                        <>
+                          <td
+                            onClick={() => {
+                              const cellDate = new Date(dayObj.dateStr + "T00:00:00");
+                              const todayMidnight = new Date();
+                              todayMidnight.setHours(23, 59, 59, 999);
+                              if (cellDate <= todayMidnight) {
+                                setRegularizingCell(dayObj);
+                              }
+                            }}
+                            title="Click to request time adjustment"
+                            className="p-3 text-center text-neutral-800 font-bold cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 transition-all underline decoration-dotted decoration-cyan-500/60"
+                          >
+                            {dayObj.checkIn}
+                          </td>
+                          <td
+                            onClick={() => {
+                              const cellDate = new Date(dayObj.dateStr + "T00:00:00");
+                              const todayMidnight = new Date();
+                              todayMidnight.setHours(23, 59, 59, 999);
+                              if (cellDate <= todayMidnight) {
+                                setRegularizingCell(dayObj);
+                              }
+                            }}
+                            title="Click to request time adjustment"
+                            className="p-3 text-center text-neutral-800 font-bold cursor-pointer hover:bg-cyan-50/50 hover:text-cyan-750 transition-all underline decoration-dotted decoration-cyan-500/60"
+                          >
+                            {dayObj.checkOut}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="p-3 text-center text-neutral-800 font-bold">
+                            {dayObj.checkIn}
+                          </td>
+                          <td className="p-3 text-center text-neutral-800 font-bold">
+                            {dayObj.checkOut}
+                          </td>
+                        </>
+                      )}
                       <td className="p-3 text-center text-cyan-600 font-black border-r border-neutral-300">
                         {(dayObj.checkIn !== "-" && dayObj.checkOut !== "-") ? dayObj.workingHoursFormatted : "—"}
                       </td>
@@ -1361,8 +1383,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       {/* Status */}
                       <td 
                         onClick={() => {
-                          const today = new Date();
-                          const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                           const isClickableAbsent = isCurrentPayrollMonthView &&
                                                     dayObj.status === "Absent" &&
                                                     !dayObj.leaveType &&
@@ -1378,8 +1398,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         }}
                         title={
                           (() => {
-                            const today = new Date();
-                            const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                             const isClickableAbsent = isCurrentPayrollMonthView &&
                                                       dayObj.status === "Absent" &&
                                                       !dayObj.leaveType &&
@@ -1396,8 +1414,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         }
                         className={
                           (() => {
-                            const today = new Date();
-                            const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                             const isClickableAbsent = isCurrentPayrollMonthView &&
                                                       dayObj.status === "Absent" &&
                                                       !dayObj.leaveType &&
@@ -1416,8 +1432,6 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       >
                         <div className="flex flex-col items-center gap-1.5 justify-center">
                           {(() => {
-                            const today = new Date();
-                            const isCurrentPayrollMonthView = selectedMonth === (today.getMonth() + 1) && selectedYear === today.getFullYear();
                             const isClickableAbsent = isCurrentPayrollMonthView &&
                                                       dayObj.status === "Absent" &&
                                                       !dayObj.leaveType &&
@@ -1444,7 +1458,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               </span>
                             );
                           })()}
-                          {dayObj.isOneDayWages && dayObj.wagesStatus && (
+                          {dayObj.wagesStatus && (
                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold border ${
                               dayObj.wagesStatus === "Approved"
                                 ? "bg-amber-50 text-amber-700 border-amber-200"
@@ -1494,7 +1508,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
              <div className="space-y-3">
               {/* LOP is always shown; paid leave buttons only shown if available > 0 */}
               {(() => {
-                const availableBalances = resolverBalances.filter((b: any) => (b.available ?? 0) > 0);
+                const activePolicyNames = leavePolicies.map((p: any) => p.leave_type.toLowerCase().trim());
+                const availableBalances = resolverBalances.filter((b: any) => {
+                  const lt = (b.leave_type || "").toLowerCase().trim();
+                  return activePolicyNames.includes(lt) && (b.available ?? 0) > 0;
+                });
                 const hasPaidLeave = !isBalancesLoading && availableBalances.length > 0;
                 return (
                   <>
@@ -1627,6 +1645,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <TimePicker
                   value={regCheckIn}
                   onChange={(val) => setRegCheckIn(val)}
+                  disabled={!!(regularizingCell.checkIn && regularizingCell.checkIn !== "-" && regularizingCell.checkIn !== "—")}
                   className="w-full"
                 />
               </div>
@@ -1635,6 +1654,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <TimePicker
                   value={regCheckOut}
                   onChange={(val) => setRegCheckOut(val)}
+                  disabled={!!(regularizingCell.checkOut && regularizingCell.checkOut !== "-" && regularizingCell.checkOut !== "—")}
                   className="w-full"
                 />
               </div>

@@ -10,6 +10,7 @@ import {
 import { AppToaster } from './components/ui/ToastConfig';
 import { BookLoader } from './components/ui/Spinner';
 import { useAuthStore } from './store/authStore';
+import SessionTimeoutHandler from './components/SessionTimeoutHandler';
 import DashboardLayout from './layouts/DashboardLayout';
 
 // Pages
@@ -112,6 +113,9 @@ function App() {
   }, []);
 
   return (<BrowserRouter>
+
+    {/* Session Timeout Inactivity Handler */}
+    <SessionTimeoutHandler />
 
     {/* Toast Notifications */}
 

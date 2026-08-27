@@ -1888,8 +1888,7 @@ def get_reporting_employees(user_id):
                 ShiftRequest.to_date >= date_to_check
             ).first()
             wages_status = wages_req.status if wages_req else None
-            is_one_day_wages_final = (wages_req is not None and wages_req.status == "Approved") or \
-                                     (is_one_day_wages and wages_status != "Rejected" and wages_status != "Pending" and attendance is not None and (attendance.check_in or attendance.card_check_in) and attendance.manager_status == "Approved" and attendance.status != "Leave")
+            is_one_day_wages_final = (wages_req is not None and wages_req.status == "Approved")
 
             return {
                 "summary_date":
