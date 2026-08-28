@@ -16,6 +16,7 @@ import DashboardLayout from './layouts/DashboardLayout';
 // Pages
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const FAQPage = lazy(() => import('./pages/FAQPage'));
 const HrmsModule = lazy(() => import("./pages/hr/HRAdminDashboard"));
 const ManagerDashboardPage = lazy(() => import('./pages/ManagerDashboardPage'));
 const EmployeeDashboardPage = lazy(() => import('./pages/employee/EmployeeDashboardPage'));
@@ -195,6 +196,15 @@ function App() {
           element={
             <ProtectedRoute>
               <AppraisalDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/faq"
+          element={
+            <ProtectedRoute>
+              <FAQPage />
             </ProtectedRoute>
           }
         />

@@ -1,6 +1,7 @@
 import {
   HomeIcon, UserGroupIcon, ChartBarIcon,
-  BellIcon, PhoneIcon, BuildingOffice2Icon, ClipboardDocumentCheckIcon
+  BellIcon, PhoneIcon, BuildingOffice2Icon, ClipboardDocumentCheckIcon,
+  QuestionMarkCircleIcon
 } from "@heroicons/react/24/outline";
 
 export const useNavigation = (user: any) => {
@@ -16,6 +17,7 @@ export const useNavigation = (user: any) => {
       { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
       { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
       { name: "Appraisal", icon: ClipboardDocumentCheckIcon, path: "/appraisal" },
+      { name: "Help & FAQ", icon: QuestionMarkCircleIcon, path: "/faq" },
     ];
 
     const teamManagementNode = {
@@ -37,6 +39,7 @@ export const useNavigation = (user: any) => {
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
         { name: "Appraisal", icon: ClipboardDocumentCheckIcon, path: "/appraisal" },
+        { name: "Help & FAQ", icon: QuestionMarkCircleIcon, path: "/faq" },
       ];
     }
 
@@ -48,6 +51,7 @@ export const useNavigation = (user: any) => {
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
         { name: "Appraisal", icon: ClipboardDocumentCheckIcon, path: "/appraisal" },
+        { name: "Help & FAQ", icon: QuestionMarkCircleIcon, path: "/faq" },
       ];
     }
 
@@ -59,6 +63,7 @@ export const useNavigation = (user: any) => {
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
         { name: "Appraisal", icon: ClipboardDocumentCheckIcon, path: "/appraisal" },
+        { name: "Help & FAQ", icon: QuestionMarkCircleIcon, path: "/faq" },
       ];
     }
 
