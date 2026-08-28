@@ -456,6 +456,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     ) {
       setResolvingWeekendCell(cell);
     } else if (
+      isCurrentPayrollMonthView &&
       cell.dateStr < todayKey &&
       cell.status !== "Future" && 
       cell.status !== "Not Joined" &&
@@ -1057,7 +1058,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                            (cell.status === "Weekly Off" || cell.status === "Holiday") &&
                                            !cell.isToday &&
                                            cell.dateStr <= todayKey;
-                const isClickableRegularize = cell.dateStr < todayKey && cell.status !== "Future" && cell.status !== "Not Joined" && cell.status !== "Present" && (!cell.leaveType || cell.halfDayDuration);
+                const isClickableRegularize = isCurrentPayrollMonthView && cell.dateStr < todayKey && cell.status !== "Future" && cell.status !== "Not Joined" && cell.status !== "Present" && (!cell.leaveType || cell.halfDayDuration);
                 const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
                 return (
                   <div
