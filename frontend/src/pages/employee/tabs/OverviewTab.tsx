@@ -35,6 +35,8 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
     !initialTeam || !overviewCache.teamMembers[initialTeam]
   );
 
+  const headManager = teamMembers.find((m) => m.reporting_manager)?.reporting_manager || "";
+
   // Fetch teams on mount
   useEffect(() => {
     // If we initialized from user.team_id, update the cache
@@ -218,6 +220,12 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           <div className="flex flex-col">
             <h3 className="text-lg font-bold text-gray-900">Team Status Overview</h3>
             <p className="text-sm text-gray-500">Real-time attendance of team members</p>
+            {headManager && (
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 border border-primary-150 px-3 py-1.5 mt-2 text-xs font-bold text-primary-700 self-start shadow-3xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-pulse" />
+                Head Manager: <span className="text-neutral-800 font-extrabold ml-0.5">{headManager}</span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">

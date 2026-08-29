@@ -40,9 +40,18 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
         const response = await fetch(`${BASE_URL}/leaves/balances/${userId}`);
         const data = await response.json();
         if (Array.isArray(data)) {
-          setBalances(data);
-          if (data.length > 0) {
-            setLeaveType(data[0].leave_type);
+
+          
+          // setBalances(data);
+          // if (data.length > 0) {
+          //   setLeaveType(data[0].leave_type);
+          // }
+
+
+          const filtered = data.filter((b: any) => b.leave_type && b.leave_type.toLowerCase() !== 'permission');
+          setBalances(filtered);
+          if (filtered.length > 0) {
+            setLeaveType(filtered[0].leave_type);
           }
         }
       } catch (err) {

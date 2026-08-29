@@ -36,6 +36,7 @@ from routes.meeting_rooms import meeting_rooms_bp
 from routes.holidays import holidays_bp
 from routes.db_admin import db_admin_bp
 from routes.ai_routes import ai_bp
+from routes.faq import faq_bp
 
 # Import Socket.IO and register events
 from extensions import socketio
@@ -105,6 +106,7 @@ def create_app():
     fastapi_app.include_router(appraisal_bp, prefix="/api")
     fastapi_app.include_router(db_admin_bp, prefix="/api/admin/db")
     fastapi_app.include_router(ai_bp, prefix="/api/ai")
+    fastapi_app.include_router(faq_bp, prefix="/api/faq")
 
     # Mount uploads directory static files (persistent Docker volume at UPLOADS_DIR)
     uploads_dir = get_uploads_dir()

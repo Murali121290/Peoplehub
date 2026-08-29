@@ -127,7 +127,7 @@ def check_in():
         payload_ip = (data.get("client_ip") or "").strip()
         client_ip = payload_ip if payload_ip else get_client_ip()
 
-        work_mode = (employee.work_mode or "").strip().lower()
+        work_mode = (employee.work_mode or "Office").strip().lower()
         if work_mode == "office":
             if not is_office_network(client_ip):
                 return jsonify({
@@ -438,7 +438,7 @@ def check_out():
         checkout_ip = payload_ip if payload_ip else get_client_ip()
 
         if employee:
-            work_mode = (employee.work_mode or "").strip().lower()
+            work_mode = (employee.work_mode or "Office").strip().lower()
             if work_mode == "office":
                 if not is_office_network(checkout_ip):
                     return jsonify({
@@ -448,9 +448,15 @@ def check_out():
 
         attendance.check_out_ip = checkout_ip
 
-        # IP Mismatch check (Option B)
+        # IP Mismatch check (Option B) - Only enforced for Office mode employees (ignore WFH & Hybrid)
+        is_office_mode = False
+        if employee:
+            work_mode = (employee.work_mode or "Office").strip().lower()
+            if work_mode == "office":
+                is_office_mode = True
+
         check_in_ip = attendance.check_in_ip
-        if check_in_ip and check_in_ip != checkout_ip:
+        if is_office_mode and check_in_ip and check_in_ip != checkout_ip:
             attendance.manager_status = "Need Clarification"
             history = list(attendance.clarification_history or [])
             msg_entry = {
@@ -526,7 +532,7 @@ def check_out():
         except Exception as socket_err:
             print("Failed to emit checkout socket:", str(socket_err))
 
-        is_mismatch = check_in_ip and check_in_ip != checkout_ip
+        is_mismatch = is_office_mode and bool(check_in_ip and check_in_ip != checkout_ip)
         message = "Checked Out Successfully (IP mismatch detected, clarification required)" if is_mismatch else "Checked Out Successfully"
         return jsonify({
             "success": True,
@@ -1774,6 +1780,7 @@ def get_attendance():
 
         attendance_list.append({
             "user_id": employee.user_id,
+            "employee_code": employee.employee_id,
             "employee_name": f"{employee.first_name} {employee.last_name}",
             "department": employee.department,
             "designation": employee.designation,
@@ -1988,6 +1995,9 @@ def _get_period_attendance_records(days_count, include_card_fields=False):
             )
 
             record = {
+
+                "employee_code":
+                    employee.employee_id,
 
                 "employee_name":
                     f"{employee.first_name} {employee.last_name}",
@@ -2327,6 +2337,14 @@ def export_monthly_attendance():
                 employees = []
         else:
             employees = [e for e in get_all_employees_cached() if is_employee_valid_for_report(e)]
+
+        # Filter by team/department if requested
+        team_param = request.args.get("team")
+        if team_param and team_param != "All":
+            employees = [
+                e for e in employees
+                if (e.department or "").strip().lower() == team_param.strip().lower()
+            ]
 
         # Sort employees by employee code in ascending order
         def get_emp_code_val(e):

@@ -136,16 +136,7 @@ function App() {
 
 
 
-        {/* Settings */}
 
-        <Route
-          path="/settings"
-          element={
-            <ProtectedRoute>
-              <SettingsPage />
-            </ProtectedRoute>
-          }
-        />
 
         {/* Pre Editing */}
 
@@ -313,7 +304,9 @@ function App() {
         <Route
           path="/complete-profile"
           element={
-            <CompleteProfile />
+            <ProtectedRoute>
+              <CompleteProfile />
+            </ProtectedRoute>
           }
         />
 

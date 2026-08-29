@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import {
   QuestionMarkCircleIcon,
   ChevronDownIcon,
@@ -12,16 +13,24 @@ import {
   ShieldCheckIcon,
   ChatBubbleLeftRightIcon,
   PaperAirplaneIcon,
-  EnvelopeIcon
+  EnvelopeIcon,
+  PlusIcon,
+  TrashIcon,
+  XMarkIcon,
+  PencilIcon
 } from '@heroicons/react/24/outline';
+import { useAuthStore } from '../store/authStore';
+import { BASE_API_URL } from '../config/api';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const BASE_URL = `${BASE_API_URL}/api`;
 
 interface FAQItem {
   id: number;
   question: string;
   answer: string;
   category: 'attendance' | 'leaves' | 'office' | 'performance' | 'support';
+  isCustom?: boolean;
+  created_by?: string;
 }
 
 const FAQ_DATA: FAQItem[] = [
@@ -246,24 +255,95 @@ const FAQ_DATA: FAQItem[] = [
   }
 ];
 
-const CATEGORIES = [
-  { id: 'all', name: 'All Topics', icon: QuestionMarkCircleIcon, count: FAQ_DATA.length, color: 'text-violet-500 bg-violet-50 border-violet-100' },
-  { id: 'attendance', name: 'Daily Attendance', icon: ClockIcon, count: FAQ_DATA.filter(f => f.category === 'attendance').length, color: 'text-emerald-500 bg-emerald-50 border-emerald-100' },
-  { id: 'leaves', name: 'Leaves & Overtime', icon: CalendarDaysIcon, count: FAQ_DATA.filter(f => f.category === 'leaves').length, color: 'text-amber-500 bg-amber-50 border-amber-100' },
-  { id: 'office', name: 'Office Tools', icon: BuildingOfficeIcon, count: FAQ_DATA.filter(f => f.category === 'office').length, color: 'text-indigo-500 bg-indigo-50 border-indigo-100' },
-  { id: 'performance', name: 'Performance & Profile', icon: UserCircleIcon, count: FAQ_DATA.filter(f => f.category === 'performance').length, color: 'text-rose-500 bg-rose-50 border-rose-100' },
-  { id: 'support', name: 'Help & Support', icon: ShieldCheckIcon, count: FAQ_DATA.filter(f => f.category === 'support').length, color: 'text-sky-500 bg-sky-50 border-sky-100' }
-];
-
 export const FAQPage: React.FC = () => {
+  const { user } = useAuthStore();
+  const normalizedRole = `${user?.access_level || user?.role || ""}`.toLowerCase();
+  const isHR = normalizedRole.includes("hr") || normalizedRole.includes("admin") || normalizedRole.includes("super") || normalizedRole.includes("human");
+
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 6;
 
   // FAQ Helpfulness Voting State
   const [votes, setVotes] = useState<Record<number, 'yes' | 'no'>>({});
   const handleVote = (faqId: number, type: 'yes' | 'no') => {
     setVotes(prev => ({ ...prev, [faqId]: type }));
+  };
+
+  // Reset page to 1 on filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, activeCategory]);
+
+  // ── Custom FAQ (HR-managed) state ─────────────────────────────────────────
+  const [customFAQs, setCustomFAQs] = useState<FAQItem[]>([]);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingFAQ, setEditingFAQ] = useState<FAQItem | null>(null);
+  const [addForm, setAddForm] = useState({ question: '', answer: '', category: 'support' as FAQItem['category'] });
+  const [addLoading, setAddLoading] = useState(false);
+
+  const fetchCustomFAQs = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await axios.get(`${BASE_URL}/faq/`, { headers });
+      const data: any[] = res.data || [];
+      setCustomFAQs(data.map(item => ({
+        id: 10000 + item.id, // offset so IDs don't clash with static FAQ_DATA
+        question: item.question,
+        answer: item.answer,
+        category: item.category as FAQItem['category'],
+        isCustom: true,
+        created_by: item.created_by,
+      })));
+    } catch { /* silent */ }
+  };
+
+  useEffect(() => { fetchCustomFAQs(); }, []);
+
+  const handleAddFAQ = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addForm.question.trim() || !addForm.answer.trim()) {
+      toast.error('Please fill in both question and answer.');
+      return;
+    }
+    setAddLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      await axios.post(`${BASE_URL}/faq/`, {
+        question: addForm.question.trim(),
+        answer: addForm.answer.trim(),
+        category: addForm.category,
+        created_by: user?.full_name || 'HR Team',
+      }, { headers });
+      toast.success('FAQ added successfully!');
+      setAddForm({ question: '', answer: '', category: 'support' });
+      setShowAddModal(false);
+      fetchCustomFAQs();
+    } catch {
+      toast.error('Failed to add FAQ. Please try again.');
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  const handleDeleteCustomFAQ = async (customItemId: number) => {
+    // customItemId is offset by 10000; real DB id = customItemId - 10000
+    const realId = customItemId - 10000;
+    try {
+      const token = localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      await axios.delete(`${BASE_URL}/faq/${realId}`, { headers });
+      toast.success('FAQ removed.');
+      fetchCustomFAQs();
+    } catch {
+      toast.error('Failed to remove FAQ.');
+    }
   };
 
   // Scroll to HR Form Reference
@@ -293,7 +373,8 @@ export const FAQPage: React.FC = () => {
       `Dear HR Team,\n\nI am writing to raise a query regarding my ${hrForm.subject} on the PeopleHub portal.\n\nDetails of my query:\n${hrForm.message}\n\nEmployee ID: ${hrForm.empId || 'Not Provided'}\nSubmitted on: ${new Date().toLocaleDateString()}\n\nBest regards,\n(Sent via PeopleHub FAQ Helpdesk)`
     );
     
-    window.location.href = `mailto:hr.chennai@s4carlisle.com?subject=${subjectLine}&body=${emailBody}`;
+    const outlookWebUrl = `https://outlook.office.com/mail/deeplink/compose?to=hr.chennai@s4carlisle.com&subject=${subjectLine}&body=${emailBody}`;
+    window.open(outlookWebUrl, '_blank');
     
     setTimeout(() => {
       setIsHrDrafting(false);
@@ -304,7 +385,70 @@ export const FAQPage: React.FC = () => {
     setExpandedId(expandedId === id ? null : id);
   };
 
-  const filteredFAQs = FAQ_DATA.filter((faq) => {
+  const allFAQs: FAQItem[] = [...FAQ_DATA, ...customFAQs];
+
+  const categories = [
+    { id: 'all', name: 'All Topics', icon: QuestionMarkCircleIcon, count: allFAQs.length, color: 'text-violet-500 bg-violet-50 border-violet-100' },
+    { id: 'attendance', name: 'Daily Attendance', icon: ClockIcon, count: allFAQs.filter(f => f.category === 'attendance').length, color: 'text-emerald-500 bg-emerald-50 border-emerald-100' },
+    { id: 'leaves', name: 'Leaves & Overtime', icon: CalendarDaysIcon, count: allFAQs.filter(f => f.category === 'leaves').length, color: 'text-amber-500 bg-amber-50 border-amber-100' },
+    { id: 'office', name: 'Office Tools', icon: BuildingOfficeIcon, count: allFAQs.filter(f => f.category === 'office').length, color: 'text-indigo-500 bg-indigo-50 border-indigo-100' },
+    { id: 'performance', name: 'Performance & Profile', icon: UserCircleIcon, count: allFAQs.filter(f => f.category === 'performance').length, color: 'text-rose-500 bg-rose-50 border-rose-100' },
+    { id: 'support', name: 'Help & Support', icon: ShieldCheckIcon, count: allFAQs.filter(f => f.category === 'support').length, color: 'text-sky-500 bg-sky-50 border-sky-100' }
+  ];
+
+  const handleStartEdit = (faq: FAQItem) => {
+    setEditingFAQ(faq);
+    setAddForm({
+      question: faq.question,
+      answer: faq.answer,
+      category: faq.category
+    });
+    setShowAddModal(true);
+  };
+
+  const handleSaveFAQ = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addForm.question.trim() || !addForm.answer.trim()) {
+      toast.error('Please fill in both question and answer.');
+      return;
+    }
+    setAddLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      if (editingFAQ) {
+        // Edit Mode
+        const realId = editingFAQ.id - 10000;
+        await axios.put(`${BASE_URL}/faq/${realId}`, {
+          question: addForm.question.trim(),
+          answer: addForm.answer.trim(),
+          category: addForm.category
+        }, { headers });
+        toast.success('FAQ updated successfully!');
+      } else {
+        // Add Mode
+        await axios.post(`${BASE_URL}/faq/`, {
+          question: addForm.question.trim(),
+          answer: addForm.answer.trim(),
+          category: addForm.category,
+          created_by: user?.full_name || 'HR Team',
+        }, { headers });
+        toast.success('FAQ added successfully!');
+      }
+
+      setAddForm({ question: '', answer: '', category: 'support' });
+      setEditingFAQ(null);
+      setShowAddModal(false);
+      fetchCustomFAQs();
+    } catch {
+      toast.error('Failed to save FAQ. Please try again.');
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  const filteredFAQs = allFAQs.filter((faq) => {
     const matchesSearch = 
       faq.question.toLowerCase().includes(searchTerm.toLowerCase()) ||
       faq.answer.toLowerCase().includes(searchTerm.toLowerCase());
@@ -312,12 +456,16 @@ export const FAQPage: React.FC = () => {
     return matchesSearch && matchesCategory;
   });
 
+  const totalPages = Math.ceil(filteredFAQs.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedFAQs = filteredFAQs.slice(startIndex, startIndex + itemsPerPage);
+
   // Chatbot State
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Array<{ sender: 'user' | 'bot'; text: string; timestamp: Date; suggestions?: Array<{ id: number; question: string }> }>>([
     {
       sender: 'bot',
-      text: "Hello! 👋 I'm the PeopleHub AI Assistant. I can answer S4Carlisle guidelines, check-in errors, leave rules, and appraisal questions in real-time.\n\nAsk me anything!",
+      text: "Hello! 👋 I am your 'How can I Help Today' assistant. I can answer S4Carlisle guidelines, check-in errors, leave rules, and appraisal questions in real-time.\n\nAsk me anything!",
       timestamp: new Date()
     }
   ]);
@@ -341,7 +489,7 @@ export const FAQPage: React.FC = () => {
     if (greetings.includes(cleanQuery)) {
       return {
         type: 'direct',
-        text: "Hello! 👋 I'm the PeopleHub AI Assistant. I'm here in real-time to help you. How can I assist you with your attendance, leaves, shift requests, or payroll today?"
+        text: "Hello! 👋 I am the 'How can I Help Today' assistant. I'm here in real-time to help you. How can I assist you with your attendance, leaves, shift requests, or payroll today?"
       };
     }
 
@@ -349,7 +497,7 @@ export const FAQPage: React.FC = () => {
     if (personalQuestions.some(q => cleanQuery.includes(q))) {
       return {
         type: 'direct',
-        text: "I am the PeopleHub AI Assistant! 🤖 I'm trained to help S4Carlisle employees with portal troubleshooting, policy lookups, and payroll/attendance queries."
+        text: "I am the 'How can I Help Today' assistant! 🤖 I'm trained to help S4Carlisle employees with portal troubleshooting, policy lookups, and payroll/attendance queries."
       };
     }
 
@@ -427,14 +575,13 @@ export const FAQPage: React.FC = () => {
     }
 
     // Forgot Punch / Regularization / Clarification Rule
-    const punchTerms = [
-      'forgot checkin', 'forgot checkout', 'forgot to check out', 'forgot to check in',
-      'forgot punch', 'forgot card', 'forgot to swipe', 'regularization', 'clarification'
-    ];
-    if (punchTerms.some(term => cleanQuery.includes(term))) {
+    const hasForgot = cleanQuery.includes('forgot') || cleanQuery.includes('forget') || cleanQuery.includes('missed') || cleanQuery.includes('miss ');
+    const hasPunch = cleanQuery.includes('check') || cleanQuery.includes('punch') || cleanQuery.includes('swipe') || cleanQuery.includes('card') || cleanQuery.includes('regular') || cleanQuery.includes('clarif');
+
+    if ((hasForgot && hasPunch) || cleanQuery.includes('regularization') || cleanQuery.includes('clarification')) {
       return {
         type: 'direct',
-        text: "If you forgot to check in or out yesterday:\n\n1. The system will mark that day as needing clarification on your calendar.\n2. Click the **\"Provide Clarification\"** button on that specific day in your dashboard.\n3. Enter your actual work start and end times, then click submit.\n\nOnce approved by your manager, your status and hours will update automatically."
+        text: "If you forgot to check in or out:\n\n1. The system will mark that day as needing clarification on your calendar.\n2. Click the **\"Provide Clarification\"** button on that specific day in your dashboard.\n3. Enter your actual work start and end times, then click submit.\n\nOnce approved by your manager, your status and hours will update automatically."
       };
     }
 
@@ -486,9 +633,27 @@ export const FAQPage: React.FC = () => {
       };
     }
 
+    // Apply Leave / Past Leave / Future Leave Router
+    if (cleanQuery.includes('leave') && (cleanQuery.includes('apply') || cleanQuery.includes('request') || cleanQuery.includes('take') || cleanQuery.includes('need to'))) {
+      const isPast = cleanQuery.includes('past') || cleanQuery.includes('absent') || cleanQuery.includes('yesterday') || cleanQuery.includes('previous') || cleanQuery.includes('backdate');
+
+      if (isPast) {
+        return {
+          type: 'direct',
+          text: "To apply for leave for a past date (when you were absent):\n\n1. Go to the leave application form in the **Attendance** tab.\n2. Select the past date (the day you were absent) as both the **Start Date** and **End Date**.\n3. Choose your leave type (Casual, Sick, LOP, etc.) and submit it.\n\nOnce approved by your manager, the status for that past day will automatically update from \"Absent\" to \"Leave\"."
+        };
+      }
+      
+      // Default or Future Leave
+      return {
+        type: 'direct',
+        text: "To apply for leave (future / standard requests):\n\n1. Navigate to the **Attendance** tab.\n2. Scroll to the Leave section and click **\"Apply Leave\"**.\n3. Select your Start and End dates (future dates), choose the leave type (Casual, Sick, LOP, etc.), select your Reporting Manager, add a reason, and click submit.\n\nYou will receive a notification once your manager reviews the request."
+      };
+    }
+
     // Synonym word mappings for keyword index lookup
     const synonyms: Record<string, string> = {
-      'leave': 'leave leaves holiday absent lop casual sick vacation cancel balance remaining',
+      'leave': 'leave leaves holiday lop casual sick vacation cancel balance remaining',
       'regularize': 'regularize regularization punch forgotten punch card timing override biometric mismatch missing punch checkout checkin',
       'meeting': 'meeting room book conference room book meeting',
       'appraisal': 'appraisal self appraisal form review performance cycle rating self-evaluation rating feedback appraisal edit',
@@ -510,7 +675,7 @@ export const FAQPage: React.FC = () => {
     let highestScore = 0;
     const partialMatches: { id: number; question: string; score: number }[] = [];
 
-    FAQ_DATA.forEach(faq => {
+    allFAQs.forEach(faq => {
       let score = 0;
       const qLower = faq.question.toLowerCase();
       const aLower = faq.answer.toLowerCase();
@@ -594,8 +759,21 @@ export const FAQPage: React.FC = () => {
     setMessages(prev => [...prev, userMsg]);
     setIsTyping(true);
 
+    // 1. Check local search index first for highly-relevant matches (direct answers or custom HR entries)
+    const localMatch = findAnswer(text);
+    if (localMatch && localMatch.type === 'direct') {
+      const botMsg = {
+        sender: 'bot' as const,
+        text: localMatch.text,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, botMsg]);
+      setIsTyping(false);
+      return;
+    }
+
+    // 2. If no direct local match, attempt to call generative AI endpoint
     try {
-      // 1. Attempt to call backend Gemini AI endpoint
       const res = await axios.post(
         `${BASE_URL}/ai/chat`,
         { message: text },
@@ -614,27 +792,26 @@ export const FAQPage: React.FC = () => {
         throw new Error("Invalid API response format");
       }
     } catch (err) {
-      // 2. Fall back to local search matching
-      const match = findAnswer(text);
+      // 3. Fall back to local search suggestions if AI is offline/errored
       let botMsg: any;
 
-      if (!match) {
+      if (!localMatch) {
         botMsg = {
           sender: 'bot' as const,
           text: "I couldn't find an answer to that specific question in our portal guidelines. Please email HR at hr.chennai@s4carlisle.com.",
           timestamp: new Date()
         };
-      } else if (match.type === 'suggestions') {
+      } else if (localMatch.type === 'suggestions') {
         botMsg = {
           sender: 'bot' as const,
-          text: match.text,
+          text: localMatch.text,
           timestamp: new Date(),
-          suggestions: match.suggestions
+          suggestions: localMatch.suggestions
         };
       } else {
         botMsg = {
           sender: 'bot' as const,
-          text: match.text,
+          text: localMatch.text,
           timestamp: new Date()
         };
       }
@@ -663,20 +840,142 @@ export const FAQPage: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900 tracking-tight">
-              Help & Knowledge Base
+              Help &amp; Knowledge Base
             </h1>
             <p className="mt-1.5 text-sm text-neutral-500">
               Find answers, troubleshoot portal behaviors, and review official S4Carlisle guidelines.
             </p>
           </div>
-          <button
-            onClick={scrollToHrForm}
-            className="flex-shrink-0 self-start sm:self-center flex items-center gap-2 px-4.5 py-2.5 bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-200 rounded-xl text-sm font-bold shadow-sm transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
-          >
-            <EnvelopeIcon className="h-4.5 w-4.5" />
-            Contact HR Support
-          </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            {isHR && (
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="flex-shrink-0 self-start sm:self-center flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-sm transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
+              >
+                <PlusIcon className="h-4.5 w-4.5" />
+                Add FAQ
+              </button>
+            )}
+            <button
+              onClick={scrollToHrForm}
+              className="flex-shrink-0 self-start sm:self-center flex items-center gap-2 px-4 py-2.5 bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-200 rounded-xl text-sm font-bold shadow-sm transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
+            >
+              <EnvelopeIcon className="h-4.5 w-4.5" />
+              Contact HR Support
+            </button>
+          </div>
         </div>
+
+        {/* ── Add FAQ Modal (HR only) ──────────────────────────────────────────── */}
+        {showAddModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-lg">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-100">
+                    {editingFAQ ? (
+                      <PencilIcon className="h-5 w-5 text-emerald-600" />
+                    ) : (
+                      <PlusIcon className="h-5 w-5 text-emerald-600" />
+                    )}
+                  </div>
+                  <div>
+                    <h2 className="text-base font-extrabold text-neutral-800">
+                      {editingFAQ ? "Edit FAQ" : "Add New FAQ"}
+                    </h2>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      {editingFAQ ? "Update FAQ details" : "Visible to all employees immediately"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowAddModal(false);
+                    setEditingFAQ(null);
+                    setAddForm({ question: "", answer: "", category: "support" });
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 transition-colors cursor-pointer"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <form onSubmit={handleSaveFAQ} className="p-6 space-y-4">
+                {/* Category */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500 mb-1.5">Category</label>
+                  <select
+                    value={addForm.category}
+                    onChange={e => setAddForm(p => ({ ...p, category: e.target.value as FAQItem['category'] }))}
+                    className="w-full bg-white border border-neutral-250 rounded-xl px-4 py-2.5 text-sm text-neutral-800 font-medium outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400 transition-all cursor-pointer"
+                  >
+                    <option value="attendance">Daily Attendance</option>
+                    <option value="leaves">Leaves &amp; Overtime</option>
+                    <option value="office">Office Tools</option>
+                    <option value="performance">Performance &amp; Profile</option>
+                    <option value="support">Help &amp; Support</option>
+                  </select>
+                </div>
+
+                {/* Question */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500 mb-1.5">Question</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. How do I update my emergency contact?"
+                    value={addForm.question}
+                    onChange={e => setAddForm(p => ({ ...p, question: e.target.value }))}
+                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-sm text-neutral-800 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400 focus:bg-white transition-all"
+                    required
+                  />
+                </div>
+
+                {/* Answer */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500 mb-1.5">Answer</label>
+                  <textarea
+                    rows={5}
+                    placeholder="Type the full answer here..."
+                    value={addForm.answer}
+                    onChange={e => setAddForm(p => ({ ...p, answer: e.target.value }))}
+                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5 text-sm text-neutral-800 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400 focus:bg-white transition-all resize-none"
+                    required
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddModal(false);
+                      setEditingFAQ(null);
+                      setAddForm({ question: "", answer: "", category: "support" });
+                    }}
+                    className="px-5 py-2.5 text-sm font-bold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 rounded-xl transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={addLoading}
+                    className="px-5 py-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 rounded-xl transition-all cursor-pointer flex items-center gap-2"
+                  >
+                    {addLoading ? (
+                      <><span className="w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />Saving...</>
+                    ) : editingFAQ ? (
+                      <><PencilIcon className="h-4 w-4" />Save Changes</>
+                    ) : (
+                      <><PlusIcon className="h-4 w-4" />Add FAQ</>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Search Bar Widget */}
         <div className="relative mb-8 bg-white border border-neutral-200 rounded-2xl p-2.5 shadow-sm focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500 transition-all flex items-center gap-3">
@@ -707,7 +1006,7 @@ export const FAQPage: React.FC = () => {
             </div>
             
             <div className="flex flex-row lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-3 lg:pb-0 whitespace-nowrap scrollbar-none">
-              {CATEGORIES.map((cat) => {
+              {categories.map((cat: any) => {
                 const isActive = activeCategory === cat.id;
                 const Icon = cat.icon;
                 return (
@@ -749,66 +1048,140 @@ export const FAQPage: React.FC = () => {
           {/* Right Column: FAQ Accordion List */}
           <div className="lg:col-span-3 space-y-4">
             {filteredFAQs.length > 0 ? (
-              <div className="space-y-4 animate-fade-in">
-                {filteredFAQs.map((faq) => {
-                  const isExpanded = expandedId === faq.id;
-                  return (
-                    <div
-                      key={faq.id}
-                      className={`bg-white border rounded-2xl overflow-hidden transition-all duration-200 ${
-                        isExpanded 
-                          ? 'border-neutral-350 shadow-sm' 
-                          : 'border-neutral-200 hover:border-neutral-300 shadow-sm'
-                      }`}
-                    >
-                      <button
-                        onClick={() => toggleAccordion(faq.id)}
-                        className="w-full text-left px-6 py-4 flex items-center justify-between gap-4 font-bold text-sm sm:text-base text-neutral-800 hover:text-primary-600 transition-colors"
+              <>
+                <div className="space-y-4 animate-fade-in">
+                  {paginatedFAQs.map((faq) => {
+                    const isExpanded = expandedId === faq.id;
+                    return (
+                      <div
+                        key={faq.id}
+                        className={`bg-white border rounded-2xl overflow-hidden transition-all duration-200 ${
+                          isExpanded 
+                            ? 'border-neutral-350 shadow-sm' 
+                            : faq.isCustom
+                            ? 'border-emerald-200 hover:border-emerald-300 shadow-sm'
+                            : 'border-neutral-200 hover:border-neutral-300 shadow-sm'
+                        }`}
                       >
-                        <span>{faq.question}</span>
-                        <ChevronDownIcon
-                          className={`h-4.5 w-4.5 text-neutral-400 flex-shrink-0 transition-transform duration-200 ${
-                            isExpanded ? 'transform rotate-180 text-neutral-650' : ''
-                          }`}
-                        />
-                      </button>
-                      
-                      {isExpanded && (
-                        <div className="px-6 pb-5 pt-1 text-sm leading-relaxed text-neutral-600 border-t border-neutral-100/70 bg-neutral-50/50 whitespace-pre-line flex flex-col justify-between">
-                          <div>{faq.answer}</div>
-                          
-                          {/* Helpfulness Rating Widget */}
-                          <div className="mt-4 pt-3 border-t border-neutral-200/40 flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-500">
-                            <span className="font-semibold">Was this answer helpful?</span>
-                            <div className="flex items-center gap-2">
-                              {votes[faq.id] ? (
-                                <span className="font-bold text-primary-600 transition-all animate-fade-in flex items-center gap-1">
-                                  {votes[faq.id] === 'yes' ? '💚 Thanks for your feedback!' : '📝 Feedback logged for review.'}
-                                </span>
-                              ) : (
-                                <>
+                        <button
+                          onClick={() => toggleAccordion(faq.id)}
+                          className="w-full text-left px-6 py-4 flex items-center justify-between gap-4 font-bold text-sm sm:text-base text-neutral-800 hover:text-primary-600 transition-colors"
+                        >
+                          <span className="flex items-center gap-2">
+                            {faq.question}
+                            {faq.isCustom && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 tracking-wide uppercase">
+                                HR
+                              </span>
+                            )}
+                          </span>
+                          <ChevronDownIcon
+                            className={`h-4.5 w-4.5 text-neutral-400 flex-shrink-0 transition-transform duration-200 ${
+                              isExpanded ? 'transform rotate-180 text-neutral-650' : ''
+                            }`}
+                          />
+                        </button>
+                        
+                        {isExpanded && (
+                          <div className="px-6 pb-5 pt-1 text-sm leading-relaxed text-neutral-600 border-t border-neutral-100/70 bg-neutral-50/50 whitespace-pre-line flex flex-col justify-between">
+                            <div>{faq.answer}</div>
+                            
+                            {/* Helpfulness Rating Widget + HR delete */}
+                            <div className="mt-4 pt-3 border-t border-neutral-200/40 flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-500">
+                              <span className="font-semibold">Was this answer helpful?</span>
+                              <div className="flex items-center gap-2">
+                                {votes[faq.id] ? (
+                                  <span className="font-bold text-primary-600 transition-all animate-fade-in flex items-center gap-1">
+                                    {votes[faq.id] === 'yes' ? '💚 Thanks for your feedback!' : '📝 Feedback logged for review.'}
+                                  </span>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => handleVote(faq.id, 'yes')}
+                                      className="flex items-center gap-1 px-2.5 py-1 bg-white border border-neutral-250 hover:border-emerald-300 hover:text-emerald-650 rounded-lg transition-all active:scale-95 shadow-sm font-bold cursor-pointer"
+                                    >
+                                      👍 Yes
+                                    </button>
+                                    <button
+                                      onClick={() => handleVote(faq.id, 'no')}
+                                      className="flex items-center gap-1 px-2.5 py-1 bg-white border border-neutral-250 hover:border-rose-300 hover:text-rose-650 rounded-lg transition-all active:scale-95 shadow-sm font-bold cursor-pointer"
+                                    >
+                                      👎 No
+                                    </button>
+                                  </>
+                                )}
+                                {/* HR-only: edit custom FAQ */}
+                                {isHR && faq.isCustom && (
                                   <button
-                                    onClick={() => handleVote(faq.id, 'yes')}
-                                    className="flex items-center gap-1 px-2.5 py-1 bg-white border border-neutral-250 hover:border-emerald-300 hover:text-emerald-650 rounded-lg transition-all active:scale-95 shadow-sm font-bold cursor-pointer"
+                                    onClick={() => handleStartEdit(faq)}
+                                    className="ml-2 flex items-center gap-1 px-2.5 py-1 bg-white border border-indigo-200 hover:border-indigo-400 text-indigo-600 hover:text-indigo-800 rounded-lg transition-all active:scale-95 shadow-sm font-bold cursor-pointer"
+                                    title="Edit this FAQ"
                                   >
-                                    👍 Yes
+                                    <PencilIcon className="h-3.5 w-3.5" />
+                                    Edit
                                   </button>
+                                )}
+                                {/* HR-only: delete custom FAQ */}
+                                {isHR && faq.isCustom && (
                                   <button
-                                    onClick={() => handleVote(faq.id, 'no')}
-                                    className="flex items-center gap-1 px-2.5 py-1 bg-white border border-neutral-250 hover:border-rose-300 hover:text-rose-650 rounded-lg transition-all active:scale-95 shadow-sm font-bold cursor-pointer"
+                                    onClick={() => handleDeleteCustomFAQ(faq.id)}
+                                    className="ml-2 flex items-center gap-1 px-2.5 py-1 bg-white border border-rose-200 hover:border-rose-400 text-rose-500 hover:text-rose-700 rounded-lg transition-all active:scale-95 shadow-sm font-bold cursor-pointer"
+                                    title="Remove this FAQ"
                                   >
-                                    👎 No
+                                    <TrashIcon className="h-3.5 w-3.5" />
+                                    Delete
                                   </button>
-                                </>
-                              )}
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-1.5 mt-8 pt-4">
+                    {/* Prev Button */}
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                      className="bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white px-4 py-2 rounded-xl text-sm font-bold cursor-pointer select-none transition-all shadow-xs"
+                    >
+                      Prev
+                    </button>
+
+                    {/* Page Numbers */}
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                      const isActive = pageNum === currentPage;
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`px-3.5 py-2 rounded-xl text-sm transition-all shadow-xs cursor-pointer select-none border ${
+                            isActive
+                              ? "bg-primary-600 border-primary-600 text-white font-bold"
+                              : "bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 font-semibold"
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+
+                    {/* Next Button */}
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      className="bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white px-4 py-2 rounded-xl text-sm font-bold cursor-pointer select-none transition-all shadow-xs"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-center py-12 bg-white border border-dashed border-neutral-300 rounded-2xl animate-fade-in">
                 <QuestionMarkCircleIcon className="h-10 w-10 text-neutral-300 mx-auto mb-2.5" />
@@ -914,7 +1287,7 @@ export const FAQPage: React.FC = () => {
           >
             <ChatBubbleLeftRightIcon className="h-6 w-6" />
             <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 ease-out text-sm font-bold whitespace-nowrap">
-              PeopleHub Assistant
+              How can I Help Today
             </span>
             <span className="absolute top-0 right-0 flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -933,7 +1306,7 @@ export const FAQPage: React.FC = () => {
                   <span className="absolute bottom-0 right-0 block h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-primary-600"></span>
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm leading-tight">PeopleHub Assistant</h3>
+                  <h3 className="font-bold text-sm leading-tight">How can I Help Today</h3>
                   <span className="text-[10px] text-primary-100 flex items-center gap-1 font-semibold mt-0.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
                     Active Helpdesk
