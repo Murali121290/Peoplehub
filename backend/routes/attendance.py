@@ -1780,6 +1780,7 @@ def get_attendance():
 
         attendance_list.append({
             "user_id": employee.user_id,
+            "employee_code": employee.employee_id,
             "employee_name": f"{employee.first_name} {employee.last_name}",
             "department": employee.department,
             "designation": employee.designation,
@@ -1994,6 +1995,9 @@ def _get_period_attendance_records(days_count, include_card_fields=False):
             )
 
             record = {
+
+                "employee_code":
+                    employee.employee_id,
 
                 "employee_name":
                     f"{employee.first_name} {employee.last_name}",
@@ -2333,6 +2337,14 @@ def export_monthly_attendance():
                 employees = []
         else:
             employees = [e for e in get_all_employees_cached() if is_employee_valid_for_report(e)]
+
+        # Filter by team/department if requested
+        team_param = request.args.get("team")
+        if team_param and team_param != "All":
+            employees = [
+                e for e in employees
+                if (e.department or "").strip().lower() == team_param.strip().lower()
+            ]
 
         # Sort employees by employee code in ascending order
         def get_emp_code_val(e):

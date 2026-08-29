@@ -21,6 +21,63 @@ const AnnouncementsPage = () => {
   const [sidebarTopOffset, setSidebarTopOffset] = useState("8.5rem");
   const [activeReactionPostId, setActiveReactionPostId] = useState<number | null>(null);
 
+  // New Image Upload States
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageUrl, setImageUrl] = useState("");
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 3MB size limit check (3 * 1024 * 1024 bytes)
+    const MAX_SIZE = 3 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      alert("Image size exceeds the 3MB maximum limit. Please select a smaller file.");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
+
+    // Show local preview immediately
+    const localUrl = URL.createObjectURL(file);
+    setImagePreviewUrl(localUrl);
+    setIsUploadingImage(true);
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    try {
+      const response = await fetch(`${BASE_API_URL}/api/communications/upload-image`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+      if (data.success && data.image_url) {
+        setImageUrl(data.image_url);
+      } else {
+        alert(data.error || "Failed to upload image");
+        handleRemoveImage();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to upload image");
+      handleRemoveImage();
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setImageUrl("");
+    setImagePreviewUrl("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
 
@@ -122,10 +179,11 @@ const AnnouncementsPage = () => {
 
     const announcementData = {
       user_id: user.id,
-      sender_name: user.first_name || "HR Admin",
+      sender_name: user.full_name || user.first_name || "HR Admin",
       title: title.trim(),
       target_role: targetRole,
       message: message.trim(),
+      image_url: imageUrl,
     };
 
 
@@ -138,6 +196,11 @@ const AnnouncementsPage = () => {
         setTitle("");
         setMessage("");
         setTargetRole("all");
+        setImageUrl("");
+        setImagePreviewUrl("");
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
         setShowEmojiPicker(false);
         setIsLoading(false);
         setTimeout(() => {
@@ -319,6 +382,25 @@ const AnnouncementsPage = () => {
                   className="w-full resize-none rounded-xl border-none bg-neutral-50 p-3 text-[15px] text-neutral-700 placeholder-neutral-400 focus:outline-none focus:ring-0 min-h-[100px]"
                 />
 
+                {imagePreviewUrl && (
+                  <div className="relative mt-3 inline-block rounded-xl overflow-hidden border border-neutral-200 shadow-sm max-w-[200px]">
+                    <img src={imagePreviewUrl} className="w-full h-auto object-cover max-h-[150px]" alt="Preview" />
+                    {isUploadingImage && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleRemoveImage}
+                      className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 hover:bg-black/85 text-white transition-colors"
+                      title="Remove Image"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                )}
+
                 <div className="mt-3 flex items-center justify-between">
                   <div className="flex items-center gap-2 relative">
                     <button
@@ -329,6 +411,22 @@ const AnnouncementsPage = () => {
                     >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 transition-colors"
+                      title="Add Image"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    </button>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleImageUpload}
+                      accept="image/*"
+                      className="hidden"
+                    />
                     {showEmojiPicker && (
                       <div ref={emojiPickerRef} className="absolute left-0 top-12 z-50 shadow-2xl">
                         <EmojiPicker onEmojiClick={onEmojiClick} autoFocusSearch={false} />
@@ -415,6 +513,19 @@ const AnnouncementsPage = () => {
                       <div className="mt-3">
                         <h3 className="text-[16px] font-bold text-neutral-800 mb-1.5">{item.title}</h3>
                         <p className="text-[14.5px] leading-relaxed text-neutral-700 whitespace-pre-wrap">{item.message}</p>
+                        
+                        {item.image_url && (
+                          <div className="mt-3 rounded-xl overflow-hidden border border-neutral-150 max-h-[400px] bg-neutral-50 flex items-center justify-center">
+                            <img
+                              src={item.image_url.startsWith("http") ? item.image_url : `${BASE_API_URL}${item.image_url}`}
+                              alt={item.title}
+                              className="max-w-full h-auto max-h-[400px] object-contain"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between gap-4 flex-wrap">
@@ -525,7 +636,11 @@ const AnnouncementsPage = () => {
                             )}
                             <div className="min-w-0">
                               <h4 className="font-semibold text-sm text-neutral-900 leading-snug">{b.first_name} {b.last_name}</h4>
-                              {b.department && <p className="text-xs text-neutral-500 font-medium mt-0.5">{b.department}</p>}
+                              {([b.designation, b.department].some(Boolean)) && (
+                                <p className="text-xs text-neutral-500 font-medium mt-0.5">
+                                  {[b.designation, b.department].filter(Boolean).join(" | ")}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -559,7 +674,12 @@ const AnnouncementsPage = () => {
                             )}
                             <div className="min-w-0">
                               <h4 className="font-semibold text-sm text-neutral-900 leading-snug">{a.first_name} {a.last_name}</h4>
-                              <p className="text-xs text-amber-700 font-semibold mt-0.5">{a.years} {a.years === 1 ? 'Year' : 'Years'} Milestone</p>
+                              {([a.designation, a.department].some(Boolean)) && (
+                                <p className="text-xs text-neutral-500 font-medium mt-0.5">
+                                  {[a.designation, a.department].filter(Boolean).join(" | ")}
+                                </p>
+                              )}
+                              <p className="text-xs text-amber-700 font-semibold mt-1.5">{a.years} {a.years === 1 ? 'Year' : 'Years'} Milestone</p>
                             </div>
                           </div>
                         </div>

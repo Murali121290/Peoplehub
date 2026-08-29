@@ -2376,6 +2376,7 @@ def get_team_attendance_by_id(team_id):
                 "last_name": emp.last_name,
                 "role": emp.designation,
                 "designation": emp.designation,
+                "reporting_manager": emp.reporting_manager,
                 "profile_image": f"/api/employees/image/{emp.id}" if emp.profile_image else None,
                 "status": status,
                 "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
@@ -2916,4 +2917,23 @@ def update_employee_status(employee_id):
         return jsonify({
             "success": False,
             "error": str(err)
+        }), 500
+
+@employees_bp.route("/departments", methods=["GET"])
+@auth_required
+def get_unique_departments():
+    try:
+        # Fetch unique departments from Employee table where department is not null or empty
+        records = db.session.query(Employee.department).distinct().all()
+        departments = sorted(list(set(
+            [r[0].strip() for r in records if r[0] and r[0].strip() and r[0].strip() != "-"]
+        )))
+        return jsonify({
+            "success": True,
+            "departments": departments
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
         }), 500

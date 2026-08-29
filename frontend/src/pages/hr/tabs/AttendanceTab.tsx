@@ -27,6 +27,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const [loading, setLoading] = useState(false);
   const [selectedShift, setSelectedShift] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [selectedTeam, setSelectedTeam] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [availableMonths, setAvailableMonths] = useState<any[]>([]);
   const [selectedCycle, setSelectedCycle] = useState<string>("");
@@ -415,6 +416,15 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const nightCount = getShiftCount("Night Shift");
   const wfhCount = uniqueEmployees.filter((emp) => !!emp.is_wfh).length;
   const shiftChangedCount = uniqueEmployees.filter((emp) => !!emp.is_shift_changed).length;
+  
+  // Teams list derivation
+  const availableTeams = Array.from(
+    new Set(
+      attendanceData
+        .map((emp) => emp.team || emp.department || "")
+        .filter((t) => t && t !== "-")
+    )
+  ).sort() as string[];
 
   // Overview Counts (calculated from current active view's unfiltered attendanceData)
   const totalEmployees = uniqueEmployees.length;
@@ -488,9 +498,18 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
     const matchesSearch =
       (emp.employee_name || "")
         .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      (emp.employee_code || "")
+        .toLowerCase()
         .includes(searchQuery.toLowerCase());
 
-    return matchesShift && matchesStatus && matchesSearch;
+    // 4. Team filter
+    const empTeam = (emp.team || emp.department || "").trim().toLowerCase();
+    const matchesTeam =
+      selectedTeam === "All" ||
+      empTeam === selectedTeam.trim().toLowerCase();
+
+    return matchesShift && matchesStatus && matchesTeam && matchesSearch;
   });
 
   const displayData =
@@ -568,6 +587,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         queryParams.push(`month=${m}`);
         queryParams.push(`year=${y}`);
       }
+      if (selectedTeam && selectedTeam !== "All") {
+        queryParams.push(`team=${encodeURIComponent(selectedTeam)}`);
+      }
 
       if (queryParams.length > 0) {
         url += `?${queryParams.join("&")}`;
@@ -601,6 +623,15 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         <div className="font-semibold text-neutral-800">
           {at.employee_name}
         </div>
+      ),
+    },
+    {
+      key: "employee_code",
+      header: "Employee ID",
+      render: (at: any) => (
+        <span className="font-mono text-neutral-600 text-xs font-semibold">
+          {at.employee_code || "-"}
+        </span>
       ),
     },
     {
@@ -662,6 +693,15 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       ),
     },
     {
+      key: "employee_code",
+      header: "Employee ID",
+      render: (row: any) => (
+        <span className="font-mono text-neutral-650 text-xs font-semibold">
+          {row.employee_code || "-"}
+        </span>
+      ),
+    },
+    {
       key: "team",
       header: "Team",
       render: (row: any) => (
@@ -718,6 +758,15 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       ),
     },
     {
+      key: "employee_code",
+      header: "Employee ID",
+      render: (row: any) => (
+        <span className="font-mono text-neutral-650 text-xs font-semibold">
+          {row.employee_code || "-"}
+        </span>
+      ),
+    },
+    {
       key: "team",
       header: "Team",
       render: (row: any) => (
@@ -761,6 +810,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const clearFilters = () => {
     setSelectedShift("All");
     setStatusFilter("All");
+    setSelectedTeam("All");
     setSearchQuery("");
   };
 
@@ -855,6 +905,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                       try {
                         const token = localStorage.getItem("token");
                         let url = `${BASE_URL}/attendance/export-monthly?month=${m.month}&year=${m.year}`;
+                        if (selectedTeam && selectedTeam !== "All") {
+                          url += `&team=${encodeURIComponent(selectedTeam)}`;
+                        }
                         const response = await fetch(url, {
                           headers: { "Authorization": `Bearer ${token}` }
                         });
@@ -1186,7 +1239,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search employee by name..."
+            placeholder="Search by name or Employee ID..."
             className="block w-full rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-2 text-sm text-neutral-800 placeholder-neutral-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
           />
         </div>
@@ -1196,12 +1249,13 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       </div>
 
       {/* Active Filters Display */}
-      {(selectedShift !== "All" || statusFilter !== "All" || searchQuery !== "") && (
+      {(selectedShift !== "All" || statusFilter !== "All" || selectedTeam !== "All" || searchQuery !== "") && (
         <div className="mb-4 flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-200 w-fit">
           <span className="text-xs text-neutral-600 font-semibold">
             Active Filters:
             {selectedShift !== "All" && ` [Shift: ${selectedShift}]`}
             {statusFilter !== "All" && ` [Status: ${statusFilter}]`}
+            {selectedTeam !== "All" && ` [Team: ${selectedTeam}]`}
             {searchQuery !== "" && ` [Search: "${searchQuery}"]`}
           </span>
           <Button onClick={clearFilters} variant="outline" size="sm" className="h-6 py-0 text-[10px]">
@@ -1222,40 +1276,59 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
           {attendanceView === "monthly" && "Monthly Attendance"}
         </h2>
 
-        {/* Project DatePicker: only show for Today view */}
-        {attendanceView === "today" && (
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
-            <div style={{ width: "180px" }}>
-              <DatePicker
-                value={selectedDate}
-                onChange={(val) => setSelectedDate(val)}
-                placeholder="Pick a date"
-              />
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Project DatePicker: only show for Today view */}
+          {attendanceView === "today" && (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ width: "180px" }}>
+                <DatePicker
+                  value={selectedDate}
+                  onChange={(val) => setSelectedDate(val)}
+                  placeholder="Pick a date"
+                />
+              </div>
+              {/* Reset to Today pill */}
+              {selectedDate && (
+                <button
+                  onClick={() => setSelectedDate("")}
+                  style={{
+                    background: "#f0fdf4",
+                    border: "1px solid #bbf7d0",
+                    borderRadius: "20px",
+                    padding: "3px 10px",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "#15803d",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ✕ Back to Today
+                </button>
+              )}
             </div>
-            {/* Reset to Today pill */}
-            {selectedDate && (
-              <button
-                onClick={() => setSelectedDate("")}
-                style={{
-                  background: "#f0fdf4",
-                  border: "1px solid #bbf7d0",
-                  borderRadius: "20px",
-                  padding: "3px 10px",
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  color: "#15803d",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                ✕ Back to Today
-              </button>
-            )}
+          )}
+
+          {/* Team Filter Dropdown */}
+          <div style={{ width: "180px" }}>
+            <select
+              value={selectedTeam}
+              onChange={(e) => setSelectedTeam(e.target.value)}
+              className="w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-xs font-bold text-neutral-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-3xs"
+              style={{ height: "38px" }}
+            >
+              <option value="All">All Teams</option>
+              {availableTeams.map((team) => (
+                <option key={team} value={team}>
+                  {team}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
+        </div>
 
         <div className="h-px bg-neutral-200 flex-1"></div>
       </div>
@@ -1270,6 +1343,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
               {/* Group Headers */}
               <tr className="border-b border-neutral-300 text-neutral-500 text-[10px] font-extrabold uppercase tracking-widest bg-neutral-50/40">
                 <th rowSpan={2} className="p-3 pl-6 border-r border-neutral-300 text-left">Employee</th>
+                <th rowSpan={2} className="p-3 border-r border-neutral-300 text-left">Employee ID</th>
                 <th rowSpan={2} className="p-3 border-r border-neutral-300 text-left">Department</th>
 
                 <th colSpan={3} className="p-2.5 text-center border-r border-b-2 border-cyan-500 bg-cyan-50/20 text-cyan-700 text-[11px] font-black">
@@ -1303,7 +1377,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             <tbody className="divide-y divide-neutral-300 text-xs font-semibold text-neutral-700 bg-white">
               {displayData.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
+                  <td colSpan={13} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
                     No Attendance Records Found
                   </td>
                 </tr>
@@ -1331,6 +1405,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                   return (
                     <tr key={i} className="hover:bg-primary-500/5 transition-colors border-b border-neutral-300">
                       <td className="p-3 pl-6 font-bold text-neutral-900 border-r border-neutral-300">{row.employee_name}</td>
+                      <td className="p-3 text-neutral-600 font-mono text-xs font-semibold border-r border-neutral-300">{row.employee_code || "-"}</td>
                       <td className="p-3 text-neutral-500 border-r border-neutral-300 font-bold">{row.department || row.team || "-"}</td>
 
                       {/* Web Site Entry */}
