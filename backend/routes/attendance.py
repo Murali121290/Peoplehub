@@ -582,6 +582,33 @@ def calculate_attendance_status(attendance):
     else:
         gross_hours = 0.0
 
+    # 1.5 Add Approved Permission Hours
+    if attendance.user_id and attendance.attendance_date:
+        try:
+            from models.employee import Employee
+            from models.leave_request import LeaveRequest
+            from sqlalchemy import or_ as sql_or
+            emp = Employee.query.filter_by(user_id=attendance.user_id).first()
+            if emp:
+                permission = LeaveRequest.query.filter(
+                    LeaveRequest.request_type == "Permission",
+                    LeaveRequest.status == "Approved",
+                    LeaveRequest.permission_date == attendance.attendance_date,
+                    sql_or(
+                        LeaveRequest.employee_id == str(emp.id),
+                        LeaveRequest.employee_id == emp.employee_id
+                    )
+                ).first()
+                if permission and permission.from_time and permission.to_time:
+                    f_time = permission.from_time
+                    t_time = permission.to_time
+                    f_sec = f_time.hour * 3600 + f_time.minute * 60 + f_time.second
+                    t_sec = t_time.hour * 3600 + t_time.minute * 60 + t_time.second
+                    permission_hours = max(t_sec - f_sec, 0) / 3600.0
+                    gross_hours += permission_hours
+        except Exception as e:
+            print("Error calculating permission hours in attendance status:", e)
+
     # 2. Determine status
     if eff_in and not eff_out:
         # Checked in but not yet checked out
@@ -596,10 +623,14 @@ def calculate_attendance_status(attendance):
 
     if gross_hours < 4.0:
         attendance.status = "Absent"
-    elif gross_hours < 7.0:
-        attendance.status = "Half Day"
     else:
-        attendance.status = "Present"
+        is_weekend = attendance.attendance_date.weekday() >= 5
+        req_hours = 7.0 if is_weekend else 8.0
+        
+        if gross_hours < req_hours:
+            attendance.status = "Half Day"
+        else:
+            attendance.status = "Present"
 
 
 def sync_biometric_to_web_entry(attendance):
@@ -1780,6 +1811,7 @@ def get_attendance():
 
         attendance_list.append({
             "user_id": employee.user_id,
+            "employee_code": employee.employee_id,
             "employee_name": f"{employee.first_name} {employee.last_name}",
             "department": employee.department,
             "designation": employee.designation,
@@ -1994,6 +2026,9 @@ def _get_period_attendance_records(days_count, include_card_fields=False):
             )
 
             record = {
+
+                "employee_code":
+                    employee.employee_id,
 
                 "employee_name":
                     f"{employee.first_name} {employee.last_name}",
@@ -2333,6 +2368,14 @@ def export_monthly_attendance():
                 employees = []
         else:
             employees = [e for e in get_all_employees_cached() if is_employee_valid_for_report(e)]
+
+        # Filter by team/department if requested
+        team_param = request.args.get("team")
+        if team_param and team_param != "All":
+            employees = [
+                e for e in employees
+                if (e.department or "").strip().lower() == team_param.strip().lower()
+            ]
 
         # Sort employees by employee code in ascending order
         def get_emp_code_val(e):
@@ -4526,7 +4569,10 @@ def update_attendance_record():
             attendance.total_hours = max(0.0, int((diff_seconds / 3600.0) * 100) / 100)
             
             # Auto-calculate status based on hours
-            if attendance.total_hours >= 7.0:
+            is_weekend = attendance.attendance_date.weekday() >= 5
+            req_hours = 7.0 if is_weekend else 8.0
+            
+            if attendance.total_hours >= req_hours:
                 attendance.status = "Present"
             elif attendance.total_hours >= 4.0:
                 attendance.status = "Half Day"

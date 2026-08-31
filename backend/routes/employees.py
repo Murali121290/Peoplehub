@@ -1800,31 +1800,12 @@ def get_reporting_employees(user_id):
             # Determine status and employee_category
             status = "Absent"
             employee_category = "absent"  # "present" | "absent" | "leave"
+            gross_hours = 0.0
 
             if attendance:
                 status = attendance.status
-                eff_in = attendance.check_in or attendance.card_check_in
-                eff_out = attendance.check_out or attendance.card_check_out
-                if eff_in and eff_out:
-                    gross_sec = (eff_out - eff_in).total_seconds()
-                    gross_hours = max(gross_sec, 0) / 3600
-                elif eff_in:
-                    now_time = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
-                    if date_to_check == now_time.date():
-                        gross_sec = (now_time - eff_in).total_seconds()
-                        gross_hours = max(gross_sec, 0) / 3600
-                    else:
-                        gross_hours = 0.0
-                else:
-                    gross_hours = 0.0
 
-                if (attendance.check_out or attendance.card_check_out) and status not in ("Absent", "Leave"):
-                    if gross_hours < 4.0:
-                        status = "Absent"
-                    elif gross_hours < 8.0:
-                        status = "Half Day"
-                    else:
-                        status = "Present"
+
 
                 if status in ("Present", "Half Day"):
                     employee_category = "present"
@@ -1876,6 +1857,20 @@ def get_reporting_employees(user_id):
                 if (attendance.check_in or attendance.card_check_in) and permission_hours > 0:
                     working_hours_val += permission_hours
             working_hours_val = int(working_hours_val * 100) / 100
+            
+            # Calculate Highlights
+            is_weekend = date_to_check.weekday() >= 5
+            highlight_short_hours = False
+            if working_hours_val > 0:
+                is_half_day_leave = leave and leave.total_days == 0.5
+                if is_half_day_leave:
+                    if working_hours_val < 4.0:
+                        highlight_short_hours = True
+                else:
+                    if is_weekend and working_hours_val < 7.0:
+                        highlight_short_hours = True
+                    elif not is_weekend and working_hours_val < 8.0:
+                        highlight_short_hours = True
 
             hist = (attendance.clarification_history if (attendance and isinstance(attendance.clarification_history, list)) else [])
 
@@ -1889,6 +1884,21 @@ def get_reporting_employees(user_id):
             ).first()
             wages_status = wages_req.status if wages_req else None
             is_one_day_wages_final = (wages_req is not None and wages_req.status == "Approved")
+
+            # AUTO-APPROVE LOGIC (Don't show Present w/o short hours, or Leave Approved)
+            should_auto_approve = False
+            if status == "Present" and not highlight_short_hours:
+                should_auto_approve = True
+            elif status == "Leave" and leave and leave.status == "Approved":
+                should_auto_approve = True
+            elif status == "Half Day" and not highlight_short_hours and leave and leave.status == "Approved" and leave.total_days == 0.5:
+                should_auto_approve = True
+
+            if should_auto_approve:
+                if attendance and (attendance.manager_status or "").strip().lower() in ("pending", ""):
+                    attendance.manager_status = "Approved"
+                    has_any_updates = True
+                return None
 
             return {
                 "summary_date":
@@ -1943,6 +1953,8 @@ def get_reporting_employees(user_id):
 
                 "working_hours":
                     working_hours_val,
+
+                "highlight_short_hours": highlight_short_hours,
 
                 "permission_time":
                     permission_time_val,
@@ -2376,6 +2388,7 @@ def get_team_attendance_by_id(team_id):
                 "last_name": emp.last_name,
                 "role": emp.designation,
                 "designation": emp.designation,
+                "reporting_manager": emp.reporting_manager,
                 "profile_image": f"/api/employees/image/{emp.id}" if emp.profile_image else None,
                 "status": status,
                 "check_in": attendance.check_in.strftime("%I:%M %p") if attendance and attendance.check_in else "-",
@@ -2916,4 +2929,23 @@ def update_employee_status(employee_id):
         return jsonify({
             "success": False,
             "error": str(err)
+        }), 500
+
+@employees_bp.route("/departments", methods=["GET"])
+@auth_required
+def get_unique_departments():
+    try:
+        # Fetch unique departments from Employee table where department is not null or empty
+        records = db.session.query(Employee.department).distinct().all()
+        departments = sorted(list(set(
+            [r[0].strip() for r in records if r[0] and r[0].strip() and r[0].strip() != "-"]
+        )))
+        return jsonify({
+            "success": True,
+            "departments": departments
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
         }), 500

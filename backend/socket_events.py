@@ -288,6 +288,8 @@ def register_socket_events(socketio):
 
             message=message_text,
 
+            image_url=data.get("image_url"),
+
             created_by=sender_name
         )
 

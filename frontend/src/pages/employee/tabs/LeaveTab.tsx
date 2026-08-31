@@ -76,10 +76,10 @@ interface LeaveTabProps {
 const getResolvedStatus = (req: any) => {
   if (req.status === "Cancelled") return "Cancelled";
   if (req.status === "Rejected") return "Rejected";
-  
+
   const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
   const isPermission = req.request_type === "Permission";
-  
+
   const checkIsCompleted = () => {
     if (!isPermission) {
       if (!req.to_date) return false;
@@ -107,14 +107,14 @@ const getResolvedStatus = (req: any) => {
     }
     return false;
   };
-  
+
   const isCompleted = checkIsCompleted();
-  
+
   if (isCompleted) {
     if (req.status === "Pending") return "Out of Date";
     if (req.status === "Approved") return "Approved";
   }
-  
+
   const checkIsInProgress = () => {
     if (req.status !== "Approved") return false;
     if (isPermission) {
@@ -143,9 +143,9 @@ const getResolvedStatus = (req: any) => {
       return req.from_date && req.to_date && today >= req.from_date && today <= req.to_date;
     }
   };
-  
-  if (checkIsInProgress()) return "In Progress";
-  
+
+  // if (checkIsInProgress()) return "In Progress";
+
   return req.status;
 };
 
@@ -1075,10 +1075,10 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                             ].map((step, i) => (
                               <div key={step.title} className="flex flex-col items-center relative z-10">
                                 <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 text-xs font-bold transition-all shadow-sm ${step.completed
-                                    ? "bg-success-500 border-success-500 text-white"
-                                    : step.active
-                                      ? "bg-white border-warning-500 text-warning-700 ring-4 ring-warning-100"
-                                      : "bg-white border-neutral-300 text-neutral-400"
+                                  ? "bg-success-500 border-success-500 text-white"
+                                  : step.active
+                                    ? "bg-white border-warning-500 text-warning-700 ring-4 ring-warning-100"
+                                    : "bg-white border-neutral-300 text-neutral-400"
                                   }`}>
                                   {step.completed ? <CheckIcon className="w-3.5 h-3.5" /> : (i + 1)}
                                 </div>
@@ -1167,21 +1167,19 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             <div className="flex bg-neutral-100 p-1 rounded-xl border border-neutral-200">
               <button
                 onClick={() => setTimelineTab("timeline")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                  timelineTab === "timeline"
-                    ? "bg-white text-primary-700 shadow-sm"
-                    : "text-neutral-600 hover:text-neutral-800"
-                }`}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${timelineTab === "timeline"
+                  ? "bg-white text-primary-700 shadow-sm"
+                  : "text-neutral-600 hover:text-neutral-800"
+                  }`}
               >
                 📅 {mode === "leave" ? "Leave Timeline" : mode === "permission" ? "Permission Timeline" : "Leave & Holiday Timeline"} ({upcomingLeaves.length + leaveHistoryRequests.length})
               </button>
               <button
                 onClick={() => setTimelineTab("holidays")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                  timelineTab === "holidays"
-                    ? "bg-white text-primary-700 shadow-sm"
-                    : "text-neutral-600 hover:text-neutral-800"
-                }`}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${timelineTab === "holidays"
+                  ? "bg-white text-primary-700 shadow-sm"
+                  : "text-neutral-600 hover:text-neutral-800"
+                  }`}
               >
                 🎉 Company Holidays ({allYearHolidays.length})
               </button>
@@ -1224,8 +1222,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                       ) : (
                         upcomingLeaves.map((req: any) => {
                           const isPermission = req.request_type === "Permission";
-                          const dateStr = isPermission 
-                            ? `${formatDateStr(req.permission_date)} @ ${req.from_time} - ${req.to_time}` 
+                          const dateStr = isPermission
+                            ? `${formatDateStr(req.permission_date)} @ ${req.from_time} - ${req.to_time}`
                             : `${formatDateStr(req.from_date)} to ${formatDateStr(req.to_date)}`;
 
                           const formatDateTime = (isoString: string | null | undefined) => {
@@ -1260,7 +1258,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                             if (r.status === "Cancelled") return formatDateTime(r.cancelled_at);
                             return "Pending";
                           };
-                          
+
                           return (
                             <tr key={req.id} className="hover:bg-neutral-50/40 transition-colors">
                               <td className="p-3 font-semibold text-neutral-800">
@@ -1327,12 +1325,12 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                       ) : (
                         leaveHistoryRequests.map((req: any) => {
                           const isPermission = req.request_type === "Permission";
-                          const dateStr = isPermission 
-                            ? `${formatDateStr(req.permission_date)} @ ${req.from_time} - ${req.to_time}` 
+                          const dateStr = isPermission
+                            ? `${formatDateStr(req.permission_date)} @ ${req.from_time} - ${req.to_time}`
                             : `${formatDateStr(req.from_date)} to ${formatDateStr(req.to_date)}`;
-                          
+
                           const resolved = getResolvedStatus(req);
-                          
+
                           let calculatedBadgeColor = "bg-amber-50 text-amber-700 border-amber-200";
                           if (resolved === "In Progress") calculatedBadgeColor = "bg-sky-50 text-sky-700 border-sky-200";
                           else if (resolved === "Approved" || resolved === "Completed") calculatedBadgeColor = "bg-green-50 text-green-700 border-green-200";
@@ -1382,8 +1380,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                                 {dateStr}
                               </td>
                               <td className="p-3 text-neutral-600 font-medium">
-                                {isPermission 
-                                  ? "Hourly" 
+                                {isPermission
+                                  ? "Hourly"
                                   : `${req.total_days} ${req.total_days === 1 ? "Day" : "Days"}`}
                               </td>
                               <td className="p-3 text-neutral-600 font-medium">
@@ -1430,7 +1428,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         const isUpcoming = hol.date >= todayStr;
                         const dateObj = new Date(hol.date);
                         const dayName = WEEKDAYS[dateObj.getDay()] || "—";
-                        
+
                         return (
                           <tr key={hol.id} className={`hover:bg-neutral-50/40 transition-colors ${!isUpcoming ? "opacity-60" : ""}`}>
                             <td className="p-3 font-semibold text-neutral-800">{hol.name}</td>
@@ -1455,7 +1453,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
       </>
 
-       {/* Leave Form Modal */}
+      {/* Leave Form Modal */}
       <Modal
         isOpen={showLeaveForm}
         onClose={() => setShowLeaveForm(false)}
@@ -1669,7 +1667,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                   className="w-full px-4 py-2.5 border border-neutral-200 rounded-xl bg-neutral-100 text-sm text-neutral-500 font-medium"
                 />
               </div>
-{/* 
+              {/* 
               {leaveForm.requestType === "Leave" && (
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Work Handover Partner</label>
@@ -1764,204 +1762,204 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             </div>
 
             {/* Form Action Buttons */}
-                <div className="flex gap-3 pt-6 border-t border-neutral-200">
-                  <Button type="button" variant="outline" onClick={() => setShowLeaveForm(false)} className="rounded-xl px-5 py-2.5 text-sm font-semibold">
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm shadow-md hover:shadow-lg transition-all duration-200">
-                    {editingLeave ? "Update Request" : "Submit Request"}
-                  </Button>
-                </div>
-              </div>
+            <div className="flex gap-3 pt-6 border-t border-neutral-200">
+              <Button type="button" variant="outline" onClick={() => setShowLeaveForm(false)} className="rounded-xl px-5 py-2.5 text-sm font-semibold">
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl px-6 py-2.5 text-sm shadow-md hover:shadow-lg transition-all duration-200">
+                {editingLeave ? "Update Request" : "Submit Request"}
+              </Button>
+            </div>
+          </div>
 
-              {/* Right Policy Side Panel */}
-              <div className="space-y-6">
-                {/* Live Leave Balance list */}
-                {mode !== "permission" && (
-                  <div className="bg-primary-50 border border-primary-200 rounded-2xl p-5 shadow-sm">
-                    <h3 className="font-extrabold text-sm mb-4 text-primary-900 flex items-center gap-1.5">
-                      <ShieldCheckIcon className="w-4 animate-bounce h-4 text-primary-700" />
-                      Leave Balance Summary
-                    </h3>
-                    <div className="space-y-3.5 text-xs">
-                      {(() => {
-                        const validPolicies = activeLeavePolicies;
-                        const totalAvailable = validPolicies.reduce((sum, pol) => sum + getAvailableBalance(pol.leave_type, pol.yearly_limit), 0);
+          {/* Right Policy Side Panel */}
+          <div className="space-y-6">
+            {/* Live Leave Balance list */}
+            {mode !== "permission" && (
+              <div className="bg-primary-50 border border-primary-200 rounded-2xl p-5 shadow-sm">
+                <h3 className="font-extrabold text-sm mb-4 text-primary-900 flex items-center gap-1.5">
+                  <ShieldCheckIcon className="w-4 animate-bounce h-4 text-primary-700" />
+                  Leave Balance Summary
+                </h3>
+                <div className="space-y-3.5 text-xs">
+                  {(() => {
+                    const validPolicies = activeLeavePolicies;
+                    const totalAvailable = validPolicies.reduce((sum, pol) => sum + getAvailableBalance(pol.leave_type, pol.yearly_limit), 0);
 
-                        const isLeaveRequest = leaveForm.requestType === "Leave";
-                        const activeLeaveType = leaveForm.leaveType;
-                        const requestedDays = isLeaveRequest && activeLeaveType ? (leaveForm.totalDays || 0) : 0;
+                    const isLeaveRequest = leaveForm.requestType === "Leave";
+                    const activeLeaveType = leaveForm.leaveType;
+                    const requestedDays = isLeaveRequest && activeLeaveType ? (leaveForm.totalDays || 0) : 0;
 
-                        let deductionFromTotal = 0;
-                        let lopDays = 0;
+                    let deductionFromTotal = 0;
+                    let lopDays = 0;
 
-                        if (requestedDays > 0 && activeLeaveType) {
-                          const activePol = validPolicies.find(p => p.leave_type === activeLeaveType);
-                          const rawAvail = activePol ? getAvailableBalance(activePol.leave_type, activePol.yearly_limit) : getAvailableBalance(activeLeaveType, 0);
-                          const avail = rawAvail;
+                    if (requestedDays > 0 && activeLeaveType) {
+                      const activePol = validPolicies.find(p => p.leave_type === activeLeaveType);
+                      const rawAvail = activePol ? getAvailableBalance(activePol.leave_type, activePol.yearly_limit) : getAvailableBalance(activeLeaveType, 0);
+                      const avail = rawAvail;
 
-                          if (avail >= requestedDays) {
-                            deductionFromTotal = requestedDays;
-                          } else {
-                            deductionFromTotal = Math.max(0, avail);
-                            lopDays = requestedDays - avail;
-                          }
-                        }
+                      if (avail >= requestedDays) {
+                        deductionFromTotal = requestedDays;
+                      } else {
+                        deductionFromTotal = Math.max(0, avail);
+                        lopDays = requestedDays - avail;
+                      }
+                    }
 
-                        const projectedTotal = totalAvailable - deductionFromTotal;
+                    const projectedTotal = totalAvailable - deductionFromTotal;
 
-                        return (
-                          <>
-                            {validPolicies.map((pol) => {
-                              const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
-                              const isActive = activeLeaveType === pol.leave_type;
+                    return (
+                      <>
+                        {validPolicies.map((pol) => {
+                          const available = getAvailableBalance(pol.leave_type, pol.yearly_limit);
+                          const isActive = activeLeaveType === pol.leave_type;
 
-                              return (
-                                <div key={pol.leave_type} className="flex justify-between items-start py-1.5 border-b border-primary-100/60 last:border-b-0">
-                                  <div>
-                                    <span className={`font-semibold ${isActive ? "text-primary-850 font-bold" : "text-neutral-600"}`}>
-                                      {pol.leave_type}
+                          return (
+                            <div key={pol.leave_type} className="flex justify-between items-start py-1.5 border-b border-primary-100/60 last:border-b-0">
+                              <div>
+                                <span className={`font-semibold ${isActive ? "text-primary-850 font-bold" : "text-neutral-600"}`}>
+                                  {pol.leave_type}
+                                </span>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className={`font-extrabold ${isActive ? "text-primary-900" : "text-neutral-700"}`}>
+                                  {available} days
+                                </span>
+                                {isActive && requestedDays > 0 && (
+                                  <span className="text-amber-600 font-semibold text-[11px] mt-0.5 whitespace-nowrap">
+                                    Availed {requestedDays} {requestedDays === 1 ? "day" : "days"}{" "}
+                                    <span className="text-primary-700 ml-1">
+                                      {Math.max(0, available - requestedDays)}
                                     </span>
-                                  </div>
-                                  <div className="flex flex-col items-end">
-                                    <span className={`font-extrabold ${isActive ? "text-primary-900" : "text-neutral-700"}`}>
-                                      {available} days
-                                    </span>
-                                    {isActive && requestedDays > 0 && (
-                                      <span className="text-amber-600 font-semibold text-[11px] mt-0.5 whitespace-nowrap">
-                                        Availed {requestedDays} {requestedDays === 1 ? "day" : "days"}{" "}
-                                        <span className="text-primary-700 ml-1">
-                                          {Math.max(0, available - requestedDays)}
-                                        </span>
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-
-                            <div className="flex justify-between items-center pt-3 text-sm">
-                              <span className="font-bold text-primary-900">Total Balance</span>
-                              <div className="flex items-center gap-2 font-extrabold text-primary-800">
-                                <span className={requestedDays > 0 ? "line-through opacity-50" : ""}>{Math.max(0, totalAvailable)} days</span>
-                                {requestedDays > 0 && (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-primary-700">{Math.max(0, projectedTotal)} days</span>
-                                    {lopDays > 0 && (
-                                      <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded text-[11px]">
-                                        Lop {lopDays}
-                                      </span>
-                                    )}
-                                  </div>
+                                  </span>
                                 )}
                               </div>
                             </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                )}
+                          );
+                        })}
 
-                {/* Permission Balance Summary card */}
-                {mode !== "leave" && (
-                  <div className="bg-violet-50 border border-violet-200 rounded-2xl p-5 shadow-sm">
-                    <h3 className="font-extrabold text-sm mb-1 text-violet-900 flex items-center gap-1.5">
-                      <ClockIcon className="w-4 h-4 text-violet-700 animate-pulse" />
-                      Permission Balance Summary
-                    </h3>
-                    <p className="text-[10px] text-violet-600 font-bold mb-4">
-                      Cycle: {permissionBalanceInfo.cycleStr}
-                    </p>
-                    <div className="space-y-3 text-xs">
-                      <div className="flex justify-between items-center py-1.5 border-b border-violet-100">
-                        <span className="text-neutral-600 font-semibold">Monthly Limit</span>
-                        <span className="font-extrabold text-violet-850 text-neutral-700">{permissionBalanceInfo.limitStr}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-1.5 border-b border-violet-100">
-                        <span className="text-neutral-600 font-semibold">Approved Permission</span>
-                        <span className="font-extrabold text-violet-850 text-neutral-700">{permissionBalanceInfo.approvedStr}</span>
-                      </div>
-                      <div className="flex justify-between items-center pt-2.5 text-sm">
-                        <span className="font-bold text-violet-950">Remaining Balance</span>
-                        <span className="font-extrabold text-violet-900">
-                          {permissionBalanceInfo.remainingStr}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Leave Policy description */}
-                {mode !== "permission" && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 shadow-sm">
-                    <h4 className="font-extrabold text-sm mb-3 text-emerald-900 flex items-center gap-1.5">
-                      <InformationCircleIcon className="w-4 h-4 text-emerald-700" />
-                      Leave Information
-                    </h4>
-                    <ul className="text-[11px] text-neutral-600 space-y-3 font-semibold leading-relaxed">
-                      <li className="flex items-start gap-2">
-                        <span className="text-emerald-500 mt-0.5">•</span>
-                        <span><strong>Privilege Leave:</strong> Planned leaves (vacation, trips) requiring prior scheduling.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-emerald-500 mt-0.5">•</span>
-                        <span><strong>Casual Leave:</strong> Personal work or unplanned immediate events.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-emerald-500 mt-0.5">•</span>
-                        <span><strong>Sick Leave:</strong> Auto-approved or manager-approved medical recoveries.</span>
-                      </li>
-                    </ul>
-                  </div>
-                )}
-
-                {/* Permission Policy description */}
-                {mode === "permission" && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 shadow-sm">
-                    <h4 className="font-extrabold text-sm mb-3 text-emerald-900 flex items-center gap-1.5">
-                      <InformationCircleIcon className="w-4 h-4 text-emerald-700" />
-                      Permission Info
-                    </h4>
-                    <p className="text-[11px] text-neutral-600 font-semibold leading-relaxed">
-                      Permissions are hourly slots designed for short personal outings (emergency or doctor visits).
-                      Up to 2 hours of permission is allowed per monthly cycle (25th to 24th).
-                    </p>
-                  </div>
-                )}
-
-                {/* Guidelines info */}
-                {mode !== "permission" && (
-                  <div className="bg-warning-50 border border-warning-200 rounded-2xl p-5 shadow-sm">
-                    <h4 className="font-extrabold text-sm mb-3 text-warning-900 flex items-center gap-1.5">
-                      <InformationCircleIcon className="w-4 h-4 text-warning-700" />
-                      Quick Guidelines
-                    </h4>
-                    <ul className="text-[11px] text-neutral-600 space-y-2.5 font-semibold leading-relaxed">
-                      <li>• Apply at least 2 days in advance for planned leaves.</li>
-                      {/* <li>• Ensure work handover partner is selected.</li> */}
-                      <li>• Keep emergency contact up to date.</li>
-                    </ul>
-                  </div>
-                )}
-
-                {/* Permission Guidelines info */}
-                {mode === "permission" && (
-                  <div className="bg-warning-50 border border-warning-200 rounded-2xl p-5 shadow-sm">
-                    <h4 className="font-extrabold text-sm mb-3 text-warning-900 flex items-center gap-1.5">
-                      <InformationCircleIcon className="w-4 h-4 text-warning-700" />
-                      Quick Guidelines
-                    </h4>
-                    <ul className="text-[11px] text-neutral-600 space-y-2.5 font-semibold leading-relaxed">
-                      <li>• Request must be submitted before stepping out.</li>
-                      <li>• Get approval from your reporting manager.</li>
-                      <li>• Limit permission to a maximum of 2 hours.</li>
-                    </ul>
-                  </div>
-                )}
+                        <div className="flex justify-between items-center pt-3 text-sm">
+                          <span className="font-bold text-primary-900">Total Balance</span>
+                          <div className="flex items-center gap-2 font-extrabold text-primary-800">
+                            <span className={requestedDays > 0 ? "line-through opacity-50" : ""}>{Math.max(0, totalAvailable)} days</span>
+                            {requestedDays > 0 && (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-primary-700">{Math.max(0, projectedTotal)} days</span>
+                                {lopDays > 0 && (
+                                  <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded text-[11px]">
+                                    Lop {lopDays}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
-            </form>
-          </Modal>
+            )}
+
+            {/* Permission Balance Summary card */}
+            {mode !== "leave" && (
+              <div className="bg-violet-50 border border-violet-200 rounded-2xl p-5 shadow-sm">
+                <h3 className="font-extrabold text-sm mb-1 text-violet-900 flex items-center gap-1.5">
+                  <ClockIcon className="w-4 h-4 text-violet-700 animate-pulse" />
+                  Permission Balance Summary
+                </h3>
+                <p className="text-[10px] text-violet-600 font-bold mb-4">
+                  Cycle: {permissionBalanceInfo.cycleStr}
+                </p>
+                <div className="space-y-3 text-xs">
+                  <div className="flex justify-between items-center py-1.5 border-b border-violet-100">
+                    <span className="text-neutral-600 font-semibold">Monthly Limit</span>
+                    <span className="font-extrabold text-violet-850 text-neutral-700">{permissionBalanceInfo.limitStr}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1.5 border-b border-violet-100">
+                    <span className="text-neutral-600 font-semibold">Approved Permission</span>
+                    <span className="font-extrabold text-violet-850 text-neutral-700">{permissionBalanceInfo.approvedStr}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-2.5 text-sm">
+                    <span className="font-bold text-violet-950">Remaining Balance</span>
+                    <span className="font-extrabold text-violet-900">
+                      {permissionBalanceInfo.remainingStr}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Leave Policy description */}
+            {mode !== "permission" && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 shadow-sm">
+                <h4 className="font-extrabold text-sm mb-3 text-emerald-900 flex items-center gap-1.5">
+                  <InformationCircleIcon className="w-4 h-4 text-emerald-700" />
+                  Leave Information
+                </h4>
+                <ul className="text-[11px] text-neutral-600 space-y-3 font-semibold leading-relaxed">
+                  <li className="flex items-start gap-2">
+                    <span className="text-emerald-500 mt-0.5">•</span>
+                    <span><strong>Privilege Leave:</strong> Planned leaves (vacation, trips) requiring prior scheduling.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-emerald-500 mt-0.5">•</span>
+                    <span><strong>Casual Leave:</strong> Personal work or unplanned immediate events.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-emerald-500 mt-0.5">•</span>
+                    <span><strong>Sick Leave:</strong> Auto-approved or manager-approved medical recoveries.</span>
+                  </li>
+                </ul>
+              </div>
+            )}
+
+            {/* Permission Policy description */}
+            {mode === "permission" && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 shadow-sm">
+                <h4 className="font-extrabold text-sm mb-3 text-emerald-900 flex items-center gap-1.5">
+                  <InformationCircleIcon className="w-4 h-4 text-emerald-700" />
+                  Permission Info
+                </h4>
+                <p className="text-[11px] text-neutral-600 font-semibold leading-relaxed">
+                  Permissions are hourly slots designed for short personal outings (emergency or doctor visits).
+                  Up to 2 hours of permission is allowed per monthly cycle (25th to 24th).
+                </p>
+              </div>
+            )}
+
+            {/* Guidelines info */}
+            {mode !== "permission" && (
+              <div className="bg-warning-50 border border-warning-200 rounded-2xl p-5 shadow-sm">
+                <h4 className="font-extrabold text-sm mb-3 text-warning-900 flex items-center gap-1.5">
+                  <InformationCircleIcon className="w-4 h-4 text-warning-700" />
+                  Quick Guidelines
+                </h4>
+                <ul className="text-[11px] text-neutral-600 space-y-2.5 font-semibold leading-relaxed">
+                  <li>• Apply at least 2 days in advance for planned leaves.</li>
+                  {/* <li>• Ensure work handover partner is selected.</li> */}
+                  <li>• Keep emergency contact up to date.</li>
+                </ul>
+              </div>
+            )}
+
+            {/* Permission Guidelines info */}
+            {mode === "permission" && (
+              <div className="bg-warning-50 border border-warning-200 rounded-2xl p-5 shadow-sm">
+                <h4 className="font-extrabold text-sm mb-3 text-warning-900 flex items-center gap-1.5">
+                  <InformationCircleIcon className="w-4 h-4 text-warning-700" />
+                  Quick Guidelines
+                </h4>
+                <ul className="text-[11px] text-neutral-600 space-y-2.5 font-semibold leading-relaxed">
+                  <li>• Request must be submitted before stepping out.</li>
+                  <li>• Get approval from your reporting manager.</li>
+                  <li>• Limit permission to a maximum of 2 hours.</li>
+                </ul>
+              </div>
+            )}
+          </div>
+        </form>
+      </Modal>
 
       {/* Leave Balance Validation Modal */}
       <Modal

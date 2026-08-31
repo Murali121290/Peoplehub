@@ -23,11 +23,11 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   itemVariants,
 }) => {
   const [teams, setTeams] = useState<any[]>(overviewCache.teams);
-  
+
   // Initialize with user's team if available, otherwise fallback to cache
   const initialTeam = user?.team_id ? user.team_id.toString() : overviewCache.selectedTeam;
   const [selectedTeam, setSelectedTeam] = useState<string>(initialTeam);
-  
+
   const [teamMembers, setTeamMembers] = useState<any[]>(
     initialTeam ? (overviewCache.teamMembers[initialTeam] || []) : []
   );
@@ -35,13 +35,15 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
     !initialTeam || !overviewCache.teamMembers[initialTeam]
   );
 
+  const headManager = teamMembers.find((m) => m.reporting_manager)?.reporting_manager || "";
+
   // Fetch teams on mount
   useEffect(() => {
     // If we initialized from user.team_id, update the cache
     if (user?.team_id) {
       overviewCache.selectedTeam = user.team_id.toString();
     }
-    
+
     const fetchTeams = async () => {
       try {
         const response = await fetch(`${API_URL}/api/users/teams`, {
@@ -186,7 +188,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             </span>
           )}
         </div>
-        
+
         {member.is_shift_changed && member.approved_shift && (
           <p className="text-[10px] text-indigo-600 font-bold mt-0.5 truncate" title={member.approved_shift}>
             Shift: {member.approved_shift}
@@ -218,6 +220,12 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           <div className="flex flex-col">
             <h3 className="text-lg font-bold text-gray-900">Team Status Overview</h3>
             <p className="text-sm text-gray-500">Real-time attendance of team members</p>
+            {/* {headManager && (
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 border border-primary-150 px-3 py-1.5 mt-2 text-xs font-bold text-primary-700 self-start shadow-3xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-pulse" />
+                Head Manager: <span className="text-neutral-800 font-extrabold ml-0.5">{headManager}</span>
+              </div>
+            )} */}
           </div>
 
           <div className="flex items-center gap-3">

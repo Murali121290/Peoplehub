@@ -190,11 +190,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     }
   }, [regularizingCell]);
 
-  // Load user info
   const userStr = localStorage.getItem("user");
   const user = userStr ? JSON.parse(userStr) : {};
   const userId = localStorage.getItem("user_id") || user.id || user.user_id;
   const employeeId = user.employee_id || user.id;
+  const isManager = (user?.access_level || "").toLowerCase() === "manager";
 
   const fetchMonthData = async () => {
     setIsLoading(true);
@@ -428,13 +428,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
 
   const handleCellClick = (cell: DayDetails) => {
+    // Prevent clicking on today's cell if the user has checked in but not yet checked out
+    const isOngoingToday = cell.isToday && cell.checkIn !== "-" && cell.checkIn !== "" && (cell.checkOut === "-" || cell.checkOut === "");
+    if (isOngoingToday) return;
+
     const noLeaveOrHalf = (!cell.leaveType || cell.halfDayDuration);
     if (
       isCurrentPayrollMonthView &&
       (cell.status === "Absent" || cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) &&
       noLeaveOrHalf &&
-      !cell.isToday &&
-      cell.dateStr < todayKey
+      cell.dateStr <= todayKey
     ) {
       let dur = "Full Day";
       if (cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) {
@@ -449,9 +452,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       setResolveDuration(dur);
       setResolvingCell(cell);
     } else if (
+      !isManager &&
       isCurrentPayrollMonthView &&
       (cell.status === "Weekly Off" || cell.status === "Holiday" || ((cell.isWeeklyOff || cell.isCompanyHoliday) && !cell.wagesStatus)) &&
-      !cell.isToday &&
       cell.dateStr <= todayKey
     ) {
       setResolvingWeekendCell(cell);
@@ -662,6 +665,25 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       status = "Check-In";
       badgeLabel = "Check-In";
       badgeEmoji = "";
+      
+      if (matchedLeaves.length > 0 && !isOneDayWages) {
+        const matchedLeave = matchedLeaves[0];
+        const isHalfDay = matchedLeave.total_days != null && Number(matchedLeave.total_days) <= 0.5;
+        if (isHalfDay) {
+          const leaveName = matchedLeave.leave_type || "Leave";
+          let durationStr = "";
+          if (matchedLeave.reason?.includes("First Half")) {
+            durationStr = " (First Half)";
+            badgeLabel = leaveName + durationStr + " & Check-In";
+          } else if (matchedLeave.reason?.includes("Second Half")) {
+            durationStr = " (Second Half)";
+            badgeLabel = "Check-In & " + leaveName + durationStr;
+          } else {
+            durationStr = " (Half Day)";
+            badgeLabel = leaveName + durationStr + " & Check-In";
+          }
+        }
+      }
     } else if (isCompanyHoliday && !isOneDayWages) {
       status = "Holiday";
       badgeLabel = holidayName || "Company Holiday";
@@ -709,7 +731,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         if (isHalfDay && dateStr <= todayKey && !isFuture) {
           if (totalHours >= 4) {
             otherHalfStatusStr = "Half Day Present & ";
-          } else if (dateStr < todayKey) {
+          } else {
             otherHalfStatusStr = "Half Day Absent & ";
           }
         }
@@ -1011,7 +1033,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               {calendarCells.map((cell, idx) => {
                 if (!cell) {
                   return (
-                    <div key={`empty-${idx}`} className="h-[80px] rounded-xl bg-transparent" />
+                    <div key={`empty-${idx}`} className="min-h-[95px] h-full rounded-xl bg-transparent" />
                   );
                 }
 
@@ -1052,11 +1074,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                           (cell.status === "Absent" || cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) &&
                                           (!cell.leaveType || cell.halfDayDuration) &&
                                           (!cell.badgeLabel || !cell.badgeLabel.includes("Half Day Present")) &&
-                                          !cell.isToday &&
-                                          cell.dateStr < todayKey;
-                const isClickableWeekend = isCurrentPayrollMonthView &&
+                                          cell.dateStr <= todayKey;
+                const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
                                            (cell.status === "Weekly Off" || cell.status === "Holiday") &&
-                                           !cell.isToday &&
                                            cell.dateStr <= todayKey;
                 const isClickableRegularize = isCurrentPayrollMonthView && cell.dateStr < todayKey && cell.status !== "Future" && cell.status !== "Not Joined" && cell.status !== "Present" && (!cell.leaveType || cell.halfDayDuration);
                 const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
@@ -1064,7 +1084,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                   <div
                     key={cell.dateStr}
                     onClick={() => handleCellClick(cell)}
-                    className={`h-[80px] p-2 flex flex-col justify-between rounded-xl border relative group transition-all duration-200 hover:z-50 ${
+                    className={`min-h-[95px] h-full p-2 flex flex-col justify-between rounded-xl border relative group transition-all duration-200 hover:z-50 ${
                       isClickable
                         ? `cursor-pointer hover:shadow-md active:scale-95 ${
                             isClickableAbsent ? "hover:border-rose-450" : "hover:border-primary-400"
@@ -1087,23 +1107,34 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         }`}>
                         {cell.dayNum}
                       </span>
-                      {cell.halfDayDuration && (
-                        <span className="text-[8px] font-extrabold text-amber-700 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 uppercase tracking-wide shrink-0">
-                          {cell.halfDayDuration === "First Half" ? "1st Half" : cell.halfDayDuration === "Second Half" ? "2nd Half" : "Half"}
-                        </span>
-                      )}
                     </div>
 
                     {/* Status Tag */}
                     {cell.status !== "Future" && (
-                      <div className="mt-1 w-full flex justify-start">
-                        <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 w-full ${badgeClass}`}>
-                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeClass.includes("emerald") ? "bg-emerald-500" : badgeClass.includes("teal") ? "bg-teal-500" : badgeClass.includes("rose") ? "bg-rose-500" : badgeClass.includes("amber") ? "bg-amber-500" : badgeClass.includes("blue") ? "bg-blue-500" : badgeClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
-                          <span className="truncate">
-                            {cell.halfDayDuration ? cell.leaveType || "Leave" : cell.badgeLabel || cell.status}
-                            {cell.wagesStatus && " (Wages)"}
-                          </span>
-                        </div>
+                      <div className="mt-1 w-full flex flex-col gap-1 justify-start">
+                        {(cell.badgeLabel || cell.status).split(" & ").map((part, idx) => {
+                          let pClass = badgeClass;
+                          if (part.includes("Half Day Present")) pClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
+                          else if (part.includes("Half Day Absent") || part.includes("Loss of Pay") || part.includes("LOP")) pClass = "bg-rose-50 text-rose-700 border-rose-200";
+                          else if (part.includes("Check-In")) pClass = "bg-teal-50 text-teal-750 border-teal-200";
+                          else if ((cell.badgeLabel || "").includes(" & ")) pClass = "bg-primary-500/10 text-primary-500 border-primary-500/20";
+                          else if (part.includes("Loss of Pay") || part.includes("LOP")) pClass = "bg-rose-50 text-rose-700 border-rose-200"; // Fallback for no ampersand
+                          
+                          // override halfDayDuration logic since we split badgeLabel
+                          const displayText = (cell.halfDayDuration && !cell.badgeLabel?.includes("&")) 
+                            ? (cell.leaveType || "Leave") 
+                            : part;
+
+                          return (
+                            <div key={idx} className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 w-full ${pClass}`}>
+                              <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${pClass.includes("emerald") ? "bg-emerald-500" : pClass.includes("teal") ? "bg-teal-500" : pClass.includes("rose") ? "bg-rose-500" : pClass.includes("amber") ? "bg-amber-500" : pClass.includes("blue") ? "bg-blue-500" : pClass.includes("primary") ? "bg-primary-500" : "bg-neutral-400"}`}></div>
+                              <span className="truncate">
+                                {displayText}
+                                {idx === 0 && cell.wagesStatus && " (Wages)"}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
 
@@ -1121,10 +1152,22 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             </h5>
                             <p className="text-[10px] text-neutral-500 font-semibold uppercase tracking-wider mt-0.5">{cell.fullDayName}</p>
                           </div>
-                          <span className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg ${badgeClass}`}>
-                            {cell.badgeLabel || cell.status}
-                            {cell.wagesStatus && " (Wages)"}
-                          </span>
+                          <div className="flex flex-col gap-1 items-end">
+                            {(cell.badgeLabel || cell.status).split(" & ").map((part, idx) => {
+                              let pClass = badgeClass;
+                              if (part.includes("Half Day Present")) pClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
+                              else if (part.includes("Half Day Absent") || part.includes("Loss of Pay") || part.includes("LOP")) pClass = "bg-rose-50 text-rose-700 border-rose-200";
+                              else if (part.includes("Check-In")) pClass = "bg-teal-50 text-teal-750 border-teal-200";
+                              else if ((cell.badgeLabel || "").includes(" & ")) pClass = "bg-primary-500/10 text-primary-500 border-primary-500/20";
+                              else if (part.includes("Loss of Pay") || part.includes("LOP")) pClass = "bg-rose-50 text-rose-700 border-rose-200"; // Fallback
+                              return (
+                                <span key={idx} className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg ${pClass}`}>
+                                  {part}
+                                  {idx === 0 && cell.wagesStatus && " (Wages)"}
+                                </span>
+                              );
+                            })}
+                          </div>
                         </div>
 
                         {/* Details Breakdown */}
@@ -1471,13 +1514,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                                     (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                                                     (!dayObj.leaveType || dayObj.halfDayDuration) &&
                                                     (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
-                                                    !dayObj.isToday &&
-                                                    dayObj.dateStr < todayKey;
-                          const isClickableWeekend = isCurrentPayrollMonthView &&
+                                                    
+                                                    dayObj.dateStr <= todayKey;
+                          const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
                                                      (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
-                                                     !dayObj.isToday &&
+                                                     
                                                      dayObj.dateStr <= todayKey;
-                          if (isClickableAbsent || isClickableWeekend) {
+                          const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration);
+                          if (isClickableAbsent || isClickableWeekend || isClickableRegularize) {
                             handleCellClick(dayObj);
                           }
                         }}
@@ -1487,14 +1531,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                                       (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                                                       (!dayObj.leaveType || dayObj.halfDayDuration) &&
                                                       (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
-                                                      !dayObj.isToday &&
-                                                      dayObj.dateStr < todayKey;
-                            const isClickableWeekend = isCurrentPayrollMonthView &&
+                                                      
+                                                      dayObj.dateStr <= todayKey;
+                            const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
                                                        (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
-                                                       !dayObj.isToday &&
+                                                       
                                                        dayObj.dateStr <= todayKey;
+                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration);
                             if (isClickableAbsent) return "Click to apply leave / regularize absent day";
                             if (isClickableWeekend) return "Click to request wages for non-working day";
+                            if (isClickableRegularize) return "Click to regularize attendance";
                             return undefined;
                           })()
                         }
@@ -1504,13 +1550,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                                       (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                                                       (!dayObj.leaveType || dayObj.halfDayDuration) &&
                                                       (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
-                                                      !dayObj.isToday &&
-                                                      dayObj.dateStr < todayKey;
-                            const isClickableWeekend = isCurrentPayrollMonthView &&
+                                                      
+                                                      dayObj.dateStr <= todayKey;
+                            const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
                                                        (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
-                                                       !dayObj.isToday &&
+                                                       
                                                        dayObj.dateStr <= todayKey;
-                            const isClickable = isClickableAbsent || isClickableWeekend;
+                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration);
+                            const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
                             return `p-3 text-center border-r border-neutral-300 transition-colors ${
                               isClickable ? "cursor-pointer hover:bg-neutral-50" : ""
                             }`;
@@ -1523,27 +1570,42 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                                       (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                                                       (!dayObj.leaveType || dayObj.halfDayDuration) &&
                                                       (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
-                                                      !dayObj.isToday &&
-                                                      dayObj.dateStr < todayKey;
-                            const isClickableWeekend = isCurrentPayrollMonthView &&
+                                                      
+                                                      dayObj.dateStr <= todayKey;
+                            const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
                                                        (dayObj.status === "Weekly Off" || dayObj.status === "Holiday") &&
-                                                       !dayObj.isToday &&
+                                                       
                                                        dayObj.dateStr <= todayKey;
-                            const isClickable = isClickableAbsent || isClickableWeekend;
+                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration);
+                            const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
                             return (
-                              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition-all duration-200 ${
-                                isClickable ? "hover:scale-105 active:scale-95 shadow-xs" : ""
-                              } ${dayObj.status === "Present" ? "bg-emerald-100 text-emerald-800 border-emerald-300" :
-                                dayObj.status === "Absent" ? `bg-rose-100 text-rose-800 border-rose-300 ${isClickable ? "hover:border-rose-450 hover:bg-rose-150" : ""}` :
-                                  dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
-                                    dayObj.status === "Leave" ? `bg-primary-500/15 text-primary-500 border-primary-500/30 ${isClickable ? "hover:border-primary-450 hover:bg-primary-500/20" : ""}` :
-                                      dayObj.status === "Holiday" ? `bg-blue-100 text-blue-800 border-blue-300 ${isClickable ? "hover:border-blue-450 hover:bg-blue-150" : ""}` :
-                                        dayObj.status === "Check-In" ? "bg-teal-100 text-teal-800 border-teal-300" :
-                                          `bg-neutral-200 text-neutral-700 border-neutral-300 ${isClickable ? "hover:border-neutral-400 hover:bg-neutral-250" : ""}`
-                                }`}>
-                                <span>{dayObj.badgeEmoji}</span>
-                                <span>{dayObj.badgeLabel || dayObj.status}</span>
-                              </span>
+                              <div className="flex flex-col gap-1 items-center w-full">
+                                {(dayObj.badgeLabel || dayObj.status).split(" & ").map((part, idx) => {
+                                  let pClass = "";
+                                  if (part.includes("Half Day Present")) pClass = "bg-emerald-100 text-emerald-800 border-emerald-300";
+                                  else if (part.includes("Half Day Absent") || part.includes("Loss of Pay") || part.includes("LOP")) pClass = `bg-rose-100 text-rose-800 border-rose-300 ${isClickable ? "hover:border-rose-450 hover:bg-rose-150" : ""}`;
+                                  else if (part.includes("Check-In")) pClass = "bg-teal-100 text-teal-800 border-teal-300";
+                                  else if ((dayObj.badgeLabel || "").includes(" & ")) pClass = `bg-primary-500/15 text-primary-500 border-primary-500/30 ${isClickable ? "hover:border-primary-450 hover:bg-primary-500/20" : ""}`;
+                                  else {
+                                    pClass = dayObj.status === "Present" ? "bg-emerald-100 text-emerald-800 border-emerald-300" :
+                                      dayObj.status === "Absent" ? `bg-rose-100 text-rose-800 border-rose-300 ${isClickable ? "hover:border-rose-450 hover:bg-rose-150" : ""}` :
+                                        dayObj.status === "Half Day" ? "bg-amber-100 text-amber-800 border-amber-300" :
+                                          dayObj.status === "Leave" ? `bg-primary-500/15 text-primary-500 border-primary-500/30 ${isClickable ? "hover:border-primary-450 hover:bg-primary-500/20" : ""}` :
+                                            dayObj.status === "Holiday" ? `bg-blue-100 text-blue-800 border-blue-300 ${isClickable ? "hover:border-blue-450 hover:bg-blue-150" : ""}` :
+                                              dayObj.status === "Check-In" ? "bg-teal-100 text-teal-800 border-teal-300" :
+                                                `bg-neutral-200 text-neutral-700 border-neutral-300 ${isClickable ? "hover:border-neutral-400 hover:bg-neutral-250" : ""}`;
+                                  }
+                                  
+                                  return (
+                                    <span key={idx} className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition-all duration-200 ${
+                                      isClickable ? "hover:scale-105 active:scale-95 shadow-xs" : ""
+                                    } ${pClass}`}>
+                                      {idx === 0 && dayObj.badgeEmoji ? <span>{dayObj.badgeEmoji}</span> : null}
+                                      <span>{part}</span>
+                                    </span>
+                                  );
+                                })}
+                              </div>
                             );
                           })()}
                           {dayObj.wagesStatus && (

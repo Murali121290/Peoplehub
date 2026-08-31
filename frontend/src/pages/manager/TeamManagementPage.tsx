@@ -7,22 +7,67 @@ import WFHApprovalPage from "./WFHApprovalPage";
 import PermissionApprovalPage from "./PermissionApprovalPage";
 import RegularizationApprovalPage from "./RegularizationApprovalPage";
 import { socket } from "../../services/socket";
+import {
+  CalendarDaysIcon,
+  ShieldCheckIcon,
+  ClockIcon,
+  HomeIcon,
+  BriefcaseIcon
+} from "@heroicons/react/24/outline";
 
 const BASE_URL = `${API_URL}/api`;
 
 interface TabConfig {
   id: string;
   label: string;
-  icon: string;
+  icon: React.ComponentType<any>;
+  activeClass: string;
+  badgeClass: string;
 }
 
 const TABS: TabConfig[] = [
-  { id: "leave", label: "Leave Approval", icon: "📋" },
-  { id: "permission", label: "Permission Approval", icon: "🔐" },
-  { id: "shift", label: "Shift Approval", icon: "⏱️" },
-  { id: "wfh", label: "WFH Approval", icon: "🏠" },
-  { id: "odw", label: "ODW Approval", icon: "💰" },
-  { id: "regularization", label: "Regularization Approval", icon: "⏰" }
+  {
+    id: "leave",
+    label: "Leave Approval",
+    icon: CalendarDaysIcon,
+    activeClass: "border-success-600 text-success-700 bg-success-50/40",
+    badgeClass: "bg-success-600 ring-success-100"
+  },
+  {
+    id: "permission",
+    label: "Permission Approval",
+    icon: ShieldCheckIcon,
+    activeClass: "border-indigo-600 text-indigo-700 bg-indigo-50/40",
+    badgeClass: "bg-indigo-600 ring-indigo-100"
+  },
+  {
+    id: "shift",
+    label: "Shift Approval",
+    icon: ClockIcon,
+    activeClass: "border-blue-600 text-blue-700 bg-blue-50/40",
+    badgeClass: "bg-blue-600 ring-blue-100"
+  },
+  {
+    id: "wfh",
+    label: "WFH Approval",
+    icon: HomeIcon,
+    activeClass: "border-purple-600 text-purple-700 bg-purple-50/40",
+    badgeClass: "bg-purple-600 ring-purple-100"
+  },
+  {
+    id: "odw",
+    label: "ODW Approval",
+    icon: BriefcaseIcon,
+    activeClass: "border-amber-600 text-amber-700 bg-amber-50/40",
+    badgeClass: "bg-amber-600 ring-amber-100"
+  },
+  {
+    id: "regularization",
+    label: "Regularization Approval",
+    icon: ClockIcon,
+    activeClass: "border-warning-600 text-warning-700 bg-warning-50/40",
+    badgeClass: "bg-warning-600 ring-warning-100"
+  }
 ];
 
 const TeamManagementPage: React.FC = () => {
@@ -69,36 +114,19 @@ const TeamManagementPage: React.FC = () => {
         return isAdmin || checkManagerMatch(req.reporting_manager, user?.full_name);
       };
 
-      const todayDate = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000);
-      const todayStr = todayDate.toISOString().split("T")[0];
-      const cutoffDate = new Date(todayDate.getTime() - 3 * 24 * 60 * 60 * 1000);
-      const cutoffStr = cutoffDate.toISOString().split("T")[0];
-
-      // Count pending shift requests (excluding WFH and ODW) where start date is not in the past (3-day cutoff)
+      // Count pending shift requests (excluding WFH and ODW)
       const shiftCount = allRequests.filter((req: any) => {
-        const isPending = req.request_type !== "WFH" && req.request_type !== "One Day Wages" && filterByManager(req) && req.status === "Pending";
-        if (!isPending) return false;
-        const startDate = req.from_date || req.shift_date || req.to_date || "";
-        const isFinished = startDate && startDate < cutoffStr;
-        return !isFinished;
+        return req.request_type !== "WFH" && req.request_type !== "One Day Wages" && filterByManager(req) && req.status === "Pending";
       }).length;
 
-      // Count pending ODW requests where created date is within 3 days
+      // Count pending ODW requests
       const odwCount = allRequests.filter((req: any) => {
-        const isPending = req.request_type === "One Day Wages" && filterByManager(req) && req.status === "Pending";
-        if (!isPending) return false;
-        const startDate = req.created_at ? req.created_at.split(/[T ]/)[0] : "";
-        const isFinished = startDate && startDate < cutoffStr;
-        return !isFinished;
+        return req.request_type === "One Day Wages" && filterByManager(req) && req.status === "Pending";
       }).length;
 
-      // Count pending WFH requests where start date is not past 3 days
+      // Count pending WFH requests
       const wfhCount = allRequests.filter((req: any) => {
-        const isPending = req.request_type === "WFH" && filterByManager(req) && req.status === "Pending";
-        if (!isPending) return false;
-        const startDate = req.from_date || req.shift_date || req.to_date || "";
-        const isFinished = startDate && startDate < cutoffStr;
-        return !isFinished;
+        return req.request_type === "WFH" && filterByManager(req) && req.status === "Pending";
       }).length;
 
       // Fetch leave requests
@@ -111,24 +139,16 @@ const TeamManagementPage: React.FC = () => {
         if (leaveResponse.ok) {
           const leaveData = await leaveResponse.json();
           if (Array.isArray(leaveData)) {
-            // Count pending leave requests (excluding permissions and expired)
+            // Count pending leave requests (excluding permissions)
             leaveCount = leaveData.filter((req: any) => {
               if (req.request_type === "Permission") return false;
-              const isPending = filterByManager(req) && req.status === "Pending";
-              if (!isPending) return false;
-              const startDate = req.from_date || req.permission_date || req.to_date || "";
-              const isFinished = startDate && startDate < todayStr;
-              return !isFinished;
+              return filterByManager(req) && req.status === "Pending";
             }).length;
 
-            // Count pending permission requests (excluding expired)
+            // Count pending permission requests
             permissionCount = leaveData.filter((req: any) => {
               if (req.request_type !== "Permission") return false;
-              const isPending = filterByManager(req) && req.status === "Pending";
-              if (!isPending) return false;
-              const startDate = req.permission_date || "";
-              const isFinished = startDate && startDate < todayStr;
-              return !isFinished;
+              return filterByManager(req) && req.status === "Pending";
             }).length;
           }
         }
@@ -240,16 +260,16 @@ const TeamManagementPage: React.FC = () => {
                     onClick={() => setActiveTab(tab.id)}
                     className={`px-5 py-3 text-sm font-bold whitespace-nowrap border-b-2 rounded-t-xl transition-all duration-200 flex items-center gap-2 relative ${
                       isActive
-                        ? "border-primary-600 text-primary-700 bg-primary-50/40 font-extrabold shadow-sm"
+                        ? `${tab.activeClass} font-extrabold shadow-sm`
                         : "border-transparent text-neutral-600 hover:text-primary-600 hover:bg-primary-50/10"
                     }`}
                   >
-                    <span className="text-base transition-transform duration-200">{tab.icon}</span>
+                    <tab.icon className={`w-4 h-4 transition-transform duration-200 ${isActive ? "" : "text-neutral-400"}`} />
                     <span>{tab.label}</span>
                     {pendingCount > 0 && (
-                      <span className={`ml-1.5 flex h-5.5 px-2 min-w-[22px] items-center justify-center rounded-full text-[10px] font-extrabold text-white shadow-md ring-2 transition-all ${
+                      <span className={`ml-1.5 flex h-5 px-2 min-w-[20px] items-center justify-center rounded-full text-[10px] font-extrabold text-white shadow-md ring-2 transition-all ${
                         isActive 
-                          ? "bg-primary-600 ring-primary-100" 
+                          ? `${tab.badgeClass}` 
                           : "bg-primary-500 ring-white"
                       }`}>
                         {pendingCount > 9 ? "9+" : pendingCount}

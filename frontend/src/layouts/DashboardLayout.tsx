@@ -93,8 +93,30 @@ const playBookNotificationSound = () => {
   }
 };
 
+let audioUnlocked = false;
+const unlockAudio = () => {
+  if (audioUnlocked) return;
+  try {
+    const silentWav = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==";
+    const a = new Audio(silentWav);
+    a.play().then(() => {
+      audioUnlocked = true;
+      window.removeEventListener("click", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+      window.removeEventListener("pointerdown", unlockAudio);
+    }).catch(err => {
+      console.warn("Audio unlock pending user interaction:", err);
+    });
+  } catch (e) {
+    console.error("Audio unlock failed:", e);
+  }
+};
+
 if (typeof window !== "undefined") {
   (window as any).playBookNotificationSound = playBookNotificationSound;
+  window.addEventListener("click", unlockAudio);
+  window.addEventListener("keydown", unlockAudio);
+  window.addEventListener("pointerdown", unlockAudio);
 }
 
 const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
@@ -339,6 +361,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
       toast.success("Birthday wishes sent successfully!");
+      fetchTodayBirthdays();
     } catch (e) {
       console.error(e);
       toast.error("Failed to send wishes.");

@@ -57,6 +57,11 @@ class Communication(db.Model):
         nullable=False
     )
 
+    image_url = db.Column(
+        db.Text,
+        nullable=True
+    )
+
     created_by = db.Column(
         db.String(200),
         nullable=True
@@ -79,6 +84,7 @@ class Communication(db.Model):
             "title": self.title,
             "target_role": self.target_role,
             "message": self.message,
+            "image_url": self.image_url,
             "created_by": self.created_by,
             "created_at": (
                 self.created_at.isoformat()

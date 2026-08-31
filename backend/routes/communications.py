@@ -311,6 +311,8 @@ def create_announcement():
 
             message=data.get("message"),
 
+            image_url=data.get("image_url"),
+
             created_by=data.get("created_by")
         )
 
@@ -574,3 +576,162 @@ def get_seen_announcements(user_id):
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+
+# ==========================================
+# UPLOAD ANNOUNCEMENT IMAGE
+# ==========================================
+
+@communication_bp.route(
+    "/upload-image",
+    methods=["POST"]
+)
+def upload_announcement_image():
+    try:
+        content_type = request.headers.get("content-type")
+        if not content_type or "multipart/form-data" not in content_type:
+            return jsonify({
+                "success": False,
+                "error": "Request must be multipart/form-data"
+            }), 400
+
+        file = request.files.get("image")
+        if not file or not file.filename:
+            return jsonify({
+                "success": False,
+                "error": "No image file uploaded"
+            }), 400
+
+        import os
+        filename = file.filename
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
+            return jsonify({
+                "success": False,
+                "error": "Unsupported file format. Please upload an image."
+            }), 400
+
+        # Check file size (3MB limit)
+        file.file.seek(0, os.SEEK_END)
+        file_size = file.file.tell()
+        file.file.seek(0)
+
+        if file_size > 3 * 1024 * 1024:
+            return jsonify({
+                "success": False,
+                "error": "Image size exceeds the 3MB maximum limit."
+            }), 400
+
+        from utils.uploads import ensure_upload_dir
+        from datetime import datetime
+
+        target_dir = ensure_upload_dir("announcements")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        target_filename = f"announcement_{timestamp}{ext}"
+        target_path = os.path.join(target_dir, target_filename)
+        
+        file.save(target_path)
+        
+        image_url = f"/uploads/announcements/{target_filename}"
+
+        return jsonify({
+            "success": True,
+            "image_url": image_url
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# ==========================================
+# JOB OPENINGS ENDPOINTS
+# ==========================================
+
+@communication_bp.route(
+    "/job-openings",
+    methods=["POST"]
+)
+def create_job_opening():
+    try:
+        data = request.json
+        job = Communication(
+            employee_id=None,
+            receiver_id=None,
+            employee_name="HR Admin",
+            message_type="job_opening",
+            title=data.get("title"),
+            target_role="all",
+            message=data.get("message"),
+            image_url=data.get("image_url"),
+            created_by=data.get("created_by")
+        )
+        db.session.add(job)
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": "Job Opening Posted Successfully",
+            "job_opening": job.to_dict()
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@communication_bp.route(
+    "/job-openings",
+    methods=["GET"]
+)
+def get_job_openings():
+    try:
+        jobs = Communication.query.filter_by(
+            message_type="job_opening"
+        ).order_by(
+            Communication.created_at.desc()
+        ).all()
+        return jsonify({
+            "success": True,
+            "count": len(jobs),
+            "job_openings": [j.to_dict() for j in jobs]
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@communication_bp.route(
+    "/job-openings/<int:job_id>",
+    methods=["PUT"]
+)
+def update_job_opening(job_id):
+    try:
+        data = request.json
+        job = Communication.query.get(job_id)
+        if not job or job.message_type != "job_opening":
+            return jsonify({
+                "success": False,
+                "error": "Job Opening Not Found"
+            }), 404
+        
+        job.title = data.get("title", job.title)
+        job.message = data.get("message", job.message)
+        job.image_url = data.get("image_url", job.image_url)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Job Opening Updated Successfully",
+            "job_opening": job.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500

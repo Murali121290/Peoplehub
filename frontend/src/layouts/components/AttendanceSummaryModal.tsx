@@ -165,22 +165,22 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
           prev.map((e) =>
             (e.employee_id === empId || e.id === empId) && (!targetDate || e.summary_date === targetDate)
               ? {
-                  ...e,
-                  decision: "Need Clarification",
-                  manager_status: "Need Clarification",
-                  employee_reply: null,
-                  clarification_comment: reason,
-                  clarification_history: [
-                    ...(e.clarification_history || []),
-                    {
-                      id: `msg_${Date.now()}`,
-                      sender_role: "manager",
-                      sender_name: "Manager",
-                      comment: reason,
-                      timestamp: new Date().toISOString()
-                    }
-                  ]
-                }
+                ...e,
+                decision: "Need Clarification",
+                manager_status: "Need Clarification",
+                employee_reply: null,
+                clarification_comment: reason,
+                clarification_history: [
+                  ...(e.clarification_history || []),
+                  {
+                    id: `msg_${Date.now()}`,
+                    sender_role: "manager",
+                    sender_name: "Manager",
+                    comment: reason,
+                    timestamp: new Date().toISOString()
+                  }
+                ]
+              }
               : e
           )
         );
@@ -247,7 +247,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
     setTimeout(() => setIsRefreshing(false), 600);
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, leaveType?: string | null) => {
     const s = (status || "").toLowerCase();
     if (s === "present") {
       return (
@@ -274,10 +274,28 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
       );
     }
     if (s === "half day") {
+      let label = "Half Day";
+      if (leaveType) {
+        const lt = leaveType.toLowerCase().trim();
+        const clSlNames = ["cl/sl", "cl / sl", "sl/cl", "sl / cl", "casual leave", "sick leave", "cl", "sl"];
+        const plNames = ["pl", "privilege leave", "privileged leave", "earned leave"];
+
+        if (clSlNames.some(name => lt.includes(name))) {
+          if (lt.includes("sick leave") || (lt === "sl")) label += " + SL";
+          else if (lt.includes("casual leave") || (lt === "cl")) label += " + CL";
+          else label += " + CL/SL"; 
+        }
+        else if (plNames.some(name => lt.includes(name))) {
+          label += " + PL";
+        }
+        else {
+          label += ` + ${leaveType.replace(" (Half Day)", "")}`;
+        }
+      }
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200 whitespace-nowrap">
           <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
-          Half Day
+          {label}
         </span>
       );
     }
@@ -376,6 +394,9 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
               </h2>
               <p className="text-xs text-neutral-500 font-medium mt-0.5">
                 Review and approve attendance for {employees[0]?.summary_date_formatted ? <span className="font-bold text-teal-700">{employees[0].summary_date_formatted}</span> : "last working day"} before payroll processing.
+                <span className="block mt-1 text-[11px] text-teal-600 font-medium bg-teal-50/50 inline-block px-2 py-0.5 rounded">
+                  Note: Only employees with Short Working Hours (&lt; 8 hrs Weekdays, &lt; 7 hrs Weekends) or Absent status are shown here (Full hours/Approved leaves are auto-approved).
+                </span>
               </p>
             </div>
           </div>
@@ -416,8 +437,8 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                   <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Check Out</th>
                   <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Break</th>
                   <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center font-semibold text-teal-800">Permission</th>
-                  <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
-                  <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
                   <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check In</th>
                   <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check Out</th>
                   <th className="bg-purple-50 border-b border-neutral-200 border-r-2 border-purple-200 py-2 px-2.5 text-center">Hours</th>
@@ -443,7 +464,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                     return (
                       <tr
                         key={emp.employee_id || emp.id}
-                        className="hover:bg-neutral-50/60 transition-colors"
+                        className={`transition-colors ${emp.highlight_short_hours ? "bg-rose-50/40 hover:bg-rose-50/60" : "hover:bg-neutral-50/60"}`}
                       >
                         {/* Employee Info */}
                         <td className="py-3.5 px-4 border-r border-neutral-100">
@@ -486,23 +507,23 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                             </span>
                           )}
                         </td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold border-r border-blue-100/50">
+                        <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r border-blue-100/50">
                           {emp.total_break_minutes ? `${emp.total_break_minutes} min` : "0 min"}
                         </td>
-                        <td 
+                        <td
                           className="py-3.5 px-3 bg-blue-50/5 text-xs text-teal-700 font-bold border-r border-blue-100/50"
                           title={emp.permission_time || undefined}
                         >
                           {emp.permission_hours ? `${emp.permission_hours} hr${emp.permission_hours !== 1 ? "s" : ""}` : "—"}
                         </td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-400 border-r border-blue-100/50">
+                        <td className={`py-3.5 px-3 bg-blue-50/5 text-xs font-bold border-r border-blue-100/50 ${emp.highlight_short_hours ? "text-rose-600 bg-rose-50/50" : "text-neutral-800"}`}>
+                          {formatWorkingHours(emp.working_hours)}
+                        </td>
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-400 border-r-2 border-blue-200/50">
                           {formatWorkingHours(
                             (emp.working_hours || 0) +
                             (emp.total_break_minutes || 0) / 60
                           )}
-                        </td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs font-bold text-neutral-800 border-r-2 border-blue-200/50">
-                          {formatWorkingHours(emp.working_hours)}
                         </td>
 
                         {/* Card Entry Columns */}
@@ -514,7 +535,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
                         {/* Status */}
                         <td className="py-3.5 px-4 border-r border-neutral-100">
-                          {getStatusBadge(emp.status)}
+                          {getStatusBadge(emp.status, emp.leave_type)}
                         </td>
 
                         {/* Verification Status */}
@@ -540,11 +561,10 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                               disabled={isApproveDisabled}
                               onClick={() => handleApproveSingle(emp.employee_id || emp.id, emp.summary_date)}
                               title={isNeedClarification ? "Approval disabled while waiting for employee clarification response" : isApproved ? "Approved" : "Approve Attendance"}
-                              className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
-                                isApproveDisabled
-                                  ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
-                                  : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 shadow-xs"
-                              }`}
+                              className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${isApproveDisabled
+                                ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
+                                : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 shadow-xs"
+                                }`}
                             >
                               <CheckIcon className={`w-3.5 h-3.5 ${isApproveDisabled ? "text-neutral-400" : "text-emerald-700"}`} />
                               Approve
@@ -555,11 +575,10 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                               disabled={isClarificationDisabled}
                               onClick={() => openRejectReasonModal(emp.employee_id || emp.id, false, emp.summary_date)}
                               title={isNeedClarification ? "Clarification request already sent, waiting for employee response" : isApproved ? "Approved" : "Request Need Clarification"}
-                              className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
-                                isClarificationDisabled
-                                  ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
-                                  : "bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 hover:-translate-y-0.5 active:bg-amber-200 shadow-xs"
-                              }`}
+                              className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${isClarificationDisabled
+                                ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
+                                : "bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 hover:-translate-y-0.5 active:bg-amber-200 shadow-xs"
+                                }`}
                             >
                               <ExclamationTriangleIcon className={`w-3.5 h-3.5 ${isClarificationDisabled ? "text-neutral-400" : "text-amber-600"}`} />
                               Need Clarification
@@ -594,8 +613,8 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                       <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Check Out</th>
                       <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Break</th>
                       <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center font-semibold text-teal-800">Permission</th>
-                      <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
-                      <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
                       <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check In</th>
                       <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check Out</th>
                       <th className="bg-purple-50 border-b border-neutral-200 border-r-2 border-purple-200 py-2 px-2.5 text-center">Hours</th>
@@ -609,17 +628,17 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                       const isClarificationDisabled = isActionLoading || isApproved || isNeedClarification;
 
                       return (
-                        <tr key={`${emp.id || emp.employee_id}-${emp.summary_date}`} className="hover:bg-neutral-50/50 transition-all duration-150 border-b border-neutral-100">
+                        <tr key={`${emp.id || emp.employee_id}-${emp.summary_date}`} className={`transition-all duration-150 border-b border-neutral-100 ${emp.highlight_short_hours ? "bg-rose-50/40 hover:bg-rose-50/60" : "hover:bg-neutral-50/50"}`}>
                           {/* Employee info */}
                           <td className="py-3.5 px-4 border-r border-neutral-100">
                             <div className="flex items-center gap-3">
                               <img
-                               src={getProfileImageUrl(emp.profile_image, emp.employee_id || emp.id)}
-                               alt={emp.employee_name}
-                               className="w-9 h-9 rounded-full object-cover border border-neutral-200 shadow-xs"
-                               onError={(e) => {
-                                 e.currentTarget.src = "/default-avatar.png";
-                               }}
+                                src={getProfileImageUrl(emp.profile_image, emp.employee_id || emp.id)}
+                                alt={emp.employee_name}
+                                className="w-9 h-9 rounded-full object-cover border border-neutral-200 shadow-xs"
+                                onError={(e) => {
+                                  e.currentTarget.src = "/default-avatar.png";
+                                }}
                               />
                               <div>
                                 <span className="font-extrabold text-neutral-800 block text-xs tracking-tight">{emp.employee_name}</span>
@@ -647,11 +666,14 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                               </span>
                             ) : "—"}
                           </td>
-                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r border-blue-100/50">
+                          <td className={`py-3.5 px-3 bg-blue-50/5 text-xs font-bold border-r border-blue-100/50 ${emp.highlight_short_hours ? "text-rose-600 bg-rose-50/50" : "text-neutral-800"}`}>
                             {formatWorkingHours(emp.working_hours)}
                           </td>
-                          <td className="py-3.5 px-3 bg-blue-50/5 text-xs font-bold text-neutral-800 border-r-2 border-blue-200/50">
-                            {formatWorkingHours(emp.working_hours)}
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r-2 border-blue-200/50">
+                            {formatWorkingHours(
+                              (emp.working_hours || 0) +
+                              (emp.total_break_minutes || 0) / 60
+                            )}
                           </td>
 
                           {/* Card Entry Columns */}
@@ -663,7 +685,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
                           {/* Status */}
                           <td className="py-3.5 px-4 border-r border-neutral-100">
-                            {getStatusBadge(emp.status)}
+                            {getStatusBadge(emp.status, emp.leave_type)}
                           </td>
 
                           {/* Verification Status */}
@@ -687,11 +709,10 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                                 disabled={isApproveDisabled}
                                 onClick={() => handleApproveSingle(emp.employee_id || emp.id, emp.summary_date)}
                                 title={isNeedClarification ? "Approval disabled while waiting for employee clarification response" : isApproved ? "Approved" : "Approve Attendance"}
-                                className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
-                                  isApproveDisabled
-                                    ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
-                                    : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 shadow-xs"
-                                }`}
+                                className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${isApproveDisabled
+                                  ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
+                                  : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 hover:-translate-y-0.5 active:bg-emerald-200 shadow-xs"
+                                  }`}
                               >
                                 <CheckIcon className={`w-3.5 h-3.5 ${isApproveDisabled ? "text-neutral-400" : "text-emerald-700"}`} />
                                 Approve
@@ -701,11 +722,10 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                                 disabled={isClarificationDisabled}
                                 onClick={() => openRejectReasonModal(emp.employee_id || emp.id, false, emp.summary_date)}
                                 title={isNeedClarification ? "Clarification request already sent, waiting for employee response" : isApproved ? "Approved" : "Request Need Clarification"}
-                                className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
-                                  isClarificationDisabled
-                                    ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
-                                    : "bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 hover:-translate-y-0.5 active:bg-amber-200 shadow-xs"
-                                }`}
+                                className={`h-8 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${isClarificationDisabled
+                                  ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
+                                  : "bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 hover:-translate-y-0.5 active:bg-amber-200 shadow-xs"
+                                  }`}
                               >
                                 <ExclamationTriangleIcon className={`w-3.5 h-3.5 ${isClarificationDisabled ? "text-neutral-400" : "text-amber-600"}`} />
                                 Need Clarification
@@ -752,17 +772,17 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
           {/* Right: Approve All Button */}
           <div className="flex items-center gap-2">
-            <button
+            {/* <button
               disabled={pendingCount === 0 && employees.filter((e) => e.decision === "Need Clarification").length === 0}
               onClick={() => setConfirmDialog("approve")}
               className={`h-10 px-5 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${pendingCount === 0 && employees.filter((e) => e.decision === "Need Clarification").length === 0
-                  ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
-                  : "bg-emerald-600 text-white hover:bg-emerald-700 hover:-translate-y-0.5 active:bg-emerald-800 shadow-sm"
+                ? "bg-slate-50 text-neutral-400 border border-slate-200 cursor-not-allowed opacity-70"
+                : "bg-emerald-600 text-white hover:bg-emerald-700 hover:-translate-y-0.5 active:bg-emerald-800 shadow-sm"
                 }`}
             >
               <CheckCircleIcon className="w-4 h-4 text-white" />
               Approve All
-            </button>
+            </button> */}
           </div>
         </div>
 
@@ -882,7 +902,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                 >
                   Need Reclarification
                 </button>
-                 <button
+                <button
                   onClick={async () => {
                     const emp = regularizationPopup;
                     setRegularizationPopup(null);

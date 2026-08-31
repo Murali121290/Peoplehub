@@ -12,6 +12,7 @@ import {
   UserCircleIcon,
   SparklesIcon,
   BanknotesIcon,
+  BriefcaseIcon,
 } from "@heroicons/react/24/outline";
 import { motion } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
@@ -29,6 +30,7 @@ import ShiftTab from "./tabs/ShiftTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import ProfileTab from "./tabs/ProfileTab";
 import EmployeePayrollTab from "./tabs/EmployeePayrollTab";
+import JobOpeningsTab from "./tabs/JobOpeningsTab";
 import DashboardHeaderActions from "./components/DashboardHeaderActions";
 import NotificationsPanel from "./components/NotificationsPanel";
 import { BookLoader } from "../../components/ui/Spinner";
@@ -142,6 +144,7 @@ const tabs = [
   { id: "requests", label: "My Requests", icon: CalendarDaysIcon },
   { id: "attendance", label: "Attendance", icon: ClockIcon },
   { id: "payroll", label: "Payroll", icon: BanknotesIcon },
+  { id: "job-openings", label: "Job Openings", icon: BriefcaseIcon },
   { id: "new-hire", label: "New Hire", icon: SparklesIcon },
   { id: "profile", label: "Profile", icon: UserCircleIcon },
 ];
@@ -154,6 +157,57 @@ const EmployeeDashboardPage: React.FC = () => {
   const queryParams = new URLSearchParams(location.search);
   const initialTab = queryParams.get("tab") || "overview";
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  // Blinking notification states for new unseen job openings
+  const [hasNewJobOpenings, setHasNewJobOpenings] = useState(false);
+
+  // Check for unseen job openings
+  useEffect(() => {
+    const checkNewJobOpenings = async () => {
+      try {
+        const response = await fetch(`${BASE_URL}/communications/job-openings`);
+        const data = await response.json();
+        if (data.success && data.job_openings) {
+          const jobs: any[] = data.job_openings;
+          
+          const localKey = `seen_job_ids_${userId}`;
+          const seenIdsRaw = localStorage.getItem(localKey);
+          const seenIds: string[] = seenIdsRaw ? JSON.parse(seenIdsRaw) : [];
+          
+          const hasUnseen = jobs.some(job => !seenIds.includes(String(job.id)));
+          setHasNewJobOpenings(hasUnseen);
+        }
+      } catch (err) {
+        console.error("Error checking new job openings:", err);
+      }
+    };
+    if (userId) {
+      checkNewJobOpenings();
+    }
+  }, [userId, activeTab]); // Include activeTab to re-verify if jobs are created or seen
+
+  // Mark all job openings as seen when entering the tab
+  useEffect(() => {
+    if (activeTab === "job-openings" && userId) {
+      const markJobsAsSeen = async () => {
+        try {
+          const response = await fetch(`${BASE_URL}/communications/job-openings`);
+          const data = await response.json();
+          if (data.success && data.job_openings) {
+            const jobs: any[] = data.job_openings;
+            const jobIds = jobs.map(job => String(job.id));
+            
+            const localKey = `seen_job_ids_${userId}`;
+            localStorage.setItem(localKey, JSON.stringify(jobIds));
+            setHasNewJobOpenings(false);
+          }
+        } catch (err) {
+          console.error("Error marking jobs as seen:", err);
+        }
+      };
+      markJobsAsSeen();
+    }
+  }, [activeTab, userId]);
 
   useEffect(() => {
     const tab = new URLSearchParams(location.search).get("tab");
@@ -721,6 +775,11 @@ if (isHalfDayLeave(leave.total_days)) return false;
   };
 
   const handleWagesCancel = () => {
+    setWagesConfirmData(null);
+    proceedToCheckInModal();
+  };
+
+  const handleWagesClose = () => {
     setWagesConfirmData(null);
   };
 
@@ -1419,6 +1478,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
         return;
       }
       toast.success("Birthday wishes sent successfully!");
+      fetchTodayBirthdays();
     } catch (e) {
       console.error(e);
       toast.error("Failed to send wishes.");
@@ -1891,6 +1951,24 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   return (
     <>
+      <style>{`
+        @keyframes lightGreenBlink {
+          0%, 100% {
+            background-color: transparent;
+            border-color: transparent;
+            color: #4b5563; /* text-neutral-600 */
+          }
+          50% {
+            background-color: #ecfdf5; /* emerald-50 bg like Check In */
+            border-color: #10b981;     /* emerald-500 border like Check In */
+            color: #047857;            /* emerald-700 text like Check In */
+          }
+        }
+        .animate-green-blink {
+          animation: lightGreenBlink 1.5s infinite ease-in-out;
+          border: 1px solid transparent; /* default transparent border to prevent layout shifts */
+        }
+      `}</style>
       {/* Action loading overlay — shown during check-in/check-out API calls */}
       {isActionLoading && <BookLoader />}
       <ConfirmModal
@@ -2004,10 +2082,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
                     <button
                       key={tab.id}
                       onClick={() => navigate("?tab=" + tab.id)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id
-                        ? "bg-primary-50 text-primary-700 border-b-2 border-primary-600"
-                        : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"
-                        }`}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                        activeTab === tab.id
+                          ? "bg-primary-50 text-primary-700 border-b-2 border-primary-600"
+                          : tab.id === "job-openings" && hasNewJobOpenings
+                          ? "text-neutral-700 hover:bg-neutral-50 animate-green-blink"
+                          : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"
+                      }`}
                     >
                       <Icon className="w-4 h-4" />
                       <div className="relative flex items-center">
@@ -2066,6 +2147,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
             )}
             {activeTab === "profile" && <ProfileTab />}
             {activeTab === "payroll" && <EmployeePayrollTab />}
+            {activeTab === "job-openings" && <JobOpeningsTab user={user} />}
           </motion.div>
         </main>
       </div>
@@ -2244,6 +2326,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
           cancelLabel="Cancel"
           onConfirm={handleWagesConfirm}
           onCancel={handleWagesCancel}
+          onClose={handleWagesClose}
         />
       )}
     </>

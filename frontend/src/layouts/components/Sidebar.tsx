@@ -438,7 +438,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     variant="outline"
     fullWidth
     icon={ArrowRightOnRectangleIcon}
-    className="bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-colors shadow-sm"
+    className="bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-colors shadow-sm font-bold"
     onClick={onLogout}
   >
     Logout
