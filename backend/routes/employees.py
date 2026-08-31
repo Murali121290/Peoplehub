@@ -1818,13 +1818,7 @@ def get_reporting_employees(user_id):
                 else:
                     gross_hours = 0.0
 
-                if (attendance.check_out or attendance.card_check_out) and status not in ("Absent", "Leave"):
-                    if gross_hours < 4.0:
-                        status = "Absent"
-                    elif gross_hours < 8.0:
-                        status = "Half Day"
-                    else:
-                        status = "Present"
+
 
                 if status in ("Present", "Half Day"):
                     employee_category = "present"
