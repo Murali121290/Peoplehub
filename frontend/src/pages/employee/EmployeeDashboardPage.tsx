@@ -1478,6 +1478,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
         return;
       }
       toast.success("Birthday wishes sent successfully!");
+      fetchTodayBirthdays();
     } catch (e) {
       console.error(e);
       toast.error("Failed to send wishes.");

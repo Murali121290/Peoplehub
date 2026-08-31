@@ -114,36 +114,19 @@ const TeamManagementPage: React.FC = () => {
         return isAdmin || checkManagerMatch(req.reporting_manager, user?.full_name);
       };
 
-      const todayDate = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000);
-      const todayStr = todayDate.toISOString().split("T")[0];
-      const cutoffDate = new Date(todayDate.getTime() - 3 * 24 * 60 * 60 * 1000);
-      const cutoffStr = cutoffDate.toISOString().split("T")[0];
-
-      // Count pending shift requests (excluding WFH and ODW) where start date is not in the past (3-day cutoff)
+      // Count pending shift requests (excluding WFH and ODW)
       const shiftCount = allRequests.filter((req: any) => {
-        const isPending = req.request_type !== "WFH" && req.request_type !== "One Day Wages" && filterByManager(req) && req.status === "Pending";
-        if (!isPending) return false;
-        const startDate = req.from_date || req.shift_date || req.to_date || "";
-        const isFinished = startDate && startDate < cutoffStr;
-        return !isFinished;
+        return req.request_type !== "WFH" && req.request_type !== "One Day Wages" && filterByManager(req) && req.status === "Pending";
       }).length;
 
-      // Count pending ODW requests where created date is within 3 days
+      // Count pending ODW requests
       const odwCount = allRequests.filter((req: any) => {
-        const isPending = req.request_type === "One Day Wages" && filterByManager(req) && req.status === "Pending";
-        if (!isPending) return false;
-        const startDate = req.created_at ? req.created_at.split(/[T ]/)[0] : "";
-        const isFinished = startDate && startDate < cutoffStr;
-        return !isFinished;
+        return req.request_type === "One Day Wages" && filterByManager(req) && req.status === "Pending";
       }).length;
 
-      // Count pending WFH requests where start date is not past 3 days
+      // Count pending WFH requests
       const wfhCount = allRequests.filter((req: any) => {
-        const isPending = req.request_type === "WFH" && filterByManager(req) && req.status === "Pending";
-        if (!isPending) return false;
-        const startDate = req.from_date || req.shift_date || req.to_date || "";
-        const isFinished = startDate && startDate < cutoffStr;
-        return !isFinished;
+        return req.request_type === "WFH" && filterByManager(req) && req.status === "Pending";
       }).length;
 
       // Fetch leave requests
@@ -156,24 +139,16 @@ const TeamManagementPage: React.FC = () => {
         if (leaveResponse.ok) {
           const leaveData = await leaveResponse.json();
           if (Array.isArray(leaveData)) {
-            // Count pending leave requests (excluding permissions and expired)
+            // Count pending leave requests (excluding permissions)
             leaveCount = leaveData.filter((req: any) => {
               if (req.request_type === "Permission") return false;
-              const isPending = filterByManager(req) && req.status === "Pending";
-              if (!isPending) return false;
-              const startDate = req.from_date || req.permission_date || req.to_date || "";
-              const isFinished = startDate && startDate < todayStr;
-              return !isFinished;
+              return filterByManager(req) && req.status === "Pending";
             }).length;
 
-            // Count pending permission requests (excluding expired)
+            // Count pending permission requests
             permissionCount = leaveData.filter((req: any) => {
               if (req.request_type !== "Permission") return false;
-              const isPending = filterByManager(req) && req.status === "Pending";
-              if (!isPending) return false;
-              const startDate = req.permission_date || "";
-              const isFinished = startDate && startDate < todayStr;
-              return !isFinished;
+              return filterByManager(req) && req.status === "Pending";
             }).length;
           }
         }

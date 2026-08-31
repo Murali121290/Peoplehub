@@ -361,6 +361,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
       toast.success("Birthday wishes sent successfully!");
+      fetchTodayBirthdays();
     } catch (e) {
       console.error(e);
       toast.error("Failed to send wishes.");
