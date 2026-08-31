@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExclamationTriangleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon, InformationCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { Modal } from './Modal';
 import { Button } from '../Button/Button';
 import { cn } from '../utils/cn';
@@ -16,6 +16,7 @@ export interface ConfirmDialogProps {
   cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  onClose?: () => void;
   loading?: boolean;
 }
 
@@ -35,6 +36,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   cancelLabel = 'Cancel',
   onConfirm,
   onCancel,
+  onClose,
   loading = false,
 }) => {
   const { icon: Icon, iconClass, bgClass, buttonVariant } = variantMeta[variant];
@@ -42,7 +44,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onCancel}
+      onClose={onClose || onCancel}
       size="sm"
       footer={
         <>
@@ -55,6 +57,15 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         </>
       }
     >
+      {onClose && (
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 rounded-xl p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 transition-colors"
+          aria-label="Close"
+        >
+          <XMarkIcon className="h-5 w-5" />
+        </button>
+      )}
       <div className="flex gap-4">
         <div className={cn('flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full', bgClass)}>
           <Icon className={cn('h-5 w-5', iconClass)} />
