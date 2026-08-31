@@ -416,8 +416,8 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                   <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Check Out</th>
                   <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Break</th>
                   <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center font-semibold text-teal-800">Permission</th>
-                  <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
-                  <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
+                  <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
                   <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check In</th>
                   <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check Out</th>
                   <th className="bg-purple-50 border-b border-neutral-200 border-r-2 border-purple-200 py-2 px-2.5 text-center">Hours</th>
@@ -443,7 +443,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                     return (
                       <tr
                         key={emp.employee_id || emp.id}
-                        className="hover:bg-neutral-50/60 transition-colors"
+                        className={`transition-colors ${emp.highlight_short_hours ? "bg-rose-50/40 hover:bg-rose-50/60" : "hover:bg-neutral-50/60"}`}
                       >
                         {/* Employee Info */}
                         <td className="py-3.5 px-4 border-r border-neutral-100">
@@ -486,7 +486,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                             </span>
                           )}
                         </td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-700 font-semibold border-r border-blue-100/50">
+                        <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r border-blue-100/50">
                           {emp.total_break_minutes ? `${emp.total_break_minutes} min` : "0 min"}
                         </td>
                         <td 
@@ -495,14 +495,14 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         >
                           {emp.permission_hours ? `${emp.permission_hours} hr${emp.permission_hours !== 1 ? "s" : ""}` : "—"}
                         </td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-400 border-r border-blue-100/50">
+                        <td className={`py-3.5 px-3 bg-blue-50/5 text-xs font-bold border-r border-blue-100/50 ${emp.highlight_short_hours ? "text-rose-600 bg-rose-50/50" : "text-neutral-800"}`}>
+                          {formatWorkingHours(emp.working_hours)}
+                        </td>
+                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs text-neutral-400 border-r-2 border-blue-200/50">
                           {formatWorkingHours(
                             (emp.working_hours || 0) +
                             (emp.total_break_minutes || 0) / 60
                           )}
-                        </td>
-                        <td className="py-3.5 px-3 bg-blue-50/5 text-xs font-bold text-neutral-800 border-r-2 border-blue-200/50">
-                          {formatWorkingHours(emp.working_hours)}
                         </td>
 
                         {/* Card Entry Columns */}
@@ -594,8 +594,8 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                       <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Check Out</th>
                       <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Break</th>
                       <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center font-semibold text-teal-800">Permission</th>
-                      <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
-                      <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
+                      <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
                       <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check In</th>
                       <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check Out</th>
                       <th className="bg-purple-50 border-b border-neutral-200 border-r-2 border-purple-200 py-2 px-2.5 text-center">Hours</th>
@@ -609,7 +609,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                       const isClarificationDisabled = isActionLoading || isApproved || isNeedClarification;
 
                       return (
-                        <tr key={`${emp.id || emp.employee_id}-${emp.summary_date}`} className="hover:bg-neutral-50/50 transition-all duration-150 border-b border-neutral-100">
+                        <tr key={`${emp.id || emp.employee_id}-${emp.summary_date}`} className={`transition-all duration-150 border-b border-neutral-100 ${emp.highlight_short_hours ? "bg-rose-50/40 hover:bg-rose-50/60" : "hover:bg-neutral-50/50"}`}>
                           {/* Employee info */}
                           <td className="py-3.5 px-4 border-r border-neutral-100">
                             <div className="flex items-center gap-3">
@@ -647,11 +647,14 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                               </span>
                             ) : "—"}
                           </td>
-                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r border-blue-100/50">
+                          <td className={`py-3.5 px-3 bg-blue-50/5 text-xs font-bold border-r border-blue-100/50 ${emp.highlight_short_hours ? "text-rose-600 bg-rose-50/50" : "text-neutral-800"}`}>
                             {formatWorkingHours(emp.working_hours)}
                           </td>
-                          <td className="py-3.5 px-3 bg-blue-50/5 text-xs font-bold text-neutral-800 border-r-2 border-blue-200/50">
-                            {formatWorkingHours(emp.working_hours)}
+                          <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-neutral-600 border-r-2 border-blue-200/50">
+                            {formatWorkingHours(
+                              (emp.working_hours || 0) +
+                              (emp.total_break_minutes || 0) / 60
+                            )}
                           </td>
 
                           {/* Card Entry Columns */}

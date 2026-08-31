@@ -1800,23 +1800,10 @@ def get_reporting_employees(user_id):
             # Determine status and employee_category
             status = "Absent"
             employee_category = "absent"  # "present" | "absent" | "leave"
+            gross_hours = 0.0
 
             if attendance:
                 status = attendance.status
-                eff_in = attendance.check_in or attendance.card_check_in
-                eff_out = attendance.check_out or attendance.card_check_out
-                if eff_in and eff_out:
-                    gross_sec = (eff_out - eff_in).total_seconds()
-                    gross_hours = max(gross_sec, 0) / 3600
-                elif eff_in:
-                    now_time = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
-                    if date_to_check == now_time.date():
-                        gross_sec = (now_time - eff_in).total_seconds()
-                        gross_hours = max(gross_sec, 0) / 3600
-                    else:
-                        gross_hours = 0.0
-                else:
-                    gross_hours = 0.0
 
 
 
@@ -1870,6 +1857,20 @@ def get_reporting_employees(user_id):
                 if (attendance.check_in or attendance.card_check_in) and permission_hours > 0:
                     working_hours_val += permission_hours
             working_hours_val = int(working_hours_val * 100) / 100
+            
+            # Calculate Highlights
+            is_weekend = date_to_check.weekday() >= 5
+            highlight_short_hours = False
+            if working_hours_val > 0:
+                is_half_day_leave = leave and leave.total_days == 0.5
+                if is_half_day_leave:
+                    if working_hours_val < 4.0:
+                        highlight_short_hours = True
+                else:
+                    if is_weekend and working_hours_val < 7.0:
+                        highlight_short_hours = True
+                    elif not is_weekend and working_hours_val < 8.0:
+                        highlight_short_hours = True
 
             hist = (attendance.clarification_history if (attendance and isinstance(attendance.clarification_history, list)) else [])
 
@@ -1937,6 +1938,8 @@ def get_reporting_employees(user_id):
 
                 "working_hours":
                     working_hours_val,
+
+                "highlight_short_hours": highlight_short_hours,
 
                 "permission_time":
                     permission_time_val,
