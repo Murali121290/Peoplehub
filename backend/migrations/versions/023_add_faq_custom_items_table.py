@@ -13,19 +13,24 @@ branch_labels = None
 depends_on = None
 
 
+from sqlalchemy.engine.reflection import Inspector
+
 def upgrade():
-    op.create_table(
-        "faq_custom_items",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("question", sa.String(500), nullable=False),
-        sa.Column("answer", sa.Text(), nullable=False),
-        sa.Column("category", sa.String(50), nullable=False, server_default="support"),
-        sa.Column("created_by", sa.String(200), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=True, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(), nullable=True, server_default=sa.func.now()),
-        sa.Column("is_active", sa.Boolean(), nullable=True, server_default=sa.text("true")),
-        sa.PrimaryKeyConstraint("id"),
-    )
+    conn = op.get_bind()
+    inspector = Inspector.from_engine(conn)
+    if "faq_custom_items" not in inspector.get_table_names():
+        op.create_table(
+            "faq_custom_items",
+            sa.Column("id", sa.Integer(), nullable=False),
+            sa.Column("question", sa.String(500), nullable=False),
+            sa.Column("answer", sa.Text(), nullable=False),
+            sa.Column("category", sa.String(50), nullable=False, server_default="support"),
+            sa.Column("created_by", sa.String(200), nullable=True),
+            sa.Column("created_at", sa.DateTime(), nullable=True, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(), nullable=True, server_default=sa.func.now()),
+            sa.Column("is_active", sa.Boolean(), nullable=True, server_default=sa.text("true")),
+            sa.PrimaryKeyConstraint("id"),
+        )
 
 
 def downgrade():
