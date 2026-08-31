@@ -1891,6 +1891,8 @@ def get_reporting_employees(user_id):
                 should_auto_approve = True
             elif status == "Leave" and leave and leave.status == "Approved":
                 should_auto_approve = True
+            elif status == "Half Day" and not highlight_short_hours and leave and leave.status == "Approved" and leave.total_days == 0.5:
+                should_auto_approve = True
 
             if should_auto_approve:
                 if attendance and (attendance.manager_status or "").strip().lower() in ("pending", ""):

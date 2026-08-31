@@ -247,7 +247,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
     setTimeout(() => setIsRefreshing(false), 600);
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, leaveType?: string | null) => {
     const s = (status || "").toLowerCase();
     if (s === "present") {
       return (
@@ -274,10 +274,28 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
       );
     }
     if (s === "half day") {
+      let label = "Half Day";
+      if (leaveType) {
+        const lt = leaveType.toLowerCase().trim();
+        const clSlNames = ["cl/sl", "cl / sl", "sl/cl", "sl / cl", "casual leave", "sick leave", "cl", "sl"];
+        const plNames = ["pl", "privilege leave", "privileged leave", "earned leave"];
+
+        if (clSlNames.some(name => lt.includes(name))) {
+          if (lt.includes("sick leave") || (lt === "sl")) label += " + SL";
+          else if (lt.includes("casual leave") || (lt === "cl")) label += " + CL";
+          else label += " + CL/SL"; 
+        }
+        else if (plNames.some(name => lt.includes(name))) {
+          label += " + PL";
+        }
+        else {
+          label += ` + ${leaveType.replace(" (Half Day)", "")}`;
+        }
+      }
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200 whitespace-nowrap">
           <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
-          Half Day
+          {label}
         </span>
       );
     }
@@ -517,7 +535,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
                         {/* Status */}
                         <td className="py-3.5 px-4 border-r border-neutral-100">
-                          {getStatusBadge(emp.status)}
+                          {getStatusBadge(emp.status, emp.leave_type)}
                         </td>
 
                         {/* Verification Status */}
@@ -667,7 +685,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
                           {/* Status */}
                           <td className="py-3.5 px-4 border-r border-neutral-100">
-                            {getStatusBadge(emp.status)}
+                            {getStatusBadge(emp.status, emp.leave_type)}
                           </td>
 
                           {/* Verification Status */}
