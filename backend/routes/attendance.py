@@ -625,7 +625,7 @@ def calculate_attendance_status(attendance):
         attendance.status = "Absent"
     else:
         is_weekend = attendance.attendance_date.weekday() >= 5
-        req_hours = 7.0 if is_weekend else 8.0
+        req_hours = 8.0 if is_weekend else 9.0
         
         if gross_hours < req_hours:
             attendance.status = "Half Day"
