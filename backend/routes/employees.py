@@ -1885,6 +1885,21 @@ def get_reporting_employees(user_id):
             wages_status = wages_req.status if wages_req else None
             is_one_day_wages_final = (wages_req is not None and wages_req.status == "Approved")
 
+            # AUTO-APPROVE LOGIC (Don't show Present w/o short hours, or Leave Approved)
+            should_auto_approve = False
+            if status == "Present" and not highlight_short_hours:
+                should_auto_approve = True
+            elif status == "Leave" and leave and leave.status == "Approved":
+                should_auto_approve = True
+            elif status == "Half Day" and not highlight_short_hours and leave and leave.status == "Approved" and leave.total_days == 0.5:
+                should_auto_approve = True
+
+            if should_auto_approve:
+                if attendance and (attendance.manager_status or "").strip().lower() in ("pending", ""):
+                    attendance.manager_status = "Approved"
+                    has_any_updates = True
+                return None
+
             return {
                 "summary_date":
                     date_to_check.strftime("%Y-%m-%d"),
