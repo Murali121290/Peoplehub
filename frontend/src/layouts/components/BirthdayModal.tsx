@@ -453,7 +453,6 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
                     await onSendWish(selectedEmpForWish, wishMessage);
                     setSelectedEmpForWish(null);
                     setWishMessage("");
-                    onClose();
                   } catch (error) {
                     console.error(error);
                   }

@@ -42,6 +42,12 @@ const FAQ_DATA: FAQItem[] = [
     answer: 'Navigate to your Employee Dashboard and click the "Check In" button. A modal will appear where you can select your shift timing and work mode (e.g., Office or WFH). Once confirmed, your daily work timer starts. When your workday is complete, click the "Check Out" button to end your timer and register your hours.'
   },
   {
+    id: 101,
+    category: 'attendance',
+    question: 'If I am in Hybrid mode, how do I apply for WFH?',
+    answer: 'For today\'s work, you do not need to go to the WFH request page. Just click "Check In" on your dashboard, toggle the work mode to "WFH", and confirm. You only need to use the WFH request page under the "Requests" tab for future dates or to correct past dates.'
+  },
+  {
     id: 2,
     category: 'attendance',
     question: 'How do break timers (Lunch & Tea) work?',
@@ -94,8 +100,8 @@ const FAQ_DATA: FAQItem[] = [
   {
     id: 8,
     category: 'leaves',
-    question: 'What is One Day Wages (ODW) and how do I request it?',
-    answer: 'If you work on a weekend (weekly off) or a public holiday, you are eligible for One Day Wages. When you click "Check In" on a non-working day, the system will automatically prompt: "Consider as One Day Wages?". Click "Yes, Request" to submit the wages request to your manager. Once approved, the day will be counted toward your overtime/extra wages.'
+    question: 'How do I apply for One Day Wages (ODW)?',
+    answer: 'There are two ways to apply for One Day Wages (ODW) depending on the date:\n\n• For Today (Current Day): Click "Check In" on your dashboard. When prompted "Consider as One Day Wages?", click "Yes, Request" to submit and check in.\n\n• For Past Dates (Claiming after the fact): Go to the "Attendance" tab, click on the specific Weekend or Public Holiday (Blue block) on your attendance calendar, fill in your "Reason for Claiming One Day Wages" in the details panel, and click "Claim One Day Wages".'
   },
   {
     id: 9,
@@ -547,6 +553,14 @@ export const FAQPage: React.FC = () => {
     }
 
     // 2. Specific Error / Troubleshooting Router (Real-time AI style)
+
+    // Hybrid/WFH Mode Check-In Rule
+    if (cleanQuery.includes('hybrid') || cleanQuery.includes('wfh') || cleanQuery.includes('work from home') || cleanQuery.includes('work from hom')) {
+      return {
+        type: 'direct',
+        text: "If you are in **Hybrid mode** and working from home **today**, you do **not** need to go to the WFH request page. Simply click **\"Check In\"** on your dashboard, toggle the work mode to **\"WFH\"**, and confirm.\n\nYou only need to use the **Requests** tab to apply for WFH if you are pre-booking WFH for a **future date** or correcting a **past date** where you forgot to set the mode during check-in."
+      };
+    }
     
     // Check-in / Check-out / General Error Matching Rules
     const isCheckin = cleanQuery.includes('checkin') || cleanQuery.includes('check in') || cleanQuery.includes('punchin') || cleanQuery.includes('punch in');
@@ -613,7 +627,7 @@ export const FAQPage: React.FC = () => {
     if (cleanQuery.includes('odw') || cleanQuery.includes('one day wages') || cleanQuery.includes('weekend work') || cleanQuery.includes('extra wages') || cleanQuery.includes('holiday wages')) {
       return {
         type: 'direct',
-        text: "One Day Wages (ODW) is compensating wages for working on a weekend or public holiday:\n\n1. When you check in on a non-working day, the system will prompt: **\"Consider as One Day Wages?\"**.\n2. Click **\"Yes, Request\"** to submit the wages request to your manager.\n3. Once approved, the day will be counted toward your overtime/extra wages."
+        text: "You can apply for **One Day Wages (ODW)** when working on a weekend or public holiday in two ways:\n\n### 1. For Today (Real-time Check-In)\n* Click **\"Check In\"** on your Employee Dashboard.\n* When prompted **\"Consider as One Day Wages?\"**, select:\n  • **Yes, Request**: Submits the ODW request to your manager and starts the work timer.\n  • **Cancel**: Proceeds to normal check-in without extra wages.\n  • **Close (X)**: Cancels check-in entirely.\n\n### 2. For Past Dates (Regularizing Weekend Work)\n* Navigate to the **Attendance** tab.\n* Select the specific **Weekend / Public Holiday** (marked as a Blue date block) on your attendance calendar.\n* In the details pane, locate the **\"Reason for Claiming One Day Wages\"** input, type your justification, and click **\"Claim One Day Wages\"** to submit for manager approval."
       };
     }
 
