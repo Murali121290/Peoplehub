@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { API_URL } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
 import { CheckIcon, MagnifyingGlassIcon, ClockIcon } from "@heroicons/react/24/outline";
+import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
 import { BookLoader } from "../../components/ui/Spinner";
 import AttendanceDetailModal from "../../layouts/components/AttendanceDetailModal";
@@ -174,65 +175,66 @@ const PendingAttendancePage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/30 p-6">
+    <div className="space-y-6 relative">
       {/* ── Header ── */}
-      <div className="mb-6 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <ClockIcon className="h-7 w-7 text-orange-500" />
-            Pending Attendance
-          </h1>
-          {cycleStart && cycleEnd && (
-            <p className="mt-1 text-sm text-slate-500">
-              Payroll Cycle:{" "}
-              <span className="font-semibold text-slate-700">
-                {fmtCycleDate(cycleStart)} – {fmtCycleDate(cycleEnd)}
-              </span>
-            </p>
-          )}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-neutral-200/80 shadow-sm">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 bg-orange-50 text-orange-600 rounded-2xl border border-orange-100 shadow-inner">
+            <ClockIcon className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-neutral-800">Pending Attendance</h2>
+            {cycleStart && cycleEnd && (
+              <p className="text-xs text-neutral-500 font-medium mt-1">
+                Payroll Cycle:{" "}
+                <span className="font-semibold text-slate-700">
+                  {fmtCycleDate(cycleStart)} – {fmtCycleDate(cycleEnd)}
+                </span>
+              </p>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Search */}
-          <div className="relative">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search employee, dept…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm text-slate-700 placeholder-slate-400 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200 w-56 transition-all"
-            />
-          </div>
-
-          {/* Approve All button */}
+        <div className="flex items-center gap-3 flex-wrap">
           {filtered.length > 0 && (
             <button
               id="approve-all-pending-btn"
               onClick={approveAll}
-              className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-orange-200 hover:bg-orange-600 transition-colors"
+              className="flex items-center gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 px-3 py-1.5 text-xs font-bold text-white shadow-md shadow-orange-200 transition-colors"
             >
               <CheckIcon className="h-4 w-4" />
               Approve All ({filtered.length})
             </button>
           )}
+          <div className="relative">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+            <input
+              type="text"
+              placeholder="Search employee, dept…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 pr-4 py-1.5 border border-neutral-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all w-64 bg-white shadow-xs"
+            />
+          </div>
         </div>
       </div>
 
       {/* ── Summary Badge ── */}
-      <div className="mb-4 flex items-center gap-3">
-        <div className="inline-flex items-center gap-2 rounded-full bg-orange-50 px-4 py-1.5 text-sm font-semibold text-orange-700 border border-orange-200">
-          <span className="h-2 w-2 rounded-full bg-orange-500 animate-pulse inline-block" />
-          {records.length} pending {records.length === 1 ? "record" : "records"}
+      {records.length > 0 && (
+        <div className="flex items-center gap-3">
+          <div className="inline-flex items-center gap-2 rounded-full bg-orange-50 px-4 py-1.5 text-xs font-bold text-orange-700 border border-orange-200 shadow-xs">
+            <span className="h-2 w-2 rounded-full bg-orange-500 animate-pulse inline-block" />
+            {records.length} pending {records.length === 1 ? "record" : "records"}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Empty State ── */}
       {records.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-emerald-300 bg-emerald-50 py-20 text-center">
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-emerald-350 bg-emerald-50 py-20 text-center">
           <div className="text-5xl mb-4">✅</div>
           <h3 className="text-xl font-bold text-emerald-700">All attendance approved!</h3>
-          <p className="mt-2 text-sm text-emerald-600">
+          <p className="mt-2 text-sm text-emerald-600 font-medium">
             No pending records for the current payroll cycle.
           </p>
         </div>
@@ -240,23 +242,24 @@ const PendingAttendancePage: React.FC = () => {
 
       {/* ── Table ── */}
       {records.length > 0 && (
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full min-w-[1100px] text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Employee</th>
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">Department</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Web Check-in</th>
-                <th className="px-4 py-3">Web Check-out</th>
-                <th className="px-4 py-3">Biometric In</th>
-                <th className="px-4 py-3">Biometric Out</th>
-                <th className="px-4 py-3 text-center">Hours</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-center">Action</th>
-              </tr>
-            </thead>
+        <Card padding="none" className="border border-neutral-200/80 shadow-sm rounded-2xl bg-white overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-neutral-50/60 text-neutral-500 text-xs font-bold uppercase tracking-wider border-b border-neutral-200/80">
+                  <th className="p-4 pl-6">Employee</th>
+                  <th className="p-4">ID</th>
+                  <th className="p-4">Department</th>
+                  <th className="p-4">Date</th>
+                  <th className="p-4">Web Check-in</th>
+                  <th className="p-4">Web Check-out</th>
+                  <th className="p-4">Biometric In</th>
+                  <th className="p-4">Biometric Out</th>
+                  <th className="p-4 text-center">Hours</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4 text-center">Action</th>
+                </tr>
+              </thead>
             <tbody>
               {filtered.map((rec, idx) => (
                 <tr
@@ -344,6 +347,7 @@ const PendingAttendancePage: React.FC = () => {
             </tbody>
           </table>
         </div>
+      </Card>
       )}
       {showDetailModal && selectedRecord && (
         <AttendanceDetailModal

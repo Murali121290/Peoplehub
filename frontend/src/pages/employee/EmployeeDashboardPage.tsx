@@ -776,6 +776,11 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   const handleWagesCancel = () => {
     setWagesConfirmData(null);
+    proceedToCheckInModal();
+  };
+
+  const handleWagesClose = () => {
+    setWagesConfirmData(null);
   };
 
   const handleCheckInClick = async () => {
@@ -2320,6 +2325,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
           cancelLabel="Cancel"
           onConfirm={handleWagesConfirm}
           onCancel={handleWagesCancel}
+          onClose={handleWagesClose}
         />
       )}
     </>
