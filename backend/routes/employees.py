@@ -695,7 +695,7 @@ def update_employee_profile(employee_id):
 
         user = User.query.get(employee.user_id)
 
-        data = request.form
+        data = request.get_json(silent=True) or request.form or {}
 
         # Basic Employee Information (from directory edit)
         if data.get("employee_id") and is_hr_or_admin:
@@ -1087,7 +1087,7 @@ def update_employee_profile(employee_id):
 
 
             if data.get("access_level"):
-                user.access_level = data.get("access_level")
+                user.access_level = str(data.get("access_level")).strip()
 
             if data.get("team_id"):
                 user.team_id = int(data.get("team_id"))
@@ -1115,7 +1115,8 @@ def update_employee_profile(employee_id):
                 "department": employee.department,
                 "shift": employee.shift_timing or "General Shift",
                 "work_mode": employee.work_mode,
-                "status": employee.status
+                "status": employee.status,
+                "access_level": user.access_level if user else None
             })
         except Exception as socket_err:
             print("Failed to emit profile socket:", str(socket_err))
@@ -1310,56 +1311,49 @@ def get_team_overview():
 
 @employees_bp.route("/my-team/<int:user_id>", methods=["GET"])
 def get_my_team(user_id):
-
     user = User.query.get(user_id)
+    manager = Employee.query.filter_by(user_id=user_id).first()
 
-    if not user:
+    if not user or not manager:
         return jsonify([])
 
-    team_id = user.team_id
-
-    team_users = User.query.filter_by(
-        team_id=team_id
-    ).all()
-
-    result = []
+    manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
     all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
 
-    for team_user in team_users:
+    reporting_list = [e for e in all_employees if is_manager_match(e.reporting_manager, manager_full_name)]
 
-        employee = Employee.query.filter_by(
-            user_id=team_user.id
-        ).first()
+    result = []
+    for employee in reporting_list:
+        update_leave_balance(employee)
 
-        if employee:
-            update_leave_balance(employee)
+        emp_full_name = f"{employee.first_name} {employee.last_name}".strip().lower()
+        is_reporting_manager = False
+        for other in all_employees:
+            if not other.reporting_manager:
+                continue
+            o_mgr = other.reporting_manager.strip().lower()
+            if (o_mgr == emp_full_name) or (len(o_mgr.split()) == 1 and emp_full_name.split()[0] == o_mgr) or (len(emp_full_name.split()) == 1 and o_mgr.split()[0] == emp_full_name):
+                is_reporting_manager = True
+                break
 
-            emp_full_name = f"{employee.first_name} {employee.last_name}".strip().lower()
-            is_reporting_manager = False
-            for other in all_employees:
-                if not other.reporting_manager:
-                    continue
-                o_mgr = other.reporting_manager.strip().lower()
-                if (o_mgr == emp_full_name) or (len(o_mgr.split()) == 1 and emp_full_name.split()[0] == o_mgr) or (len(emp_full_name.split()) == 1 and o_mgr.split()[0] == emp_full_name):
-                    is_reporting_manager = True
-                    break
-
-            result.append({
-                "id": employee.id,
-                "name": f"{employee.first_name} {employee.last_name}",
-                "email": employee.email,
-                "role": employee.designation or "Employee",
-                "department": employee.department,
-                "designation": employee.designation or "Employee",
-                "salary": employee.salary,
-                "reporting_manager": employee.reporting_manager,
-                "status": employee.status,
-                "sick_leave": employee.sick_leave,
-                "casual_leave": employee.casual_leave,
-                "privilege_leave": employee.privilege_leave,
-                "earned_leave": employee.privilege_leave,
-                "is_reporting_manager": is_reporting_manager
-            })
+        result.append({
+            "id": employee.id,
+            "user_id": employee.user_id,
+            "employee_id": employee.employee_id,
+            "name": f"{employee.first_name} {employee.last_name}",
+            "email": employee.email,
+            "role": employee.designation or "Employee",
+            "department": employee.department,
+            "designation": employee.designation or "Employee",
+            "salary": employee.salary,
+            "reporting_manager": employee.reporting_manager,
+            "status": employee.status,
+            "sick_leave": employee.sick_leave,
+            "casual_leave": employee.casual_leave,
+            "privilege_leave": employee.privilege_leave,
+            "earned_leave": employee.privilege_leave,
+            "is_reporting_manager": is_reporting_manager
+        })
 
     return jsonify(result)
 
@@ -1424,7 +1418,6 @@ def get_team_attendance(user_id):
                 return jsonify([])
             manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
             reporting_list = [e for e in all_employees if is_manager_match(e.reporting_manager, manager_full_name)]
-
         # Get list of reporting employee IDs and user IDs for batch queries
         reporting_emp_ids = [str(e.id) for e in reporting_list] + [e.employee_id for e in reporting_list if e.employee_id]
         reporting_user_ids = [e.user_id for e in reporting_list]
@@ -1554,8 +1547,7 @@ def get_team_attendance(user_id):
                         if not (attendance.check_out or attendance.card_check_out):
                             att_status = "Present"
                         else:
-                            if att_status == "Present":
-                                att_status = "Checked Out"
+                            att_status = "Checked Out"
 
                 # Web Entry: only show from web columns, do not fallback
                 check_in = attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None

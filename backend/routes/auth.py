@@ -151,7 +151,12 @@ def login():
         # SHIFT-BASED DEVICE & IP RESTRICTION VALIDATION
         role_name = (user.role.name or "").lower() if user.role else ""
         access_level = (user.access_level or "").lower()
-        is_excluded = role_name in ("admin", "manager") or access_level in ("admin", "manager")
+        is_excluded = (
+            role_name in ("admin", "manager") or
+            access_level in ("admin", "manager", "team_lead", "team lead", "service_manager", "service manager", "lead") or
+            "manager" in access_level or "lead" in access_level or
+            "manager" in role_name or "lead" in role_name
+        )
 
         if employee:
             from zoneinfo import ZoneInfo

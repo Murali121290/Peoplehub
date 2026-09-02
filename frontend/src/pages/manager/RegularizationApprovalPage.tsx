@@ -56,17 +56,24 @@ const RegularizationApprovalPage: React.FC = () => {
     fetchRequests();
   }, [user]);
 
-  const handleApprove = async (req: any) => {
+  // Approval Modal & Minutes Adjustment State
+  const [approveModalReq, setApproveModalReq] = useState<any | null>(null);
+  const [addedMinutesInput, setAddedMinutesInput] = useState<number>(0);
+
+  const handleApproveConfirm = async (req: any, minutes: number) => {
     try {
       setProcessingId(req.id);
-      const res = await fetch(`${BASE_URL}/attendance/approve/${req.employee_id}?date=${req.date}`, {
+      const res = await fetch(`${BASE_URL}/attendance/approve/${req.employee_id}?date=${req.date}&add_minutes=${minutes}`, {
         method: "PUT",
         headers: {
-          "Authorization": `Bearer ${token}`
-        }
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ add_minutes: minutes })
       });
       if (res.ok) {
-        toast.success(`Time adjustment approved for ${req.employee_name}`);
+        toast.success(`Time adjustment approved for ${req.employee_name}${minutes > 0 ? ` (+${minutes} mins)` : ''}`);
+        setApproveModalReq(null);
         fetchRequests();
       } else {
         const err = await res.json();
@@ -286,7 +293,10 @@ const RegularizationApprovalPage: React.FC = () => {
                               <Button
                                 variant="primary"
                                 size="sm"
-                                onClick={() => handleApprove(req)}
+                                onClick={() => {
+                                  setApproveModalReq(req);
+                                  setAddedMinutesInput(0);
+                                }}
                                 disabled={processingId === req.id}
                                 className="!py-1.5 !px-3 !text-xs shadow-sm bg-success-600 hover:bg-success-700 border-success-600 text-white"
                               >
@@ -375,6 +385,166 @@ const RegularizationApprovalPage: React.FC = () => {
         confirmLabel="Yes, Cancel"
         cancelLabel="No, Keep"
       />
+
+      {/* Regularization Approval & Minute Adjustment Modal */}
+      {approveModalReq && (
+        <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-neutral-200 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+              <div className="flex items-center gap-2 text-neutral-900 font-bold text-base">
+                <CheckIcon className="w-5 h-5 text-success-600" />
+                <span>Approve Time Adjustment</span>
+              </div>
+              <button
+                onClick={() => setApproveModalReq(null)}
+                className="text-neutral-400 hover:text-neutral-600 text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {(() => {
+              const checkIn = approveModalReq.check_in && approveModalReq.check_in !== "-" ? approveModalReq.check_in : "09:00 AM";
+              const checkOut = approveModalReq.check_out && approveModalReq.check_out !== "-" ? approveModalReq.check_out : "06:00 PM";
+              
+              let grossMins = 0;
+              try {
+                const parseTime = (str: string) => {
+                  const match = str.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+                  if (!match) return null;
+                  let h = parseInt(match[1]);
+                  const m = parseInt(match[2]);
+                  const ampm = match[3].toUpperCase();
+                  if (ampm === "PM" && h < 12) h += 12;
+                  if (ampm === "AM" && h === 12) h = 0;
+                  return h * 60 + m;
+                };
+                const inMins = parseTime(checkIn);
+                const outMins = parseTime(checkOut);
+                if (inMins !== null && outMins !== null) {
+                  grossMins = outMins >= inMins ? outMins - inMins : (outMins + 24 * 60) - inMins;
+                }
+              } catch (_) {}
+
+              const lunch = Number(approveModalReq.lunch_minutes) || 0;
+              const tea = Number(approveModalReq.tea_minutes) || 0;
+              const totalBreaks = lunch + tea;
+              const workedMins = Math.max(0, grossMins - totalBreaks);
+              const effectiveMins = workedMins + (Number(addedMinutesInput) || 0);
+
+              const formatMins = (m: number) => {
+                const hrs = Math.floor(m / 60);
+                const remMins = m % 60;
+                if (remMins === 0) return `${hrs}h`;
+                if (hrs === 0) return `${remMins}m`;
+                return `${hrs}h ${remMins}m`;
+              };
+
+              return (
+                <div className="space-y-3">
+                  {/* Employee & Date Header */}
+                  <div className="flex justify-between items-center bg-neutral-50 px-3.5 py-2.5 rounded-xl border border-neutral-100 text-xs">
+                    <span className="font-bold text-neutral-800">👤 {approveModalReq.employee_name}</span>
+                    <span className="font-semibold text-neutral-500">📅 {approveModalReq.date}</span>
+                  </div>
+
+                  {/* Check-In & Check-Out Box */}
+                  <div className="grid grid-cols-2 gap-2 bg-blue-50/40 p-3 rounded-2xl border border-blue-100/60">
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">CHECK-IN</span>
+                      <span className="font-extrabold text-emerald-600 text-xs">{checkIn}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">CHECK-OUT</span>
+                      <span className="font-extrabold text-teal-600 text-xs">{checkOut}</span>
+                    </div>
+                  </div>
+
+                  {/* Lunch & Tea Break Box */}
+                  <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-3 rounded-2xl border border-neutral-100">
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">LUNCH BREAK</span>
+                      <span className="font-extrabold text-neutral-800 text-xs">{lunch} mins</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-neutral-400 block mb-0.5">TEA BREAK</span>
+                      <span className="font-extrabold text-neutral-800 text-xs">{tea} mins</span>
+                    </div>
+                  </div>
+
+                  {/* Total Hours & Working Hours Pills */}
+                  <div className="space-y-2 pt-1">
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-xs text-neutral-500 font-bold">Total Hours</span>
+                      <span className="text-xs font-extrabold text-neutral-700 bg-neutral-100 px-2.5 py-1 rounded-md">
+                        {formatMins(grossMins)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-xs text-neutral-500 font-bold">Total Working Hours</span>
+                      <span className="text-xs font-extrabold text-primary-500 bg-primary-500/10 px-2.5 py-1 rounded-md inline-flex items-center gap-1">
+                        <span>{formatMins(effectiveMins)}</span>
+                        {addedMinutesInput > 0 && (
+                          <span className="text-[10px] font-bold text-teal-600 bg-white/80 px-1 py-0.2 rounded border border-teal-200/80">
+                            (+{addedMinutesInput}m)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-neutral-700">
+                Additional Adjustment (Minutes):
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  max="59"
+                  value={addedMinutesInput}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 0;
+                    setAddedMinutesInput(Math.min(59, Math.max(0, val)));
+                  }}
+                  className="w-full pl-3 pr-24 py-2.5 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white font-bold text-neutral-800"
+                  placeholder="0 - 59"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-neutral-400 pointer-events-none">
+                  Mins (0-59)
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-500">
+                ⚡ Specify additional minutes (max 59m) to credit towards total worked time on this date. If total hours reach 7h 55m (grace period), status will automatically update to <strong className="text-success-700">Present</strong>.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setApproveModalReq(null)}
+                disabled={processingId === approveModalReq.id}
+                className="!px-4 !py-2 rounded-xl text-xs font-bold"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleApproveConfirm(approveModalReq, addedMinutesInput)}
+                disabled={processingId === approveModalReq.id}
+                className="!px-4 !py-2 rounded-xl text-xs font-bold bg-success-600 hover:bg-success-700 border-success-600 text-white shadow-sm"
+              >
+                {processingId === approveModalReq.id ? "Approving..." : "Confirm & Approve"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

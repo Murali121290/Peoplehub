@@ -70,8 +70,8 @@ const Sidebar: React.FC<SidebarProps> = ({
     const access = user?.access_level?.toLowerCase() || '';
     const role = user?.role?.toLowerCase() || '';
     const isManagerOrAdmin = 
-      access === 'admin' || access === 'manager' || access === 'lead' || 
-      role.includes('manager');
+      access === 'admin' || access === 'manager' || access === 'team_lead' || access === 'service_manager' || access === 'lead' || 
+      role.includes('manager') || role.includes('lead');
 
     if (isManagerOrAdmin) {
       const fetchCounts = async () => {

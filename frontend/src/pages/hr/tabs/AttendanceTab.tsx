@@ -2,6 +2,7 @@ import React, {
   useState,
   useEffect,
   useRef,
+  useMemo,
 } from "react";
 import { toast } from "react-hot-toast";
 
@@ -32,7 +33,19 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const [availableMonths, setAvailableMonths] = useState<any[]>([]);
   const [selectedCycle, setSelectedCycle] = useState<string>("");
   const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportTeam, setExportTeam] = useState("All");
+  const [exportMonth, setExportMonth] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<string>(""); // empty = today
+
+  const availableTeamsList = useMemo(() => {
+    const set = new Set<string>();
+    (attendanceData || []).forEach((item: any) => {
+      if (item.department) set.add(item.department.trim());
+      if (item.team_name) set.add(item.team_name.trim());
+    });
+    return Array.from(set).filter(Boolean).sort();
+  }, [attendanceData]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -512,12 +525,29 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
     return matchesShift && matchesStatus && matchesTeam && matchesSearch;
   });
 
+  const getEmpIdNumeric = (emp: any) => {
+    const rawId = emp.employee_code || emp.employee_id || emp.user_id || emp.id || "";
+    const cleanNum = String(rawId).replace(/\D/g, "");
+    return cleanNum !== "" ? parseInt(cleanNum, 10) : 9999999;
+  };
+
+  const sortedFilteredAttendance = useMemo(() => {
+    return [...filteredAttendance].sort((a: any, b: any) => {
+      const idA = getEmpIdNumeric(a);
+      const idB = getEmpIdNumeric(b);
+      if (idA !== idB) {
+        return idA - idB;
+      }
+      return (a.employee_name || "").localeCompare(b.employee_name || "");
+    });
+  }, [filteredAttendance]);
+
   const displayData =
     attendanceView === "weekly"
-      ? getGroupedWeeklyData(filteredAttendance)
+      ? getGroupedWeeklyData(sortedFilteredAttendance)
       : attendanceView === "monthly"
-        ? getGroupedMonthlyData(filteredAttendance)
-        : filteredAttendance;
+        ? getGroupedMonthlyData(sortedFilteredAttendance)
+        : sortedFilteredAttendance;
 
   useEffect(() => {
     const loadAttendance = async () => {
@@ -838,121 +868,37 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
         </div>
 
         <div className="flex items-center gap-4">
-          {/* Export Attendance Dropdown Button */}
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={() => setShowExportDropdown(!showExportDropdown)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "8px 16px",
-                borderRadius: "10px",
-                border: "none",
-                background: "#0f766e",
-                color: "#fff",
-                fontSize: "13px",
-                fontWeight: 700,
-                cursor: "pointer",
-                boxShadow: "0 4px 10px rgba(15,118,110,0.18)",
-                height: "38px",
-                transition: "background 0.2s ease",
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#0d6561"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#0f766e"; }}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-              Download Excel
-            </button>
-
-            {showExportDropdown && availableMonths.length > 0 && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "100%",
-                  left: 0,
-                  marginTop: "8px",
-                  minWidth: "220px",
-                  borderRadius: "12px",
-                  border: "1px solid #e2e8f0",
-                  background: "#fff",
-                  boxShadow: "0 12px 32px rgba(15, 23, 42, 0.13)",
-                  zIndex: 50,
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    padding: "10px 12px",
-                    borderBottom: "1px solid #f1f5f9",
-                    background: "#f8fafc",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    color: "#64748b",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                  }}
-                >
-                  Select Month
-                </div>
-                {availableMonths.map((m: any) => (
-                  <button
-                    key={`${m.month}-${m.year}`}
-                    onClick={async () => {
-                      setShowExportDropdown(false);
-                      try {
-                        const token = localStorage.getItem("token");
-                        let url = `${BASE_URL}/attendance/export-monthly?month=${m.month}&year=${m.year}`;
-                        if (selectedTeam && selectedTeam !== "All") {
-                          url += `&team=${encodeURIComponent(selectedTeam)}`;
-                        }
-                        const response = await fetch(url, {
-                          headers: { "Authorization": `Bearer ${token}` }
-                        });
-                        const blob = await response.blob();
-                        const urlBlob = window.URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = urlBlob;
-                        a.download = `Attendance_Report_${m.label.replace(/\s+/g, "_")}.xlsx`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                      } catch (error) {
-                        console.error("Failed to download attendance report:", error);
-                      }
-                    }}
-                    style={{
-                      width: "100%",
-                      padding: "11px 16px",
-                      border: "none",
-                      background: "transparent",
-                      color: "#1e293b",
-                      fontSize: "13px",
-                      fontWeight: 500,
-                      cursor: "pointer",
-                      textAlign: "left",
-                      transition: "all 0.15s ease",
-                      borderBottom: "1px solid #f1f5f9",
-                      display: "block",
-                    }}
-                    onMouseEnter={(e) => { (e.target as HTMLElement).style.background = "#f1f5f9"; }}
-                    onMouseLeave={(e) => { (e.target as HTMLElement).style.background = "transparent"; }}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {showExportDropdown && (
-              <div
-                style={{ position: "fixed", inset: 0, zIndex: 40 }}
-                onClick={() => setShowExportDropdown(false)}
-              />
-            )}
-          </div>
+          {/* Download Excel Button */}
+          <button
+            onClick={() => {
+              setExportTeam(selectedTeam || "All");
+              setExportMonth(selectedCycle || (availableMonths[0] ? `${availableMonths[0].month},${availableMonths[0].year}` : ""));
+              setShowExportModal(true);
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "8px 16px",
+              borderRadius: "10px",
+              border: "none",
+              background: "#0f766e",
+              color: "#fff",
+              fontSize: "13px",
+              fontWeight: 700,
+              cursor: "pointer",
+              boxShadow: "0 4px 10px rgba(15,118,110,0.18)",
+              height: "38px",
+              transition: "background 0.2s ease",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#0d6561"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#0f766e"; }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Download Excel
+          </button>
 
           <Button
             onClick={() => fileInputRef.current?.click()}
@@ -1483,6 +1429,137 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             </div>
           }
         />
+      )}
+
+      {/* Export Attendance Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-neutral-100 overflow-hidden animate-in fade-in zoom-in duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-teal-50 text-teal-700">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-bold text-neutral-800 text-base">Export Attendance Report</h3>
+                  <p className="text-xs text-neutral-500">Select team and month range to download Excel</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              {/* Select Team */}
+              <div>
+                <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-2">
+                  Select Team / Department
+                </label>
+                <select
+                  value={exportTeam}
+                  onChange={(e) => setExportTeam(e.target.value)}
+                  className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-800 focus:border-teal-600 focus:ring-2 focus:ring-teal-100 outline-none transition-all shadow-2xs font-medium"
+                >
+                  <option value="All">All Teams</option>
+                  {availableTeamsList.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Select Month */}
+              <div>
+                <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-2">
+                  Select Attendance Month / Cycle
+                </label>
+                <select
+                  value={exportMonth}
+                  onChange={(e) => setExportMonth(e.target.value)}
+                  className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-800 focus:border-teal-600 focus:ring-2 focus:ring-teal-100 outline-none transition-all shadow-2xs font-medium"
+                >
+                  {availableMonths.map((m: any) => (
+                    <option key={`${m.month}-${m.year}`} value={`${m.month},${m.year}`}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-neutral-50/80 border-t border-neutral-100">
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-neutral-600 hover:bg-neutral-200/60 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setShowExportModal(false);
+                  try {
+                    const token = localStorage.getItem("token");
+                    let url = `${BASE_URL}/attendance/export-monthly`;
+                    const queryParams: string[] = [];
+
+                    if (exportMonth) {
+                      const [m, y] = exportMonth.split(",");
+                      queryParams.push(`month=${m}`);
+                      queryParams.push(`year=${y}`);
+                    }
+                    if (exportTeam && exportTeam !== "All") {
+                      queryParams.push(`team=${encodeURIComponent(exportTeam)}`);
+                    }
+
+                    if (queryParams.length > 0) {
+                      url += `?${queryParams.join("&")}`;
+                    }
+
+                    const response = await fetch(url, {
+                      headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (!response.ok) {
+                      const errData = await response.json().catch(() => ({}));
+                      toast.error(errData.error || "Failed to download attendance report");
+                      return;
+                    }
+                    const blob = await response.blob();
+                    const urlBlob = window.URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = urlBlob;
+                    const activeLabel = availableMonths.find((m) => `${m.month},${m.year}` === exportMonth)?.label || "";
+                    const filenameSuffix = activeLabel ? `_${activeLabel.replace(/\s+/g, "_")}` : "";
+                    const teamSuffix = exportTeam && exportTeam !== "All" ? `_${exportTeam.replace(/\s+/g, "_")}` : "";
+                    a.download = `Attendance_Report${teamSuffix}${filenameSuffix}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                  } catch (error) {
+                    console.error("Failed to download attendance report:", error);
+                  }
+                }}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold shadow-md shadow-teal-700/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Download Excel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </Panel>
   );

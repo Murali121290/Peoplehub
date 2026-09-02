@@ -1,7 +1,7 @@
 import {
   HomeIcon, UserGroupIcon, ChartBarIcon,
   BellIcon, PhoneIcon, BuildingOffice2Icon, ClipboardDocumentCheckIcon,
-  QuestionMarkCircleIcon
+  QuestionMarkCircleIcon, BookOpenIcon
 } from "@heroicons/react/24/outline";
 
 export const useNavigation = (user: any) => {
@@ -13,6 +13,7 @@ export const useNavigation = (user: any) => {
 
     const commonItems = [
       { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
+      { name: "Organization", icon: BookOpenIcon, path: "/organization" },
       { name: "Announcements", icon: BellIcon, path: "/announcements" },
       { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
       { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
@@ -35,6 +36,7 @@ export const useNavigation = (user: any) => {
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         { name: "HR Management", icon: UserGroupIcon, path: "/hrms" },
         teamManagementNode,
+        { name: "Organization", icon: BookOpenIcon, path: "/organization" },
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
@@ -47,6 +49,7 @@ export const useNavigation = (user: any) => {
       return [
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         teamManagementNode,
+        { name: "Organization", icon: BookOpenIcon, path: "/organization" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
@@ -59,6 +62,7 @@ export const useNavigation = (user: any) => {
       return [
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         { name: "HR Management", icon: UserGroupIcon, path: "/hrms" },
+        { name: "Organization", icon: BookOpenIcon, path: "/organization" },
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },

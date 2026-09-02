@@ -45,6 +45,12 @@ const accessClasses: Record<string, string> = {
   full: 'bg-slate-900 text-white',
   limited: 'bg-amber-100 text-amber-800',
   read_only: 'bg-sky-100 text-sky-800',
+  admin: 'bg-purple-100 text-purple-800',
+  hr: 'bg-pink-100 text-pink-800',
+  manager: 'bg-indigo-100 text-indigo-800',
+  team_lead: 'bg-teal-100 text-teal-800',
+  service_manager: 'bg-blue-100 text-blue-800',
+  user: 'bg-slate-100 text-slate-700',
 };
 
 const UsersPage: React.FC = () => {

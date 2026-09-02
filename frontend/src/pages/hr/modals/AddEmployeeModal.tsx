@@ -295,6 +295,8 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 .filter(
                   (emp) =>
                     emp.access_level?.toLowerCase() === "manager" ||
+                    emp.access_level?.toLowerCase() === "team_lead" ||
+                    emp.access_level?.toLowerCase() === "service_manager" ||
                     emp.access_level?.toLowerCase() === "hr" ||
                     emp.access_level?.toLowerCase() === "admin"
                 )
@@ -422,6 +424,8 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 { label: "Admin", value: "admin" },
                 { label: "HR", value: "hr" },
                 { label: "Manager", value: "manager" },
+                { label: "Team Lead", value: "team_lead" },
+                { label: "Service Manager", value: "service_manager" },
                 { label: "User", value: "user" },
               ]}
               className={fieldErrors["access_level"] ? "border-danger-500" : ""}

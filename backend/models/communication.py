@@ -62,6 +62,17 @@ class Communication(db.Model):
         nullable=True
     )
 
+    poll_data = db.Column(
+        db.JSON,
+        nullable=True
+    )
+
+    poll_votes = db.Column(
+        db.JSON,
+        default=dict,
+        nullable=True
+    )
+
     created_by = db.Column(
         db.String(200),
         nullable=True
@@ -85,6 +96,8 @@ class Communication(db.Model):
             "target_role": self.target_role,
             "message": self.message,
             "image_url": self.image_url,
+            "poll_data": self.poll_data,
+            "poll_votes": self.poll_votes or {},
             "created_by": self.created_by,
             "created_at": (
                 self.created_at.isoformat()

@@ -194,7 +194,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const user = userStr ? JSON.parse(userStr) : {};
   const userId = localStorage.getItem("user_id") || user.id || user.user_id;
   const employeeId = user.employee_id || user.id;
-  const isManager = (user?.access_level || "").toLowerCase() === "manager";
+  const isManager = ["manager", "team_lead", "service_manager", "lead"].includes((user?.access_level || "").toLowerCase());
 
   const fetchMonthData = async () => {
     setIsLoading(true);
@@ -473,8 +473,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   // Format decimal hours to "Xh Ym"
   const formatHoursMinutes = (hoursDecimal: number): string => {
     if (!hoursDecimal || hoursDecimal <= 0) return "0h";
-    const hrs = Math.floor(hoursDecimal);
-    const mins = Math.round((hoursDecimal - hrs) * 60);
+    const totalMinutes = Math.round(hoursDecimal * 60);
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
     if (mins === 0) return `${hrs}h`;
     if (hrs === 0) return `${mins}m`;
     return `${hrs}h ${mins}m`;
@@ -1251,16 +1252,29 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                </>
                              ) : null}
 
-                             <div className="flex justify-between items-center px-1">
-                               <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
-                               <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
-                             </div>
+                              <div className="flex justify-between items-center px-1 gap-2">
+                                <span className="text-[11px] text-neutral-500 font-bold whitespace-nowrap">Total Working Hours</span>
+                                <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2.5 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1">
+                                  <span>{cell.workingHoursFormatted}</span>
+                                  {((cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes) > 0) && (
+                                    <span className="text-[10px] font-bold text-teal-600 bg-white/80 px-1 py-0.2 rounded border border-teal-200/80" title="Manager added minutes">
+                                      (+{cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes}m)
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
                             {cell.overtime && cell.overtime !== "00:00" && cell.overtime !== "0h" && cell.overtime !== "0.0h" && (
                               <div className="flex justify-between items-center px-1">
                                 <span className="text-[11px] text-neutral-500 font-bold">Overtime</span>
                                 <span className="font-bold text-emerald-600 text-[11px]">+{cell.overtime}</span>
                               </div>
                             )}
+                            {cell.rawAttendanceRecord?.remarks && (
+                               <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200/80 mt-2 text-[11px]">
+                                 <span className="text-[9px] uppercase font-extrabold text-amber-700 block mb-0.5">📝 Edit Reason / Remark</span>
+                                 <span className="font-semibold text-neutral-800 block text-[11px] leading-snug">{cell.rawAttendanceRecord.remarks}</span>
+                               </div>
+                             )}
                             {((cell.rawAttendanceRecord?.check_in_ip) || (cell.rawAttendanceRecord?.check_out_ip)) && (
                               <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-2.5 rounded-xl border border-neutral-100 mt-2 text-[10px]">
                                 <div>
@@ -1291,9 +1305,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                     <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
                                   </div>
                                 </div>
-                                <div className="flex justify-between items-center px-1">
-                                  <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
-                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
+                                <div className="flex justify-between items-center px-1 gap-2">
+                                  <span className="text-[11px] text-neutral-500 font-bold whitespace-nowrap">Total Working Hours</span>
+                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2.5 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1">
+                                    <span>{cell.workingHoursFormatted}</span>
+                                    {((cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes) > 0) && (
+                                      <span className="text-[10px] font-bold text-teal-600 bg-white/80 px-1 py-0.2 rounded border border-teal-200/80" title="Manager added minutes">
+                                        (+{cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes}m)
+                                      </span>
+                                    )}
+                                  </span>
                                 </div>
                               </div>
                             )}
@@ -1332,9 +1353,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                     <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
                                   </div>
                                 </div>
-                                <div className="flex justify-between items-center px-1">
-                                  <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
-                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
+                                <div className="flex justify-between items-center px-1 gap-2">
+                                  <span className="text-[11px] text-neutral-500 font-bold whitespace-nowrap">Total Working Hours</span>
+                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2.5 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1">
+                                    <span>{cell.workingHoursFormatted}</span>
+                                    {((cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes) > 0) && (
+                                      <span className="text-[10px] font-bold text-teal-600 bg-white/80 px-1 py-0.2 rounded border border-teal-200/80" title="Manager added minutes">
+                                        (+{cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes}m)
+                                      </span>
+                                    )}
+                                  </span>
                                 </div>
                               </div>
                             )}
@@ -1356,9 +1384,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                     <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
                                   </div>
                                 </div>
-                                <div className="flex justify-between items-center px-1">
-                                  <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
-                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
+                                <div className="flex justify-between items-center px-1 gap-2">
+                                  <span className="text-[11px] text-neutral-500 font-bold whitespace-nowrap">Total Working Hours</span>
+                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2.5 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1">
+                                    <span>{cell.workingHoursFormatted}</span>
+                                    {((cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes) > 0) && (
+                                      <span className="text-[10px] font-bold text-teal-600 bg-white/80 px-1 py-0.2 rounded border border-teal-200/80" title="Manager added minutes">
+                                        (+{cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes}m)
+                                      </span>
+                                    )}
+                                  </span>
                                 </div>
                               </div>
                             )}
