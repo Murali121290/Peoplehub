@@ -1312,15 +1312,23 @@ def get_team_overview():
 @employees_bp.route("/my-team/<int:user_id>", methods=["GET"])
 def get_my_team(user_id):
     user = User.query.get(user_id)
-    manager = Employee.query.filter_by(user_id=user_id).first()
+    manager = None
+    if user:
+        manager = Employee.query.filter(
+            (Employee.user_id == user.id) |
+            (Employee.email == user.company_email) |
+            (Employee.email == user.email)
+        ).first()
+    if not manager:
+        manager = Employee.query.filter_by(id=user_id).first()
 
-    if not user or not manager:
+    if not manager:
         return jsonify([])
 
     manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
     all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
 
-    reporting_list = [e for e in all_employees if is_manager_match(e.reporting_manager, manager_full_name)]
+    reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
 
     result = []
     for employee in reporting_list:
@@ -1397,8 +1405,17 @@ def get_all_reporting_employees_recursive(manager_name, all_employees, visited=N
 def get_team_attendance(user_id):
     """Return all employees reporting to this manager with today's attendance status."""
     try:
-        manager = Employee.query.filter_by(user_id=user_id).first()
         user = User.query.get(user_id)
+        manager = None
+        if user:
+            manager = Employee.query.filter(
+                (Employee.user_id == user.id) |
+                (Employee.email == user.company_email) |
+                (Employee.email == user.email)
+            ).first()
+        if not manager:
+            manager = Employee.query.filter_by(id=user_id).first()
+
         is_admin = False
         if user:
             role_name = (user.role.name or "").lower() if user.role else ""
@@ -1407,8 +1424,7 @@ def get_team_attendance(user_id):
                 is_admin = True
 
         today = date.today()
-        # Filter with database, not in Python
-        all_employees = Employee.query.filter(Employee.is_active != False).all()
+        all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
         result = []
 
         if is_admin:
@@ -1419,8 +1435,8 @@ def get_team_attendance(user_id):
             manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
             reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
         # Get list of reporting employee IDs and user IDs for batch queries
-        reporting_emp_ids = [str(e.id) for e in reporting_list] + [e.employee_id for e in reporting_list if e.employee_id]
-        reporting_user_ids = [e.user_id for e in reporting_list]
+        reporting_emp_ids = [str(e.id) for e in reporting_list] + [str(e.employee_id) for e in reporting_list if e.employee_id]
+        reporting_user_ids = [e.user_id for e in reporting_list if e.user_id is not None]
 
         # BATCH FETCH: Permissions
         permissions = LeaveRequest.query.filter(
@@ -1428,7 +1444,7 @@ def get_team_attendance(user_id):
             LeaveRequest.status == "Approved",
             LeaveRequest.permission_date == today,
             LeaveRequest.employee_id.in_(reporting_emp_ids)
-        ).all()
+        ).all() if reporting_emp_ids else []
 
         permission_by_employee = {}
         for p in permissions:
@@ -1438,7 +1454,7 @@ def get_team_attendance(user_id):
         attendances = Attendance.query.filter(
             Attendance.user_id.in_(reporting_user_ids),
             Attendance.attendance_date == today
-        ).all()
+        ).all() if reporting_user_ids else []
         attendance_by_user = {a.user_id: a for a in attendances}
 
         # BATCH FETCH: All leave requests for reporting employees today
@@ -1448,7 +1464,7 @@ def get_team_attendance(user_id):
             LeaveRequest.request_type == "Leave",
             LeaveRequest.from_date <= today,
             LeaveRequest.to_date >= today
-        ).order_by(LeaveRequest.created_at.desc()).all()
+        ).order_by(LeaveRequest.created_at.desc()).all() if reporting_emp_ids else []
 
         leave_by_employee = {}
         for lr in leave_requests_batch:
@@ -1457,13 +1473,27 @@ def get_team_attendance(user_id):
                 leave_by_employee[emp_key] = lr
 
         # BATCH FETCH: All shift requests for reporting employees today
+        # Note: ShiftRequest.employee_id is INTEGER in DB, so only pass valid integers
+        numeric_shift_emp_ids = []
+        for e in reporting_list:
+            if e.id is not None:
+                try:
+                    numeric_shift_emp_ids.append(int(e.id))
+                except (ValueError, TypeError):
+                    pass
+            if e.employee_id is not None:
+                try:
+                    numeric_shift_emp_ids.append(int(e.employee_id))
+                except (ValueError, TypeError):
+                    pass
+
         from models.shift_request import ShiftRequest
         shift_requests_batch = ShiftRequest.query.filter(
-            ShiftRequest.employee_id.in_(reporting_emp_ids),
+            ShiftRequest.employee_id.in_(numeric_shift_emp_ids),
             ShiftRequest.status == "Approved",
             ShiftRequest.from_date <= today,
             ShiftRequest.to_date >= today
-        ).order_by(ShiftRequest.created_at.desc()).all()
+        ).order_by(ShiftRequest.created_at.desc()).all() if numeric_shift_emp_ids else []
 
         # Keep all approved requests per employee (not just the latest) so
         # WFH-type and Shift-type requests active on the same day aren't
@@ -1535,6 +1565,15 @@ def get_team_attendance(user_id):
             shift_change_today = next((r for r in emp_requests_today if r.request_type == "Shift"), None)
 
             if attendance:
+                is_copied_biometric = False
+                if attendance.check_in and attendance.card_check_in:
+                    if abs((attendance.check_in - attendance.card_check_in).total_seconds()) < 60:
+                        if attendance.check_out and attendance.card_check_out:
+                            if abs((attendance.check_out - attendance.card_check_out).total_seconds()) < 60:
+                                is_copied_biometric = True
+                        elif not attendance.check_out and not attendance.card_check_out:
+                            is_copied_biometric = True
+
                 # Start with the database status
                 att_status = attendance.status or "Absent"
                 if att_status == "Leave":
@@ -1714,9 +1753,16 @@ def get_reporting_employees(user_id):
 
     try:
 
-        manager = Employee.query.filter_by(
-            user_id=user_id
-        ).first()
+        user = User.query.get(user_id)
+        manager = None
+        if user:
+            manager = Employee.query.filter(
+                (Employee.user_id == user.id) |
+                (Employee.email == user.company_email) |
+                (Employee.email == user.email)
+            ).first()
+        if not manager:
+            manager = Employee.query.filter_by(id=user_id).first()
 
         if not manager:
             return jsonify([])

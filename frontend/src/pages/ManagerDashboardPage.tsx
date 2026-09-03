@@ -720,9 +720,12 @@ const ManagerDashboardPage = () => {
 
   const loadTeamMembers = async (viewedUserId = currentViewedManagerId) => {
     try {
-      const response = await fetch(`${BASE_URL}/employees/my-team/${viewedUserId}`);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${BASE_URL}/employees/my-team/${viewedUserId}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       const data = await response.json();
-      const formattedMembers = data.map((emp: any) => ({
+      const formattedMembers = (Array.isArray(data) ? data : []).map((emp: any) => ({
         id: emp.id,
         user_id: emp.user_id || emp.id,
         employee_id: emp.employee_id || emp.employee_code || (emp.id ? `EMP${emp.id}` : ""),
@@ -752,7 +755,10 @@ const ManagerDashboardPage = () => {
 
   const loadTeamAttendance = async (viewedUserId = currentViewedManagerId) => {
     try {
-      const response = await fetch(`${BASE_URL}/employees/team-attendance/${viewedUserId}`);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${BASE_URL}/employees/team-attendance/${viewedUserId}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       const data = await response.json();
       setTeamAttendance(Array.isArray(data) ? data : []);
     } catch (error) {

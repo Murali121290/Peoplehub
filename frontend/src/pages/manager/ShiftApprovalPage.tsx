@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { API_URL, getProfileImageUrl } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
 import { CheckIcon, XMarkIcon, ArrowRightIcon, MagnifyingGlassIcon, PaperClipIcon, ClockIcon } from "@heroicons/react/24/outline";
@@ -96,7 +96,9 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
 
   const fetchEmployees = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/employees/`);
+      const res = await fetch(`${BASE_URL}/employees/`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       if (res.ok) {
         const data = await res.json();
         setTeamEmployees(Array.isArray(data) ? data : []);
@@ -200,73 +202,58 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
     return false;
   };
 
-  const getRecursiveReportingIdentifiers = (
-    managerId: number | string | undefined | null,
-    allEmps: any[]
-  ) => {
-    if (!managerId || !Array.isArray(allEmps) || allEmps.length === 0) {
-      return { ids: new Set<string>(), names: new Set<string>() };
-    }
+  const getRecursiveReportingIdentifiers = (managerFullName: string, employeesList: any[]) => {
+    const allowed = new Set<string>();
+    if (!managerFullName || !employeesList.length) return allowed;
 
-    const currentMgr = allEmps.find((e: any) =>
-      Number(e.id) === Number(managerId) ||
-      Number(e.user_id) === Number(managerId) ||
-      String(e.employee_id || "").trim() === String(managerId).trim()
-    );
-
-    const targetNames = new Set<string>();
-    if (currentMgr) {
-      const fName = `${currentMgr.first_name || ""} ${currentMgr.last_name || ""}`.trim();
-      if (fName) targetNames.add(fName.toLowerCase());
-    }
-
-    const ids = new Set<string>();
-    const names = new Set<string>();
-    const queue: string[] = Array.from(targetNames);
-
-    if (queue.length === 0) {
-      return { ids, names };
-    }
-
-    const visitedNames = new Set<string>(queue);
+    const queue: string[] = [managerFullName];
+    const visitedManagers = new Set<string>([managerFullName.trim().toLowerCase()]);
 
     while (queue.length > 0) {
-      const parentName = queue.shift()!;
+      const currentMgr = queue.shift()!;
+      for (const emp of employeesList) {
+        if (checkManagerMatch(emp.reporting_manager, currentMgr)) {
+          const empFullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.name || "";
 
-      allEmps.forEach((e: any) => {
-        const repMgr = (e.reporting_manager || "").trim().toLowerCase();
-        if (repMgr && (repMgr === parentName || repMgr.includes(parentName) || parentName.includes(repMgr))) {
-          if (e.id) ids.add(String(e.id));
-          if (e.user_id) ids.add(String(e.user_id));
-          if (e.employee_id) ids.add(String(e.employee_id).trim());
+          if (emp.id) allowed.add(String(emp.id).toLowerCase());
+          if (emp.user_id) allowed.add(String(emp.user_id).toLowerCase());
+          if (emp.employee_id) allowed.add(String(emp.employee_id).toLowerCase());
+          if (empFullName) allowed.add(empFullName.toLowerCase());
 
-          const childName = `${e.first_name || ""} ${e.last_name || ""}`.trim().toLowerCase();
-          if (childName && !visitedNames.has(childName)) {
-            visitedNames.add(childName);
-            names.add(childName);
-            queue.push(childName);
+          const empFullNameClean = empFullName.toLowerCase();
+          if (empFullNameClean && !visitedManagers.has(empFullNameClean)) {
+            visitedManagers.add(empFullNameClean);
+            queue.push(empFullName);
           }
         }
-      });
+      }
     }
 
-    return { ids, names };
+    return allowed;
   };
 
+  const userFullName = user?.full_name || `${(user as any)?.first_name || ""} ${(user as any)?.last_name || ""}`.trim();
+  const reportingIdentifiers = useMemo(() => {
+    if (!userFullName || user?.access_level?.toLowerCase() === "admin") return new Set<string>();
+    return getRecursiveReportingIdentifiers(userFullName, teamEmployees);
+  }, [userFullName, user?.access_level, teamEmployees]);
+
   const safeManagerShiftRequests = shiftRequests.filter((req: any) => {
+    const reqType = (req.request_type || "").trim().toLowerCase();
     if (isOdwOnly) {
-      if (req.request_type !== "One Day Wages") return false;
+      if (reqType !== "one day wages" && reqType !== "odw") return false;
     } else {
-      if (req.request_type === "One Day Wages" || req.request_type === "WFH") return false;
+      if (reqType === "one day wages" || reqType === "odw" || reqType === "wfh") return false;
     }
 
-    const reportingSet = getRecursiveReportingIdentifiers(user?.id, teamEmployees);
-    const reqEmpId = String(req.employee_id || "").trim();
-    const reqUserDbId = String(req.user_id || req.employee_db_id || "").trim();
-    const reqRepMgr = String(req.reporting_manager || "").trim().toLowerCase();
-
-    const isDirectManager = checkManagerMatch(req.reporting_manager, user?.full_name);
-    const isRecursiveReport = reportingSet.ids.has(reqEmpId) || reportingSet.ids.has(reqUserDbId) || (reqRepMgr && reportingSet.names.has(reqRepMgr));
+    const isDirectManager = checkManagerMatch(req.reporting_manager, userFullName);
+    const isRecursiveReport = (
+      (req.employee_id && reportingIdentifiers.has(String(req.employee_id).toLowerCase())) ||
+      (req.user_id && reportingIdentifiers.has(String(req.user_id).toLowerCase())) ||
+      (req.employee_db_id && reportingIdentifiers.has(String(req.employee_db_id).toLowerCase())) ||
+      (req.employee_name && reportingIdentifiers.has(String(req.employee_name).trim().toLowerCase())) ||
+      (req.reporting_manager && reportingIdentifiers.has(String(req.reporting_manager).trim().toLowerCase()))
+    );
     const isAdmin = user?.access_level?.toLowerCase() === "admin";
 
     const isManager = isDirectManager || isRecursiveReport || isAdmin;

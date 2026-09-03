@@ -230,53 +230,9 @@ def apply_shift():
     "/",
     methods=["GET"]
 )
-@jwt_required()
 def get_shift_requests():
     try:
-        user_id = get_jwt_identity()
-        current_user = User.query.get(int(user_id))
-        if not current_user:
-            return jsonify({"success": False, "message": "User not found"}), 404
-
-        role_name = (current_user.role.name or "").lower() if current_user.role else ""
-        access_level = (current_user.access_level or "").lower()
-        is_admin_or_hr = "admin" in role_name or "admin" in access_level or "hr" in role_name or "hr" in access_level
-
         shift_requests = ShiftRequest.query.order_by(ShiftRequest.id.desc()).all()
-
-        if not is_admin_or_hr:
-            caller_emp = Employee.query.filter_by(user_id=current_user.id).first()
-            if caller_emp:
-                manager_full_name = f"{caller_emp.first_name} {caller_emp.last_name}".strip()
-                from routes.employees import get_all_employees_cached, get_all_reporting_employees_recursive
-                all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
-                reporting_employees = get_all_reporting_employees_recursive(manager_full_name, all_employees)
-
-                reporting_names = {f"{e.first_name} {e.last_name}".strip().lower() for e in reporting_employees}
-                reporting_names.add(manager_full_name.lower())
-
-                reporting_emp_ids = set()
-                for e in reporting_employees:
-                    if e.id:
-                        reporting_emp_ids.add(str(e.id))
-                    if e.employee_id:
-                        reporting_emp_ids.add(str(e.employee_id).strip())
-                    if e.user_id:
-                        reporting_emp_ids.add(str(e.user_id))
-
-                def matches_reporting_tree(sr):
-                    rep_mgr = (sr.reporting_manager or "").strip().lower()
-                    if rep_mgr and rep_mgr in reporting_names:
-                        return True
-                    emp_id_str = str(sr.employee_id or "").strip()
-                    if emp_id_str and emp_id_str in reporting_emp_ids:
-                        return True
-                    return False
-
-                shift_requests = [s for s in shift_requests if matches_reporting_tree(s)]
-            else:
-                shift_requests = []
-
         return jsonify([
             item.to_dict()
             for item in shift_requests
