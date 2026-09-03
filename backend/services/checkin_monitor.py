@@ -173,7 +173,7 @@ def generate_daily_notifications():
                         notif_self = Notification(
                             receiver_name=celebrator_name,
                             title="🎂 Happy Birthday!",
-                            message=f"Happy Birthday, {celebrator_name}! Have a wonderful day ahead.",
+                            message=f"Wishing you a very Happy Birthday, {celebrator_name}! May your day be filled with joy and success!",
                             is_read=False,
                             related_id=emp.id,
                             related_type="birthday_self"
@@ -200,7 +200,7 @@ def generate_daily_notifications():
                                 notif_other = Notification(
                                     receiver_name=other_name,
                                     title="🎂 Birthday Reminder",
-                                    message=f"Today is {celebrator_name}'s birthday. Wish them!",
+                                    message=f"Today is {celebrator_name}'s birthday! Join us in wishing them a fantastic day and a great year ahead!",
                                     is_read=False,
                                     related_id=emp.id,
                                     related_type="birthday_reminder"
@@ -226,7 +226,8 @@ def generate_daily_notifications():
                     years = today.year - emp.joining_date.year
                     if years > 0:
                         celebrator_name = f"{emp.first_name} {emp.last_name or ''}".strip()
-                        print(f"🎉 Today is {celebrator_name}'s {years}-year Work Anniversary!")
+                        year_ord = get_year_ordinal(years)
+                        print(f"🎉 Today marks {celebrator_name}'s {year_ord} Work Anniversary!")
 
                         # Check if notification already exists to avoid duplication
                         existing = Notification.query.filter_by(
@@ -241,7 +242,7 @@ def generate_daily_notifications():
                             notif_self = Notification(
                                 receiver_name=celebrator_name,
                                 title="🎉 Work Anniversary!",
-                                message=f"Congratulations on completing {years} year{'s' if years > 1 else ''} with us, {celebrator_name}!",
+                                message=f"Congratulations on completing your {year_ord} work anniversary with us, {celebrator_name}! Wishing you continued success!",
                                 is_read=False,
                                 related_id=emp.id,
                                 related_type="anniversary_self"
@@ -268,7 +269,7 @@ def generate_daily_notifications():
                                     notif_other = Notification(
                                         receiver_name=other_name,
                                         title="🎉 Anniversary Reminder",
-                                        message=f"Today is {celebrator_name}'s {years}-year work anniversary. Congratulate them!",
+                                        message=f"Today marks {celebrator_name}'s {year_ord} work anniversary! Join us in congratulating them on this wonderful milestone!",
                                         is_read=False,
                                         related_id=emp.id,
                                         related_type="anniversary_reminder"
@@ -287,6 +288,26 @@ def generate_daily_notifications():
                                         "related_type": "anniversary_reminder",
                                         "celebrator_name": celebrator_name
                                     }, to=str(other_emp.id))
+
+        # Reformat existing notification messages in DB so UI updates immediately
+        try:
+            import re
+            existing_notifs = Notification.query.filter(
+                Notification.related_type.in_(["anniversary_reminder", "anniversary_self", "birthday_reminder", "birthday_self"])
+            ).all()
+            for n in existing_notifs:
+                msg = n.message or ""
+                m_ann = re.search(r"Today is (.+?)'s (\d+)-year work anniversary\. Congratulate them!", msg)
+                if m_ann:
+                    c_name = m_ann.group(1)
+                    yrs = int(m_ann.group(2))
+                    n.message = f"Today marks {c_name}'s {get_year_ordinal(yrs)} work anniversary! Join us in congratulating them on this wonderful milestone!"
+                m_bday = re.search(r"Today is (.+?)'s birthday\. Wish them!", msg)
+                if m_bday:
+                    c_name = m_bday.group(1)
+                    n.message = f"Today is {c_name}'s birthday! Join us in wishing them a fantastic day and a great year ahead!"
+        except Exception as update_err:
+            print("Notice: Existing notifications reformat error:", str(update_err))
 
         db.session.commit()
         

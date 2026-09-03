@@ -7,7 +7,7 @@ interface NotificationPanelProps {
   onToggle: () => void;
   onClearAll: () => void;
   onDismiss: (id: number) => void;
-  onSendThanks: (wishId: number, senderName: string) => void;
+  onSendThanks: (wishId: number, senderName: string, relatedType?: string) => void;
   onViewThanks: (message: string) => void;
   onRemindCheckIn?: (notificationId: number, employeeName: string) => void;
   onGoToAttendance?: () => void;
@@ -92,7 +92,13 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
             <ul className="divide-y divide-gray-100 p-2">
               {notifications.map((item: any) => {
                 const isBirthdayWish = item.related_type === "birthday_wish";
+                const isAnniversaryWish = item.related_type === "anniversary_wish";
+                const isWishNotification = isBirthdayWish || isAnniversaryWish;
+
                 const isBirthdayThanks = item.related_type === "birthday_thanks";
+                const isAnniversaryThanks = item.related_type === "anniversary_thanks";
+                const isThanksNotification = isBirthdayThanks || isAnniversaryThanks;
+
                 const isCheckinReminder = item.related_type === "checkin_reminder";
 
                 return (
@@ -100,11 +106,6 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                     key={item.id}
                     className="p-4 hover:bg-slate-50 transition-all duration-200 flex gap-4 items-start rounded-xl mx-2 my-2 border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 relative bg-white"
                   >
-                    {/* Unread indicator dot */}
-                    {/* {!item.is_read && (
-                      <span className="absolute top-4 left-2 w-2.5 h-2.5 bg-blue-600 rounded-full animate-pulse" title="Unread" />
-                    )} */}
-
                     {/* Avatar */}
                     {item.sender_employee_id ? (
                       <img
@@ -115,10 +116,11 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                           e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
                         }}
                       />
-                    ) : (isBirthdayWish || isBirthdayThanks) ? (
+                    ) : (isWishNotification || isThanksNotification) ? (
                       <span className="text-2xl flex-shrink-0 select-none">
                         {isBirthdayWish && "🎂"}
-                        {isBirthdayThanks && "🎉"}
+                        {isAnniversaryWish && "🎗️"}
+                        {(isBirthdayThanks || isAnniversaryThanks) && "🎉"}
                       </span>
                     ) : null}
 
@@ -137,13 +139,13 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                       </p>
 
                       {/* Action buttons area */}
-                      {(isBirthdayWish || isBirthdayThanks) && (
+                      {(isWishNotification || isThanksNotification) && (
                         <div className="mt-3 flex items-center gap-2">
-                          {isBirthdayWish && (
+                          {isWishNotification && (
                             <button
                               onClick={() => {
                                 if (!item.thanked) {
-                                  onSendThanks(item.related_id, item.sender_name || "Employee");
+                                  onSendThanks(item.related_id, item.sender_name || "Employee", item.related_type);
                                 }
                               }}
                               disabled={item.thanked}
@@ -156,7 +158,7 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({
                             </button>
                           )}
 
-                          {isBirthdayThanks && (
+                          {isThanksNotification && (
                             <>
                               <button
                                 onClick={() => onViewThanks(item.message)}

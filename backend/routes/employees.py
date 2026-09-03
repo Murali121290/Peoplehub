@@ -695,7 +695,7 @@ def update_employee_profile(employee_id):
 
         user = User.query.get(employee.user_id)
 
-        data = request.form
+        data = request.get_json(silent=True) or request.form or {}
 
         # Basic Employee Information (from directory edit)
         if data.get("employee_id") and is_hr_or_admin:
@@ -1087,7 +1087,7 @@ def update_employee_profile(employee_id):
 
 
             if data.get("access_level"):
-                user.access_level = data.get("access_level")
+                user.access_level = str(data.get("access_level")).strip()
 
             if data.get("team_id"):
                 user.team_id = int(data.get("team_id"))
@@ -1115,7 +1115,8 @@ def update_employee_profile(employee_id):
                 "department": employee.department,
                 "shift": employee.shift_timing or "General Shift",
                 "work_mode": employee.work_mode,
-                "status": employee.status
+                "status": employee.status,
+                "access_level": user.access_level if user else None
             })
         except Exception as socket_err:
             print("Failed to emit profile socket:", str(socket_err))
@@ -1310,56 +1311,57 @@ def get_team_overview():
 
 @employees_bp.route("/my-team/<int:user_id>", methods=["GET"])
 def get_my_team(user_id):
-
     user = User.query.get(user_id)
+    manager = None
+    if user:
+        manager = Employee.query.filter(
+            (Employee.user_id == user.id) |
+            (Employee.email == user.company_email) |
+            (Employee.email == user.email)
+        ).first()
+    if not manager:
+        manager = Employee.query.filter_by(id=user_id).first()
 
-    if not user:
+    if not manager:
         return jsonify([])
 
-    team_id = user.team_id
-
-    team_users = User.query.filter_by(
-        team_id=team_id
-    ).all()
-
-    result = []
+    manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
     all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
 
-    for team_user in team_users:
+    reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
 
-        employee = Employee.query.filter_by(
-            user_id=team_user.id
-        ).first()
+    result = []
+    for employee in reporting_list:
+        update_leave_balance(employee)
 
-        if employee:
-            update_leave_balance(employee)
+        emp_full_name = f"{employee.first_name} {employee.last_name}".strip().lower()
+        is_reporting_manager = False
+        for other in all_employees:
+            if not other.reporting_manager:
+                continue
+            o_mgr = other.reporting_manager.strip().lower()
+            if (o_mgr == emp_full_name) or (len(o_mgr.split()) == 1 and emp_full_name.split()[0] == o_mgr) or (len(emp_full_name.split()) == 1 and o_mgr.split()[0] == emp_full_name):
+                is_reporting_manager = True
+                break
 
-            emp_full_name = f"{employee.first_name} {employee.last_name}".strip().lower()
-            is_reporting_manager = False
-            for other in all_employees:
-                if not other.reporting_manager:
-                    continue
-                o_mgr = other.reporting_manager.strip().lower()
-                if (o_mgr == emp_full_name) or (len(o_mgr.split()) == 1 and emp_full_name.split()[0] == o_mgr) or (len(emp_full_name.split()) == 1 and o_mgr.split()[0] == emp_full_name):
-                    is_reporting_manager = True
-                    break
-
-            result.append({
-                "id": employee.id,
-                "name": f"{employee.first_name} {employee.last_name}",
-                "email": employee.email,
-                "role": employee.designation or "Employee",
-                "department": employee.department,
-                "designation": employee.designation or "Employee",
-                "salary": employee.salary,
-                "reporting_manager": employee.reporting_manager,
-                "status": employee.status,
-                "sick_leave": employee.sick_leave,
-                "casual_leave": employee.casual_leave,
-                "privilege_leave": employee.privilege_leave,
-                "earned_leave": employee.privilege_leave,
-                "is_reporting_manager": is_reporting_manager
-            })
+        result.append({
+            "id": employee.id,
+            "user_id": employee.user_id,
+            "employee_id": employee.employee_id,
+            "name": f"{employee.first_name} {employee.last_name}",
+            "email": employee.email,
+            "role": employee.designation or "Employee",
+            "department": employee.department,
+            "designation": employee.designation or "Employee",
+            "salary": employee.salary,
+            "reporting_manager": employee.reporting_manager,
+            "status": employee.status,
+            "sick_leave": employee.sick_leave,
+            "casual_leave": employee.casual_leave,
+            "privilege_leave": employee.privilege_leave,
+            "earned_leave": employee.privilege_leave,
+            "is_reporting_manager": is_reporting_manager
+        })
 
     return jsonify(result)
 
@@ -1403,8 +1405,17 @@ def get_all_reporting_employees_recursive(manager_name, all_employees, visited=N
 def get_team_attendance(user_id):
     """Return all employees reporting to this manager with today's attendance status."""
     try:
-        manager = Employee.query.filter_by(user_id=user_id).first()
         user = User.query.get(user_id)
+        manager = None
+        if user:
+            manager = Employee.query.filter(
+                (Employee.user_id == user.id) |
+                (Employee.email == user.company_email) |
+                (Employee.email == user.email)
+            ).first()
+        if not manager:
+            manager = Employee.query.filter_by(id=user_id).first()
+
         is_admin = False
         if user:
             role_name = (user.role.name or "").lower() if user.role else ""
@@ -1413,8 +1424,7 @@ def get_team_attendance(user_id):
                 is_admin = True
 
         today = date.today()
-        # Filter with database, not in Python
-        all_employees = Employee.query.filter(Employee.is_active != False).all()
+        all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
         result = []
 
         if is_admin:
@@ -1423,11 +1433,10 @@ def get_team_attendance(user_id):
             if not manager:
                 return jsonify([])
             manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
-            reporting_list = [e for e in all_employees if is_manager_match(e.reporting_manager, manager_full_name)]
-
+            reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
         # Get list of reporting employee IDs and user IDs for batch queries
-        reporting_emp_ids = [str(e.id) for e in reporting_list] + [e.employee_id for e in reporting_list if e.employee_id]
-        reporting_user_ids = [e.user_id for e in reporting_list]
+        reporting_emp_ids = [str(e.id) for e in reporting_list] + [str(e.employee_id) for e in reporting_list if e.employee_id]
+        reporting_user_ids = [e.user_id for e in reporting_list if e.user_id is not None]
 
         # BATCH FETCH: Permissions
         permissions = LeaveRequest.query.filter(
@@ -1435,7 +1444,7 @@ def get_team_attendance(user_id):
             LeaveRequest.status == "Approved",
             LeaveRequest.permission_date == today,
             LeaveRequest.employee_id.in_(reporting_emp_ids)
-        ).all()
+        ).all() if reporting_emp_ids else []
 
         permission_by_employee = {}
         for p in permissions:
@@ -1445,7 +1454,7 @@ def get_team_attendance(user_id):
         attendances = Attendance.query.filter(
             Attendance.user_id.in_(reporting_user_ids),
             Attendance.attendance_date == today
-        ).all()
+        ).all() if reporting_user_ids else []
         attendance_by_user = {a.user_id: a for a in attendances}
 
         # BATCH FETCH: All leave requests for reporting employees today
@@ -1455,7 +1464,7 @@ def get_team_attendance(user_id):
             LeaveRequest.request_type == "Leave",
             LeaveRequest.from_date <= today,
             LeaveRequest.to_date >= today
-        ).order_by(LeaveRequest.created_at.desc()).all()
+        ).order_by(LeaveRequest.created_at.desc()).all() if reporting_emp_ids else []
 
         leave_by_employee = {}
         for lr in leave_requests_batch:
@@ -1464,13 +1473,27 @@ def get_team_attendance(user_id):
                 leave_by_employee[emp_key] = lr
 
         # BATCH FETCH: All shift requests for reporting employees today
+        # Note: ShiftRequest.employee_id is INTEGER in DB, so only pass valid integers
+        numeric_shift_emp_ids = []
+        for e in reporting_list:
+            if e.id is not None:
+                try:
+                    numeric_shift_emp_ids.append(int(e.id))
+                except (ValueError, TypeError):
+                    pass
+            if e.employee_id is not None:
+                try:
+                    numeric_shift_emp_ids.append(int(e.employee_id))
+                except (ValueError, TypeError):
+                    pass
+
         from models.shift_request import ShiftRequest
         shift_requests_batch = ShiftRequest.query.filter(
-            ShiftRequest.employee_id.in_(reporting_emp_ids),
+            ShiftRequest.employee_id.in_(numeric_shift_emp_ids),
             ShiftRequest.status == "Approved",
             ShiftRequest.from_date <= today,
             ShiftRequest.to_date >= today
-        ).order_by(ShiftRequest.created_at.desc()).all()
+        ).order_by(ShiftRequest.created_at.desc()).all() if numeric_shift_emp_ids else []
 
         # Keep all approved requests per employee (not just the latest) so
         # WFH-type and Shift-type requests active on the same day aren't
@@ -1542,6 +1565,15 @@ def get_team_attendance(user_id):
             shift_change_today = next((r for r in emp_requests_today if r.request_type == "Shift"), None)
 
             if attendance:
+                is_copied_biometric = False
+                if attendance.check_in and attendance.card_check_in:
+                    if abs((attendance.check_in - attendance.card_check_in).total_seconds()) < 60:
+                        if attendance.check_out and attendance.card_check_out:
+                            if abs((attendance.check_out - attendance.card_check_out).total_seconds()) < 60:
+                                is_copied_biometric = True
+                        elif not attendance.check_out and not attendance.card_check_out:
+                            is_copied_biometric = True
+
                 # Start with the database status
                 att_status = attendance.status or "Absent"
                 if att_status == "Leave":
@@ -1554,13 +1586,17 @@ def get_team_attendance(user_id):
                         if not (attendance.check_out or attendance.card_check_out):
                             att_status = "Present"
                         else:
-                            if att_status == "Present":
-                                att_status = "Checked Out"
+                            att_status = "Checked Out"
 
                 # Web Entry: only show from web columns, do not fallback
-                check_in = attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None
-                check_out = attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None
-                working_hours = attendance.total_hours or 0.0
+                if is_copied_biometric:
+                    check_in = None
+                    check_out = None
+                    working_hours = 0.0
+                else:
+                    check_in = attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None
+                    check_out = attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None
+                    working_hours = attendance.total_hours or 0.0
                 if attendance.check_in and not attendance.check_out:
                     now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
                     paused_secs = (attendance.paused_minutes or 0) * 60
@@ -1572,8 +1608,8 @@ def get_team_attendance(user_id):
                     hours_decimal = max(elapsed - break_secs - paused_secs, 0) / 3600
                     working_hours = int(hours_decimal * 100) / 100
 
-                # Add permission hours if checked in
-                if attendance.check_in and permission_hours > 0:
+                # Add permission hours if checked in via web or card or present
+                if attendance and (attendance.check_in or attendance.card_check_in or (attendance.status and attendance.status in ("Present", "Checked Out", "Half Day"))) and permission_hours > 0:
                     working_hours += permission_hours
                     working_hours = int(working_hours * 100) / 100
             elif on_leave:
@@ -1717,9 +1753,16 @@ def get_reporting_employees(user_id):
 
     try:
 
-        manager = Employee.query.filter_by(
-            user_id=user_id
-        ).first()
+        user = User.query.get(user_id)
+        manager = None
+        if user:
+            manager = Employee.query.filter(
+                (Employee.user_id == user.id) |
+                (Employee.email == user.company_email) |
+                (Employee.email == user.email)
+            ).first()
+        if not manager:
+            manager = Employee.query.filter_by(id=user_id).first()
 
         if not manager:
             return jsonify([])
@@ -1758,7 +1801,7 @@ def get_reporting_employees(user_id):
             if not manager:
                 return jsonify([])
             manager_full_name = f"{manager.first_name} {manager.last_name}".strip()
-            reporting_list = [e for e in all_employees if e.user_id != user_id and is_manager_match(e.reporting_manager, manager_full_name)]
+            reporting_list = get_all_reporting_employees_recursive(manager_full_name, all_employees)
 
         has_any_updates = False
         today_date = date.today()
@@ -1777,14 +1820,6 @@ def get_reporting_employees(user_id):
                 attendance_date=date_to_check
             ).first()
 
-            if attendance and (attendance.manager_status or "").strip().lower() == "approved":
-                return None
-
-            if attendance:
-                from routes.attendance import sync_biometric_to_web_entry
-                if sync_biometric_to_web_entry(attendance):
-                    has_any_updates = True
-
             from models.leave import LeaveRequest
             from sqlalchemy import or_ as sql_or
             leave = LeaveRequest.query.filter(
@@ -1797,12 +1832,25 @@ def get_reporting_employees(user_id):
                 LeaveRequest.to_date >= date_to_check
             ).first()
 
-            # Determine status and employee_category
             status = "Absent"
-            employee_category = "absent"  # "present" | "absent" | "leave"
-            gross_hours = 0.0
+            employee_category = "absent"
 
-            if attendance:
+            is_copied_biometric = (
+                attendance and
+                attendance.check_in and
+                attendance.card_check_in and
+                attendance.check_in == attendance.card_check_in and
+                not attendance.is_regularization
+            )
+
+            if is_copied_biometric:
+                status = "Absent"
+                employee_category = "absent"
+            elif attendance:
+                from routes.attendance import sync_biometric_to_web_entry, calculate_attendance_status
+                if sync_biometric_to_web_entry(attendance):
+                    has_any_updates = True
+                calculate_attendance_status(attendance)
                 status = attendance.status
 
 
@@ -1846,15 +1894,14 @@ def get_reporting_employees(user_id):
                     permission_hours = max(t_sec - f_sec, 0) / 3600.0
 
             working_hours_val = 0.0
-            if attendance:
+            if is_copied_biometric:
+                working_hours_val = 0.0
+            elif attendance:
                 total_h = attendance.total_hours
-                if (total_h is None or total_h == 0.0) and attendance.card_working_hours:
-                    total_h = attendance.card_working_hours
-                
                 if total_h is not None:
                     working_hours_val = float(total_h)
                 
-                if (attendance.check_in or attendance.card_check_in) and permission_hours > 0:
+                if attendance.check_in and permission_hours > 0:
                     working_hours_val += permission_hours
             working_hours_val = int(working_hours_val * 100) / 100
             
@@ -1932,14 +1979,10 @@ def get_reporting_employees(user_id):
                     employee_category,
 
                 "check_in":
-                    attendance.check_in.strftime("%I:%M %p")
-                    if (attendance and attendance.check_in)
-                    else None,
+                    None if is_copied_biometric else (attendance.check_in.strftime("%I:%M %p") if (attendance and attendance.check_in) else None),
 
                 "check_out":
-                    attendance.check_out.strftime("%I:%M %p")
-                    if (attendance and attendance.check_out)
-                    else None,
+                    None if is_copied_biometric else (attendance.check_out.strftime("%I:%M %p") if (attendance and attendance.check_out) else None),
 
                 "regularization_check_in":
                     attendance.regularization_check_in.strftime("%I:%M %p")
@@ -2349,7 +2392,7 @@ def get_team_attendance_by_id(team_id):
                 t_sec = t_time.hour * 3600 + t_time.minute * 60 + t_time.second
                 permission_hours = max(t_sec - f_sec, 0) / 3600.0
 
-            if attendance and attendance.check_in and permission_hours > 0:
+            if attendance and (attendance.check_in or attendance.card_check_in or (attendance.status and attendance.status in ("Present", "Checked Out", "Half Day"))) and permission_hours > 0:
                 working_hours = working_hours + permission_hours
                 total_hours = total_hours + permission_hours
 
@@ -2552,7 +2595,7 @@ def get_team_attendance_by_id(team_id):
                 t_sec = t_time.hour * 3600 + t_time.minute * 60 + t_time.second
                 permission_hours = max(t_sec - f_sec, 0) / 3600.0
 
-            if attendance and attendance.check_in and permission_hours > 0:
+            if attendance and (attendance.check_in or attendance.card_check_in or (attendance.status and attendance.status in ("Present", "Checked Out", "Half Day"))) and permission_hours > 0:
                 working_hours = working_hours + permission_hours
                 total_hours = total_hours + permission_hours
 

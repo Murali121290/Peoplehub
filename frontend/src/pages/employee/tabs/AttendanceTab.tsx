@@ -194,7 +194,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const user = userStr ? JSON.parse(userStr) : {};
   const userId = localStorage.getItem("user_id") || user.id || user.user_id;
   const employeeId = user.employee_id || user.id;
-  const isManager = (user?.access_level || "").toLowerCase() === "manager";
+  const isManager = ["manager", "team_lead", "service_manager", "lead"].includes((user?.access_level || "").toLowerCase());
 
   const fetchMonthData = async () => {
     setIsLoading(true);
@@ -473,8 +473,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   // Format decimal hours to "Xh Ym"
   const formatHoursMinutes = (hoursDecimal: number): string => {
     if (!hoursDecimal || hoursDecimal <= 0) return "0h";
-    const hrs = Math.floor(hoursDecimal);
-    const mins = Math.round((hoursDecimal - hrs) * 60);
+    const totalMinutes = Math.round(hoursDecimal * 60);
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
     if (mins === 0) return `${hrs}h`;
     if (hrs === 0) return `${mins}m`;
     return `${hrs}h ${mins}m`;
@@ -1251,16 +1252,29 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                </>
                              ) : null}
 
-                             <div className="flex justify-between items-center px-1">
-                               <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
-                               <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
-                             </div>
+                              <div className="flex justify-between items-center px-1 gap-2">
+                                <span className="text-[11px] text-neutral-500 font-bold whitespace-nowrap">Total Working Hours</span>
+                                <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2.5 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1">
+                                  <span>{cell.workingHoursFormatted}</span>
+                                  {((cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes) > 0) && (
+                                    <span className="text-[10px] font-bold text-teal-600 bg-white/80 px-1 py-0.2 rounded border border-teal-200/80" title="Manager added minutes">
+                                      (+{cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes}m)
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
                             {cell.overtime && cell.overtime !== "00:00" && cell.overtime !== "0h" && cell.overtime !== "0.0h" && (
                               <div className="flex justify-between items-center px-1">
                                 <span className="text-[11px] text-neutral-500 font-bold">Overtime</span>
                                 <span className="font-bold text-emerald-600 text-[11px]">+{cell.overtime}</span>
                               </div>
                             )}
+                            {cell.rawAttendanceRecord?.remarks && (
+                               <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200/80 mt-2 text-[11px]">
+                                 <span className="text-[9px] uppercase font-extrabold text-amber-700 block mb-0.5">📝 Edit Reason / Remark</span>
+                                 <span className="font-semibold text-neutral-800 block text-[11px] leading-snug">{cell.rawAttendanceRecord.remarks}</span>
+                               </div>
+                             )}
                             {((cell.rawAttendanceRecord?.check_in_ip) || (cell.rawAttendanceRecord?.check_out_ip)) && (
                               <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-2.5 rounded-xl border border-neutral-100 mt-2 text-[10px]">
                                 <div>
@@ -1291,9 +1305,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                     <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
                                   </div>
                                 </div>
-                                <div className="flex justify-between items-center px-1">
-                                  <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
-                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
+                                <div className="flex justify-between items-center px-1 gap-2">
+                                  <span className="text-[11px] text-neutral-500 font-bold whitespace-nowrap">Total Working Hours</span>
+                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2.5 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1">
+                                    <span>{cell.workingHoursFormatted}</span>
+                                    {((cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes) > 0) && (
+                                      <span className="text-[10px] font-bold text-teal-600 bg-white/80 px-1 py-0.2 rounded border border-teal-200/80" title="Manager added minutes">
+                                        (+{cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes}m)
+                                      </span>
+                                    )}
+                                  </span>
                                 </div>
                               </div>
                             )}
@@ -1332,9 +1353,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                     <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
                                   </div>
                                 </div>
-                                <div className="flex justify-between items-center px-1">
-                                  <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
-                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
+                                <div className="flex justify-between items-center px-1 gap-2">
+                                  <span className="text-[11px] text-neutral-500 font-bold whitespace-nowrap">Total Working Hours</span>
+                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2.5 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1">
+                                    <span>{cell.workingHoursFormatted}</span>
+                                    {((cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes) > 0) && (
+                                      <span className="text-[10px] font-bold text-teal-600 bg-white/80 px-1 py-0.2 rounded border border-teal-200/80" title="Manager added minutes">
+                                        (+{cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes}m)
+                                      </span>
+                                    )}
+                                  </span>
                                 </div>
                               </div>
                             )}
@@ -1356,9 +1384,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                     <span className="font-extrabold text-primary-500 text-[12px]">{cell.checkOut}</span>
                                   </div>
                                 </div>
-                                <div className="flex justify-between items-center px-1">
-                                  <span className="text-[11px] text-neutral-500 font-bold">Total Working Hours</span>
-                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded-md">{cell.workingHoursFormatted}</span>
+                                <div className="flex justify-between items-center px-1 gap-2">
+                                  <span className="text-[11px] text-neutral-500 font-bold whitespace-nowrap">Total Working Hours</span>
+                                  <span className="text-[12px] font-extrabold text-primary-500 bg-primary-500/10 px-2.5 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1">
+                                    <span>{cell.workingHoursFormatted}</span>
+                                    {((cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes) > 0) && (
+                                      <span className="text-[10px] font-bold text-teal-600 bg-white/80 px-1 py-0.2 rounded border border-teal-200/80" title="Manager added minutes">
+                                        (+{cell.rawAttendanceRecord?.added_minutes || cell.rawAttendanceRecord?.addedMinutes}m)
+                                      </span>
+                                    )}
+                                  </span>
                                 </div>
                               </div>
                             )}
@@ -1636,12 +1671,19 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
       {/* LOP/Leave Resolver Modal */}
       {resolvingCell && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-neutral-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full border border-neutral-200 shadow-2xl animate-scaleIn">
-            <h3 className="text-[16px] font-extrabold text-neutral-900 mb-2">Resolve Exception Day</h3>
-            <p className="text-xs text-neutral-500 mb-4">
-              Choose how to log your time on <strong className="text-neutral-850 font-bold">{resolvingCell.dayNum} {MONTH_NAMES[selectedMonth - 1]}</strong>:
-            </p>
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-neutral-900/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full border border-neutral-200/90 shadow-2xl animate-scaleIn">
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-100">
+              <div>
+                <h3 className="text-[16px] font-extrabold text-neutral-900">Resolve Exception Day</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Log time for <strong className="text-neutral-850 font-bold">{resolvingCell.dayNum} {MONTH_NAMES[selectedMonth - 1]}</strong>
+                </p>
+              </div>
+              <span className="w-8 h-8 rounded-xl bg-cyan-50 border border-cyan-100 text-cyan-600 flex items-center justify-center font-extrabold text-sm shrink-0">
+                {resolvingCell.dayNum}
+              </span>
+            </div>
 
             <div className="mb-4 text-left flex flex-col gap-3">
               <div>
@@ -1651,7 +1693,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <select
                   value={resolveDuration}
                   onChange={(e) => setResolveDuration(e.target.value)}
-                  className="w-full px-3 py-2 border border-neutral-300 rounded-xl text-xs focus:ring-1 focus:ring-primary-500 focus:outline-none bg-neutral-50/50 font-semibold cursor-pointer"
+                  className="w-full px-3.5 py-2.5 border border-neutral-300 rounded-xl text-xs focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none bg-neutral-50/50 font-bold cursor-pointer"
                 >
                   <option value="Full Day">Full Day</option>
                   <option value="First Half">First Half</option>
@@ -1665,14 +1707,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <textarea
                   value={resolveReason}
                   onChange={(e) => setResolveReason(e.target.value)}
-                  placeholder="Enter reason..."
-                  className="w-full px-3 py-2 border border-neutral-300 rounded-xl text-xs focus:ring-1 focus:ring-primary-500 focus:outline-none placeholder-neutral-400 bg-neutral-50/50 font-semibold"
+                  placeholder="Enter reason for resolving..."
+                  className="w-full px-3.5 py-2.5 border border-neutral-300 rounded-xl text-xs focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none placeholder-neutral-400 bg-neutral-50/50 font-semibold"
                   rows={2}
                 />
               </div>
             </div>
 
-             <div className="space-y-3">
+             <div className="space-y-2.5">
               {/* LOP is always shown; paid leave buttons only shown if available > 0 */}
               {(() => {
                 const activePolicyNames = leavePolicies.map((p: any) => p.leave_type.toLowerCase().trim());
@@ -1688,10 +1730,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       <button
                         onClick={() => submitResolveAbsent("LOP")}
                         disabled={isResolving}
-                        className="w-full text-left px-4 py-3 rounded-xl border border-rose-250 bg-rose-50/50 hover:bg-rose-50 text-rose-700 text-xs font-bold transition-all flex justify-between items-center"
+                        className="w-full text-left px-4 py-3 rounded-xl border border-rose-250 bg-rose-50/60 hover:bg-rose-100/70 text-rose-700 text-xs font-bold transition-all flex justify-between items-center shadow-xs"
                       >
                         <span>Loss of Pay (LOP)</span>
-                        <span className="text-[10px] text-rose-500 uppercase tracking-wide">Deducted Pay</span>
+                        <span className="text-[10px] text-rose-600 font-extrabold uppercase tracking-wide bg-white px-2 py-0.5 rounded border border-rose-200">Deducted Pay</span>
                       </button>
                     )}
 
@@ -1708,10 +1750,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             key={balObj.id || leaveType}
                             onClick={() => submitResolveAbsent(leaveType)}
                             disabled={isResolving}
-                            className="w-full text-left px-4 py-3 rounded-xl border border-primary-200 bg-neutral-50 hover:bg-neutral-100/70 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center"
+                            className="w-full text-left px-4 py-3 rounded-xl border border-emerald-200/90 bg-emerald-50/40 hover:bg-emerald-50 text-neutral-800 text-xs font-bold transition-all flex justify-between items-center shadow-xs hover:border-emerald-300"
                           >
                             <span>{leaveType}</span>
-                            <span className="text-[10px] text-emerald-600 font-bold">{availableVal} Left</span>
+                            <span className="text-[10px] text-emerald-700 font-extrabold bg-white px-2 py-0.5 rounded border border-emerald-200">{availableVal} Left</span>
                           </button>
                         );
                       })
@@ -1721,21 +1763,21 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               })()}
             </div>
 
-            <div className="mt-6 flex justify-between items-center">
+            <div className="mt-5 pt-3 border-t border-neutral-100 flex items-center justify-between gap-2">
               <button
                 onClick={() => {
                   setResolvingCell(null);
                   setRegularizingCell(resolvingCell);
                 }}
                 disabled={isResolving}
-                className="text-[11px] font-bold text-cyan-600 hover:text-cyan-700 underline decoration-cyan-500/30 hover:decoration-cyan-500/80 transition-all"
+                className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-700 hover:to-teal-700 text-white font-extrabold text-xs shadow-sm shadow-cyan-500/20 flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98]"
               >
-                Forgot to check-in?
+                <span>Apply Regularization</span>
               </button>
               <button
                 onClick={() => setResolvingCell(null)}
                 disabled={isResolving}
-                className="px-4 py-2 border border-neutral-200 rounded-lg text-xs text-neutral-600 font-bold hover:bg-neutral-50 transition-colors"
+                className="px-4 py-2.5 border border-neutral-200 rounded-xl text-xs text-neutral-600 font-bold hover:bg-neutral-100/70 transition-colors"
               >
                 Cancel
               </button>

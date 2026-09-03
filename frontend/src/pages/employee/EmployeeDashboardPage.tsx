@@ -547,10 +547,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   const fetchTodayAnniversaries = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/employees/anniversaries/today`);
-      if (!res.ok) throw new Error("Failed to load anniversaries");
+      const senderId = localStorage.getItem("employee_id");
+      const url = senderId
+        ? `${BASE_URL}/work-anniversary/today?sender_id=${senderId}`
+        : `${BASE_URL}/work-anniversary/today`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to load work anniversaries");
       const data = await res.json();
-      setAnniversaryEmployees(Array.isArray(data) ? data : []);
+      setAnniversaryEmployees(Array.isArray(data.employees) ? data.employees : []);
     } catch (err) {
       setAnniversaryEmployees([]);
     }
@@ -1485,6 +1489,35 @@ if (isHalfDayLeave(leave.total_days)) return false;
     }
   };
 
+  const sendAnniversaryWish = async (emp: any, customMessage: string) => {
+    const senderId = localStorage.getItem("employee_id");
+    if (!senderId) {
+      toast.error("Sender employee details not found.");
+      return;
+    }
+    try {
+      const res = await fetch(`${BASE_URL}/work-anniversary/wish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sender_id: Number(senderId),
+          receiver_id: emp.id,
+          message: customMessage,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to send wishes.");
+        return;
+      }
+      toast.success("Work anniversary wishes sent successfully!");
+      fetchTodayAnniversaries();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to send wishes.");
+    }
+  };
+
   // --- Auto Check-In Reminder (Every 5 mins) ---
   useEffect(() => {
     if (isCheckedIn || hasCheckedOutToday || !currentEmployee) return;
@@ -1844,13 +1877,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   useEffect(() => {
     if (
-      birthdayEmployees.length > 0 &&
+      (birthdayEmployees.length > 0 || anniversaryEmployees.length > 0) &&
       !sessionStorage.getItem("birthday_popup_shown")
     ) {
       setBirthdayModal(true);
       sessionStorage.setItem("birthday_popup_shown", "true");
     }
-  }, [birthdayEmployees]);
+  }, [birthdayEmployees, anniversaryEmployees]);
 
   useEffect(() => {
     if (!showNotificationsPanel && !sessionStorage.getItem("attendance_popup_shown")) {
@@ -1985,14 +2018,16 @@ if (isHalfDayLeave(leave.total_days)) return false;
         onClose={() => setPopup({ ...popup, show: false })}
       />
 
-      {birthdayModal && birthdayEmployees.length > 0 && (
+      {birthdayModal && (birthdayEmployees.length > 0 || anniversaryEmployees.length > 0) && (
         <BirthdayModal
           birthdayEmployees={birthdayEmployees}
+          anniversaryEmployees={anniversaryEmployees}
           isMyBirthday={isMyBirthday}
           currentEmployee={currentEmployee}
           user={user}
           onClose={() => setBirthdayModal(false)}
           onSendWish={sendBirthdayWish}
+          onSendAnniversaryWish={sendAnniversaryWish}
         />
       )}
 

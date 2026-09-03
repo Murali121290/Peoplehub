@@ -279,6 +279,8 @@ const UserModal: React.FC<UserModalProps> = ({ user, onClose }) => {
               options={[
                 { label: "User", value: "user" },
                 { label: "Manager", value: "manager" },
+                { label: "Team Lead", value: "team_lead" },
+                { label: "Service Manager", value: "service_manager" },
                 { label: "HR", value: "hr" },
                 { label: "Admin", value: "admin" },
               ]}

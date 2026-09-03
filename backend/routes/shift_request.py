@@ -230,43 +230,9 @@ def apply_shift():
     "/",
     methods=["GET"]
 )
-@jwt_required()
 def get_shift_requests():
     try:
-        user_id = get_jwt_identity()
-        current_user = User.query.get(int(user_id))
-        if not current_user:
-            return jsonify({"success": False, "message": "User not found"}), 404
-
-        role_name = (current_user.role.name or "").lower() if current_user.role else ""
-        access_level = (current_user.access_level or "").lower()
-        is_admin_or_hr = "admin" in role_name or "admin" in access_level or "hr" in role_name or "hr" in access_level
-
         shift_requests = ShiftRequest.query.order_by(ShiftRequest.id.desc()).all()
-
-        if not is_admin_or_hr:
-            caller_emp = Employee.query.filter_by(user_id=current_user.id).first()
-            if caller_emp:
-                manager_full_name = f"{caller_emp.first_name} {caller_emp.last_name}".strip().lower()
-
-                def matches_manager(rep_mgr):
-                    if not rep_mgr:
-                        return False
-                    rep_mgr_clean = rep_mgr.strip().lower()
-                    if rep_mgr_clean == manager_full_name:
-                        return True
-                    rep_words = rep_mgr_clean.split()
-                    mgr_words = manager_full_name.split()
-                    if len(rep_words) == 1 and mgr_words and mgr_words[0] == rep_mgr_clean:
-                        return True
-                    if len(mgr_words) == 1 and rep_words and rep_words[0] == manager_full_name:
-                        return True
-                    return False
-
-                shift_requests = [s for s in shift_requests if matches_manager(s.reporting_manager)]
-            else:
-                shift_requests = []
-
         return jsonify([
             item.to_dict()
             for item in shift_requests
@@ -327,20 +293,31 @@ def get_employee_requests(
 @shift_bp.route("/approvals/<manager_name>", methods=["GET"])
 def get_shift_approvals(manager_name):
 
-    normalized_manager = manager_name.strip().lower()
+    manager_full_name = manager_name.strip()
+    from routes.employees import get_all_employees_cached, get_all_reporting_employees_recursive
+    all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
+    reporting_employees = get_all_reporting_employees_recursive(manager_full_name, all_employees)
+
+    reporting_names = {f"{e.first_name} {e.last_name}".strip().lower() for e in reporting_employees}
+    reporting_names.add(manager_full_name.lower())
+
+    reporting_emp_ids = set()
+    for e in reporting_employees:
+        if e.id:
+            reporting_emp_ids.add(str(e.id))
+        if e.employee_id:
+            reporting_emp_ids.add(str(e.employee_id).strip())
+        if e.user_id:
+            reporting_emp_ids.add(str(e.user_id))
 
     shifts = ShiftRequest.query.order_by(
         ShiftRequest.id.desc()
     ).all()
 
-    # Filter by manager match in Python to handle name variations
     shifts = [
         s for s in shifts
-        if s.reporting_manager and (
-            (s.reporting_manager.strip().lower() == normalized_manager) or
-            (len(s.reporting_manager.strip().split()) == 1 and normalized_manager.split()[0] == s.reporting_manager.strip().lower()) or
-            (len(normalized_manager.split()) == 1 and s.reporting_manager.strip().lower().split()[0] == normalized_manager)
-        )
+        if (s.reporting_manager and s.reporting_manager.strip().lower() in reporting_names) or
+           (str(s.employee_id or "").strip() in reporting_emp_ids)
     ]
 
     return jsonify([

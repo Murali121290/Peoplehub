@@ -37,6 +37,7 @@ from routes.holidays import holidays_bp
 from routes.db_admin import db_admin_bp
 from routes.ai_routes import ai_bp
 from routes.faq import faq_bp
+from routes.hr_documents import hr_documents_bp
 
 # Import Socket.IO and register events
 from extensions import socketio
@@ -107,12 +108,14 @@ def create_app():
     fastapi_app.include_router(db_admin_bp, prefix="/api/admin/db")
     fastapi_app.include_router(ai_bp, prefix="/api/ai")
     fastapi_app.include_router(faq_bp, prefix="/api/faq")
+    fastapi_app.include_router(hr_documents_bp, prefix="/api/hr-documents")
 
     # Mount uploads directory static files (persistent Docker volume at UPLOADS_DIR)
     uploads_dir = get_uploads_dir()
     ensure_upload_dir()  # ensure base dir exists
     ensure_upload_dir("shift_requests")  # pre-create subdirs
     ensure_upload_dir("employees")
+    ensure_upload_dir("hr_documents")
     fastapi_app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
     # Initialize database, apply Alembic migrations, and seed defaults

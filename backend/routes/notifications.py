@@ -41,65 +41,87 @@ def get_notifications(manager_name):
 
     today = date.today()
 
-    notifications = Notification.query.filter_by(
-        receiver_name=manager_name
+    from models.birthday_wish import BirthdayWish
+    from models.work_anniversary_wish import WorkAnniversaryWish
+    from utils.employee_cache import get_all_employees_cached
+    from sqlalchemy import or_
+
+    clean_manager_name = (manager_name or "").strip()
+
+    notifications = Notification.query.filter(
+        or_(
+            Notification.receiver_name == clean_manager_name,
+            Notification.receiver_name == f"{clean_manager_name} None",
+            Notification.receiver_name.ilike(f"{clean_manager_name}%")
+        )
     ).order_by(
         Notification.created_at.desc()
     ).all()
 
-    from models.birthday_wish import BirthdayWish
-    from utils.employee_cache import get_all_employees_cached
-
-    # Batch fetch all employees and birthday wishes to prevent N+1 queries (exclude inactive)
+    # Batch fetch all employees and wish records (exclude inactive)
     all_employees = [e for e in get_all_employees_cached() if e.is_active != False]
     employee_map = {emp.id: emp for emp in all_employees}
 
-    all_wishes = BirthdayWish.query.all()
-    wish_map = {wish.id: wish for wish in all_wishes}
+    bday_wishes = {w.id: w for w in BirthdayWish.query.all()}
+    anniv_wishes = {w.id: w for w in WorkAnniversaryWish.query.all()}
 
     result = []
     for n in notifications:
-      thanked = False
-      sender_employee_id = None
-      sender_name = "System"
-      if n.related_type and n.related_id:
-          if n.related_type in ('birthday_wish', 'birthday_thanks'):
-              wish = wish_map.get(n.related_id)
-              if wish:
-                  thanked = wish.thanked
-                  if n.related_type == 'birthday_wish':
-                      sender_employee_id = wish.sender_id
-                      emp = employee_map.get(wish.sender_id)
-                      if emp:
-                          sender_name = f"{emp.first_name} {emp.last_name}"
-                  elif n.related_type == 'birthday_thanks':
-                      sender_employee_id = wish.receiver_id
-                      emp = employee_map.get(wish.receiver_id)
-                      if emp:
-                          sender_name = f"{emp.first_name} {emp.last_name}"
-          elif n.related_type in ('checkin_reminder',):
-              sender_employee_id = n.related_id
-              emp = employee_map.get(n.related_id)
-              if emp:
-                  sender_name = f"{emp.first_name} {emp.last_name}"
+        thanked = False
+        sender_employee_id = None
+        sender_name = "System"
+        if n.related_type and n.related_id:
+            if n.related_type in ('birthday_wish', 'birthday_thanks'):
+                wish = bday_wishes.get(n.related_id)
+                if wish:
+                    thanked = wish.thanked
+                    if n.related_type == 'birthday_wish':
+                        sender_employee_id = wish.sender_id
+                        emp = employee_map.get(wish.sender_id)
+                        if emp:
+                            sender_name = f"{emp.first_name} {emp.last_name or ''}".strip()
+                    elif n.related_type == 'birthday_thanks':
+                        sender_employee_id = wish.receiver_id
+                        emp = employee_map.get(wish.receiver_id)
+                        if emp:
+                            sender_name = f"{emp.first_name} {emp.last_name or ''}".strip()
+            elif n.related_type in ('anniversary_wish', 'anniversary_thanks'):
+                wish = anniv_wishes.get(n.related_id)
+                if wish:
+                    thanked = wish.thanked
+                    if n.related_type == 'anniversary_wish':
+                        sender_employee_id = wish.sender_id
+                        emp = employee_map.get(wish.sender_id)
+                        if emp:
+                            sender_name = f"{emp.first_name} {emp.last_name or ''}".strip()
+                    elif n.related_type == 'anniversary_thanks':
+                        sender_employee_id = wish.receiver_id
+                        emp = employee_map.get(wish.receiver_id)
+                        if emp:
+                            sender_name = f"{emp.first_name} {emp.last_name or ''}".strip()
+            elif n.related_type in ('checkin_reminder',):
+                sender_employee_id = n.related_id
+                emp = employee_map.get(n.related_id)
+                if emp:
+                    sender_name = f"{emp.first_name} {emp.last_name or ''}".strip()
 
-      result.append({
-          "id": n.id,
-          "title": n.title,
-          "message": n.message,
-          "is_read": n.is_read,
-          "created_at": n.created_at.isoformat() if n.created_at else None,
-          "related_id": n.related_id,
-          "related_type": n.related_type,
-          "thanked": thanked,
-          "sender_employee_id": sender_employee_id,
-          "sender_name": sender_name,
-          "notification_type": n.notification_type,
-          "status": n.status,
-          "action_required": n.action_required,
-          "resolved": n.resolved,
-          "resolved_at": n.resolved_at.isoformat() if n.resolved_at else None
-      })
+        result.append({
+            "id": n.id,
+            "title": n.title,
+            "message": n.message,
+            "is_read": n.is_read,
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+            "related_id": n.related_id,
+            "related_type": n.related_type,
+            "thanked": thanked,
+            "sender_employee_id": sender_employee_id,
+            "sender_name": sender_name,
+            "notification_type": n.notification_type,
+            "status": n.status,
+            "action_required": n.action_required,
+            "resolved": n.resolved,
+            "resolved_at": n.resolved_at.isoformat() if n.resolved_at else None
+        })
 
     # Store in Redis cache
     if r:

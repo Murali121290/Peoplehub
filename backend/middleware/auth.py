@@ -124,11 +124,16 @@ def access_level_required(*allowed_levels):
                         "error": "Access level not assigned"
                     }), 403
 
-                if (
-                    allowed_levels and
-                    user.access_level.lower() not in
-                    [level.lower() for level in allowed_levels]
-                ):
+                user_level = user.access_level.lower().strip()
+                normalized_allowed = [level.lower().strip() for level in allowed_levels]
+
+                effective_levels = {user_level}
+                if user_level in ("team_lead", "team lead", "service_manager", "service manager", "lead"):
+                    effective_levels.add("manager")
+                if user_level == "admin":
+                    effective_levels.update(["manager", "hr", "user"])
+
+                if allowed_levels and not (effective_levels & set(normalized_allowed)):
                     return jsonify({
                         "error": "Insufficient permissions"
                     }), 403

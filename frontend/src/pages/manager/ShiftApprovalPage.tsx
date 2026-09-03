@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { API_URL, getProfileImageUrl } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
 import { CheckIcon, XMarkIcon, ArrowRightIcon, MagnifyingGlassIcon, PaperClipIcon, ClockIcon } from "@heroicons/react/24/outline";
@@ -96,7 +96,9 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
 
   const fetchEmployees = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/employees/`);
+      const res = await fetch(`${BASE_URL}/employees/`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       if (res.ok) {
         const data = await res.json();
         setTeamEmployees(Array.isArray(data) ? data : []);
@@ -200,15 +202,61 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
     return false;
   };
 
-  const safeManagerShiftRequests = shiftRequests.filter((req: any) => {
-    if (isOdwOnly) {
-      if (req.request_type !== "One Day Wages") return false;
-    } else {
-      if (req.request_type === "One Day Wages" || req.request_type === "WFH") return false;
+  const getRecursiveReportingIdentifiers = (managerFullName: string, employeesList: any[]) => {
+    const allowed = new Set<string>();
+    if (!managerFullName || !employeesList.length) return allowed;
+
+    const queue: string[] = [managerFullName];
+    const visitedManagers = new Set<string>([managerFullName.trim().toLowerCase()]);
+
+    while (queue.length > 0) {
+      const currentMgr = queue.shift()!;
+      for (const emp of employeesList) {
+        if (checkManagerMatch(emp.reporting_manager, currentMgr)) {
+          const empFullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.name || "";
+
+          if (emp.id) allowed.add(String(emp.id).toLowerCase());
+          if (emp.user_id) allowed.add(String(emp.user_id).toLowerCase());
+          if (emp.employee_id) allowed.add(String(emp.employee_id).toLowerCase());
+          if (empFullName) allowed.add(empFullName.toLowerCase());
+
+          const empFullNameClean = empFullName.toLowerCase();
+          if (empFullNameClean && !visitedManagers.has(empFullNameClean)) {
+            visitedManagers.add(empFullNameClean);
+            queue.push(empFullName);
+          }
+        }
+      }
     }
 
-    const isManager = checkManagerMatch(req.reporting_manager, user?.full_name) ||
-      user?.access_level?.toLowerCase() === "admin";
+    return allowed;
+  };
+
+  const userFullName = user?.full_name || `${(user as any)?.first_name || ""} ${(user as any)?.last_name || ""}`.trim();
+  const reportingIdentifiers = useMemo(() => {
+    if (!userFullName || user?.access_level?.toLowerCase() === "admin") return new Set<string>();
+    return getRecursiveReportingIdentifiers(userFullName, teamEmployees);
+  }, [userFullName, user?.access_level, teamEmployees]);
+
+  const safeManagerShiftRequests = shiftRequests.filter((req: any) => {
+    const reqType = (req.request_type || "").trim().toLowerCase();
+    if (isOdwOnly) {
+      if (reqType !== "one day wages" && reqType !== "odw") return false;
+    } else {
+      if (reqType === "one day wages" || reqType === "odw" || reqType === "wfh") return false;
+    }
+
+    const isDirectManager = checkManagerMatch(req.reporting_manager, userFullName);
+    const isRecursiveReport = (
+      (req.employee_id && reportingIdentifiers.has(String(req.employee_id).toLowerCase())) ||
+      (req.user_id && reportingIdentifiers.has(String(req.user_id).toLowerCase())) ||
+      (req.employee_db_id && reportingIdentifiers.has(String(req.employee_db_id).toLowerCase())) ||
+      (req.employee_name && reportingIdentifiers.has(String(req.employee_name).trim().toLowerCase())) ||
+      (req.reporting_manager && reportingIdentifiers.has(String(req.reporting_manager).trim().toLowerCase()))
+    );
+    const isAdmin = user?.access_level?.toLowerCase() === "admin";
+
+    const isManager = isDirectManager || isRecursiveReport || isAdmin;
     if (!isManager) return false;
 
     if (statusFilter !== "All" && req.status !== statusFilter) return false;

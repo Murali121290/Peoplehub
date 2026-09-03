@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { API_URL } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
 import { CheckIcon, XMarkIcon, MagnifyingGlassIcon, CalendarDaysIcon } from "@heroicons/react/24/outline";
@@ -47,6 +47,7 @@ const getActionedAtText = (r: any) => {
 const LeaveApprovalPage: React.FC = () => {
   const { user, token } = useAuthStore();
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -131,12 +132,22 @@ const LeaveApprovalPage: React.FC = () => {
   const fetchLeaves = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${BASE_URL}/leaves/`, {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      if (!res.ok) throw new Error("Failed to load leaves");
-      const data = await res.json();
-      setLeaveRequests(Array.isArray(data) ? data : []);
+      const [leavesRes, empRes] = await Promise.all([
+        fetch(`${BASE_URL}/leaves/`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        }),
+        fetch(`${BASE_URL}/employees/`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        })
+      ]);
+      if (!leavesRes.ok) throw new Error("Failed to load leaves");
+      const leavesData = await leavesRes.json();
+      setLeaveRequests(Array.isArray(leavesData) ? leavesData : []);
+
+      if (empRes.ok) {
+        const empData = await empRes.json();
+        setEmployees(Array.isArray(empData) ? empData : []);
+      }
     } catch (error) {
       console.error(error);
       toast.error("Failed to load leave requests");
@@ -170,13 +181,54 @@ const LeaveApprovalPage: React.FC = () => {
     return false;
   };
 
+  const getRecursiveReportingIdentifiers = (managerFullName: string, employeesList: any[]) => {
+    const allowed = new Set<string>();
+    if (!managerFullName || !employeesList.length) return allowed;
+
+    const queue: string[] = [managerFullName];
+    const visitedManagers = new Set<string>([managerFullName.trim().toLowerCase()]);
+
+    while (queue.length > 0) {
+      const currentMgr = queue.shift()!;
+      for (const emp of employeesList) {
+        if (checkManagerMatch(emp.reporting_manager, currentMgr)) {
+          const empFullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.name || "";
+
+          if (emp.id) allowed.add(String(emp.id));
+          if (emp.employee_id) allowed.add(String(emp.employee_id).toLowerCase());
+          if (empFullName) allowed.add(empFullName.toLowerCase());
+
+          const empFullNameClean = empFullName.toLowerCase();
+          if (empFullNameClean && !visitedManagers.has(empFullNameClean)) {
+            visitedManagers.add(empFullNameClean);
+            queue.push(empFullName);
+          }
+        }
+      }
+    }
+
+    return allowed;
+  };
+
+  const reportingIdentifiers = useMemo(() => {
+    if (!user?.full_name || user?.access_level?.toLowerCase() === "admin") return new Set<string>();
+    return getRecursiveReportingIdentifiers(user.full_name, employees);
+  }, [user?.full_name, user?.access_level, employees]);
+
   const approvalLeaves = leaveRequests.filter((l: any) => {
     if (l.request_type === "Permission") return false;
 
-    const isManager = checkManagerMatch(l.reporting_manager, user?.full_name) ||
-      checkManagerMatch(l.handover_to, user?.full_name) ||
-      user?.access_level?.toLowerCase() === "admin";
-    if (!isManager) return false;
+    const isAdmin = user?.access_level?.toLowerCase() === "admin";
+    const isDirectManager = checkManagerMatch(l.reporting_manager, user?.full_name) ||
+      checkManagerMatch(l.handover_to, user?.full_name);
+
+    const isRecursiveReport = (
+      (l.employee_id && reportingIdentifiers.has(String(l.employee_id).toLowerCase())) ||
+      (l.employee_name && reportingIdentifiers.has(String(l.employee_name).trim().toLowerCase()))
+    );
+
+    const isAuthorizedManager = isAdmin || isDirectManager || isRecursiveReport;
+    if (!isAuthorizedManager) return false;
 
     if (statusFilter !== "All" && l.status !== statusFilter) return false;
     if (searchQuery) {

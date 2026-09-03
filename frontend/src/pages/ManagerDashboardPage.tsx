@@ -28,6 +28,7 @@ import {
   HomeIcon,
   ArrowPathIcon,
   ArrowDownTrayIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -302,6 +303,8 @@ const ManagerDashboardPage = () => {
     cardCheckOut: "",
     lunchMinutes: 0,
     teaMinutes: 0,
+    addedMinutes: 0,
+    remarks: "",
   });
 
   // Auto-calculate status based on check-in and check-out times inside edit modal
@@ -323,12 +326,19 @@ const ManagerDashboardPage = () => {
 
     const totalBreaks = (Number(editForm.lunchMinutes) || 0) + (Number(editForm.teaMinutes) || 0);
     const workedMinutes = Math.max(0, diffMinutes - totalBreaks);
-    const workedHours = workedMinutes / 60.0;
+    const extraMinutes = Number(editForm.addedMinutes) || 0;
+    let effectiveHours = (workedMinutes + extraMinutes) / 60.0;
+
+    // Credit permission hours if employee has an approved permission for this date
+    if (editingRecord?.has_permission || editingRecord?.permission_label) {
+      effectiveHours += 2.0;
+    }
 
     let computedStatus = "Absent";
-    if (workedHours >= 7.0) {
+    // 5-minute grace period for Present: 7h 55m = 7.9167 hours
+    if (effectiveHours >= 7.9167) {
       computedStatus = "Present";
-    } else if (workedHours >= 4.0) {
+    } else if (effectiveHours >= 4.0) {
       computedStatus = "Half Day";
     }
 
@@ -338,7 +348,7 @@ const ManagerDashboardPage = () => {
       }
       return prev;
     });
-  }, [editForm.checkIn, editForm.checkOut, editForm.lunchMinutes, editForm.teaMinutes]);
+  }, [editForm.checkIn, editForm.checkOut, editForm.lunchMinutes, editForm.teaMinutes, editForm.addedMinutes, editingRecord]);
 
   const convertTo24Hour = (time12: string) => {
     if (!time12 || time12 === "-" || time12 === "—") return "";
@@ -375,16 +385,24 @@ const ManagerDashboardPage = () => {
       cardCheckOut: convertTo24Hour(record.cardCheckOut || record.card_check_out),
       lunchMinutes: record.lunchMinutes || 0,
       teaMinutes: record.teaMinutes || 0,
+      addedMinutes: record.addedMinutes ?? record.added_minutes ?? 0,
+      remarks: record.remarks || "",
     });
   };
 
   const handleSaveEdit = async () => {
     if (!editingRecord || !historyModalUser) return;
+
+    if (!editForm.remarks || !editForm.remarks.trim()) {
+      toast.error("Reason for edit / remarks is mandatory before saving changes!");
+      return;
+    }
+
     setSavingEdit(true);
     try {
       const token = localStorage.getItem("token");
       const targetEmpId = historyModalUser.id || historyModalUser.employee_id;
-      
+
       const payload = {
         employee_id: targetEmpId,
         attendance_date: editingRecord.date,
@@ -395,6 +413,10 @@ const ManagerDashboardPage = () => {
         card_check_out: convertTo12Hour(editForm.cardCheckOut) || null,
         lunch_minutes: Number(editForm.lunchMinutes) || 0,
         tea_minutes: Number(editForm.teaMinutes) || 0,
+        added_minutes: Number(editForm.addedMinutes) || 0,
+        addedMinutes: Number(editForm.addedMinutes) || 0,
+        remarks: editForm.remarks.trim(),
+        reason: editForm.remarks.trim(),
       };
 
       const response = await fetch(`${BASE_URL}/attendance/update-attendance-record`, {
@@ -435,6 +457,18 @@ const ManagerDashboardPage = () => {
   const [selectedCycle, setSelectedCycle] = useState<string>("");
   const [availableMonths, setAvailableMonths] = useState<any[]>([]);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [showManagerExportModal, setShowManagerExportModal] = useState(false);
+  const [managerExportTeam, setManagerExportTeam] = useState("All");
+  const [managerExportMonth, setManagerExportMonth] = useState<string>("");
+
+  const managerAvailableTeams = useMemo(() => {
+    const set = new Set<string>();
+    (teamAttendance || []).forEach((m: any) => {
+      if (m.department) set.add(m.department.trim());
+      if (m.team_name) set.add(m.team_name.trim());
+    });
+    return Array.from(set).filter(Boolean).sort();
+  }, [teamAttendance]);
 
   // Yesterday Summary States
   const [yesterdaySummary, setYesterdaySummary] = useState<any[]>([]);
@@ -489,7 +523,7 @@ const ManagerDashboardPage = () => {
         if (Array.isArray(subTeam) && subTeam.length > 0) {
           setManagerPath((prev) => [...prev, { id: member.user_id, name: member.name }]);
         }
-          } catch (_) {}
+      } catch (_) { }
     }
   };
 
@@ -686,9 +720,12 @@ const ManagerDashboardPage = () => {
 
   const loadTeamMembers = async (viewedUserId = currentViewedManagerId) => {
     try {
-      const response = await fetch(`${BASE_URL}/employees/my-team/${viewedUserId}`);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${BASE_URL}/employees/my-team/${viewedUserId}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       const data = await response.json();
-      const formattedMembers = data.map((emp: any) => ({
+      const formattedMembers = (Array.isArray(data) ? data : []).map((emp: any) => ({
         id: emp.id,
         user_id: emp.user_id || emp.id,
         employee_id: emp.employee_id || emp.employee_code || (emp.id ? `EMP${emp.id}` : ""),
@@ -718,7 +755,10 @@ const ManagerDashboardPage = () => {
 
   const loadTeamAttendance = async (viewedUserId = currentViewedManagerId) => {
     try {
-      const response = await fetch(`${BASE_URL}/employees/team-attendance/${viewedUserId}`);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${BASE_URL}/employees/team-attendance/${viewedUserId}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       const data = await response.json();
       setTeamAttendance(Array.isArray(data) ? data : []);
     } catch (error) {
@@ -888,80 +928,84 @@ const ManagerDashboardPage = () => {
   // SCOPED TEAM MEMBERS
   // ==========================
   const scopedTeamMembers = useMemo(() => {
-    let list = [];
-    if (teamAttendance.length === 0) {
-      list = teamMembers.map((m: any) => ({
-        ...m,
-        name: m.name || `${m.first_name || ""} ${m.last_name || ""}`.trim()
-      }));
-    } else {
-      list = teamAttendance.map((att: any) => {
-        const match = teamMembers.find(
-          (m) =>
-            (att.id != null && m.id === att.id) ||
-            (att.email && m.email && m.email.toLowerCase() === att.email.toLowerCase()),
-        );
+    let list = teamAttendance.map((att: any) => {
+      const match = teamMembers.find(
+        (m) =>
+          (att.id != null && m.id === att.id) ||
+          (att.email && m.email && m.email.toLowerCase() === att.email.toLowerCase()),
+      );
 
-        const isOnLeave = att.attendance_status === "On Leave";
+      const isOnLeave = att.attendance_status === "On Leave" || att.status === "Leave";
+      let calculatedStatus = att.attendance_status || (isOnLeave ? "On Leave" : "Absent");
+      if (att.check_in || att.card_check_in) {
+        if (!calculatedStatus || calculatedStatus === "Absent" || calculatedStatus === "Present" || calculatedStatus === "Checked Out") {
+          calculatedStatus = (att.check_out || att.card_check_out) ? "Checked Out" : "Present";
+        }
+      }
 
-        return {
-          id: att.id ?? match?.id,
-          user_id: att.user_id || match?.user_id || att.id || match?.id,
-          employee_id: att.employee_id || match?.employee_id || (att.id ? `EMP${att.id}` : ""),
-          name: att.name || match?.name || "",
-          email: match?.email || att.email || "",
-          role: att.designation || match?.role || "Employee",
-          designation: att.designation || match?.role || "Employee",
-          department: att.department || "",
-          avatar:
-            match?.avatar ||
-            (att.name
-              ? att.name
-                .split(" ")
-                .map((n: string) => n[0])
-                .join("")
-                .substring(0, 2)
-                .toUpperCase()
-              : "EM"),
-          tasksCompleted: match?.tasksCompleted ?? 0,
-          efficiency: match?.efficiency ?? 0,
-          hoursThisWeek: match?.hoursThisWeek ?? att.working_hours ?? 0,
-          status: isOnLeave ? "Leave" : match?.status || "Active",
-          isWfh: att.is_wfh || false,
-          isPermanentWfh: att.is_permanent_wfh || false,
-          isShiftChanged: att.is_shift_changed || false,
-          attendanceStatus: att.attendance_status || "",
-          profile_image: att.profile_image,
-          check_in: att.check_in,
-          check_out: att.check_out,
-          check_in_ip: att.check_in_ip,
-          check_out_ip: att.check_out_ip,
-          working_hours: att.working_hours,
-          card_check_in: att.card_check_in,
-          card_check_out: att.card_check_out,
-          card_working_hours: att.card_working_hours,
-          lunch_minutes: att.lunch_minutes,
-          tea_minutes: att.tea_minutes,
-          is_paused: att.is_paused || false,
-          paused_minutes: att.paused_minutes || 0,
-          shift: att.shift,
-          manager_status: att.manager_status,
-          attendance_status: att.attendance_status || "",
-          is_reporting_manager: att.is_reporting_manager || match?.is_reporting_manager || false,
-          report_count: att.report_count ?? match?.report_count ?? 0,
-          reporting_manager: att.reporting_manager || match?.reporting_manager || "",
-          permission_from: att.permission_from,
-          permission_to: att.permission_to,
-          is_permission: att.is_permission,
-          permission_hours: att.permission_hours,
-        };
-      });
-    }
+      return {
+        id: att.id ?? match?.id,
+        user_id: att.user_id || match?.user_id || att.id || match?.id,
+        employee_id: att.employee_id || match?.employee_id || (att.id ? `EMP${att.id}` : ""),
+        name: att.name || match?.name || "",
+        email: match?.email || att.email || "",
+        role: att.designation || match?.role || "Employee",
+        designation: att.designation || match?.role || "Employee",
+        department: att.department || "",
+        avatar:
+          match?.avatar ||
+          (att.name
+            ? att.name
+              .split(" ")
+              .map((n: string) => n[0])
+              .join("")
+              .substring(0, 2)
+              .toUpperCase()
+            : "EM"),
+        tasksCompleted: match?.tasksCompleted ?? 0,
+        efficiency: match?.efficiency ?? 0,
+        hoursThisWeek: match?.hoursThisWeek ?? att.working_hours ?? 0,
+        status: isOnLeave ? "Leave" : match?.status || "Active",
+        isWfh: att.is_wfh || false,
+        isPermanentWfh: att.is_permanent_wfh || false,
+        isShiftChanged: att.is_shift_changed || false,
+        attendanceStatus: calculatedStatus,
+        profile_image: att.profile_image,
+        check_in: att.check_in,
+        check_out: att.check_out,
+        check_in_ip: att.check_in_ip,
+        check_out_ip: att.check_out_ip,
+        working_hours: att.working_hours,
+        card_check_in: att.card_check_in,
+        card_check_out: att.card_check_out,
+        card_working_hours: att.card_working_hours,
+        lunch_minutes: att.lunch_minutes,
+        tea_minutes: att.tea_minutes,
+        is_paused: att.is_paused || false,
+        paused_minutes: att.paused_minutes || 0,
+        shift: att.shift,
+        manager_status: att.manager_status,
+        attendance_status: calculatedStatus,
+        is_reporting_manager: att.is_reporting_manager || match?.is_reporting_manager || false,
+        report_count: att.report_count ?? match?.report_count ?? 0,
+        reporting_manager: att.reporting_manager || match?.reporting_manager || "",
+        permission_from: att.permission_from,
+        permission_to: att.permission_to,
+        is_permission: att.is_permission,
+        permission_hours: att.permission_hours,
+      };
+    });
 
     return [...list].sort((a: any, b: any) => {
-      const nameA = (a.name || "").trim().toLowerCase();
-      const nameB = (b.name || "").trim().toLowerCase();
-      return nameA.localeCompare(nameB);
+      const getEmpIdNum = (emp: any) => {
+        const rawId = emp.employee_id || emp.user_id || emp.id || "";
+        const cleanNum = String(rawId).replace(/\D/g, "");
+        return cleanNum !== "" ? parseInt(cleanNum, 10) : 9999999;
+      };
+      const idA = getEmpIdNum(a);
+      const idB = getEmpIdNum(b);
+      if (idA !== idB) return idA - idB;
+      return (a.name || "").trim().toLowerCase().localeCompare((b.name || "").trim().toLowerCase());
     });
   }, [teamAttendance, teamMembers]);
 
@@ -1069,29 +1113,30 @@ const ManagerDashboardPage = () => {
 
   const notCheckedInCount = useMemo(
     () =>
-      teamAttendance.filter(
+      scopedTeamMembers.filter(
         (m) =>
           !m.check_in &&
           !m.card_check_in &&
           m.attendance_status !== "Present" &&
           m.attendance_status !== "Checked Out" &&
           m.attendance_status !== "Half Day" &&
-          m.attendance_status !== "On Leave",
+          m.attendance_status !== "On Leave" &&
+          m.status !== "Leave",
       ).length,
-    [teamAttendance],
+    [scopedTeamMembers],
   );
 
   const statCards = [
     {
       label: "Team Members",
-      value: teamAttendance.length,
+      value: scopedTeamMembers.length,
       sub: "Direct reports",
       icon: UsersIcon,
       tone: "default",
     },
     {
       label: "Present Today",
-      value: teamAttendance.filter(
+      value: scopedTeamMembers.filter(
         (m) =>
           !!m.check_in ||
           !!m.card_check_in ||
@@ -1112,7 +1157,7 @@ const ManagerDashboardPage = () => {
     },
     {
       label: "On Leave",
-      value: teamAttendance.filter((m) => m.attendance_status === "On Leave").length,
+      value: scopedTeamMembers.filter((m) => m.status === "Leave" || m.attendance_status === "On Leave").length,
       sub: "Approved leave",
       icon: CalendarDaysIcon,
       tone: "warning",
@@ -1497,128 +1542,38 @@ const ManagerDashboardPage = () => {
                     flexWrap: "wrap",
                   }}
                 >
-                  {/* Export Team Attendance Button & Dropdown */}
-                  <div style={{ position: "relative" }}>
-                    <button
-                      onClick={() => setShowExportDropdown(!showExportDropdown)}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = THEME.primaryDark;
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = THEME.primary;
-                      }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        padding: "9px 16px",
-                        borderRadius: "12px",
-                        border: "none",
-                        background: THEME.primary,
-                        color: "#fff",
-                        fontSize: "13px",
-                        fontWeight: 700,
-                        cursor: "pointer",
-                        boxShadow: "0 4px 10px rgba(24,99,112,0.15)",
-                        height: "42px",
-                        transition: "background 0.2s ease",
-                      }}
-                    >
-                      <ArrowDownTrayIcon style={{ width: "16px", height: "16px" }} />
-                      Export Team Attendance
-                    </button>
-
-                    {showExportDropdown && availableMonths.length > 0 && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: "100%",
-                          left: 0,
-                          marginTop: "8px",
-                          minWidth: "280px",
-                          borderRadius: "12px",
-                          border: `1px solid ${THEME.border}`,
-                          background: THEME.surface,
-                          boxShadow: "0 12px 32px rgba(15, 23, 42, 0.15)",
-                          zIndex: 50,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            padding: "10px 12px",
-                            borderBottom: `1px solid ${THEME.border}`,
-                            background: THEME.surfaceSoft,
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            color: THEME.textSoft,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.05em",
-                          }}
-                        >
-                          Select Month
-                        </div>
-                        {availableMonths.map((m: any) => (
-                          <button
-                            key={`${m.month}-${m.year}`}
-                            onClick={async () => {
-                              setShowExportDropdown(false);
-                              try {
-                                let url = `${BASE_URL}/attendance/export-monthly?manager_id=${userId}`;
-                                url += `&month=${m.month}&year=${m.year}`;
-                                const token = localStorage.getItem("token");
-                                const response = await fetch(url, {
-                                  headers: { "Authorization": `Bearer ${token}` }
-                                });
-                                const blob = await response.blob();
-                                const urlBlob = window.URL.createObjectURL(blob);
-                                const a = document.createElement("a");
-                                a.href = urlBlob;
-                                a.download = `Team_Attendance_Report_${m.label.replace(/\s+/g, "_")}.xlsx`;
-                                document.body.appendChild(a);
-                                a.click();
-                                a.remove();
-                              } catch (error) {
-                                console.error("Failed to download team attendance report:", error);
-                              }
-                            }}
-                            style={{
-                              width: "100%",
-                              padding: "12px 16px",
-                              border: "none",
-                              background: "transparent",
-                              color: THEME.text,
-                              fontSize: "13px",
-                              fontWeight: 500,
-                              cursor: "pointer",
-                              textAlign: "left",
-                              transition: "all 0.2s ease",
-                              borderBottom: `1px solid ${THEME.border}`,
-                            }}
-                            onMouseEnter={(e) => {
-                              (e.target as HTMLElement).style.background = THEME.surfaceMuted;
-                            }}
-                            onMouseLeave={(e) => {
-                              (e.target as HTMLElement).style.background = "transparent";
-                            }}
-                          >
-                            {m.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {showExportDropdown && (
-                    <div
-                      style={{
-                        position: "fixed",
-                        inset: 0,
-                        zIndex: 40,
-                      }}
-                      onClick={() => setShowExportDropdown(false)}
-                    />
-                  )}
+                  {/* Export Team Attendance Button */}
+                  <button
+                    onClick={() => {
+                      setManagerExportMonth(availableMonths[0] ? `${availableMonths[0].month},${availableMonths[0].year}` : "");
+                      setShowManagerExportModal(true);
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = THEME.primaryDark;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = THEME.primary;
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "9px 16px",
+                      borderRadius: "12px",
+                      border: "none",
+                      background: THEME.primary,
+                      color: "#fff",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      boxShadow: "0 4px 10px rgba(24,99,112,0.15)",
+                      height: "42px",
+                      transition: "background 0.2s ease",
+                    }}
+                  >
+                    <ArrowDownTrayIcon style={{ width: "16px", height: "16px" }} />
+                    Export Team Attendance
+                  </button>
 
                   <div style={{ position: "relative" }}>
                     <MagnifyingGlassIcon
@@ -1805,17 +1760,41 @@ const ManagerDashboardPage = () => {
                       if (attendanceFilter === "All") {
                         matchFilter = true;
                       } else if (attendanceFilter === "Present") {
-                        matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out" || m.attendance_status === "Half Day";
+                        matchFilter =
+                          !!m.check_in ||
+                          !!m.card_check_in ||
+                          m.attendance_status === "Present" ||
+                          m.attendance_status === "Checked Out" ||
+                          m.attendance_status === "Half Day" ||
+                          m.attendanceStatus === "Present" ||
+                          m.attendanceStatus === "Checked Out" ||
+                          m.attendanceStatus === "Half Day";
                       } else if (attendanceFilter === "Not Checked In") {
-                        matchFilter = !m.check_in && !m.card_check_in && m.attendance_status !== "Present" && m.attendance_status !== "Checked Out" && m.attendance_status !== "Half Day";
-                      } else if (attendanceFilter === "Leave") {
-                        matchFilter = m.status === "Leave" || m.attendance_status === "On Leave";
+                        matchFilter =
+                          !m.check_in &&
+                          !m.card_check_in &&
+                          m.attendance_status !== "Present" &&
+                          m.attendance_status !== "Checked Out" &&
+                          m.attendance_status !== "Half Day" &&
+                          m.attendance_status !== "On Leave" &&
+                          m.status !== "Leave";
+                      } else if (attendanceFilter === "Leave" || attendanceFilter === "On Leave") {
+                        matchFilter = m.status === "Leave" || m.attendance_status === "On Leave" || m.attendanceStatus === "On Leave";
                       } else if (attendanceFilter === "WFH") {
                         matchFilter = !!m.isWfh;
                       } else if (attendanceFilter === "Shift Changed") {
                         matchFilter = !!m.isShiftChanged;
+                      } else if (attendanceFilter === "Checked Out") {
+                        matchFilter = m.attendance_status === "Checked Out" || m.attendanceStatus === "Checked Out";
+                      } else if (attendanceFilter === "Absent") {
+                        matchFilter =
+                          !m.check_in &&
+                          !m.card_check_in &&
+                          (m.attendance_status === "Absent" || m.attendanceStatus === "Absent") &&
+                          m.status !== "Leave" &&
+                          m.attendance_status !== "On Leave";
                       } else {
-                        matchFilter = m.attendance_status === attendanceFilter;
+                        matchFilter = m.attendance_status === attendanceFilter || m.attendanceStatus === attendanceFilter;
                       }
 
                       const matchDept = deptFilter === "All" || m.department === deptFilter;
@@ -2251,8 +2230,8 @@ const ManagerDashboardPage = () => {
                             )}
                             <button
                               onClick={(e) => {
-                                  e.stopPropagation();
-                                  viewEmployeeHistory(member);
+                                e.stopPropagation();
+                                viewEmployeeHistory(member);
                               }}
                               style={{
                                 flex: 1,
@@ -2366,17 +2345,41 @@ const ManagerDashboardPage = () => {
                           if (attendanceFilter === "All") {
                             matchFilter = true;
                           } else if (attendanceFilter === "Present") {
-                            matchFilter = m.attendance_status === "Present" || m.attendance_status === "Checked Out" || m.attendance_status === "Half Day";
+                            matchFilter =
+                              !!m.check_in ||
+                              !!m.card_check_in ||
+                              m.attendance_status === "Present" ||
+                              m.attendance_status === "Checked Out" ||
+                              m.attendance_status === "Half Day" ||
+                              m.attendanceStatus === "Present" ||
+                              m.attendanceStatus === "Checked Out" ||
+                              m.attendanceStatus === "Half Day";
                           } else if (attendanceFilter === "Not Checked In") {
-                            matchFilter = !m.check_in && !m.card_check_in && m.attendance_status !== "Present" && m.attendance_status !== "Checked Out" && m.attendance_status !== "Half Day";
-                          } else if (attendanceFilter === "Leave") {
-                            matchFilter = m.status === "Leave" || m.attendance_status === "On Leave";
+                            matchFilter =
+                              !m.check_in &&
+                              !m.card_check_in &&
+                              m.attendance_status !== "Present" &&
+                              m.attendance_status !== "Checked Out" &&
+                              m.attendance_status !== "Half Day" &&
+                              m.attendance_status !== "On Leave" &&
+                              m.status !== "Leave";
+                          } else if (attendanceFilter === "Leave" || attendanceFilter === "On Leave") {
+                            matchFilter = m.status === "Leave" || m.attendance_status === "On Leave" || m.attendanceStatus === "On Leave";
                           } else if (attendanceFilter === "WFH") {
                             matchFilter = !!m.isWfh;
                           } else if (attendanceFilter === "Shift Changed") {
                             matchFilter = !!m.isShiftChanged;
+                          } else if (attendanceFilter === "Checked Out") {
+                            matchFilter = m.attendance_status === "Checked Out" || m.attendanceStatus === "Checked Out";
+                          } else if (attendanceFilter === "Absent") {
+                            matchFilter =
+                              !m.check_in &&
+                              !m.card_check_in &&
+                              (m.attendance_status === "Absent" || m.attendanceStatus === "Absent") &&
+                              m.status !== "Leave" &&
+                              m.attendance_status !== "On Leave";
                           } else {
-                            matchFilter = m.attendance_status === attendanceFilter;
+                            matchFilter = m.attendance_status === attendanceFilter || m.attendanceStatus === attendanceFilter;
                           }
 
                           const matchDept = deptFilter === "All" || m.department === deptFilter;
@@ -2785,8 +2788,8 @@ const ManagerDashboardPage = () => {
                             {(emp.lunch_minutes > 0 || emp.tea_minutes > 0) ? `${emp.lunch_minutes}m / ${emp.tea_minutes}m` : "—"}
                           </td>
                           <td style={{ padding: "12px 16px", color: "#0f766e", fontWeight: 700, borderRight: `1px solid ${THEME.border}`, textAlign: "center" }}>
-                                    {emp.permission_hours ? `${emp.permission_hours} hr${emp.permission_hours !== 1 ? "s" : ""}` : "—"}
-                                  </td>
+                            {emp.permission_hours ? `${emp.permission_hours} hr${emp.permission_hours !== 1 ? "s" : ""}` : "—"}
+                          </td>
                           <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>
                             <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "999px", background: msBg, color: msColor, fontSize: "11px", fontWeight: 800 }}>{managerStatus}</span>
                           </td>
@@ -3232,7 +3235,9 @@ const ManagerDashboardPage = () => {
                         <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "2px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Status</th>
                         <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", background: "rgba(37,99,235,0.06)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
                         <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", background: "rgba(126,34,206,0.06)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
-                        <th rowSpan={2} style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0" }}>Breaks (L/T)</th>
+                        <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Breaks (L/T)</th>
+                        <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", background: "rgba(13, 148, 136, 0.06)", color: "#0d9488", fontWeight: 800 }}>Extra Time</th>
+                        <th rowSpan={2} style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0", background: "rgba(16, 185, 129, 0.06)", color: "#065f46", fontWeight: 800 }}>Total Working Hours</th>
                       </tr>
                       <tr style={{ background: "#f8fafc", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                         <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #c7d2fe" }}>Check In</th>
@@ -3277,14 +3282,14 @@ const ManagerDashboardPage = () => {
 
                         return (
                           <tr key={record.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                            <td 
+                            <td
                               onClick={() => handleEditClick(record)}
                               title="Click to edit attendance"
-                              style={{ 
-                                padding: "12px 16px", 
-                                fontWeight: 700, 
-                                color: THEME.primary, 
-                                borderRight: "1px solid #e2e8f0", 
+                              style={{
+                                padding: "12px 16px",
+                                fontWeight: 700,
+                                color: THEME.primary,
+                                borderRight: "1px solid #e2e8f0",
                                 whiteSpace: "nowrap",
                                 cursor: "pointer",
                                 textDecoration: "underline",
@@ -3429,11 +3434,51 @@ const ManagerDashboardPage = () => {
                             <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", fontWeight: 700, color: "#7e22ce", borderRight: "2px solid #e9d5ff", textAlign: "center" }}>
                               {formatWorkingHours(record.cardWorkingHours)}
                             </td>
-                            <td style={{ padding: "12px 16px", color: THEME.textSoft, textAlign: "center" }}>
+                            <td style={{ padding: "12px 16px", color: THEME.textSoft, borderRight: "1px solid #e2e8f0", textAlign: "center" }}>
                               {record.lunchMinutes > 0 || record.teaMinutes > 0 ? (
                                 <span>{record.lunchMinutes}m / {record.teaMinutes}m</span>
                               ) : "—"}
                             </td>
+                            {/* Extra Time Column */}
+                            <td style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", textAlign: "center", background: "rgba(13, 148, 136, 0.02)" }}>
+                              {(() => {
+                                const addedMins = Number(record.addedMinutes || record.added_minutes || 0);
+                                if (addedMins > 0) {
+                                  return (
+                                    <span style={{ fontSize: "11px", fontWeight: 800, color: "#0d9488", background: "#f0fdf4", padding: "3px 8px", borderRadius: "6px", border: "1px solid #99f6e4", whiteSpace: "nowrap" }}>
+                                      +{addedMins} min
+                                    </span>
+                                  );
+                                }
+                                return <span style={{ color: THEME.textSoft }}>—</span>;
+                              })()}
+                            </td>
+                            {(() => {
+                              const breakHrs = ((Number(record.lunchMinutes) || 0) + (Number(record.teaMinutes) || 0)) / 60;
+                              const webWorked = Number(record.workingHours) || Number(record.working_hours) || 0;
+                              const cardWorked = Number(record.cardWorkingHours) || Number(record.card_working_hours) || 0;
+                              const grossFromDb = Number(record.totalHours) || Number(record.total_hours) || 0;
+                              
+                              let grossWorkingHrs = grossFromDb;
+                              if (!grossWorkingHrs || grossWorkingHrs <= 0) {
+                                const netWorked = Math.max(webWorked, cardWorked);
+                                grossWorkingHrs = netWorked > 0 ? netWorked + breakHrs : 0;
+                              }
+                              
+                              const addedMins = Number(record.addedMinutes || record.added_minutes || 0);
+                              return (
+                                <td style={{ padding: "12px 16px", fontWeight: 800, color: grossWorkingHrs > 0 ? "#059669" : THEME.textSoft, textAlign: "center", background: "rgba(16, 185, 129, 0.02)" }}>
+                                  <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                    <span>{formatWorkingHours(grossWorkingHrs)}</span>
+                                    {addedMins > 0 && (
+                                      <span style={{ fontSize: "10px", fontWeight: 700, color: "#0d9488", background: "#f0fdf4", padding: "1px 5px", borderRadius: "4px", border: "1px solid #99f6e4" }} title="Manager added minutes">
+                                        +{addedMins}m
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            })()}
                           </tr>
                         );
                       })}
@@ -3516,19 +3561,36 @@ const ManagerDashboardPage = () => {
             {/* Form */}
             <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
               <div>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Status</label>
-                <select
-                  value={editForm.status}
-                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px", color: THEME.text }}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Status</label>
+                  <span style={{ fontSize: "10px", color: "#64748b", fontStyle: "italic" }}>⚡ Auto-calculated from times</span>
+                </div>
+                <div
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #e2e8f0",
+                    background: "#f8fafc",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    color: editForm.status === "Present" ? "#166534" : editForm.status === "Half Day" ? "#6b21a8" : "#991b1b",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    cursor: "not-allowed",
+                  }}
                 >
-                  <option value="Present">Present</option>
-                  <option value="Absent">Absent</option>
-                  <option value="Half Day">Half Day</option>
-                  <option value="Leave">Leave</option>
-                  <option value="Week Off">Week Off</option>
-                  <option value="Holiday">Holiday</option>
-                </select>
+                  <span
+                    style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background: editForm.status === "Present" ? "#16a34a" : editForm.status === "Half Day" ? "#a855f7" : "#dc2626",
+                    }}
+                  />
+                  <span>{editForm.status}</span>
+                </div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
@@ -3565,7 +3627,7 @@ const ManagerDashboardPage = () => {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
                 <div>
                   <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Lunch Break (mins)</label>
                   <input
@@ -3586,6 +3648,49 @@ const ManagerDashboardPage = () => {
                     style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px", color: THEME.text }}
                   />
                 </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Extra Time (mins)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={editForm.addedMinutes}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 0;
+                      setEditForm({ ...editForm, addedMinutes: Math.min(59, Math.max(0, val)) });
+                    }}
+                    placeholder="0 - 59"
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px", color: THEME.text, fontWeight: 700 }}
+                  />
+                </div>
+              </div>
+
+              {/* Mandatory Reason for Edit / Remarks */}
+              <div style={{ marginTop: "16px" }}>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 800, color: "#b91c1c", textTransform: "uppercase", marginBottom: "6px" }}>
+                  Reason for Edit / Remarks <span style={{ color: "#ef4444" }}>*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={editForm.remarks}
+                  onChange={(e) => setEditForm({ ...editForm, remarks: e.target.value })}
+                  placeholder="Enter mandatory reason for modifying attendance times or extra minutes..."
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: "8px",
+                    border: !editForm.remarks.trim() ? "1.5px solid #f87171" : "1px solid #cbd5e1",
+                    fontSize: "13px",
+                    color: THEME.text,
+                    outline: "none",
+                    fontFamily: "inherit"
+                  }}
+                />
+                {!editForm.remarks.trim() && (
+                  <p style={{ fontSize: "11px", color: "#ef4444", marginTop: "4px", fontWeight: 600 }}>
+                    ⚠️ Reason for edit is required before saving changes.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -3599,16 +3704,16 @@ const ManagerDashboardPage = () => {
               </button>
               <button
                 onClick={handleSaveEdit}
-                disabled={savingEdit}
+                disabled={savingEdit || !editForm.remarks.trim()}
                 style={{
                   padding: "8px 16px",
                   borderRadius: "8px",
                   border: "none",
-                  background: THEME.primary,
+                  background: !editForm.remarks.trim() ? "#94a3b8" : THEME.primary,
                   fontSize: "12px",
                   fontWeight: 600,
                   color: "#fff",
-                  cursor: "pointer",
+                  cursor: !editForm.remarks.trim() ? "not-allowed" : "pointer",
                   opacity: savingEdit ? 0.7 : 1
                 }}
               >
@@ -3632,6 +3737,102 @@ const ManagerDashboardPage = () => {
           to { transform: rotate(360deg); }
         }
       `}</style>
+
+      {/* Export Team Attendance Modal */}
+      {showManagerExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-neutral-100 overflow-hidden animate-in fade-in zoom-in duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-teal-50 text-teal-700">
+                  <ArrowDownTrayIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-neutral-800 text-base">Export Team Attendance</h3>
+                  <p className="text-xs text-neutral-500">Select attendance month cycle to download Excel report</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowManagerExportModal(false)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-2">
+                  Select Attendance Month / Cycle
+                </label>
+                <select
+                  value={managerExportMonth}
+                  onChange={(e) => setManagerExportMonth(e.target.value)}
+                  className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-800 focus:border-teal-600 focus:ring-2 focus:ring-teal-100 outline-none transition-all shadow-2xs font-medium"
+                >
+                  {availableMonths.map((m: any) => (
+                    <option key={`${m.month}-${m.year}`} value={`${m.month},${m.year}`}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-neutral-50/80 border-t border-neutral-100">
+              <button
+                onClick={() => setShowManagerExportModal(false)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-neutral-600 hover:bg-neutral-200/60 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setShowManagerExportModal(false);
+                  try {
+                    const token = localStorage.getItem("token");
+                    const targetManagerId = currentViewedManagerId || userId;
+                    let url = `${BASE_URL}/attendance/export-monthly?manager_id=${targetManagerId}`;
+                    if (managerExportMonth) {
+                      const [m, y] = managerExportMonth.split(",");
+                      url += `&month=${m}&year=${y}`;
+                    }
+
+                    const response = await fetch(url, {
+                      headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (!response.ok) {
+                      const errData = await response.json().catch(() => ({}));
+                      toast.error(errData.error || "Failed to download team attendance report");
+                      return;
+                    }
+                    const blob = await response.blob();
+                    const urlBlob = window.URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = urlBlob;
+                    const activeLabel = availableMonths.find((m) => `${m.month},${m.year}` === managerExportMonth)?.label || "";
+                    const filenameSuffix = activeLabel ? `_${activeLabel.replace(/\s+/g, "_")}` : "";
+                    a.download = `Team_Attendance_Report${filenameSuffix}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                  } catch (error) {
+                    console.error("Failed to download team attendance report:", error);
+                    toast.error("Failed to download team attendance report");
+                  }
+                }}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold shadow-md shadow-teal-700/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <ArrowDownTrayIcon className="w-4 h-4" />
+                Download Excel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
