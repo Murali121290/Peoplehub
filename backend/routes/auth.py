@@ -117,14 +117,14 @@ def login():
         if not user:
             return jsonify({
                 "success": False,
-                "error": "Invalid Email or Password"
+                "error": "Invalid Employee Id or Password"
             }), 401
 
         # Verify password
         if not user.check_password(password):
             return jsonify({
                 "success": False,
-                "error": "Invalid Email or Password"
+                "error": "Invalid Employee Id or Password"
             }), 401
 
         # Check for default password to force change

@@ -40,6 +40,35 @@ const checkManagerMatch = (reportingManager: string | null | undefined, managerF
   return false;
 };
 
+const getRecursiveReportingIdentifiers = (managerFullName: string, employeesList: any[]): Set<string> => {
+  const allowed = new Set<string>();
+  if (!managerFullName || !employeesList.length) return allowed;
+
+  const queue: string[] = [managerFullName];
+  const visitedManagers = new Set<string>([managerFullName.trim().toLowerCase()]);
+
+  while (queue.length > 0) {
+    const currentMgr = queue.shift()!;
+    for (const emp of employeesList) {
+      if (checkManagerMatch(emp.reporting_manager, currentMgr)) {
+        const empFullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.name || "";
+
+        if (emp.id) allowed.add(String(emp.id));
+        if (emp.employee_id) allowed.add(String(emp.employee_id).toLowerCase());
+        if (empFullName) allowed.add(empFullName.toLowerCase());
+
+        const empFullNameClean = empFullName.toLowerCase();
+        if (empFullNameClean && !visitedManagers.has(empFullNameClean)) {
+          visitedManagers.add(empFullNameClean);
+          queue.push(empFullName);
+        }
+      }
+    }
+  }
+
+  return allowed;
+};
+
 const Sidebar: React.FC<SidebarProps> = ({
   sidebarItems,
   showReportMenu,
@@ -78,18 +107,29 @@ const Sidebar: React.FC<SidebarProps> = ({
         try {
           const token = localStorage.getItem('token');
           const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
-          const [leaveRes, shiftRes] = await Promise.all([
+          const [leaveRes, shiftRes, empRes] = await Promise.all([
              fetch(`${API_URL}/api/leaves/`, { headers }),
-             fetch(`${API_URL}/api/shifts/`, { headers })
+             fetch(`${API_URL}/api/shifts/`, { headers }),
+             fetch(`${API_URL}/api/employees/`, { headers })
           ]);
 
           const accessClean = user?.access_level?.toLowerCase() || '';
           const isAdmin = accessClean === 'admin';
 
+          let reportingIdentifiers = new Set<string>();
+          if (empRes.ok && user?.full_name && !isAdmin) {
+            const employees = await empRes.json();
+            if (Array.isArray(employees)) {
+              reportingIdentifiers = getRecursiveReportingIdentifiers(user.full_name, employees);
+            }
+          }
+
           const filterByManager = (req: any): boolean => {
-            return isAdmin || 
-              checkManagerMatch(req.reporting_manager, user?.full_name) ||
-              checkManagerMatch(req.handover_to, user?.full_name);
+            if (isAdmin) return true;
+            if (checkManagerMatch(req.reporting_manager, user?.full_name) || checkManagerMatch(req.handover_to, user?.full_name)) return true;
+            if (req.employee_id && reportingIdentifiers.has(String(req.employee_id).toLowerCase())) return true;
+            if (req.employee_name && reportingIdentifiers.has(String(req.employee_name).trim().toLowerCase())) return true;
+            return false;
           };
 
           const todayDate = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000);

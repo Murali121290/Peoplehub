@@ -96,9 +96,74 @@ const TeamManagementPage: React.FC = () => {
     return false;
   };
 
+  const getRecursiveReportingIdentifiers = (
+    managerId: number | string | undefined | null,
+    allEmps: any[]
+  ) => {
+    if (!managerId || !Array.isArray(allEmps) || allEmps.length === 0) {
+      return { ids: new Set<string>(), names: new Set<string>() };
+    }
+
+    const currentMgr = allEmps.find((e: any) =>
+      Number(e.id) === Number(managerId) ||
+      Number(e.user_id) === Number(managerId) ||
+      String(e.employee_id || "").trim() === String(managerId).trim()
+    );
+
+    const targetNames = new Set<string>();
+    if (currentMgr) {
+      const fName = `${currentMgr.first_name || ""} ${currentMgr.last_name || ""}`.trim();
+      if (fName) targetNames.add(fName.toLowerCase());
+    }
+
+    const ids = new Set<string>();
+    const names = new Set<string>();
+    const queue: string[] = Array.from(targetNames);
+
+    if (queue.length === 0) {
+      return { ids, names };
+    }
+
+    const visitedNames = new Set<string>(queue);
+
+    while (queue.length > 0) {
+      const parentName = queue.shift()!;
+
+      allEmps.forEach((e: any) => {
+        const repMgr = (e.reporting_manager || "").trim().toLowerCase();
+        if (repMgr && (repMgr === parentName || repMgr.includes(parentName) || parentName.includes(repMgr))) {
+          if (e.id) ids.add(String(e.id));
+          if (e.user_id) ids.add(String(e.user_id));
+          if (e.employee_id) ids.add(String(e.employee_id).trim());
+
+          const childName = `${e.first_name || ""} ${e.last_name || ""}`.trim().toLowerCase();
+          if (childName && !visitedNames.has(childName)) {
+            visitedNames.add(childName);
+            names.add(childName);
+            queue.push(childName);
+          }
+        }
+      });
+    }
+
+    return { ids, names };
+  };
+
   const fetchNotificationCounts = async () => {
     try {
       const isAdmin = user?.access_level?.toLowerCase() === "admin";
+      let activeEmployees: any[] = [];
+      try {
+        const empRes = await fetch(`${BASE_URL}/employees/`);
+        if (empRes.ok) {
+          const empData = await empRes.json();
+          activeEmployees = Array.isArray(empData) ? empData : [];
+        }
+      } catch (err) {
+        console.error("Failed to fetch employees for team counts", err);
+      }
+
+      const reportingSet = getRecursiveReportingIdentifiers(user?.id, activeEmployees);
 
       // Fetch shift/WFH requests
       const shiftResponse = await fetch(`${BASE_URL}/shifts/`, {
@@ -111,7 +176,13 @@ const TeamManagementPage: React.FC = () => {
       if (!Array.isArray(allRequests)) return;
 
       const filterByManager = (req: any): boolean => {
-        return isAdmin || checkManagerMatch(req.reporting_manager, user?.full_name);
+        if (isAdmin) return true;
+        const isDirect = checkManagerMatch(req.reporting_manager, user?.full_name);
+        const reqEmpId = String(req.employee_id || "").trim();
+        const reqUserDbId = String(req.user_id || req.employee_db_id || "").trim();
+        const reqRepMgr = String(req.reporting_manager || "").trim().toLowerCase();
+        const isRecursive = reportingSet.ids.has(reqEmpId) || reportingSet.ids.has(reqUserDbId) || (reqRepMgr ? reportingSet.names.has(reqRepMgr) : false);
+        return Boolean(isDirect || isRecursive);
       };
 
       // Count pending shift requests (excluding WFH and ODW)

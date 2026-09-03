@@ -3230,6 +3230,7 @@ const ManagerDashboardPage = () => {
                         <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", background: "rgba(37,99,235,0.06)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
                         <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", background: "rgba(126,34,206,0.06)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
                         <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Breaks (L/T)</th>
+                        <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", background: "rgba(13, 148, 136, 0.06)", color: "#0d9488", fontWeight: 800 }}>Extra Time</th>
                         <th rowSpan={2} style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0", background: "rgba(16, 185, 129, 0.06)", color: "#065f46", fontWeight: 800 }}>Total Working Hours</th>
                       </tr>
                       <tr style={{ background: "#f8fafc", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
@@ -3431,6 +3432,20 @@ const ManagerDashboardPage = () => {
                               {record.lunchMinutes > 0 || record.teaMinutes > 0 ? (
                                 <span>{record.lunchMinutes}m / {record.teaMinutes}m</span>
                               ) : "—"}
+                            </td>
+                            {/* Extra Time Column */}
+                            <td style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", textAlign: "center", background: "rgba(13, 148, 136, 0.02)" }}>
+                              {(() => {
+                                const addedMins = Number(record.addedMinutes || record.added_minutes || 0);
+                                if (addedMins > 0) {
+                                  return (
+                                    <span style={{ fontSize: "11px", fontWeight: 800, color: "#0d9488", background: "#f0fdf4", padding: "3px 8px", borderRadius: "6px", border: "1px solid #99f6e4", whiteSpace: "nowrap" }}>
+                                      +{addedMins} min
+                                    </span>
+                                  );
+                                }
+                                return <span style={{ color: THEME.textSoft }}>—</span>;
+                              })()}
                             </td>
                             {(() => {
                               const breakHrs = ((Number(record.lunchMinutes) || 0) + (Number(record.teaMinutes) || 0)) / 60;
