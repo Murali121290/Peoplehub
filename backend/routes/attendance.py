@@ -1493,6 +1493,7 @@ def attendance_history(user_id):
 
                 has_permission = False
                 permission_label = ""
+                perm_hours = 0
                 actual_working_hours = working_hours
                 if perm_req and perm_req.from_time and perm_req.to_time:
                     has_permission = True
@@ -1560,6 +1561,8 @@ def attendance_history(user_id):
                     "wages_status": wages_status,
                     "has_permission": has_permission,
                     "permission_label": permission_label,
+                    "permission_hours": perm_hours,
+                    "permission_time": permission_label,
                     "is_regularization": bool(record.is_regularization),
                     "regularization_reason": record.regularization_reason or "",
                     "regularization_check_in": record.regularization_check_in.strftime("%I:%M %p") if record.regularization_check_in else "-",
