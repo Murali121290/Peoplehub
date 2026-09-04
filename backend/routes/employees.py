@@ -1847,10 +1847,6 @@ def get_reporting_employees(user_id):
                 status = "Absent"
                 employee_category = "absent"
             elif attendance:
-                from routes.attendance import sync_biometric_to_web_entry, calculate_attendance_status
-                if sync_biometric_to_web_entry(attendance):
-                    has_any_updates = True
-                calculate_attendance_status(attendance)
                 status = attendance.status
 
 

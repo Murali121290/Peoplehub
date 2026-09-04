@@ -567,26 +567,26 @@ def calculate_attendance_status(attendance):
     eff_out = attendance.check_out
 
     if eff_in and eff_out:
-        # If checked out, calculate net worked hours (gross minus breaks)
+        # Status calculation: gross time minus paused and gap minutes (breaks are INCLUDED)
         gross_seconds = (eff_out - eff_in).total_seconds()
-        break_mins = (attendance.total_break_minutes or 0) or ((attendance.lunch_minutes or 0) + (attendance.tea_minutes or 0))
         gap_mins = getattr(attendance, 'total_gap_minutes', 0) or 0
         paused_mins = getattr(attendance, 'paused_minutes', 0) or 0
-        net_seconds = gross_seconds - (break_mins + gap_mins + paused_mins) * 60
-        gross_hours = max(net_seconds, 0) / 3600.0
+        status_seconds = gross_seconds - (gap_mins + paused_mins) * 60
+        status_calc_hours = max(status_seconds, 0) / 3600.0
     elif eff_in:
         # If currently checked in, calculate elapsed gross hours till now (if today)
         now = get_ist_now()
         if attendance.attendance_date == now.date():
             gross_seconds = (now - eff_in).total_seconds()
-            break_mins = (attendance.total_break_minutes or 0) or ((attendance.lunch_minutes or 0) + (attendance.tea_minutes or 0))
-            net_seconds = gross_seconds - (break_mins * 60)
-            gross_hours = max(net_seconds, 0) / 3600.0
+            gap_mins = getattr(attendance, 'total_gap_minutes', 0) or 0
+            paused_mins = getattr(attendance, 'paused_minutes', 0) or 0
+            status_seconds = gross_seconds - (gap_mins + paused_mins) * 60
+            status_calc_hours = max(status_seconds, 0) / 3600.0
         else:
             # Past date without check-out
-            gross_hours = 0.0
+            status_calc_hours = 0.0
     else:
-        gross_hours = 0.0
+        status_calc_hours = 0.0
 
     # 1.5 Add Approved Permission Hours
     att_user_id = getattr(attendance, 'user_id', None)
@@ -622,14 +622,14 @@ def calculate_attendance_status(attendance):
                     f_sec = f_time.hour * 3600 + f_time.minute * 60 + f_time.second
                     t_sec = t_time.hour * 3600 + t_time.minute * 60 + (t_time.second if hasattr(t_time, 'second') else 0)
                     permission_hours = max(t_sec - f_sec, 0) / 3600.0
-                    gross_hours += permission_hours
+                    status_calc_hours += permission_hours
         except Exception as e:
             print("Error calculating permission hours in attendance status:", e)
 
     # 1.6 Add Manager Adjustment Minutes (added_minutes)
     added_mins = getattr(attendance, 'added_minutes', 0) or 0
     if added_mins > 0:
-        gross_hours += (added_mins / 60.0)
+        status_calc_hours += (added_mins / 60.0)
 
     # 2. Determine status
     if eff_in and not eff_out:
@@ -643,14 +643,13 @@ def calculate_attendance_status(attendance):
         attendance.status = "Absent"
         return
 
-    if gross_hours < 4.0:
+    if status_calc_hours < 4.0:
         attendance.status = "Absent"
     else:
         is_weekend = attendance.attendance_date.weekday() >= 5
-        # 5-minute grace period for Present: 7h 55m = 475 mins = 7.9167 hours (or 6h 55m = 6.9167 hours on weekends)
-        req_hours = 6.9167 if is_weekend else 7.9167
+        req_hours = 7.9167 if is_weekend else 8.9167
         
-        if gross_hours < req_hours:
+        if status_calc_hours < req_hours:
             attendance.status = "Half Day"
         else:
             attendance.status = "Present"
