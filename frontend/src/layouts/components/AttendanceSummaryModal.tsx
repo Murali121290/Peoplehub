@@ -437,6 +437,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                   <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Check Out</th>
                   <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Break</th>
                   <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center font-semibold text-teal-800">Permission</th>
+
                   <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
                   <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
                   <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check In</th>
@@ -516,6 +517,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                         >
                           {emp.permission_hours ? `${emp.permission_hours} hr${emp.permission_hours !== 1 ? "s" : ""}` : "—"}
                         </td>
+
                         <td className={`py-3.5 px-3 bg-blue-50/5 text-xs font-bold border-r border-blue-100/50 ${emp.highlight_short_hours ? "text-rose-600 bg-rose-50/50" : "text-neutral-800"}`}>
                           {formatWorkingHours(emp.working_hours)}
                         </td>
@@ -613,6 +615,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                       <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Check Out</th>
                       <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Break</th>
                       <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center font-semibold text-teal-800">Permission</th>
+
                       <th className="bg-blue-50 border-b border-neutral-200 border-r border-blue-200 py-2 px-2.5 text-center">Working Hours</th>
                       <th className="bg-blue-50 border-b border-neutral-200 border-r-2 border-blue-200 py-2 px-2.5 text-center">Total Hours</th>
                       <th className="bg-purple-50 border-b border-neutral-200 border-r border-purple-200 py-2 px-2.5 text-center">Check In</th>
@@ -661,11 +664,12 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
                           </td>
                           <td className="py-3.5 px-2.5 bg-blue-50/5 text-xs text-center text-teal-700 font-bold border-r border-blue-100/50">
                             {emp.permission_hours > 0 ? (
-                              <span className="cursor-pointer underline decoration-dotted decoration-teal-500" title={emp.permission_time}>
+                              <span className="cursor-pointer" title={emp.permission_time}>
                                 {emp.permission_hours} hr{emp.permission_hours > 1 ? "s" : ""}
                               </span>
                             ) : "—"}
                           </td>
+
                           <td className={`py-3.5 px-3 bg-blue-50/5 text-xs font-bold border-r border-blue-100/50 ${emp.highlight_short_hours ? "text-rose-600 bg-rose-50/50" : "text-neutral-800"}`}>
                             {formatWorkingHours(emp.working_hours)}
                           </td>

@@ -2304,9 +2304,8 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", background: "#eff6ff", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
+                        <th colSpan={6} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", background: "#eff6ff", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
                         <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", background: "#faf5ff", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}`, color: "#6b21a8", fontWeight: 800, textAlign: "center", borderRight: `1px solid ${THEME.border}` }}>Permission</th>
                         <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "120px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
 
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
@@ -2326,7 +2325,11 @@ const ManagerDashboardPage = () => {
                       <tr style={{ background: "#f8fafc", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                         <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "1px solid #c7d2fe", minWidth: "105px" }}>Check In</th>
                         <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "1px solid #c7d2fe", minWidth: "105px" }}>Check Out</th>
-                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", fontWeight: 700, minWidth: "75px" }}>Hours</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "1px solid #c7d2fe", minWidth: "80px" }}>Break</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "1px solid #c7d2fe", minWidth: "100px", color: "#0d9488" }}>Permission</th>
+
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "1px solid #c7d2fe", fontWeight: 700, minWidth: "115px" }}>Working Hours</th>
+                        <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#eff6ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", minWidth: "105px" }}>Total Hours</th>
                         <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "1px solid #e9d5ff", minWidth: "105px" }}>Check In</th>
                         <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "1px solid #e9d5ff", minWidth: "105px" }}>Check Out</th>
                         <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", fontWeight: 700, minWidth: "75px" }}>Hours</th>
@@ -2564,8 +2567,22 @@ const ManagerDashboardPage = () => {
                                   <div style={{ fontSize: "10px", color: THEME.textSoft, marginTop: "2px" }}>{member.check_out_ip}</div>
                                 )}
                               </td>
-                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", fontWeight: 700, borderRight: "2px solid #c7d2fe", textAlign: "center" }}>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
+                                {(member as any).total_break_minutes ? `${(member as any).total_break_minutes} min` : "0 min"}
+                              </td>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", color: "#0d9488", fontWeight: 700, borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
+                                {member.permission_hours > 0 ? (
+                                  <span style={{ cursor: "pointer" }} title={(member as any).permission_time}>
+                                    {member.permission_hours} hr{member.permission_hours !== 1 ? "s" : ""}
+                                  </span>
+                                ) : "—"}
+                              </td>
+
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", fontWeight: 700, borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
                                 {formatWorkingHours(member.working_hours)}
+                              </td>
+                              <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", borderRight: "2px solid #c7d2fe", textAlign: "center" }}>
+                                {formatWorkingHours((member.working_hours || 0) + ((member as any).total_break_minutes || 0) / 60)}
                               </td>
 
                               {/* Card Entry Columns */}
@@ -2574,9 +2591,7 @@ const ManagerDashboardPage = () => {
                               <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.01)", fontWeight: 700, color: "#7e22ce", borderRight: "2px solid #e9d5ff", textAlign: "center" }}>
                                 {formatWorkingHours(member.card_working_hours)}
                               </td>
-                              <td style={{ padding: "12px 16px", color: "#6b21a8", fontWeight: 700, textAlign: "center", borderRight: `1px solid ${THEME.border}` }}>
-                                {member.permission_hours ? `${member.permission_hours} hr${member.permission_hours !== 1 ? "s" : ""}` : "—"}
-                              </td>
+
 
                               <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>
                                 <span
@@ -3233,16 +3248,17 @@ const ManagerDashboardPage = () => {
                       <tr style={{ background: "#f8fafc", fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                         <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Date</th>
                         <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "2px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Status</th>
-                        <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", background: "rgba(37,99,235,0.06)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
+                        <th colSpan={7} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", background: "rgba(37,99,235,0.06)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
                         <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", background: "rgba(126,34,206,0.06)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
-                        <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Breaks (L/T)</th>
-                        <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", background: "rgba(13, 148, 136, 0.06)", color: "#0d9488", fontWeight: 800 }}>Extra Time</th>
-                        <th rowSpan={2} style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0", background: "rgba(16, 185, 129, 0.06)", color: "#065f46", fontWeight: 800 }}>Total Working Hours</th>
                       </tr>
                       <tr style={{ background: "#f8fafc", fontSize: "10px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                         <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #c7d2fe" }}>Check In</th>
                         <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #c7d2fe" }}>Check Out</th>
-                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "2px solid #c7d2fe", fontWeight: 700 }}>Hours</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #c7d2fe" }}>Breaks<br/><span style={{ fontSize: "0.85em", fontWeight: 600, opacity: 0.8 }}>(L/T)</span></th>
+                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #c7d2fe" }}>Permission</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #c7d2fe" }}>Presence Adjustment</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #c7d2fe", fontWeight: 700 }}>Working Hours</th>
+                        <th style={{ padding: "6px 16px", background: "rgba(37,99,235,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "2px solid #c7d2fe", fontWeight: 700 }}>Total Hours</th>
                         <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e9d5ff" }}>Check In</th>
                         <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e9d5ff" }}>Check Out</th>
                         <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "2px solid #e9d5ff", fontWeight: 700 }}>Hours</th>
@@ -3421,26 +3437,19 @@ const ManagerDashboardPage = () => {
                             <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", color: record.checkOut !== "-" ? THEME.text : THEME.textSoft, borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
                               {record.checkOut}
                             </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", fontWeight: 700, color: record.workingHours > 0 ? THEME.primary : THEME.textSoft, borderRight: "2px solid #c7d2fe", textAlign: "center" }}>
-                              {formatWorkingHours(record.workingHours)}
-                            </td>
-                            {/* Biometric Card entry */}
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckIn !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>
-                              {record.cardCheckIn}
-                            </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckOut !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>
-                              {record.cardCheckOut || record.card_check_out || "-"}
-                            </td>
-                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", fontWeight: 700, color: "#7e22ce", borderRight: "2px solid #e9d5ff", textAlign: "center" }}>
-                              {formatWorkingHours(record.cardWorkingHours)}
-                            </td>
-                            <td style={{ padding: "12px 16px", color: THEME.textSoft, borderRight: "1px solid #e2e8f0", textAlign: "center" }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", color: THEME.textSoft, borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
                               {record.lunchMinutes > 0 || record.teaMinutes > 0 ? (
                                 <span>{record.lunchMinutes}m / {record.teaMinutes}m</span>
                               ) : "—"}
                             </td>
-                            {/* Extra Time Column */}
-                            <td style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", textAlign: "center", background: "rgba(13, 148, 136, 0.02)" }}>
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", color: "#0d9488", fontWeight: 700, borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
+                              {record.permission_hours > 0 ? (
+                                <span style={{ cursor: "pointer" }} title={record.permission_time}>
+                                  {record.permission_hours} hr{record.permission_hours !== 1 ? "s" : ""}
+                                </span>
+                              ) : "—"}
+                            </td>
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
                               {(() => {
                                 const addedMins = Number(record.addedMinutes || record.added_minutes || 0);
                                 if (addedMins > 0) {
@@ -3453,32 +3462,39 @@ const ManagerDashboardPage = () => {
                                 return <span style={{ color: THEME.textSoft }}>—</span>;
                               })()}
                             </td>
+                            <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.015)", fontWeight: 700, color: record.workingHours > 0 ? THEME.primary : THEME.textSoft, borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
+                              {formatWorkingHours(record.workingHours)}
+                            </td>
                             {(() => {
                               const breakHrs = ((Number(record.lunchMinutes) || 0) + (Number(record.teaMinutes) || 0)) / 60;
                               const webWorked = Number(record.workingHours) || Number(record.working_hours) || 0;
                               const cardWorked = Number(record.cardWorkingHours) || Number(record.card_working_hours) || 0;
                               const grossFromDb = Number(record.totalHours) || Number(record.total_hours) || 0;
-                              
+
                               let grossWorkingHrs = grossFromDb;
                               if (!grossWorkingHrs || grossWorkingHrs <= 0) {
                                 const netWorked = Math.max(webWorked, cardWorked);
                                 grossWorkingHrs = netWorked > 0 ? netWorked + breakHrs : 0;
                               }
-                              
-                              const addedMins = Number(record.addedMinutes || record.added_minutes || 0);
+
                               return (
-                                <td style={{ padding: "12px 16px", fontWeight: 800, color: grossWorkingHrs > 0 ? "#059669" : THEME.textSoft, textAlign: "center", background: "rgba(16, 185, 129, 0.02)" }}>
-                                  <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                <td style={{ padding: "12px 16px", fontWeight: 800, color: grossWorkingHrs > 0 ? "#059669" : THEME.textSoft, textAlign: "center", background: "rgba(37,99,235,0.015)", borderRight: "2px solid #c7d2fe" }}>
+                                  <div style={{ display: "inline-flex", alignItems: "center", gap: "4px", justifyContent: "center", width: "100%" }}>
                                     <span>{formatWorkingHours(grossWorkingHrs)}</span>
-                                    {addedMins > 0 && (
-                                      <span style={{ fontSize: "10px", fontWeight: 700, color: "#0d9488", background: "#f0fdf4", padding: "1px 5px", borderRadius: "4px", border: "1px solid #99f6e4" }} title="Manager added minutes">
-                                        +{addedMins}m
-                                      </span>
-                                    )}
                                   </div>
                                 </td>
                               );
                             })()}
+                            {/* Biometric Card entry */}
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckIn !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>
+                              {record.cardCheckIn}
+                            </td>
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", color: record.cardCheckOut !== "-" ? "#7e22ce" : THEME.textSoft, fontWeight: 600, borderRight: "1px solid #e9d5ff", textAlign: "center" }}>
+                              {record.cardCheckOut || record.card_check_out || "-"}
+                            </td>
+                            <td style={{ padding: "12px 16px", background: "rgba(126,34,206,0.015)", fontWeight: 700, color: "#7e22ce", borderRight: "2px solid #e9d5ff", textAlign: "center" }}>
+                              {formatWorkingHours(record.cardWorkingHours)}
+                            </td>
                           </tr>
                         );
                       })}
@@ -3649,7 +3665,7 @@ const ManagerDashboardPage = () => {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Extra Time (mins)</label>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Presence Adjustment (mins)</label>
                   <input
                     type="number"
                     min="0"
