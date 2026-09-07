@@ -643,6 +643,43 @@ def calculate_attendance_status(attendance):
         attendance.status = "Absent"
         return
 
+    # Check for approved half-day leave on this attendance date
+    is_half_day_leave = False
+    if (att_user_id or att_emp_id) and attendance.attendance_date:
+        try:
+            from models.leave import LeaveRequest
+            from sqlalchemy import or_ as sql_or
+
+            half_leave_filters = [
+                LeaveRequest.request_type == "Leave",
+                LeaveRequest.status == "Approved",
+                LeaveRequest.from_date <= attendance.attendance_date,
+                LeaveRequest.to_date >= attendance.attendance_date,
+                LeaveRequest.total_days <= 0.5
+            ]
+            if emp_id_str and emp_code_str:
+                half_leave_filters.append(sql_or(
+                    LeaveRequest.employee_id == emp_id_str,
+                    LeaveRequest.employee_id == emp_code_str
+                ))
+            elif emp_id_str:
+                half_leave_filters.append(LeaveRequest.employee_id == emp_id_str)
+            elif emp_code_str:
+                half_leave_filters.append(LeaveRequest.employee_id == emp_code_str)
+
+            half_leave = LeaveRequest.query.filter(*half_leave_filters).first()
+            if half_leave:
+                is_half_day_leave = True
+        except Exception as e:
+            print("Error checking half day leave in calculate_attendance_status:", e)
+
+    if is_half_day_leave:
+        if status_calc_hours >= 4.0:
+            attendance.status = "Present"
+        else:
+            attendance.status = "Half Day" if status_calc_hours > 0 else "Absent"
+        return
+
     if status_calc_hours < 4.0:
         attendance.status = "Absent"
     else:
