@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { API_URL } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
-import { CheckIcon, XMarkIcon, CalendarDaysIcon } from "@heroicons/react/24/outline";
+import { CheckIcon, XMarkIcon, CalendarDaysIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/Modal";
 import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
 import { BookLoader } from "../../components/ui/Spinner";
+import { generateFinancialYears, generateCyclesForYear, getCurrentCycleValue } from "../../utils/cycle";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -21,7 +22,15 @@ const RegularizationApprovalPage: React.FC = () => {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("All");
+  const years = useMemo(() => generateFinancialYears(5), []);
+  const [selectedYear, setSelectedYear] = useState<string>(years[0].value);
+  const cycles = useMemo(() => {
+    const yearObj = years.find(y => y.value === selectedYear) || years[0];
+    return generateCyclesForYear(yearObj.startYear);
+  }, [selectedYear, years]);
+  const [selectedCycle, setSelectedCycle] = useState<string>(getCurrentCycleValue());
   const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
 
   // Regularization Cancellation Confirmation State
@@ -155,9 +164,35 @@ const RegularizationApprovalPage: React.FC = () => {
   };
 
   const filteredRequests = requests.filter((req) => {
+    let searchMatch = true;
+    if (searchQuery.trim() !== "") {
+      const q = searchQuery.toLowerCase();
+      searchMatch =
+        req.employee_name?.toLowerCase().includes(q) ||
+        req.employee_id?.toLowerCase().includes(q);
+    }
+
     const resolvedStatus = getStatusText(req.manager_status);
-    if (statusFilter === "All") return true;
-    return resolvedStatus.toLowerCase() === statusFilter.toLowerCase();
+    let statusMatch = true;
+    if (statusFilter !== "All") {
+      statusMatch = resolvedStatus.toLowerCase() === statusFilter.toLowerCase();
+    }
+
+    let cycleMatch = true;
+    if (selectedCycle !== "All") {
+      const targetCycle = cycles.find(c => c.value === selectedCycle);
+      if (targetCycle) {
+        const dStr = req.date;
+        if (dStr) {
+           const reqDate = new Date(dStr);
+           if (reqDate < targetCycle.start || reqDate > targetCycle.end) {
+              cycleMatch = false;
+           }
+        }
+      }
+    }
+
+    return searchMatch && statusMatch && cycleMatch;
   });
 
   if (loading) {
@@ -166,7 +201,7 @@ const RegularizationApprovalPage: React.FC = () => {
 
   return (
     <div className="space-y-6 relative">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-neutral-200/80 shadow-sm">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-white p-6 rounded-2xl border border-neutral-200/80 shadow-sm">
         <div className="flex items-center gap-3.5">
           <div className="p-3 bg-warning-50 text-warning-600 rounded-2xl border border-warning-100 shadow-inner">
             <CalendarDaysIcon className="w-6 h-6" />
@@ -178,19 +213,63 @@ const RegularizationApprovalPage: React.FC = () => {
         </div>
 
         {/* Filter Dropdown */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-neutral-500">Status:</span>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-755 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
-          >
-            <option value="All">All Requests</option>
-            <option value="Pending">Pending</option>
-            <option value="Approved">Approved</option>
-            <option value="Returned">Returned</option>
-            <option value="Rejected">Rejected</option>
-          </select>
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 lg:justify-end">
+          <div className="relative">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+            <input
+              type="text"
+              placeholder="Search by name or ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-4 py-1.5 border border-neutral-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all w-48 bg-white shadow-xs"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-neutral-500">Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-755 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
+            >
+              <option value="All">All Requests</option>
+              <option value="Pending">Pending</option>
+              <option value="Approved">Approved</option>
+              <option value="Returned">Returned</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-neutral-500">Year:</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => {
+                setSelectedYear(e.target.value);
+                setSelectedCycle("All");
+              }}
+              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
+            >
+              {years.map((y) => (
+                <option key={y.value} value={y.value}>
+                  {y.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-neutral-500">Cycle:</span>
+            <select
+              value={selectedCycle}
+              onChange={(e) => setSelectedCycle(e.target.value)}
+              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
+            >
+              <option value="All">All Cycles</option>
+              {cycles.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
