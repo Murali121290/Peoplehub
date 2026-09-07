@@ -3805,10 +3805,7 @@ def get_pending_regularizations(manager_user_id):
                 Attendance.user_id.in_(list(reporting_user_ids)),
                 cast(Attendance.user_id, String).in_([str(i) for i in reporting_user_ids if i is not None])
             ),
-            sql_or(
-                Attendance.is_regularization == True,
-                Attendance.manager_status == "Clarification Provided"
-            )
+            Attendance.is_regularization == True
         ).order_by(Attendance.attendance_date.desc()).all()
 
         results = []
