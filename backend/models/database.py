@@ -83,6 +83,7 @@ def init_db(app=None):
             conn.execute(text("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS paused_minutes INTEGER DEFAULT 0"))
             conn.execute(text("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS added_minutes INTEGER DEFAULT 0"))
             conn.execute(text("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS remarks TEXT"))
+            conn.execute(text("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS used_weekly_grace BOOLEAN DEFAULT FALSE"))
             conn.execute(text("ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancelled_dates JSON"))
             conn.execute(text("ALTER TABLE communications ADD COLUMN IF NOT EXISTS poll_data JSON"))
             conn.execute(text("ALTER TABLE communications ADD COLUMN IF NOT EXISTS poll_votes JSON"))

@@ -12,6 +12,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { BookLoader } from "../../components/ui/Spinner";
 import { getProfileImageUrl } from "../../config/api";
+import { computeAttendanceBadgeLabel } from "../../utils/attendance";
 
 const formatWorkingHours = (hoursVal: any) => {
   if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "—";
@@ -247,70 +248,52 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
     setTimeout(() => setIsRefreshing(false), 600);
   };
 
-  const getStatusBadge = (status: string, leaveType?: string | null) => {
-    const s = (status || "").toLowerCase();
-    if (s === "present") {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          Present
-        </span>
-      );
-    }
-    if (s === "absent") {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-          <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-          Absent
-        </span>
-      );
-    }
-    if (s === "late") {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-          Late
-        </span>
-      );
-    }
-    if (s === "half day") {
-      let label = "Half Day";
-      if (leaveType) {
-        const lt = leaveType.toLowerCase().trim();
-        const clSlNames = ["cl/sl", "cl / sl", "sl/cl", "sl / cl", "casual leave", "sick leave", "cl", "sl"];
-        const plNames = ["pl", "privilege leave", "privileged leave", "earned leave"];
+  const getStatusBadge = (emp: any) => {
+    const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+    const badgeStr = computeAttendanceBadgeLabel(
+      emp.status,
+      emp.gross_hours || 0,
+      emp.leave_details || [],
+      emp.date || emp.attendance_date || todayStr,
+      todayStr,
+      (emp.date || emp.attendance_date || todayStr) > todayStr,
+      emp.is_one_day_wages || false
+    );
 
-        if (clSlNames.some(name => lt.includes(name))) {
-          if (lt.includes("sick leave") || (lt === "sl")) label += " + SL";
-          else if (lt.includes("casual leave") || (lt === "cl")) label += " + CL";
-          else label += " + CL/SL"; 
-        }
-        else if (plNames.some(name => lt.includes(name))) {
-          label += " + PL";
-        }
-        else {
-          label += ` + ${leaveType.replace(" (Half Day)", "")}`;
-        }
-      }
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200 whitespace-nowrap">
-          <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
-          {label}
-        </span>
-      );
-    }
-    if (s === "leave") {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-          Leave
-        </span>
-      );
-    }
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-neutral-100 text-neutral-600 border border-neutral-200">
-        {status || "Pending"}
-      </span>
+      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+        {badgeStr.split(" & ").map((part: string, idx: number) => {
+          const s = part.toLowerCase();
+          let bgClass = "bg-neutral-100 text-neutral-600 border-neutral-200";
+          let dotClass = "bg-neutral-500";
+          
+          if (s.includes("present")) {
+            bgClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
+            dotClass = "bg-emerald-500";
+          } else if (s.includes("absent")) {
+            bgClass = "bg-rose-50 text-rose-700 border-rose-200";
+            dotClass = "bg-rose-500";
+          } else if (s.includes("half day")) {
+            bgClass = "bg-purple-50 text-purple-700 border-purple-200";
+            dotClass = "bg-purple-500";
+          } else if (s.includes("leave") || s.includes("lop") || s.includes("loss of pay") || s.includes("cl") || s.includes("sl") || s.includes("pl")) {
+            bgClass = "bg-blue-50 text-blue-700 border-blue-200";
+            dotClass = "bg-blue-500";
+          }
+          
+          return (
+            <span key={idx} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border whitespace-nowrap ${bgClass}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+              {part}
+            </span>
+          );
+        })}
+        {emp.used_weekly_grace && (
+          <span title="Weekly 15m grace period applied" className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border whitespace-nowrap bg-indigo-50 text-indigo-700 border-indigo-200 cursor-help">
+            ℹ️ 15m Grace
+          </span>
+        )}
+      </div>
     );
   };
 
@@ -537,7 +520,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
                         {/* Status */}
                         <td className="py-3.5 px-4 border-r border-neutral-100">
-                          {getStatusBadge(emp.status, emp.leave_type)}
+                          {getStatusBadge(emp)}
                         </td>
 
                         {/* Verification Status */}
@@ -689,7 +672,7 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
 
                           {/* Status */}
                           <td className="py-3.5 px-4 border-r border-neutral-100">
-                            {getStatusBadge(emp.status, emp.leave_type)}
+                            {getStatusBadge(emp)}
                           </td>
 
                           {/* Verification Status */}

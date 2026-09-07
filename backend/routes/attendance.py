@@ -647,11 +647,41 @@ def calculate_attendance_status(attendance):
         attendance.status = "Absent"
     else:
         is_weekend = attendance.attendance_date.weekday() >= 5
-        req_hours = 7.9167 if is_weekend else 8.9167
+        req_hours = 8.0 if is_weekend else 9.0
         
         if status_calc_hours < req_hours:
-            attendance.status = "Half Day"
+            # Check for weekly 15-minute grace period
+            if (req_hours - status_calc_hours) <= (15.0 / 60.0) and hasattr(attendance, 'used_weekly_grace'):
+                from models.attendance import Attendance
+                from sqlalchemy import cast, Date
+                from datetime import timedelta
+                
+                att_date = attendance.attendance_date
+                start_of_week = att_date - timedelta(days=att_date.weekday())
+                end_of_week = start_of_week + timedelta(days=6)
+                
+                used_grace_record = Attendance.query.filter(
+                    Attendance.user_id == attendance.user_id,
+                    cast(Attendance.attendance_date, Date) >= start_of_week,
+                    cast(Attendance.attendance_date, Date) <= end_of_week,
+                    Attendance.used_weekly_grace == True,
+                    Attendance.id != attendance.id
+                ).first()
+                
+                if not used_grace_record:
+                    attendance.used_weekly_grace = True
+                    attendance.status = "Present"
+                    attendance.total_hours = req_hours
+                else:
+                    attendance.used_weekly_grace = False
+                    attendance.status = "Half Day"
+            else:
+                if hasattr(attendance, 'used_weekly_grace'):
+                    attendance.used_weekly_grace = False
+                attendance.status = "Half Day"
         else:
+            if hasattr(attendance, 'used_weekly_grace'):
+                attendance.used_weekly_grace = False
             attendance.status = "Present"
 
 
@@ -783,6 +813,7 @@ def sync_card_logs():
                     "id": employee.id,
                     "user_id": employee.user_id,
                     "attendance_status": attendance.status,
+                    "used_weekly_grace": getattr(attendance, "used_weekly_grace", False),
                     "check_in": web_in_str,
                     "check_out": web_out_str,
                     "working_hours": attendance.total_hours or 0.0,
@@ -1368,6 +1399,18 @@ def attendance_history(user_id):
         for o in overrides
     }
 
+    from models.leave import LeaveRequest as LR
+    leaves_batch = LR.query.filter(
+        or_(
+            LR.employee_id == str(employee.id),
+            LR.employee_id == employee.employee_id
+        ),
+        LR.request_type == "Leave",
+        LR.status == "Approved",
+        LR.from_date <= end_date,
+        LR.to_date >= start_date_val
+    ).all()
+
     if end_date >= start_date_val:
         num_days = (end_date - start_date_val).days + 1
         for i in range(num_days):
@@ -1430,14 +1473,8 @@ def attendance_history(user_id):
                     check_out_str = "-"
 
                 # Calculate gross total hours (Web Entry ONLY)
-                is_copied_biometric = (
-                    record.check_in and
-                    record.card_check_in and
-                    record.check_in == record.card_check_in and
-                    not record.is_regularization
-                )
-                eff_in = None if is_copied_biometric else record.check_in
-                eff_out = None if is_copied_biometric else record.check_out
+                eff_in = record.check_in
+                eff_out = record.check_out
                 if eff_in and eff_out:
                     gross_sec = (eff_out - eff_in).total_seconds()
                     gross_hours = max(gross_sec, 0) / 3600
@@ -1450,17 +1487,16 @@ def attendance_history(user_id):
                 gross_hours = int(gross_hours * 100) / 100
 
                 # Derive display status
-                if is_copied_biometric:
-                    display_status = "Absent"
-                else:
-                    display_status = record.status
-                    if not display_status:
-                        if gross_hours < 4.0:
-                            display_status = "Absent"
-                        elif gross_hours < 7.0:
-                            display_status = "Half Day"
-                        else:
-                            display_status = "Present"
+                display_status = record.status
+                if not display_status or display_status in ("Checked Out", "Check In"):
+                    is_weekend = record.attendance_date.weekday() >= 5
+                    req_hours = 8.0 if is_weekend else 9.0
+                    if gross_hours < 4.0:
+                        display_status = "Absent"
+                    elif gross_hours < req_hours:
+                        display_status = "Half Day"
+                    else:
+                        display_status = "Present"
 
                 # If employee has checked in but not checked out today, keep 'Check In'
                 if record.check_in and not record.check_out and not record.card_check_out and is_today:
@@ -1480,7 +1516,6 @@ def attendance_history(user_id):
                         display_status = "Week Off"
 
                 # Check for approved Permission on this date
-                from models.leave import LeaveRequest as LR
                 perm_req = LR.query.filter(
                     or_(
                         LR.employee_id == str(employee.id),
@@ -1519,7 +1554,16 @@ def attendance_history(user_id):
                     elif eff_h >= 4.0 and display_status == "Absent":
                         display_status = "Half Day"
 
-
+                leave_details = [
+                    {
+                        "leave_type": leave.leave_type,
+                        "reason": leave.reason,
+                        "status": leave.status,
+                        "total_days": leave.total_days
+                    }
+                    for leave in leaves_batch
+                    if leave.from_date <= current_date and leave.to_date >= current_date
+                ]
 
                 result.append({
                     "id": record.id,
@@ -1527,14 +1571,14 @@ def attendance_history(user_id):
                     "attendance_date": record.attendance_date.strftime("%Y-%m-%d"),
                     "attendance_date_formatted": record.attendance_date.strftime("%d %b %Y"),
                     "shift": effective_shift,
-                    "checkIn": "-" if is_copied_biometric else (record.check_in.strftime("%I:%M %p") if record.check_in else "-"),
-                    "check_in": "-" if is_copied_biometric else (record.check_in.strftime("%I:%M %p") if record.check_in else "-"),
-                    "checkOut": "-" if is_copied_biometric else check_out_str,
-                    "check_out": "-" if is_copied_biometric else check_out_str,
-                    "workingHours": 0.0 if is_copied_biometric else working_hours,
-                    "working_hours": 0.0 if is_copied_biometric else working_hours,
-                    "total_hours": 0.0 if is_copied_biometric else gross_hours,
-                    "totalHours": 0.0 if is_copied_biometric else gross_hours,
+                    "checkIn": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
+                    "check_in": record.check_in.strftime("%I:%M %p") if record.check_in else "-",
+                    "checkOut": check_out_str,
+                    "check_out": check_out_str,
+                    "workingHours": working_hours,
+                    "working_hours": working_hours,
+                    "gross_hours": gross_hours,
+                    "grossHours": gross_hours,
                     "cardCheckIn": record.card_check_in.strftime("%I:%M %p") if record.card_check_in else "-",
                     "card_check_in": record.card_check_in.strftime("%I:%M %p") if record.card_check_in else "-",
                     "cardCheckOut": record.card_check_out.strftime("%I:%M %p") if record.card_check_out else "-",
@@ -1551,6 +1595,7 @@ def attendance_history(user_id):
                     "totalBreak": record.total_break_minutes,
                     "total_break_minutes": record.total_break_minutes,
                     "status": display_status,
+                    "used_weekly_grace": getattr(record, "used_weekly_grace", False),
                     "manager_status": record.manager_status or "Pending",
                     "reporting_manager": employee.reporting_manager or "",
                     "check_in_ip": record.check_in_ip,
@@ -1568,6 +1613,7 @@ def attendance_history(user_id):
                     "regularization_check_in": record.regularization_check_in.strftime("%I:%M %p") if record.regularization_check_in else "-",
                     "regularization_check_out": record.regularization_check_out.strftime("%I:%M %p") if record.regularization_check_out else "-",
                     "regularization_total_hours": record.regularization_total_hours or 0.0,
+                    "leave_details": leave_details,
                 })
 
             else:
@@ -1651,6 +1697,7 @@ def attendance_history(user_id):
                     "totalBreak": 0,
                     "total_break_minutes": 0,
                     "status": status,
+                    "used_weekly_grace": False,
                     "manager_status": "Pending",
                     "reporting_manager": employee.reporting_manager or "",
                     "clarification_history": [],
@@ -1694,23 +1741,28 @@ def get_attendance():
 
         if attendance:
             status = attendance.status
+            
+            eff_in = attendance.check_in
+            eff_out = attendance.check_out
+            
+            if eff_in and eff_out:
+                gross_sec = (eff_out - eff_in).total_seconds()
+                gross_hours = max(gross_sec, 0) / 3600
+            elif eff_in and today == get_ist_today():
+                now = get_ist_now()
+                gross_sec = (now - eff_in).total_seconds()
+                gross_hours = max(gross_sec, 0) / 3600
+            else:
+                gross_hours = 0.0
+            
+            gross_hours = int(gross_hours * 100) / 100
+
             if not status:
-                # Fallback to gross hours threshold check
-                eff_in = attendance.check_in or attendance.card_check_in
-                eff_out = attendance.check_out or attendance.card_check_out
-                if eff_in and eff_out:
-                    gross_sec = (eff_out - eff_in).total_seconds()
-                    gross_hours = max(gross_sec, 0) / 3600
-                elif eff_in and today == get_ist_today():
-                    now = get_ist_now()
-                    gross_sec = (now - eff_in).total_seconds()
-                    gross_hours = max(gross_sec, 0) / 3600
-                else:
-                    gross_hours = 0.0
-                
+                is_weekend = attendance.attendance_date.weekday() >= 5
+                req_hours = 8.0 if is_weekend else 9.0
                 if gross_hours < 4.0:
                     status = "Absent"
-                elif gross_hours < 7.0:
+                elif gross_hours < req_hours:
                     status = "Half Day"
                 else:
                     status = "Present"
@@ -1759,7 +1811,10 @@ def get_attendance():
             check_out = "-"
             card_check_in = "-"
             card_check_out = "-"
-            total_hours = 0
+            total_hours = 0.0
+            gross_hours = 0.0
+            card_hrs = 0.0
+
 
         if status == "Absent":
             from models.leave import LeaveRequest
@@ -1852,12 +1907,18 @@ def get_attendance():
             "total_hours": total_hours,
             "attendance_date": str(today),
             "status": status,
+            "used_weekly_grace": getattr(attendance, "used_weekly_grace", False) if attendance else False,
             "is_wfh": bool(wfh_today),
             "is_shift_changed": bool(shift_change_today),
             "check_in_ip": attendance.check_in_ip if attendance else None,
             "check_out_ip": attendance.check_out_ip if attendance else None,
             "has_permission": has_permission,
             "permission_label": permission_label,
+            "permission_hours": perm_hours if has_permission else 0.0,
+            "working_hours": total_hours,
+            "gross_hours": gross_hours,
+            "card_working_hours": card_hrs,
+            "added_minutes": attendance.added_minutes if attendance else 0,
             "regularization_check_in": (
                 attendance.regularization_check_in.strftime("%H:%M:%S")
                 if (attendance and attendance.regularization_check_in)
@@ -2008,9 +2069,11 @@ def _get_period_attendance_records(days_count, include_card_fields=False):
                     else:
                         gross_hours = 0.0
                     
+                    is_weekend = current_date.weekday() >= 5
+                    req_hours = 8.0 if is_weekend else 9.0
                     if gross_hours < 4.0:
                         status = "Absent"
-                    elif gross_hours < 7.0:
+                    elif gross_hours < req_hours:
                         status = "Half Day"
                     else:
                         status = "Present"
@@ -3761,6 +3824,7 @@ def get_pending_regularizations(manager_user_id):
                 "total_hours": record.total_hours or 0.0,
                 "reason": record.regularization_reason or "",
                 "status": record.status or "Absent",
+                "used_weekly_grace": getattr(record, "used_weekly_grace", False),
                 "manager_status": record.manager_status
             })
 
@@ -4029,9 +4093,6 @@ def reject_attendance(employee_id):
         else:
             for att in attendances:
                 if not is_clarification:
-                    att.check_in = att.card_check_in
-                    att.check_out = att.card_check_out
-                    
                     # Recalculate hours based on card check-in/out if present
                     if att.check_in and att.check_out:
                         total_seconds = (att.check_out - att.check_in).total_seconds()
@@ -4226,6 +4287,7 @@ def get_pending_clarifications(user_id):
                 "break_str": break_str,
                 "total_break_minutes": rec.total_break_minutes or 0,
                 "status": rec.status,
+                "used_weekly_grace": getattr(rec, "used_weekly_grace", False),
                 "clarification_history": rec.clarification_history or []
             })
 
@@ -5066,6 +5128,7 @@ def get_pending_cycle_attendance(manager_user_id):
                 "biometric_checkout":   fmt_time(rec.card_check_out),
                 "working_hours":        round(rec.total_hours or 0, 2),
                 "status":               rec.status or "Absent",
+                "used_weekly_grace":    getattr(rec, "used_weekly_grace", False),
                 "manager_status":       rec.manager_status or "Pending",
                 "check_in":             fmt_time(rec.check_in),
                 "check_out":            fmt_time(rec.check_out),

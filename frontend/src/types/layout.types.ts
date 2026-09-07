@@ -43,6 +43,7 @@ export interface AttendanceDetail {
   tea_minutes?: number;
   total_break_minutes?: number;
   working_hours?: string;
+  used_weekly_grace?: boolean;
 }
 
 export interface ChatMessage {

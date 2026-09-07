@@ -1470,7 +1470,8 @@ def get_team_attendance(user_id):
         for lr in leave_requests_batch:
             emp_key = str(lr.employee_id)
             if emp_key not in leave_by_employee:
-                leave_by_employee[emp_key] = lr
+                leave_by_employee[emp_key] = []
+            leave_by_employee[emp_key].append(lr)
 
         # BATCH FETCH: All shift requests for reporting employees today
         # Note: ShiftRequest.employee_id is INTEGER in DB, so only pass valid integers
@@ -1543,12 +1544,23 @@ def get_team_attendance(user_id):
                 t_sec = t_time.hour * 3600 + t_time.minute * 60 + t_time.second
                 permission_hours = max(t_sec - f_sec, 0) / 3600.0
 
-            # Latest leave request takes precedence (pre-fetched, no query!)
-            on_leave = (
+            # Latest leave request takes precedence for boolean flag
+            emp_leaves = (
                 leave_by_employee.get(str(emp.id)) or
                 leave_by_employee.get(emp.employee_id) or
-                leave_by_employee.get(str(emp.employee_id))
+                leave_by_employee.get(str(emp.employee_id)) or []
             )
+            on_leave = len(emp_leaves) > 0
+            
+            leave_details = [
+                {
+                    "leave_type": l.leave_type,
+                    "reason": l.reason,
+                    "status": l.status,
+                    "total_days": l.total_days
+                }
+                for l in emp_leaves
+            ]
 
             # Pre-fetched approved shift/WFH requests for today (no query!)
             emp_requests_today = (
@@ -1565,40 +1577,41 @@ def get_team_attendance(user_id):
             shift_change_today = next((r for r in emp_requests_today if r.request_type == "Shift"), None)
 
             if attendance:
-                is_copied_biometric = False
-                if attendance.check_in and attendance.card_check_in:
-                    if abs((attendance.check_in - attendance.card_check_in).total_seconds()) < 60:
-                        if attendance.check_out and attendance.card_check_out:
-                            if abs((attendance.check_out - attendance.card_check_out).total_seconds()) < 60:
-                                is_copied_biometric = True
-                        elif not attendance.check_out and not attendance.card_check_out:
-                            is_copied_biometric = True
-
-                # Start with the database status
-                att_status = attendance.status or "Absent"
-                if att_status == "Leave":
-                    att_status = "On Leave"
-
-                # If they are currently checked in (not checked out), we show "Present"
-                # If they have checked out today, we show "Checked Out"
-                if att_status in ("Present", "Half Day", "Absent"):
-                    if attendance.check_in or attendance.card_check_in:
-                        if not (attendance.check_out or attendance.card_check_out):
-                            att_status = "Present"
-                        else:
-                            att_status = "Checked Out"
-
                 # Web Entry: only show from web columns, do not fallback
-                if is_copied_biometric:
-                    check_in = None
-                    check_out = None
-                    working_hours = 0.0
+                check_in = attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None
+                check_out = attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None
+                working_hours = attendance.total_hours or 0.0
+                
+                # Calculate gross_hours and handle status
+                eff_in = attendance.check_in
+                eff_out = attendance.check_out
+                now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
+                if eff_in and eff_out:
+                    gross_sec = (eff_out - eff_in).total_seconds()
+                    gross_hours = max(gross_sec, 0) / 3600
+                elif eff_in:
+                    gross_sec = (now_ist - eff_in).total_seconds()
+                    gross_hours = max(gross_sec, 0) / 3600
                 else:
-                    check_in = attendance.check_in.strftime("%I:%M %p") if attendance.check_in else None
-                    check_out = attendance.check_out.strftime("%I:%M %p") if attendance.check_out else None
-                    working_hours = attendance.total_hours or 0.0
+                    gross_hours = 0.0
+                gross_hours = int(gross_hours * 100) / 100
+
+                att_status = attendance.status
+                if not att_status or att_status in ("Checked Out", "Check In", "Absent"):
+                    is_weekend = today.weekday() >= 5
+                    req_hours = 8.0 if is_weekend else 9.0
+                    if gross_hours < 4.0:
+                        att_status = "Absent"
+                    elif gross_hours < req_hours:
+                        att_status = "Half Day"
+                    else:
+                        att_status = "Present"
+
+                # Override for active check-in
                 if attendance.check_in and not attendance.check_out:
-                    now_ist = datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
+                    att_status = "Check In"
+
+                if attendance.check_in and not attendance.check_out:
                     paused_secs = (attendance.paused_minutes or 0) * 60
                     if attendance.is_paused and attendance.paused_start:
                         elapsed = (attendance.paused_start - attendance.check_in).total_seconds()
@@ -1612,16 +1625,20 @@ def get_team_attendance(user_id):
                 if attendance and (attendance.check_in or attendance.card_check_in or (attendance.status and attendance.status in ("Present", "Checked Out", "Half Day"))) and permission_hours > 0:
                     working_hours += permission_hours
                     working_hours = int(working_hours * 100) / 100
+                    gross_hours += permission_hours
+                    gross_hours = int(gross_hours * 100) / 100
             elif on_leave:
                 att_status = "On Leave"
                 check_in = None
                 check_out = None
-                working_hours = 0
+                working_hours = 0.0
+                gross_hours = 0.0
             else:
                 att_status = "Absent"
                 check_in = None
                 check_out = None
-                working_hours = 0
+                working_hours = 0.0
+                gross_hours = 0.0
 
             # Check if this employee is a reporting manager using pre-built lookup
             emp_full_name = f"{emp.first_name} {emp.last_name}".strip().lower()
@@ -1646,7 +1663,9 @@ def get_team_attendance(user_id):
                 "check_out": check_out,
                 "check_in_ip": attendance.check_in_ip if attendance else None,
                 "check_out_ip": attendance.check_out_ip if attendance else None,
+                "leave_details": leave_details,
                 "working_hours": working_hours,
+                "gross_hours": gross_hours,
                 "card_check_in": attendance.card_check_in.strftime("%I:%M %p") if (attendance and attendance.card_check_in) else None,
                 "card_check_out": attendance.card_check_out.strftime("%I:%M %p") if (attendance and attendance.card_check_out) else None,
                 "card_working_hours": attendance.card_working_hours if (attendance and attendance.card_working_hours) else 0.0,
@@ -1834,21 +1853,10 @@ def get_reporting_employees(user_id):
 
             status = "Absent"
             employee_category = "absent"
+            total_hours = attendance.total_hours if attendance else 0.0
 
-            is_copied_biometric = (
-                attendance and
-                attendance.check_in and
-                attendance.card_check_in and
-                attendance.check_in == attendance.card_check_in and
-                not attendance.is_regularization
-            )
-
-            if is_copied_biometric:
-                status = "Absent"
-                employee_category = "absent"
-            elif attendance:
+            if attendance:
                 status = attendance.status
-
 
 
                 if status in ("Present", "Half Day"):
@@ -1888,9 +1896,23 @@ def get_reporting_employees(user_id):
                     f_sec = f_time.hour * 3600 + f_time.minute * 60 + f_time.second
                     t_sec = t_time.hour * 3600 + t_time.minute * 60 + t_time.second
                     permission_hours = max(t_sec - f_sec, 0) / 3600.0
+                    permission_hours = max(t_sec - f_sec, 0) / 3600.0
 
+            gross_hours = 0.0
+            if attendance:
+                eff_in = attendance.check_in
+                eff_out = attendance.check_out
+                if eff_in and eff_out:
+                    gross_sec = (eff_out - eff_in).total_seconds()
+                    gross_hours = max(gross_sec, 0) / 3600
+                elif eff_in and date_to_check == date.today():
+                    from utils.compat import get_ist_now
+                    now = get_ist_now()
+                    gross_sec = (now - eff_in).total_seconds()
+                    gross_hours = max(gross_sec, 0) / 3600
+            gross_hours = int(gross_hours * 100) / 100
             working_hours_val = 0.0
-            if is_copied_biometric:
+            if False:
                 working_hours_val = 0.0
             elif attendance:
                 total_h = attendance.total_hours
@@ -1975,10 +1997,10 @@ def get_reporting_employees(user_id):
                     employee_category,
 
                 "check_in":
-                    None if is_copied_biometric else (attendance.check_in.strftime("%I:%M %p") if (attendance and attendance.check_in) else None),
+                    (attendance.check_in.strftime("%I:%M %p") if (attendance and attendance.check_in) else None),
 
                 "check_out":
-                    None if is_copied_biometric else (attendance.check_out.strftime("%I:%M %p") if (attendance and attendance.check_out) else None),
+                    (attendance.check_out.strftime("%I:%M %p") if (attendance and attendance.check_out) else None),
 
                 "regularization_check_in":
                     attendance.regularization_check_in.strftime("%I:%M %p")
@@ -1992,6 +2014,18 @@ def get_reporting_employees(user_id):
 
                 "working_hours":
                     working_hours_val,
+
+                "gross_hours":
+                    gross_hours,
+
+                "added_minutes":
+                    attendance.added_minutes if attendance else 0,
+
+                "has_permission":
+                    bool(yesterday_permission),
+
+                "permission_label":
+                    "Approved" if yesterday_permission else "",
 
                 "highlight_short_hours": highlight_short_hours,
 

@@ -30,6 +30,8 @@ import {
   ArrowDownTrayIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
+import Sidebar from "../layouts/components/Sidebar";
+import { computeAttendanceBadgeLabel } from "../utils/attendance";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
@@ -135,8 +137,9 @@ const formatWorkingHours = (hoursVal: any) => {
   if (hoursVal == null || hoursVal === "" || hoursVal === 0 || hoursVal === "0" || hoursVal === "0.0") return "—";
   const num = Number(hoursVal);
   if (isNaN(num) || num <= 0) return "—";
-  const hrs = Math.floor(num);
-  const mins = Math.round((num - hrs) * 60);
+  const totalMinutes = Math.round(num * 60);
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
   return `${hrs} h ${mins} m`;
 };
 
@@ -335,8 +338,14 @@ const ManagerDashboardPage = () => {
     }
 
     let computedStatus = "Absent";
-    // 5-minute grace period for Present: 7h 55m = 7.9167 hours
-    if (effectiveHours >= 7.9167) {
+    // Check if weekend (0 = Sunday, 6 = Saturday)
+    const recordDate = editingRecord?.date ? new Date(editingRecord.date) : new Date();
+    const isWeekend = recordDate.getDay() === 0 || recordDate.getDay() === 6;
+    
+    // Strict requirement, no automatic grace period
+    const reqHours = isWeekend ? 8.0 : 9.0;
+
+    if (effectiveHours >= reqHours) {
       computedStatus = "Present";
     } else if (effectiveHours >= 4.0) {
       computedStatus = "Half Day";
@@ -570,7 +579,7 @@ const ManagerDashboardPage = () => {
   const handleApproveToday = async (empUserId: number) => {
     setIsPageLoading(true);
     try {
-      const todayStr = new Date().toISOString().split("T")[0];
+      const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const response = await fetch(`${BASE_URL}/attendance/approve/${empUserId}?date=${todayStr}`, {
         method: "PUT",
       });
@@ -589,7 +598,7 @@ const ManagerDashboardPage = () => {
   const handleRejectToday = async (empUserId: number) => {
     setIsPageLoading(true);
     try {
-      const todayStr = new Date().toISOString().split("T")[0];
+      const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const response = await fetch(`${BASE_URL}/attendance/reject/${empUserId}?date=${todayStr}`, {
         method: "PUT",
       });
@@ -2568,7 +2577,7 @@ const ManagerDashboardPage = () => {
                                 )}
                               </td>
                               <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
-                                {(member as any).total_break_minutes ? `${(member as any).total_break_minutes} min` : "0 min"}
+                                {((member as any).lunch_minutes || (member as any).tea_minutes) ? `${(member as any).lunch_minutes || 0}m / ${(member as any).tea_minutes || 0}m` : "0 min"}
                               </td>
                               <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", color: "#0d9488", fontWeight: 700, borderRight: "1px solid #c7d2fe", textAlign: "center" }}>
                                 {member.permission_hours > 0 ? (
@@ -2582,7 +2591,7 @@ const ManagerDashboardPage = () => {
                                 {formatWorkingHours(member.working_hours)}
                               </td>
                               <td style={{ padding: "12px 16px", background: "rgba(37,99,235,0.01)", borderRight: "2px solid #c7d2fe", textAlign: "center" }}>
-                                {formatWorkingHours((member.working_hours || 0) + ((member as any).total_break_minutes || 0) / 60)}
+                                {formatWorkingHours((member as any).gross_hours)}
                               </td>
 
                               {/* Card Entry Columns */}
@@ -2594,19 +2603,53 @@ const ManagerDashboardPage = () => {
 
 
                               <td style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>
-                                <span
-                                  style={{
-                                    display: "inline-flex",
-                                    padding: "4px 8px",
-                                    borderRadius: "999px",
-                                    background: statusStyle.pillBg,
-                                    color: statusStyle.text,
-                                    fontSize: "11px",
-                                    fontWeight: 800,
-                                  }}
-                                >
-                                  {status}
-                                </span>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" }}>
+                                {(() => {
+                                  const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                                  const badgeStr = computeAttendanceBadgeLabel(
+                                    status,
+                                    (member as any).gross_hours || 0,
+                                    (member as any).leave_details || [],
+                                    todayStr,
+                                    todayStr,
+                                    false,
+                                    false
+                                  );
+                                  return badgeStr.split(" & ").map((part: string, idx: number) => {
+                                    const s = part.toLowerCase();
+                                    let bgClass = statusStyle.pillBg;
+                                    let textClass = statusStyle.text;
+                                    
+                                    if (s.includes("present")) {
+                                      bgClass = "#dcfce7"; textClass = "#166534";
+                                    } else if (s.includes("absent")) {
+                                      bgClass = "#fee2e2"; textClass = "#b91c1c";
+                                    } else if (s.includes("half day")) {
+                                      bgClass = "#f3e8ff"; textClass = "#7e22ce";
+                                    } else if (s.includes("leave") || s.includes("lop") || s.includes("loss of pay") || s.includes("cl") || s.includes("sl") || s.includes("pl")) {
+                                      bgClass = "#eff6ff"; textClass = "#1d4ed8";
+                                    }
+
+                                    return (
+                                      <span
+                                        key={idx}
+                                        style={{
+                                          display: "inline-flex",
+                                          padding: "4px 8px",
+                                          borderRadius: "999px",
+                                          background: bgClass,
+                                          color: textClass,
+                                          fontSize: "11px",
+                                          fontWeight: 800,
+                                          whiteSpace: "nowrap"
+                                        }}
+                                      >
+                                        {part}
+                                      </span>
+                                    );
+                                  });
+                                })()}
+                              </div>
                               </td>
                               <td style={{ padding: "12px 16px", textAlign: "center" }}>
                                 <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
@@ -3113,7 +3156,7 @@ const ManagerDashboardPage = () => {
               background: "#fff",
               borderRadius: "24px",
               width: "100%",
-              maxWidth: "1100px",
+              maxWidth: "1300px",
               maxHeight: "88vh",
               display: "flex",
               flexDirection: "column",
@@ -3247,7 +3290,7 @@ const ManagerDashboardPage = () => {
                     <thead>
                       <tr style={{ background: "#f8fafc", fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                         <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Date</th>
-                        <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "2px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>Status</th>
+                        <th rowSpan={2} style={{ padding: "12px 16px", borderRight: "2px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", minWidth: "160px" }}>Status</th>
                         <th colSpan={7} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", background: "rgba(37,99,235,0.06)", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
                         <th colSpan={3} style={{ padding: "8px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", background: "rgba(126,34,206,0.06)", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
                       </tr>
@@ -3266,26 +3309,16 @@ const ManagerDashboardPage = () => {
                     </thead>
                     <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>
                       {historyRecords.map((record) => {
-                        let pillBg = "#f1f5f9";
-                        let pillText = "#475569";
-                        const status = record.status || "Absent";
-
-                        if (status === "Present" || status === "Checked Out") {
-                          pillBg = THEME.successBg;
-                          pillText = THEME.success;
-                        } else if (status === "Leave" || status === "On Leave") {
-                          pillBg = THEME.warningBg;
-                          pillText = THEME.warning;
-                        } else if (status === "Absent") {
-                          pillBg = THEME.dangerBg;
-                          pillText = THEME.danger;
-                        } else if (status === "Week Off") {
-                          pillBg = "rgba(148, 163, 184, 0.15)";
-                          pillText = "#64748b";
-                        } else if (status === "Holiday") {
-                          pillBg = "rgba(124, 58, 237, 0.15)";
-                          pillText = "#7c3aed";
-                        }
+                        const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                        const badgeStr = computeAttendanceBadgeLabel(
+                          record.status || "Absent",
+                          record.gross_hours || record.total_hours || record.working_hours || 0,
+                          record.leave_details || [],
+                          record.date,
+                          todayStr,
+                          record.date > todayStr,
+                          record.is_one_day_wages || false
+                        );
 
                         // Format date nicely
                         const dateObj = new Date(record.date);
@@ -3315,19 +3348,48 @@ const ManagerDashboardPage = () => {
                             </td>
                             <td style={{ padding: "12px 16px", borderRight: "2px solid #e2e8f0" }}>
                               <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
-                                <span
-                                  style={{
-                                    display: "inline-flex",
-                                    padding: "4px 10px",
-                                    borderRadius: "999px",
-                                    background: pillBg,
-                                    color: pillText,
-                                    fontSize: "11px",
-                                    fontWeight: 800,
-                                  }}
-                                >
-                                  {status}
-                                </span>
+                                {badgeStr.split(" & ").map((part: string, idx: number) => {
+                                  const s = part.toLowerCase();
+                                  let bgClass = "rgba(241, 245, 249, 1)";
+                                  let textClass = "#475569";
+                                  
+                                  if (s.includes("present") || s.includes("check-in") || s.includes("checked out")) {
+                                    bgClass = THEME.successBg;
+                                    textClass = THEME.success;
+                                  } else if (s.includes("absent")) {
+                                    bgClass = THEME.dangerBg;
+                                    textClass = THEME.danger;
+                                  } else if (s.includes("half day")) {
+                                    bgClass = "rgba(233, 213, 255, 0.5)";
+                                    textClass = "#7e22ce";
+                                  } else if (s.includes("leave") || s.includes("lop") || s.includes("loss of pay") || s.includes("cl") || s.includes("sl") || s.includes("pl")) {
+                                    bgClass = "rgba(219, 234, 254, 0.5)";
+                                    textClass = "#1d4ed8";
+                                  } else if (s.includes("week off") || s.includes("weekend")) {
+                                    bgClass = "rgba(148, 163, 184, 0.15)";
+                                    textClass = "#64748b";
+                                  } else if (s.includes("holiday")) {
+                                    bgClass = "rgba(124, 58, 237, 0.15)";
+                                    textClass = "#7c3aed";
+                                  }
+
+                                  return (
+                                    <span
+                                      key={idx}
+                                      style={{
+                                        display: "inline-flex",
+                                        padding: "4px 10px",
+                                        borderRadius: "999px",
+                                        background: bgClass,
+                                        color: textClass,
+                                        fontSize: "11px",
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      {part}
+                                    </span>
+                                  );
+                                })}
                                 {record.is_one_day_wages && record.wages_status && (
                                   <span
                                     title={`One Day Wages: ${record.wages_status}`}
@@ -3366,6 +3428,27 @@ const ManagerDashboardPage = () => {
                                     }}
                                   >
                                     🕐 Perm: {record.permission_label}
+                                  </span>
+                                )}
+                                {record.used_weekly_grace && (
+                                  <span
+                                    title="Weekly 15m grace period applied"
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                      padding: "2px 8px",
+                                      borderRadius: "999px",
+                                      background: "#e0e7ff",
+                                      border: "1px solid #c7d2fe",
+                                      color: "#3730a3",
+                                      fontSize: "10px",
+                                      fontWeight: 800,
+                                      whiteSpace: "nowrap",
+                                      cursor: "help",
+                                    }}
+                                  >
+                                    ℹ️ 15m Grace
                                   </span>
                                 )}
                                 {record.is_regularization && record.manager_status === "Clarification Provided" && (
@@ -3607,6 +3690,9 @@ const ManagerDashboardPage = () => {
                   />
                   <span>{editForm.status}</span>
                 </div>
+                <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
+                  * Weekly 15m grace period will be applied automatically on save if available.
+                </div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
@@ -3669,13 +3755,13 @@ const ManagerDashboardPage = () => {
                   <input
                     type="number"
                     min="0"
-                    max="59"
+                    max="5"
                     value={editForm.addedMinutes}
                     onChange={(e) => {
                       const val = parseInt(e.target.value) || 0;
-                      setEditForm({ ...editForm, addedMinutes: Math.min(59, Math.max(0, val)) });
+                      setEditForm({ ...editForm, addedMinutes: Math.min(5, Math.max(0, val)) });
                     }}
-                    placeholder="0 - 59"
+                    placeholder="0 - 5"
                     style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px", color: THEME.text, fontWeight: 700 }}
                   />
                 </div>
