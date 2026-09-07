@@ -211,10 +211,10 @@ def apply_leave():
             duration_hours = (dt_to - dt_from).total_seconds() / 3600.0
             duration_minutes = (dt_to - dt_from).total_seconds() / 60.0
             
-            if abs(duration_minutes - 60.0) > 0.1 and abs(duration_minutes - 120.0) > 0.1:
+            if abs(duration_minutes - 30.0) > 0.1 and abs(duration_minutes - 60.0) > 0.1 and abs(duration_minutes - 120.0) > 0.1:
                 return jsonify({
                     "success": False,
-                    "error": "Permission duration must be exactly 1 hour or 2 hours."
+                    "error": "Permission duration must be exactly 30 minutes, 1 hour, or 2 hours."
                 }), 400
 
             # Validate against database permission balance row
