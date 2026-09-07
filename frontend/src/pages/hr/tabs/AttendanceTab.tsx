@@ -1404,6 +1404,27 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                               <Chip key={idx} type={part as any} />
                             ));
                           })()}
+                          {row.used_weekly_grace && (
+                            <span
+                              title="Weekly 15m grace period applied"
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "3px",
+                                padding: "2px 7px",
+                                borderRadius: "999px",
+                                background: "#e0e7ff",
+                                border: "1px solid #c7d2fe",
+                                color: "#3730a3",
+                                fontSize: "10px",
+                                fontWeight: 800,
+                                whiteSpace: "nowrap",
+                                cursor: "help",
+                              }}
+                            >
+                              ℹ️ 15m Grace
+                            </span>
+                          )}
                           {row.has_permission && (
                             <span
                               title={`Permission: ${row.permission_label}`}

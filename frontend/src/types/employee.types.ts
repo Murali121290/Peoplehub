@@ -31,6 +31,7 @@ export interface Attendance {
   checkOut: string;
   workingHours: number;
   status: 'Present' | 'Absent' | 'Leave';
+  used_weekly_grace?: boolean;
 }
 
 export interface Performance {

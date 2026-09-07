@@ -86,6 +86,7 @@ interface DayDetails {
   wagesStatus?: string | null;
   isWeeklyOff?: boolean;
   isCompanyHoliday?: boolean;
+  used_weekly_grace?: boolean;
 }
 
 const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAttendanceProp = [], currentEmployee }) => {
@@ -857,7 +858,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       isOneDayWages,
       wagesStatus,
       isWeeklyOff,
-      isCompanyHoliday
+      isCompanyHoliday,
+      used_weekly_grace: attRec?.used_weekly_grace || false
     });
 
     currentDate.setDate(currentDate.getDate() + 1);
@@ -1155,6 +1157,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             </div>
                           );
                         })}
+                        {cell.used_weekly_grace && (
+                          <div title="Weekly 15m grace period applied" className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 w-full bg-indigo-50 text-indigo-700 border-indigo-200 cursor-help`}>
+                            <span className="truncate">ℹ️ 15m Grace</span>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1187,6 +1194,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                 </span>
                               );
                             })}
+                            {cell.used_weekly_grace && (
+                                <span className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg bg-indigo-50 text-indigo-700 border-indigo-200`}>
+                                  ℹ️ 15m Grace
+                                </span>
+                            )}
                           </div>
                         </div>
 

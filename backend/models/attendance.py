@@ -233,3 +233,10 @@ class Attendance(db.Model):
         db.Text,
         nullable=True
     )
+
+    used_weekly_grace = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False,
+        server_default="false"
+    )

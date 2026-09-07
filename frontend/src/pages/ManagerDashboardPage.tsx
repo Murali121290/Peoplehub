@@ -3430,6 +3430,27 @@ const ManagerDashboardPage = () => {
                                     🕐 Perm: {record.permission_label}
                                   </span>
                                 )}
+                                {record.used_weekly_grace && (
+                                  <span
+                                    title="Weekly 15m grace period applied"
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                      padding: "2px 8px",
+                                      borderRadius: "999px",
+                                      background: "#e0e7ff",
+                                      border: "1px solid #c7d2fe",
+                                      color: "#3730a3",
+                                      fontSize: "10px",
+                                      fontWeight: 800,
+                                      whiteSpace: "nowrap",
+                                      cursor: "help",
+                                    }}
+                                  >
+                                    ℹ️ 15m Grace
+                                  </span>
+                                )}
                                 {record.is_regularization && record.manager_status === "Clarification Provided" && (
                                   <div
                                     style={{
@@ -3668,6 +3689,9 @@ const ManagerDashboardPage = () => {
                     }}
                   />
                   <span>{editForm.status}</span>
+                </div>
+                <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
+                  * Weekly 15m grace period will be applied automatically on save if available.
                 </div>
               </div>
 

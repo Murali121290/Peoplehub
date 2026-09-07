@@ -650,8 +650,38 @@ def calculate_attendance_status(attendance):
         req_hours = 8.0 if is_weekend else 9.0
         
         if status_calc_hours < req_hours:
-            attendance.status = "Half Day"
+            # Check for weekly 15-minute grace period
+            if (req_hours - status_calc_hours) <= (15.0 / 60.0) and hasattr(attendance, 'used_weekly_grace'):
+                from models.attendance import Attendance
+                from sqlalchemy import cast, Date
+                from datetime import timedelta
+                
+                att_date = attendance.attendance_date
+                start_of_week = att_date - timedelta(days=att_date.weekday())
+                end_of_week = start_of_week + timedelta(days=6)
+                
+                used_grace_record = Attendance.query.filter(
+                    Attendance.user_id == attendance.user_id,
+                    cast(Attendance.attendance_date, Date) >= start_of_week,
+                    cast(Attendance.attendance_date, Date) <= end_of_week,
+                    Attendance.used_weekly_grace == True,
+                    Attendance.id != attendance.id
+                ).first()
+                
+                if not used_grace_record:
+                    attendance.used_weekly_grace = True
+                    attendance.status = "Present"
+                    attendance.total_hours = req_hours
+                else:
+                    attendance.used_weekly_grace = False
+                    attendance.status = "Half Day"
+            else:
+                if hasattr(attendance, 'used_weekly_grace'):
+                    attendance.used_weekly_grace = False
+                attendance.status = "Half Day"
         else:
+            if hasattr(attendance, 'used_weekly_grace'):
+                attendance.used_weekly_grace = False
             attendance.status = "Present"
 
 
@@ -783,6 +813,7 @@ def sync_card_logs():
                     "id": employee.id,
                     "user_id": employee.user_id,
                     "attendance_status": attendance.status,
+                    "used_weekly_grace": getattr(attendance, "used_weekly_grace", False),
                     "check_in": web_in_str,
                     "check_out": web_out_str,
                     "working_hours": attendance.total_hours or 0.0,
@@ -1564,6 +1595,7 @@ def attendance_history(user_id):
                     "totalBreak": record.total_break_minutes,
                     "total_break_minutes": record.total_break_minutes,
                     "status": display_status,
+                    "used_weekly_grace": getattr(record, "used_weekly_grace", False),
                     "manager_status": record.manager_status or "Pending",
                     "reporting_manager": employee.reporting_manager or "",
                     "check_in_ip": record.check_in_ip,
@@ -1665,6 +1697,7 @@ def attendance_history(user_id):
                     "totalBreak": 0,
                     "total_break_minutes": 0,
                     "status": status,
+                    "used_weekly_grace": False,
                     "manager_status": "Pending",
                     "reporting_manager": employee.reporting_manager or "",
                     "clarification_history": [],
@@ -1874,6 +1907,7 @@ def get_attendance():
             "total_hours": total_hours,
             "attendance_date": str(today),
             "status": status,
+            "used_weekly_grace": getattr(attendance, "used_weekly_grace", False) if attendance else False,
             "is_wfh": bool(wfh_today),
             "is_shift_changed": bool(shift_change_today),
             "check_in_ip": attendance.check_in_ip if attendance else None,
@@ -3790,6 +3824,7 @@ def get_pending_regularizations(manager_user_id):
                 "total_hours": record.total_hours or 0.0,
                 "reason": record.regularization_reason or "",
                 "status": record.status or "Absent",
+                "used_weekly_grace": getattr(record, "used_weekly_grace", False),
                 "manager_status": record.manager_status
             })
 
@@ -4252,6 +4287,7 @@ def get_pending_clarifications(user_id):
                 "break_str": break_str,
                 "total_break_minutes": rec.total_break_minutes or 0,
                 "status": rec.status,
+                "used_weekly_grace": getattr(rec, "used_weekly_grace", False),
                 "clarification_history": rec.clarification_history or []
             })
 
@@ -5092,6 +5128,7 @@ def get_pending_cycle_attendance(manager_user_id):
                 "biometric_checkout":   fmt_time(rec.card_check_out),
                 "working_hours":        round(rec.total_hours or 0, 2),
                 "status":               rec.status or "Absent",
+                "used_weekly_grace":    getattr(rec, "used_weekly_grace", False),
                 "manager_status":       rec.manager_status or "Pending",
                 "check_in":             fmt_time(rec.check_in),
                 "check_out":            fmt_time(rec.check_out),

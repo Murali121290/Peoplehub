@@ -288,6 +288,11 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
             </span>
           );
         })}
+        {emp.used_weekly_grace && (
+          <span title="Weekly 15m grace period applied" className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border whitespace-nowrap bg-indigo-50 text-indigo-700 border-indigo-200 cursor-help">
+            ℹ️ 15m Grace
+          </span>
+        )}
       </div>
     );
   };
