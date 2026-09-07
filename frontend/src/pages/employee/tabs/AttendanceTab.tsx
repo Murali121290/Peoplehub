@@ -747,7 +747,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
         let otherHalfStatusStr = "";
         if (isHalfDay && dateStr <= todayKey && !isFuture) {
-          if (totalHours >= 4) {
+          if (Math.round(totalHours * 60) >= 240) {
             otherHalfStatusStr = "Half Day Present & ";
           } else {
             otherHalfStatusStr = "Half Day Absent & ";
@@ -775,11 +775,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         badgeEmoji = "";
       } else if (checkIn !== "-" && checkIn !== "") {
         // Fallback to Present vs Half Day vs Absent thresholds if db status is null/empty
-        if (totalHours > 0 && totalHours < 4) {
+        if (totalHours > 0 && Math.round(totalHours * 60) < 240) {
           status = "Absent";
           badgeLabel = "Absent";
           badgeEmoji = "";
-        } else if (totalHours >= 4 && totalHours < 7) {
+        } else if (Math.round(totalHours * 60) >= 240 && totalHours < 7) {
           status = "Half Day";
           badgeLabel = "Half Day";
           badgeEmoji = "";
@@ -1465,7 +1465,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                     Biometric Card Entry
                   </th>
 
-                  <th rowSpan={2} className="p-3 border-r border-neutral-300 text-center">Status</th>
+                  <th rowSpan={2} className="p-3 border-r border-neutral-300 text-center min-w-[160px]">Status</th>
                   <th rowSpan={2} className="p-3 border-r border-neutral-300 text-left">Shift</th>
                   <th rowSpan={2} className="p-3 text-center pr-6">Overtime</th>
                 </tr>

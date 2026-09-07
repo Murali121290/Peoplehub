@@ -5,6 +5,7 @@ import React, {
   useMemo,
 } from "react";
 import { toast } from "react-hot-toast";
+import { computeAttendanceBadgeLabel } from "../../../utils/attendance";
 
 import Panel from "../components/Panel";
 import Chip from "../components/Chip";
@@ -199,7 +200,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             status: record.status,
             check_in: record.check_in,
             check_out: record.check_out,
-            total_hours: record.total_hours,
+            gross_hours: record.gross_hours,
           };
         }
       }
@@ -248,7 +249,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
           absentCount: 0,
           lateCount: 0,
           leaveCount: 0,
-          totalHoursSum: 0,
+          grossHoursSum: 0,
           hoursRecordCount: 0,
           daysMap: {},
         };
@@ -274,10 +275,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
           grouped[empName].halfDayCount = (grouped[empName].halfDayCount || 0) + 1;
         }
 
-        if (record.total_hours && record.total_hours !== "-") {
-          const hrs = parseFloat(record.total_hours);
+        if (record.gross_hours && record.gross_hours !== "-") {
+          const hrs = parseFloat(record.gross_hours);
           if (!isNaN(hrs)) {
-            grouped[empName].totalHoursSum += hrs;
+            grouped[empName].grossHoursSum += hrs;
             grouped[empName].hoursRecordCount += 1;
           }
         }
@@ -287,7 +288,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
     return Object.values(grouped).map((emp: any) => {
       const avgHours =
         emp.hoursRecordCount > 0
-          ? (emp.totalHoursSum / emp.hoursRecordCount).toFixed(1)
+          ? (emp.grossHoursSum / emp.hoursRecordCount).toFixed(1)
           : "-";
       return {
         ...emp,
@@ -310,7 +311,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             P
           </span>
           <span className="text-[9px] text-neutral-400 mt-0.5">
-            {cellData.total_hours && cellData.total_hours !== "-" ? `${cellData.total_hours} hrs` : ""}
+            {cellData.gross_hours && cellData.gross_hours !== "-" ? `${cellData.gross_hours} hrs` : ""}
           </span>
         </div>
       );
@@ -348,7 +349,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             HD
           </span>
           <span className="text-[9px] text-neutral-400 mt-0.5">
-            {cellData.total_hours && cellData.total_hours !== "-" ? `${cellData.total_hours} hrs` : ""}
+            {cellData.gross_hours && cellData.gross_hours !== "-" ? `${cellData.gross_hours} hrs` : ""}
           </span>
         </div>
       );
@@ -378,7 +379,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
           if (status === "present") {
             colorClass = "bg-emerald-500 hover:bg-emerald-600";
-            tooltipTitle = `${dateStr}: Present (${record.total_hours} hrs)`;
+            tooltipTitle = `${dateStr}: Present (${record.gross_hours} hrs)`;
           } else if (status === "absent") {
             colorClass = "bg-rose-500 hover:bg-rose-600";
             tooltipTitle = `${dateStr}: Absent`;
@@ -394,7 +395,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
             tooltipTitle = `${dateStr}: Leave`;
           } else if (status === "half day" || status === "half_day") {
             colorClass = "bg-purple-500 hover:bg-purple-600";
-            tooltipTitle = `${dateStr}: Half Day (${record.total_hours} hrs)`;
+            tooltipTitle = `${dateStr}: Half Day (${record.gross_hours} hrs)`;
           }
 
           return (
@@ -696,9 +697,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
       render: (at: any) => at.card_check_out || "-",
     },
     {
-      key: "total_hours",
-      header: "Working Hours",
-      render: (at: any) => at.total_hours || "-",
+      key: "gross_hours",
+      width: 100,
+      render: (at: any) => at.gross_hours || "-",
     },
     {
       key: "shift",
@@ -1292,16 +1293,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                 <th rowSpan={2} className="p-3 border-r border-neutral-300 text-left">Employee ID</th>
                 <th rowSpan={2} className="p-3 border-r border-neutral-300 text-left">Department</th>
 
-                <th colSpan={3} className="p-2.5 text-center border-r border-b-2 border-cyan-500 bg-cyan-50/20 text-cyan-700 text-[11px] font-black">
+                <th colSpan={7} className="p-2.5 text-center border-r-2 border-b-2 border-blue-500 bg-blue-100/60 text-blue-900 text-[11px] font-black tracking-wider">
                   Web Site Entry
                 </th>
 
-                <th colSpan={3} className="p-2.5 text-center border-r border-b-2 border-violet-500 bg-violet-50/25 text-violet-700 text-[11px] font-black">
+                <th colSpan={3} className="p-2.5 text-center border-r-2 border-b-2 border-purple-500 bg-purple-100/60 text-purple-900 text-[11px] font-black tracking-wider">
                   Biometric Card Entry
-                </th>
-
-                <th rowSpan={2} className="p-3 border-r border-neutral-300 text-center text-neutral-600 font-extrabold">
-                  Breaks <div className="text-[9px] text-neutral-400 font-bold normal-case">(L/T)</div>
                 </th>
 
                 <th rowSpan={2} className="p-3 border-r border-neutral-300 text-center">Status</th>
@@ -1311,19 +1308,23 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
               {/* Sub Headers */}
               <tr className="border-b border-neutral-300 text-neutral-500 text-[10px] font-extrabold uppercase tracking-wider bg-white">
                 {/* Web Site Entry columns */}
-                <th className="p-2 text-center text-cyan-600">Check-In</th>
-                <th className="p-2 text-center text-cyan-600">Check-Out</th>
-                <th className="p-2 text-center text-cyan-600 border-r border-neutral-300">Hours</th>
+                <th className="p-2 text-center text-blue-800 bg-blue-50/70 border-r border-blue-300">Check-In</th>
+                <th className="p-2 text-center text-blue-800 bg-blue-50/70 border-r border-blue-300">Check-Out</th>
+                <th className="p-2 text-center text-blue-800 bg-blue-50/70 border-r border-blue-300 whitespace-nowrap">Break (L/T)</th>
+                <th className="p-2 text-center text-blue-800 bg-blue-50/70 border-r border-blue-300">Permission</th>
+                <th className="p-2 text-center text-blue-800 bg-blue-50/70 border-r border-blue-300">Presence Adj.</th>
+                <th className="p-2 text-center text-blue-800 bg-blue-50/70 border-r border-blue-300">Working Hours</th>
+                <th className="p-2 text-center text-blue-900 bg-blue-100/70 border-r-2 border-blue-500 font-extrabold">Total Hours</th>
                 {/* Biometric Card Entry columns */}
-                <th className="p-2 text-center text-violet-600">Check-In</th>
-                <th className="p-2 text-center text-violet-600">Check-Out</th>
-                <th className="p-2 text-center text-violet-600 border-r border-neutral-300">Hours</th>
+                <th className="p-2 text-center text-purple-800 bg-purple-50/70 border-r border-purple-300">Check-In</th>
+                <th className="p-2 text-center text-purple-800 bg-purple-50/70 border-r border-purple-300">Check-Out</th>
+                <th className="p-2 text-center text-purple-900 bg-purple-100/70 border-r-2 border-purple-500 font-extrabold">Hours</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-300 text-xs font-semibold text-neutral-700 bg-white">
               {displayData.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
+                  <td colSpan={16} className="p-10 text-center text-neutral-400 font-semibold bg-neutral-50/20">
                     No Attendance Records Found
                   </td>
                 </tr>
@@ -1331,14 +1332,15 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                 displayData.map((row: any, i: number) => {
                   const formatHoursMinutes = (hoursDecimal: number): string => {
                     if (!hoursDecimal || hoursDecimal <= 0) return "—";
-                    const hrs = Math.floor(hoursDecimal);
-                    const mins = Math.round((hoursDecimal - hrs) * 60);
+                    const totalMinutes = Math.round(hoursDecimal * 60);
+                    const hrs = Math.floor(totalMinutes / 60);
+                    const mins = totalMinutes % 60;
                     if (mins === 0) return `${hrs}h`;
                     if (hrs === 0) return `${mins}m`;
-                    return `${hrs}h`;
+                    return `${hrs}h ${mins}m`;
                   };
 
-                  const workingHours = Number(row.total_hours || 0);
+                  const workingHours = Number(row.working_hours || 0);
                   const workingHoursFormatted = formatHoursMinutes(workingHours);
 
                   let overtime = "00:00";
@@ -1355,28 +1357,53 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                       <td className="p-3 text-neutral-500 border-r border-neutral-300 font-bold">{row.department || row.team || "-"}</td>
 
                       {/* Web Site Entry */}
-                      <td className="p-3 text-center text-neutral-800 font-bold">{row.check_in || "-"}</td>
-                      <td className="p-3 text-center text-neutral-800 font-bold">{row.check_out || "-"}</td>
-                      <td className="p-3 text-center text-cyan-600 font-black border-r border-neutral-300">
-                        {row.status === "Present" || row.status === "Half Day" ? workingHoursFormatted : "—"}
+                      <td className="p-3 text-center text-neutral-800 font-bold bg-blue-50/70 border-r border-blue-300">{row.check_in || "-"}</td>
+                      <td className="p-3 text-center text-neutral-800 font-bold bg-blue-50/70 border-r border-blue-300">{row.check_out || "-"}</td>
+                      <td className="p-3 text-center font-bold text-neutral-600 bg-blue-50/70 border-r border-blue-300">
+                        {(row.lunch_minutes || row.tea_minutes) ? `${row.lunch_minutes || 0}m / ${row.tea_minutes || 0}m` : "0 min"}
+                      </td>
+                      <td className="p-3 text-center font-bold text-neutral-600 bg-blue-50/70 border-r border-blue-300">
+                        {row.permission_hours && row.permission_hours > 0 ? (
+                          <span className="cursor-pointer" title={row.permission_label}>
+                            {row.permission_hours} hr{row.permission_hours !== 1 ? "s" : ""}
+                          </span>
+                        ) : "—"}
+                      </td>
+                      <td className="p-3 text-center font-bold text-neutral-600 bg-blue-50/70 border-r border-blue-300">
+                        {row.added_minutes && row.added_minutes > 0 ? `+${row.added_minutes} min` : "—"}
+                      </td>
+                      <td className="p-3 text-center font-black text-blue-600 bg-blue-50/70 border-r border-blue-300">
+                        {(row.status === "Present" || row.status === "Half Day" || workingHours > 0) ? workingHoursFormatted : "—"}
+                      </td>
+                      <td className="p-3 text-center font-black text-blue-700 bg-blue-100/40 border-r-2 border-blue-400 shadow-inner">
+                        {row.gross_hours && row.gross_hours > 0 ? formatHoursMinutes(row.gross_hours) : "—"}
                       </td>
 
                       {/* Biometric Card Entry */}
-                      <td className="p-3 text-center text-neutral-800 font-bold">{row.card_check_in || "-"}</td>
-                      <td className="p-3 text-center text-neutral-800 font-bold">{row.card_check_out || "-"}</td>
-                      <td className="p-3 text-center text-violet-600 font-black border-r border-neutral-300">
-                        {row.status === "Present" || row.status === "Half Day" ? formatHoursMinutes(row.card_working_hours || 0) : "—"}
-                      </td>
-
-                      {/* Breaks */}
-                      <td className="p-3 text-center font-bold text-neutral-600 border-r border-neutral-300">
-                        {(row.lunch_minutes || row.tea_minutes) ? `${row.lunch_minutes || 0}m / ${row.tea_minutes || 0}m` : "—"}
+                      <td className="p-3 text-center text-neutral-800 font-bold bg-purple-50/70 border-r border-purple-300">{row.card_check_in || "-"}</td>
+                      <td className="p-3 text-center text-neutral-800 font-bold bg-purple-50/70 border-r border-purple-300">{row.card_check_out || "-"}</td>
+                      <td className="p-3 text-center font-black text-purple-700 bg-purple-100/40 border-r-2 border-purple-400 shadow-inner">
+                        {(row.status === "Present" || row.status === "Half Day" || row.card_working_hours > 0) ? formatHoursMinutes(row.card_working_hours || 0) : "—"}
                       </td>
 
                       {/* Status */}
                       <td className="p-3 text-center border-r border-neutral-300">
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
-                          <Chip type={row.status} />
+                          {(() => {
+                            const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                            const badgeStr = computeAttendanceBadgeLabel(
+                              row.status,
+                              row.gross_hours || 0,
+                              row.leave_details || [],
+                              row.date || row.attendance_date || todayStr,
+                              todayStr,
+                              (row.date || row.attendance_date || todayStr) > todayStr,
+                              false
+                            );
+                            return badgeStr.split(" & ").map((part, idx) => (
+                              <Chip key={idx} type={part as any} />
+                            ));
+                          })()}
                           {row.has_permission && (
                             <span
                               title={`Permission: ${row.permission_label}`}
