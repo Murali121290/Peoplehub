@@ -327,10 +327,10 @@ const ManagerDashboardPage = () => {
       diffMinutes += 24 * 60;
     }
 
-    const totalBreaks = (Number(editForm.lunchMinutes) || 0) + (Number(editForm.teaMinutes) || 0);
-    const workedMinutes = Math.max(0, diffMinutes - totalBreaks);
+    // Backend uses GROSS span (breaks included) for status calculation, same as attendance.py
+    // Only gap_minutes and paused_minutes are excluded (not lunch/tea breaks)
     const extraMinutes = Number(editForm.addedMinutes) || 0;
-    let effectiveHours = (workedMinutes + extraMinutes) / 60.0;
+    let effectiveHours = (diffMinutes + extraMinutes) / 60.0;
 
     // Credit permission hours if employee has an approved permission for this date
     if (editingRecord?.has_permission || editingRecord?.permission_label) {
