@@ -3750,7 +3750,7 @@ const ManagerDashboardPage = () => {
                   <TimePicker
                     value={editForm.checkIn}
                     onChange={(val) => setEditForm({ ...editForm, checkIn: val })}
-                    disabled={true}
+                    disabled={!!(editingRecord?.checkIn && editingRecord.checkIn !== "-")}
                   />
                 </div>
                 <div>
@@ -3758,7 +3758,7 @@ const ManagerDashboardPage = () => {
                   <TimePicker
                     value={editForm.checkOut}
                     onChange={(val) => setEditForm({ ...editForm, checkOut: val })}
-                    disabled={true}
+                    disabled={!!(editingRecord?.checkOut && editingRecord.checkOut !== "-")}
                   />
                 </div>
               </div>

@@ -307,8 +307,6 @@ def get_shift_approvals(manager_name):
             reporting_emp_ids.add(str(e.id))
         if e.employee_id:
             reporting_emp_ids.add(str(e.employee_id).strip())
-        if e.user_id:
-            reporting_emp_ids.add(str(e.user_id))
 
     shifts = ShiftRequest.query.order_by(
         ShiftRequest.id.desc()
