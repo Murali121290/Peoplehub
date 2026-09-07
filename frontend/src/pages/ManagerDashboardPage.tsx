@@ -347,6 +347,8 @@ const ManagerDashboardPage = () => {
 
     if (effectiveHours >= reqHours) {
       computedStatus = "Present";
+    } else if (effectiveHours >= reqHours - 0.25 && (editingRecord?.used_weekly_grace || editingRecord?.status === "Present" || (editingRecord?.status || "").includes("Present (15m Grace)"))) {
+      computedStatus = "Present (15m Grace)";
     } else if (effectiveHours >= 4.0) {
       computedStatus = "Half Day";
     }
@@ -3552,7 +3554,7 @@ const ManagerDashboardPage = () => {
                               const breakHrs = ((Number(record.lunchMinutes) || 0) + (Number(record.teaMinutes) || 0)) / 60;
                               const webWorked = Number(record.workingHours) || Number(record.working_hours) || 0;
                               const cardWorked = Number(record.cardWorkingHours) || Number(record.card_working_hours) || 0;
-                              const grossFromDb = Number(record.totalHours) || Number(record.total_hours) || 0;
+                              const grossFromDb = Number(record.grossHours) || Number(record.gross_hours) || Number(record.totalHours) || Number(record.total_hours) || 0;
 
                               let grossWorkingHrs = grossFromDb;
                               if (!grossWorkingHrs || grossWorkingHrs <= 0) {
@@ -3673,7 +3675,7 @@ const ManagerDashboardPage = () => {
                     background: "#f8fafc",
                     fontSize: "13px",
                     fontWeight: 700,
-                    color: editForm.status === "Present" ? "#166534" : editForm.status === "Half Day" ? "#6b21a8" : "#991b1b",
+                    color: editForm.status.includes("Present") ? "#166534" : editForm.status === "Half Day" ? "#6b21a8" : "#991b1b",
                     display: "flex",
                     alignItems: "center",
                     gap: "8px",
@@ -3685,7 +3687,7 @@ const ManagerDashboardPage = () => {
                       width: "8px",
                       height: "8px",
                       borderRadius: "50%",
-                      background: editForm.status === "Present" ? "#16a34a" : editForm.status === "Half Day" ? "#a855f7" : "#dc2626",
+                      background: editForm.status.includes("Present") ? "#16a34a" : editForm.status === "Half Day" ? "#a855f7" : "#dc2626",
                     }}
                   />
                   <span>{editForm.status}</span>
@@ -3701,6 +3703,7 @@ const ManagerDashboardPage = () => {
                   <TimePicker
                     value={editForm.checkIn}
                     onChange={(val) => setEditForm({ ...editForm, checkIn: val })}
+                    disabled={true}
                   />
                 </div>
                 <div>
@@ -3708,6 +3711,7 @@ const ManagerDashboardPage = () => {
                   <TimePicker
                     value={editForm.checkOut}
                     onChange={(val) => setEditForm({ ...editForm, checkOut: val })}
+                    disabled={true}
                   />
                 </div>
               </div>
@@ -3718,6 +3722,7 @@ const ManagerDashboardPage = () => {
                   <TimePicker
                     value={editForm.cardCheckIn}
                     onChange={(val) => setEditForm({ ...editForm, cardCheckIn: val })}
+                    disabled={true}
                   />
                 </div>
                 <div>
@@ -3725,6 +3730,7 @@ const ManagerDashboardPage = () => {
                   <TimePicker
                     value={editForm.cardCheckOut}
                     onChange={(val) => setEditForm({ ...editForm, cardCheckOut: val })}
+                    disabled={true}
                   />
                 </div>
               </div>
