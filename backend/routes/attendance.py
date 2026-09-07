@@ -671,7 +671,6 @@ def calculate_attendance_status(attendance):
                 if not used_grace_record:
                     attendance.used_weekly_grace = True
                     attendance.status = "Present"
-                    attendance.total_hours = req_hours
                 else:
                     attendance.used_weekly_grace = False
                     attendance.status = "Half Day"
@@ -3509,15 +3508,14 @@ def approve_attendance(employee_id):
                     base_hours = attendance.regularization_total_hours or 0.0
 
                 attendance.added_minutes = add_minutes
-                added_hours = add_minutes / 60.0
-                attendance.total_hours = round(base_hours + added_hours, 2)
+                attendance.total_hours = round(base_hours, 2)
                 attendance.is_regularization = False
                 attendance.manager_status = "Approved"
                 
                 calculate_attendance_status(attendance)
             elif add_minutes > 0:
                 attendance.added_minutes = add_minutes
-                attendance.total_hours = round((attendance.total_hours or 0.0) + (add_minutes / 60.0), 2)
+                attendance.total_hours = round(attendance.total_hours or 0.0, 2)
                 attendance.manager_status = "Approved"
                 calculate_attendance_status(attendance)
                 
@@ -4766,7 +4764,6 @@ def update_attendance_record():
             gap_minutes = attendance.total_gap_minutes or 0
             paused_minutes = attendance.paused_minutes or 0
             diff_seconds -= (break_minutes + gap_minutes + paused_minutes) * 60
-            diff_seconds += (added_minutes * 60)
             attendance.total_hours = max(0.0, int((diff_seconds / 3600.0) * 100) / 100)
             
             calculate_attendance_status(attendance)
