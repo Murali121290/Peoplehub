@@ -3554,7 +3554,7 @@ const ManagerDashboardPage = () => {
                               const breakHrs = ((Number(record.lunchMinutes) || 0) + (Number(record.teaMinutes) || 0)) / 60;
                               const webWorked = Number(record.workingHours) || Number(record.working_hours) || 0;
                               const cardWorked = Number(record.cardWorkingHours) || Number(record.card_working_hours) || 0;
-                              const grossFromDb = Number(record.totalHours) || Number(record.total_hours) || 0;
+                              const grossFromDb = Number(record.grossHours) || Number(record.gross_hours) || Number(record.totalHours) || Number(record.total_hours) || 0;
 
                               let grossWorkingHrs = grossFromDb;
                               if (!grossWorkingHrs || grossWorkingHrs <= 0) {

@@ -653,7 +653,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       if (attRec.managerStatus) managerStatus = attRec.managerStatus;
 
       // Calculate total/gross hours
-      totalHours = Number(attRec.total_hours || attRec.totalHours || 0);
+      totalHours = Number(attRec.gross_hours || attRec.grossHours || attRec.total_hours || attRec.totalHours || 0);
       if (totalHours <= 0 && hasCheckedIn) {
         totalHours = baseWorkingHours + ((lunchMinutes + teaMinutes) / 60) + permissionHours;
       }
