@@ -1668,6 +1668,19 @@ def attendance_history(user_id):
                             
                         status = ("Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave") if (leave and not is_cancelled) else "Absent"
 
+                # Build leave_details so frontend badge shows correct type (e.g. "Loss of Pay" not "Leave")
+                virtual_leave_details = []
+                virtual_is_lop = False
+                if leave and not is_cancelled:
+                    leave_type_lower = (leave.leave_type or "").lower()
+                    virtual_is_lop = "loss of pay" in leave_type_lower or bool(__import__('re').search(r'\blop\b', leave_type_lower))
+                    virtual_leave_details = [{
+                        "leave_type": leave.leave_type or "Leave",
+                        "total_days": leave.total_days,
+                        "status": leave.status,
+                        "reason": leave.reason or ""
+                    }]
+
                 result.append({
                     "id": f"virtual-{current_date.strftime('%Y-%m-%d')}",
                     "date": current_date.strftime("%Y-%m-%d"),
@@ -1696,6 +1709,8 @@ def attendance_history(user_id):
                     "totalBreak": 0,
                     "total_break_minutes": 0,
                     "status": status,
+                    "is_lop": virtual_is_lop,
+                    "leave_details": virtual_leave_details,
                     "used_weekly_grace": False,
                     "manager_status": "Pending",
                     "reporting_manager": employee.reporting_manager or "",
