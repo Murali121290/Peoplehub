@@ -3331,19 +3331,21 @@ const ManagerDashboardPage = () => {
                           year: "numeric",
                         });
 
+                        const isNonEditable = badgeStr.toLowerCase().includes("leave") || badgeStr.toLowerCase().includes("lop") || badgeStr.toLowerCase().includes("present");
+
                         return (
                           <tr key={record.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                             <td
-                              onClick={() => handleEditClick(record)}
-                              title="Click to edit attendance"
+                              onClick={isNonEditable ? undefined : () => handleEditClick(record)}
+                              title={isNonEditable ? "Cannot edit attendance for this status" : "Click to edit attendance"}
                               style={{
                                 padding: "12px 16px",
                                 fontWeight: 700,
-                                color: THEME.primary,
+                                color: isNonEditable ? "#94a3b8" : THEME.primary,
                                 borderRight: "1px solid #e2e8f0",
                                 whiteSpace: "nowrap",
-                                cursor: "pointer",
-                                textDecoration: "underline",
+                                cursor: isNonEditable ? "not-allowed" : "pointer",
+                                textDecoration: isNonEditable ? "none" : "underline",
                               }}
                             >
                               {formattedDate}
@@ -3396,49 +3398,6 @@ const ManagerDashboardPage = () => {
                                     </span>
                                   );
                                 })}
-                                {/* 15m Grace sub-badge */}
-                                {record.used_weekly_grace && (
-                                  <span
-                                    title="Weekly 15m grace period applied"
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "3px",
-                                      padding: "2px 8px",
-                                      borderRadius: "999px",
-                                      background: "#e0e7ff",
-                                      border: "1px solid #c7d2fe",
-                                      color: "#3730a3",
-                                      fontSize: "10px",
-                                      fontWeight: 800,
-                                      whiteSpace: "nowrap",
-                                      cursor: "help",
-                                    }}
-                                  >
-                                    ℹ️ 15m Grace
-                                  </span>
-                                )}
-                                {/* Presence adjustment +Xm chip */}
-                                {(Number(record.addedMinutes) > 0 || Number(record.added_minutes) > 0) && (
-                                  <span
-                                    title={`Presence adjustment: +${record.addedMinutes || record.added_minutes} minutes added by manager`}
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "4px",
-                                      padding: "2px 8px",
-                                      borderRadius: "999px",
-                                      background: "#f0fdf4",
-                                      border: "1px solid #99f6e4",
-                                      color: "#0d9488",
-                                      fontSize: "10px",
-                                      fontWeight: 800,
-                                      whiteSpace: "nowrap",
-                                    }}
-                                  >
-                                    +{record.addedMinutes || record.added_minutes}m
-                                  </span>
-                                )}
                                 {record.is_one_day_wages && record.wages_status && (
                                   <span
                                     title={`One Day Wages: ${record.wages_status}`}
