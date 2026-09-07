@@ -48,8 +48,8 @@ def send_birthday_wish():
         if not sender or not receiver:
             return jsonify({"success": False, "error": "Sender or Receiver not found"}), 404
 
-        sender_full_name = f"{sender.first_name} {sender.last_name}"
-        receiver_full_name = f"{receiver.first_name} {receiver.last_name}"
+        sender_full_name = f"{sender.first_name} {sender.last_name or ''}".strip()
+        receiver_full_name = f"{receiver.first_name} {receiver.last_name or ''}".strip()
 
         # Create notification for receiver
         notification = Notification(
@@ -112,8 +112,8 @@ def send_thanks(wish_id):
         if not sender or not receiver:
             return jsonify({"success": False, "error": "Sender or Receiver not found"}), 404
 
-        receiver_full_name = f"{receiver.first_name} {receiver.last_name}"
-        sender_full_name = f"{sender.first_name} {sender.last_name}"
+        receiver_full_name = f"{receiver.first_name} {receiver.last_name or ''}".strip()
+        sender_full_name = f"{sender.first_name} {sender.last_name or ''}".strip()
 
         # Create notification for the sender of the wish
         notification = Notification(

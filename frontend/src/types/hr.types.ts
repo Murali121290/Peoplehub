@@ -43,6 +43,20 @@ export interface AttendanceRecord {
   total_hours?: string;
   status?: string;
   attendance_date?: string;
+  used_weekly_grace?: boolean;
+}
+
+export interface Attendance {
+  id?: number;
+  user_id?: number;
+  employee_name?: string;
+  department?: string;
+  check_in?: string;
+  break_str?: string;
+  total_break_minutes?: number;
+  status: string;
+  used_weekly_grace?: boolean;
+  clarification_history?: any[];
 }
 
 export interface NewEmployee {

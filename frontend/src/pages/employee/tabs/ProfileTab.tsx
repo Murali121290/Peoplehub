@@ -1207,7 +1207,13 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
               >
                 <option value="">Select Manager</option>
                 {employees
-                  .filter((emp) => emp.access_level?.toLowerCase() === "manager" || emp.access_level?.toLowerCase() === "hr" || emp.access_level?.toLowerCase() === "admin")
+                  .filter((emp) =>
+                    emp.access_level?.toLowerCase() === "manager" ||
+                    emp.access_level?.toLowerCase() === "team_lead" ||
+                    emp.access_level?.toLowerCase() === "service_manager" ||
+                    emp.access_level?.toLowerCase() === "hr" ||
+                    emp.access_level?.toLowerCase() === "admin"
+                  )
                   .map((emp) => {
                     const fullName = `${emp.first_name} ${emp.last_name}`.trim();
                     return <option key={emp.id} value={fullName}>{fullName}</option>;

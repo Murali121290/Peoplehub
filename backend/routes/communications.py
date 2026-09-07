@@ -313,6 +313,8 @@ def create_announcement():
 
             image_url=data.get("image_url"),
 
+            poll_data=data.get("poll_data"),
+
             created_by=data.get("created_by")
         )
 
@@ -322,10 +324,16 @@ def create_announcement():
 
         db.session.commit()
 
+        ann_dict = announcement.to_dict()
+        try:
+            socketio.emit("receive_announcement", ann_dict)
+        except Exception as se:
+            print("Socket emit error:", se)
+
         return jsonify({
             "success": True,
             "message": "Announcement Sent Successfully",
-            "announcement": announcement.to_dict()
+            "announcement": ann_dict
         }), 201
 
     except Exception as e:
@@ -336,6 +344,58 @@ def create_announcement():
             "success": False,
             "error": str(e)
         }), 500
+
+
+@communication_bp.route(
+    "/<int:message_id>/vote",
+    methods=["POST"]
+)
+def vote_poll(message_id):
+    try:
+        data = request.json
+        user_id = str(data.get("user_id"))
+        option_index = data.get("option_index")
+        user_name = data.get("user_name", f"User #{user_id}")
+        profile_image = data.get("profile_image", "")
+
+        message = Communication.query.get(message_id)
+        if not message:
+            return jsonify({"success": False, "error": "Announcement not found"}), 404
+
+        if not message.poll_data:
+            return jsonify({"success": False, "error": "This announcement has no poll"}), 400
+
+        votes = dict(message.poll_votes or {})
+        opt_list = option_index if isinstance(option_index, list) else [option_index]
+        
+        votes[user_id] = {
+            "option_index": opt_list,
+            "user_name": user_name,
+            "profile_image": profile_image,
+            "user_id": user_id
+        }
+        
+        message.poll_votes = votes
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(message, "poll_votes")
+        db.session.commit()
+
+        socketio.emit(
+            "poll_vote_updated",
+            {
+                "message_id": message.id,
+                "poll_votes": message.poll_votes
+            }
+        )
+
+        return jsonify({
+            "success": True,
+            "poll_votes": message.poll_votes
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
     
 @communication_bp.route(
     "/conversations/<int:user_id>",
@@ -735,3 +795,79 @@ def update_job_opening(job_id):
             "success": False,
             "error": str(e)
         }), 500
+
+
+# ==========================================
+# EDIT & DELETE ANNOUNCEMENTS
+# ==========================================
+
+@communication_bp.route(
+    "/<int:comm_id>",
+    methods=["PUT"]
+)
+def update_communication(comm_id):
+    try:
+        data = request.json
+        comm = Communication.query.get(comm_id)
+        if not comm:
+            return jsonify({
+                "success": False,
+                "error": "Announcement Not Found"
+            }), 404
+
+        if "title" in data:
+            comm.title = data.get("title")
+        if "message" in data:
+            comm.message = data.get("message")
+        if "target_role" in data:
+            comm.target_role = data.get("target_role")
+        if "image_url" in data:
+            comm.image_url = data.get("image_url")
+
+        db.session.commit()
+
+        updated_dict = comm.to_dict()
+        socketio.emit("update_announcement", updated_dict)
+
+        return jsonify({
+            "success": True,
+            "message": "Announcement Updated Successfully",
+            "announcement": updated_dict
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@communication_bp.route(
+    "/<int:comm_id>",
+    methods=["DELETE"]
+)
+def delete_communication(comm_id):
+    try:
+        comm = Communication.query.get(comm_id)
+        if not comm:
+            return jsonify({
+                "success": False,
+                "error": "Announcement Not Found"
+            }), 404
+
+        db.session.delete(comm)
+        db.session.commit()
+
+        socketio.emit("delete_announcement", {"id": comm_id})
+
+        return jsonify({
+            "success": True,
+            "message": "Announcement Deleted Successfully"
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+

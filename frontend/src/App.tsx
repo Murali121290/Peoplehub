@@ -23,6 +23,7 @@ const EmployeeDashboardPage = lazy(() => import('./pages/employee/EmployeeDashbo
 const CompleteProfile = lazy(() => import('./pages/Compeleteprofilepage'));
 const AnnouncementsPage = lazy(() => import('./pages/AnnouncementsPage'));
 const TelecomDirectoryPage = lazy(() => import("./pages/Telecomdirectory "));
+const OrganizationPage = lazy(() => import("./pages/OrganizationPage"));
 const MeetingRoomsPage = lazy(() => import("./pages/mettingroom/MeetingRooms"));
 const AppraisalDashboard = lazy(() => import("./pages/appraisal/AppraisalDashboard"));
 const DBAdminPage = lazy(() => import("./pages/admin/DBAdminPage"));
@@ -76,7 +77,21 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     const userRole = (user?.role || '').toLowerCase();
     const userAccessLevel = (user?.access_level || '').toLowerCase();
     const allowed = allowedAccessLevels.map((l) => l.toLowerCase());
-    const isAllowed = allowed.includes(userRole) || allowed.includes(userAccessLevel);
+
+    const isManagerAllowed = allowed.includes("manager");
+    const isManagerUser =
+      userAccessLevel === "manager" ||
+      userAccessLevel === "team_lead" ||
+      userAccessLevel === "service_manager" ||
+      userAccessLevel === "lead" ||
+      userRole.includes("manager") ||
+      userRole.includes("lead");
+
+    const isAllowed =
+      allowed.includes(userRole) ||
+      allowed.includes(userAccessLevel) ||
+      (isManagerAllowed && isManagerUser);
+
     if (!isAllowed) {
       return <Navigate to="/employee-dashboard" replace />;
     }
@@ -160,8 +175,17 @@ function App() {
           }
         />
 
-        {/* Intercom Directory */}
+        {/* Organization Documents */}
+        <Route
+          path="/organization"
+          element={
+            <ProtectedRoute>
+              <OrganizationPage />
+            </ProtectedRoute>
+          }
+        />
 
+        {/* Intercom Directory */}
         <Route
           path="/telecom-directory"
           element={

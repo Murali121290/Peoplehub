@@ -138,9 +138,10 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   const [showNotifications, setShowNotifications] = useState(false);
   const shownNotifications = useRef(new Set<number>());
 
-  // Birthday state
+  // Birthday & Anniversary state
   const [birthdayModal, setBirthdayModal] = useState(false);
   const [birthdayEmployees, setBirthdayEmployees] = useState<any[]>([]);
+  const [anniversaryEmployees, setAnniversaryEmployees] = useState<any[]>([]);
 
   // Attendance state
   const [showPopup, setShowPopup] = useState(false);
@@ -217,15 +218,6 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
       notifications.forEach((item: any) => {
         if (!shownSet.has(item.id)) {
           shownSet.add(item.id);
-          
-          // Only show toast if notification was created today
-          const itemDateStr = item.created_at ? item.created_at.split("T")[0] : "";
-          const isCreatedToday = itemDateStr === todayStr;
-
-          if (isCreatedToday) {
-            // Display a friendly toast instead of an error toast
-            toast(item.message, { icon: "🔔", duration: 3000 });
-          }
           updated = true;
         }
         // Also ensure shownNotifications ref is synchronized
@@ -271,13 +263,28 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const fetchTodayAnniversaries = async () => {
+    try {
+      const senderId = localStorage.getItem("employee_id");
+      const url = senderId
+        ? `${BASE_URL}/work-anniversary/today?sender_id=${senderId}`
+        : `${BASE_URL}/work-anniversary/today`;
+      const res = await fetch(url);
+      const data = await res.json();
+      setAnniversaryEmployees(Array.isArray(data.employees) ? data.employees : []);
+    } catch (err) {
+      setAnniversaryEmployees([]);
+    }
+  };
+
   useEffect(() => {
     fetchTodayBirthdays();
+    fetchTodayAnniversaries();
   }, []);
 
   useEffect(() => {
     if (
-      birthdayEmployees.length > 0 &&
+      (birthdayEmployees.length > 0 || anniversaryEmployees.length > 0) &&
       !sessionStorage.getItem("birthday_popup_shown")
     ) {
       setBirthdayModal(true);
@@ -285,7 +292,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     } else {
       setShowPopup(true);
     }
-  }, [birthdayEmployees]);
+  }, [birthdayEmployees, anniversaryEmployees]);
 
   // Show attendance summary modal when navigating to Team Management
   useEffect(() => {
@@ -297,6 +304,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   // Birthday & Thanks confirmation/view states
   const [thanksWishId, setThanksWishId] = useState<number | null>(null);
   const [thanksSenderName, setThanksSenderName] = useState<string>("");
+  const [thanksWishType, setThanksWishType] = useState<string>("birthday_wish");
   const [viewThanksMessage, setViewThanksMessage] = useState<string | null>(null);
 
   // Missed Check-in states
@@ -368,10 +376,44 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const sendAnniversaryWish = async (emp: any, customMessage: string) => {
+    const senderId = localStorage.getItem("employee_id");
+    if (!senderId) {
+      toast.error("Sender employee details not found.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${BASE_URL}/work-anniversary/wish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sender_id: Number(senderId),
+          receiver_id: emp.id,
+          message: customMessage,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to send wishes.");
+        return;
+      }
+      toast.success("Work anniversary wishes sent successfully!");
+      fetchTodayAnniversaries();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to send wishes.");
+    }
+  };
+
   const handleSendThanks = async () => {
     if (!thanksWishId) return;
     try {
-      const res = await fetch(`${BASE_URL}/birthday-wishes/thank/${thanksWishId}`, {
+      const endpoint = thanksWishType === "anniversary_wish"
+        ? `${BASE_URL}/work-anniversary/thank/${thanksWishId}`
+        : `${BASE_URL}/birthday-wishes/thank/${thanksWishId}`;
+
+      const res = await fetch(endpoint, {
         method: "POST",
       });
       const data = await res.json();
@@ -900,9 +942,10 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         onToggle={() => setShowNotifications(!showNotifications)}
         onClearAll={() => setNotifications([])}
         onDismiss={dismissNotification}
-        onSendThanks={(wishId, senderName) => {
+        onSendThanks={(wishId, senderName, relatedType) => {
           setThanksWishId(wishId);
           setThanksSenderName(senderName);
+          setThanksWishType(relatedType || "birthday_wish");
         }}
         onViewThanks={(message) => {
           setViewThanksMessage(message);
@@ -1007,10 +1050,11 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         </div>
       )}
 
-      {/* Birthday Modal */}
-      {birthdayModal && birthdayEmployees.length > 0 && (
+      {/* Birthday & Anniversary Wishes Modal */}
+      {birthdayModal && (birthdayEmployees.length > 0 || anniversaryEmployees.length > 0) && (
         <BirthdayModal
           birthdayEmployees={birthdayEmployees}
+          anniversaryEmployees={anniversaryEmployees}
           isMyBirthday={isMyBirthday}
           currentEmployee={currentEmployee}
           user={user}
@@ -1019,6 +1063,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
             setShowPopup(true);
           }}
           onSendWish={sendBirthdayWish}
+          onSendAnniversaryWish={sendAnniversaryWish}
         />
       )}
 

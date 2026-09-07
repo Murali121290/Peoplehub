@@ -3,11 +3,13 @@ import { BASE_URL } from '../data/layoutData';
 
 interface BirthdayModalProps {
   birthdayEmployees: any[];
+  anniversaryEmployees?: any[];
   isMyBirthday: boolean;
   currentEmployee: any;
   user: any;
   onClose: () => void;
   onSendWish: (emp: any, message: string) => void;
+  onSendAnniversaryWish?: (emp: any, message: string) => void;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -104,20 +106,47 @@ const Balloon: React.FC<BalloonProps> = ({
 
 const BirthdayModal: React.FC<BirthdayModalProps> = ({
   birthdayEmployees,
+  anniversaryEmployees = [],
   isMyBirthday,
   currentEmployee,
   user,
   onClose,
   onSendWish,
+  onSendAnniversaryWish,
 }) => {
   const [selectedEmpForWish, setSelectedEmpForWish] = React.useState<any | null>(null);
   const [wishMessage, setWishMessage] = React.useState<string>("");
+  const [wishedEmpKeys, setWishedEmpKeys] = React.useState<string[]>([]);
 
-  const presetMessages = [
+  const birthdayPresetMessages = [
     "Happy Birthday! Wishing you a wonderful year ahead. 🎂🎉",
     "Wishing you a very Happy Birthday! Hope you have a great day filled with joy. ✨",
     "Happy Birthday! May your day be as wonderful as you are. Have a blast! 🥳",
   ];
+
+  const anniversaryPresetMessages = [
+    "Happy Work Anniversary! Thank you for your dedication and great contributions to our team! 🎉🎗️",
+    "Wishing you a very Happy Work Anniversary! It is a pleasure working with you. ✨👏",
+    "Congratulations on another successful year with S4Carlisle! Wishing you continued growth and success! 🚀🏆",
+  ];
+
+  const isAnniversary = selectedEmpForWish?.eventType === "anniversary";
+  const activePresetMessages = isAnniversary ? anniversaryPresetMessages : birthdayPresetMessages;
+
+  const currentEmpId = localStorage.getItem("employee_id");
+  const currentUserId = user?.id || localStorage.getItem("user_id");
+
+  const allCelebrators = [
+    ...birthdayEmployees.map((e) => ({ ...e, eventType: "birthday" })),
+    ...anniversaryEmployees.map((e) => ({ ...e, eventType: "anniversary" })),
+  ].filter((emp) => {
+    const isSelf =
+      (currentEmpId && Number(emp.id) === Number(currentEmpId)) ||
+      (currentEmpId && Number(emp.employee_id) === Number(currentEmpId)) ||
+      (currentUserId && Number(emp.user_id) === Number(currentUserId));
+
+    return !isSelf && !emp.wished && !wishedEmpKeys.includes(`${emp.eventType}-${emp.id}`);
+  });
 
   if (isMyBirthday) {
     const myEmployeeData = birthdayEmployees.find((emp) => Number(emp.user_id) === Number(user?.id)) || currentEmployee;
@@ -368,7 +397,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
       <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 overflow-hidden">
         <div className="bg-gradient-to-r from-primary-700 to-primary-500 px-6 py-5 flex justify-between items-center">
           <h2 className="text-white font-bold text-xl">
-            {selectedEmpForWish ? "✨ Customize Wishes" : "🎉 Today's Birthdays"}
+            {selectedEmpForWish ? "✨ Customize Wishes" : "🎉 Today's Celebrations"}
           </h2>
           <button
             onClick={onClose}
@@ -405,7 +434,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
                 Select a Wish
               </label>
               <div className="flex flex-col gap-2">
-                {presetMessages.map((msg, idx) => (
+                {activePresetMessages.map((msg: string, idx: number) => (
                   <button
                     key={idx}
                     type="button"
@@ -448,9 +477,15 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
               </button>
               <button
                 onClick={async () => {
-                  if (!wishMessage.trim()) return;
+                  if (!wishMessage.trim() || !selectedEmpForWish) return;
                   try {
-                    await onSendWish(selectedEmpForWish, wishMessage);
+                    if (isAnniversary && onSendAnniversaryWish) {
+                      await onSendAnniversaryWish(selectedEmpForWish, wishMessage);
+                    } else {
+                      await onSendWish(selectedEmpForWish, wishMessage);
+                    }
+                    const wishedKey = `${selectedEmpForWish.eventType}-${selectedEmpForWish.id}`;
+                    setWishedEmpKeys((prev) => [...prev, wishedKey]);
                     setSelectedEmpForWish(null);
                     setWishMessage("");
                   } catch (error) {
@@ -464,42 +499,63 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
               </button>
             </div>
           </div>
+        ) : allCelebrators.length === 0 ? (
+          <div className="p-8 text-center space-y-3">
+            <div className="text-4xl">🎉</div>
+            <h3 className="font-bold text-gray-800 text-base">All Wishes Sent!</h3>
+            <p className="text-sm text-gray-500">
+              You have wished everyone celebrating today.
+            </p>
+            <button
+              onClick={onClose}
+              className="mt-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              Close
+            </button>
+          </div>
         ) : (
           <div className="max-h-[420px] overflow-y-auto p-5 space-y-4">
-            {birthdayEmployees.map((emp: any) => (
-              <div
-                key={emp.id}
-                className="flex items-center gap-4 p-4 rounded-xl bg-primary-50/20 border border-primary-100/50 hover:bg-primary-50/40 transition-colors"
-              >
-                <img
-                  src={`${BASE_URL}/employees/image/${emp.id}`}
-                  alt={emp.first_name}
-                  className="w-16 h-16 rounded-full object-cover border border-primary-200 shadow-sm"
-                  onError={(e) => {
-                    e.currentTarget.src =
-                      "https://cdn-icons-png.flaticon.com/512/149/149071.png";
-                  }}
-                />
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-neutral-800 text-lg truncate">
-                    {emp.first_name} {emp.last_name}
-                  </h3>
-                  <p className="text-sm text-neutral-500 truncate">{emp.designation}</p>
-                  <p className="text-sm text-primary-700 font-semibold mt-1">
-                    🎂 Birthday Today
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setSelectedEmpForWish(emp);
-                    setWishMessage(presetMessages[0]);
-                  }}
-                  className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap"
+            {allCelebrators.map((emp: any) => {
+              const isAnniv = emp.eventType === "anniversary";
+              return (
+                <div
+                  key={`${emp.eventType}-${emp.id}`}
+                  className="flex items-center gap-4 p-4 rounded-xl bg-primary-50/20 border border-primary-100/50 hover:bg-primary-50/40 transition-colors"
                 >
-                  🎉 Wishes
-                </button>
-              </div>
-            ))}
+                  <img
+                    src={`${BASE_URL}/employees/image/${emp.id}`}
+                    alt={emp.first_name}
+                    className="w-16 h-16 rounded-full object-cover border border-primary-200 shadow-sm"
+                    onError={(e) => {
+                      e.currentTarget.src =
+                        "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+                    }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-neutral-800 text-lg truncate">
+                      {emp.first_name} {emp.last_name}
+                    </h3>
+                    <p className="text-sm text-neutral-500 truncate">{emp.designation}</p>
+                    <p className="text-sm text-primary-700 font-semibold mt-1">
+                      {isAnniv
+                        ? `🎗️ ${emp.years_completed || 1}-Year Work Anniversary Today`
+                        : "🎂 Birthday Today"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedEmpForWish(emp);
+                      setWishMessage(
+                        isAnniv ? anniversaryPresetMessages[0] : birthdayPresetMessages[0]
+                      );
+                    }}
+                    className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap"
+                  >
+                    🎉 Wishes
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
 

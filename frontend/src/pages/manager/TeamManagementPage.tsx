@@ -96,9 +96,52 @@ const TeamManagementPage: React.FC = () => {
     return false;
   };
 
+  const getRecursiveReportingIdentifiers = (managerFullName: string, employeesList: any[]) => {
+    const allowed = new Set<string>();
+    if (!managerFullName || !employeesList.length) return allowed;
+
+    const queue: string[] = [managerFullName];
+    const visitedManagers = new Set<string>([managerFullName.trim().toLowerCase()]);
+
+    while (queue.length > 0) {
+      const currentMgr = queue.shift()!;
+      for (const emp of employeesList) {
+        if (checkManagerMatch(emp.reporting_manager, currentMgr)) {
+          const empFullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.name || "";
+
+          if (emp.id) allowed.add(String(emp.id).toLowerCase());
+          if (emp.user_id) allowed.add(String(emp.user_id).toLowerCase());
+          if (emp.employee_id) allowed.add(String(emp.employee_id).toLowerCase());
+          if (empFullName) allowed.add(empFullName.toLowerCase());
+
+          const empFullNameClean = empFullName.toLowerCase();
+          if (empFullNameClean && !visitedManagers.has(empFullNameClean)) {
+            visitedManagers.add(empFullNameClean);
+            queue.push(empFullName);
+          }
+        }
+      }
+    }
+
+    return allowed;
+  };
+
   const fetchNotificationCounts = async () => {
     try {
       const isAdmin = user?.access_level?.toLowerCase() === "admin";
+      const userFullName = user?.full_name || `${(user as any)?.first_name || ""} ${(user as any)?.last_name || ""}`.trim();
+      let activeEmployees: any[] = [];
+      try {
+        const empRes = await fetch(`${BASE_URL}/employees/`);
+        if (empRes.ok) {
+          const empData = await empRes.json();
+          activeEmployees = Array.isArray(empData) ? empData : [];
+        }
+      } catch (err) {
+        console.error("Failed to fetch employees for team counts", err);
+      }
+
+      const reportingSet = getRecursiveReportingIdentifiers(userFullName, activeEmployees);
 
       // Fetch shift/WFH requests
       const shiftResponse = await fetch(`${BASE_URL}/shifts/`, {
@@ -111,7 +154,14 @@ const TeamManagementPage: React.FC = () => {
       if (!Array.isArray(allRequests)) return;
 
       const filterByManager = (req: any): boolean => {
-        return isAdmin || checkManagerMatch(req.reporting_manager, user?.full_name);
+        if (isAdmin) return true;
+        const isDirect = checkManagerMatch(req.reporting_manager, userFullName);
+        const reqEmpId = String(req.employee_id || "").toLowerCase();
+        const reqUserDbId = String(req.user_id || req.employee_db_id || "").toLowerCase();
+        const reqEmpName = String(req.employee_name || "").trim().toLowerCase();
+        const reqRepMgr = String(req.reporting_manager || "").trim().toLowerCase();
+        const isRecursive = reportingSet.has(reqEmpId) || reportingSet.has(reqUserDbId) || reportingSet.has(reqEmpName) || (reqRepMgr ? reportingSet.has(reqRepMgr) : false);
+        return Boolean(isDirect || isRecursive);
       };
 
       // Count pending shift requests (excluding WFH and ODW)

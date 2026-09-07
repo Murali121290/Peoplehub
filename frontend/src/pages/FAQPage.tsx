@@ -34,6 +34,19 @@ interface FAQItem {
 }
 
 const FAQ_DATA: FAQItem[] = [
+  // --- PeopleHub Core Info ---
+  {
+    id: 999,
+    category: 'attendance',
+    question: 'What is PeopleHub and how does it replace Pathfinder?',
+    answer: 'PeopleHub is the centralized Employee Management and Attendance Tracking system for S4Carlisle. It completely replaces the older Pathfinder system. Crucially, ONLY the attendance logged inside PeopleHub is considered for monthly payroll processing and salary credits. Make sure to check in and check out daily on PeopleHub to ensure your attendance and payroll calculations are accurate.'
+  },
+  {
+    id: 1000,
+    category: 'attendance',
+    question: 'What are the core processes and features available in PeopleHub?',
+    answer: 'PeopleHub manages the entire employee lifecycle and daily operations from top to bottom. The key processes include:\n\n1. Daily Attendance (Check-In/Out): Click "Check In" on your dashboard to select your shift and work mode (Office/WFH). Use break trackers (Lunch/Tea) to pause/resume the timer. Click "Check Out" at the end of the shift.\n\n2. Hybrid / Work From Home (WFH): Toggle work mode directly during check-in to apply for today\'s WFH without visiting the requests page. For past/future dates, submit a WFH request under "Requests".\n\n3. One Day Wages (ODW): Claim extra wages when working on weekends/public holidays either in real-time on check-in or by clicking the blue holiday block on your "Attendance" calendar.\n\n4. Leaves & Regularization: Apply for leaves, regularization (missed punches), and late entry/early exit permissions under the "Attendance" tab.\n\n5. Shift Requests: Request shift timing changes in the "Shift" tab.\n\n6. Appraisal & Payroll: Access monthly salary slips, check tax details, download forms, and complete self-appraisals under the "Appraisal" and "Payroll" tabs.'
+  },
   // --- Attendance ---
   {
     id: 1,
@@ -62,8 +75,8 @@ const FAQ_DATA: FAQItem[] = [
   {
     id: 4,
     category: 'attendance',
-    question: 'What are the standard office timings and core hours?',
-    answer: 'Standard working hours for the General Shift are from 09:00 AM to 06:00 PM. Employees are expected to log a minimum of 8 working hours per day. Core hours of required availability are between 10:00 AM and 05:00 PM.'
+    question: 'What are the standard office timings?',
+    answer: 'Standard working hours for the General Shift are from 09:00 AM to 06:00 PM. Employees are expected to log a minimum of 9 working hours per day. If logged working hours are below 9 hours, it will be considered as a half day.'
   },
   {
     id: 19,
@@ -83,7 +96,7 @@ const FAQ_DATA: FAQItem[] = [
     id: 5,
     category: 'leaves',
     question: 'How do I apply for leave?',
-    answer: 'Navigate to the "Attendance" tab, scroll to the Leave section, and click "Apply Leave". Select the start and end dates, leave type (Casual, Sick, LOP, etc.), select your reporting manager, add a reason, and click submit. You will receive a notification once approved or rejected.'
+    answer: 'Navigate to the "My Requests" tab in the sidebar navigation, then click the "Apply Leave" button. Select the start and end dates, leave type (CL/SL, Loss of Pay, etc.), leave duration (Full Day, First/Second Half), confirm your reporting manager, add a reason, and click submit. You will receive a notification once approved or rejected.'
   },
   {
     id: 6,
@@ -113,13 +126,13 @@ const FAQ_DATA: FAQItem[] = [
     id: 10,
     category: 'leaves',
     question: 'How do I request a Permission (Late Entry / Early Exit)?',
-    answer: 'Navigate to the "Attendance" tab, scroll down to the Permission section, and click "Apply Permission". Select the date, choose the time duration, select whether it is for Late Entry or Early Exit, select your reporting manager, and submit. The approved hours will be adjusted in your attendance total.'
+    answer: 'Navigate to the "My Requests" tab in the sidebar navigation, click the "Permissions" sub-tab, and click the "Apply Permission" button. Select the date, choose the From/To times, select your reporting manager, add a reason, and submit.'
   },
   {
     id: 11,
     category: 'leaves',
-    question: 'How do I apply for a Shift Change or permanent Work Mode change?',
-    answer: 'Navigate to the "Requests" tab and click "Apply Shift/Work Mode". Enter the date range, select your requested shift timings and work mode (Office, WFH, or Hybrid), provide a reason, and submit it for manager review.'
+    question: 'How do I apply for a Shift Change?',
+    answer: 'Navigate to the "My Requests" tab in the sidebar navigation, click the "Shift" sub-tab, then click the "Request Shift Change" button. Select the date range, choose your requested shift timings, select your reporting manager, add a reason, and submit it for manager review.'
   },
   {
     id: 12,
@@ -191,12 +204,7 @@ const FAQ_DATA: FAQItem[] = [
     question: 'How do I view or download my payslip?',
     answer: 'Navigate to your Profile tab and select the "Payslip" or "Salary" section. You can view monthly payslips and download them as PDF. If your payslip is missing or shows incorrect details, please contact your HR team.'
   },
-  {
-    id: 26,
-    category: 'performance',
-    question: 'How do I change my portal login password?',
-    answer: 'Navigate to the Settings page from the sidebar or from your profile menu. Click on "Change Password", enter your current password, then set and confirm your new password. If you have forgotten your current password, use the "Forgot Password" link on the login page to reset it via email.'
-  },
+
 
   // --- Support & Troubleshooting ---
   {
@@ -265,6 +273,27 @@ export const FAQPage: React.FC = () => {
   const { user } = useAuthStore();
   const normalizedRole = `${user?.access_level || user?.role || ""}`.toLowerCase();
   const isHR = normalizedRole.includes("hr") || normalizedRole.includes("admin") || normalizedRole.includes("super") || normalizedRole.includes("human");
+
+  const [employeeDetails, setEmployeeDetails] = useState<any>(null);
+  
+  useEffect(() => {
+    const fetchEmpDetails = async () => {
+      const empId = localStorage.getItem("employee_id");
+      if (empId) {
+        try {
+          const token = localStorage.getItem("token");
+          const headers = token ? { Authorization: `Bearer ${token}` } : {};
+          const res = await axios.get(`${BASE_URL}/employees/${empId}`, { headers });
+          if (res.data) {
+            setEmployeeDetails(res.data);
+          }
+        } catch (e) {
+          console.error("Error fetching employee details in FAQPage:", e);
+        }
+      }
+    };
+    fetchEmpDetails();
+  }, []);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
@@ -490,12 +519,69 @@ export const FAQPage: React.FC = () => {
     const cleanQuery = query.toLowerCase().trim();
     if (!cleanQuery) return null;
 
+    // Personal Role / Designation Query
+    if (cleanQuery.includes('role') || cleanQuery.includes('designation')) {
+      if (employeeDetails) {
+        return {
+          type: 'direct',
+          text: `Your active designation in S4Carlisle is **${employeeDetails.designation || 'Not Configured'}** under the **${employeeDetails.department || 'Not Configured'}** department.\n\n*Access Level: ${user?.access_level || 'User'}*`
+        };
+      }
+      return {
+        type: 'direct',
+        text: `Your active role in the system is **${user?.role || 'User'}** with access level **${user?.access_level || 'Default'}**.`
+      };
+    }
+
+    // Personal DOB Query
+    if (cleanQuery.includes('dob') || cleanQuery.includes('date of birth') || cleanQuery.includes('birth date')) {
+      if (employeeDetails && employeeDetails.dob) {
+        const dobDate = new Date(employeeDetails.dob);
+        const formattedDob = dobDate.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+        return {
+          type: 'direct',
+          text: `Your Date of Birth (DOB) registered in our records is **${formattedDob}**.`
+        };
+      }
+      return {
+        type: 'direct',
+        text: "We couldn't retrieve your Date of Birth. Please check the **Profile** tab in your dashboard or contact HR if this is missing."
+      };
+    }
+
+    // Personal Joining Date / Days Ago Query
+    if (cleanQuery.includes('join') || cleanQuery.includes('doj') || cleanQuery.includes('joining date') || cleanQuery.includes('when did i')) {
+      if (employeeDetails && employeeDetails.joining_date) {
+        const joinDate = new Date(employeeDetails.joining_date);
+        const today = new Date();
+        const diffTime = Math.abs(today.getTime() - joinDate.getTime());
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const formattedDoj = joinDate.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+        return {
+          type: 'direct',
+          text: `You joined S4Carlisle on **${formattedDoj}**. That was exactly **${diffDays} days ago**! 🚀`
+        };
+      }
+      return {
+        type: 'direct',
+        text: "We couldn't retrieve your joining date. Please check your **Profile** tab or contact HR to verify your employment records."
+      };
+    }
+
     // 1. Handle Greetings & Small Talk
     const greetings = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'hi there'];
     if (greetings.includes(cleanQuery)) {
       return {
         type: 'direct',
         text: "Hello! 👋 I am the 'How can I Help Today' assistant. I'm here in real-time to help you. How can I assist you with your attendance, leaves, shift requests, or payroll today?"
+      };
+    }
+
+    // PeopleHub Core Explanation & Full Process
+    if (cleanQuery.includes('peoplehub') || cleanQuery.includes('explain peoplehub') || cleanQuery.includes('what is peoplehub') || cleanQuery.includes('pathfinder')) {
+      return {
+        type: 'direct',
+        text: "### Welcome to PeopleHub! 🏢✨\n\n**PeopleHub** is S4Carlisle's official centralized Employee Management and Attendance Tracking portal, **fully replacing the older Pathfinder system**.\n\n> [!IMPORTANT]\n> **Payroll Dependency**: ONLY the attendance records registered inside PeopleHub are used for monthly payroll calculations, salary credits, and LOP tracking. Attendance from the old Pathfinder system is no longer considered.\n\n---\n\n### 📝 Core Processes & How to Apply (Step-by-Step):\n\n#### 1. Daily Attendance (Check-In/Out)\n* **Check-In**: Click **\"Check In\"** at the top of your Employee Dashboard. Select your shift timing and work mode (Office / WFH).\n* **Breaks**: Use **\"Lunch Break\"** or **\"Tea Break\"** trackers during the day to pause/resume the timer.\n* **Check-Out**: Click **\"Check Out\"** at the end of your shift to submit your daily hours.\n\n#### 2. Hybrid Mode / WFH Check-In\n* **Today's WFH**: Simply click **\"Check In\"** on your dashboard, toggle the work mode switch to **\"WFH\"**, and click confirm. No need to visit the WFH request page!\n* **Past/Future WFH**: Go to the **Requests** tab and click **\"Request WFH\"**.\n\n#### 3. One Day Wages (ODW)\n* **Today**: A pop-up asks **\"Consider as One Day Wages?\"** when checking in on weekends/holidays. Click **\"Yes, Request\"**.\n* **Past Days**: Go to **Attendance**, click on the specific **Weekend/Holiday** (marked in **Blue**), fill in the reason, and click **\"Claim One Day Wages\"**.\n\n#### 4. Applying for Leave\n* **Navigation**: Click on the **My Requests** tab in the sidebar navigation, then click the **\"Apply Leave\"** button.\n* **Form Fields**:\n  1. Select **Leave Type** (e.g., `CL/SL`, `Loss of Pay (LOP)`).\n  2. Select **Leave Duration** (`Full Day`, `First Half`, `Second Half`).\n  3. Pick the **From Date** and **To Date** using the calendar pickers.\n  4. Confirm the **Reporting Manager** (automatically shows `Murali B`).\n  5. Choose the **Reason for Application** (e.g., `Emergency`, `Personal Reasons`, `Family Reasons`, `Medical`, `Travel`, `Others`).\n  6. (Optional) Upload a **Supportive Document / Attachment** (PDF/JPG/PNG up to 5MB).\n* **Submit**: Click **\"Submit Request\"** to send it for approval.\n\n#### 5. Applying for Permission (Late Entry / Early Exit)\n* **Navigation**: Go to the **My Requests** tab in the sidebar, click the **Permissions** sub-tab, then click the **\"Apply Permission\"** button.\n* **Form Fields**:\n  1. Select the **Permission Date** using the date picker.\n  2. Specify the **From Time** and **To Time** (hours, minutes, and AM/PM).\n  3. Confirm the **Reporting Manager** (`Murali B`).\n  4. Choose the **Reason for Application** (e.g., `Personal Emergency`, `Medical Appointment`, `Accident`, `Family Emergency`, `Official Work`, `Others`).\n  5. (Optional) Upload a **Supportive Document / Attachment**.\n* **Submit**: Click **\"Submit Request\"** to submit.\n\n#### 6. Payroll & Payslips\n* **Access**: Navigate to the **Payroll** tab to download monthly payslips (PDF), review PF wages, tax details, and earnings summaries."
       };
     }
 
@@ -647,21 +733,69 @@ export const FAQPage: React.FC = () => {
       };
     }
 
+    // Regularization / Missed Punch / Forgotten Punch Router
+    if (cleanQuery.includes('regular') || cleanQuery.includes('missed punch') || cleanQuery.includes('forgot') || cleanQuery.includes('mismatch') || cleanQuery.includes('punch regularization')) {
+      return {
+        type: 'direct',
+        text: "### Missed Punch / Forgotten Check-In & Check-Out ⏰\n\nIf you forgot to check in/out, or had a biometric mismatch, you must regularize the timing to keep attendance and payroll accurate:\n\n1. Go to the **Attendance** tab in the sidebar.\n2. Click on the specific **Date** block in your attendance calendar grid that has the missing hours.\n3. In the detail drawer that opens, enter your actual **Check-In** and **Check-Out** times.\n4. Type a brief **Reason for Regularization**.\n5. Click **\"Request Regularization\"** to submit it to your manager for approval."
+      };
+    }
+
+    // Shift Change Request Router
+    if (cleanQuery.includes('shift') && (cleanQuery.includes('change') || cleanQuery.includes('request') || cleanQuery.includes('timing') || cleanQuery.includes('general') || cleanQuery.includes('first') || cleanQuery.includes('second'))) {
+      return {
+        type: 'direct',
+        text: "### Requesting a Shift Change 🔄\n\nTo apply for a different shift timeline (First Shift, General Shift, or Second Shift):\n\n1. Go to the **My Requests** tab in the sidebar navigation.\n2. Select the **Shift** sub-tab.\n3. Click the **\"Request Shift Change\"** button.\n4. Input the following details:\n   • **From Date** and **To Date** (the dates the shift is applicable).\n   • **Requested Shift** (select from First Shift, General Shift, or Second Shift).\n   • Confirm your **Reporting Manager**.\n   • Input your **Reason for Shift Change**.\n5. Click **\"Submit Request\"**.\n\n*Note: Strict lock-out times apply during morning check-ins depending on your active shift assignment.*"
+      };
+    }
+
+    // Meeting / Conference Room Booking Router
+    if (cleanQuery.includes('meeting') || cleanQuery.includes('conference') || cleanQuery.includes('book room') || cleanQuery.includes('reserve room')) {
+      return {
+        type: 'direct',
+        text: "### Booking a Meeting Room 📅🏢\n\nTo reserve a conference/meeting room inside the office premises:\n\n1. Click the **Meeting Rooms** tab in the sidebar.\n2. View the calendar grid showing room availabilities and capacities.\n3. Drag and select the desired **Date & Time slot** on the timeline, or click **\"Book Slot\"**.\n4. Fill in the **Meeting Title**, **Description**, and list any invitees.\n5. Click **\"Confirm Booking\"** to complete the slot reservation."
+      };
+    }
+
+    // Appraisal & Self-Appraisal Router
+    if (cleanQuery.includes('appraisal') || cleanQuery.includes('performance') || cleanQuery.includes('rating') || cleanQuery.includes('self-appraisal')) {
+      return {
+        type: 'direct',
+        text: "### Completing Self-Appraisal Forms 📈\n\nTo complete your self-evaluation during appraisal cycles:\n\n1. Go to the **Appraisal** tab in the sidebar.\n2. Open your active evaluation form listed for the cycle.\n3. Input your highlights, key accomplishments, self-rating metrics, and comments.\n4. Click **\"Submit Appraisal\"** to forward it to your reporting manager.\n5. Once submitted, your manager will review, schedule a conversation, and provide final ratings."
+      };
+    }
+
+    // Telecom / Colleague Directory Router
+    if (cleanQuery.includes('directory') || cleanQuery.includes('extension') || cleanQuery.includes('intercom') || cleanQuery.includes('contact') || cleanQuery.includes('phone') || cleanQuery.includes('search colleague')) {
+      return {
+        type: 'direct',
+        text: "### Telecom & Colleague Directory 📞\n\nTo find department extensions, intercom lines, or email contacts:\n\n1. Go to the **Telecom Directory** tab in the sidebar.\n2. Use the search bar to query colleagues by **Name**, **Department**, or **Designation**.\n3. You can filter the contacts by departments (e.g. Software Development, Editorial Services, HR, etc.) using the dropdown select options."
+      };
+    }
+
+    // Payroll & Payslips Router
+    if (cleanQuery.includes('payroll') || cleanQuery.includes('payslip') || cleanQuery.includes('salary') || cleanQuery.includes('overtime') || cleanQuery.includes('tax')) {
+      return {
+        type: 'direct',
+        text: "### Accessing Payslips & Payroll Details 💵📄\n\nTo download monthly salary statements and tax files:\n\n1. Go to the **Payroll** tab in the sidebar.\n2. Under the Payslip block, filter by **Year** and select the month.\n3. Click the **\"Download PDF\"** icon next to the month to save your payslip.\n4. The page also outlines Gross salary, PF deductions, Professional tax, and Net payable days."
+      };
+    }
+
     // Apply Leave / Past Leave / Future Leave Router
-    if (cleanQuery.includes('leave') && (cleanQuery.includes('apply') || cleanQuery.includes('request') || cleanQuery.includes('take') || cleanQuery.includes('need to'))) {
+    if (cleanQuery.includes('leave') && (cleanQuery.includes('apply') || cleanQuery.includes('request') || cleanQuery.includes('take') || cleanQuery.includes('need to') || cleanQuery.includes('sick') || cleanQuery.includes('casual') || cleanQuery.includes('lop'))) {
       const isPast = cleanQuery.includes('past') || cleanQuery.includes('absent') || cleanQuery.includes('yesterday') || cleanQuery.includes('previous') || cleanQuery.includes('backdate');
 
       if (isPast) {
         return {
           type: 'direct',
-          text: "To apply for leave for a past date (when you were absent):\n\n1. Go to the leave application form in the **Attendance** tab.\n2. Select the past date (the day you were absent) as both the **Start Date** and **End Date**.\n3. Choose your leave type (Casual, Sick, LOP, etc.) and submit it.\n\nOnce approved by your manager, the status for that past day will automatically update from \"Absent\" to \"Leave\"."
+          text: "To apply for leave for a past date (when you were absent):\n\n1. Navigate to the **My Requests** tab in the sidebar.\n2. Click the **\"Apply Leave\"** button.\n3. In the form fields:\n   • Select **Leave Type** (e.g., `CL/SL`, `Loss of Pay (LOP)`).\n   • Set the **From Date** and **To Date** as the specific past date(s) of your absence.\n   • Select the **Reason for Application** (e.g. `Emergency`, `Medical`, etc.).\n   • (Highly Recommended) Upload a medical certificate or supporting document.\n4. Click **\"Submit Request\"**.\n\n*Note: Missed check-ins block your dashboard until a regularization or post-leave request is submitted.*"
         };
       }
       
       // Default or Future Leave
       return {
         type: 'direct',
-        text: "To apply for leave (future / standard requests):\n\n1. Navigate to the **Attendance** tab.\n2. Scroll to the Leave section and click **\"Apply Leave\"**.\n3. Select your Start and End dates (future dates), choose the leave type (Casual, Sick, LOP, etc.), select your Reporting Manager, add a reason, and click submit.\n\nYou will receive a notification once your manager reviews the request."
+        text: "To apply for standard/future leave:\n\n1. Navigate to the **My Requests** tab in the sidebar.\n2. Click the **\"Apply Leave\"** button.\n3. Fill in the form details:\n   • Choose **Leave Type** (`CL/SL` or `LOP`).\n   • Set the **Leave Duration** (`Full Day`, `First Half`, or `Second Half`).\n   • Pick your **From Date** and **To Date**.\n   • Confirm your **Reporting Manager** (`Murali B`).\n   • Select your **Reason for Application**.\n   • (Optional) Attach a supporting document.\n4. Click **\"Submit Request\"**."
       };
     }
 

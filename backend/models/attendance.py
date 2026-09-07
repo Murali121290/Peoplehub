@@ -222,3 +222,21 @@ class Attendance(db.Model):
         db.String(45),
         nullable=True
     )
+
+    added_minutes = db.Column(
+        db.Integer,
+        default=0,
+        nullable=True
+    )
+
+    remarks = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    used_weekly_grace = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False,
+        server_default="false"
+    )

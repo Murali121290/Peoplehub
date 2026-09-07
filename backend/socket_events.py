@@ -36,7 +36,7 @@ def register_socket_events(socketio):
                 access_level = (user.access_level or "").lower()
                 role_name = (user.role.name or "").lower() if user.role else ""
                 
-                if access_level == "manager" or "manager" in role_name or "lead" in role_name:
+                if access_level in ("manager", "team_lead", "service_manager", "lead") or "manager" in access_level or "lead" in access_level or "manager" in role_name or "lead" in role_name:
                     join_room("managers")
                     print(f"Employee {employee_id} (Manager) joined 'managers' room")
                 else:
