@@ -228,7 +228,7 @@ const WFHApprovalPage: React.FC = () => {
       (req.employee_name && reportingIdentifiers.has(String(req.employee_name).trim().toLowerCase())) ||
       (req.reporting_manager && reportingIdentifiers.has(String(req.reporting_manager).trim().toLowerCase()))
     );
-    const isAdmin = user?.access_level?.toLowerCase() === "admin";
+    const isAdmin = user?.access_level?.toLowerCase() === "admin" || user?.access_level?.toLowerCase() === "hr";
 
     const isManager = isDirectManager || isRecursiveReport || isAdmin;
     if (!isManager) return false;

@@ -3774,7 +3774,7 @@ def get_pending_regularizations(manager_user_id):
         if user:
             role_name = (user.role.name or "").lower() if user.role else ""
             access_level = (user.access_level or "").lower()
-            if "admin" in role_name or "admin" in access_level:
+            if "admin" in role_name or "admin" in access_level or "hr" in access_level:
                 is_admin = True
 
         from routes.employees import get_all_employees_cached

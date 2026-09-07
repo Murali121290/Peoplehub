@@ -218,7 +218,7 @@ const LeaveApprovalPage: React.FC = () => {
   const approvalLeaves = leaveRequests.filter((l: any) => {
     if (l.request_type === "Permission") return false;
 
-    const isAdmin = user?.access_level?.toLowerCase() === "admin";
+    const isAdmin = user?.access_level?.toLowerCase() === "admin" || user?.access_level?.toLowerCase() === "hr";
     const isDirectManager = checkManagerMatch(l.reporting_manager, user?.full_name) ||
       checkManagerMatch(l.handover_to, user?.full_name);
 
