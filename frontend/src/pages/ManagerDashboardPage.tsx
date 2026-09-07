@@ -347,6 +347,8 @@ const ManagerDashboardPage = () => {
 
     if (effectiveHours >= reqHours) {
       computedStatus = "Present";
+    } else if (effectiveHours >= reqHours - 0.25 && (editingRecord?.used_weekly_grace || editingRecord?.status === "Present" || (editingRecord?.status || "").includes("Present (15m Grace)"))) {
+      computedStatus = "Present (15m Grace)";
     } else if (effectiveHours >= 4.0) {
       computedStatus = "Half Day";
     }
@@ -3673,7 +3675,7 @@ const ManagerDashboardPage = () => {
                     background: "#f8fafc",
                     fontSize: "13px",
                     fontWeight: 700,
-                    color: editForm.status === "Present" ? "#166534" : editForm.status === "Half Day" ? "#6b21a8" : "#991b1b",
+                    color: editForm.status.includes("Present") ? "#166534" : editForm.status === "Half Day" ? "#6b21a8" : "#991b1b",
                     display: "flex",
                     alignItems: "center",
                     gap: "8px",
@@ -3685,7 +3687,7 @@ const ManagerDashboardPage = () => {
                       width: "8px",
                       height: "8px",
                       borderRadius: "50%",
-                      background: editForm.status === "Present" ? "#16a34a" : editForm.status === "Half Day" ? "#a855f7" : "#dc2626",
+                      background: editForm.status.includes("Present") ? "#16a34a" : editForm.status === "Half Day" ? "#a855f7" : "#dc2626",
                     }}
                   />
                   <span>{editForm.status}</span>
