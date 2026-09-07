@@ -709,7 +709,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
     {
       key: "status",
       header: "Status",
-      render: (at: any) => <Chip type={at.status} />,
+      render: (at: any) => <Chip type={(at.status === "Leave" || at.status === "Half Day") && at.leave_type ? at.leave_type : at.status} />,
     },
   ];
 
@@ -1391,7 +1391,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
                           {(() => {
                             const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
-                            const badgeStr = computeAttendanceBadgeLabel(
+                            let badgeStr = computeAttendanceBadgeLabel(
                               row.status,
                               row.gross_hours || 0,
                               row.leave_details || [],
@@ -1400,6 +1400,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                               (row.date || row.attendance_date || todayStr) > todayStr,
                               false
                             );
+                            if ((badgeStr === "Leave" || badgeStr === "Half Day") && row.leave_type) {
+                              badgeStr = row.leave_type;
+                            }
                             return badgeStr.split(" & ").map((part, idx) => (
                               <Chip key={idx} type={part as any} />
                             ));
@@ -1443,6 +1446,26 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                               }}
                             >
                               🕐 Perm: {row.permission_label}
+                            </span>
+                          )}
+                          {(Number(row.added_minutes) > 0) && (
+                            <span
+                              title={`Presence adjustment: +${row.added_minutes} minutes added by manager`}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "3px",
+                                padding: "2px 7px",
+                                borderRadius: "999px",
+                                background: "#f0fdf4",
+                                border: "1px solid #99f6e4",
+                                color: "#0d9488",
+                                fontSize: "10px",
+                                fontWeight: 800,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              +{row.added_minutes}m
                             </span>
                           )}
                         </div>
