@@ -1618,6 +1618,8 @@ def attendance_history(user_id):
             else:
                 # Check normal calendar rules for virtual status
                 status = "Absent"
+                leave = None
+                is_cancelled = False
                 
                 # 1. Check HolidayOverride first
                 override = override_dict.get(current_date)

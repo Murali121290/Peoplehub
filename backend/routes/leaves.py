@@ -2193,20 +2193,14 @@ def resolve_absent():
                 att = Attendance(
                     user_id=employee.user_id,
                     attendance_date=target_date,
-                    status="Leave",
-                    leave_type=leave_type,
-                    check_in=None,
-                    check_out=None,
-                    total_hours=0.0
+                    status="Half Day" if days_to_deduct == 0.5 else "Leave",
+                    leave_type=leave_type
                 )
                 db.session.add(att)
             else:
-                att.status = "Leave"
+                att.status = "Half Day" if days_to_deduct == 0.5 else "Leave"
                 att.leave_type = leave_type
                 att.is_lop = False
-                att.check_in = None
-                att.check_out = None
-                att.total_hours = 0.0
 
             db.session.commit()
             

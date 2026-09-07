@@ -442,7 +442,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       isCurrentPayrollMonthView &&
       (cell.status === "Absent" || cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) &&
       noLeaveOrHalf &&
-      cell.dateStr <= todayKey
+      cell.dateStr <= todayKey &&
+      (!cell.badgeLabel || (!cell.badgeLabel.includes("Half Day Present") && !cell.badgeLabel.includes("Pending Reg")))
     ) {
       let dur = "Full Day";
       if (cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) {
@@ -469,7 +470,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       cell.status !== "Future" &&
       cell.status !== "Not Joined" &&
       cell.status !== "Present" &&
-      noLeaveOrHalf
+      noLeaveOrHalf &&
+      (!cell.badgeLabel || (!cell.badgeLabel.includes("Half Day Present") && !cell.badgeLabel.includes("Pending Reg")))
     ) {
       setRegularizingCell(cell);
     }
@@ -815,6 +817,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       badgeEmoji = "";
     }
 
+    if (attRec?.is_regularization === true) {
+      if (badgeLabel.includes("Half Day Present")) {
+        badgeLabel = "Half Day Present & Pending Reg.";
+      } else {
+        badgeLabel = "Pending Regularization";
+      }
+      status = "Absent";
+    }
 
 
     daysDataList.push({
@@ -1102,12 +1112,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
                   (cell.status === "Weekly Off" || cell.status === "Holiday") &&
                   cell.dateStr <= todayKey;
-                const isClickableRegularize = isCurrentPayrollMonthView && cell.dateStr < todayKey && cell.status !== "Future" && cell.status !== "Not Joined" && cell.status !== "Present" && (!cell.leaveType || cell.halfDayDuration);
+                const isClickableRegularize = isCurrentPayrollMonthView && cell.dateStr < todayKey && cell.status !== "Future" && cell.status !== "Not Joined" && cell.status !== "Present" && (!cell.leaveType || cell.halfDayDuration) && (!cell.badgeLabel || (!cell.badgeLabel.includes("Half Day Present") && !cell.badgeLabel.includes("Pending Reg")));
                 const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
                 return (
                   <div
                     key={cell.dateStr}
-                    onClick={() => handleCellClick(cell)}
+                    onClick={() => isClickable && handleCellClick(cell)}
                     className={`min-h-[95px] h-full p-2 flex flex-col justify-between rounded-xl border relative group transition-all duration-200 hover:z-50 ${isClickable
                       ? `cursor-pointer hover:shadow-md active:scale-95 ${isClickableAbsent ? "hover:border-rose-450" : "hover:border-primary-400"
                       }`
@@ -1137,6 +1147,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         {(cell.badgeLabel || cell.status).split(" & ").map((part, idx) => {
                           let pClass = badgeClass;
                           if (part.includes("Half Day Present")) pClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
+                          else if (part.includes("Pending Reg")) pClass = "bg-amber-50 text-amber-700 border-amber-200";
                           else if (part.includes("Half Day Absent") || part.includes("Loss of Pay") || part.includes("LOP")) pClass = "bg-rose-50 text-rose-700 border-rose-200";
                           else if (part.includes("Check-In")) pClass = "bg-teal-50 text-teal-750 border-teal-200";
                           else if ((cell.badgeLabel || "").includes(" & ")) pClass = "bg-primary-500/10 text-primary-500 border-primary-500/20";
@@ -1588,14 +1599,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                           const isClickableAbsent = isCurrentPayrollMonthView &&
                             (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                             (!dayObj.leaveType || dayObj.halfDayDuration) &&
-                            (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
+                            (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg"))) &&
 
                             dayObj.dateStr <= todayKey;
                           const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
                             (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
 
                             dayObj.dateStr <= todayKey;
-                          const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration);
+                          const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
                           if (isClickableAbsent || isClickableWeekend || isClickableRegularize) {
                             handleCellClick(dayObj);
                           }
@@ -1605,14 +1616,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             const isClickableAbsent = isCurrentPayrollMonthView &&
                               (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                               (!dayObj.leaveType || dayObj.halfDayDuration) &&
-                              (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
+                              (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg"))) &&
 
                               dayObj.dateStr <= todayKey;
                             const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
                               (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
 
                               dayObj.dateStr <= todayKey;
-                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration);
+                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
                             if (isClickableAbsent) return "Click to apply leave / regularize absent day";
                             if (isClickableWeekend) return "Click to request wages for non-working day";
                             if (isClickableRegularize) return "Click to regularize attendance";
@@ -1624,14 +1635,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             const isClickableAbsent = isCurrentPayrollMonthView &&
                               (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                               (!dayObj.leaveType || dayObj.halfDayDuration) &&
-                              (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
+                              (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg"))) &&
 
                               dayObj.dateStr <= todayKey;
                             const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
                               (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
 
                               dayObj.dateStr <= todayKey;
-                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration);
+                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
                             const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
                             return `p-3 text-center border-r border-neutral-300 transition-colors ${isClickable ? "cursor-pointer hover:bg-neutral-50" : ""
                               }`;
@@ -1643,20 +1654,21 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             const isClickableAbsent = isCurrentPayrollMonthView &&
                               (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                               (!dayObj.leaveType || dayObj.halfDayDuration) &&
-                              (!dayObj.badgeLabel || !dayObj.badgeLabel.includes("Half Day Present")) &&
+                              (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg"))) &&
 
                               dayObj.dateStr <= todayKey;
                             const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
                               (dayObj.status === "Weekly Off" || dayObj.status === "Holiday") &&
 
                               dayObj.dateStr <= todayKey;
-                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration);
+                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
                             const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
                             return (
                               <div className="flex flex-col gap-1 items-center w-full">
                                 {(dayObj.badgeLabel || dayObj.status).split(" & ").map((part, idx) => {
                                   let pClass = "";
                                   if (part.includes("Half Day Present")) pClass = "bg-emerald-100 text-emerald-800 border-emerald-300";
+                                  else if (part.includes("Pending Reg")) pClass = "bg-amber-100 text-amber-800 border-amber-300";
                                   else if (part.includes("Half Day Absent") || part.includes("Loss of Pay") || part.includes("LOP")) pClass = `bg-rose-100 text-rose-800 border-rose-300 ${isClickable ? "hover:border-rose-450 hover:bg-rose-150" : ""}`;
                                   else if (part.includes("Check-In")) pClass = "bg-teal-100 text-teal-800 border-teal-300";
                                   else if ((dayObj.badgeLabel || "").includes(" & ")) pClass = `bg-primary-500/15 text-primary-500 border-primary-500/30 ${isClickable ? "hover:border-primary-450 hover:bg-primary-500/20" : ""}`;
