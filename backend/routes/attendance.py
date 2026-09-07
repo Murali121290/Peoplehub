@@ -1830,9 +1830,11 @@ def get_attendance():
             card_hrs = 0.0
 
 
-        if status == "Absent":
+        # Track leave details for complex badge rendering
+        daily_leave_details = []
+        if status in ("Absent", "Half Day"):
             from models.leave import LeaveRequest
-            leave = LeaveRequest.query.filter(
+            leaves = LeaveRequest.query.filter(
                 or_(
                     LeaveRequest.employee_id == str(employee.id),
                     LeaveRequest.employee_id == employee.employee_id
@@ -1840,10 +1842,19 @@ def get_attendance():
                 LeaveRequest.status == "Approved",
                 LeaveRequest.from_date <= today,
                 LeaveRequest.to_date >= today
-            ).first()
-            if leave:
-                status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
-
+            ).all()
+            if leaves:
+                total_leave_days = sum(l.total_days or 0.0 for l in leaves)
+                if status == "Absent":
+                    status = "Half Day" if total_leave_days <= 0.5 else "Leave"
+                
+                for lv in leaves:
+                    daily_leave_details.append({
+                        "leave_type": lv.leave_type or "",
+                        "total_days": lv.total_days,
+                        "reason": lv.reason or "",
+                        "status": lv.status
+                    })
         # Check for an approved Permission on this date and credit its hours
         from models.leave import LeaveRequest as LR
         from datetime import time as dtime
@@ -1921,6 +1932,7 @@ def get_attendance():
             "total_hours": total_hours,
             "attendance_date": str(today),
             "status": status,
+            "leave_details": daily_leave_details,
             "used_weekly_grace": getattr(attendance, "used_weekly_grace", False) if attendance else False,
             "is_wfh": bool(wfh_today),
             "is_shift_changed": bool(shift_change_today),

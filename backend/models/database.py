@@ -62,6 +62,7 @@ class DbMock:
     Index = Index
     session = db_session
     extract = extract
+    engine = engine
 
 db = DbMock
 
