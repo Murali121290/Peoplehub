@@ -789,26 +789,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
   const handleCheckInClick = async () => {
     setWantsToChangeMode(false);
-
-    try {
-      setIsActionLoading(true);
-      const res = await fetch(`${BASE_URL}/attendance/check-holiday-or-weekoff`, {
-        headers: {
-          "Authorization": `Bearer ${localStorage.getItem("token")}`
-        }
-      });
-      const data = await res.json();
-      if (data.success && data.is_holiday_or_weekoff && !data.already_requested) {
-        setIsActionLoading(false);
-        setWagesConfirmData({ isOpen: true, reason: data.reason || "Weekoff/Holiday" });
-        return;
-      }
-    } catch (err) {
-      console.error("Holiday/weekoff check failed", err);
-    } finally {
-      setIsActionLoading(false);
-    }
-
     proceedToCheckInModal();
   };
 

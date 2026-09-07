@@ -211,10 +211,10 @@ def apply_leave():
             duration_hours = (dt_to - dt_from).total_seconds() / 3600.0
             duration_minutes = (dt_to - dt_from).total_seconds() / 60.0
             
-            if abs(duration_minutes - 60.0) > 0.1 and abs(duration_minutes - 120.0) > 0.1:
+            if abs(duration_minutes - 30.0) > 0.1 and abs(duration_minutes - 60.0) > 0.1 and abs(duration_minutes - 120.0) > 0.1:
                 return jsonify({
                     "success": False,
-                    "error": "Permission duration must be exactly 1 hour or 2 hours."
+                    "error": "Permission duration must be exactly 30 minutes, 1 hour, or 2 hours."
                 }), 400
 
             # Validate against database permission balance row
@@ -938,7 +938,7 @@ def cancel_leave_date(leave_id):
         reporting_emp_names = {f"{e.first_name} {e.last_name}".strip().lower() for e in recursive_reports}
 
         is_authorized = (
-            approver.access_level.lower() == "admin" or
+            approver.access_level.lower() in ["admin", "hr"] or
             str(employee.id) in reporting_emp_ids or
             (employee.employee_id and str(employee.employee_id) in reporting_emp_ids) or
             f"{employee.first_name} {employee.last_name}".strip().lower() in reporting_emp_names or
@@ -2193,20 +2193,14 @@ def resolve_absent():
                 att = Attendance(
                     user_id=employee.user_id,
                     attendance_date=target_date,
-                    status="Leave",
-                    leave_type=leave_type,
-                    check_in=None,
-                    check_out=None,
-                    total_hours=0.0
+                    status="Half Day" if days_to_deduct == 0.5 else "Leave",
+                    leave_type=leave_type
                 )
                 db.session.add(att)
             else:
-                att.status = "Leave"
+                att.status = "Half Day" if days_to_deduct == 0.5 else "Leave"
                 att.leave_type = leave_type
                 att.is_lop = False
-                att.check_in = None
-                att.check_out = None
-                att.total_hours = 0.0
 
             db.session.commit()
             

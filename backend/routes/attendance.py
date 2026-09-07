@@ -671,7 +671,6 @@ def calculate_attendance_status(attendance):
                 if not used_grace_record:
                     attendance.used_weekly_grace = True
                     attendance.status = "Present"
-                    attendance.total_hours = req_hours
                 else:
                     attendance.used_weekly_grace = False
                     attendance.status = "Half Day"
@@ -1619,6 +1618,8 @@ def attendance_history(user_id):
             else:
                 # Check normal calendar rules for virtual status
                 status = "Absent"
+                leave = None
+                is_cancelled = False
                 
                 # 1. Check HolidayOverride first
                 override = override_dict.get(current_date)
@@ -1669,6 +1670,19 @@ def attendance_history(user_id):
                             
                         status = ("Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave") if (leave and not is_cancelled) else "Absent"
 
+                # Build leave_details so frontend badge shows correct type (e.g. "Loss of Pay" not "Leave")
+                virtual_leave_details = []
+                virtual_is_lop = False
+                if leave and not is_cancelled:
+                    leave_type_lower = (leave.leave_type or "").lower()
+                    virtual_is_lop = "loss of pay" in leave_type_lower or bool(__import__('re').search(r'\blop\b', leave_type_lower))
+                    virtual_leave_details = [{
+                        "leave_type": leave.leave_type or "Leave",
+                        "total_days": leave.total_days,
+                        "status": leave.status,
+                        "reason": leave.reason or ""
+                    }]
+
                 result.append({
                     "id": f"virtual-{current_date.strftime('%Y-%m-%d')}",
                     "date": current_date.strftime("%Y-%m-%d"),
@@ -1697,6 +1711,8 @@ def attendance_history(user_id):
                     "totalBreak": 0,
                     "total_break_minutes": 0,
                     "status": status,
+                    "is_lop": virtual_is_lop,
+                    "leave_details": virtual_leave_details,
                     "used_weekly_grace": False,
                     "manager_status": "Pending",
                     "reporting_manager": employee.reporting_manager or "",
@@ -1816,9 +1832,11 @@ def get_attendance():
             card_hrs = 0.0
 
 
-        if status == "Absent":
+        # Track leave details for complex badge rendering
+        daily_leave_details = []
+        if status in ("Absent", "Half Day"):
             from models.leave import LeaveRequest
-            leave = LeaveRequest.query.filter(
+            leaves = LeaveRequest.query.filter(
                 or_(
                     LeaveRequest.employee_id == str(employee.id),
                     LeaveRequest.employee_id == employee.employee_id
@@ -1826,10 +1844,19 @@ def get_attendance():
                 LeaveRequest.status == "Approved",
                 LeaveRequest.from_date <= today,
                 LeaveRequest.to_date >= today
-            ).first()
-            if leave:
-                status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
-
+            ).all()
+            if leaves:
+                total_leave_days = sum(l.total_days or 0.0 for l in leaves)
+                if status == "Absent":
+                    status = "Half Day" if total_leave_days <= 0.5 else "Leave"
+                
+                for lv in leaves:
+                    daily_leave_details.append({
+                        "leave_type": lv.leave_type or "",
+                        "total_days": lv.total_days,
+                        "reason": lv.reason or "",
+                        "status": lv.status
+                    })
         # Check for an approved Permission on this date and credit its hours
         from models.leave import LeaveRequest as LR
         from datetime import time as dtime
@@ -1907,6 +1934,7 @@ def get_attendance():
             "total_hours": total_hours,
             "attendance_date": str(today),
             "status": status,
+            "leave_details": daily_leave_details,
             "used_weekly_grace": getattr(attendance, "used_weekly_grace", False) if attendance else False,
             "is_wfh": bool(wfh_today),
             "is_shift_changed": bool(shift_change_today),
@@ -3509,15 +3537,14 @@ def approve_attendance(employee_id):
                     base_hours = attendance.regularization_total_hours or 0.0
 
                 attendance.added_minutes = add_minutes
-                added_hours = add_minutes / 60.0
-                attendance.total_hours = round(base_hours + added_hours, 2)
+                attendance.total_hours = round(base_hours, 2)
                 attendance.is_regularization = False
                 attendance.manager_status = "Approved"
                 
                 calculate_attendance_status(attendance)
             elif add_minutes > 0:
                 attendance.added_minutes = add_minutes
-                attendance.total_hours = round((attendance.total_hours or 0.0) + (add_minutes / 60.0), 2)
+                attendance.total_hours = round(attendance.total_hours or 0.0, 2)
                 attendance.manager_status = "Approved"
                 calculate_attendance_status(attendance)
                 
@@ -3747,7 +3774,7 @@ def get_pending_regularizations(manager_user_id):
         if user:
             role_name = (user.role.name or "").lower() if user.role else ""
             access_level = (user.access_level or "").lower()
-            if "admin" in role_name or "admin" in access_level:
+            if "admin" in role_name or "admin" in access_level or "hr" in access_level:
                 is_admin = True
 
         from routes.employees import get_all_employees_cached
@@ -3766,12 +3793,6 @@ def get_pending_regularizations(manager_user_id):
         for e in reporting_employees:
             if e.user_id:
                 reporting_user_ids.add(e.user_id)
-            if e.id:
-                reporting_user_ids.add(e.id)
-            if e.employee_id:
-                reporting_user_ids.add(e.employee_id)
-                if str(e.employee_id).isdigit():
-                    reporting_user_ids.add(int(e.employee_id))
 
         if not reporting_user_ids:
             return jsonify([])
@@ -3797,12 +3818,6 @@ def get_pending_regularizations(manager_user_id):
             if e.user_id:
                 emp_lookup[e.user_id] = e
                 emp_lookup[str(e.user_id)] = e
-            if e.id:
-                emp_lookup[e.id] = e
-                emp_lookup[str(e.id)] = e
-            if e.employee_id:
-                emp_lookup[e.employee_id] = e
-                emp_lookup[str(e.employee_id)] = e
 
         for record in pending_records:
             emp = emp_lookup.get(record.user_id) or emp_lookup.get(str(record.user_id))
@@ -4766,7 +4781,6 @@ def update_attendance_record():
             gap_minutes = attendance.total_gap_minutes or 0
             paused_minutes = attendance.paused_minutes or 0
             diff_seconds -= (break_minutes + gap_minutes + paused_minutes) * 60
-            diff_seconds += (added_minutes * 60)
             attendance.total_hours = max(0.0, int((diff_seconds / 3600.0) * 100) / 100)
             
             calculate_attendance_status(attendance)

@@ -128,7 +128,7 @@ const TeamManagementPage: React.FC = () => {
 
   const fetchNotificationCounts = async () => {
     try {
-      const isAdmin = user?.access_level?.toLowerCase() === "admin";
+      const isAdmin = user?.access_level?.toLowerCase() === "admin" || user?.access_level?.toLowerCase() === "hr";
       const userFullName = user?.full_name || `${(user as any)?.first_name || ""} ${(user as any)?.last_name || ""}`.trim();
       let activeEmployees: any[] = [];
       try {
