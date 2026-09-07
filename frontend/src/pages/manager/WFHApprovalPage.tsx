@@ -2,12 +2,13 @@ import React, { useEffect, useState, useMemo } from "react";
 import { API_URL } from "../../config/api";
 import { useAuthStore } from "../../store/authStore";
 import { CheckIcon, XMarkIcon, ArrowRightIcon, MagnifyingGlassIcon, HomeIcon } from "@heroicons/react/24/outline";
-import { ConfirmDialog } from "../../components/ui/Modal";
+import { Modal, ConfirmDialog } from "../../components/ui/Modal";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import toast from "react-hot-toast";
 import { BookLoader } from "../../components/ui/Spinner";
 import { formatDateStr } from "../../utils/date";
+import { generateFinancialYears, generateCyclesForYear, getCurrentCycleValue } from "../../utils/cycle";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -54,6 +55,13 @@ const WFHApprovalPage: React.FC = () => {
   const { user, token } = useAuthStore();
   const [shiftRequests, setShiftRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const years = useMemo(() => generateFinancialYears(5), []);
+  const [selectedYear, setSelectedYear] = useState<string>(years[0].value);
+  const cycles = useMemo(() => {
+    const yearObj = years.find(y => y.value === selectedYear) || years[0];
+    return generateCyclesForYear(yearObj.startYear);
+  }, [selectedYear, years]);
+  const [selectedCycle, setSelectedCycle] = useState<string>(getCurrentCycleValue());
   const [processingId, setProcessingId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -234,6 +242,20 @@ const WFHApprovalPage: React.FC = () => {
     if (!isManager) return false;
 
     if (statusFilter !== "All" && req.status !== statusFilter) return false;
+
+    if (selectedCycle !== "All") {
+      const targetCycle = cycles.find(c => c.value === selectedCycle);
+      if (targetCycle) {
+        const dStr = req.from_date || req.date;
+        if (dStr) {
+           const reqDate = new Date(dStr);
+           if (reqDate < targetCycle.start || reqDate > targetCycle.end) {
+              return false;
+           }
+        }
+      }
+    }
+
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const empName = (req.employee_name || "").toLowerCase();
@@ -311,7 +333,7 @@ const WFHApprovalPage: React.FC = () => {
 
   return (
     <div className="space-y-6 relative">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-neutral-200/80 shadow-sm">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-white p-6 rounded-2xl border border-neutral-200/80 shadow-sm">
         <div className="flex items-center gap-3.5">
           <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl border border-purple-100 shadow-inner">
             <HomeIcon className="w-6 h-6" />
@@ -322,7 +344,7 @@ const WFHApprovalPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 lg:justify-end">
           <Button
             variant="primary"
             onClick={() => setShowManagerLogModal(true)}
@@ -337,7 +359,7 @@ const WFHApprovalPage: React.FC = () => {
               placeholder="Search by name or ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-1.5 border border-neutral-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all w-64 bg-white shadow-xs"
+              className="pl-9 pr-4 py-1.5 border border-neutral-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all w-48 bg-white shadow-xs"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -352,6 +374,38 @@ const WFHApprovalPage: React.FC = () => {
               <option value="Approved">Approved</option>
               <option value="Rejected">Rejected</option>
               <option value="Cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-neutral-500">Year:</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => {
+                setSelectedYear(e.target.value);
+                setSelectedCycle("All");
+              }}
+              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
+            >
+              {years.map((y) => (
+                <option key={y.value} value={y.value}>
+                  {y.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-neutral-500">Cycle:</span>
+            <select
+              value={selectedCycle}
+              onChange={(e) => setSelectedCycle(e.target.value)}
+              className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-xs"
+            >
+              <option value="All">All Cycles</option>
+              {cycles.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
