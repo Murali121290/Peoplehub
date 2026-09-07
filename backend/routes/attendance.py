@@ -3793,12 +3793,6 @@ def get_pending_regularizations(manager_user_id):
         for e in reporting_employees:
             if e.user_id:
                 reporting_user_ids.add(e.user_id)
-            if e.id:
-                reporting_user_ids.add(e.id)
-            if e.employee_id:
-                reporting_user_ids.add(e.employee_id)
-                if str(e.employee_id).isdigit():
-                    reporting_user_ids.add(int(e.employee_id))
 
         if not reporting_user_ids:
             return jsonify([])
@@ -3824,12 +3818,6 @@ def get_pending_regularizations(manager_user_id):
             if e.user_id:
                 emp_lookup[e.user_id] = e
                 emp_lookup[str(e.user_id)] = e
-            if e.id:
-                emp_lookup[e.id] = e
-                emp_lookup[str(e.id)] = e
-            if e.employee_id:
-                emp_lookup[e.employee_id] = e
-                emp_lookup[str(e.employee_id)] = e
 
         for record in pending_records:
             emp = emp_lookup.get(record.user_id) or emp_lookup.get(str(record.user_id))
