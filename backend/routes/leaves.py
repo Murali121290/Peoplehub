@@ -134,11 +134,11 @@ def apply_leave():
         request_type = data.get("request_type", "Leave")
 
         leave = LeaveRequest(
-            employee_id=data.get("employee_id"),
-            employee_name=data.get("employee_name"),
+            employee_id=employee.employee_id if employee and employee.employee_id else str(emp_id),
+            employee_name=data.get("employee_name") or (f"{employee.first_name} {employee.last_name}".strip() if employee else ""),
             request_type=request_type,
             leave_type=data.get("leave_type"),
-            reporting_manager=data.get("reporting_manager"),
+            reporting_manager=data.get("reporting_manager") or (employee.reporting_manager if employee else ""),
             handover_to=data.get("handover_to"),
             reason=data.get("reason")
         )
