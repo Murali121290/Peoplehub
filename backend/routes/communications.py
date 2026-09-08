@@ -368,11 +368,35 @@ def vote_poll(message_id):
         votes = dict(message.poll_votes or {})
         opt_list = option_index if isinstance(option_index, list) else [option_index]
         
+        user_prev = votes.get(user_id) or {}
+        prev_opts = user_prev.get("option_index", []) if isinstance(user_prev, dict) else []
+        if not isinstance(prev_opts, list):
+            prev_opts = [prev_opts]
+
+        expires_at_str = message.poll_data.get("expires_at")
+        if expires_at_str:
+            from datetime import datetime
+            try:
+                expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                # If it has a timezone, make it naive UTC for comparison with utcnow
+                expires_at = expires_at.replace(tzinfo=None)
+                if datetime.utcnow() > expires_at:
+                    return jsonify({
+                        "success": False,
+                        "error": "This poll has ended."
+                    }), 400
+            except Exception:
+                pass
+
+        change_count = user_prev.get("change_count", 0) if isinstance(user_prev, dict) else (1 if user_prev else 0)
+        change_count += 1
+        
         votes[user_id] = {
             "option_index": opt_list,
             "user_name": user_name,
             "profile_image": profile_image,
-            "user_id": user_id
+            "user_id": user_id,
+            "change_count": change_count
         }
         
         message.poll_votes = votes

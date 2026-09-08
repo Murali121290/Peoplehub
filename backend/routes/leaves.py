@@ -2112,7 +2112,7 @@ def resolve_absent():
                 att.is_lop = True
                 
             leave = LeaveRequest(
-                employee_id=employee.id,
+                employee_id=employee.employee_id,
                 employee_name=f"{employee.first_name} {employee.last_name}".strip(),
                 request_type="Leave",
                 leave_type="Loss of Pay",
@@ -2167,40 +2167,36 @@ def resolve_absent():
             if not balance or balance.available < days_to_deduct:
                 return jsonify({"success": False, "error": f"Not enough leave balance (need {days_to_deduct})"}), 400
             
-            # Deduct from the leave balance immediately (auto-approve)
-            balance.available = max(balance.available - days_to_deduct, 0.0)
-
-            # Create the leave request as already Approved
+            # Do NOT deduct balance yet — wait for manager approval
+            # Create the leave request as Pending
             leave = LeaveRequest(
-                employee_id=employee.id,
+                employee_id=employee.employee_id,
                 employee_name=f"{employee.first_name} {employee.last_name}".strip(),
                 request_type="Leave",
                 leave_type=leave_type,
                 from_date=target_date,
                 to_date=target_date,
                 total_days=days_to_deduct,
-                status="Approved",
+                status="Pending",
                 reason=reason,
                 reporting_manager=employee.reporting_manager,
-                approved_by="Auto Approved",
-                created_at=now,
-                approved_at=now
+                created_at=now
             )
             db.session.add(leave)
 
-            # Update the attendance record to reflect the leave
+            # Keep attendance as Absent — it will be updated when manager approves
+            # Just add a note that leave has been requested
             if not att:
                 att = Attendance(
                     user_id=employee.user_id,
                     attendance_date=target_date,
-                    status="Half Day" if days_to_deduct == 0.5 else "Leave",
-                    leave_type=leave_type
+                    status="Absent",
+                    leave_type=None,
+                    manager_status="Leave Requested"
                 )
                 db.session.add(att)
             else:
-                att.status = "Half Day" if days_to_deduct == 0.5 else "Leave"
-                att.leave_type = leave_type
-                att.is_lop = False
+                att.manager_status = "Leave Requested"
 
             db.session.commit()
             
@@ -2219,7 +2215,7 @@ def resolve_absent():
             except Exception as se:
                 print("Resolve absent socket emit failed:", se)
                 
-            return jsonify({"success": True, "message": f"{leave_type} applied and approved automatically."}), 200
+            return jsonify({"success": True, "message": f"{leave_type} leave request submitted. Awaiting manager approval."}), 200
             
     except Exception as e:
         db.session.rollback()

@@ -5,6 +5,8 @@ import { Button } from "../components/ui/Button";
 import EmojiPicker from 'emoji-picker-react';
 import { getProfileImageUrl, BASE_API_URL } from "../config/api";
 import { BookLoader } from "../components/ui/Spinner";
+import { ImageViewerModal } from "../components/ui/ImageViewerModal";
+import { DatePicker } from "../components/ui/DatePicker";
 
 
 const AnnouncementsPage = () => {
@@ -20,6 +22,8 @@ const AnnouncementsPage = () => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [sidebarTopOffset, setSidebarTopOffset] = useState("8.5rem");
   const [activeReactionPostId, setActiveReactionPostId] = useState<number | null>(null);
+  const [activeReactionPopover, setActiveReactionPopover] = useState<{ announcementId: number; emoji: string } | null>(null);
+  const [activePollVotersPopover, setActivePollVotersPopover] = useState<{ announcementId: number; optionIndex: number } | null>(null);
 
   // Edit & Delete Announcement States
   const [editingPost, setEditingPost] = useState<any | null>(null);
@@ -39,6 +43,7 @@ const AnnouncementsPage = () => {
   // Toast Notification & Custom Popup States
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [viewerImage, setViewerImage] = useState<{ url: string; title: string } | null>(null);
 
   // Hyperlink Modal States
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -50,6 +55,7 @@ const AnnouncementsPage = () => {
   const [showPollCreator, setShowPollCreator] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+  const [pollExpiresAt, setPollExpiresAt] = useState<string>("");
 
   const handleVotePoll = async (announcementId: number, optionIndex: number) => {
     try {
@@ -62,6 +68,21 @@ const AnnouncementsPage = () => {
       if (!userId) {
         showToast("User session not found. Please log in again.", "error");
         return;
+      }
+
+      const targetAnn = announcements.find(a => a.id === announcementId);
+      if (targetAnn && targetAnn.poll_votes) {
+        const userVoteData = targetAnn.poll_votes[String(userId)];
+        if (userVoteData) {
+          const opts = Array.isArray(userVoteData.option_index) ? userVoteData.option_index : [userVoteData.option_index];
+          if (!opts.includes(optionIndex)) {
+            const currentCount = userVoteData.change_count || 1;
+            if (currentCount >= 3) {
+              showToast("You have reached the maximum limit of 3 vote changes for this poll.", "error");
+              return;
+            }
+          }
+        }
       }
 
       const res = await fetch(`${BASE_API_URL}/api/communications/${announcementId}/vote`, {
@@ -496,6 +517,12 @@ const AnnouncementsPage = () => {
       if (!target.closest(".reaction-container")) {
         setActiveReactionPostId(null);
       }
+      if (!target.closest(".reaction-badge-container")) {
+        setActiveReactionPopover(null);
+      }
+      if (!target.closest(".voter-badge-container")) {
+        setActivePollVotersPopover(null);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -526,7 +553,8 @@ const AnnouncementsPage = () => {
     const activePollOptions = pollOptions.filter(o => o.trim().length > 0);
     const poll_data = (showPollCreator && pollQuestion.trim() && activePollOptions.length >= 2) ? {
       question: pollQuestion.trim(),
-      options: activePollOptions
+      options: activePollOptions,
+      expires_at: pollExpiresAt ? new Date(`${pollExpiresAt}T23:59:59`).toISOString() : null
     } : null;
 
     const announcementData = {
@@ -563,6 +591,7 @@ const AnnouncementsPage = () => {
         setShowPollCreator(false);
         setPollQuestion("");
         setPollOptions(["", ""]);
+        setPollExpiresAt("");
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
         }
@@ -1151,8 +1180,13 @@ const AnnouncementsPage = () => {
 
                 {/* Attached Image Preview */}
                 {imagePreviewUrl && (
-                  <div className="relative mt-3 inline-block rounded-xl overflow-hidden border border-neutral-200 shadow-sm max-w-[220px]">
-                    <img src={imagePreviewUrl} className="w-full h-auto object-cover max-h-[150px]" alt="Preview" />
+                  <div className="relative mt-3 inline-block rounded-xl overflow-hidden border border-neutral-200 shadow-sm max-w-[220px] group cursor-pointer">
+                    <img
+                      src={imagePreviewUrl}
+                      className="w-full h-auto object-cover max-h-[150px] group-hover:scale-105 transition-transform"
+                      alt="Preview"
+                      onClick={() => setViewerImage({ url: imagePreviewUrl, title: title || "Image Attachment Preview" })}
+                    />
                     {isUploadingImage && (
                       <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                         <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
@@ -1295,6 +1329,16 @@ const AnnouncementsPage = () => {
                         </button>
                       )}
                     </div>
+                    
+                    <div className="space-y-2 mt-3">
+                      <span className="text-[11px] font-bold text-neutral-600 block">Poll Deadline (Optional):</span>
+                      <DatePicker
+                        value={pollExpiresAt}
+                        onChange={(val) => setPollExpiresAt(val)}
+                        placeholder="Select deadline date"
+                        disablePast={true}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -1316,15 +1360,21 @@ const AnnouncementsPage = () => {
                   const myReaction = likesArray.find((l: any) => Number(l.employee_id) === Number(currentUserId));
                   const hasReacted = !!myReaction;
 
-                  // Group reactions by emoji type
-                  const emojiCounts: { [key: string]: { count: number; names: string[] } } = {};
+                  // Group reactions by emoji type with full user details
+                  const emojiCounts: { [key: string]: { count: number; names: string[]; users: any[] } } = {};
                   likesArray.forEach((l: any) => {
                     const emo = l.reaction || "👍";
                     if (!emojiCounts[emo]) {
-                      emojiCounts[emo] = { count: 0, names: [] };
+                      emojiCounts[emo] = { count: 0, names: [], users: [] };
                     }
                     emojiCounts[emo].count += 1;
-                    if (l.name) emojiCounts[emo].names.push(l.name);
+                    const userName = l.name || (l.employee_id ? `User #${l.employee_id}` : "Anonymous");
+                    emojiCounts[emo].names.push(userName);
+                    emojiCounts[emo].users.push({
+                      employee_id: l.employee_id || l.user_id,
+                      name: userName,
+                      profile_image: l.profile_image || ""
+                    });
                   });
 
                   return (
@@ -1373,15 +1423,33 @@ const AnnouncementsPage = () => {
                             {renderFormattedMessage(item.message)}
 
                             {item.image_url && (
-                              <div className="mt-3 rounded-xl overflow-hidden border border-neutral-150 max-h-[400px] bg-neutral-50 flex items-center justify-center">
+                              <div
+                                onClick={() =>
+                                  setViewerImage({
+                                    url: item.image_url.startsWith("http")
+                                      ? item.image_url
+                                      : `${BASE_API_URL}${item.image_url}`,
+                                    title: item.title,
+                                  })
+                                }
+                                className="mt-3 rounded-xl overflow-hidden border border-neutral-200/80 max-h-[420px] bg-neutral-900/5 hover:bg-neutral-900/10 flex items-center justify-center cursor-pointer group relative transition-all duration-200 shadow-xs hover:shadow-md"
+                              >
                                 <img
                                   src={item.image_url.startsWith("http") ? item.image_url : `${BASE_API_URL}${item.image_url}`}
                                   alt={item.title}
-                                  className="max-w-full h-auto max-h-[400px] object-contain"
+                                  className="max-w-full h-auto max-h-[420px] object-contain group-hover:scale-[1.01] transition-transform duration-300"
                                   onError={(e) => {
                                     e.currentTarget.style.display = 'none';
                                   }}
                                 />
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100 backdrop-blur-[1px]">
+                                  <div className="px-3.5 py-1.5 rounded-full bg-neutral-900/80 backdrop-blur-md text-white text-xs font-semibold flex items-center gap-2 shadow-xl transform translate-y-2 group-hover:translate-y-0 transition-transform border border-white/20">
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                                    </svg>
+                                    Click to view & zoom
+                                  </div>
+                                </div>
                               </div>
                             )}
 
@@ -1396,11 +1464,12 @@ const AnnouncementsPage = () => {
                                 {(() => {
                                   const votesObj = item.poll_votes || {};
                                   const totalVotes = Object.keys(votesObj).length;
+                                  const userVoteData = votesObj[String(currentUserId)] || null;
+                                  const isCurrentUserVoted = !!userVoteData;
                                   
-                                  let isCurrentUserVoted = false;
-                                  if (votesObj[String(currentUserId)]) {
-                                    isCurrentUserVoted = true;
-                                  }
+                                  const expiresAt = item.poll_data.expires_at ? new Date(item.poll_data.expires_at).getTime() : null;
+                                  const isPollFrozen = expiresAt ? Date.now() > expiresAt : false;
+                                  const formattedExpiresAt = expiresAt ? new Date(expiresAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
 
                                   return (
                                     <div className="space-y-2 pt-1">
@@ -1439,20 +1508,25 @@ const AnnouncementsPage = () => {
                                           <button
                                             key={idx}
                                             type="button"
+                                            disabled={isPollFrozen}
                                             onClick={() => handleVotePoll(item.id, idx)}
-                                            className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer relative group/opt ${
+                                            className={`w-full text-left p-3 rounded-xl border transition-all relative group/opt ${
+                                              isPollFrozen ? "cursor-not-allowed opacity-80" : "cursor-pointer hover:border-primary-300 hover:bg-neutral-50"
+                                            } ${
                                               isVotedByMe
                                                 ? "border-primary-500 bg-primary-50/60 font-bold"
-                                                : "border-neutral-200 bg-white hover:border-primary-300 hover:bg-neutral-50"
+                                                : "border-neutral-200 bg-white"
                                             }`}
                                           >
-                                            {/* Live Progress Bar Background (Clipped inside rounded container) */}
-                                            <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
-                                              <div
-                                                className="h-full bg-primary-500/15 transition-all duration-500 rounded-xl"
-                                                style={{ width: `${percentage}%` }}
-                                              />
-                                            </div>
+                                            {/* Live Progress Bar Background - Only show if voted or poll ended */}
+                                            {(isCurrentUserVoted || isPollFrozen) && (
+                                              <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
+                                                <div
+                                                  className="h-full bg-primary-500/15 transition-all duration-500 rounded-xl"
+                                                  style={{ width: `${percentage}%` }}
+                                                />
+                                              </div>
+                                            )}
 
                                             <div className="relative flex items-center justify-between z-10 text-xs">
                                               <div className="flex items-center gap-2.5">
@@ -1467,53 +1541,119 @@ const AnnouncementsPage = () => {
                                               </div>
 
                                               <div className="flex items-center gap-3 shrink-0">
-                                                {/* Voter Profile Avatars & Hover Tooltip */}
-                                                {votersForOption.length > 0 && (
-                                                  <div className="relative group/voters flex items-center -space-x-1.5 overflow-visible">
-                                                    {votersForOption.slice(0, 4).map((voter, vIdx) => (
-                                                      <img
-                                                        key={vIdx}
-                                                        src={getProfileImageUrl(voter.profileImage, voter.userId)}
-                                                        alt={voter.name}
-                                                        className="inline-block h-5 w-5 rounded-full ring-1 ring-white object-cover shadow-2xs"
-                                                      />
-                                                    ))}
-                                                    {votersForOption.length > 4 && (
-                                                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-200 text-[9px] font-bold text-neutral-700 ring-1 ring-white">
-                                                        +{votersForOption.length - 4}
-                                                      </span>
-                                                    )}
+                                                {/* Voter Profile Avatars & Scrollable Popover - Only show if voted or poll ended */}
+                                                {(isCurrentUserVoted || isPollFrozen) && votersForOption.length > 0 && (() => {
+                                                  const isVoterPopoverOpen =
+                                                    activePollVotersPopover?.announcementId === item.id &&
+                                                    activePollVotersPopover?.optionIndex === idx;
 
-                                                    {/* Hover Tooltip listing voter names */}
-                                                    <div className="absolute bottom-full right-0 mb-2.5 hidden group-hover/voters:block z-[999] w-max max-w-xs p-2.5 bg-neutral-900/95 backdrop-blur-xs text-white text-[11px] rounded-xl shadow-2xl pointer-events-none border border-neutral-700">
-                                                      <div className="font-bold text-neutral-300 border-b border-neutral-700/80 pb-1 mb-1.5 flex items-center justify-between gap-3">
-                                                        <span>Voted for {optText}:</span>
-                                                        <span className="text-[10px] text-neutral-400 font-normal">({votersForOption.length})</span>
-                                                      </div>
-                                                      <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
-                                                        {votersForOption.map((v, i) => (
-                                                          <div key={i} className="flex items-center gap-1.5 text-white font-medium text-[11px]">
-                                                            <img src={getProfileImageUrl(v.profileImage, v.userId)} className="w-4 h-4 rounded-full object-cover shrink-0 border border-neutral-600" alt={v.name} />
-                                                            <span>{v.name}</span>
+                                                  return (
+                                                    <div
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setActivePollVotersPopover(
+                                                          isVoterPopoverOpen
+                                                            ? null
+                                                            : { announcementId: item.id, optionIndex: idx }
+                                                        );
+                                                      }}
+                                                      className="voter-badge-container relative group/voters flex items-center -space-x-1.5 overflow-visible cursor-pointer select-none"
+                                                    >
+                                                      {votersForOption.slice(0, 4).map((voter, vIdx) => (
+                                                        <img
+                                                          key={vIdx}
+                                                          src={getProfileImageUrl(voter.profileImage, voter.userId)}
+                                                          alt={voter.name}
+                                                          className="inline-block h-5 w-5 rounded-full ring-1 ring-white object-cover shadow-2xs"
+                                                          onError={(e) => {
+                                                            e.currentTarget.style.display = "none";
+                                                          }}
+                                                        />
+                                                      ))}
+                                                      {votersForOption.length > 4 && (
+                                                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-200 hover:bg-neutral-300 text-[9px] font-bold text-neutral-700 ring-1 ring-white transition-colors">
+                                                          +{votersForOption.length - 4}
+                                                        </span>
+                                                      )}
+
+                                                      {/* Hover / Click Interactive Popover listing voter names */}
+                                                      <div
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        onWheel={(e) => e.stopPropagation()}
+                                                        className={`absolute bottom-full right-0 mb-2 z-[999] w-60 sm:w-64 p-3 bg-neutral-900/95 backdrop-blur-md text-white text-[11px] rounded-2xl shadow-2xl pointer-events-auto border border-neutral-700/80 transition-all animate-fadeIn ${
+                                                          isVoterPopoverOpen ? "block" : "hidden group-hover/voters:block"
+                                                        }`}
+                                                      >
+                                                        {/* Header */}
+                                                        <div className="flex items-center justify-between border-b border-neutral-800 pb-2 mb-2">
+                                                          <div className="flex items-center gap-1.5 font-bold text-neutral-200 text-xs truncate max-w-[140px]">
+                                                            <span>Voted:</span>
+                                                            <span className="text-primary-400 font-bold truncate">"{optText}"</span>
                                                           </div>
-                                                        ))}
-                                                      </div>
-                                                      <div className="absolute top-full right-3 border-4 border-transparent border-t-neutral-900/95"></div>
-                                                    </div>
-                                                  </div>
-                                                )}
+                                                          <span className="text-[10px] font-semibold text-neutral-400 px-1.5 py-0.5 rounded-full bg-neutral-800 border border-neutral-700 shrink-0">
+                                                            {votersForOption.length} {votersForOption.length === 1 ? "voter" : "voters"}
+                                                          </span>
+                                                        </div>
 
-                                                <span className="font-extrabold text-neutral-600 text-[11px]">
-                                                  {percentage}% ({count})
-                                                </span>
+                                                        {/* Scrollable List */}
+                                                        <div className="flex flex-col gap-1 max-h-44 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-neutral-700 hover:scrollbar-thumb-neutral-600">
+                                                          {votersForOption.map((v, i) => (
+                                                            <div
+                                                              key={i}
+                                                              className="flex items-center gap-2.5 p-1 rounded-lg hover:bg-white/5 transition-colors"
+                                                            >
+                                                              {v.profileImage ? (
+                                                                <img
+                                                                  src={getProfileImageUrl(v.profileImage, v.userId)}
+                                                                  className="w-5 h-5 rounded-full object-cover shrink-0 border border-neutral-600"
+                                                                  alt={v.name}
+                                                                  onError={(e) => {
+                                                                    e.currentTarget.style.display = "none";
+                                                                  }}
+                                                                />
+                                                              ) : (
+                                                                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-neutral-700 to-neutral-800 flex items-center justify-center text-[9px] font-bold text-neutral-300 shrink-0 border border-neutral-600">
+                                                                  {v.name.charAt(0).toUpperCase()}
+                                                                </div>
+                                                              )}
+                                                              <span className="text-[11.5px] text-neutral-200 font-medium truncate flex-1 text-left">
+                                                                {v.name}
+                                                              </span>
+                                                            </div>
+                                                          ))}
+                                                        </div>
+
+                                                        {/* Pointer Arrow */}
+                                                        <div className="absolute top-full right-4 border-4 border-transparent border-t-neutral-900/95"></div>
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })()}
+
+                                                {(isCurrentUserVoted || isPollFrozen) && (
+                                                  <span className="font-extrabold text-neutral-600 text-[11px]">
+                                                    {percentage}% ({count})
+                                                  </span>
+                                                )}
                                               </div>
                                             </div>
                                           </button>
                                         );
                                       })}
 
-                                      <div className="text-[11px] text-neutral-400 font-semibold text-right pt-1">
-                                        Total Votes: {totalVotes}
+                                      <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-neutral-150/80">
+                                        <div className="flex items-center gap-1 font-semibold">
+                                          {isPollFrozen ? (
+                                            <span className="text-red-600">🔒 Poll Ended{formattedExpiresAt ? ` on ${formattedExpiresAt}` : ''}</span>
+                                          ) : isCurrentUserVoted ? (
+                                            <span className="text-emerald-600">✓ Voted (You can change your vote{formattedExpiresAt ? ` until ${formattedExpiresAt}` : ''})</span>
+                                          ) : (
+                                            <span className="text-neutral-400 font-medium">Select an option to vote{formattedExpiresAt ? ` (Ends on ${formattedExpiresAt})` : ''}</span>
+                                          )}
+                                        </div>
+                                        <div className="text-[11px] text-neutral-400 font-semibold text-right">
+                                          Total Votes: {totalVotes}
+                                        </div>
                                       </div>
                                     </div>
                                   );
@@ -1559,35 +1699,88 @@ const AnnouncementsPage = () => {
                               )}
                             </div>
 
-                            {/* Reaction Badges with Hover Tooltip of Names */}
+                            {/* Reaction Badges with In-Place Scrollable Popover */}
                             {likesArray.length > 0 && (
                               <div className="flex items-center gap-2 flex-wrap">
-                                {Object.entries(emojiCounts).map(([emo, info]) => (
-                                  <div
-                                    key={emo}
-                                    className="relative group/tooltip flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-100 border border-neutral-200 text-xs font-bold text-neutral-700 cursor-pointer hover:bg-neutral-200 transition-colors"
-                                  >
-                                    <span>{emo}</span>
-                                    <span>{info.count}</span>
+                                {Object.entries(emojiCounts).map(([emo, info]) => {
+                                  const isPopoverOpen =
+                                    activeReactionPopover?.announcementId === item.id &&
+                                    activeReactionPopover?.emoji === emo;
 
-                                    {/* Hover Tooltip Listing Reacted Employee Names */}
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/tooltip:block z-40 w-max max-w-xs p-2 bg-neutral-900 text-white text-[11px] rounded-lg shadow-xl pointer-events-none">
-                                      <div className="font-semibold text-neutral-300 border-b border-neutral-700 pb-1 mb-1">
-                                        Reacted with {emo}:
+                                  return (
+                                    <div
+                                      key={emo}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveReactionPopover(
+                                          isPopoverOpen ? null : { announcementId: item.id, emoji: emo }
+                                        );
+                                      }}
+                                      className={`reaction-badge-container relative group/reaction flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-bold transition-all cursor-pointer select-none ${
+                                        isPopoverOpen
+                                          ? "bg-neutral-800 text-white border-neutral-700 shadow-sm ring-2 ring-neutral-400/20"
+                                          : "bg-neutral-100 hover:bg-neutral-200 text-neutral-700 border-neutral-200"
+                                      }`}
+                                    >
+                                      <span className="text-sm leading-none">{emo}</span>
+                                      <span className="text-[11px] font-extrabold">{info.count}</span>
+
+                                      {/* Scrollable Hover / Click Popover */}
+                                      <div
+                                        onClick={(e) => e.stopPropagation()}
+                                        onWheel={(e) => e.stopPropagation()}
+                                        className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-56 sm:w-64 p-3 bg-neutral-900/95 backdrop-blur-md text-white rounded-2xl shadow-2xl border border-neutral-700/80 pointer-events-auto transition-all animate-fadeIn ${
+                                          isPopoverOpen ? "block" : "hidden group-hover/reaction:block"
+                                        }`}
+                                      >
+                                        {/* Popover Header */}
+                                        <div className="flex items-center justify-between border-b border-neutral-800 pb-2 mb-2">
+                                          <div className="flex items-center gap-1.5 font-bold text-neutral-200 text-xs">
+                                            <span>Reacted with {emo}</span>
+                                          </div>
+                                          <span className="text-[10px] font-semibold text-neutral-400 px-1.5 py-0.5 rounded-full bg-neutral-800 border border-neutral-700">
+                                            {info.count} {info.count === 1 ? "person" : "people"}
+                                          </span>
+                                        </div>
+
+                                        {/* Smooth Scrollable Users List */}
+                                        <div className="flex flex-col gap-1 max-h-44 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-neutral-700 hover:scrollbar-thumb-neutral-600">
+                                          {info.users.length > 0 ? (
+                                            info.users.map((u, i) => (
+                                              <div
+                                                key={i}
+                                                className="flex items-center gap-2.5 p-1 rounded-lg hover:bg-white/5 transition-colors"
+                                              >
+                                                {u.profile_image ? (
+                                                  <img
+                                                    src={getProfileImageUrl(u.profile_image, u.employee_id)}
+                                                    alt={u.name}
+                                                    className="w-5 h-5 rounded-full object-cover shrink-0 border border-neutral-600"
+                                                    onError={(e) => {
+                                                      e.currentTarget.style.display = "none";
+                                                    }}
+                                                  />
+                                                ) : (
+                                                  <div className="w-5 h-5 rounded-full bg-gradient-to-br from-neutral-700 to-neutral-800 flex items-center justify-center text-[9px] font-bold text-neutral-300 shrink-0 border border-neutral-600">
+                                                    {u.name.charAt(0).toUpperCase()}
+                                                  </div>
+                                                )}
+                                                <span className="text-[11.5px] text-neutral-200 font-medium truncate flex-1 text-left">
+                                                  {u.name}
+                                                </span>
+                                              </div>
+                                            ))
+                                          ) : (
+                                            <span className="text-neutral-400 text-xs py-1">No details</span>
+                                          )}
+                                        </div>
+
+                                        {/* Pointer arrow */}
+                                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-neutral-900/95"></div>
                                       </div>
-                                      <div className="flex flex-col gap-0.5 max-h-32 overflow-y-auto">
-                                        {info.names.length > 0 ? (
-                                          info.names.map((name, i) => (
-                                            <span key={i} className="text-white font-medium">• {name}</span>
-                                          ))
-                                        ) : (
-                                          <span className="text-neutral-400">Anonymous</span>
-                                        )}
-                                      </div>
-                                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-neutral-900"></div>
                                     </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -2006,8 +2199,13 @@ const AnnouncementsPage = () => {
                   Image Attachment (Optional)
                 </label>
                 {editImagePreview ? (
-                  <div className="relative inline-block rounded-xl overflow-hidden border border-neutral-200 shadow-sm max-w-[200px]">
-                    <img src={editImagePreview} className="w-full h-auto object-cover max-h-[140px]" alt="Edit Preview" />
+                  <div className="relative inline-block rounded-xl overflow-hidden border border-neutral-200 shadow-sm max-w-[200px] group cursor-pointer">
+                    <img
+                      src={editImagePreview}
+                      className="w-full h-auto object-cover max-h-[140px] group-hover:scale-105 transition-transform"
+                      alt="Edit Preview"
+                      onClick={() => setViewerImage({ url: editImagePreview, title: editTitle || "Attachment Preview" })}
+                    />
                     <button
                       type="button"
                       onClick={() => { setEditImageUrl(""); setEditImagePreview(""); }}
@@ -2171,6 +2369,15 @@ const AnnouncementsPage = () => {
           </div>
         </div>
       )}
+
+      {/* Lightbox / Image Viewer Modal */}
+      <ImageViewerModal
+        isOpen={!!viewerImage}
+        onClose={() => setViewerImage(null)}
+        imageUrl={viewerImage?.url || ""}
+        title={viewerImage?.title}
+        altText={viewerImage?.title}
+      />
     </div>
   );
 };

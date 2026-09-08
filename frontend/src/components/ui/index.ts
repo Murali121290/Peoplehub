@@ -11,4 +11,5 @@ export * from './EmptyState';
 export * from './Spinner';
 export * from './Drawer';
 export * from './Tooltip';
+export * from './ImageViewerModal';
 export { AppToaster } from './ToastConfig';

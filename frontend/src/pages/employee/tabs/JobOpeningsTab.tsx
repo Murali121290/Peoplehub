@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { BASE_API_URL } from "../../../config/api";
 import { Button } from "../../../components/ui/Button";
 import { BookLoader } from "../../../components/ui/Spinner";
+import { ImageViewerModal } from "../../../components/ui/ImageViewerModal";
 import { toast } from "react-hot-toast";
 import {
   BriefcaseIcon,
@@ -72,8 +73,9 @@ const JobOpeningsTab: React.FC<JobOpeningsTabProps> = ({ user }) => {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Delete Dialog States
+  // Confirmation modal
   const [jobToDelete, setJobToDelete] = useState<ParsedJobOpening | null>(null);
+  const [viewerImage, setViewerImage] = useState<{ url: string; title: string } | null>(null);
 
   // Departments State (initialized with fallback defaults)
   const [dbDepartments, setDbDepartments] = useState<string[]>([
@@ -493,12 +495,31 @@ If you are interested, please contact ${job.poc_name} directly at ${job.poc_emai
 
                   {/* Banner Image */}
                   {job.image_url && (
-                    <div className="mt-4 rounded-xl overflow-hidden border border-neutral-150 max-h-[300px] bg-neutral-50 flex items-center justify-center">
+                    <div
+                      onClick={() => {
+                        if (!job.image_url) return;
+                        setViewerImage({
+                          url: job.image_url.startsWith("http")
+                            ? job.image_url
+                            : `${BASE_API_URL}${job.image_url}`,
+                          title: job.title,
+                        });
+                      }}
+                      className="mt-4 rounded-xl overflow-hidden border border-neutral-200/80 max-h-[320px] bg-neutral-900/5 hover:bg-neutral-900/10 flex items-center justify-center cursor-pointer group relative transition-all duration-200 shadow-xs hover:shadow-md"
+                    >
                       <img
                         src={job.image_url.startsWith("http") ? job.image_url : `${BASE_API_URL}${job.image_url}`}
                         alt={job.title}
-                        className="w-full h-auto max-h-[300px] object-cover"
+                        className="w-full h-auto max-h-[320px] object-cover group-hover:scale-[1.01] transition-transform duration-300"
                       />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100 backdrop-blur-[1px]">
+                        <div className="px-3.5 py-1.5 rounded-full bg-neutral-900/80 backdrop-blur-md text-white text-xs font-semibold flex items-center gap-2 shadow-xl transform translate-y-2 group-hover:translate-y-0 transition-transform border border-white/20">
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                          </svg>
+                          Click to view & zoom
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -778,6 +799,15 @@ If you are interested, please contact ${job.poc_name} directly at ${job.poc_emai
           </div>
         </div>
       )}
+
+      {/* Lightbox / Image Viewer Modal */}
+      <ImageViewerModal
+        isOpen={!!viewerImage}
+        onClose={() => setViewerImage(null)}
+        imageUrl={viewerImage?.url || ""}
+        title={viewerImage?.title}
+        altText={viewerImage?.title}
+      />
     </div>
   );
 };

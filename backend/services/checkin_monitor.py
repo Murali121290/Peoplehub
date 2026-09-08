@@ -297,7 +297,7 @@ def generate_daily_notifications():
             ).all()
             for n in existing_notifs:
                 msg = n.message or ""
-                m_ann = re.search(r"Today is (.+?)'s (\d+)-year work anniversary\. Congratulate them!", msg)
+                m_ann = re.search(r"Today is (.+?)'s (\d+)-year work anniversary\. ", msg)
                 if m_ann:
                     c_name = m_ann.group(1)
                     yrs = int(m_ann.group(2))

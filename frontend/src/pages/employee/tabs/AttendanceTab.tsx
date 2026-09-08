@@ -817,13 +817,14 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       badgeEmoji = "";
     }
 
-    if (attRec?.is_regularization === true) {
+    if (attRec?.is_regularization === true && attRec?.manager_status !== "Approved" && attRec?.manager_status !== "Rejected") {
       if (badgeLabel.includes("Half Day Present")) {
         badgeLabel = "Half Day Present & Pending Reg.";
       } else {
         badgeLabel = "Pending Regularization";
+        status = "Absent";
       }
-      status = "Absent";
+
     }
 
 
@@ -1206,9 +1207,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                               );
                             })}
                             {cell.used_weekly_grace && (
-                                <span className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg bg-indigo-50 text-indigo-700 border-indigo-200`}>
-                                  ℹ️ 15m Grace
-                                </span>
+                              <span className={`text-[10px] font-extrabold px-2 py-1 border rounded-lg bg-indigo-50 text-indigo-700 border-indigo-200`}>
+                                ℹ️ 15m Grace
+                              </span>
                             )}
                           </div>
                         </div>
