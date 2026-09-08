@@ -100,19 +100,22 @@ def apply_shift():
 
         if employee:
             emp_ids = [employee.employee_id]
+            if str(employee.id) not in emp_ids:
+                emp_ids.append(str(employee.id))
 
             overlapping_leave = LeaveRequest.query.filter(
                 LeaveRequest.employee_id.in_(emp_ids),
                 LeaveRequest.status == "Approved",
                 LeaveRequest.request_type == "Leave",
                 LeaveRequest.from_date <= req_to,
-                LeaveRequest.to_date >= req_from
+                LeaveRequest.to_date >= req_from,
+                ((LeaveRequest.total_days > 0.5) | (LeaveRequest.total_days.is_(None)))
             ).first()
             
             if overlapping_leave:
                 return jsonify({
                     "success": False,
-                    "message": f"Cannot apply for shift change/WFH. You have an approved leave from {overlapping_leave.from_date} to {overlapping_leave.to_date}."
+                    "message": f"Cannot apply for shift change/WFH. You have an approved full-day leave from {overlapping_leave.from_date} to {overlapping_leave.to_date}."
                 }), 400
 
             # Check for existing approved Shift/WFH/Office requests in the date range
