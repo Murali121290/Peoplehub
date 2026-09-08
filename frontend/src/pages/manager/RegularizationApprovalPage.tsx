@@ -166,10 +166,10 @@ const RegularizationApprovalPage: React.FC = () => {
   const filteredRequests = requests.filter((req) => {
     let searchMatch = true;
     if (searchQuery.trim() !== "") {
-      const q = searchQuery.toLowerCase();
-      searchMatch =
-        req.employee_name?.toLowerCase().includes(q) ||
-        req.employee_id?.toLowerCase().includes(q);
+      const q = searchQuery.toLowerCase().trim();
+      const empName = String(req.employee_name || "").toLowerCase();
+      const empId = String(req.employee_id || "").toLowerCase();
+      searchMatch = empName.includes(q) || empId.includes(q);
     }
 
     const resolvedStatus = getStatusText(req.manager_status);
