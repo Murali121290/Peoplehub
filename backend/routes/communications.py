@@ -373,18 +373,23 @@ def vote_poll(message_id):
         if not isinstance(prev_opts, list):
             prev_opts = [prev_opts]
 
-        change_count = user_prev.get("change_count", 0) if isinstance(user_prev, dict) else (1 if user_prev else 0)
+        expires_at_str = message.poll_data.get("expires_at")
+        if expires_at_str:
+            from datetime import datetime
+            try:
+                expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                # If it has a timezone, make it naive UTC for comparison with utcnow
+                expires_at = expires_at.replace(tzinfo=None)
+                if datetime.utcnow() > expires_at:
+                    return jsonify({
+                        "success": False,
+                        "error": "This poll has ended."
+                    }), 400
+            except Exception:
+                pass
 
-        # If user has already voted and is attempting to change their selection
-        if prev_opts and prev_opts != opt_list:
-            if change_count >= 3:
-                return jsonify({
-                    "success": False,
-                    "error": "You have reached the maximum limit of 3 vote changes for this poll."
-                }), 400
-            change_count += 1
-        elif not prev_opts:
-            change_count = 1
+        change_count = user_prev.get("change_count", 0) if isinstance(user_prev, dict) else (1 if user_prev else 0)
+        change_count += 1
         
         votes[user_id] = {
             "option_index": opt_list,
