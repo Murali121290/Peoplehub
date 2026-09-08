@@ -5,7 +5,12 @@ import {
   CalendarIcon,
   ListBulletIcon,
   ArrowPathIcon,
-  CalendarDaysIcon
+  CalendarDaysIcon,
+  ClockIcon,
+  ShieldCheckIcon,
+  DocumentTextIcon,
+  XMarkIcon,
+  ArrowRightIcon
 } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'framer-motion';
 import StatCard from '../components/StatCard';
@@ -142,6 +147,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const [regCheckOut, setRegCheckOut] = useState("18:00");
   const [regReason, setRegReason] = useState("");
   const [isSubmittingReg, setIsSubmittingReg] = useState(false);
+
+  // Resolution Action Choice state (Step 1 Modal)
+  const [actionChoiceCell, setActionChoiceCell] = useState<DayDetails | null>(null);
+
+  // Permission Request states
+  const [resolvingPermissionCell, setResolvingPermissionCell] = useState<DayDetails | null>(null);
+  const [permFromTime, setPermFromTime] = useState<string>("");
+  const [permToTime, setPermToTime] = useState<string>("");
+  const [permReason, setPermReason] = useState<string>("");
+  const [isSubmittingPerm, setIsSubmittingPerm] = useState<boolean>(false);
 
   useEffect(() => {
     setResolveReason("");
@@ -432,6 +447,88 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   };
 
 
+  const submitPermissionRequest = async () => {
+    const targetEmpId = currentEmployee?.id || employeeId;
+    if (!resolvingPermissionCell || !targetEmpId) return;
+
+    if (!permFromTime || !permToTime) {
+      toast.error("Please enter both From and To times for permission");
+      return;
+    }
+
+    if (permFromTime >= permToTime) {
+      toast.error("From Time must be earlier than To Time");
+      return;
+    }
+
+    if (!permReason.trim()) {
+      toast.error("Please enter a reason for the permission request");
+      return;
+    }
+
+    setIsSubmittingPerm(true);
+    try {
+      const userStr = localStorage.getItem("user");
+      const userObj = userStr ? JSON.parse(userStr) : {};
+
+      const targetEmpCode = currentEmployee?.employee_id || user.employee_id || targetEmpId;
+
+      const payload = {
+        employee_id: targetEmpCode,
+        employee_name: currentEmployee ? `${currentEmployee.first_name} ${currentEmployee.last_name}` : userObj.name || "Employee",
+        request_type: "Permission",
+        permission_date: resolvingPermissionCell.dateStr,
+        from_time: permFromTime,
+        to_time: permToTime,
+        reporting_manager: currentEmployee?.reporting_manager || "Admin",
+        reason: permReason.trim()
+      };
+
+      const res = await apiService.post("/leaves/", payload);
+      if (res.data.success || res.status === 200 || res.status === 201) {
+        toast.success("Permission request submitted to manager for approval");
+        setResolvingPermissionCell(null);
+        fetchMonthData();
+      } else {
+        toast.error(res.data.message || res.data.error || "Failed to submit permission request");
+      }
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || "Error submitting permission request";
+      toast.error(errorMsg);
+    } finally {
+      setIsSubmittingPerm(false);
+    }
+  };
+
+  const handleSelectLeave = (cell: DayDetails) => {
+    let dur = "Full Day";
+    if (cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) {
+      if (cell.leaveReason?.includes("First Half") || cell.rawLeaveRecord?.from_time?.startsWith("09:00")) {
+        dur = "Second Half";
+      } else if (cell.leaveReason?.includes("Second Half") || cell.rawLeaveRecord?.from_time?.startsWith("13:30")) {
+        dur = "First Half";
+      } else {
+        dur = "First Half";
+      }
+    }
+    setResolveDuration(dur);
+    setActionChoiceCell(null);
+    setResolvingCell(cell);
+  };
+
+  const handleSelectRegularization = (cell: DayDetails) => {
+    setActionChoiceCell(null);
+    setRegularizingCell(cell);
+  };
+
+  const handleSelectPermission = (cell: DayDetails) => {
+    setActionChoiceCell(null);
+    setPermFromTime("");
+    setPermToTime("");
+    setPermReason("");
+    setResolvingPermissionCell(cell);
+  };
+
   const handleCellClick = (cell: DayDetails) => {
     // Prevent clicking on today's cell if the user has checked in but not yet checked out
     const isOngoingToday = cell.isToday && cell.checkIn !== "-" && cell.checkIn !== "" && (cell.checkOut === "-" || cell.checkOut === "");
@@ -440,23 +537,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     const noLeaveOrHalf = (!cell.leaveType || cell.halfDayDuration);
     if (
       isCurrentPayrollMonthView &&
-      (cell.status === "Absent" || cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) &&
+      (cell.status === "Absent" || cell.status === "Half Day" || cell.status === "Leave" || cell.badgeLabel?.includes("Loss of Pay")) &&
       noLeaveOrHalf &&
       cell.dateStr <= todayKey &&
       (!cell.badgeLabel || (!cell.badgeLabel.includes("Half Day Present") && !cell.badgeLabel.includes("Pending Reg")))
     ) {
-      let dur = "Full Day";
-      if (cell.status === "Half Day" || (cell.status === "Leave" && cell.halfDayDuration)) {
-        if (cell.leaveReason?.includes("First Half") || cell.rawLeaveRecord?.from_time?.startsWith("09:00")) {
-          dur = "Second Half";
-        } else if (cell.leaveReason?.includes("Second Half") || cell.rawLeaveRecord?.from_time?.startsWith("13:30")) {
-          dur = "First Half";
-        } else {
-          dur = "First Half";
-        }
-      }
-      setResolveDuration(dur);
-      setResolvingCell(cell);
+      setActionChoiceCell(cell);
     } else if (
       !isManager &&
       isCurrentPayrollMonthView &&
@@ -473,7 +559,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       noLeaveOrHalf &&
       (!cell.badgeLabel || (!cell.badgeLabel.includes("Half Day Present") && !cell.badgeLabel.includes("Pending Reg")))
     ) {
-      setRegularizingCell(cell);
+      setActionChoiceCell(cell);
     }
   };
 
@@ -1724,6 +1810,90 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         )}
       </Card>
 
+      {/* Attendance Resolution Action Selector Modal (Step 1) */}
+      {actionChoiceCell && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-neutral-900/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full border border-neutral-200/90 shadow-2xl animate-scaleIn text-left">
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-100">
+              <div>
+                <h3 className="text-[16px] font-extrabold text-neutral-900">Resolve Attendance</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Select action for <strong className="text-neutral-850 font-bold">{formatDateStr(actionChoiceCell.dateStr)}</strong> ({actionChoiceCell.status}):
+                </p>
+              </div>
+              <button
+                onClick={() => setActionChoiceCell(null)}
+                className="w-8 h-8 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-500 hover:text-neutral-700 flex items-center justify-center transition-colors"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 my-4">
+              {/* Option 1: Apply for Leave */}
+              <button
+                onClick={() => handleSelectLeave(actionChoiceCell)}
+                className="w-full text-left p-3.5 rounded-xl border border-emerald-200/80 bg-emerald-50/40 hover:bg-emerald-50 text-neutral-800 transition-all flex items-center justify-between group shadow-xs hover:shadow-md hover:border-emerald-300 cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <DocumentTextIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-extrabold text-neutral-900 group-hover:text-emerald-700 transition-colors">Apply for Leave</div>
+                    <div className="text-[11px] text-neutral-500">Deduct CL/SL, PL or Loss of Pay</div>
+                  </div>
+                </div>
+                <ArrowRightIcon className="w-4 h-4 text-neutral-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all shrink-0" />
+              </button>
+
+              {/* Option 2: Apply for Regularization */}
+              <button
+                onClick={() => handleSelectRegularization(actionChoiceCell)}
+                className="w-full text-left p-3.5 rounded-xl border border-cyan-200/80 bg-cyan-50/40 hover:bg-cyan-50 text-neutral-800 transition-all flex items-center justify-between group shadow-xs hover:shadow-md hover:border-cyan-300 cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <ClockIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-extrabold text-neutral-900 group-hover:text-cyan-700 transition-colors">Apply for Regularization</div>
+                    <div className="text-[11px] text-neutral-500">Adjust check-in / check-out times</div>
+                  </div>
+                </div>
+                <ArrowRightIcon className="w-4 h-4 text-neutral-400 group-hover:text-cyan-600 group-hover:translate-x-0.5 transition-all shrink-0" />
+              </button>
+
+              {/* Option 3: Apply for Permission */}
+              <button
+                onClick={() => handleSelectPermission(actionChoiceCell)}
+                className="w-full text-left p-3.5 rounded-xl border border-purple-200/80 bg-purple-50/40 hover:bg-purple-50 text-neutral-800 transition-all flex items-center justify-between group shadow-xs hover:shadow-md hover:border-purple-300 cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <ShieldCheckIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-extrabold text-neutral-900 group-hover:text-purple-700 transition-colors">Apply for Permission</div>
+                    <div className="text-[11px] text-neutral-500">Request permission hours for this day</div>
+                  </div>
+                </div>
+                <ArrowRightIcon className="w-4 h-4 text-neutral-400 group-hover:text-purple-600 group-hover:translate-x-0.5 transition-all shrink-0" />
+              </button>
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={() => setActionChoiceCell(null)}
+                className="w-full py-2.5 border border-neutral-200 rounded-xl text-xs text-neutral-600 font-bold hover:bg-neutral-100/70 transition-colors text-center cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* LOP/Leave Resolver Modal */}
       {resolvingCell && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-neutral-900/60 backdrop-blur-xs p-4 animate-fadeIn">
@@ -1822,12 +1992,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               <button
                 onClick={() => {
                   setResolvingCell(null);
-                  setRegularizingCell(resolvingCell);
+                  setActionChoiceCell(resolvingCell);
                 }}
                 disabled={isResolving}
-                className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-700 hover:to-teal-700 text-white font-extrabold text-xs shadow-sm shadow-cyan-500/20 flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                className="px-3.5 py-2.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs flex items-center gap-1.5 transition-all"
               >
-                <span>Apply Regularization</span>
+                <span>Back</span>
               </button>
               <button
                 onClick={() => setResolvingCell(null)}
@@ -1886,7 +2056,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               <button
                 onClick={submitResolveWeekend}
                 disabled={isSubmittingWages}
-                className="w-full text-center px-4 py-3 rounded-xl border border-primary-200 bg-primary-50 hover:bg-primary-100 text-primary-700 text-xs font-bold transition-all flex justify-center items-center"
+                className="w-full text-center px-4 py-3 rounded-xl border border-primary-200 bg-primary-50 hover:bg-primary-100 text-primary-700 text-xs font-bold transition-all flex justify-center items-center cursor-pointer"
               >
                 {isSubmittingWages ? "Submitting..." : "Claim One Day Wages"}
               </button>
@@ -1894,7 +2064,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               <button
                 onClick={() => setResolvingWeekendCell(null)}
                 disabled={isSubmittingWages}
-                className="w-full text-center px-4 py-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-600 text-xs font-bold transition-all flex justify-center items-center"
+                className="w-full text-center px-4 py-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-600 text-xs font-bold transition-all flex justify-center items-center cursor-pointer"
               >
                 Keep as Weekoff / Holiday
               </button>
@@ -1950,7 +2120,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               <button
                 onClick={submitRegularizationRequest}
                 disabled={isSubmittingReg}
-                className="w-full text-center px-4 py-3 rounded-xl border border-primary-200 bg-primary-50 hover:bg-primary-100 text-primary-700 text-xs font-bold transition-all flex justify-center items-center"
+                className="w-full text-center px-4 py-3 rounded-xl border border-primary-200 bg-primary-50 hover:bg-primary-100 text-primary-700 text-xs font-bold transition-all flex justify-center items-center cursor-pointer"
               >
                 {isSubmittingReg ? "Submitting..." : "Submit Adjustment Request"}
               </button>
@@ -1958,7 +2128,78 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
               <button
                 onClick={() => setRegularizingCell(null)}
                 disabled={isSubmittingReg}
-                className="w-full text-center px-4 py-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-600 text-xs font-bold transition-all flex justify-center items-center"
+                className="w-full text-center px-4 py-3 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-600 text-xs font-bold transition-all flex justify-center items-center cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permission Request Modal */}
+      {resolvingPermissionCell && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-neutral-900/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full border border-neutral-200 shadow-2xl animate-scaleIn text-left">
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-100">
+              <div>
+                <h3 className="text-[16px] font-extrabold text-neutral-900">Apply for Permission</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Submit permission for <strong className="text-neutral-850 font-bold">{formatDateStr(resolvingPermissionCell.dateStr)}</strong>:
+                </p>
+              </div>
+              <span className="w-8 h-8 rounded-xl bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center font-extrabold text-sm shrink-0">
+                {resolvingPermissionCell.dayNum}
+              </span>
+            </div>
+
+            {/* Time Pickers */}
+            <div className="grid grid-cols-2 gap-4 mb-4 text-left">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">From Time</label>
+                <TimePicker
+                  value={permFromTime}
+                  onChange={(val) => setPermFromTime(val)}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">To Time</label>
+                <TimePicker
+                  value={permToTime}
+                  onChange={(val) => setPermToTime(val)}
+                  className="w-full"
+                />
+              </div>
+            </div>
+
+            {/* Reason Text Area */}
+            <div className="mb-4 text-left">
+              <label className="block text-xs font-bold text-neutral-700 mb-1">
+                Reason for Permission <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                value={permReason}
+                onChange={(e) => setPermReason(e.target.value)}
+                placeholder="Enter reason for permission request..."
+                className="w-full px-3 py-2 border border-neutral-300 rounded-xl text-xs focus:ring-1 focus:ring-primary-500 focus:outline-none placeholder-neutral-400 bg-neutral-50/50 font-semibold"
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={submitPermissionRequest}
+                disabled={isSubmittingPerm}
+                className="w-full text-center px-4 py-3 rounded-xl border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold transition-all shadow-xs flex justify-center items-center cursor-pointer hover:border-purple-300"
+              >
+                {isSubmittingPerm ? "Submitting..." : "Submit Permission Request"}
+              </button>
+
+              <button
+                onClick={() => setResolvingPermissionCell(null)}
+                disabled={isSubmittingPerm}
+                className="w-full text-center px-4 py-2.5 border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-600 text-xs font-bold transition-all flex justify-center items-center rounded-xl cursor-pointer"
               >
                 Cancel
               </button>
