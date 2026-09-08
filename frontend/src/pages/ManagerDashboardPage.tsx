@@ -256,6 +256,14 @@ const NOTIFICATION_STYLES: Record<string, string> = {
 const ManagerDashboardPage = () => {
   const navigate = useNavigate();
   const userId = localStorage.getItem("user_id");
+  const _userStr = localStorage.getItem("user");
+  const _userObj = _userStr ? JSON.parse(_userStr) : {};
+  const isHrUser = (() => {
+    const accessLevel = (_userObj.access_level || "").toLowerCase();
+    const userRole = (_userObj.role || "").toLowerCase();
+    return accessLevel === "admin" || accessLevel === "hr" || accessLevel === "hr admin" ||
+      accessLevel === "human resource" || userRole.includes("hr") || userRole.includes("admin");
+  })();
 
   // Pending Cycle Attendance States
   const [pendingCycleSummary, setPendingCycleSummary] = useState<any[]>([]);
@@ -3763,18 +3771,21 @@ const ManagerDashboardPage = () => {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Presence Adjustment (mins)</label>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>
+                    Presence Adjustment (mins){isHrUser ? " — HR: up to 9h" : ""}
+                  </label>
                   <input
                     type="number"
                     min="0"
-                    max="5"
+                    max={isHrUser ? 540 : 5}
                     value={editForm.addedMinutes}
                     onChange={(e) => {
                       const val = parseInt(e.target.value) || 0;
-                      setEditForm({ ...editForm, addedMinutes: Math.min(5, Math.max(0, val)) });
+                      const maxVal = isHrUser ? 540 : 5;
+                      setEditForm({ ...editForm, addedMinutes: Math.min(maxVal, Math.max(0, val)) });
                     }}
-                    placeholder="0 - 5"
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px", color: THEME.text, fontWeight: 700 }}
+                    placeholder={isHrUser ? "0 - 540" : "0 - 5"}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1px solid ${isHrUser ? "#7c3aed" : "#cbd5e1"}`, fontSize: "13px", color: THEME.text, fontWeight: 700 }}
                   />
                 </div>
               </div>
