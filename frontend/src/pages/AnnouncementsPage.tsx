@@ -6,6 +6,7 @@ import EmojiPicker from 'emoji-picker-react';
 import { getProfileImageUrl, BASE_API_URL } from "../config/api";
 import { BookLoader } from "../components/ui/Spinner";
 import { ImageViewerModal } from "../components/ui/ImageViewerModal";
+import { DatePicker } from "../components/ui/DatePicker";
 
 
 const AnnouncementsPage = () => {
@@ -54,6 +55,7 @@ const AnnouncementsPage = () => {
   const [showPollCreator, setShowPollCreator] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+  const [pollExpiresAt, setPollExpiresAt] = useState<string>("");
 
   const handleVotePoll = async (announcementId: number, optionIndex: number) => {
     try {
@@ -551,7 +553,8 @@ const AnnouncementsPage = () => {
     const activePollOptions = pollOptions.filter(o => o.trim().length > 0);
     const poll_data = (showPollCreator && pollQuestion.trim() && activePollOptions.length >= 2) ? {
       question: pollQuestion.trim(),
-      options: activePollOptions
+      options: activePollOptions,
+      expires_at: pollExpiresAt ? new Date(`${pollExpiresAt}T23:59:59`).toISOString() : null
     } : null;
 
     const announcementData = {
@@ -588,6 +591,7 @@ const AnnouncementsPage = () => {
         setShowPollCreator(false);
         setPollQuestion("");
         setPollOptions(["", ""]);
+        setPollExpiresAt("");
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
         }
@@ -1325,6 +1329,16 @@ const AnnouncementsPage = () => {
                         </button>
                       )}
                     </div>
+                    
+                    <div className="space-y-2 mt-3">
+                      <span className="text-[11px] font-bold text-neutral-600 block">Poll Deadline (Optional):</span>
+                      <DatePicker
+                        value={pollExpiresAt}
+                        onChange={(val) => setPollExpiresAt(val)}
+                        placeholder="Select deadline date"
+                        disablePast={true}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -1452,8 +1466,10 @@ const AnnouncementsPage = () => {
                                   const totalVotes = Object.keys(votesObj).length;
                                   const userVoteData = votesObj[String(currentUserId)] || null;
                                   const isCurrentUserVoted = !!userVoteData;
-                                  const changeCount = typeof userVoteData === "object" && userVoteData !== null ? (userVoteData.change_count || 1) : (isCurrentUserVoted ? 1 : 0);
-                                  const remainingChanges = Math.max(0, 3 - changeCount);
+                                  
+                                  const expiresAt = item.poll_data.expires_at ? new Date(item.poll_data.expires_at).getTime() : null;
+                                  const isPollFrozen = expiresAt ? Date.now() > expiresAt : false;
+                                  const formattedExpiresAt = expiresAt ? new Date(expiresAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
 
                                   return (
                                     <div className="space-y-2 pt-1">
@@ -1492,20 +1508,25 @@ const AnnouncementsPage = () => {
                                           <button
                                             key={idx}
                                             type="button"
+                                            disabled={isPollFrozen}
                                             onClick={() => handleVotePoll(item.id, idx)}
-                                            className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer relative group/opt ${
+                                            className={`w-full text-left p-3 rounded-xl border transition-all relative group/opt ${
+                                              isPollFrozen ? "cursor-not-allowed opacity-80" : "cursor-pointer hover:border-primary-300 hover:bg-neutral-50"
+                                            } ${
                                               isVotedByMe
                                                 ? "border-primary-500 bg-primary-50/60 font-bold"
-                                                : "border-neutral-200 bg-white hover:border-primary-300 hover:bg-neutral-50"
+                                                : "border-neutral-200 bg-white"
                                             }`}
                                           >
-                                            {/* Live Progress Bar Background (Clipped inside rounded container) */}
-                                            <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
-                                              <div
-                                                className="h-full bg-primary-500/15 transition-all duration-500 rounded-xl"
-                                                style={{ width: `${percentage}%` }}
-                                              />
-                                            </div>
+                                            {/* Live Progress Bar Background - Only show if voted or poll ended */}
+                                            {(isCurrentUserVoted || isPollFrozen) && (
+                                              <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
+                                                <div
+                                                  className="h-full bg-primary-500/15 transition-all duration-500 rounded-xl"
+                                                  style={{ width: `${percentage}%` }}
+                                                />
+                                              </div>
+                                            )}
 
                                             <div className="relative flex items-center justify-between z-10 text-xs">
                                               <div className="flex items-center gap-2.5">
@@ -1520,8 +1541,8 @@ const AnnouncementsPage = () => {
                                               </div>
 
                                               <div className="flex items-center gap-3 shrink-0">
-                                                {/* Voter Profile Avatars & Scrollable Popover */}
-                                                {votersForOption.length > 0 && (() => {
+                                                {/* Voter Profile Avatars & Scrollable Popover - Only show if voted or poll ended */}
+                                                {(isCurrentUserVoted || isPollFrozen) && votersForOption.length > 0 && (() => {
                                                   const isVoterPopoverOpen =
                                                     activePollVotersPopover?.announcementId === item.id &&
                                                     activePollVotersPopover?.optionIndex === idx;
@@ -1609,9 +1630,11 @@ const AnnouncementsPage = () => {
                                                   );
                                                 })()}
 
-                                                <span className="font-extrabold text-neutral-600 text-[11px]">
-                                                  {percentage}% ({count})
-                                                </span>
+                                                {(isCurrentUserVoted || isPollFrozen) && (
+                                                  <span className="font-extrabold text-neutral-600 text-[11px]">
+                                                    {percentage}% ({count})
+                                                  </span>
+                                                )}
                                               </div>
                                             </div>
                                           </button>
@@ -1619,21 +1642,15 @@ const AnnouncementsPage = () => {
                                       })}
 
                                       <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-neutral-150/80">
-                                        {isCurrentUserVoted ? (
-                                          <div className={`flex items-center gap-1 font-semibold ${
-                                            changeCount >= 3 ? "text-amber-600" : "text-emerald-600"
-                                          }`}>
-                                            {changeCount >= 3 ? (
-                                              <span>🔒 3/3 selections used (No changes left)</span>
-                                            ) : (
-                                              <span>✓ {changeCount}/3 selection{changeCount > 1 ? "s" : ""} used ({remainingChanges} change{remainingChanges !== 1 ? "s" : ""} left)</span>
-                                            )}
-                                          </div>
-                                        ) : (
-                                          <span className="text-neutral-400 font-medium">
-                                            Select an option to vote (up to 3 changes allowed)
-                                          </span>
-                                        )}
+                                        <div className="flex items-center gap-1 font-semibold">
+                                          {isPollFrozen ? (
+                                            <span className="text-red-600">🔒 Poll Ended{formattedExpiresAt ? ` on ${formattedExpiresAt}` : ''}</span>
+                                          ) : isCurrentUserVoted ? (
+                                            <span className="text-emerald-600">✓ Voted (You can change your vote{formattedExpiresAt ? ` until ${formattedExpiresAt}` : ''})</span>
+                                          ) : (
+                                            <span className="text-neutral-400 font-medium">Select an option to vote{formattedExpiresAt ? ` (Ends on ${formattedExpiresAt})` : ''}</span>
+                                          )}
+                                        </div>
                                         <div className="text-[11px] text-neutral-400 font-semibold text-right">
                                           Total Votes: {totalVotes}
                                         </div>
