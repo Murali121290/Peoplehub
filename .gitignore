@@ -26,3 +26,5 @@ backend/uploads/
 data/
 
 backend/debug_emails
+
+peoplehub-playwright
