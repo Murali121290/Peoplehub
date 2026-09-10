@@ -591,6 +591,7 @@ def calculate_attendance_status(attendance):
     # 1.5 Add Approved Permission Hours
     att_user_id = getattr(attendance, 'user_id', None)
     att_emp_id = getattr(attendance, 'employee_id', None)
+    emp_code_str = ""
     if (att_user_id or att_emp_id) and attendance.attendance_date:
         try:
             from models.employee import Employee
@@ -642,7 +643,6 @@ def calculate_attendance_status(attendance):
     if (att_user_id or att_emp_id) and attendance.attendance_date:
         try:
             from models.leave import LeaveRequest
-            from sqlalchemy import or_ as sql_or
 
             half_leave_filters = [
                 LeaveRequest.request_type == "Leave",
@@ -651,14 +651,7 @@ def calculate_attendance_status(attendance):
                 LeaveRequest.to_date >= attendance.attendance_date,
                 LeaveRequest.total_days <= 0.5
             ]
-            if att_user_id and emp_code_str:
-                half_leave_filters.append(sql_or(
-                    LeaveRequest.employee_id == att_user_id,
-                    LeaveRequest.employee_id == emp_code_str
-                ))
-            elif att_user_id:
-                half_leave_filters.append(LeaveRequest.employee_id == att_user_id)
-            elif emp_code_str:
+            if emp_code_str:
                 half_leave_filters.append(LeaveRequest.employee_id == emp_code_str)
 
             half_leave = LeaveRequest.query.filter(*half_leave_filters).first()
