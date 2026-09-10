@@ -661,10 +661,8 @@ def calculate_attendance_status(attendance):
             print("Error checking half day leave in calculate_attendance_status:", e)
 
     if is_half_day_leave:
-        if status_calc_hours >= 4.0:
-            attendance.status = "Present"
-        else:
-            attendance.status = "Half Day" if status_calc_hours > 0 else "Absent"
+        # If half-day leave is applied, always mark as "Half Day" (don't upgrade to "Present")
+        attendance.status = "Half Day"
         return
 
     if status_calc_hours < 4.0:
