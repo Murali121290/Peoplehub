@@ -591,6 +591,8 @@ def calculate_attendance_status(attendance):
     # 1.5 Add Approved Permission Hours
     att_user_id = getattr(attendance, 'user_id', None)
     att_emp_id = getattr(attendance, 'employee_id', None)
+    emp_id_str = ""
+    emp_code_str = ""
     if (att_user_id or att_emp_id) and attendance.attendance_date:
         try:
             from models.employee import Employee
@@ -3606,8 +3608,8 @@ def approve_attendance(employee_id):
                     leave_req.approved_by = emp.reporting_manager or "Manager"
                     leave_req.approved_at = datetime.now()
             else:
-                # Normal present record — just flip manager_status
-                # Recalculate hours if we have check-in and check-out
+                # Normal present/half-day record — recalculate using the full engine
+                # so that approved permissions are included in the status calculation.
                 if attendance.check_in and attendance.check_out:
                     total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
                     break_minutes = attendance.total_break_minutes or 0
@@ -3619,32 +3621,8 @@ def approve_attendance(employee_id):
                     hours_decimal = max(total_seconds, 0) / 3600
                     attendance.total_hours = int(hours_decimal * 100) / 100
 
-                # Determine correct status
-                web_hrs = attendance.total_hours or 0.0
-                card_hrs = attendance.card_working_hours or 0.0
-                max_hrs = max(web_hrs, card_hrs)
-
-                active_hrs = max_hrs
-                if not (attendance.check_out or attendance.card_check_out):
-                    effective_in = attendance.check_in or attendance.card_check_in
-                    if effective_in:
-                        now = get_ist_now()
-                        if attendance.attendance_date == now.date():
-                            paused_seconds = (attendance.paused_minutes or 0) * 60
-                            if attendance.is_paused and attendance.paused_start:
-                                elapsed_seconds = (attendance.paused_start - effective_in).total_seconds()
-                            else:
-                                elapsed_seconds = (now - effective_in).total_seconds()
-                            break_seconds = (attendance.total_break_minutes or 0) * 60
-                            hours_decimal = max(elapsed_seconds - break_seconds - paused_seconds, 0) / 3600
-                            active_hrs = max(hours_decimal, max_hrs)
-
-                if active_hrs < 4.0:
-                    attendance.status = "Absent"
-                elif active_hrs < 8.0:
-                    attendance.status = "Half Day"
-                else:
-                    attendance.status = "Present"
+                # Use the full engine which includes permission hours, grace period etc.
+                calculate_attendance_status(attendance)
 
         db.session.commit()
 
@@ -5200,4 +5178,36 @@ def get_pending_cycle_attendance(manager_user_id):
     except Exception as e:
         import traceback
         traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Admin: Recalculate attendance status for a specific record by ID
+# ---------------------------------------------------------------------------
+
+@attendance_bp.route("/recalculate-status/<int:attendance_id>", methods=["POST"])
+def recalculate_attendance_status(attendance_id):
+    """
+    Force-recalculate the attendance status for a specific attendance record.
+    Useful for fixing records stuck as Half Day after a permission was approved.
+    """
+    try:
+        att = Attendance.query.get(attendance_id)
+        if not att:
+            return jsonify({"success": False, "error": "Attendance record not found"}), 404
+
+        old_status = att.status
+        calculate_attendance_status(att)
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "attendance_id": attendance_id,
+            "old_status": old_status,
+            "new_status": att.status,
+            "total_hours": att.total_hours
+        })
+
+    except Exception as e:
+        db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500

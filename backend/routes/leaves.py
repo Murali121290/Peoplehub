@@ -226,11 +226,11 @@ def apply_leave():
             ).first()
 
             available_hours = float(perm_bal.available) if perm_bal else 2.0
-            if duration_hours > available_hours:
-                return jsonify({
-                    "success": False,
-                    "error": f"Applying this permission would exceed your remaining monthly permission limit. You have {available_hours:.2f} hours remaining."
-                }), 400
+            # if duration_hours > available_hours:
+            #     return jsonify({
+            #         "success": False,
+            #         "error": f"Applying this permission would exceed your remaining monthly permission limit. You have {available_hours:.2f} hours remaining."
+            #     }), 400
 
             leave.total_days = 0
 
