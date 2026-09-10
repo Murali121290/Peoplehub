@@ -602,19 +602,13 @@ def calculate_attendance_status(attendance):
                 emp = Employee.query.filter_by(user_id=att_user_id).first()
             if not emp and att_emp_id:
                 emp = Employee.query.filter_by(id=att_emp_id).first() or Employee.query.filter_by(employee_id=str(att_emp_id)).first()
-
-            emp_id_str = str(emp.id) if emp else (str(att_emp_id) if att_emp_id else "")
-            emp_code_str = emp.employee_id if emp else ""
-
-            if emp_id_str or emp_code_str:
+            emp_code_str = str(emp.employee_id) if emp and emp.employee_id else ""
+            if emp_code_str:
                 permission = LeaveRequest.query.filter(
                     LeaveRequest.request_type == "Permission",
                     LeaveRequest.status == "Approved",
                     LeaveRequest.permission_date == attendance.attendance_date,
-                    sql_or(
-                        LeaveRequest.employee_id == emp_id_str,
-                        LeaveRequest.employee_id == emp_code_str
-                    )
+                    LeaveRequest.employee_id == str(emp_code_str)
                 ).first()
                 if permission and permission.from_time and permission.to_time:
                     f_time = permission.from_time
@@ -657,13 +651,13 @@ def calculate_attendance_status(attendance):
                 LeaveRequest.to_date >= attendance.attendance_date,
                 LeaveRequest.total_days <= 0.5
             ]
-            if emp_id_str and emp_code_str:
+            if att_user_id and emp_code_str:
                 half_leave_filters.append(sql_or(
-                    LeaveRequest.employee_id == emp_id_str,
+                    LeaveRequest.employee_id == att_user_id,
                     LeaveRequest.employee_id == emp_code_str
                 ))
-            elif emp_id_str:
-                half_leave_filters.append(LeaveRequest.employee_id == emp_id_str)
+            elif att_user_id:
+                half_leave_filters.append(LeaveRequest.employee_id == att_user_id)
             elif emp_code_str:
                 half_leave_filters.append(LeaveRequest.employee_id == emp_code_str)
 
@@ -3606,8 +3600,8 @@ def approve_attendance(employee_id):
                     leave_req.approved_by = emp.reporting_manager or "Manager"
                     leave_req.approved_at = datetime.now()
             else:
-                # Normal present record — just flip manager_status
-                # Recalculate hours if we have check-in and check-out
+                # Normal present/half-day record — recalculate using the full engine
+                # so that approved permissions are included in the status calculation.
                 if attendance.check_in and attendance.check_out:
                     total_seconds = (attendance.check_out - attendance.check_in).total_seconds()
                     break_minutes = attendance.total_break_minutes or 0
@@ -3619,32 +3613,8 @@ def approve_attendance(employee_id):
                     hours_decimal = max(total_seconds, 0) / 3600
                     attendance.total_hours = int(hours_decimal * 100) / 100
 
-                # Determine correct status
-                web_hrs = attendance.total_hours or 0.0
-                card_hrs = attendance.card_working_hours or 0.0
-                max_hrs = max(web_hrs, card_hrs)
-
-                active_hrs = max_hrs
-                if not (attendance.check_out or attendance.card_check_out):
-                    effective_in = attendance.check_in or attendance.card_check_in
-                    if effective_in:
-                        now = get_ist_now()
-                        if attendance.attendance_date == now.date():
-                            paused_seconds = (attendance.paused_minutes or 0) * 60
-                            if attendance.is_paused and attendance.paused_start:
-                                elapsed_seconds = (attendance.paused_start - effective_in).total_seconds()
-                            else:
-                                elapsed_seconds = (now - effective_in).total_seconds()
-                            break_seconds = (attendance.total_break_minutes or 0) * 60
-                            hours_decimal = max(elapsed_seconds - break_seconds - paused_seconds, 0) / 3600
-                            active_hrs = max(hours_decimal, max_hrs)
-
-                if active_hrs < 4.0:
-                    attendance.status = "Absent"
-                elif active_hrs < 8.0:
-                    attendance.status = "Half Day"
-                else:
-                    attendance.status = "Present"
+                # Use the full engine which includes permission hours, grace period etc.
+                calculate_attendance_status(attendance)
 
         db.session.commit()
 
