@@ -4779,8 +4779,14 @@ def update_attendance_record():
             paused_minutes = attendance.paused_minutes or 0
             diff_seconds -= (break_minutes + gap_minutes + paused_minutes) * 60
             attendance.total_hours = max(0.0, int((diff_seconds / 3600.0) * 100) / 100)
-            
+
+            # Store the raw worked hours (before permission is added to status calculation)
+            raw_total_hours = attendance.total_hours
+
             calculate_attendance_status(attendance)
+
+            # Ensure total_hours stays as raw worked time (permission used only for status, not stored in total_hours)
+            attendance.total_hours = raw_total_hours
         else:
             calculate_attendance_status(attendance)
 
