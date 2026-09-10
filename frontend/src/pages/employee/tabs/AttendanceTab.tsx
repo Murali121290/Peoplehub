@@ -728,11 +728,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       baseWorkingHours = Number(attRec.workingHours || attRec.working_hours || 0);
 
       const hasCheckedIn = checkIn !== "-" && checkIn !== "";
-      if (hasCheckedIn) {
-        workingHours = baseWorkingHours + permissionHours;
-      } else {
-        workingHours = baseWorkingHours;
-      }
+      workingHours = baseWorkingHours;
 
       workingHoursFormatted = formatHoursMinutes(workingHours);
       lunchMinutes = Number(attRec.lunchMinutes || attRec.lunch_minutes || 0);
@@ -743,7 +739,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       // Calculate total/gross hours
       totalHours = Number(attRec.gross_hours || attRec.grossHours || attRec.total_hours || attRec.totalHours || 0);
       if (totalHours <= 0 && hasCheckedIn) {
-        totalHours = baseWorkingHours + ((lunchMinutes + teaMinutes) / 60) + permissionHours;
+        totalHours = baseWorkingHours + ((lunchMinutes + teaMinutes) / 60);
       }
       totalHoursFormatted = formatHoursMinutes(totalHours);
       addedMinutes = Number(attRec.addedMinutes || attRec.added_minutes || 0);
