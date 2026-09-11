@@ -16,6 +16,7 @@ from .room_booking import RoomBooking
 from .communication import Communication
 from .appraisal import AppraisalCycle, AppraisalQuestion, AppraisalRequest, AppraisalAnswer
 from .otp import OTPToken
+from .kpi_evaluation import KpiEvaluation
 
 __all__ = [
     'db', 'init_db',
@@ -33,5 +34,6 @@ __all__ = [
     'RoomBooking',
     'Communication',
     'AppraisalCycle', 'AppraisalQuestion', 'AppraisalRequest', 'AppraisalAnswer',
-    'PaymentDetails'
+    'PaymentDetails',
+    'KpiEvaluation'
 ]

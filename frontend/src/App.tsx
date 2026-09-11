@@ -32,6 +32,7 @@ const ShiftApprovalPage = lazy(() => import("./pages/manager/ShiftApprovalPage")
 const PermissionApprovalPage = lazy(() => import("./pages/manager/PermissionApprovalPage"));
 const WFHApprovalPage = lazy(() => import("./pages/manager/WFHApprovalPage"));
 const TeamManagementPage = lazy(() => import("./pages/manager/TeamManagementPage"));
+const EvaluationRootPage = lazy(() => import("./pages/evaluation/EvaluationRootPage"));
 
 const PageLoadingFallback = () => (
   <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
@@ -211,6 +212,15 @@ function App() {
           element={
             <ProtectedRoute>
               <AppraisalDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/evaluation"
+          element={
+            <ProtectedRoute>
+              <EvaluationRootPage />
             </ProtectedRoute>
           }
         />

@@ -14,6 +14,7 @@ export interface ConfirmDialogProps {
   variant?: ConfirmDialogVariant;
   confirmLabel?: string;
   cancelLabel?: string;
+  hideCancel?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   onClose?: () => void;
@@ -34,6 +35,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   variant = 'danger',
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
+  hideCancel = false,
   onConfirm,
   onCancel,
   onClose,
@@ -48,9 +50,11 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       size="sm"
       footer={
         <>
-          <Button variant="outline" onClick={onCancel} disabled={loading}>
-            {cancelLabel}
-          </Button>
+          {!hideCancel && (
+            <Button variant="outline" onClick={onCancel} disabled={loading}>
+              {cancelLabel}
+            </Button>
+          )}
           <Button variant={buttonVariant} onClick={onConfirm} loading={loading}>
             {confirmLabel}
           </Button>

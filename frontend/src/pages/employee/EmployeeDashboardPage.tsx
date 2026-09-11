@@ -31,6 +31,7 @@ import AttendanceTab from "./tabs/AttendanceTab";
 import ProfileTab from "./tabs/ProfileTab";
 import EmployeePayrollTab from "./tabs/EmployeePayrollTab";
 import JobOpeningsTab from "./tabs/JobOpeningsTab";
+import EvaluationTab from "./tabs/EvaluationTab";
 import DashboardHeaderActions from "./components/DashboardHeaderActions";
 import NotificationsPanel from "./components/NotificationsPanel";
 import { BookLoader } from "../../components/ui/Spinner";
@@ -144,6 +145,7 @@ const tabs = [
   { id: "requests", label: "My Requests", icon: CalendarDaysIcon },
   { id: "attendance", label: "Attendance", icon: ClockIcon },
   { id: "payroll", label: "Payroll", icon: BanknotesIcon },
+  { id: "evaluation", label: "Evaluation & Report", icon: ChartBarIcon },
   { id: "job-openings", label: "Job Openings", icon: BriefcaseIcon },
   { id: "new-hire", label: "New Hire", icon: SparklesIcon },
   { id: "profile", label: "Profile", icon: UserCircleIcon },
@@ -2162,6 +2164,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
             )}
             {activeTab === "profile" && <ProfileTab />}
             {activeTab === "payroll" && <EmployeePayrollTab />}
+            {activeTab === "evaluation" && <EvaluationTab />}
             {activeTab === "job-openings" && <JobOpeningsTab user={user} />}
           </motion.div>
         </main>
