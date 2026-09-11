@@ -265,6 +265,12 @@ const ManagerDashboardPage = () => {
       accessLevel === "human resource" || userRole.includes("hr") || userRole.includes("admin");
   })();
 
+  // Only "HR Admin" role can edit restricted records (Leave/LOP/Present)
+  const isHrAdminOnly = (() => {
+    const userRole = (_userObj.role || "").toLowerCase();
+    return userRole === "hr admin";
+  })();
+
   // Pending Cycle Attendance States
   const [pendingCycleSummary, setPendingCycleSummary] = useState<any[]>([]);
   const [loadingPendingCycle, setLoadingPendingCycle] = useState(false);
@@ -3341,7 +3347,8 @@ const ManagerDashboardPage = () => {
                           year: "numeric",
                         });
 
-                        const isNonEditable = badgeStr.toLowerCase().includes("leave") || badgeStr.toLowerCase().includes("lop") || badgeStr.toLowerCase().includes("present");
+                        // Only "HR Admin" role can edit Leave/LOP/Present records
+                        const isNonEditable = !isHrAdminOnly && (badgeStr.toLowerCase().includes("leave") || badgeStr.toLowerCase().includes("lop") || badgeStr.toLowerCase().includes("present"));
 
                         return (
                           <tr key={record.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
