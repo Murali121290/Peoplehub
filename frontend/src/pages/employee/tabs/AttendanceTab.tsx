@@ -15,6 +15,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import StatCard from '../components/StatCard';
 import { formatDateStr } from "../../../utils/date";
+import { isHalfDayPresent } from "../../../utils/attendance";
 import { Attendance } from '../../../types/employee.types';
 import { Card } from '../../../components/ui/Card';
 import apiService from '../../../services/api';
@@ -832,7 +833,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
         let otherHalfStatusStr = "";
         if (isHalfDay && dateStr <= todayKey && !isFuture) {
-          if (Math.round(totalHours * 60) >= 240) {
+          if (isHalfDayPresent(totalHours, permissionHours)) {
             otherHalfStatusStr = "Half Day Present & ";
           } else {
             otherHalfStatusStr = "Half Day Absent & ";
