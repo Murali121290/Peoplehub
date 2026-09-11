@@ -4,6 +4,8 @@ from sqlalchemy import or_
 from extensions import socketio
 from models.database import db
 from models.communication import Communication
+from models.employee import Employee
+from models.user import User
 
 communication_bp = Blueprint(
     "communication",
@@ -391,11 +393,46 @@ def vote_poll(message_id):
         change_count = user_prev.get("change_count", 0) if isinstance(user_prev, dict) else (1 if user_prev else 0)
         change_count += 1
         
+        # Look up employee in DB for department / team details
+        emp_obj = Employee.query.filter(
+            or_(
+                Employee.id == int(user_id) if user_id.isdigit() else False,
+                Employee.employee_id == user_id,
+                Employee.user_id == int(user_id) if user_id.isdigit() else False
+            )
+        ).first()
+
+        user_obj = None
+        if user_id.isdigit():
+            user_obj = User.query.get(int(user_id))
+
+        user_team_name = user_obj.role.team.name if (user_obj and user_obj.role and user_obj.role.team) else None
+        user_role_name = user_obj.role.name if (user_obj and user_obj.role) else (user_obj.access_level if user_obj else None)
+
+        dept_name = (emp_obj.department if emp_obj else None) or (emp_obj.team if hasattr(emp_obj, 'team') and emp_obj.team else None) or user_team_name or data.get("department") or data.get("team_name") or "General"
+        designation = (emp_obj.designation if emp_obj else None) or user_role_name or data.get("designation") or "Team Member"
+        emp_code = (emp_obj.employee_id if emp_obj else None) or (f"EMP-{user_id}" if user_id else "EMP-01")
+        
+        if emp_obj:
+            emp_full_name = f"{emp_obj.first_name or ''} {emp_obj.last_name or ''}".strip()
+            if emp_full_name:
+                user_name = emp_full_name
+        elif user_obj and (user_obj.full_name or user_obj.name):
+            user_name = (user_obj.full_name or user_obj.name).strip()
+
+        from datetime import datetime
+        now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
         votes[user_id] = {
             "option_index": opt_list,
             "user_name": user_name,
             "profile_image": profile_image,
             "user_id": user_id,
+            "employee_code": emp_code,
+            "department": dept_name,
+            "team_name": dept_name,
+            "designation": designation,
+            "voted_at": now_str,
             "change_count": change_count
         }
         
@@ -420,6 +457,106 @@ def vote_poll(message_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@communication_bp.route("/<int:message_id>/poll-report", methods=["GET"])
+def get_poll_report(message_id):
+    try:
+        message = Communication.query.get(message_id)
+        if not message:
+            return jsonify({"success": False, "error": "Announcement not found"}), 404
+        
+        votes = dict(message.poll_votes or {})
+        poll_data = message.poll_data or {}
+        question = poll_data.get("question", "Interactive Poll")
+        options = poll_data.get("options", [])
+        
+        # Preload all employees into a map by id, user_id, and employee_id
+        all_emps = Employee.query.all()
+        emp_by_id = {}
+        for emp in all_emps:
+            emp_info = {
+                "code": emp.employee_id or (f"EMP-{emp.id}" if emp.id else "—"),
+                "name": f"{emp.first_name or ''} {emp.last_name or ''}".strip() or "Employee",
+                "department": emp.department or "General",
+                "designation": emp.designation or "Team Member"
+            }
+            if emp.id:
+                emp_by_id[str(emp.id)] = emp_info
+            if emp.user_id:
+                emp_by_id[str(emp.user_id)] = emp_info
+            if emp.employee_id:
+                emp_by_id[str(emp.employee_id)] = emp_info
+
+        voter_records = []
+        s_no = 1
+        for u_id, v_val in votes.items():
+            emp_info = emp_by_id.get(str(u_id))
+            
+            chosen_opt_indices = []
+            change_count = 1
+            voted_at = message.created_at.strftime("%Y-%m-%d %H:%M:%S") if message.created_at else ""
+            
+            if isinstance(v_val, dict):
+                opts = v_val.get("option_index", [])
+                if not isinstance(opts, list):
+                    opts = [opts]
+                chosen_opt_indices = [int(x) for x in opts if x is not None and str(x).isdigit()]
+                change_count = v_val.get("change_count", 1)
+                voted_at = v_val.get("voted_at") or voted_at
+                u_name = v_val.get("user_name")
+                emp_code = v_val.get("employee_code")
+                dept = v_val.get("team_name") or v_val.get("department")
+                desig = v_val.get("designation")
+            elif isinstance(v_val, list):
+                chosen_opt_indices = [int(x) for x in v_val if x is not None and str(x).isdigit()]
+                u_name = None
+                emp_code = None
+                dept = None
+                desig = None
+            else:
+                if v_val is not None and str(v_val).isdigit():
+                    chosen_opt_indices = [int(v_val)]
+                u_name = None
+                emp_code = None
+                dept = None
+                desig = None
+                
+            # Prioritize the real database employee_id code (e.g. 1216, 5000)
+            final_code = (emp_info["code"] if emp_info and emp_info["code"] else None) or emp_code or (str(u_id) if not str(u_id).isdigit() else f"EMP-{u_id}")
+            final_name = (emp_info["name"] if emp_info and emp_info["name"] and emp_info["name"] != "Employee" else None) or u_name or f"User #{u_id}"
+            final_dept = (emp_info["department"] if emp_info and emp_info["department"] else None) or dept or "General"
+            final_desig = (emp_info["designation"] if emp_info and emp_info["designation"] else None) or desig or "Team Member"
+            
+            opt_names = [options[idx] if idx < len(options) else f"Option {idx+1}" for idx in chosen_opt_indices]
+            opt_nums = [f"Option {idx+1}" for idx in chosen_opt_indices]
+            
+            voter_records.append({
+                "s_no": s_no,
+                "employee_code": final_code,
+                "voter_name": final_name,
+                "department": final_dept,
+                "designation": final_desig,
+                "selected_option": ", ".join(opt_names) if opt_names else "—",
+                "option_number": ", ".join(opt_nums) if opt_nums else "—",
+                "change_count": change_count,
+                "voted_at": voted_at
+            })
+            s_no += 1
+            
+        return jsonify({
+            "success": True,
+            "question": question,
+            "title": message.title or "Announcement",
+            "created_by": message.created_by or "HR Admin",
+            "created_at": message.created_at.strftime("%Y-%m-%d %H:%M:%S") if message.created_at else "",
+            "expires_at": poll_data.get("expires_at") or "",
+            "options": options,
+            "voters": voter_records
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
     
 @communication_bp.route(
     "/conversations/<int:user_id>",
