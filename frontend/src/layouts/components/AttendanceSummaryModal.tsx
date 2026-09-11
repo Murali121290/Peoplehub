@@ -257,7 +257,8 @@ const AttendanceSummaryModal: React.FC<AttendanceSummaryModalProps> = ({
       emp.date || emp.attendance_date || todayStr,
       todayStr,
       (emp.date || emp.attendance_date || todayStr) > todayStr,
-      emp.is_one_day_wages || false
+      emp.is_one_day_wages || false,
+      emp.permission_hours || 0
     );
 
     return (

@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { socket } from "../socket";
-import { MegaphoneIcon, PencilSquareIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { ArrowDownTrayIcon, MegaphoneIcon, PencilSquareIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { Button } from "../components/ui/Button";
 import EmojiPicker from 'emoji-picker-react';
 import { getProfileImageUrl, BASE_API_URL } from "../config/api";
 import { BookLoader } from "../components/ui/Spinner";
 import { ImageViewerModal } from "../components/ui/ImageViewerModal";
 import { DatePicker } from "../components/ui/DatePicker";
+import toast from 'react-hot-toast';
 
 
 const AnnouncementsPage = () => {
@@ -40,8 +41,7 @@ const AnnouncementsPage = () => {
   const [imageUrl, setImageUrl] = useState("");
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  // Toast Notification & Custom Popup States
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  // Delete Confirmation States
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [viewerImage, setViewerImage] = useState<{ url: string; title: string } | null>(null);
 
@@ -57,6 +57,63 @@ const AnnouncementsPage = () => {
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
   const [pollExpiresAt, setPollExpiresAt] = useState<string>("");
 
+  // Extend Poll States
+  const [showExtendPollModal, setShowExtendPollModal] = useState<number | null>(null);
+  const [extendDays, setExtendDays] = useState(7);
+
+  // Close Poll States
+  const [showClosePollConfirm, setShowClosePollConfirm] = useState<number | null>(null);
+
+  const handleExtendPoll = async (announcementId: number) => {
+    try {
+      const res = await fetch(`${BASE_API_URL}/api/communications/${announcementId}/extend-poll`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: extendDays })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Poll extended by ${extendDays} days`);
+        setAnnouncements(prev => prev.map(a =>
+          a.id === announcementId
+            ? { ...a, poll_data: { ...a.poll_data, expires_at: data.new_expires_at } }
+            : a
+        ));
+        setShowExtendPollModal(null);
+        setExtendDays(7);
+      } else {
+        toast.error(data.error || "Failed to extend poll");
+      }
+    } catch (err) {
+      toast.error("Failed to extend poll");
+    }
+  };
+
+  const handleClosePoll = async (announcementId: number) => {
+    try {
+      const res = await fetch(`${BASE_API_URL}/api/communications/${announcementId}/close-poll`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Poll closed successfully");
+        setAnnouncements(prev => prev.map(a =>
+          a.id === announcementId
+            ? { ...a, poll_data: { ...a.poll_data, expires_at: data.expires_at, closed_early: true } }
+            : a
+        ));
+        setShowClosePollConfirm(null);
+      } else {
+        toast.error(data.error || "Failed to close poll");
+      }
+    } catch (err) {
+      toast.error("Failed to close poll");
+    }
+  };
+
   const handleVotePoll = async (announcementId: number, optionIndex: number) => {
     try {
       const userStr = localStorage.getItem("user");
@@ -64,25 +121,13 @@ const AnnouncementsPage = () => {
       const userId = user?.id || user?.user_id;
       const userName = user?.full_name || user?.first_name || user?.name || `User #${userId}`;
       const profileImage = user?.profile_image || "";
+      const department = user?.department || user?.team || "";
+      const designation = user?.designation || "";
+      const employeeCode = user?.employee_id || user?.employee_code || user?.code || "";
 
       if (!userId) {
-        showToast("User session not found. Please log in again.", "error");
+        toast.error("User session not found. Please log in again.");
         return;
-      }
-
-      const targetAnn = announcements.find(a => a.id === announcementId);
-      if (targetAnn && targetAnn.poll_votes) {
-        const userVoteData = targetAnn.poll_votes[String(userId)];
-        if (userVoteData) {
-          const opts = Array.isArray(userVoteData.option_index) ? userVoteData.option_index : [userVoteData.option_index];
-          if (!opts.includes(optionIndex)) {
-            const currentCount = userVoteData.change_count || 1;
-            if (currentCount >= 3) {
-              showToast("You have reached the maximum limit of 3 vote changes for this poll.", "error");
-              return;
-            }
-          }
-        }
       }
 
       const res = await fetch(`${BASE_API_URL}/api/communications/${announcementId}/vote`, {
@@ -91,7 +136,11 @@ const AnnouncementsPage = () => {
         body: JSON.stringify({
           user_id: userId,
           user_name: userName,
+          employee_code: employeeCode,
           profile_image: profileImage,
+          department: department,
+          team_name: department,
+          designation: designation,
           option_index: optionIndex
         })
       });
@@ -107,26 +156,188 @@ const AnnouncementsPage = () => {
           }
           return ann;
         }));
-        showToast("Vote recorded successfully!", "success");
+        toast.success("Vote Recorded Successfully!");
       } else {
-        showToast(data.error || "Failed to record vote", "error");
+        toast.error(data.error || "Failed to record vote");
       }
     } catch (e) {
       console.error(e);
-      showToast("Failed to record vote", "error");
+      toast.error("Failed to record vote");
     }
   };
 
-  const showToast = (msg: string, type: "success" | "error" | "info" = "info") => {
-    setToast({ message: msg, type });
-    setTimeout(() => {
-      setToast(null);
-    }, 4000);
+  const handleDownloadPollReport = async (item: any) => {
+    if (!item?.poll_data) return;
+
+    const question = item.poll_data.question || "Interactive Poll";
+    const options: string[] = item.poll_data.options || [];
+    const votesObj: Record<string, any> = item.poll_votes || {};
+    const totalVotesCount = Object.keys(votesObj).length;
+
+    const expiresAt = item.poll_data.expires_at ? new Date(item.poll_data.expires_at).toLocaleString() : "No Expiration Date";
+    const isExpired = item.poll_data.expires_at ? Date.now() > new Date(item.poll_data.expires_at).getTime() : false;
+    const createdAt = item.created_at ? new Date(item.created_at).toLocaleString() : new Date().toLocaleString();
+
+    let voterRows: any[] = [];
+    let optionSummaries: any[] = [];
+
+    // Try dedicated Backend Poll Report API first (Fetches exact Employee Codes directly from DB)
+    try {
+      const reportRes = await fetch(`${BASE_API_URL}/api/communications/${item.id}/poll-report`);
+      const reportData = await reportRes.json();
+      if (reportData.success && Array.isArray(reportData.voters)) {
+        voterRows = reportData.voters.map((v: any) => ({
+          sNo: v.s_no,
+          employeeCode: v.employee_code || "—",
+          voterName: v.voter_name || "Employee",
+          teamName: v.department || "General",
+          designation: v.designation || "Team Member",
+          selectedOption: v.selected_option || "—",
+          optionNumber: v.option_number || "—",
+          changeCount: v.change_count || 1,
+          votedAt: v.voted_at || createdAt
+        }));
+      }
+    } catch (err) {
+      console.warn("Direct poll report API failed, falling back to local resolver:", err);
+    }
+
+    // Fallback: If direct endpoint was unavailable, resolve from employee list
+    if (voterRows.length === 0 && totalVotesCount > 0) {
+      const employeeMap = new Map<string, any>();
+      try {
+        const empRes = await fetch(`${BASE_API_URL}/api/employees`);
+        const empData = await empRes.json();
+        const empList = Array.isArray(empData) ? empData : (empData?.employees || empData?.data || []);
+        empList.forEach((e: any) => {
+          const fName = `${e.first_name || ''} ${e.last_name || ''}`.trim() || e.name || e.employee_name || "";
+          const dept = e.department || e.team || e.team_name || "General";
+          const desig = e.designation || e.role_name || e.role || "Team Member";
+          const code = e.employee_code || e.employee_id || e.code || "";
+          const info = { fullName: fName, dept, desig, code };
+          if (e.id) employeeMap.set(String(e.id), info);
+          if (e.employee_id) employeeMap.set(String(e.employee_id), info);
+          if (e.employee_code) employeeMap.set(String(e.employee_code), info);
+          if (e.user_id) employeeMap.set(String(e.user_id), info);
+        });
+      } catch (err) {
+        console.error("Error fetching employees for poll report:", err);
+      }
+
+      let sNo = 1;
+      Object.entries(votesObj).forEach(([uId, vVal]: [string, any]) => {
+        const dbEmp = employeeMap.get(String(uId));
+        let uName = dbEmp?.fullName || `User #${uId}`;
+        let empCode = dbEmp?.code || (vVal?.employee_code && !vVal.employee_code.startsWith("EMP-") ? vVal.employee_code : (uId.length >= 4 && !uId.startsWith("EMP-") ? uId : dbEmp?.code || uId));
+        let teamName = dbEmp?.dept || "General";
+        let designation = dbEmp?.desig || "Team Member";
+        let votedAt = createdAt;
+        let chosenOptIndices: number[] = [];
+        let changeCount = 1;
+
+        if (typeof vVal === "object" && vVal !== null) {
+          if (vVal.user_name && vVal.user_name !== `User #${uId}`) {
+            uName = vVal.user_name;
+          }
+          if (vVal.employee_code && !vVal.employee_code.startsWith("EMP-")) empCode = vVal.employee_code;
+          if (vVal.team_name || vVal.department) teamName = vVal.team_name || vVal.department;
+          if (vVal.designation) designation = vVal.designation;
+          if (vVal.voted_at) votedAt = vVal.voted_at;
+          changeCount = vVal.change_count || 1;
+          const opts = Array.isArray(vVal.option_index) ? vVal.option_index : [vVal.option_index];
+          chosenOptIndices = opts.filter((idx: any) => typeof idx === "number" || (!isNaN(Number(idx)) && idx !== ""));
+        } else if (typeof vVal === "number" || (typeof vVal === "string" && !isNaN(Number(vVal)))) {
+          chosenOptIndices = [Number(vVal)];
+        } else if (Array.isArray(vVal)) {
+          chosenOptIndices = vVal;
+        }
+
+        const chosenOptNames = chosenOptIndices.map(idx => options[idx] || `Option ${idx + 1}`).join(", ");
+        const chosenOptNums = chosenOptIndices.map(idx => `Option ${idx + 1}`).join(", ");
+
+        voterRows.push({
+          sNo: sNo++,
+          employeeCode: empCode,
+          voterName: uName,
+          teamName: teamName,
+          designation: designation,
+          selectedOption: chosenOptNames || "—",
+          optionNumber: chosenOptNums || "—",
+          changeCount: changeCount,
+          votedAt: votedAt
+        });
+      });
+    }
+
+    // Calculate Summary per Option
+    optionSummaries = options.map((optText, idx) => {
+      let count = 0;
+      Object.values(votesObj).forEach((vVal: any) => {
+        let isMatch = false;
+        if (typeof vVal === "object" && vVal !== null) {
+          const opts = Array.isArray(vVal.option_index) ? vVal.option_index : [vVal.option_index];
+          if (opts.includes(idx)) isMatch = true;
+        } else {
+          const opts = Array.isArray(vVal) ? vVal : [vVal];
+          if (opts.includes(idx)) isMatch = true;
+        }
+        if (isMatch) count++;
+      });
+      const pct = totalVotesCount > 0 ? ((count / totalVotesCount) * 100).toFixed(1) : "0.0";
+      return { optionNumber: idx + 1, optionName: optText, count, percentage: `${pct}%` };
+    });
+
+    // 4. Format Filter-Friendly CSV
+    // Row 1 starts immediately with standard table headers for 1-click Excel Filtering
+    const escapeCsv = (str: any) => `"${String(str ?? '').replace(/"/g, '""')}"`;
+
+    let csv = "\uFEFF"; // UTF-8 BOM for Microsoft Excel
+    csv += `S.No,Employee Code,Voter Name,Team / Department,Designation,Selected Option,Option Number,Poll Question,Announcement Title,Vote Changes,Voted At\n`;
+
+    if (voterRows.length === 0) {
+      csv += `1,—,No votes recorded yet,—,—,—,—,${escapeCsv(question)},${escapeCsv(item.title || "Announcement")},0,${escapeCsv(createdAt)}\n`;
+    } else {
+      voterRows.forEach(r => {
+        csv += `${r.sNo},${escapeCsv(r.employeeCode)},${escapeCsv(r.voterName)},${escapeCsv(r.teamName)},${escapeCsv(r.designation)},${escapeCsv(r.selectedOption)},${escapeCsv(r.optionNumber)},${escapeCsv(question)},${escapeCsv(item.title || "Announcement")},${r.changeCount},${escapeCsv(r.votedAt)}\n`;
+      });
+    }
+
+    // Additional Summary Block at the bottom
+    csv += `\n\n`;
+    csv += `--- POLL METADATA & SUMMARY ---\n`;
+    csv += `Poll Question,${escapeCsv(question)}\n`;
+    csv += `Announcement Title,${escapeCsv(item.title || "Announcement")}\n`;
+    csv += `Announcement Author,${escapeCsv(item.created_by || "HR Admin")}\n`;
+    csv += `Announcement Created Date,${escapeCsv(createdAt)}\n`;
+    csv += `Poll Expiry,${escapeCsv(expiresAt)}\n`;
+    csv += `Poll Status,${escapeCsv(isExpired ? "Ended / Frozen" : "Active")}\n`;
+    csv += `Total Voters,${totalVotesCount}\n\n`;
+
+    csv += `POLL OPTIONS BREAKDOWN\n`;
+    csv += `Option #,Option Name,Total Votes,Percentage\n`;
+    optionSummaries.forEach(s => {
+      csv += `${s.optionNumber},${escapeCsv(s.optionName)},${s.count},${escapeCsv(s.percentage)}\n`;
+    });
+
+    // Trigger Download
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeTitle = (question || "poll").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 35);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Poll_Report_${safeTitle}_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast.success("Poll voters and responses report downloaded successfully!");
   };
+
 
   const handleInsertLink = () => {
     if (!linkUrl || !linkUrl.trim() || linkUrl.trim() === "https://") {
-      showToast("Please enter a valid URL", "error");
+      toast.error("Please enter a valid URL");
       return;
     }
     const targetRef = isEditLinkMode ? editEditableRef : composerEditableRef;
@@ -162,7 +373,7 @@ const AnnouncementsPage = () => {
     // 3MB size limit check (3 * 1024 * 1024 bytes)
     const MAX_SIZE = 3 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
-      showToast("Image size exceeds the 3MB maximum limit. Please select a smaller file.", "error");
+      toast.error("Image size exceeds the 3MB maximum limit. Please select a smaller file.");
       if (!isEditMode && fileInputRef.current) fileInputRef.current.value = "";
       if (isEditMode && editFileInputRef.current) editFileInputRef.current.value = "";
       return;
@@ -192,7 +403,7 @@ const AnnouncementsPage = () => {
           setImageUrl(data.image_url);
         }
       } else {
-        showToast(data.error || "Failed to upload image", "error");
+        toast.error(data.error || "Failed to upload image");
         if (isEditMode) {
           setEditImageUrl(""); setEditImagePreview("");
         } else {
@@ -201,7 +412,7 @@ const AnnouncementsPage = () => {
       }
     } catch (err) {
       console.error(err);
-      showToast("Failed to upload image", "error");
+      toast.error("Failed to upload image");
       if (isEditMode) {
         setEditImageUrl(""); setEditImagePreview("");
       } else {
@@ -653,13 +864,13 @@ const AnnouncementsPage = () => {
       if (data.success) {
         setAnnouncements(prev => prev.map(a => a.id === editingPost.id ? { ...a, title: editTitle.trim(), message: editMessage.trim(), target_role: editTargetRole, image_url: editImageUrl } : a));
         setEditingPost(null);
-        showToast("Announcement updated successfully", "success");
+        toast.success("Announcement updated successfully");
       } else {
-        showToast(data.error || "Failed to update announcement", "error");
+        toast.error(data.error || "Failed to update announcement");
       }
     } catch (err) {
       console.error(err);
-      showToast("Failed to update announcement", "error");
+      toast.error("Failed to update announcement");
     } finally {
       setIsSavingEdit(false);
     }
@@ -680,13 +891,13 @@ const AnnouncementsPage = () => {
       const data = await res.json();
       if (data.success) {
         setAnnouncements(prev => prev.filter(a => a.id !== postId));
-        showToast("Announcement deleted successfully", "success");
+        toast.success("Announcement deleted successfully");
       } else {
-        showToast(data.error || "Failed to delete announcement", "error");
+        toast.error(data.error || "Failed to delete announcement");
       }
     } catch (err) {
       console.error(err);
-      showToast("Failed to delete announcement", "error");
+      toast.error("Failed to delete announcement");
     }
   };
 
@@ -1456,9 +1667,59 @@ const AnnouncementsPage = () => {
                             {/* Embedded Poll Component */}
                             {item.poll_data && item.poll_data.question && (
                               <div className="mt-4 p-4 rounded-2xl bg-neutral-50 border border-neutral-200/90 space-y-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-base">📊</span>
-                                  <h4 className="font-extrabold text-neutral-900 text-xs">{item.poll_data.question}</h4>
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-base shrink-0">📊</span>
+                                    <h4 className="font-extrabold text-neutral-900 text-xs truncate">{item.poll_data.question}</h4>
+                                  </div>
+                                  {canSendAnnouncement && (() => {
+                                    const pollExpiresAt = item.poll_data.expires_at ? new Date(item.poll_data.expires_at).getTime() : null;
+                                    const isPollEnded = pollExpiresAt ? Date.now() > pollExpiresAt : false;
+
+                                    return (
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowExtendPollModal(item.id);
+                                            setExtendDays(7);
+                                          }}
+                                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-emerald-700 bg-white hover:bg-emerald-50 border border-emerald-200 hover:border-emerald-300 rounded-xl shadow-2xs transition-all duration-150 cursor-pointer shrink-0"
+                                          title="Extend poll deadline"
+                                        >
+                                          <span>⏱️</span>
+                                          <span>Extend Poll</span>
+                                        </button>
+                                        {!isPollEnded && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setShowClosePollConfirm(item.id);
+                                            }}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-red-700 bg-white hover:bg-red-50 border border-red-200 hover:border-red-300 rounded-xl shadow-2xs transition-all duration-150 cursor-pointer shrink-0"
+                                            title="Close poll immediately"
+                                          >
+                                            <span>🔒</span>
+                                            <span>Close Poll</span>
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDownloadPollReport(item);
+                                          }}
+                                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-primary-700 bg-white hover:bg-primary-50 border border-primary-200 hover:border-primary-300 rounded-xl shadow-2xs transition-all duration-150 cursor-pointer shrink-0"
+                                          title="Download full poll report with voter names and options chosen"
+                                        >
+                                          <ArrowDownTrayIcon className="w-3.5 h-3.5 stroke-[2.5]" />
+                                          <span>Download Poll Report</span>
+                                        </button>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
 
                                 {(() => {
@@ -1641,8 +1902,8 @@ const AnnouncementsPage = () => {
                                         );
                                       })}
 
-                                      <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-neutral-150/80">
-                                        <div className="flex items-center gap-1 font-semibold">
+                                      <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-neutral-150/80 flex-wrap gap-2">
+                                        <div className="flex items-center gap-2 font-semibold">
                                           {isPollFrozen ? (
                                             <span className="text-red-600">🔒 Poll Ended{formattedExpiresAt ? ` on ${formattedExpiresAt}` : ''}</span>
                                           ) : isCurrentUserVoted ? (
@@ -1882,9 +2143,9 @@ const AnnouncementsPage = () => {
       {/* Edit Announcement Modal */}
       {editingPost && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-neutral-100 overflow-hidden animate-in fade-in zoom-in duration-150">
+          <div className="w-full max-w-lg max-h-[90vh] rounded-2xl bg-white shadow-2xl border border-neutral-100 overflow-hidden animate-in fade-in zoom-in duration-150 flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50/50">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50/50 flex-shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-primary-50 text-primary-600">
                   <PencilSquareIcon className="w-5 h-5" />
@@ -1903,7 +2164,7 @@ const AnnouncementsPage = () => {
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-4">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-2">
                   Announcement Title
@@ -2237,7 +2498,7 @@ const AnnouncementsPage = () => {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-neutral-50/80 border-t border-neutral-100">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-neutral-50/80 border-t border-neutral-100 flex-shrink-0">
               <button
                 onClick={() => setEditingPost(null)}
                 className="px-4 py-2 rounded-xl text-sm font-semibold text-neutral-600 hover:bg-neutral-200/60 transition-colors"
@@ -2257,13 +2518,119 @@ const AnnouncementsPage = () => {
         </div>
       )}
 
-      {/* Toast Notification */}
-      {toast && (
-        <div className={`fixed top-5 right-6 z-50 flex items-center gap-3 rounded-xl px-5 py-3.5 text-sm font-semibold text-white shadow-xl animate-slideInRight ${toast.type === "error" ? "bg-red-600" : toast.type === "success" ? "bg-emerald-600" : "bg-neutral-900"
-          }`}>
-          <span className={`h-2.5 w-2.5 flex-shrink-0 rounded-full ${toast.type === "error" ? "bg-white" : "bg-emerald-300"
-            }`} />
-          <span>{toast.message}</span>
+      {/* Close Poll Confirmation Modal */}
+      {showClosePollConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-neutral-100 animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center gap-3 mb-4 text-red-600">
+              <div className="p-2.5 rounded-full bg-red-100">
+                <span className="text-lg">🔒</span>
+              </div>
+              <h3 className="text-lg font-bold text-neutral-900">Close Poll Now?</h3>
+            </div>
+            <p className="text-sm text-neutral-600 mb-6 font-medium">
+              Closing this poll will immediately end voting. Employees will not be able to vote after this action.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowClosePollConfirm(null)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-neutral-600 hover:bg-neutral-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (showClosePollConfirm) {
+                    handleClosePoll(showClosePollConfirm);
+                  }
+                }}
+                className="px-5 py-2 rounded-xl text-sm font-semibold bg-red-600 hover:bg-red-700 text-white shadow-md transition-colors"
+              >
+                Close Poll
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extend Poll Modal */}
+      {showExtendPollModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-neutral-100 overflow-hidden animate-in fade-in zoom-in duration-150">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-primary-50 text-primary-600">
+                  <span className="text-lg">⏱️</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-neutral-800 text-base">Extend Poll</h3>
+                  <p className="text-xs text-neutral-500">Add more time for voting</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowExtendPollModal(null)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-3">
+                  Extend by (days)
+                </label>
+                <div className="flex gap-2">
+                  {[1, 3, 7, 14, 30].map(days => (
+                    <button
+                      key={days}
+                      onClick={() => setExtendDays(days)}
+                      className={`flex-1 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+                        extendDays === days
+                          ? "bg-primary-600 text-white border border-primary-600"
+                          : "bg-neutral-100 text-neutral-700 border border-neutral-200 hover:bg-neutral-200"
+                      }`}
+                    >
+                      {days}d
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-2">
+                  Or Enter Custom Days
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={extendDays}
+                  onChange={(e) => setExtendDays(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm text-neutral-800 focus:border-primary-600 focus:ring-2 focus:ring-primary-100 outline-none transition-all"
+                  placeholder="Number of days..."
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-neutral-50/80 border-t border-neutral-100">
+              <button
+                onClick={() => setShowExtendPollModal(null)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-neutral-600 hover:bg-neutral-200/60 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleExtendPoll(showExtendPollModal)}
+                className="px-5 py-2 rounded-xl text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white shadow-md transition-colors"
+              >
+                Extend Poll
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

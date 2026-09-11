@@ -2976,6 +2976,7 @@ def update_employee_status(employee_id):
         is_active = data.get("is_active", True)
 
         employee.is_active = is_active
+        employee.status = "Active" if is_active else "Inactive"
         if not is_active:
             employee.deactivation_reason = data.get("deactivation_reason")
             lwd_str = data.get("last_working_date")

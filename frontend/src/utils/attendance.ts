@@ -1,3 +1,8 @@
+export const isHalfDayPresent = (totalHours: number, permissionHours: number = 0): boolean => {
+  const effectiveHours = totalHours + (permissionHours || 0);
+  return Math.round(effectiveHours * 60) >= 240;
+};
+
 export const computeAttendanceBadgeLabel = (
   status: string,
   totalHours: number,
@@ -5,7 +10,8 @@ export const computeAttendanceBadgeLabel = (
   dateStr: string,
   todayStr: string,
   isFuture: boolean,
-  isOneDayWages: boolean = false
+  isOneDayWages: boolean = false,
+  permissionHours: number = 0
 ): string => {
   if (leaveDetails && leaveDetails.length > 0 && !isOneDayWages) {
     if (leaveDetails.length === 2 && leaveDetails.every((l: any) => l.total_days != null && Number(l.total_days) <= 0.5)) {
@@ -35,7 +41,7 @@ export const computeAttendanceBadgeLabel = (
 
       let otherHalfStatusStr = "";
       if (isHalfDay && dateStr <= todayStr && !isFuture) {
-        if (Math.round(totalHours * 60) >= 240) {
+        if (isHalfDayPresent(totalHours, permissionHours)) {
           otherHalfStatusStr = "Half Day Present & ";
         } else {
           otherHalfStatusStr = "Half Day Absent & ";
