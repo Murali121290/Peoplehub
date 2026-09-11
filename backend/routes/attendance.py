@@ -1763,7 +1763,19 @@ def get_attendance():
     else:
         today = get_ist_today()
 
-    employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
+    all_employees = get_all_employees_cached()
+
+    # Filter: exclude inactive employees ONLY if the query date is after their last_working_date
+    employees = []
+    for e in all_employees:
+        if (e.status or "").lower() == "inactive":
+            if e.is_active is False and e.last_working_date:
+                lwd = e.last_working_date.date() if isinstance(e.last_working_date, datetime) else e.last_working_date
+                if lwd < today:
+                    continue  # Skip if date is after last_working_date
+            else:
+                continue  # Skip if status is inactive but no last_working_date
+        employees.append(e)
 
     attendance_list = []
 
@@ -2050,10 +2062,21 @@ def _get_period_attendance_records(days_count, include_card_fields=False):
 
     result = []
 
-    employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
-
     end_date = date.today()
     start_date = end_date - timedelta(days=days_count - 1)
+
+    # Filter: exclude inactive employees ONLY if ALL dates in range are after their last_working_date
+    all_employees = get_all_employees_cached()
+    employees = []
+    for e in all_employees:
+        if (e.status or "").lower() == "inactive":
+            if e.is_active is False and e.last_working_date:
+                lwd = e.last_working_date.date() if isinstance(e.last_working_date, datetime) else e.last_working_date
+                if lwd < start_date:
+                    continue  # Skip if entire range is after last_working_date
+            else:
+                continue  # Skip if status is inactive but no last_working_date
+        employees.append(e)
 
     user_ids = [e.user_id for e in employees]
     leave_emp_ids = list({str(e.id) for e in employees} | {e.employee_id for e in employees if e.employee_id})
