@@ -840,7 +840,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
           requested_shift: targetShift,
           current_work_mode: todayActiveWorkMode,
           requested_work_mode: targetWorkMode,
-          request_type: targetWorkMode === "WFH" ? "WFH" : targetWorkMode === "Hybrid" ? "Hybrid" : "Shift",
+          request_type: (isHybrid && wantsToChangeMode && targetWorkMode === "WFH") ? "WFH" : "Shift",
           from_date: todayStr,
           to_date: todayStr,
           reporting_manager: currentEmployee.reporting_manager || "Admin",

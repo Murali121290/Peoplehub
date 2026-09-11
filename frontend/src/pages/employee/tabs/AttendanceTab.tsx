@@ -15,6 +15,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import StatCard from '../components/StatCard';
 import { formatDateStr } from "../../../utils/date";
+import { isHalfDayPresent } from "../../../utils/attendance";
 import { Attendance } from '../../../types/employee.types';
 import { Card } from '../../../components/ui/Card';
 import apiService from '../../../services/api';
@@ -728,11 +729,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       baseWorkingHours = Number(attRec.workingHours || attRec.working_hours || 0);
 
       const hasCheckedIn = checkIn !== "-" && checkIn !== "";
-      if (hasCheckedIn) {
-        workingHours = baseWorkingHours + permissionHours;
-      } else {
-        workingHours = baseWorkingHours;
-      }
+      workingHours = baseWorkingHours;
 
       workingHoursFormatted = formatHoursMinutes(workingHours);
       lunchMinutes = Number(attRec.lunchMinutes || attRec.lunch_minutes || 0);
@@ -743,7 +740,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       // Calculate total/gross hours
       totalHours = Number(attRec.gross_hours || attRec.grossHours || attRec.total_hours || attRec.totalHours || 0);
       if (totalHours <= 0 && hasCheckedIn) {
-        totalHours = baseWorkingHours + ((lunchMinutes + teaMinutes) / 60) + permissionHours;
+        totalHours = baseWorkingHours + ((lunchMinutes + teaMinutes) / 60);
       }
       totalHoursFormatted = formatHoursMinutes(totalHours);
       addedMinutes = Number(attRec.addedMinutes || attRec.added_minutes || 0);
@@ -836,7 +833,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
         let otherHalfStatusStr = "";
         if (isHalfDay && dateStr <= todayKey && !isFuture) {
-          if (Math.round(totalHours * 60) >= 240) {
+          if (isHalfDayPresent(totalHours, permissionHours)) {
             otherHalfStatusStr = "Half Day Present & ";
           } else {
             otherHalfStatusStr = "Half Day Absent & ";

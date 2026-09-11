@@ -226,11 +226,11 @@ def apply_leave():
             ).first()
 
             available_hours = float(perm_bal.available) if perm_bal else 2.0
-            if duration_hours > available_hours:
-                return jsonify({
-                    "success": False,
-                    "error": f"Applying this permission would exceed your remaining monthly permission limit. You have {available_hours:.2f} hours remaining."
-                }), 400
+            # if duration_hours > available_hours:
+            #     return jsonify({
+            #         "success": False,
+            #         "error": f"Applying this permission would exceed your remaining monthly permission limit. You have {available_hours:.2f} hours remaining."
+            #     }), 400
 
             leave.total_days = 0
 
@@ -358,6 +358,9 @@ def approve_leave(leave_id):
                 perm_hours = max(perm_seconds, 0) / 3600.0
                 perm_bal.available = max(0.0, (perm_bal.available or 0.0) - perm_hours)
 
+            # Commit BEFORE recalculating attendance so permission is in database
+            db.session.commit()
+
             # Recalculate attendance status if it exists
             from models.attendance import Attendance
             from routes.attendance import calculate_attendance_status
@@ -368,6 +371,7 @@ def approve_leave(leave_id):
             if att:
                 calculate_attendance_status(att)
 
+            # Commit any attendance changes
             db.session.commit()
 
             # Emit leave_update socket event for real-time dashboard updates
