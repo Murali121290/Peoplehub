@@ -557,7 +557,92 @@ def get_poll_report(message_id):
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-    
+
+@communication_bp.route("/<int:message_id>/extend-poll", methods=["POST"])
+def extend_poll(message_id):
+    try:
+        data = request.json
+        days_to_extend = data.get("days", 7)
+
+        message = Communication.query.get(message_id)
+        if not message:
+            return jsonify({"success": False, "error": "Announcement not found"}), 404
+
+        if not message.poll_data:
+            return jsonify({"success": False, "error": "This announcement has no poll"}), 400
+
+        from datetime import datetime, timedelta
+
+        poll_data = dict(message.poll_data or {})
+        current_expires_at = poll_data.get("expires_at")
+
+        if current_expires_at:
+            current_date = datetime.fromisoformat(current_expires_at.replace('Z', '+00:00'))
+        else:
+            current_date = datetime.now()
+
+        new_expires_at = current_date + timedelta(days=days_to_extend)
+        poll_data["expires_at"] = new_expires_at.isoformat()
+
+        message.poll_data = poll_data
+        db.session.commit()
+
+        socketio.emit(
+            "poll_extended",
+            {
+                "message_id": message_id,
+                "new_expires_at": poll_data["expires_at"],
+                "days_extended": days_to_extend
+            },
+            skip_sid=None
+        )
+
+        return jsonify({
+            "success": True,
+            "message": f"Poll extended by {days_to_extend} days",
+            "new_expires_at": poll_data["expires_at"]
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@communication_bp.route("/<int:message_id>/close-poll", methods=["POST"])
+def close_poll(message_id):
+    try:
+        message = Communication.query.get(message_id)
+        if not message:
+            return jsonify({"success": False, "error": "Announcement not found"}), 404
+
+        if not message.poll_data:
+            return jsonify({"success": False, "error": "This announcement has no poll"}), 400
+
+        from datetime import datetime
+
+        poll_data = dict(message.poll_data or {})
+        poll_data["expires_at"] = datetime.now().isoformat()
+        poll_data["closed_early"] = True
+
+        message.poll_data = poll_data
+        db.session.commit()
+
+        socketio.emit(
+            "poll_closed",
+            {
+                "message_id": message_id,
+                "expires_at": poll_data["expires_at"]
+            },
+            skip_sid=None
+        )
+
+        return jsonify({
+            "success": True,
+            "message": "Poll closed successfully",
+            "expires_at": poll_data["expires_at"]
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @communication_bp.route(
     "/conversations/<int:user_id>",
     methods=["GET"]
