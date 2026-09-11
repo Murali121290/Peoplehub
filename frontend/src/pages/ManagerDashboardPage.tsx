@@ -2623,7 +2623,8 @@ const ManagerDashboardPage = () => {
                                       todayStr,
                                       todayStr,
                                       false,
-                                      false
+                                      false,
+                                      (member as any).permission_hours || 0
                                     );
                                     return badgeStr.split(" & ").map((part: string, idx: number) => {
                                       const s = part.toLowerCase();
@@ -3327,7 +3328,8 @@ const ManagerDashboardPage = () => {
                           record.date,
                           todayStr,
                           record.date > todayStr,
-                          record.is_one_day_wages || false
+                          record.is_one_day_wages || false,
+                          record.permission_hours || 0
                         );
 
                         // Format date nicely

@@ -1398,7 +1398,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                               row.date || row.attendance_date || todayStr,
                               todayStr,
                               (row.date || row.attendance_date || todayStr) > todayStr,
-                              false
+                              false,
+                              row.permission_hours || 0
                             );
                             if ((badgeStr === "Leave" || badgeStr === "Half Day") && row.leave_type) {
                               badgeStr = row.leave_type;
