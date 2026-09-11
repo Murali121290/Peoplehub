@@ -341,8 +341,8 @@ const ManagerDashboardPage = () => {
     let effectiveHours = (diffMinutes + extraMinutes) / 60.0;
 
     // Credit permission hours if employee has an approved permission for this date
-    if (editingRecord?.has_permission || editingRecord?.permission_label) {
-      effectiveHours += 2.0;
+    if (editingRecord?.permission_hours && editingRecord.permission_hours > 0) {
+      effectiveHours += editingRecord.permission_hours;
     }
 
     let computedStatus = "Absent";
@@ -2279,7 +2279,7 @@ const ManagerDashboardPage = () => {
                       <tr style={{ background: "#f8fafc", borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                         <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}`, minWidth: "260px" }}>Employee</th>
                         <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "14px 16px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}`, minWidth: "110px" }}>Employee ID</th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "6px 10px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Department</span>
                             <CustomSelect
@@ -2290,7 +2290,7 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "6px 10px", minWidth: "140px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Designation</span>
                             <CustomSelect
@@ -2301,7 +2301,7 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "150px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "6px 10px", minWidth: "150px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Reporting Manager</span>
                             <CustomSelect
@@ -2312,7 +2312,7 @@ const ManagerDashboardPage = () => {
                             />
                           </div>
                         </th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "130px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "6px 10px", minWidth: "130px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Shift</span>
                             <CustomSelect
@@ -2325,7 +2325,7 @@ const ManagerDashboardPage = () => {
                         </th>
                         <th colSpan={6} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #c7d2fe", background: "#eff6ff", color: THEME.primary, fontWeight: 800 }}>Web Site Entry</th>
                         <th colSpan={3} style={{ position: "sticky", top: 0, zIndex: 20, padding: "10px 16px", textAlign: "center", borderBottom: `2px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", background: "#faf5ff", color: "#7e22ce", fontWeight: 800 }}>Biometric Card Entry</th>
-                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "8px 12px", minWidth: "120px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
+                        <th rowSpan={2} style={{ position: "sticky", top: 0, zIndex: 20, background: "#f8fafc", padding: "6px 10px", minWidth: "120px", borderBottom: `1px solid ${THEME.border}`, borderRight: `1px solid ${THEME.border}` }}>
 
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span>Status</span>
@@ -2354,7 +2354,7 @@ const ManagerDashboardPage = () => {
                         <th style={{ position: "sticky", top: "36px", zIndex: 20, padding: "8px 16px", background: "#faf5ff", borderBottom: `1px solid ${THEME.border}`, borderRight: "2px solid #e9d5ff", fontWeight: 700, minWidth: "75px" }}>Hours</th>
                       </tr>
                     </thead>
-                    <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>
+                    <tbody style={{ fontSize: "12px", color: THEME.text, fontWeight: 500 }}>
                       {scopedTeamMembers
                         .filter((m) => {
                           const matchSearch =
@@ -2735,7 +2735,7 @@ const ManagerDashboardPage = () => {
                   </div>
                   <div>
                     <div style={{ fontSize: "18px", fontWeight: 800, color: THEME.navy }}>Yesterday's Attendance Summary</div>
-                    <div style={{ fontSize: "13px", color: THEME.textSoft, marginTop: "2px" }}>
+                    <div style={{ fontSize: "12px", color: THEME.textSoft, marginTop: "2px" }}>
                       {yesterdaySummaryDate ? `For ${yesterdaySummaryDate}` : "Last working day"} — Pending your approval
                     </div>
                   </div>
@@ -2758,7 +2758,7 @@ const ManagerDashboardPage = () => {
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px", color: THEME.text }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "12px", color: THEME.text }}>
                   <thead>
                     <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                       <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>Employee</th>
@@ -2987,7 +2987,7 @@ const ManagerDashboardPage = () => {
                   </div>
                   <div>
                     <div style={{ fontSize: "18px", fontWeight: 800, color: THEME.navy }}>Pending Cycle Attendance</div>
-                    <div style={{ fontSize: "13px", color: THEME.textSoft, marginTop: "2px" }}>
+                    <div style={{ fontSize: "12px", color: THEME.textSoft, marginTop: "2px" }}>
                       {pendingCycleStart && pendingCycleEnd ? `Cycle: ${new Date(pendingCycleStart).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' })} – ${new Date(pendingCycleEnd).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}` : "Current Payroll Cycle"} — {pendingCycleSummary.length} pending approval
                     </div>
                   </div>
@@ -3018,7 +3018,7 @@ const ManagerDashboardPage = () => {
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px", color: THEME.text }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "12px", color: THEME.text }}>
                   <thead>
                     <tr style={{ background: THEME.surfaceSoft, borderBottom: `1px solid ${THEME.border}`, fontSize: "11px", color: THEME.textSoft, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
                       <th style={{ padding: "12px 16px", borderRight: `1px solid ${THEME.border}` }}>Employee</th>
@@ -3288,7 +3288,7 @@ const ManagerDashboardPage = () => {
               {loadingHistory ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "60px 0", gap: "12px" }}>
                   <div style={{ width: "32px", height: "32px", border: `3px solid ${THEME.border}`, borderTop: `3px solid ${THEME.primary}`, borderRadius: "50%", animation: "spin 1s linear infinite" }} />
-                  <p style={{ fontSize: "13px", color: THEME.textSoft, fontWeight: 500 }}>Loading attendance records...</p>
+                  <p style={{ fontSize: "12px", color: THEME.textSoft, fontWeight: 500 }}>Loading attendance records...</p>
                 </div>
               ) : historyRecords.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "40px 0", color: THEME.textSoft }}>
@@ -3318,7 +3318,7 @@ const ManagerDashboardPage = () => {
                         <th style={{ padding: "6px 16px", background: "rgba(126,34,206,0.03)", borderBottom: "1px solid #e2e8f0", borderRight: "2px solid #e9d5ff", fontWeight: 700 }}>Hours</th>
                       </tr>
                     </thead>
-                    <tbody style={{ fontSize: "13px", color: THEME.text, fontWeight: 500 }}>
+                    <tbody style={{ fontSize: "12px", color: THEME.text, fontWeight: 500 }}>
                       {historyRecords.map((record) => {
                         const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
                         const badgeStr = computeAttendanceBadgeLabel(
@@ -3676,46 +3676,46 @@ const ManagerDashboardPage = () => {
               <button onClick={() => setEditingRecord(null)} style={{ background: "transparent", border: "none", fontSize: "18px", color: "#94a3b8", cursor: "pointer" }}>✕</button>
             </div>
             {/* Form */}
-            <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: "12px" }}>
               <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Status</label>
-                  <span style={{ fontSize: "10px", color: "#64748b", fontStyle: "italic" }}>⚡ Auto-calculated from times</span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                  <label style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Status</label>
+                  <span style={{ fontSize: "9px", color: "#64748b", fontStyle: "italic" }}>⚡ Auto-calculated from times</span>
                 </div>
                 <div
                   style={{
                     width: "100%",
-                    padding: "9px 12px",
+                    padding: "6px 10px",
                     borderRadius: "8px",
                     border: "1px solid #e2e8f0",
                     background: "#f8fafc",
-                    fontSize: "13px",
+                    fontSize: "12px",
                     fontWeight: 700,
                     color: editForm.status.includes("Present") ? "#166534" : editForm.status === "Half Day" ? "#6b21a8" : "#991b1b",
                     display: "flex",
                     alignItems: "center",
-                    gap: "8px",
+                    gap: "6px",
                     cursor: "not-allowed",
                   }}
                 >
                   <span
                     style={{
-                      width: "8px",
-                      height: "8px",
+                      width: "7px",
+                      height: "7px",
                       borderRadius: "50%",
                       background: editForm.status.includes("Present") ? "#16a34a" : editForm.status === "Half Day" ? "#a855f7" : "#dc2626",
                     }}
                   />
                   <span>{editForm.status}</span>
                 </div>
-                <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
+                <div style={{ fontSize: "9px", color: "#64748b", marginTop: "2px" }}>
                   * Weekly 15m grace period will be applied automatically on save if available.
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Web Check In</label>
+                  <label style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>Web Check In</label>
                   <TimePicker
                     value={editForm.checkIn}
                     onChange={(val) => setEditForm({ ...editForm, checkIn: val })}
@@ -3723,7 +3723,7 @@ const ManagerDashboardPage = () => {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Web Check Out</label>
+                  <label style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>Web Check Out</label>
                   <TimePicker
                     value={editForm.checkOut}
                     onChange={(val) => setEditForm({ ...editForm, checkOut: val })}
@@ -3732,9 +3732,9 @@ const ManagerDashboardPage = () => {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Card Check In</label>
+                  <label style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>Card Check In</label>
                   <TimePicker
                     value={editForm.cardCheckIn}
                     onChange={(val) => setEditForm({ ...editForm, cardCheckIn: val })}
@@ -3742,7 +3742,7 @@ const ManagerDashboardPage = () => {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Card Check Out</label>
+                  <label style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>Card Check Out</label>
                   <TimePicker
                     value={editForm.cardCheckOut}
                     onChange={(val) => setEditForm({ ...editForm, cardCheckOut: val })}
@@ -3751,29 +3751,67 @@ const ManagerDashboardPage = () => {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+              {/* Row 1: Lunch Break & Tea Break */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Lunch Break (mins)</label>
+                  <label style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>Lunch Break (mins)</label>
                   <input
                     type="number"
                     min="0"
                     value={editForm.lunchMinutes}
                     onChange={(e) => setEditForm({ ...editForm, lunchMinutes: parseInt(e.target.value) || 0 })}
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px", color: THEME.text }}
+                    style={{ width: "100%", padding: "6px 10px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "12px", color: THEME.text }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>Tea Break (mins)</label>
+                  <label style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>Tea Break (mins)</label>
                   <input
                     type="number"
                     min="0"
                     value={editForm.teaMinutes}
                     onChange={(e) => setEditForm({ ...editForm, teaMinutes: parseInt(e.target.value) || 0 })}
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px", color: THEME.text }}
+                    style={{ width: "100%", padding: "6px 10px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "12px", color: THEME.text }}
                   />
                 </div>
-                <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "6px" }}>
+              </div>
+
+              {/* Row 2: Permission & Presence Adjustment */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                {editingRecord?.has_permission && editingRecord?.permission_time && (
+                  <div>
+                    <label style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>Permission</label>
+                    <div
+                      style={{
+                        width: "100%",
+                        padding: "9px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                        background: "#f0fdf4",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "#16a34a",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        cursor: "not-allowed",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                      title={`${editingRecord.permission_time}${editingRecord?.permission_hours ? ` (${Math.round(editingRecord.permission_hours * 60)} mins)` : ''}`}
+                    >
+                      <span style={{ fontSize: "13px" }}>✓</span>
+                      <span>{editingRecord.permission_time}</span>
+                      {editingRecord?.permission_hours && (
+                        <span style={{ color: "#15803d", fontSize: "11px", fontWeight: 500 }}>
+                          ({Math.round(editingRecord.permission_hours * 60)} mins)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div style={{ ...(editingRecord?.has_permission && editingRecord?.permission_time ? {} : { gridColumn: editingRecord?.has_permission && editingRecord?.permission_time ? "auto" : "1 / -1" }) }}>
+                  <label style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>
                     Presence Adjustment (mins){isHrUser ? " — HR: up to 9h" : ""}
                   </label>
                   <input
@@ -3787,7 +3825,7 @@ const ManagerDashboardPage = () => {
                       setEditForm({ ...editForm, addedMinutes: Math.min(maxVal, Math.max(0, val)) });
                     }}
                     placeholder={isHrUser ? "0 - 540" : "0 - 5"}
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1px solid ${isHrUser ? "#7c3aed" : "#cbd5e1"}`, fontSize: "13px", color: THEME.text, fontWeight: 700 }}
+                    style={{ width: "100%", padding: "6px 10px", borderRadius: "8px", border: `1px solid ${isHrUser ? "#7c3aed" : "#cbd5e1"}`, fontSize: "12px", color: THEME.text, fontWeight: 700 }}
                   />
                 </div>
               </div>
@@ -3804,7 +3842,7 @@ const ManagerDashboardPage = () => {
                   placeholder="Enter mandatory reason for modifying attendance times or extra minutes..."
                   style={{
                     width: "100%",
-                    padding: "8px 12px",
+                    padding: "6px 10px",
                     borderRadius: "8px",
                     border: !editForm.remarks.trim() ? "1.5px solid #f87171" : "1px solid #cbd5e1",
                     fontSize: "13px",
