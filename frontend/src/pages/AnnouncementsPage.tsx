@@ -183,7 +183,11 @@ const AnnouncementsPage = () => {
 
     // Try dedicated Backend Poll Report API first (Fetches exact Employee Codes directly from DB)
     try {
-      const reportRes = await fetch(`${BASE_API_URL}/api/communications/${item.id}/poll-report`);
+      const tokenStr = localStorage.getItem("token") || "";
+      const token = tokenStr.replace(/^"(.*)"$/, '$1'); // clean up quotes if present
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+
+      const reportRes = await fetch(`${BASE_API_URL}/api/communications/${item.id}/poll-report`, { headers });
       const reportData = await reportRes.json();
       if (reportData.success && Array.isArray(reportData.voters)) {
         voterRows = reportData.voters.map((v: any) => ({
@@ -206,7 +210,11 @@ const AnnouncementsPage = () => {
     if (voterRows.length === 0 && totalVotesCount > 0) {
       const employeeMap = new Map<string, any>();
       try {
-        const empRes = await fetch(`${BASE_API_URL}/api/employees`);
+        const tokenStr = localStorage.getItem("token") || "";
+        const token = tokenStr.replace(/^"(.*)"$/, '$1'); // clean up quotes if present
+        const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+
+        const empRes = await fetch(`${BASE_API_URL}/api/employees`, { headers });
         const empData = await empRes.json();
         const empList = Array.isArray(empData) ? empData : (empData?.employees || empData?.data || []);
         empList.forEach((e: any) => {

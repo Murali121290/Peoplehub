@@ -393,14 +393,12 @@ def vote_poll(message_id):
         change_count = user_prev.get("change_count", 0) if isinstance(user_prev, dict) else (1 if user_prev else 0)
         change_count += 1
         
-        # Look up employee in DB for department / team details
-        emp_obj = Employee.query.filter(
-            or_(
-                Employee.id == int(user_id) if user_id.isdigit() else False,
-                Employee.employee_id == user_id,
-                Employee.user_id == int(user_id) if user_id.isdigit() else False
-            )
-        ).first()
+        # Look up employee in DB for department / team details (Prioritize user_id to prevent collision with employee id)
+        emp_obj = None
+        if user_id.isdigit():
+            emp_obj = Employee.query.filter(Employee.user_id == int(user_id)).first()
+        if not emp_obj:
+            emp_obj = Employee.query.filter(Employee.employee_id == user_id).first()
 
         user_obj = None
         if user_id.isdigit():
@@ -471,9 +469,10 @@ def get_poll_report(message_id):
         question = poll_data.get("question", "Interactive Poll")
         options = poll_data.get("options", [])
         
-        # Preload all employees into a map by id, user_id, and employee_id
+        # Preload all employees into maps to prevent ID space collisions
         all_emps = Employee.query.all()
-        emp_by_id = {}
+        emp_by_user_id = {}
+        emp_by_employee_id = {}
         for emp in all_emps:
             emp_info = {
                 "code": emp.employee_id or (f"EMP-{emp.id}" if emp.id else "—"),
@@ -481,17 +480,15 @@ def get_poll_report(message_id):
                 "department": emp.department or "General",
                 "designation": emp.designation or "Team Member"
             }
-            if emp.id:
-                emp_by_id[str(emp.id)] = emp_info
             if emp.user_id:
-                emp_by_id[str(emp.user_id)] = emp_info
+                emp_by_user_id[str(emp.user_id)] = emp_info
             if emp.employee_id:
-                emp_by_id[str(emp.employee_id)] = emp_info
+                emp_by_employee_id[str(emp.employee_id)] = emp_info
 
         voter_records = []
         s_no = 1
         for u_id, v_val in votes.items():
-            emp_info = emp_by_id.get(str(u_id))
+            emp_info = emp_by_user_id.get(str(u_id)) or emp_by_employee_id.get(str(u_id))
             
             chosen_opt_indices = []
             change_count = 1
@@ -522,11 +519,11 @@ def get_poll_report(message_id):
                 dept = None
                 desig = None
                 
-            # Prioritize the real database employee_id code (e.g. 1216, 5000)
-            final_code = (emp_info["code"] if emp_info and emp_info["code"] else None) or emp_code or (str(u_id) if not str(u_id).isdigit() else f"EMP-{u_id}")
-            final_name = (emp_info["name"] if emp_info and emp_info["name"] and emp_info["name"] != "Employee" else None) or u_name or f"User #{u_id}"
-            final_dept = (emp_info["department"] if emp_info and emp_info["department"] else None) or dept or "General"
-            final_desig = (emp_info["designation"] if emp_info and emp_info["designation"] else None) or desig or "Team Member"
+            # Prioritize the snapshot vote data over DB lookup (to prevent names being overwritten by shared admin accounts)
+            final_code = emp_code or (emp_info["code"] if emp_info and emp_info["code"] else None) or (str(u_id) if not str(u_id).isdigit() else f"EMP-{u_id}")
+            final_name = u_name or (emp_info["name"] if emp_info and emp_info["name"] and emp_info["name"] != "Employee" else None) or f"User #{u_id}"
+            final_dept = dept or (emp_info["department"] if emp_info and emp_info["department"] else None) or "General"
+            final_desig = desig or (emp_info["designation"] if emp_info and emp_info["designation"] else None) or "Team Member"
             
             opt_names = [options[idx] if idx < len(options) else f"Option {idx+1}" for idx in chosen_opt_indices]
             opt_nums = [f"Option {idx+1}" for idx in chosen_opt_indices]
