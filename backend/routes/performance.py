@@ -123,81 +123,13 @@ def write_eval_store(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def sync_postgres_kpi_to_store_and_back():
-    """Ensure PostgreSQL kpi_evaluations table and evaluation store are fully synced"""
+    """Ensure PostgreSQL kpi_evaluations table is the single source of truth"""
     try:
-        eval_records = KpiEvaluation.query.all()
+        eval_records = KpiEvaluation.query.order_by(KpiEvaluation.id.desc()).all()
         store = read_eval_store()
-        cycles = store.get("cycles", [])
-        responses = store.get("responses", [])
-
-        # If PostgreSQL table has 0 rows but store has responses, migrate store -> PostgreSQL
-        if not eval_records and (responses or cycles):
-            now = datetime.utcnow()
-            for r in responses:
-                emp_id = str(r.get("employeeCode") or r.get("employeeId") or "").strip()
-                if not emp_id:
-                    continue
-                cycle_id = r.get("cycleId")
-                cycle_obj = next((c for c in cycles if c.get("id") == cycle_id), {})
-                
-                # Lookup employee in DB
-                emp_obj = Employee.query.filter(
-                    or_(Employee.employee_id == emp_id, Employee.id == int(emp_id) if emp_id.isdigit() else False)
-                ).first()
-                
-                team_name = (emp_obj.department if emp_obj else None) or (emp_obj.team if emp_obj else None) or r.get("teamId") or cycle_obj.get("teamName") or "Editorial Services"
-                emp_name = r.get("employeeName") or (f"{emp_obj.first_name} {emp_obj.last_name}" if emp_obj else f"Employee #{emp_id}")
-                mgr_name = (emp_obj.reporting_manager if emp_obj else None) or cycle_obj.get("managerName") or "Murali B"
-                mgr_id = str(emp_obj.reporting_manager_id if (emp_obj and emp_obj.reporting_manager_id) else (cycle_obj.get("managerId") or "2150"))
-                
-                # Check if evaluation record already exists for this employee for this specific cycle/form
-                cycle_name = cycle_obj.get("name") or "Performance Evaluation"
-                existing_eval = KpiEvaluation.query.filter(
-                    KpiEvaluation.employee_id == emp_id,
-                    or_(KpiEvaluation.form == cycle_name, KpiEvaluation.performance_metrics == cycle_name)
-                ).first()
-                if existing_eval:
-                    continue
-
-                new_eval = KpiEvaluation(
-                    form=cycle_obj.get("name") or "Q3 2026 KPI Assessment",
-                    team_id=str(r.get("teamId") or cycle_obj.get("teamId") or ""),
-                    team_name=team_name,
-                    metrics_data=r.get("kpiResponses") or cycle_obj.get("categories") or [],
-                    performance_metrics=cycle_obj.get("name") or "Performance Evaluation",
-                    description=f"KPI deliverables evaluation for {team_name}",
-                    target_score="100",
-                    weightage="100",
-                    actual_earned_mark=str(r.get("employeeOverallScore", "0.0")),
-                    earned_score=str(r.get("employeeOverallScore", "0.0")),
-                    employee_overall_score=float(r.get("employeeOverallScore") or 0.0),
-                    employee_remark=r.get("employeeRemarks", ""),
-                    manager_actual_pm="",
-                    manager_approve_score=str(r.get("managerScore", "")) if r.get("managerScore") is not None else "",
-                    manager_score=float(r.get("managerScore")) if r.get("managerScore") is not None else None,
-                    manager_remark=r.get("managerRemarks", ""),
-                    service_manager_approve_status="Approved" if r.get("status") == "approved" else "Pending",
-                    service_manager_score=str(r.get("serviceManagerScore", "")) if r.get("serviceManagerScore") is not None else "",
-                    remark=r.get("serviceManagerRemarks", ""),
-                    employee_id=emp_id,
-                    employee_name=emp_name,
-                    reporting_manager=mgr_name,
-                    reporting_manager_id=mgr_id,
-                    manager_id=mgr_id,
-                    service_manager=cycle_obj.get("serviceManagerName") or "Service Manager",
-                    service_manager_id=str(cycle_obj.get("serviceManagerId") or ""),
-                    status=r.get("status", "employee_in_progress"),
-                    created_at=now,
-                    updated_at=now
-                )
-                db.session.add(new_eval)
-            db.session.commit()
-            eval_records = KpiEvaluation.query.all()
-
         return eval_records, store
     except Exception as e:
-        db.session.rollback()
-        print(f"Error syncing Postgres KPI records: {e}")
+        print(f"Error reading Postgres KPI records: {e}")
         return [], {"cycles": [], "responses": []}
 
 def merge_kpi_responses_into_categories(categories, responses_dict):
@@ -307,8 +239,6 @@ def extract_kpi_responses_from_metrics_data(metrics_data):
 def get_evaluation_data():
     try:
         eval_records, store = sync_postgres_kpi_to_store_and_back()
-        cycles = store.get("cycles", [])
-        responses = store.get("responses", [])
 
         # 1. Dynamically build and maintain cycles directly from PostgreSQL KpiEvaluation records
         team_eval_groups = {}
@@ -334,7 +264,9 @@ def get_evaluation_data():
                     "serviceManagerName": rec.service_manager,
                     "serviceManagerId": str(rec.service_manager_id or ""),
                     "metrics_data": rec.metrics_data,
-                    "employeeIds": []
+                    "employeeIds": [],
+                    "createdAt": rec.created_at.isoformat() if rec.created_at else datetime.utcnow().isoformat(),
+                    "updatedAt": rec.updated_at.isoformat() if rec.updated_at else datetime.utcnow().isoformat(),
                 }
             elif extracted_period and not team_eval_groups[group_key].get("periodName"):
                 team_eval_groups[group_key]["periodName"] = extracted_period
@@ -343,23 +275,10 @@ def get_evaluation_data():
             if emp_id and emp_id not in team_eval_groups[group_key]["employeeIds"]:
                 team_eval_groups[group_key]["employeeIds"].append(emp_id)
 
-        for g_key, g_info in team_eval_groups.items():
-            matching_cycle = next((c for c in cycles if (c.get("teamName") == g_info["teamName"] or c.get("teamId") == g_info["teamId"]) and (c.get("name") == g_info["form"] or c.get("form") == g_info["form"])), None)
-            
-            categories_from_db = g_info["metrics_data"] if isinstance(g_info["metrics_data"], list) else []
-            if matching_cycle:
-                matching_cycle["employeeIds"] = list(set((matching_cycle.get("employeeIds") or []) + g_info["employeeIds"]))
-                if categories_from_db:
-                    matching_cycle["categories"] = categories_from_db
-                if g_info.get("periodName"):
-                    matching_cycle["periodName"] = g_info["periodName"]
-                if g_info.get("description"):
-                    matching_cycle["description"] = g_info["description"]
-                if g_info["managerName"]:
-                    matching_cycle["managerName"] = g_info["managerName"]
-                if g_info["managerId"]:
-                    matching_cycle["managerId"] = g_info["managerId"]
-            else:
+        if eval_records:
+            cycles = []
+            for g_key, g_info in team_eval_groups.items():
+                categories_from_db = g_info["metrics_data"] if isinstance(g_info["metrics_data"], list) else []
                 new_c_id = f"cycle_db_{abs(hash(g_key)) % 1000000}"
                 cycles.append({
                     "id": new_c_id,
@@ -376,79 +295,39 @@ def get_evaluation_data():
                     "categories": categories_from_db,
                     "employeeIds": g_info["employeeIds"],
                     "isActive": True,
-                    "createdAt": datetime.utcnow().isoformat(),
-                    "updatedAt": datetime.utcnow().isoformat()
+                    "createdAt": g_info["createdAt"],
+                    "updatedAt": g_info["updatedAt"]
                 })
+        else:
+            cycles = store.get("cycles", [])
 
-        # 2. Sync all DB records into responses array
-        for rec in eval_records:
-            emp_id = str(rec.employee_id or "")
-            emp_obj = Employee.query.filter(
-                or_(Employee.employee_id == emp_id, Employee.id == int(emp_id) if emp_id.isdigit() else False)
-            ).first()
-            actual_code = emp_obj.employee_id if emp_obj and emp_obj.employee_id else emp_id
-            resolved_team = rec.team_name or rec.team_id or (emp_obj.department if emp_obj else None) or (emp_obj.team if emp_obj else None) or "Media"
-            resolved_name = rec.employee_name or (f"{emp_obj.first_name} {emp_obj.last_name}" if emp_obj else f"Employee #{actual_code}")
+        # 2. Build responses directly from DB records (single source of truth)
+        if eval_records:
+            responses = []
+            for rec in eval_records:
+                emp_id = str(rec.employee_id or "")
+                emp_obj = Employee.query.filter(
+                    or_(Employee.employee_id == emp_id, Employee.id == int(emp_id) if emp_id.isdigit() else False)
+                ).first()
+                actual_code = emp_obj.employee_id if emp_obj and emp_obj.employee_id else emp_id
+                resolved_team = rec.team_name or rec.team_id or (emp_obj.department if emp_obj else None) or (emp_obj.team if emp_obj else None) or "Media"
+                resolved_name = rec.employee_name or (f"{emp_obj.first_name} {emp_obj.last_name}" if emp_obj else f"Employee #{actual_code}")
 
-            db_kpis = extract_kpi_responses_from_metrics_data(rec.metrics_data)
+                db_kpis = extract_kpi_responses_from_metrics_data(rec.metrics_data)
 
-            # Find matching cycle id distinctly by team and form
-            resp_cycle = next((c for c in cycles if (c.get("teamName") == rec.team_name or c.get("teamId") == rec.team_id) and (c.get("name") == rec.form or c.get("form") == rec.form)), None)
-            cycle_id = resp_cycle["id"] if resp_cycle else f"cycle_db_{abs(hash(f'{rec.team_name}_{rec.form}')) % 1000000}"
+                resp_cycle = next((c for c in cycles if (c.get("teamName") == rec.team_name or c.get("teamId") == rec.team_id) and (c.get("name") == rec.form or c.get("form") == rec.form)), None)
+                cycle_id = resp_cycle["id"] if resp_cycle else f"cycle_db_{abs(hash(f'{rec.team_name}_{rec.form}')) % 1000000}"
 
-            # Match response distinctly by rec.id or cycleId + employeeCode
-            rec_resp_id = f"resp_{rec.id}"
-            existing_resp = next((r for r in responses if str(r.get("id")) == rec_resp_id or str(r.get("id")) == str(rec.id)), None)
-            if not existing_resp and rec.form:
-                existing_resp = next((r for r in responses if r.get("periodName") == rec.form and str(r.get("employeeCode") or r.get("employeeId")) in [emp_id, actual_code]), None)
+                extracted_period = ""
+                if rec.description and "(" in rec.description and ")" in rec.description:
+                    extracted_period = rec.description.split("(", 1)[1].rsplit(")", 1)[0].strip()
 
-            extracted_period = ""
-            if rec.description and "(" in rec.description and ")" in rec.description:
-                extracted_period = rec.description.split("(", 1)[1].rsplit(")", 1)[0].strip()
-
-            if existing_resp:
-                existing_resp["id"] = existing_resp.get("id") or rec_resp_id
-                existing_resp["employeeCode"] = actual_code
-                existing_resp["employeeId"] = actual_code
-                existing_resp["cycleId"] = cycle_id
-                existing_resp["teamId"] = resolved_team
-                existing_resp["employeeName"] = resolved_name
-                existing_resp["periodName"] = extracted_period or existing_resp.get("periodName") or rec.form
-                existing_resp["description"] = rec.description or existing_resp.get("description", "")
-                if rec.submitted_at:
-                    existing_resp["employeeSubmittedAt"] = rec.submitted_at.isoformat()
-                existing_resp["managerReviewedAt"] = rec.reviewed_at.isoformat() if rec.reviewed_at else None
-                existing_resp["serviceManagerApprovedAt"] = rec.approved_at.isoformat() if rec.approved_at else None
-                existing_resp["managerId"] = str(rec.manager_id or "")
-                existing_resp["employeeOverallScore"] = rec.employee_overall_score or float(rec.earned_score or 0)
-                existing_resp["employeeRemarks"] = rec.employee_remark or existing_resp.get("employeeRemarks", "")
-                existing_resp["managerScore"] = rec.manager_score
-                existing_resp["managerRemarks"] = rec.manager_remark or ""
-                existing_resp["form"] = rec.form or rec.performance_metrics or "Performance Evaluation"
-                existing_resp["performance_metrics"] = rec.performance_metrics or rec.form or ""
-                if rec.service_manager_score:
-                    try:
-                        existing_resp["serviceManagerScore"] = float(rec.service_manager_score)
-                    except ValueError:
-                        pass
-                if rec.status:
-                    existing_resp["status"] = rec.status
-                existing_resp["categories"] = rec.metrics_data if isinstance(rec.metrics_data, list) else []
-                existing_resp["metrics_data"] = rec.metrics_data
-                
-                # Merge DB KPI responses
-                if db_kpis:
-                    if not existing_resp.get("kpiResponses"):
-                        existing_resp["kpiResponses"] = db_kpis
-                    else:
-                        for k, v in db_kpis.items():
-                            if k not in existing_resp["kpiResponses"] or not existing_resp["kpiResponses"][k].get("actualValue"):
-                                existing_resp["kpiResponses"][k] = v
-            else:
                 responses.append({
-                    "id": rec_resp_id,
+                    "id": f"resp_{rec.id}",
+                    "db_id": rec.id,
                     "cycleId": cycle_id,
                     "teamId": resolved_team,
+                    "teamName": resolved_team,
                     "employeeId": actual_code,
                     "employeeCode": actual_code,
                     "employeeName": resolved_name,
@@ -459,28 +338,28 @@ def get_evaluation_data():
                     "employeeSubmittedAt": rec.submitted_at.isoformat() if rec.submitted_at else None,
                     "managerReviewedAt": rec.reviewed_at.isoformat() if rec.reviewed_at else None,
                     "serviceManagerApprovedAt": rec.approved_at.isoformat() if rec.approved_at else None,
-                    "managerId": str(rec.manager_id or ""),
-                    "status": rec.status or "employee_in_progress",
-                    "employeeOverallScore": rec.employee_overall_score or 0,
+                    "managerId": str(rec.reporting_manager_id or rec.manager_id or ""),
+                    "reportingManager": rec.reporting_manager or "",
+                    "reporting_manager": rec.reporting_manager or "",
+                    "reporting_manager_id": str(rec.reporting_manager_id or rec.manager_id or ""),
+                    "serviceManager": rec.service_manager or "",
+                    "service_manager": rec.service_manager or "",
+                    "service_manager_id": str(rec.service_manager_id or ""),
+                    "status": rec.status or "Assigned to Employee",
+                    "employeeOverallScore": rec.employee_overall_score or (float(rec.earned_score) if rec.earned_score and rec.earned_score.replace('.', '', 1).isdigit() else 0.0),
                     "employeeRemarks": rec.employee_remark or "",
                     "managerScore": rec.manager_score,
                     "managerRemarks": rec.manager_remark or "",
+                    "serviceManagerScore": float(rec.service_manager_score) if (rec.service_manager_score and rec.service_manager_score.replace('.', '', 1).isdigit()) else None,
+                    "serviceManagerRemarks": rec.remark or "",
                     "categories": rec.metrics_data if isinstance(rec.metrics_data, list) else [],
                     "metrics_data": rec.metrics_data,
-                    "kpiResponses": db_kpis
+                    "kpiResponses": db_kpis,
+                    "createdAt": rec.created_at.isoformat() if rec.created_at else None,
+                    "updatedAt": rec.updated_at.isoformat() if rec.updated_at else None
                 })
-
-        # Deduplicate responses distinctly by ID
-        dedup_responses = []
-        seen_r_ids = set()
-        for r in responses:
-            rid = str(r.get("id") or "")
-            if rid and rid in seen_r_ids:
-                continue
-            if rid:
-                seen_r_ids.add(rid)
-            dedup_responses.append(r)
-        responses = dedup_responses
+        else:
+            responses = store.get("responses", [])
 
         store["cycles"] = cycles
         store["responses"] = responses
@@ -681,52 +560,55 @@ def save_evaluation_responses():
             form_name = item.get("form") or item.get("performance_metrics") or item.get("periodName") or ""
 
             if emp_id:
+                clean_id = resp_id.replace("resp_", "").replace("eval_", "").strip()
                 eval_row = None
-                if resp_id.startswith("resp_") and resp_id.replace("resp_", "").isdigit():
-                    eval_row = KpiEvaluation.query.get(int(resp_id.replace("resp_", "")))
-                elif resp_id.isdigit():
-                    eval_row = KpiEvaluation.query.get(int(resp_id))
+                if clean_id.isdigit():
+                    eval_row = KpiEvaluation.query.get(int(clean_id))
 
-                if not eval_row and form_name:
+                period_name = str(item.get("periodName") or "").strip()
+                if not eval_row and (form_name or period_name):
                     eval_row = KpiEvaluation.query.filter(
                         KpiEvaluation.employee_id == emp_id,
-                        or_(KpiEvaluation.form == form_name, KpiEvaluation.performance_metrics == form_name)
-                    ).first()
+                        or_(
+                            KpiEvaluation.form == form_name,
+                            KpiEvaluation.performance_metrics == form_name,
+                            KpiEvaluation.description.ilike(f"%{period_name}%") if period_name else False
+                        )
+                    ).order_by(KpiEvaluation.id.desc()).first()
 
                 if not eval_row:
-                    eval_row = KpiEvaluation(
-                        form=form_name or "Performance Evaluation",
-                        team_id=str(item.get("teamId") or ""),
-                        team_name=item.get("teamName") or "Editorial Services",
-                        employee_id=emp_id,
-                        employee_name=item.get("employeeName") or f"Employee #{emp_id}",
-                        created_at=now
-                    )
-                    db.session.add(eval_row)
+                    eval_row = KpiEvaluation.query.filter(
+                        KpiEvaluation.employee_id == emp_id
+                    ).order_by(KpiEvaluation.id.desc()).first()
 
-                if "kpiResponses" in item and item["kpiResponses"]:
-                    eval_row.metrics_data = item["kpiResponses"]
-                if "employeeOverallScore" in item:
-                    try:
-                        eval_row.employee_overall_score = float(item["employeeOverallScore"])
-                        eval_row.earned_score = str(item["employeeOverallScore"])
-                    except (ValueError, TypeError):
-                        pass
-                if "employeeRemarks" in item:
-                    eval_row.employee_remark = item["employeeRemarks"]
-                if "managerScore" in item and item["managerScore"] is not None:
-                    try:
-                        eval_row.manager_score = float(item["managerScore"])
-                        eval_row.manager_approve_score = str(item["managerScore"])
-                    except (ValueError, TypeError):
-                        pass
-                if "managerRemarks" in item:
-                    eval_row.manager_remark = item["managerRemarks"]
-                if "serviceManagerScore" in item and item["serviceManagerScore"] is not None:
-                    eval_row.service_manager_score = str(item["serviceManagerScore"])
-                if "status" in item:
-                    eval_row.status = item["status"]
-                eval_row.updated_at = now
+                if eval_row:
+                    if "kpiResponses" in item and item["kpiResponses"]:
+                        if isinstance(eval_row.metrics_data, list):
+                            eval_row.metrics_data = merge_kpi_responses_into_categories(eval_row.metrics_data, item["kpiResponses"])
+                        else:
+                            eval_row.metrics_data = item["kpiResponses"]
+                    if "employeeOverallScore" in item:
+                        try:
+                            eval_row.employee_overall_score = float(item["employeeOverallScore"])
+                            eval_row.earned_score = str(item["employeeOverallScore"])
+                            eval_row.actual_earned_mark = str(item["employeeOverallScore"])
+                        except (ValueError, TypeError):
+                            pass
+                    if "employeeRemarks" in item:
+                        eval_row.employee_remark = item["employeeRemarks"]
+                    if "managerScore" in item and item["managerScore"] is not None:
+                        try:
+                            eval_row.manager_score = float(item["managerScore"])
+                            eval_row.manager_approve_score = str(item["managerScore"])
+                        except (ValueError, TypeError):
+                            pass
+                    if "managerRemarks" in item:
+                        eval_row.manager_remark = item["managerRemarks"]
+                    if "serviceManagerScore" in item and item["serviceManagerScore"] is not None:
+                        eval_row.service_manager_score = str(item["serviceManagerScore"])
+                    if "status" in item and item["status"]:
+                        eval_row.status = item["status"]
+                    eval_row.updated_at = now
 
         db.session.commit()
         store["responses"] = responses
@@ -932,13 +814,38 @@ def assign_kpi_metrics():
             period_label = data.get("periodName") or data.get("period_name") or data.get("period") or ""
             desc_text = f"Performance evaluation for {team_name}" + (f" ({period_label})" if period_label else "")
 
-            # Check if an evaluation record already exists for this employee for this specific form/period
-            record = KpiEvaluation.query.filter(
+            # Check if evaluation records already exist for this employee for this specific form/period
+            existing_records = KpiEvaluation.query.filter(
                 KpiEvaluation.employee_id == emp_id,
-                or_(KpiEvaluation.form == form_name, KpiEvaluation.performance_metrics == form_name)
-            ).order_by(KpiEvaluation.id.desc()).first()
+                or_(
+                    KpiEvaluation.form == form_name, 
+                    KpiEvaluation.performance_metrics == form_name,
+                    KpiEvaluation.description.ilike(f"%{period_label}%") if period_label else False
+                )
+            ).order_by(KpiEvaluation.id.desc()).all()
 
-            if not record:
+            if existing_records:
+                record = existing_records[0]
+                # Clean up any duplicates in DB if present so strictly 1 row exists
+                for extra in existing_records[1:]:
+                    db.session.delete(extra)
+                # Update existing row with latest assigned metrics JSON, form title, and team
+                record.form = form_name
+                record.performance_metrics = form_name
+                record.description = desc_text
+                record.team_id = str(team_id) if team_id else record.team_id
+                record.team_name = team_name if team_name else record.team_name
+                record.metrics_data = categories_data
+                record.target_score = "100"
+                record.weightage = "100"
+                record.reporting_manager = reporting_manager if reporting_manager else record.reporting_manager
+                record.reporting_manager_id = reporting_manager_id if reporting_manager_id else record.reporting_manager_id
+                record.manager_id = reporting_manager_id if reporting_manager_id else record.manager_id
+                record.service_manager = service_manager if service_manager else record.service_manager
+                record.service_manager_id = service_manager_id if service_manager_id else record.service_manager_id
+                record.status = "Assigned to Employee"
+                record.updated_at = now
+            else:
                 record = KpiEvaluation(
                     form=form_name,
                     team_id=str(team_id),
@@ -970,23 +877,6 @@ def assign_kpi_metrics():
                     updated_at=now
                 )
                 db.session.add(record)
-            else:
-                # Update existing row with latest assigned metrics JSON, form title, and team
-                record.form = form_name
-                record.performance_metrics = form_name
-                record.description = desc_text
-                record.team_id = str(team_id) if team_id else record.team_id
-                record.team_name = team_name if team_name else record.team_name
-                record.metrics_data = categories_data
-                record.target_score = "100"
-                record.weightage = "100"
-                record.reporting_manager = reporting_manager if reporting_manager else record.reporting_manager
-                record.reporting_manager_id = reporting_manager_id if reporting_manager_id else record.reporting_manager_id
-                record.manager_id = reporting_manager_id if reporting_manager_id else record.manager_id
-                record.service_manager = service_manager if service_manager else record.service_manager
-                record.service_manager_id = service_manager_id if service_manager_id else record.service_manager_id
-                record.status = "Assigned to Employee"
-                record.updated_at = now
 
             db.session.flush()
             created_records.append(record)

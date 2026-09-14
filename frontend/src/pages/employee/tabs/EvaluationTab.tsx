@@ -1826,12 +1826,35 @@ export const EvaluationTab: React.FC = () => {
 
 
   // 4. Employee Active Cycle & Response (Strictly for the employee's own record)
-  const allUserResponses = responses.filter(isResponseForUser).sort((a, b) => {
-    const timeA = new Date(a.createdAt || a.employeeSubmittedAt || a.updatedAt || 0).getTime();
-    const timeB = new Date(b.createdAt || b.employeeSubmittedAt || b.updatedAt || 0).getTime();
-    if (timeB !== timeA) return timeB - timeA;
-    return (b.id || '').localeCompare(a.id || '');
-  });
+  const allUserResponses = useMemo(() => {
+    const rawList = responses.filter(isResponseForUser).sort((a, b) => {
+      const timeA = new Date(a.createdAt || a.employeeSubmittedAt || a.updatedAt || 0).getTime();
+      const timeB = new Date(b.createdAt || b.employeeSubmittedAt || b.updatedAt || 0).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+
+    // Deduplicate so each evaluation period appears ONCE for the employee, prioritizing records with full categories
+    const periodMap = new Map<string, EvaluationResponse>();
+    rawList.forEach(r => {
+      const pKey = (r.periodName || (r as any).form || '').trim().toLowerCase();
+      const key = pKey || r.id;
+      const existing = periodMap.get(key);
+      if (!existing) {
+        periodMap.set(key, r);
+      } else {
+        const hasCats = (resp: any) => Boolean(resp.categories?.length > 0 || resp.metrics_data?.length > 0);
+        const isDb = (resp: any) => String(resp.id || '').startsWith('resp_') && /\d+/.test(String(resp.id || ''));
+        if (hasCats(r) && !hasCats(existing)) {
+          periodMap.set(key, r);
+        } else if (isDb(r) && !isDb(existing)) {
+          periodMap.set(key, r);
+        }
+      }
+    });
+
+    return Array.from(periodMap.values());
+  }, [responses, dbEmployees, userId, userCode, currentDbUser]);
 
   const activeEmpResponse = (selectedResponseId && allUserResponses.find(r => r.id === selectedResponseId))
     || allUserResponses[0];
@@ -1894,8 +1917,58 @@ export const EvaluationTab: React.FC = () => {
       : undefined
   ) || managerDirectCycles.find(c => c.status === 'active') || managerDirectCycles[0];
 
-  const activeCategories = activeCycle?.categories || DEFAULT_KPI_CATEGORIES;
-  const managerTeamCategories = activeManagerCycle?.categories || activeCategories;
+  // Resolve active categories for employee worksheet
+  const activeCategories: KPICategory[] = useMemo(() => {
+    // 1. Prefer categories explicitly attached to the employee's active response
+    if (activeEmpResponse) {
+      const respCats = (activeEmpResponse as any).categories || (activeEmpResponse as any).metrics_data;
+      if (Array.isArray(respCats) && respCats.length > 0) {
+        return respCats;
+      }
+      // If it has kpiResponses or metrics_data as a dictionary of KPIs, wrap into a category
+      const mData = (activeEmpResponse as any).metrics_data || activeEmpResponse.kpiResponses;
+      if (mData && typeof mData === 'object' && !Array.isArray(mData) && Object.keys(mData).length > 0) {
+        const kpisList: KPIItem[] = [];
+        const seenIds = new Set<string>();
+        Object.entries(mData).forEach(([key, val]: [string, any]) => {
+          if (!val || typeof val !== 'object') return;
+          const kId = val.kpiId || val.id || key;
+          if (seenIds.has(kId)) return;
+          seenIds.add(kId);
+          kpisList.push({
+            id: kId,
+            name: val.name || key,
+            description: val.description || '',
+            targetScore: val.targetScore || 100,
+            weightage: val.weightage || 100,
+            targetFromManager: val.targetFromManager || val.targetValue || '100%',
+            targetValue: val.targetValue || 100,
+            unit: val.unit || '%',
+            scoringDirection: (val.scoringDirection || 'higher_is_better') as any,
+            measurementType: (val.measurementType || 'numerical') as any,
+            isRequired: true
+          });
+        });
+        if (kpisList.length > 0) {
+          return [{
+            id: 'cat_deliverables',
+            name: (activeEmpResponse as any).form || activeEmpResponse.periodName || 'Performance Deliverables',
+            description: 'Deliverables evaluation items',
+            weightage: 100,
+            kpis: kpisList
+          }];
+        }
+      }
+    }
+    // 2. Check activeCycle categories (ensuring non-empty array)
+    if (activeCycle?.categories && Array.isArray(activeCycle.categories) && activeCycle.categories.length > 0) {
+      return activeCycle.categories;
+    }
+    // 3. Fallback to default KPI categories
+    return DEFAULT_KPI_CATEGORIES;
+  }, [activeEmpResponse, activeCycle]);
+
+  const managerTeamCategories = (activeManagerCycle?.categories && activeManagerCycle.categories.length > 0) ? activeManagerCycle.categories : activeCategories;
 
   // Responses strictly belonging to active manager cycle / team
   const activeCycleResponses = responses.filter(r =>
@@ -2177,7 +2250,7 @@ export const EvaluationTab: React.FC = () => {
       });
 
       await evaluationService.saveCycles(updatedCycles);
-      await evaluationService.saveResponses(updatedResponses);
+      evaluationService.saveResponsesLocal(updatedResponses);
 
       // Sync to backend Postgres
       try {
@@ -2757,11 +2830,14 @@ export const EvaluationTab: React.FC = () => {
       // Filter out orphan/ghost responses with no name
       if (!empInDb && !employeeName) return;
 
-      // Distinct key per employee and evaluation cycle/form/period (so multiple assigned metrics appear distinctly)
-      const formKey = ((r as any).form || r.periodName || '').trim().toLowerCase();
-      const key = formKey 
-        ? `${String(employeeCode).trim().toLowerCase()}_${formKey}`
-        : (r.id ? String(r.id) : `${String(employeeCode).trim().toLowerCase()}_${r.cycleId || 'default'}`);
+      // Distinct key per employee and evaluation period (so multiple assigned metrics in different periods appear distinctly, but duplicates in the same period are merged)
+      const rawPeriod = (r.periodName || (r as any).form || '').trim().toLowerCase();
+      let canonicalPeriod = rawPeriod;
+      if (rawPeriod.includes('(') && rawPeriod.includes(')')) {
+        const parts = rawPeriod.split('(');
+        canonicalPeriod = parts[parts.length - 1].replace(')', '').trim();
+      }
+      const key = `${String(employeeCode).trim().toLowerCase()}_${canonicalPeriod || r.cycleId || r.id}`;
       const existing = map.get(key);
       const normalizedResponse: EvaluationResponse = {
         ...r,
@@ -2772,8 +2848,15 @@ export const EvaluationTab: React.FC = () => {
       if (!existing) {
         map.set(key, normalizedResponse);
       } else {
+        const hasMgr = (resp: any) => Boolean((resp as any).reporting_manager || (resp as any).managerName || (resp as any).manager_name);
+        const hasCats = (resp: any) => Boolean((resp as any).categories?.length > 0 || (resp as any).metrics_data?.length > 0);
         const isDb = (resp: any) => String(resp.id || '').startsWith('resp_') && /\d+/.test(String(resp.id || ''));
-        if (isDb(r) && !isDb(existing)) {
+
+        if (hasMgr(r) && !hasMgr(existing)) {
+          map.set(key, normalizedResponse);
+        } else if (hasCats(r) && !hasCats(existing)) {
+          map.set(key, normalizedResponse);
+        } else if (isDb(r) && !isDb(existing)) {
           map.set(key, normalizedResponse);
         } else if (!isDb(r) && isDb(existing)) {
           // Keep existing DB record
@@ -2789,6 +2872,12 @@ export const EvaluationTab: React.FC = () => {
             (r.employeeOverallScore > 0 && existing.employeeOverallScore === 0)
           ) {
             map.set(key, normalizedResponse);
+          } else {
+            const numA = parseInt(String(r.id || '').replace(/\D/g, ''), 10) || 0;
+            const numB = parseInt(String(existing.id || '').replace(/\D/g, ''), 10) || 0;
+            if (numA > numB) {
+              map.set(key, normalizedResponse);
+            }
           }
         }
       }

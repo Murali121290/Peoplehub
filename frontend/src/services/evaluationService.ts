@@ -719,74 +719,12 @@ export const evaluationService = {
     categories: KPICategory[];
     allEmployees: any[];
   }): Promise<{ cycle: EvaluationCycle; responses: EvaluationResponse[] }> {
-    const cycleId = `cycle_${Date.now()}`;
-    const newCycle: EvaluationCycle = {
-      id: cycleId,
-      name: data.formName || `Performance Evaluation - ${data.teamName}`,
-      description: `KPI Assessment for ${data.teamName} (${data.periodName})`,
-      teamId: data.teamId,
-      teamName: data.teamName,
-      managerId: data.managerId,
-      managerName: data.managerName,
-      serviceManagerId: data.serviceManagerId || '',
-      serviceManagerName: data.serviceManagerName || '',
-      employeeIds: data.employeeIds,
-      startDate: data.startDate,
-      endDate: data.endDate,
-      periodName: data.periodName,
-      status: 'active',
-      categories: data.categories,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    const cycles = this.getCycles();
-    const updatedCycles = [newCycle, ...cycles];
-    await this.saveCycles(updatedCycles);
-
-    // Create active EvaluationResponse for each selected employee
     const targetEmployees = data.allEmployees.filter(e => 
       data.employeeIds.includes(String(e.id)) || 
       data.employeeIds.includes(String(e.employee_id))
     );
 
-    const newResponses: EvaluationResponse[] = targetEmployees.map(emp => {
-      const initialKpiResponses: Record<string, KPIResponseItem> = {};
-      data.categories.forEach(cat => {
-        cat.kpis.forEach(kpi => {
-          initialKpiResponses[kpi.id] = {
-            kpiId: kpi.id,
-            actualValue: '',
-            achievementPercentage: 0,
-            earnedScore: 0,
-            employeeRemarks: ''
-          };
-        });
-      });
-
-      const empCode = String(emp.employee_id || emp.id);
-      return {
-        id: `eval_${Date.now()}_${empCode}`,
-        cycleId: cycleId,
-        teamId: data.teamId,
-        employeeId: empCode,
-        employeeName: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || 'Team Member',
-        employeeCode: empCode,
-        designation: emp.designation || 'Team Member',
-        periodName: data.periodName,
-        status: 'employee_in_progress',
-        kpiResponses: initialKpiResponses,
-        employeeOverallScore: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-    });
-
-    const existingResponses = this.getResponses();
-    const updatedResponses = [...newResponses, ...existingResponses];
-    await this.saveResponses(updatedResponses);
-
-    // Also persist rows into Postgres kpi_evaluations table (1 JSON row per employee)
+    // 1. Assign to PostgreSQL kpi_evaluations table (strictly 1 row per employee)
     try {
       const token = localStorage.getItem('token') || '';
       await fetch(`${API_URL}/api/performance/kpi-evaluations/assign`, {
@@ -815,7 +753,28 @@ export const evaluationService = {
       console.warn('Sync to kpi_evaluations Postgres table skipped or offline:', dbErr);
     }
 
-    return { cycle: newCycle, responses: newResponses };
+    // 2. Fetch fresh, official data directly from DB
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const cycle = remoteData.cycles.find(c => c.name === data.formName || (c as any).form === data.formName) || remoteData.cycles[0];
+    return { 
+      cycle: cycle || { 
+        id: `cycle_${Date.now()}`, 
+        name: data.formName, 
+        teamId: data.teamId, 
+        teamName: data.teamName, 
+        managerId: data.managerId, 
+        managerName: data.managerName, 
+        employeeIds: data.employeeIds, 
+        startDate: data.startDate, 
+        endDate: data.endDate, 
+        periodName: data.periodName, 
+        status: 'active', 
+        categories: data.categories, 
+        createdAt: new Date().toISOString(), 
+        updatedAt: new Date().toISOString() 
+      }, 
+      responses: remoteData.responses 
+    };
   }
 };
 
