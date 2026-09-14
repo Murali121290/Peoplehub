@@ -36,6 +36,8 @@ import DashboardHeaderActions from "./components/DashboardHeaderActions";
 import NotificationsPanel from "./components/NotificationsPanel";
 import { BookLoader } from "../../components/ui/Spinner";
 import { ConfirmDialog } from "../../components/ui/Modal/ConfirmDialog";
+import { evaluationService } from "../../services/evaluationService";
+import { EvaluationCheckOutPromptModal } from "./modals/EvaluationCheckOutPromptModal";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -303,6 +305,12 @@ const EmployeeDashboardPage: React.FC = () => {
   // Modal state
   const [pendingClarifications, setPendingClarifications] = useState<any[]>([]);
   const [confirmModal, setConfirmModal] = useState(false);
+  const [pendingEvalPrompt, setPendingEvalPrompt] = useState<{
+    isOpen: boolean;
+    periodName: string;
+    dueDateText: string;
+    isPreWeekoff: boolean;
+  } | null>(null);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [birthdayEmployees, setBirthdayEmployees] = useState<any[]>([]);
   const [anniversaryEmployees, setAnniversaryEmployees] = useState<any[]>([]);
@@ -886,6 +894,92 @@ if (isHalfDayLeave(leave.total_days)) return false;
       toast.error("Error setting shift timing.");
     } finally {
       setIsActionLoading(false);
+    }
+  };
+
+  const checkPendingEvaluationBeforeCheckout = async () => {
+    if (!currentEmployee && !user) return null;
+
+    try {
+      const { cycles, responses } = await evaluationService.fetchRemoteEvaluationData();
+
+      const clean = (v: any) => String(v || '').trim().toLowerCase().replace(/^emp-?/i, '');
+      const myCode = clean(currentEmployee?.employee_id || user?.employee_id || currentEmployee?.id || user?.id || '');
+      const myFullName = (
+        (currentEmployee ? `${currentEmployee.first_name || ''} ${currentEmployee.last_name || ''}`.trim() : '') ||
+        user?.full_name ||
+        ''
+      ).trim().toLowerCase();
+
+      const userResponses = (responses || []).filter((r) => {
+        if (!r) return false;
+        const isPending = r.status === 'employee_in_progress' || r.status === 'returned_to_employee' || !r.employeeSubmittedAt;
+        if (!isPending) return false;
+
+        const rEmpCode = clean(r.employeeCode);
+        const rEmpId = clean(r.employeeId);
+        const rName = (r.employeeName || '').trim().toLowerCase();
+
+        const isCodeMatch = Boolean(myCode && (myCode === rEmpCode || myCode === rEmpId));
+        const isNameMatch = Boolean(rName && myFullName && rName.length >= 4 && rName === myFullName);
+
+        return isCodeMatch || isNameMatch;
+      });
+
+      if (!userResponses || userResponses.length === 0) return null;
+
+      const today = new Date();
+      const todayStr = today.toISOString().split("T")[0];
+      const todayDay = today.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+
+      for (const resp of userResponses) {
+        const cycle = (cycles || []).find((c) => c.id === resp.cycleId);
+
+        const periodName = cycle?.periodName || cycle?.name || "Performance Metrics";
+        const endDateStr = cycle?.endDate ? cycle.endDate.split("T")[0] : todayStr;
+
+        const endDateObj = new Date(endDateStr);
+        const endDay = endDateObj.getDay();
+
+        const isDueToday = endDateStr === todayStr;
+        const isWeekly = periodName.toLowerCase().includes("week") || (cycle?.name || "").toLowerCase().includes("week");
+        const isWeekendDue = endDay === 6 || endDay === 0;
+
+        const diffTime = endDateObj.getTime() - new Date(todayStr).getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        // Check if today is Friday (5) and due date is on Saturday or Sunday of this weekend
+        const isPreWeekoff = todayDay === 5 && isWeekendDue && diffDays >= 0 && diffDays <= 2;
+
+        if (isDueToday || isPreWeekoff || (diffDays >= 0 && diffDays <= 1) || isWeekly) {
+          return {
+            periodName,
+            dueDateText: isDueToday ? "Today" : endDateStr,
+            isPreWeekoff,
+          };
+        }
+      }
+    } catch (err) {
+      console.error("Error checking pending evaluation before checkout:", err);
+    }
+
+    return null;
+  };
+
+  const handleCheckOutAction = async () => {
+    setIsActionLoading(true);
+    const pendingEval = await checkPendingEvaluationBeforeCheckout();
+    setIsActionLoading(false);
+
+    if (pendingEval) {
+      setPendingEvalPrompt({
+        isOpen: true,
+        periodName: pendingEval.periodName,
+        dueDateText: pendingEval.dueDateText,
+        isPreWeekoff: pendingEval.isPreWeekoff,
+      });
+    } else {
+      setConfirmModal(true);
     }
   };
 
@@ -1989,11 +2083,30 @@ if (isHalfDayLeave(leave.total_days)) return false;
       <ConfirmModal
         isOpen={confirmModal}
         onCancel={() => setConfirmModal(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setConfirmModal(false);
-          handleCheckOut();
+          await handleCheckOut();
         }}
       />
+
+      {pendingEvalPrompt && (
+        <EvaluationCheckOutPromptModal
+          isOpen={pendingEvalPrompt.isOpen}
+          periodName={pendingEvalPrompt.periodName}
+          dueDateText={pendingEvalPrompt.dueDateText}
+          isPreWeekoff={pendingEvalPrompt.isPreWeekoff}
+          onCompleteNow={() => {
+            setPendingEvalPrompt(null);
+            setActiveTab("evaluation");
+            navigate("?tab=evaluation");
+          }}
+          onCheckOutAnyway={async () => {
+            setPendingEvalPrompt(null);
+            await handleCheckOut();
+          }}
+          onClose={() => setPendingEvalPrompt(null)}
+        />
+      )}
 
       <PopupModal
         popup={popup}
@@ -2075,7 +2188,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
                     isShiftLocked={shiftLockStatus.isLocked}
                     shiftLockLabel={shiftLockStatus.label}
                     shiftLockTime={shiftLockStatus.timeLabel}
-                    onCheckInOut={() => isCheckedIn ? setConfirmModal(true) : handleCheckInClick()}
+                    onCheckInOut={() => isCheckedIn ? handleCheckOutAction() : handleCheckInClick()}
                     onLunchBreak={handleLunchBreak}
                     onTeaBreak={handleTeaBreak}
                     isHybrid={(currentEmployee?.work_mode || "").toLowerCase() === "hybrid"}

@@ -20,6 +20,7 @@ import {
 import { useAuthStore } from '../../../store/authStore';
 import {
   PlusIcon,
+  CheckIcon,
   CheckCircleIcon,
   SparklesIcon,
   ArrowPathIcon,
@@ -51,6 +52,102 @@ import {
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolid } from '@heroicons/react/24/solid';
 import { ConfirmDialog } from '../../../components/ui/Modal/ConfirmDialog';
+
+const ExpandableRemarkInput: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  required?: boolean;
+  className?: string;
+}> = ({ value, onChange, placeholder = 'Remarks...', disabled = false, required = false, className = '' }) => {
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
+  const isLong = (value || '').length > 30 || (value || '').includes('\n');
+
+  useEffect(() => {
+    if (!value || !value.trim() || (!value.includes('\n') && value.length <= 30)) {
+      setIsExpanded(false);
+    }
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newVal = e.target.value;
+    onChange(newVal);
+    if (!newVal || !newVal.trim() || (!newVal.includes('\n') && newVal.length <= 30)) {
+      setIsExpanded(false);
+    }
+  };
+
+  return (
+    <div className="relative group w-full flex flex-col items-end">
+      <textarea
+        rows={isExpanded ? 3 : 1}
+        value={value}
+        disabled={disabled}
+        required={required}
+        onChange={handleChange}
+        placeholder={placeholder}
+        onFocus={() => {
+          if (isLong && !isExpanded) setIsExpanded(true);
+        }}
+        className={`w-full py-1.5 px-3 text-xs rounded-xl transition-all duration-200 resize-none ${
+          isExpanded ? 'min-h-[72px]' : 'h-8.5 overflow-hidden'
+        } ${className}`}
+      />
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="text-[10px] font-bold text-teal-800 hover:text-teal-900 bg-teal-50 hover:bg-teal-100/70 px-1.5 py-0.5 rounded-md border border-teal-200/80 shadow-2xs flex items-center gap-0.5 transition cursor-pointer mt-1"
+        >
+          <span>{isExpanded ? 'Collapse' : 'Expand'}</span>
+          {isExpanded ? (
+            <ChevronUpIcon className="w-2.5 h-2.5 stroke-[2.5]" />
+          ) : (
+            <ChevronDownIcon className="w-2.5 h-2.5 stroke-[2.5]" />
+          )}
+        </button>
+      )}
+    </div>
+  );
+};
+
+const ExpandableRemarkView: React.FC<{
+  text: string;
+  fallback?: string;
+}> = ({ text, fallback = '—' }) => {
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
+
+  if (!text || !text.trim()) {
+    return <span className="text-slate-400 italic text-[11px]">{fallback}</span>;
+  }
+
+  const isLong = text.length > 30 || text.includes('\n');
+
+  if (!isLong) {
+    return <span className="text-xs text-slate-700 font-medium break-words">{text}</span>;
+  }
+
+  return (
+    <div className="inline-flex flex-col items-start gap-1 text-xs text-slate-700 font-medium max-w-[260px]">
+      <span className={isExpanded ? "break-words leading-relaxed text-slate-800" : "line-clamp-1 text-slate-700"}>
+        {text}
+      </span>
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="inline-flex items-center gap-0.5 text-[10px] font-bold text-teal-800 hover:text-teal-900 bg-teal-50 hover:bg-teal-100/80 px-1.5 py-0.5 rounded-md border border-teal-200/80 transition cursor-pointer"
+      >
+        <span>{isExpanded ? 'Collapse' : 'Expand'}</span>
+        {isExpanded ? (
+          <ChevronUpIcon className="w-2.5 h-2.5 stroke-[2.5]" />
+        ) : (
+          <ChevronDownIcon className="w-2.5 h-2.5 stroke-[2.5]" />
+        )}
+      </button>
+    </div>
+  );
+};
 
 export const EvaluationTab: React.FC = () => {
   const { user } = useAuthStore();
@@ -173,8 +270,8 @@ export const EvaluationTab: React.FC = () => {
       formTitle = `Weekly Performance Metrics (${fromFmt} - ${toFmt}) - ${formTeamLabel}`;
     } else if (pType === 'daily') {
       const dueFmt = formatDisplayDate(pDue);
-      periodStr = `Due Date: ${dueFmt}`;
-      formTitle = `Performance Deliverables (Due: ${dueFmt}) - ${formTeamLabel}`;
+      periodStr = `Daily (${dueFmt})`;
+      formTitle = `Daily Deliverables (${dueFmt}) - ${formTeamLabel}`;
     }
 
     setMgrAssignPeriod(periodStr);
@@ -192,6 +289,9 @@ export const EvaluationTab: React.FC = () => {
 
   // Employee Form State
   const [selectedResponseId, setSelectedResponseId] = useState<string>('');
+  const [selectedReportResponseId, setSelectedReportResponseId] = useState<string>('');
+  const [showReportAuditBreakdown, setShowReportAuditBreakdown] = useState<boolean>(false);
+  const [historyAuditBreakdownOpen, setHistoryAuditBreakdownOpen] = useState<Record<string, boolean>>({});
   const [kpiInputs, setKpiInputs] = useState<Record<string, KPIResponseItem>>({});
   const [empRemarks, setEmpRemarks] = useState('');
   const [employeeSubTab, setEmployeeSubTab] = useState<'worksheet' | 'reports'>('worksheet');
@@ -207,7 +307,7 @@ export const EvaluationTab: React.FC = () => {
   const [mgrKpiActuals, setMgrKpiActuals] = useState<Record<string, string | number>>({});
   const [mgrKpiRemarks, setMgrKpiRemarks] = useState<Record<string, string>>({});
   const [showManagerDeliverablesMatrix, setShowManagerDeliverablesMatrix] = useState<boolean>(false);
-  const [managerFilterDept, setManagerFilterDept] = useState<string>('all');
+  const [managerFilterDept, setManagerFilterDept] = useState<string>('');
   const [mgrSearchQuery, setMgrSearchQuery] = useState<string>('');
   const [mgrStatusFilter, setMgrStatusFilter] = useState<'all' | 'pending' | 'submitted' | 'approved'>('all');
   const [mgrViewMode, setMgrViewMode] = useState<'table' | 'cards'>('table');
@@ -326,8 +426,14 @@ export const EvaluationTab: React.FC = () => {
         localStorage.removeItem('eval_draft_user');
       } catch (e) {}
 
-      // Auto-select active response for employee (strictly for the logged in user)
-      const myResp = loadedResponses.find(isResponseForUser);
+      // Auto-select active response for employee (strictly for the logged in user, prioritizing pending active evaluations)
+      const userResponses = loadedResponses.filter(isResponseForUser);
+      const activePendingResp = userResponses.find(r => {
+        const st = String(r.status || '');
+        const isSubmitted = st === 'manager_review' || st === 'approved' || st === 'sm_final_approval' || Boolean(r.employeeSubmittedAt);
+        return !isSubmitted;
+      });
+      const myResp = activePendingResp || userResponses[0];
 
       if (myResp) {
         setSelectedResponseId(myResp.id);
@@ -1254,19 +1360,91 @@ export const EvaluationTab: React.FC = () => {
     syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, newTeamId);
   };
 
+  // Helper to check if an employee is already assigned metrics for a specific evaluation period
+  const isEmpAlreadyAssignedForPeriod = (
+    empId: string,
+    periodStr = mgrAssignPeriod,
+    pType = mgrPeriodType,
+    pQuarter = mgrPeriodQuarter,
+    pYear = mgrPeriodYear,
+    pMonth = mgrPeriodMonth,
+    pDue = mgrPeriodDueDate,
+    pFrom = mgrPeriodFromDate,
+    pTo = mgrPeriodToDate
+  ) => {
+    if (!empId) return false;
+    const cleanTag = (periodStr || '').trim().toLowerCase();
+
+    const matchesPeriod = (cPeriodRaw: string) => {
+      const cPeriod = (cPeriodRaw || '').trim().toLowerCase();
+      if (!cPeriod) return false;
+
+      // 1. Direct tag match or exact substring match
+      if (cleanTag && (cPeriod === cleanTag || cPeriod.includes(cleanTag) || cleanTag.includes(cPeriod))) {
+        return true;
+      }
+
+      // 2. Frequency-specific precise match
+      if (pType === 'quarterly') {
+        const qStr = `q${pQuarter}`;
+        const yStr = `${pYear}`;
+        if (cPeriod.includes(qStr) && cPeriod.includes(yStr)) return true;
+      } else if (pType === 'monthly') {
+        const mName = (MONTH_NAMES[pMonth - 1] || '').toLowerCase();
+        const yStr = `${pYear}`;
+        if (mName && cPeriod.includes(mName) && cPeriod.includes(yStr)) return true;
+      } else if (pType === 'daily' && pDue) {
+        const dueFmt = formatDisplayDate(pDue).toLowerCase();
+        if (dueFmt && cPeriod.includes(dueFmt)) return true;
+        if (cPeriod.includes(pDue.toLowerCase())) return true;
+      } else if (pType === 'weekly' && pFrom && pTo) {
+        const fromFmt = formatDisplayDate(pFrom).toLowerCase();
+        const toFmt = formatDisplayDate(pTo).toLowerCase();
+        if (fromFmt && toFmt && cPeriod.includes(fromFmt) && cPeriod.includes(toFmt)) return true;
+      }
+
+      return false;
+    };
+
+    // Check in cycles
+    const hasInCycles = cycles.some(c => {
+      const empList = (c.employeeIds || []).map(id => String(id).trim().toLowerCase());
+      const isEmpIn = empList.includes(String(empId).trim().toLowerCase());
+      if (!isEmpIn) return false;
+      return matchesPeriod(c.periodName || c.name || '');
+    });
+    if (hasInCycles) return true;
+
+    // Check in responses
+    const hasInResponses = responses.some(r => {
+      const cleanEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase();
+      if (cleanEmpCode !== String(empId).trim().toLowerCase()) return false;
+
+      const rCycle = cycles.find(c => c.id === r.cycleId);
+      const rPeriod = rCycle?.periodName || rCycle?.name || (r as any).periodName || '';
+      return matchesPeriod(rPeriod);
+    });
+
+    return hasInResponses;
+  };
+
   const handleMgrToggleEmp = (empId: string) => {
+    if (isEmpAlreadyAssignedForPeriod(empId)) return;
     setMgrAssignEmpIds(prev =>
       prev.includes(empId) ? prev.filter(id => id !== empId) : [...prev, empId]
     );
   };
 
   const handleMgrToggleSelectAll = (teamEmps: any[]) => {
-    const allIds = teamEmps.map(e => String(e.employee_id || e.id));
-    const allSelected = allIds.length > 0 && allIds.every(id => mgrAssignEmpIds.includes(id));
+    const availableIds = teamEmps
+      .map(e => String(e.employee_id || e.id))
+      .filter(id => !isEmpAlreadyAssignedForPeriod(id));
+
+    const allSelected = availableIds.length > 0 && availableIds.every(id => mgrAssignEmpIds.includes(id));
     if (allSelected) {
-      setMgrAssignEmpIds(prev => prev.filter(id => !allIds.includes(id)));
+      setMgrAssignEmpIds(prev => prev.filter(id => !availableIds.includes(id)));
     } else {
-      setMgrAssignEmpIds(prev => Array.from(new Set([...prev, ...allIds])));
+      setMgrAssignEmpIds(prev => Array.from(new Set([...prev, ...availableIds])));
     }
   };
 
@@ -1297,12 +1475,51 @@ export const EvaluationTab: React.FC = () => {
     setMgrAssignCategories(prev => [...prev, newCat]);
   };
 
+  const rebalanceCategoriesAfterDelete = (categories: KPICategory[], deletedCatId: string): KPICategory[] => {
+    const filtered = categories.filter(c => c.id !== deletedCatId);
+    if (filtered.length === 0) return filtered;
+
+    const oldTotal = filtered.reduce((sum, c) => sum + (Number(c.weightage) || 0), 0);
+    let accumulatedWeight = 0;
+
+    return filtered.map((c, idx) => {
+      let newWeight = 0;
+      if (idx === filtered.length - 1) {
+        newWeight = Math.max(1, Number((100 - accumulatedWeight).toFixed(2)));
+      } else {
+        if (oldTotal > 0) {
+          newWeight = Math.max(1, Math.round(((Number(c.weightage) || 0) / oldTotal) * 100));
+        } else {
+          newWeight = Math.max(1, Math.floor(100 / filtered.length));
+        }
+        accumulatedWeight += newWeight;
+      }
+
+      const count = c.kpis ? c.kpis.length : 0;
+      if (count > 0) {
+        const perKpi = Number((newWeight / count).toFixed(2));
+        let remaining = newWeight;
+        const updatedKpis = c.kpis.map((k, i) => {
+          if (i === count - 1) {
+            const finalScore = Number(remaining.toFixed(2));
+            return { ...k, targetScore: finalScore, weightage: finalScore };
+          }
+          remaining -= perKpi;
+          return { ...k, targetScore: perKpi, weightage: perKpi };
+        });
+        return { ...c, weightage: newWeight, kpis: updatedKpis };
+      }
+
+      return { ...c, weightage: newWeight };
+    });
+  };
+
   const handleMgrDeleteCategory = (catId: string) => {
     if (mgrAssignCategories.length <= 1) {
       showAlert('At least one performance category is required.', 'Action Not Allowed');
       return;
     }
-    setMgrAssignCategories(prev => prev.filter(c => c.id !== catId));
+    setMgrAssignCategories(prev => rebalanceCategoriesAfterDelete(prev, catId));
   };
 
   const handleMgrUpdateCategoryName = (catId: string, name: string) => {
@@ -1460,6 +1677,22 @@ export const EvaluationTab: React.FC = () => {
         : mgrAssignTeamId;
       const currentMgrName = `${user?.full_name || userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Reporting Manager';
 
+      let effectiveStartDate = startDate;
+      let effectiveEndDate = endDate;
+      if (mgrPeriodType === 'daily') {
+        effectiveStartDate = mgrPeriodDueDate;
+        effectiveEndDate = mgrPeriodDueDate;
+      } else if (mgrPeriodType === 'weekly') {
+        effectiveStartDate = mgrPeriodFromDate;
+        effectiveEndDate = mgrPeriodToDate;
+      } else if (mgrPeriodType === 'monthly') {
+        effectiveStartDate = `${mgrPeriodYear}-${String(mgrPeriodMonth).padStart(2, '0')}-01`;
+        effectiveEndDate = new Date(mgrPeriodYear, mgrPeriodMonth, 0).toISOString().split('T')[0];
+      } else if (mgrPeriodType === 'quarterly') {
+        effectiveStartDate = `${mgrPeriodYear}-${String((mgrPeriodQuarter - 1) * 3 + 1).padStart(2, '0')}-01`;
+        effectiveEndDate = new Date(mgrPeriodYear, mgrPeriodQuarter * 3, 0).toISOString().split('T')[0];
+      }
+
       await evaluationService.createAndAssignKpiMetrics({
         formName: mgrAssignFormName,
         teamId: mgrAssignTeamId,
@@ -1470,8 +1703,8 @@ export const EvaluationTab: React.FC = () => {
         serviceManagerName: 'Service Manager',
         employeeIds: mgrAssignEmpIds,
         periodName: mgrAssignPeriod,
-        startDate: startDate,
-        endDate: endDate,
+        startDate: effectiveStartDate,
+        endDate: effectiveEndDate,
         categories: mgrAssignCategories,
         allEmployees: dbEmployees
       });
@@ -1593,8 +1826,15 @@ export const EvaluationTab: React.FC = () => {
 
 
   // 4. Employee Active Cycle & Response (Strictly for the employee's own record)
-  const activeEmpResponse = (selectedResponseId && responses.find(r => r.id === selectedResponseId && isResponseForUser(r)))
-    || responses.find(isResponseForUser);
+  const allUserResponses = responses.filter(isResponseForUser).sort((a, b) => {
+    const timeA = new Date(a.createdAt || a.employeeSubmittedAt || a.updatedAt || 0).getTime();
+    const timeB = new Date(b.createdAt || b.employeeSubmittedAt || b.updatedAt || 0).getTime();
+    if (timeB !== timeA) return timeB - timeA;
+    return (b.id || '').localeCompare(a.id || '');
+  });
+
+  const activeEmpResponse = (selectedResponseId && allUserResponses.find(r => r.id === selectedResponseId))
+    || allUserResponses[0];
 
   const isEmployeeExplicitlyAssigned = Boolean(
     activeEmpResponse ||
@@ -1649,7 +1889,7 @@ export const EvaluationTab: React.FC = () => {
 
   // Active Manager Cycle for viewing the team's Deliverables Matrix (strictly when created by this manager)
   const activeManagerCycle = (
-    managerFilterDept !== 'all'
+    (managerFilterDept && managerFilterDept !== 'all')
       ? managerDirectCycles.find(c => (c.teamName || '').toLowerCase() === managerFilterDept.toLowerCase())
       : undefined
   ) || managerDirectCycles.find(c => c.status === 'active') || managerDirectCycles[0];
@@ -1741,7 +1981,7 @@ export const EvaluationTab: React.FC = () => {
       showAlert('At least one performance category is required.', 'Action Not Allowed');
       return;
     }
-    setMgrEditCategories(prev => prev.filter(c => c.id !== catId));
+    setMgrEditCategories(prev => rebalanceCategoriesAfterDelete(prev, catId));
   };
 
   const handleMgrUpdateEditCategoryName = (catId: string, name: string) => {
@@ -2376,7 +2616,55 @@ export const EvaluationTab: React.FC = () => {
   // Selected manager review response object & cycle
   const selectedMgrResponse = responses.find(r => r.id === selectedMgrResponseId);
   const selectedMgrCycle = selectedMgrResponse ? cycles.find(c => c.id === selectedMgrResponse.cycleId) : activeManagerCycle;
-  const selectedMgrCategories = selectedMgrCycle?.categories || managerTeamCategories;
+  
+  // Resolve all assigned categories and deliverables for manager review
+  const selectedMgrCategories: KPICategory[] = useMemo(() => {
+    if (!selectedMgrResponse) return activeManagerCycle?.categories || managerTeamCategories;
+    if ((selectedMgrResponse as any).categories && Array.isArray((selectedMgrResponse as any).categories) && (selectedMgrResponse as any).categories.length > 0) {
+      return (selectedMgrResponse as any).categories;
+    }
+    if ((selectedMgrResponse as any).metrics_data && Array.isArray((selectedMgrResponse as any).metrics_data) && (selectedMgrResponse as any).metrics_data.length > 0) {
+      return (selectedMgrResponse as any).metrics_data;
+    }
+    // If metrics_data or kpiResponses is a dictionary of KPIs, wrap them into a category
+    const mData = (selectedMgrResponse as any).metrics_data || selectedMgrResponse.kpiResponses;
+    if (mData && typeof mData === 'object' && !Array.isArray(mData)) {
+      const kpisList: KPIItem[] = [];
+      const seenIds = new Set<string>();
+      Object.entries(mData).forEach(([key, val]: [string, any]) => {
+        if (!val || typeof val !== 'object') return;
+        const kId = val.kpiId || val.id || key;
+        if (seenIds.has(kId)) return;
+        seenIds.add(kId);
+        kpisList.push({
+          id: kId,
+          name: val.name || key,
+          description: val.description || '',
+          targetScore: val.targetScore || 100,
+          weightage: val.weightage || 100,
+          targetFromManager: val.targetFromManager || val.targetValue || '100%',
+          targetValue: val.targetValue || 100,
+          unit: val.unit || '%',
+          scoringDirection: (val.scoringDirection || 'higher_is_better') as any,
+          measurementType: (val.measurementType || 'numerical') as any,
+          isRequired: true
+        });
+      });
+      if (kpisList.length > 0) {
+        return [{
+          id: 'cat_deliverables',
+          name: (selectedMgrResponse as any).form || selectedMgrResponse.periodName || 'Performance Deliverables',
+          description: 'Deliverables evaluation items',
+          weightage: 100,
+          kpis: kpisList
+        }];
+      }
+    }
+    if (selectedMgrCycle?.categories && selectedMgrCycle.categories.length > 0) {
+      return selectedMgrCycle.categories;
+    }
+    return (managerTeamCategories && managerTeamCategories.length > 0) ? managerTeamCategories : DEFAULT_KPI_CATEGORIES;
+  }, [selectedMgrResponse, selectedMgrCycle, managerTeamCategories, activeManagerCycle]);
 
   // Selected SM review response object & cycle
   const selectedSmResponse = responses.find(r => r.id === selectedSmResponseId);
@@ -2469,7 +2757,11 @@ export const EvaluationTab: React.FC = () => {
       // Filter out orphan/ghost responses with no name
       if (!empInDb && !employeeName) return;
 
-      const key = String(employeeCode).trim().toLowerCase();
+      // Distinct key per employee and evaluation cycle/form/period (so multiple assigned metrics appear distinctly)
+      const formKey = ((r as any).form || r.periodName || '').trim().toLowerCase();
+      const key = formKey 
+        ? `${String(employeeCode).trim().toLowerCase()}_${formKey}`
+        : (r.id ? String(r.id) : `${String(employeeCode).trim().toLowerCase()}_${r.cycleId || 'default'}`);
       const existing = map.get(key);
       const normalizedResponse: EvaluationResponse = {
         ...r,
@@ -2480,19 +2772,40 @@ export const EvaluationTab: React.FC = () => {
       if (!existing) {
         map.set(key, normalizedResponse);
       } else {
-        if (
-          r.status === 'manager_review' ||
-          r.status === 'sm_final_approval' ||
-          r.status === 'approved' ||
-          (r.employeeOverallScore > 0 && existing.employeeOverallScore === 0) ||
-          r.status !== 'employee_in_progress'
-        ) {
+        const isDb = (resp: any) => String(resp.id || '').startsWith('resp_') && /\d+/.test(String(resp.id || ''));
+        if (isDb(r) && !isDb(existing)) {
           map.set(key, normalizedResponse);
+        } else if (!isDb(r) && isDb(existing)) {
+          // Keep existing DB record
+        } else {
+          // Prioritize pending reviews requiring manager attention
+          const rPending = (r.status as string) === 'manager_review' || (r.status as string) === 'Submitted to Manager' || r.managerScore == null;
+          const exPending = (existing.status as string) === 'manager_review' || (existing.status as string) === 'Submitted to Manager' || existing.managerScore == null;
+          if (rPending && !exPending) {
+            map.set(key, normalizedResponse);
+          } else if (
+            r.status === 'approved' ||
+            r.status === 'sm_final_approval' ||
+            (r.employeeOverallScore > 0 && existing.employeeOverallScore === 0)
+          ) {
+            map.set(key, normalizedResponse);
+          }
         }
       }
     });
 
     return Array.from(map.values()).sort((a, b) => {
+      // 1. Pending reviews (needing manager attention) ALWAYS sort to the top!
+      const aPending = (a.status as string) === 'manager_review' || (a.status as string) === 'Submitted to Manager' || a.managerScore == null;
+      const bPending = (b.status as string) === 'manager_review' || (b.status as string) === 'Submitted to Manager' || b.managerScore == null;
+      if (aPending && !bPending) return -1;
+      if (!aPending && bPending) return 1;
+
+      // 2. Sort by ID descending (newest first e.g. resp_12 before resp_11)
+      const numA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+      if (numA !== numB) return numB - numA;
+
       const infoA = getEmployeeDisplayInfo(a);
       const infoB = getEmployeeDisplayInfo(b);
       const teamComp = infoA.teamName.localeCompare(infoB.teamName);
@@ -2535,7 +2848,7 @@ export const EvaluationTab: React.FC = () => {
     }
 
     // Apply Department Filter
-    if (managerFilterDept !== 'all') {
+    if (managerFilterDept && managerFilterDept !== 'all') {
       const target = managerFilterDept.trim().toLowerCase();
       list = list.filter(r => {
         const { empInDb, teamName } = getEmployeeDisplayInfo(r);
@@ -2580,12 +2893,14 @@ export const EvaluationTab: React.FC = () => {
 
       const totalEmployees = deptResponses.length;
       const completedList = deptResponses.filter(r => 
-        r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null
+        (r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
+        (r.status as string) !== 'manager_review' &&
+        (r.status as string) !== 'Submitted to Manager'
       );
       const completedCount = completedList.length;
 
       const submittedList = deptResponses.filter(r => 
-        (r.status === 'manager_review' || (r.employeeOverallScore != null && r.employeeOverallScore > 0)) &&
+        ((r.status as string) === 'manager_review' || (r.status as string) === 'Submitted to Manager' || (r.employeeOverallScore != null && r.employeeOverallScore > 0)) &&
         r.status !== 'approved' && r.status !== 'sm_final_approval' && r.managerScore == null
       );
       const submittedCount = submittedList.length;
@@ -2648,29 +2963,78 @@ export const EvaluationTab: React.FC = () => {
     }).filter(t => t.totalEmployees > 0);
   }, [activeScopedResponsesForCards, dbEmployees, userId, userCode, currentDbUser]);
 
+  // Top 3 Teams Leaderboard (Racing) by Average Score & Progress
+  const topThreeTeams = useMemo(() => {
+    if (!teamWiseCardsData || teamWiseCardsData.length === 0) return [];
+    return [...teamWiseCardsData]
+      .sort((a, b) => {
+        const scoreA = a.teamAvgScore ?? a.teamAvgMgrScore ?? a.completionPercentage ?? 0;
+        const scoreB = b.teamAvgScore ?? b.teamAvgMgrScore ?? b.completionPercentage ?? 0;
+        return scoreB - scoreA;
+      })
+      .slice(0, 3);
+  }, [teamWiseCardsData]);
+
   // Overall calculations across current scoped teams for the summary card
   const allTeamsTotalEmps = activeScopedResponsesForCards.length;
-  const allTeamsCompletedCount = activeScopedResponsesForCards.filter(r => r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null).length;
+  const allTeamsCompletedCount = activeScopedResponsesForCards.filter(r => 
+    (r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
+    (r.status as string) !== 'manager_review' &&
+    (r.status as string) !== 'Submitted to Manager'
+  ).length;
   const allTeamsPendingCount = Math.max(0, allTeamsTotalEmps - allTeamsCompletedCount);
-  const allTeamsSubmittedCount = activeScopedResponsesForCards.filter(r => (r.status === 'manager_review' || (r.employeeOverallScore != null && r.employeeOverallScore > 0)) && r.status !== 'approved' && r.managerScore == null).length;
+  const allTeamsSubmittedCount = activeScopedResponsesForCards.filter(r => 
+    ((r.status as string) === 'manager_review' || (r.status as string) === 'Submitted to Manager' || (r.employeeOverallScore != null && r.employeeOverallScore > 0)) && 
+    r.status !== 'approved' && r.managerScore == null
+  ).length;
   const allTeamsOverallProgress = allTeamsTotalEmps > 0 ? Math.min(100, Math.round((allTeamsCompletedCount / allTeamsTotalEmps) * 100)) : 0;
   
   const allTeamsMgrScored = activeScopedResponsesForCards.filter(r => r.managerScore != null && !isNaN(Number(r.managerScore)));
   const allTeamsMgrSum = allTeamsMgrScored.reduce((acc, r) => acc + Number(r.managerScore), 0);
   const allTeamsAvgMgrScore = allTeamsMgrScored.length > 0 ? Number((allTeamsMgrSum / allTeamsMgrScored.length).toFixed(1)) : null;
 
-  // Executive Manager Intelligence & Calibration Stats
+  // Executive Manager Intelligence & Calibration Stats (Top Summary Cards)
   const managerStats = useMemo(() => {
-    const total = deduplicatedManagerResponses.length;
-    const submitted = deduplicatedManagerResponses.filter(r => r.status === 'manager_review' || r.status === 'sm_final_approval' || r.status === 'approved' || (r.employeeOverallScore != null && r.employeeOverallScore > 0)).length;
-    const approved = deduplicatedManagerResponses.filter(r => r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null).length;
+    const baseList = activeScopedResponsesForCards;
+    const total = baseList.length;
+    const submitted = baseList.filter(r => 
+      (r.status as string) === 'manager_review' || 
+      (r.status as string) === 'Submitted to Manager' || 
+      r.status === 'sm_final_approval' || 
+      r.status === 'approved' || 
+      (r.employeeOverallScore != null && r.employeeOverallScore > 0)
+    ).length;
+    const approved = baseList.filter(r => 
+      (r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
+      (r.status as string) !== 'manager_review' &&
+      (r.status as string) !== 'Submitted to Manager'
+    ).length;
     const pending = Math.max(0, total - approved);
-    const validScores = deduplicatedManagerResponses
+    const validScores = baseList
       .map(r => r.managerScore != null ? Number(r.managerScore) : (r.employeeOverallScore != null && r.employeeOverallScore > 0 ? Number(r.employeeOverallScore) : null))
       .filter((s): s is number => s !== null && !isNaN(s));
     const avgScore = validScores.length > 0 ? (validScores.reduce((a, b) => a + b, 0) / validScores.length) : 0;
     const submissionRate = total > 0 ? Math.round((submitted / total) * 100) : 0;
     return { total, submitted, approved, pending, avgScore, submissionRate };
+  }, [activeScopedResponsesForCards]);
+
+  // Queue status pill counts specifically for the active filtered table view
+  const queueStats = useMemo(() => {
+    const total = deduplicatedManagerResponses.length;
+    const submitted = deduplicatedManagerResponses.filter(r => 
+      (r.status as string) === 'manager_review' || 
+      (r.status as string) === 'Submitted to Manager' || 
+      r.status === 'sm_final_approval' || 
+      r.status === 'approved' || 
+      (r.employeeOverallScore != null && r.employeeOverallScore > 0)
+    ).length;
+    const approved = deduplicatedManagerResponses.filter(r => 
+      (r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
+      (r.status as string) !== 'manager_review' &&
+      (r.status as string) !== 'Submitted to Manager'
+    ).length;
+    const pending = Math.max(0, total - approved);
+    return { total, submitted, approved, pending };
   }, [deduplicatedManagerResponses]);
 
   // Filter manager responses by search query and status pill
@@ -2679,13 +3043,20 @@ export const EvaluationTab: React.FC = () => {
       const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(r);
       // Status filter
       if (mgrStatusFilter === 'pending') {
-        const isPending = r.status === 'employee_in_progress' || (r.managerScore == null && r.status !== 'approved' && r.status !== 'sm_final_approval');
+        const isPending = r.status === 'employee_in_progress' || 
+          (r.status as string) === 'manager_review' || 
+          (r.status as string) === 'Submitted to Manager' || 
+          (r.managerScore == null && r.status !== 'approved' && r.status !== 'sm_final_approval');
         if (!isPending) return false;
       } else if (mgrStatusFilter === 'submitted') {
-        const isSubmitted = r.status === 'manager_review' || (r.employeeOverallScore != null && r.employeeOverallScore > 0 && r.managerScore == null);
+        const isSubmitted = (r.status as string) === 'manager_review' || 
+          (r.status as string) === 'Submitted to Manager' || 
+          (r.employeeOverallScore != null && r.employeeOverallScore > 0 && r.managerScore == null);
         if (!isSubmitted) return false;
       } else if (mgrStatusFilter === 'approved') {
-        const isApproved = r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null;
+        const isApproved = (r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
+          (r.status as string) !== 'manager_review' &&
+          (r.status as string) !== 'Submitted to Manager';
         if (!isApproved) return false;
       }
 
@@ -2841,17 +3212,68 @@ export const EvaluationTab: React.FC = () => {
     const initialActuals: Record<string, string | number> = {};
     const initialRemarks: Record<string, string> = {};
 
-    const targetCycle = cycles.find(c => c.id === r.cycleId) || activeManagerCycle;
-    const targetCats = (targetCycle?.categories && targetCycle.categories.length > 0)
-      ? targetCycle.categories
-      : managerTeamCategories;
+    const isPendingReview = (r.status as string) === 'manager_review' || 
+      (r.status as string) === 'Submitted to Manager' || 
+      String(r.status || '').toLowerCase().includes('submitted') || 
+      r.managerScore == null;
 
-    targetCats.forEach(cat => {
-      cat.kpis.forEach(kpi => {
-        const respItem = r.kpiResponses?.[kpi.id];
-        const actualVal = respItem?.managerActualValue !== undefined
-          ? respItem.managerActualValue
-          : (respItem?.actualValue ?? '');
+    const targetCycle = cycles.find(c => c.id === r.cycleId) || activeManagerCycle;
+    let targetCats: KPICategory[] = (
+      (r as any).categories?.length > 0
+        ? (r as any).categories
+        : (r as any).metrics_data?.length > 0 && Array.isArray((r as any).metrics_data)
+          ? (r as any).metrics_data
+          : (targetCycle?.categories && targetCycle.categories.length > 0)
+            ? targetCycle.categories
+            : managerTeamCategories
+    );
+    if (!targetCats || targetCats.length === 0) {
+      const mData = (r as any).metrics_data || r.kpiResponses;
+      if (mData && typeof mData === 'object' && !Array.isArray(mData)) {
+        const kpisList: KPIItem[] = [];
+        const seenIds = new Set<string>();
+        Object.entries(mData).forEach(([key, val]: [string, any]) => {
+          if (!val || typeof val !== 'object') return;
+          const kId = val.kpiId || val.id || key;
+          if (seenIds.has(kId)) return;
+          seenIds.add(kId);
+          kpisList.push({
+            id: kId,
+            name: val.name || key,
+            description: val.description || '',
+            targetScore: val.targetScore || 100,
+            weightage: val.weightage || 100,
+            targetFromManager: val.targetFromManager || val.targetValue || '100%',
+            targetValue: val.targetValue || 100,
+            unit: val.unit || '%',
+            scoringDirection: (val.scoringDirection || 'higher_is_better') as any,
+            measurementType: (val.measurementType || 'numerical') as any,
+            isRequired: true
+          });
+        });
+        if (kpisList.length > 0) {
+          targetCats = [{
+            id: 'cat_deliverables',
+            name: (r as any).form || r.periodName || 'Performance Deliverables',
+            description: 'Deliverables evaluation items',
+            weightage: 100,
+            kpis: kpisList
+          }];
+        }
+      }
+    }
+    if (!targetCats || targetCats.length === 0) {
+      targetCats = DEFAULT_KPI_CATEGORIES;
+    }
+
+    targetCats.forEach((cat: KPICategory) => {
+      cat.kpis.forEach((kpi: KPIItem) => {
+        const respItem = r.kpiResponses?.[kpi.id] || (kpi.name ? r.kpiResponses?.[kpi.name] : null);
+        const empActual = respItem?.actualValue ?? '';
+        let actualVal = empActual;
+        if (!isPendingReview && respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== '') {
+          actualVal = respItem.managerActualValue;
+        }
         initialActuals[kpi.id] = actualVal;
         initialRemarks[kpi.id] = respItem?.managerRemarks || '';
       });
@@ -2861,8 +3283,8 @@ export const EvaluationTab: React.FC = () => {
     setMgrKpiRemarks(initialRemarks);
 
     let totalScore = 0;
-    targetCats.forEach(cat => {
-      cat.kpis.forEach(kpi => {
+    targetCats.forEach((cat: KPICategory) => {
+      cat.kpis.forEach((kpi: KPIItem) => {
         const actualVal = initialActuals[kpi.id];
         const calc = calculateKPIScore(kpi, actualVal);
         totalScore += calc.earnedScore;
@@ -2870,7 +3292,7 @@ export const EvaluationTab: React.FC = () => {
     });
 
     const calculatedScore = Number(totalScore.toFixed(2));
-    setMgrScore(r.managerScore != null ? Number(r.managerScore) : calculatedScore);
+    setMgrScore(isPendingReview ? calculatedScore : (r.managerScore != null ? Number(r.managerScore) : calculatedScore));
     setMgrRemarks(r.managerRemarks || '');
   };
 
@@ -3011,21 +3433,17 @@ export const EvaluationTab: React.FC = () => {
       )}
 
       {/* Top Header & Navigation Bar */}
-      <div className="bg-white rounded-3xl p-6 border border-neutral-200/80 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase font-black tracking-widest px-2.5 py-0.5 rounded-full bg-primary-50 text-primary-800 border border-primary-200">
-                Performance Management
-              </span>
-              <span className="text-xs text-neutral-400 font-bold">•</span>
-              <span className="text-xs text-neutral-500 font-medium">
-                Team deliverable matrix & performance scorecards
-              </span>
+      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200/80 flex items-center justify-center text-teal-700 shrink-0">
+              <ChartBarIcon className="w-5 h-5" />
             </div>
-            <h2 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight">
-              Performance Evaluations & Scorecards
-            </h2>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+                Evaluation & Report
+              </h2>
+            </div>
           </div>
 
           {/* Sync Button */}
@@ -3034,24 +3452,24 @@ export const EvaluationTab: React.FC = () => {
               type="button"
               onClick={() => loadAllData(true)}
               disabled={isRefreshing}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-neutral-50 hover:bg-neutral-100 text-neutral-700 border border-neutral-200/90 shadow-2xs transition cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer"
               title="Sync latest evaluations from server"
             >
-              <ArrowPathIcon className={`w-4 h-4 text-primary-700 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <ArrowPathIcon className={`w-3.5 h-3.5 text-teal-700 ${isRefreshing ? 'animate-spin' : ''}`} />
               <span>{isRefreshing ? 'Syncing...' : 'Sync Data'}</span>
             </button>
           </div>
         </div>
 
-        {/* Clean Segmented Navigation Tabs (Rendered when user has access to multiple roles) */}
+        {/* Clean Segmented Navigation Tabs */}
         {(isHrOrAdmin || isServiceManager || isManager) && (
-          <div className="bg-slate-100/90 p-1 rounded-2xl border border-slate-200/80 flex flex-wrap gap-1 items-center w-fit">
+          <div className="bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 flex flex-wrap gap-1 items-center w-fit">
             {isHrOrAdmin && (
               <button
                 type="button"
                 onClick={() => setActiveRole('hr')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${activeRole === 'hr'
-                    ? 'bg-primary-600 text-white shadow-md shadow-primary-500/20'
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${activeRole === 'hr'
+                    ? 'bg-teal-700 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
                   }`}
               >
@@ -3060,7 +3478,6 @@ export const EvaluationTab: React.FC = () => {
               </button>
             )}
 
-
             {(isHrOrAdmin || isManager || isServiceManager) && (
               <button
                 type="button"
@@ -3068,17 +3485,17 @@ export const EvaluationTab: React.FC = () => {
                   setActiveRole('manager');
                   setManagerFilterDept('all');
                 }}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${activeRole === 'manager'
-                    ? 'bg-primary-600 text-white shadow-md shadow-primary-500/20'
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${activeRole === 'manager'
+                    ? 'bg-teal-700 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
                   }`}
               >
                 <BriefcaseIcon className="w-3.5 h-3.5" />
                 <span>{isTeamLead ? 'Team Lead Reviews' : 'Manager Reviews'}</span>
                 {directResponsesCount > 0 && (
-                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${activeRole === 'manager'
-                      ? 'bg-white text-primary-800'
-                      : 'bg-primary-100 text-primary-800'
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${activeRole === 'manager'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-teal-100 text-teal-800'
                     }`}>
                     {directResponsesCount}
                   </span>
@@ -3093,17 +3510,17 @@ export const EvaluationTab: React.FC = () => {
                   setActiveRole('downline_teams');
                   setManagerFilterDept('all');
                 }}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${activeRole === 'downline_teams'
-                    ? 'bg-primary-600 text-white shadow-md shadow-primary-500/20'
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${activeRole === 'downline_teams'
+                    ? 'bg-teal-700 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
                   }`}
               >
                 <UserGroupIcon className="w-3.5 h-3.5" />
                 <span>Downline Teams</span>
                 {downlineResponsesCount > 0 && (
-                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${activeRole === 'downline_teams'
-                      ? 'bg-white text-primary-800'
-                      : 'bg-primary-100 text-primary-800'
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${activeRole === 'downline_teams'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-teal-100 text-teal-800'
                     }`}>
                     {downlineResponsesCount}
                   </span>
@@ -3114,8 +3531,8 @@ export const EvaluationTab: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveRole('employee')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${activeRole === 'employee'
-                  ? 'bg-primary-600 text-white shadow-md shadow-primary-500/20'
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${activeRole === 'employee'
+                  ? 'bg-teal-700 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
                 }`}
             >
@@ -3685,6 +4102,7 @@ export const EvaluationTab: React.FC = () => {
             }).length;
 
             const selfScoreNum = liveEmployeeScore.overallScore;
+            const empSelfScore = activeEmpResponse?.employeeOverallScore != null ? Number(activeEmpResponse.employeeOverallScore) : selfScoreNum;
             const mgrScoreNum = (isEmpSubmitted && activeEmpResponse?.managerScore !== undefined) ? Number(activeEmpResponse.managerScore) : null;
             const scoreVariance = mgrScoreNum !== null ? Number((mgrScoreNum - selfScoreNum).toFixed(2)) : null;
 
@@ -3706,9 +4124,6 @@ export const EvaluationTab: React.FC = () => {
               const achievementRate = (effectiveScore / targetWeight) * 100;
               return { ...cat, catEarned, catMgrEarned, effectiveScore, targetWeight, achievementRate };
             });
-
-            const topStrengths = [...categoryPerformance].sort((a, b) => b.achievementRate - a.achievementRate).slice(0, 2);
-            const focusAreas = [...categoryPerformance].sort((a, b) => a.achievementRate - b.achievementRate).slice(0, 2);
 
             // Filtered categories and KPIs
             const filteredCategories = activeCategories.map(cat => {
@@ -3735,182 +4150,158 @@ export const EvaluationTab: React.FC = () => {
             }).filter(cat => cat.matchingKpis.length > 0 || !empSearchQuery.trim());
 
             return (
-              <div className="space-y-6 animate-in fade-in duration-300">
-                {/* 1. Executive Performance Hero & Lifecycle Stepper */}
-                <div className="bg-gradient-to-br from-white via-slate-50 to-primary-50/30 rounded-3xl border border-slate-200/90 shadow-sm p-6 space-y-6">
-                  {/* Top Row: Cycle Header & Quick Actions */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/70">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary-600 to-teal-700 text-white flex items-center justify-center shadow-md shadow-primary-600/20 shrink-0">
-                        <SparklesIcon className="w-6 h-6" />
+              <div className="space-y-5 animate-in fade-in duration-200">
+                {/* 1. Ultra-Compact Executive Tracking Progress Header */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-2xs space-y-3">
+                  {/* Cycle Info & Summary Pill Badges */}
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-teal-700 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <SparklesIcon className="w-4 h-4" />
                       </div>
                       <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-base font-black text-slate-900">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-xs font-bold text-slate-900 whitespace-nowrap">
                             {activeCycle?.name || 'Performance Evaluation Cycle'}
                           </h3>
-                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-primary-100 text-primary-900 border border-primary-200">
-                            {activeCycle?.periodName || 'Q3 2026'}
-                          </span>
+                          {/* Period Selector Dropdown (Allows switching between previous & latest periods) */}
+                          <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full shadow-2xs">
+                            <CalendarDaysIcon className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                            <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Period:</span>
+                            <select
+                              value={selectedResponseId || activeEmpResponse?.id || ''}
+                              onChange={(e) => {
+                                const newId = e.target.value;
+                                setSelectedResponseId(newId);
+                                setSelectedReportResponseId(newId);
+                              }}
+                              className="bg-transparent text-[11px] font-extrabold text-teal-900 border-none outline-none cursor-pointer pr-1"
+                            >
+                              {allUserResponses.length > 0 ? (
+                                allUserResponses.map((r, idx) => {
+                                  const c = cycles.find(cy => cy.id === r.cycleId);
+                                  const label = c?.periodName || c?.name || (r as any).periodName || `Cycle ${idx + 1}`;
+                                  const isLatest = idx === 0;
+                                  const isSubmitted = r.status === 'manager_review' || r.status === 'approved' || r.status === 'sm_final_approval' || Boolean(r.employeeSubmittedAt);
+                                  const statusLabel = isSubmitted ? 'Submitted' : 'In Progress';
+                                  return (
+                                    <option key={r.id} value={r.id}>
+                                      {label} {isLatest ? '(Latest)' : ''} — {statusLabel}
+                                    </option>
+                                  );
+                                })
+                              ) : (
+                                <option value="">{activeCycle?.periodName || activeCycle?.name || 'Q3 2026'}</option>
+                              )}
+                            </select>
+                          </div>
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Enterprise KPI Evaluation Matrix • 100% Total Deliverable Allocation
-                        </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2.5">
+                    {/* Summary Pill Badges - Single Line Non-Wrapping Row */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 text-xs flex-nowrap overflow-x-auto shrink-0 py-0.5">
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 whitespace-nowrap">
+                        <span className="text-[10px] text-slate-500 font-medium">Self Score:</span>
+                        <strong className="text-teal-900 font-bold">{selfScoreNum.toFixed(1)}%</strong>
+                      </div>
+
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 whitespace-nowrap">
+                        <span className="text-[10px] text-slate-500 font-medium">Mgr Score:</span>
+                        <strong className="text-teal-950 font-bold">
+                          {activeEmpResponse && (activeEmpResponse.status === 'approved' || activeEmpResponse.status === 'sm_final_approval' || (activeEmpResponse.managerReviewedAt && activeEmpResponse.status !== 'manager_review')) && activeEmpResponse.managerScore != null
+                            ? `${Number(activeEmpResponse.managerScore).toFixed(1)}%`
+                            : 'Pending'}
+                        </strong>
+                      </div>
+
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 whitespace-nowrap">
+                        <span className="text-[10px] text-slate-500 font-medium">Progress:</span>
+                        <strong className="text-slate-900 font-bold">{completedKpiCount}/{totalKpiCount}</strong>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => setEmployeeSubTab('reports')}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
+                        className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer whitespace-nowrap"
                       >
-                        <DocumentChartBarIcon className="w-4 h-4 text-primary-600" />
+                        <DocumentChartBarIcon className="w-3.5 h-3.5 text-teal-700" />
                         <span>Official Report</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* 3-Stage Lifecycle Stepper */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {/* Stage 1: Self Assessment */}
-                    <div className={`p-4 rounded-2xl border transition-all ${
-                      isEmpSubmitted
-                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                        : 'bg-white border-primary-200 shadow-2xs'
-                    }`}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                          Stage 1 • Self-Assessment
-                        </span>
-                        {isEmpSubmitted ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-600" /> Submitted
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary-100 text-primary-800">
-                            In Progress
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-baseline justify-between">
-                        <h4 className="text-xs font-bold text-slate-900">Deliverable Assessment</h4>
-                        <span className="text-sm font-black text-primary-800">{selfScoreNum.toFixed(1)}%</span>
-                      </div>
-                    </div>
+                  {/* Visual Process Tracker Line */}
+                  <div className="relative py-2 px-6 max-w-xl mx-auto">
+                    {/* Base Track Line */}
+                    <div className="absolute left-10 right-10 top-5 h-0.5 bg-slate-200" />
+                    
+                    {/* Active Progress Fill Line */}
+                    <div 
+                      className="absolute left-10 top-5 h-0.5 bg-emerald-500 transition-all duration-500" 
+                      style={{
+                        width: activeEmpResponse?.status === 'approved' 
+                          ? 'calc(100% - 5rem)' 
+                          : (activeEmpResponse?.status === 'sm_final_approval' || (activeEmpResponse?.managerReviewedAt && activeEmpResponse?.status !== 'manager_review'))
+                            ? 'calc(75% - 2.5rem)'
+                            : isEmpSubmitted 
+                              ? 'calc(50% - 2.5rem)' 
+                              : '0%'
+                      }}
+                    />
 
-                    {/* Stage 2: Manager Calibration */}
-                    <div className={`p-4 rounded-2xl border transition-all ${
-                      activeEmpResponse?.status === 'approved' || activeEmpResponse?.managerScore !== undefined
-                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                        : isEmpSubmitted
-                          ? 'bg-primary-50/40 border-primary-200'
-                          : 'bg-slate-50/80 border-slate-200 opacity-75'
-                    }`}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                          Stage 2 • Manager Review
-                        </span>
-                        {activeEmpResponse?.status === 'approved' || activeEmpResponse?.managerScore !== undefined ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            <CheckBadgeIcon className="w-3.5 h-3.5 text-emerald-600" /> Reviewed
-                          </span>
-                        ) : isEmpSubmitted ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                            <ClockIcon className="w-3.5 h-3.5 text-amber-600" /> Under Review
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-medium text-slate-400">Pending Submit</span>
-                        )}
+                    <div className="flex items-center justify-between relative z-10">
+                      {/* Step 1: Submitted */}
+                      <div className="flex flex-col items-center gap-1.5 text-center">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all shadow-2xs ${
+                          isEmpSubmitted 
+                            ? 'bg-emerald-500 text-white ring-4 ring-emerald-50' 
+                            : 'bg-emerald-500 text-white ring-4 ring-emerald-100'
+                        }`}>
+                          {isEmpSubmitted ? <CheckIcon className="w-4 h-4 stroke-[3]" /> : '1'}
+                        </div>
+                        <span className="text-xs font-bold text-slate-800">Submitted</span>
                       </div>
-                      <div className="flex items-baseline justify-between">
-                        <h4 className="text-xs font-bold text-slate-900">Manager Calibration</h4>
-                        <span className="text-sm font-black text-emerald-900">
-                          {activeEmpResponse?.managerScore !== undefined ? `${Number(activeEmpResponse.managerScore).toFixed(1)}%` : '—'}
-                        </span>
-                      </div>
-                    </div>
 
-                    {/* Stage 3: Official Executive Record */}
-                    <div className={`p-4 rounded-2xl border transition-all ${
-                      activeEmpResponse?.status === 'approved'
-                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                        : 'bg-slate-50/80 border-slate-200 opacity-75'
-                    }`}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                          Stage 3 • Official Record
-                        </span>
-                        {activeEmpResponse?.status === 'approved' ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white">
-                            <CheckBadgeIcon className="w-3.5 h-3.5" /> Published
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-medium text-slate-400">Pending Approval</span>
-                        )}
+                      {/* Step 2: Manager Review */}
+                      <div className="flex flex-col items-center gap-1.5 text-center">
+                        {(() => {
+                          const isManagerDone = activeEmpResponse?.status === 'approved' || activeEmpResponse?.status === 'sm_final_approval' || (Boolean(activeEmpResponse?.managerReviewedAt) && activeEmpResponse?.status !== 'manager_review');
+                          return (
+                            <>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                                isManagerDone
+                                  ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 shadow-2xs'
+                                  : isEmpSubmitted
+                                    ? 'bg-amber-50 text-amber-700 border-2 border-amber-500 ring-4 ring-amber-100 shadow-2xs'
+                                    : 'bg-white text-slate-400 border-2 border-slate-300'
+                              }`}>
+                                {isManagerDone ? (
+                                  <CheckIcon className="w-4 h-4 stroke-[3]" />
+                                ) : (
+                                  '2'
+                                )}
+                              </div>
+                              <span className="text-xs font-bold text-slate-800">Manager Review</span>
+                            </>
+                          );
+                        })()}
                       </div>
-                      <div className="flex items-baseline justify-between">
-                        <h4 className="text-xs font-bold text-slate-900">Final Tier Rating</h4>
-                        <span className="text-sm font-black text-primary-900">
-                          {getRatingForScore(activeEmpResponse?.managerScore ?? selfScoreNum).grade} / 5.0
-                        </span>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* 4 Key Stat Cards Strip */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-                    <div className="p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">Self Score</span>
-                        <strong className="text-lg font-black text-slate-900">{selfScoreNum.toFixed(1)}%</strong>
-                      </div>
-                      <div className="w-8 h-8 rounded-xl bg-primary-50 text-primary-700 flex items-center justify-center font-black text-xs">
-                        {getRatingForScore(selfScoreNum).grade}
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">Manager Score</span>
-                        <strong className="text-lg font-black text-emerald-950">
-                          {activeEmpResponse?.managerScore !== undefined ? `${Number(activeEmpResponse.managerScore).toFixed(1)}%` : 'Pending'}
-                        </strong>
-                      </div>
-                      <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-black text-xs">
-                        {getRatingForScore(activeEmpResponse?.managerScore ?? selfScoreNum).grade}
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">Score Delta / Variance</span>
-                        {scoreVariance !== null ? (
-                          <strong className={`text-base font-black ${
-                            scoreVariance > 0
-                              ? 'text-emerald-600'
-                              : scoreVariance < 0
-                                ? 'text-amber-700'
-                                : 'text-slate-700'
-                          }`}>
-                            {scoreVariance >= 0 ? `+${scoreVariance.toFixed(2)}%` : `${scoreVariance.toFixed(2)}%`}
-                          </strong>
-                        ) : (
-                          <span className="text-xs font-semibold text-slate-400">Calibration Pending</span>
-                        )}
-                      </div>
-                      <div className="w-8 h-8 rounded-xl bg-slate-50 text-slate-600 flex items-center justify-center">
-                        <ArrowTrendingUpIcon className="w-4 h-4" />
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">Deliverables Progress</span>
-                        <strong className="text-base font-black text-slate-900">{completedKpiCount} / {totalKpiCount} Completed</strong>
-                      </div>
-                      <div className="w-8 h-8 rounded-xl bg-primary-50 text-primary-700 flex items-center justify-center">
-                        <CheckCircleIcon className="w-4 h-4" />
+                      {/* Step 3: Final Status */}
+                      <div className="flex flex-col items-center gap-1.5 text-center">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                          activeEmpResponse?.status === 'approved'
+                            ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 shadow-2xs'
+                            : 'bg-white text-slate-400 border-2 border-slate-300'
+                        }`}>
+                          {activeEmpResponse?.status === 'approved' ? (
+                            <CheckBadgeIcon className="w-4.5 h-4.5 text-white" />
+                          ) : (
+                            '3'
+                          )}
+                        </div>
+                        <span className="text-xs font-bold text-slate-800">Final Status</span>
                       </div>
                     </div>
                   </div>
@@ -3926,8 +4317,8 @@ export const EvaluationTab: React.FC = () => {
                         type="text"
                         value={empSearchQuery}
                         onChange={e => setEmpSearchQuery(e.target.value)}
-                        placeholder="Search deliverable by name, metric, or remark..."
-                        className="w-full h-8 pl-9 pr-7 text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-primary-500 rounded-xl focus:outline-none transition"
+                        placeholder="Search deliverable..."
+                        className="w-full h-8 pl-9 pr-7 text-xs bg-white border border-slate-200 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 rounded-xl focus:outline-none transition shadow-2xs"
                       />
                       {empSearchQuery && (
                         <button
@@ -3959,7 +4350,7 @@ export const EvaluationTab: React.FC = () => {
                           onClick={() => setEmpFilterTab('adjusted')}
                           className={`px-3 py-1 rounded-lg transition flex items-center gap-1 ${
                             empFilterTab === 'adjusted'
-                              ? 'bg-amber-100 text-amber-950 shadow-2xs font-black'
+                              ? 'bg-amber-100 text-amber-950 shadow-2xs font-bold'
                               : 'text-amber-800 hover:text-amber-950'
                           }`}
                         >
@@ -3971,43 +4362,43 @@ export const EvaluationTab: React.FC = () => {
                 </div>
 
                 {/* 3. Deliverable-Level Evaluation Breakdown Table */}
-                <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-2xs overflow-hidden">
-                  <div className="p-4 bg-slate-50/70 border-b border-neutral-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                        Deliverable-Level Evaluation Breakdown
+                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                  <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-bold text-slate-900 tracking-tight">
+                        Deliverable Breakdown
                       </h4>
-                      <p className="text-[11px] text-neutral-500 mt-0.5">
-                        {isEmpSubmitted 
-                          ? 'Assessment is submitted and locked. Values reflect your submitted self-evaluation and official manager review.' 
-                          : 'Enter your actual performance numbers in each metric. Earned Score updates dynamically.'}
-                      </p>
+                      {isEmpSubmitted && (
+                        <span className="text-[10px] font-medium text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded-md">
+                          Submitted & Locked
+                        </span>
+                      )}
                     </div>
-                    <span className="text-[10px] font-bold text-primary-800 bg-primary-50 px-2.5 py-1 rounded-full border border-primary-200 shrink-0">
-                      100% Total Deliverable Allocation
+                    <span className="text-[10px] font-bold text-teal-800 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200/80 shrink-0">
+                      100% Allocation
                     </span>
                   </div>
 
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-50 text-slate-700 font-bold border-b border-neutral-200">
+                      <thead className="bg-slate-100/70 text-slate-700 font-bold border-b border-slate-200">
                         <tr>
-                          <th className="px-4 py-3 text-left">Deliverable Metric</th>
-                          <th className="px-3 py-3 text-center">Target Goal</th>
-                          <th className="px-3 py-3 text-center">Weight %</th>
-                          <th className="px-3 py-3 text-center">Self Actual</th>
-                          <th className="px-3 py-3 text-center">Self Score</th>
-                          <th className="px-4 py-3 text-left">Self Remarks</th>
+                          <th className="px-4 py-3 text-left whitespace-nowrap">Deliverable</th>
+                          <th className="px-3 py-3 text-center whitespace-nowrap">Target</th>
+                          <th className="px-3 py-3 text-center whitespace-nowrap">Weight</th>
+                          <th className="px-3 py-3 text-center whitespace-nowrap">Self Actual</th>
+                          <th className="px-3 py-3 text-center whitespace-nowrap">Self Score</th>
+                          <th className="px-4 py-3 text-left whitespace-nowrap">Self Remarks</th>
                           {isEmpSubmitted && (
                             <>
-                              <th className="px-3 py-3 text-center bg-[#ebf8f2] text-slate-800 border-l border-emerald-100">Manager Actual</th>
-                              <th className="px-3 py-3 text-center bg-[#ebf8f2] text-slate-800">Manager Score</th>
-                              <th className="px-4 py-3 text-left bg-[#ebf8f2] text-slate-800">Manager Remarks</th>
+                              <th className="px-3 py-3 text-center bg-teal-50/50 text-slate-800 border-l border-teal-100 whitespace-nowrap">Mgr Actual</th>
+                              <th className="px-3 py-3 text-center bg-teal-50/50 text-slate-800 whitespace-nowrap">Mgr Score</th>
+                              <th className="px-4 py-3 text-left bg-teal-50/50 text-slate-800 whitespace-nowrap">Mgr Remarks</th>
                             </>
                           )}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-neutral-100 bg-white">
+                      <tbody className="divide-y divide-slate-100 bg-white">
                         {filteredCategories.map((cat, catIdx) => {
                           const catEarned = cat.kpis.reduce((sum, k) => {
                             const respItem = getKpiResponseItem(k);
@@ -4024,9 +4415,9 @@ export const EvaluationTab: React.FC = () => {
 
                           return (
                             <React.Fragment key={cat.id}>
-                              {/* Sleek Category Subheading Row matching Image 1 */}
-                              <tr className="bg-slate-100/70 font-bold text-slate-800 border-t border-b border-slate-200/60">
-                                <td colSpan={isEmpSubmitted ? 9 : 6} className="px-4 py-2.5 text-xs">
+                              {/* Category Subheading Row */}
+                              <tr className="bg-slate-100/80 font-bold text-slate-900 border-t border-b border-slate-200/80">
+                                <td colSpan={isEmpSubmitted ? 9 : 6} className="px-4 py-2 text-xs">
                                   {catIdx + 1}. {cat.name} ({cat.weightage}% Allocation)
                                 </td>
                               </tr>
@@ -4057,21 +4448,21 @@ export const EvaluationTab: React.FC = () => {
                                   <tr key={kpi.id} className="hover:bg-slate-50/50 transition">
                                     {/* Deliverable Metric */}
                                     <td className="px-4 py-3 align-middle">
-                                      <span className="font-bold text-neutral-900 text-xs">{kpi.name}</span>
+                                      <span className="font-semibold text-slate-900 text-xs">{kpi.name}</span>
                                     </td>
 
                                     {/* Target Goal */}
-                                    <td className="px-3 py-3 text-center align-middle font-medium text-slate-600 text-xs">
+                                    <td className="px-3 py-3 text-center align-middle font-medium text-slate-700 text-xs whitespace-nowrap">
                                       {kpi.targetFromManager || '—'} {kpi.unit || ''}
                                     </td>
 
                                     {/* Weight % */}
-                                    <td className="px-3 py-3 text-center align-middle font-bold text-slate-700 text-xs">
+                                    <td className="px-3 py-3 text-center align-middle font-bold text-slate-700 text-xs whitespace-nowrap">
                                       {kpi.targetScore}%
                                     </td>
 
                                     {/* Self Actual */}
-                                    <td className="px-3 py-3 text-center align-middle text-xs">
+                                    <td className="px-3 py-3 text-center align-middle text-xs whitespace-nowrap">
                                       {isEmpSubmitted ? (
                                         <span className="font-bold text-slate-900">
                                           {val !== '' ? `${val} ${kpi.unit || ''}` : '—'}
@@ -4086,38 +4477,35 @@ export const EvaluationTab: React.FC = () => {
                                             disabled={isSubmittingEmp}
                                             onChange={e => handleKPIChange(kpi, e.target.value)}
                                             placeholder="0"
-                                            className="w-24 h-8 px-2 text-center font-bold text-xs rounded-lg transition shadow-2xs bg-white text-primary-900 border border-primary-300 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                                            className="w-24 h-8 px-2 text-center font-bold text-xs rounded-xl transition shadow-2xs bg-white text-teal-950 border border-slate-200 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 focus:outline-none"
                                           />
                                         </div>
                                       )}
                                     </td>
 
                                     {/* Self Score */}
-                                    <td className="px-3 py-3 text-center align-middle text-xs">
+                                    <td className="px-3 py-3 text-center align-middle text-xs whitespace-nowrap">
                                       <span className="font-bold text-slate-900">
                                         {calc.earnedScore.toFixed(2)}%
                                       </span>
                                     </td>
 
                                     {/* Self Remarks */}
-                                    <td className="px-4 py-3 align-middle text-xs">
+                                    <td className="px-4 py-3 align-middle text-xs min-w-[200px] max-w-[260px]">
                                       {isEmpSubmitted ? (
-                                        <span className="text-slate-600 italic">
-                                          {remarks || '—'}
-                                        </span>
+                                        <ExpandableRemarkView text={remarks} fallback="—" />
                                       ) : (
-                                        <input
-                                          type="text"
+                                        <ExpandableRemarkInput
                                           value={remarks}
                                           disabled={isSubmittingEmp}
-                                          onChange={e => handleKPIRemarksChange(kpi, e.target.value)}
-                                          placeholder="Enter required remarks..."
-                                          className={`w-full h-8 px-2.5 text-xs rounded-lg transition ${
+                                          onChange={val => handleKPIRemarksChange(kpi, val)}
+                                          placeholder="Enter remarks..."
+                                          required={true}
+                                          className={
                                             !remarks.trim()
-                                              ? 'bg-amber-50/40 focus:bg-white border border-amber-300 focus:border-primary-500 text-slate-800 focus:outline-none'
-                                              : 'bg-slate-50/60 focus:bg-white border border-slate-200 focus:border-primary-500 text-slate-800 focus:outline-none'
-                                          }`}
-                                          required
+                                              ? 'bg-amber-50/40 focus:bg-white border border-amber-300 focus:border-teal-600 text-slate-800 focus:outline-none shadow-2xs'
+                                              : 'bg-slate-50/60 focus:bg-white border border-slate-200 focus:border-teal-600 text-slate-800 focus:outline-none shadow-2xs'
+                                          }
                                         />
                                       )}
                                     </td>
@@ -4125,12 +4513,12 @@ export const EvaluationTab: React.FC = () => {
                                     {/* Manager Reviewed Fields Display */}
                                     {isEmpSubmitted && (
                                       <>
-                                        <td className="px-3 py-3 text-center align-middle bg-[#ebf8f2]/30 border-l border-emerald-100">
+                                        <td className="px-3 py-3 text-center align-middle bg-teal-50/30 border-l border-teal-100 whitespace-nowrap">
                                           {hasMgrActual && mgrActualVal !== '' ? (
                                             <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold transition ${
                                               isActualModifiedByMgr
                                                 ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                                : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
+                                                : 'bg-teal-100 text-teal-900 border border-teal-200'
                                             }`}>
                                               {mgrActualVal} {kpi.unit || ''}
                                             </span>
@@ -4139,16 +4527,14 @@ export const EvaluationTab: React.FC = () => {
                                           )}
                                         </td>
 
-                                        <td className="px-3 py-3 text-center align-middle bg-[#ebf8f2]/30">
+                                        <td className="px-3 py-3 text-center align-middle bg-teal-50/30 whitespace-nowrap">
                                           <span className="font-bold text-slate-900 text-xs">
                                             {mgrEarnedScore !== null ? `${mgrEarnedScore.toFixed(2)}%` : '—'}
                                           </span>
                                         </td>
 
-                                        <td className="px-4 py-3 align-middle bg-[#ebf8f2]/30 text-xs">
-                                          <span className="text-slate-700 font-normal">
-                                            {mgrRemarks || '—'}
-                                          </span>
+                                        <td className="px-4 py-3 align-middle bg-teal-50/30 text-xs min-w-[200px] max-w-[260px]">
+                                          <ExpandableRemarkView text={mgrRemarks} fallback="—" />
                                         </td>
                                       </>
                                     )}
@@ -4163,29 +4549,29 @@ export const EvaluationTab: React.FC = () => {
                   </div>
 
                   {/* Scorecard Summary Footer */}
-                  <div className="p-4 sm:p-5 bg-slate-50/80 border-t border-neutral-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="p-4 sm:p-5 bg-slate-50/80 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex flex-wrap items-center gap-3 text-xs">
                       <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
-                        <span className="text-slate-500 font-semibold">Self Overall Score:</span>
-                        <strong className="text-primary-800 text-sm font-black">{selfScoreNum.toFixed(1)}%</strong>
+                        <span className="text-slate-500 font-medium">Self Overall Score:</span>
+                        <strong className="text-teal-900 text-sm font-extrabold">{selfScoreNum.toFixed(1)}%</strong>
                       </div>
                       {activeEmpResponse?.managerScore !== undefined && (
-                        <div className="flex items-center gap-2 bg-emerald-50 px-3.5 py-2 rounded-xl border border-emerald-300 shadow-2xs">
-                          <span className="text-emerald-800 font-bold">Manager Official Score:</span>
-                          <strong className="text-emerald-950 text-sm font-black">{Number(activeEmpResponse.managerScore).toFixed(1)}%</strong>
+                        <div className="flex items-center gap-2 bg-teal-50 px-3.5 py-2 rounded-xl border border-teal-200 shadow-2xs">
+                          <span className="text-teal-800 font-bold">Manager Official Score:</span>
+                          <strong className="text-teal-950 text-sm font-extrabold">{Number(activeEmpResponse.managerScore).toFixed(1)}%</strong>
                         </div>
                       )}
                       <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
-                        <span className="text-slate-500 font-semibold">Grade Tier:</span>
-                        <strong className="text-primary-800 text-sm font-black">
+                        <span className="text-slate-500 font-medium">Grade Tier:</span>
+                        <strong className="text-teal-900 text-sm font-extrabold">
                           {getRatingForScore(activeEmpResponse?.managerScore ?? selfScoreNum).grade} / 5.0
                         </strong>
                       </div>
                     </div>
 
                     {isEmpSubmitted ? (
-                      <div className="flex items-center gap-2 px-5 py-2.5 bg-emerald-100/90 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-300 shadow-2xs">
-                        <CheckCircleIcon className="w-4 h-4 text-emerald-700" />
+                      <div className="flex items-center gap-2 px-5 py-2.5 bg-teal-50 text-teal-800 rounded-xl text-xs font-bold border border-teal-200 shadow-2xs">
+                        <CheckCircleIcon className="w-4 h-4 text-teal-700" />
                         <span>Submitted to Manager (Locked)</span>
                       </div>
                     ) : (
@@ -4193,7 +4579,7 @@ export const EvaluationTab: React.FC = () => {
                         type="button"
                         onClick={handleEmployeeSubmit}
                         disabled={isSubmittingEmp}
-                        className="flex items-center justify-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-primary-600/20 transition cursor-pointer"
+                        className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
                       >
                         {isSubmittingEmp ? (
                           <>
@@ -4203,54 +4589,11 @@ export const EvaluationTab: React.FC = () => {
                         ) : (
                           <>
                             <CheckCircleIcon className="w-4 h-4" />
-                            <span>Submit Self-Assessment to Manager</span>
+                            <span>Submit Self-Assessment</span>
                           </>
                         )}
                       </button>
                     )}
-                  </div>
-                </div>
-
-                {/* 4. Performance Strengths & Focus Areas Insights Card */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-5 bg-gradient-to-br from-emerald-50/60 to-white rounded-3xl border border-emerald-200/80 shadow-2xs space-y-2">
-                    <div className="flex items-center gap-2 text-emerald-900 font-black text-xs">
-                      <SparklesIcon className="w-4 h-4 text-emerald-600" />
-                      <span>Top Performance Strengths</span>
-                    </div>
-                    <p className="text-[11px] text-emerald-800">
-                      High achievement categories demonstrating strongest execution consistency.
-                    </p>
-                    <div className="space-y-1.5 pt-1">
-                      {topStrengths.map(s => (
-                        <div key={s.id} className="flex items-center justify-between text-xs bg-white/90 px-3 py-1.5 rounded-xl border border-emerald-100">
-                          <span className="font-bold text-slate-800 truncate">{s.name}</span>
-                          <span className="font-black text-emerald-800 text-xs shrink-0 ml-2">
-                            {s.effectiveScore.toFixed(2)}% / {s.targetWeight}% ({s.achievementRate.toFixed(0)}%)
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="p-5 bg-gradient-to-br from-primary-50/40 to-white rounded-3xl border border-primary-200/80 shadow-2xs space-y-2">
-                    <div className="flex items-center gap-2 text-primary-950 font-black text-xs">
-                      <ArrowTrendingUpIcon className="w-4 h-4 text-primary-600" />
-                      <span>Coaching & Growth Alignment</span>
-                    </div>
-                    <p className="text-[11px] text-primary-800">
-                      Deliverable areas identified for performance optimization and lead mentorship.
-                    </p>
-                    <div className="space-y-1.5 pt-1">
-                      {focusAreas.map(f => (
-                        <div key={f.id} className="flex items-center justify-between text-xs bg-white/90 px-3 py-1.5 rounded-xl border border-primary-100">
-                          <span className="font-bold text-slate-800 truncate">{f.name}</span>
-                          <span className="font-black text-primary-800 text-xs shrink-0 ml-2">
-                            {f.effectiveScore.toFixed(2)}% / {f.targetWeight}% ({f.achievementRate.toFixed(0)}%)
-                          </span>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 </div>
               </div>
@@ -4277,187 +4620,465 @@ export const EvaluationTab: React.FC = () => {
                 </p>
               </div>
             </div>
-          ) : (
-            <div className="bg-white rounded-3xl p-8 border border-neutral-200 shadow-sm space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between pb-6 border-b-2 border-primary-100 gap-4">
-                <div>
-                  <span className="text-xs uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-primary-50 text-primary-700 font-bold border border-primary-200">
-                    Official Performance Record
-                  </span>
-                  <h2 className="text-2xl font-bold text-neutral-900 mt-2">
-                    Executive Evaluation Report
-                  </h2>
-                  <p className="text-xs text-neutral-500">
-                    Employee: {activeEmpResponse ? (getEmployeeDisplayInfo(activeEmpResponse).employeeName || activeEmpResponse.employeeName) : ''} ({activeEmpResponse ? getEmployeeDisplayInfo(activeEmpResponse).employeeCode : ''}) • Cycle: {activeCycle?.name}
-                  </p>
+          ) : (() => {
+            // Filter, deduplicate, and sort employee responses with latest report/cycle on top
+            const rawUserResponses = responses.filter(isResponseForUser);
+            const uniqueEmpResponses: EvaluationResponse[] = [];
+            const seenKeys = new Set<string>();
+            rawUserResponses.forEach(r => {
+              const key = r.id || `${r.cycleId}_${(r as any).periodName || ''}`;
+              if (!seenKeys.has(key)) {
+                seenKeys.add(key);
+                uniqueEmpResponses.push(r);
+              }
+            });
+
+            const allEmpResponses = uniqueEmpResponses.sort((a, b) => {
+              const timeA = new Date(a.serviceManagerApprovedAt || a.managerReviewedAt || a.employeeSubmittedAt || a.createdAt || 0).getTime();
+              const timeB = new Date(b.serviceManagerApprovedAt || b.managerReviewedAt || b.employeeSubmittedAt || b.createdAt || 0).getTime();
+              if (timeB !== timeA) return timeB - timeA;
+              return (b.id || '').localeCompare(a.id || '');
+            });
+
+            return (
+              <div className="space-y-8 animate-in fade-in duration-200">
+                {/* Executive Overview Header */}
+                <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-teal-700 text-white shadow-xs">
+                        <CheckBadgeIcon className="w-3.5 h-3.5" />
+                        Evaluation History
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400">
+                        {allEmpResponses.length} {allEmpResponses.length === 1 ? 'Record' : 'Records'}
+                      </span>
+                    </div>
+                    <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                      Evaluation History & Scorecards
+                    </h2>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Official performance scorecards and evaluation records.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setEmployeeSubTab('worksheet')}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+                    >
+                      <PencilSquareIcon className="w-4 h-4 text-slate-500" />
+                      <span>Back to Worksheet</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded-xl shadow-xs transition cursor-pointer"
+                    >
+                      <PrinterIcon className="w-4 h-4" />
+                      <span>Print PDF</span>
+                    </button>
+                  </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-md shadow-primary-500/20 transition cursor-pointer"
-                >
-                  <PrinterIcon className="w-4 h-4" />
-                  <span>Print / Save PDF</span>
-                </button>
+                {/* Stack of Full Executive Scorecards — One per Stage Response in DB */}
+                <div className="space-y-8">
+                  {allEmpResponses.map((r, idx) => {
+                    const itemCycle = cycles.find(cy => cy.id === r.cycleId);
+                    const itemTitle = itemCycle?.name || itemCycle?.periodName || (r as any).periodName || `Performance Evaluation Stage ${allEmpResponses.length - idx}`;
+                    const itemCategories = (itemCycle?.categories && itemCycle.categories.length > 0) ? itemCycle.categories : activeCategories;
+
+                    // Resolve descriptive period time from cycle, response, or DB fields
+                    const resolvePeriodTime = () => {
+                      // 1. Check description from DB for embedded period (e.g. "Performance evaluation for Media (Daily (14 Sep 2026))")
+                      const desc = String(itemCycle?.description || (r as any).description || '').trim();
+                      if (desc.includes('(') && desc.includes(')')) {
+                        const extracted = desc.substring(desc.lastIndexOf('(') + 1, desc.lastIndexOf(')')).trim();
+                        if (extracted && extracted.toLowerCase() !== (itemCycle?.name || '').toLowerCase()) {
+                          return extracted;
+                        }
+                      }
+
+                      // 2. Check if single day (Daily) by dates: startDate === endDate
+                      if (itemCycle?.startDate && itemCycle?.endDate && itemCycle.startDate === itemCycle.endDate) {
+                        return `Daily (${formatDisplayDate(itemCycle.startDate)})`;
+                      }
+
+                      // 3. Check cycle.periodName or (r as any).periodName
+                      let rawPeriod = String(itemCycle?.periodName || (r as any).periodName || (r as any).reviewPeriod || '').trim();
+
+                      // If rawPeriod has a specific period format (Daily, Weekly, Monthly, Due Date, Q1-Q4, Stage)
+                      const isDescriptive = rawPeriod && rawPeriod.toLowerCase() !== (itemCycle?.name || '').toLowerCase() && (
+                        rawPeriod.toLowerCase().includes('daily') ||
+                        rawPeriod.toLowerCase().includes('due') ||
+                        rawPeriod.toLowerCase().includes('week') ||
+                        rawPeriod.toLowerCase().includes('stage') ||
+                        rawPeriod.includes('(') ||
+                        /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(rawPeriod)
+                      );
+
+                      if (isDescriptive) {
+                        return rawPeriod;
+                      }
+
+                      // 4. Date range if present
+                      const hasCycleDates = Boolean(itemCycle?.startDate && itemCycle?.endDate);
+                      const formattedDates = hasCycleDates
+                        ? `${formatDisplayDate(itemCycle!.startDate)} – ${formatDisplayDate(itemCycle!.endDate)}`
+                        : '';
+
+                      // 5. Check for Quarter in title / form name / rawPeriod
+                      const textToCheck = `${itemTitle} ${rawPeriod} ${itemCycle?.name || ''}`;
+                      const qMatch = textToCheck.match(/Q([1-4])/i);
+                      if (qMatch) {
+                        const qNum = parseInt(qMatch[1]);
+                        const qLabels: Record<number, string> = { 1: 'Jan - Mar', 2: 'Apr - Jun', 3: 'Jul - Sep', 4: 'Oct - Dec' };
+                        const yr = (itemCycle?.startDate ? new Date(itemCycle.startDate).getFullYear() : (r.createdAt ? new Date(r.createdAt).getFullYear() : currentYear)) || currentYear;
+                        return `Q${qNum} ${yr} (${qLabels[qNum]})`;
+                      }
+
+                      if (formattedDates) {
+                        return formattedDates;
+                      }
+
+                      if (rawPeriod && rawPeriod.toLowerCase() !== (itemCycle?.name || '').toLowerCase()) {
+                        return rawPeriod;
+                      }
+
+                      if (r.createdAt) {
+                        return formatDisplayDate(r.createdAt);
+                      }
+
+                      return `Q${currentQuarter} ${currentYear} (${quarterLabel})`;
+                    };
+
+                    const itemPeriodTime = resolvePeriodTime();
+
+                    const rawSelf = r.employeeOverallScore != null ? Number(r.employeeOverallScore) : 0;
+                    let itemSelfScore = rawSelf;
+                    if (itemSelfScore === 0) {
+                      if (r.managerScore != null && Number(r.managerScore) > 0) {
+                        itemSelfScore = Number(r.managerScore);
+                      } else if (r.kpiResponses && Object.keys(r.kpiResponses).length > 0) {
+                        const kpis = Object.values(r.kpiResponses);
+                        let tot = 0, cnt = 0;
+                        kpis.forEach((item: any) => {
+                          if (typeof item === 'object' && item !== null) {
+                            const sc = item.earnedScore ?? item.earned_score ?? item.score;
+                            if (sc !== undefined && sc !== null && Number(sc) > 0) {
+                              tot += Number(sc);
+                              cnt++;
+                            }
+                          }
+                        });
+                        if (cnt > 0) itemSelfScore = tot / cnt;
+                      }
+                    }
+
+                    const itemMgrScore = r.managerScore != null ? Number(r.managerScore) : (r.serviceManagerScore != null ? Number(r.serviceManagerScore) : null);
+                    const itemFinalScore = itemMgrScore ?? itemSelfScore;
+                    const itemRating = getRatingForScore(itemFinalScore);
+                    const itemSelfRating = getRatingForScore(itemSelfScore);
+                    const itemIsApproved = r.status === 'approved' || r.status === 'sm_final_approval';
+                    // Audit breakdown table is hidden by default; user can toggle it open
+                    const isAuditOpen = historyAuditBreakdownOpen[r.id] === true;
+
+                    return (
+                      <div key={r.id || idx} className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/90 shadow-xs space-y-6 animate-in fade-in duration-200">
+                        {/* Executive Stage Header Banner — Clean & Minimized */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 border-b border-slate-200/80 gap-3">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200/80 shadow-2xs">
+                                <CalendarDaysIcon className="w-3 h-3 text-teal-700 shrink-0" />
+                                <span>Period: <strong className="text-teal-950 font-black">{itemPeriodTime}</strong></span>
+                              </span>
+
+                              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                itemIsApproved
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}>
+                                {itemIsApproved ? '● Published' : '○ In Review'}
+                              </span>
+                            </div>
+
+                            <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                              {itemTitle}
+                            </h3>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const summary = `PERFORMANCE REPORT: ${itemTitle}\nPeriod: ${itemPeriodTime}\nSelf Score: ${itemSelfScore.toFixed(1)}%\nManager Score: ${itemMgrScore !== null ? `${itemMgrScore.toFixed(1)}%` : 'Pending'}\nFinal Grade: ${itemRating.grade} / 5.0 (${itemRating.name})`;
+                                navigator.clipboard.writeText(summary);
+                                alert('Performance Summary copied!');
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition cursor-pointer"
+                            >
+                              <ClipboardDocumentListIcon className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Copy Summary</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Hero Executive Scorecard & Consensus Grid */}
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                          {/* Dark Green Hero Card */}
+                          <div
+                            onClick={() => setHistoryAuditBreakdownOpen(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
+                            className="lg:col-span-5 bg-gradient-to-br from-teal-900 via-teal-800 to-slate-900 text-white rounded-2xl p-6 shadow-md flex flex-col justify-between space-y-5 relative overflow-hidden cursor-pointer hover:ring-2 hover:ring-teal-400/60 transition-all duration-200 group"
+                            title={isAuditOpen ? "Click to collapse Deliverable Audit Breakdown" : "Click to view detailed Deliverable Audit Breakdown"}
+                          >
+                            <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                            <div className="flex items-center justify-between z-10">
+                              <span className="text-[10px] uppercase font-bold text-teal-200 tracking-wider flex items-center gap-1">
+                                <SparklesIcon className="w-3.5 h-3.5 text-teal-300" />
+                                Final Performance Scorecard
+                              </span>
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-teal-700/80 text-teal-100 border border-teal-600/50">
+                                {itemRating.name}
+                              </span>
+                            </div>
+
+                            <div className="space-y-2 z-10">
+                              <div className="flex items-baseline gap-3">
+                                <span className="text-5xl font-black tracking-tight text-white">
+                                  {itemRating.grade}
+                                </span>
+                                <span className="text-sm font-semibold text-teal-200">/ 5.0 Rating Grade</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="text-2xl font-black text-teal-100">
+                                  {itemFinalScore.toFixed(1)}%
+                                </div>
+                                <span className="text-xs text-teal-200/80 font-medium">Cumulative Score</span>
+                              </div>
+                            </div>
+
+                            <div className="pt-3 border-t border-teal-700/60 flex items-center justify-between z-10">
+                              <div className="flex items-center gap-1">
+                                {[1, 2, 3, 4, 5].map(s => (
+                                  s <= itemRating.stars ? (
+                                    <StarSolid key={s} className="w-4 h-4 text-amber-400 drop-shadow-xs" />
+                                  ) : (
+                                    <StarIcon key={s} className="w-4 h-4 text-teal-700" />
+                                  )
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-1 text-[11px] font-extrabold text-teal-200 group-hover:text-white transition">
+                                <span>{isAuditOpen ? 'Hide Audit Breakdown' : 'View Audit Breakdown'}</span>
+                                {isAuditOpen ? (
+                                  <ChevronUpIcon className="w-3.5 h-3.5 text-teal-300" />
+                                ) : (
+                                  <ChevronDownIcon className="w-3.5 h-3.5 text-teal-300" />
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Evaluation Score Alignment Box */}
+                          <div className="lg:col-span-7 bg-slate-50/90 rounded-2xl p-5 border border-slate-200 shadow-2xs flex flex-col justify-between space-y-4">
+                            <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+                              <div className="flex items-center gap-2">
+                                <ChartBarIcon className="w-4 h-4 text-teal-700" />
+                                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                                  Evaluation Score Alignment
+                                </h3>
+                              </div>
+                            </div>
+
+                            {/* Dual Metric KPI Stat Cards */}
+                            <div className="grid grid-cols-2 gap-3">
+                              {/* Self Score Card */}
+                              <div className="bg-white rounded-xl p-3.5 border border-slate-200/80 space-y-1">
+                                <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase">
+                                  <span>Self Score</span>
+                                  <span className="text-slate-400">Submitted</span>
+                                </div>
+                                <div className="flex items-baseline justify-between">
+                                  <span className="text-2xl font-black text-slate-900">{itemSelfScore.toFixed(1)}%</span>
+                                  <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/60">
+                                    Grade {itemSelfRating.grade}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Manager Final Card */}
+                              <div className="bg-white rounded-xl p-3.5 border border-teal-200/80 space-y-1">
+                                <div className="flex items-center justify-between text-[10px] font-bold text-teal-900 uppercase">
+                                  <span>Manager Final</span>
+                                  <span className={itemMgrScore !== null ? 'text-emerald-600 font-extrabold' : 'text-amber-600 font-extrabold'}>
+                                    {itemMgrScore !== null ? 'Published' : 'In Review'}
+                                  </span>
+                                </div>
+                                <div className="flex items-baseline justify-between">
+                                  <span className="text-2xl font-black text-teal-950">
+                                    {itemMgrScore !== null ? `${itemMgrScore.toFixed(1)}%` : '—'}
+                                  </span>
+                                  <span className="text-xs font-bold text-teal-900 bg-teal-100/70 px-2 py-0.5 rounded-md border border-teal-300/80">
+                                    Grade {itemRating.grade}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Consensus Status Bar */}
+                            <div className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between text-xs font-semibold">
+                              <span className="text-slate-500 text-[11px] font-bold">Consensus Status:</span>
+                              {itemMgrScore !== null ? (
+                                <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold border ${
+                                  Math.abs(itemMgrScore - itemSelfScore) <= 2
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : itemMgrScore > itemSelfScore
+                                      ? 'bg-teal-50 text-teal-800 border-teal-200'
+                                      : 'bg-amber-50 text-amber-800 border-amber-200'
+                                }`}>
+                                  {itemMgrScore === itemSelfScore
+                                    ? '100% Aligned Consensus'
+                                    : `${itemMgrScore > itemSelfScore ? '+' : ''}${(itemMgrScore - itemSelfScore).toFixed(1)}% Manager Adjustment`}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 italic text-[11px]">Awaiting Manager Official Scoring</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Detailed Performance Deliverables Breakdown Table */}
+                        {isAuditOpen && (
+                          <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="flex items-center justify-between">
+                              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                                <TableCellsIcon className="w-4 h-4 text-teal-700" />
+                                Deliverable Audit Breakdown ({itemTitle} • {itemPeriodTime})
+                              </h3>
+                              <button
+                                type="button"
+                                onClick={() => setHistoryAuditBreakdownOpen(prev => ({ ...prev, [r.id]: false }))}
+                                className="text-[10px] font-bold text-slate-500 hover:text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200 transition cursor-pointer"
+                              >
+                                Close Breakdown ▲
+                              </button>
+                            </div>
+
+                            <div className="overflow-x-auto rounded-2xl border border-slate-200/90 shadow-2xs">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
+                                  <tr>
+                                    <th className="px-4 py-2.5 whitespace-nowrap">Deliverable Metric</th>
+                                    <th className="px-3 py-2.5 text-center whitespace-nowrap">Target</th>
+                                    <th className="px-3 py-2.5 text-center whitespace-nowrap">Weight</th>
+                                    <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Actual</th>
+                                    <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Score</th>
+                                    <th className="px-4 py-2.5 whitespace-nowrap">Self Remarks</th>
+                                    <th className="px-3 py-2.5 text-center bg-teal-50/50 text-slate-800 border-l border-teal-100 whitespace-nowrap">Mgr Actual</th>
+                                    <th className="px-3 py-2.5 text-center bg-teal-50/50 text-slate-800 whitespace-nowrap">Mgr Score</th>
+                                    <th className="px-4 py-2.5 bg-teal-50/50 text-slate-800 whitespace-nowrap">Mgr Remarks</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white">
+                                  {itemCategories.map((cat, catIdx) => (
+                                    <React.Fragment key={cat.id}>
+                                      <tr className="bg-slate-100/90 font-black text-slate-900 border-t border-b border-slate-200/90">
+                                        <td colSpan={9} className="px-4 py-2 text-xs uppercase tracking-wider text-slate-800">
+                                          {catIdx + 1}. {cat.name} ({cat.weightage}% Weight)
+                                        </td>
+                                      </tr>
+                                      {cat.kpis.map((kpi) => {
+                                        const selfRes = r.kpiResponses?.[kpi.id];
+                                        const selfActual = selfRes?.actualValue !== undefined && selfRes?.actualValue !== null && selfRes?.actualValue !== ''
+                                          ? selfRes.actualValue
+                                          : '—';
+                                        const selfScore = selfRes?.earnedScore !== undefined ? selfRes.earnedScore : 0;
+                                        const selfRemarks = selfRes?.employeeRemarks || '';
+
+                                        const mgrActual = selfRes?.managerActualValue !== undefined && selfRes?.managerActualValue !== null && selfRes?.managerActualValue !== ''
+                                          ? selfRes.managerActualValue
+                                          : '—';
+                                        const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null
+                                          ? Number(selfRes.managerScore)
+                                          : null;
+                                        const mgrRemarks = selfRes?.managerRemarks || '';
+
+                                        return (
+                                          <tr key={kpi.id} className="hover:bg-slate-50/80 transition">
+                                            <td className="px-4 py-2.5 align-middle">
+                                              <div className="font-bold text-slate-800 text-xs">{kpi.name}</div>
+                                              {kpi.description && (
+                                                <div className="text-[10px] text-slate-400 line-clamp-1">{kpi.description}</div>
+                                              )}
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center align-middle font-medium text-slate-600 whitespace-nowrap">
+                                              {kpi.targetFromManager !== undefined && kpi.targetFromManager !== ''
+                                                ? `${kpi.targetFromManager} ${kpi.unit || ''}`.trim()
+                                                : `${kpi.targetValue} ${kpi.unit || ''}`.trim()}
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center align-middle font-semibold text-slate-600 whitespace-nowrap">
+                                              {kpi.weightage || Math.round(cat.weightage / Math.max(1, cat.kpis.length))}%
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center align-middle font-bold text-slate-800 whitespace-nowrap">
+                                              {selfActual !== '—' ? `${selfActual} ${kpi.unit || ''}`.trim() : '—'}
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center align-middle font-extrabold text-slate-900 whitespace-nowrap">
+                                              {selfScore.toFixed(2)}%
+                                            </td>
+                                            <td className="px-4 py-2.5 align-middle text-xs min-w-[180px] max-w-[240px]">
+                                              <ExpandableRemarkView text={selfRemarks} fallback="—" />
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center align-middle bg-teal-50/30 font-bold text-slate-900 border-l border-teal-100 whitespace-nowrap">
+                                              {mgrActual !== '—' ? `${mgrActual} ${kpi.unit || ''}`.trim() : '—'}
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-slate-900">
+                                              {mgrScore !== null ? `${mgrScore.toFixed(2)}%` : '—'}
+                                            </td>
+                                            <td className="px-4 py-2.5 align-middle bg-teal-50/30 text-xs min-w-[180px] max-w-[240px]">
+                                              <ExpandableRemarkView text={mgrRemarks} fallback="—" />
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </React.Fragment>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Leadership Feedback Box */}
+                        {r.managerRemarks && (
+                          <div className="p-4 bg-teal-50/60 rounded-2xl border border-teal-200/80 space-y-1.5">
+                            <div className="flex items-center gap-2 text-xs font-bold text-teal-900 uppercase tracking-wider">
+                              <SparklesIcon className="w-4 h-4 text-teal-700" />
+                              Leadership Feedback ({itemTitle})
+                            </div>
+                            <p className="text-xs text-slate-700 italic leading-relaxed pl-5 border-l-2 border-teal-600 font-medium">
+                              "{r.managerRemarks}"
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-
-              {/* 3-Score Rollup Grid */}
-              <div className="p-6 bg-primary-50/40 rounded-2xl border border-primary-200 space-y-4">
-                <span className="text-xs font-bold text-primary-800 uppercase tracking-wider block">
-                  3-Way Score Alignment & Evaluation Progression
-                </span>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs bg-white rounded-xl border border-neutral-200 overflow-hidden">
-                    <thead className="bg-neutral-50 text-neutral-600 font-bold border-b border-neutral-200">
-                      <tr>
-                        <th className="px-4 py-3">Evaluation Tier</th>
-                        <th className="px-4 py-3 text-center">Target</th>
-                        <th className="px-4 py-3 text-center">Earned Score</th>
-                        <th className="px-4 py-3 text-center">Grade</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100 font-bold">
-                      <tr>
-                        <td className="px-4 py-3 text-neutral-900">Actual Score (Self)</td>
-                        <td className="px-4 py-3 text-center text-neutral-500">100%</td>
-                        <td className="px-4 py-3 text-center text-neutral-800">{activeEmpResponse?.employeeOverallScore != null ? `${Number(activeEmpResponse.employeeOverallScore).toFixed(1)}%` : '—'}</td>
-                        <td className="px-4 py-3 text-center text-primary-700">{getRatingForScore(activeEmpResponse?.employeeOverallScore || 0).grade}</td>
-                      </tr>
-                      <tr className="bg-primary-50/30">
-                        <td className="px-4 py-3 text-primary-900">Manager Rating (Official Final)</td>
-                        <td className="px-4 py-3 text-center text-neutral-500">100%</td>
-                        <td className="px-4 py-3 text-center text-primary-800 font-black">{activeEmpResponse?.managerScore != null ? `${Number(activeEmpResponse.managerScore).toFixed(1)}%` : 'Pending'}</td>
-                        <td className="px-4 py-3 text-center text-primary-800 font-black">{getRatingForScore(activeEmpResponse?.managerScore ?? activeEmpResponse?.employeeOverallScore ?? 0).grade}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* 5-Star Rating Badge */}
-              <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-neutral-400 block">Final Performance Level</span>
-                  <span className="text-base font-bold text-neutral-900">
-                    {getRatingForScore(activeEmpResponse?.managerScore ?? activeEmpResponse?.serviceManagerScore ?? activeEmpResponse?.employeeOverallScore ?? 0).name}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {[1, 2, 3, 4, 5].map(s => (
-                    s <= getRatingForScore(activeEmpResponse?.managerScore ?? activeEmpResponse?.serviceManagerScore ?? activeEmpResponse?.employeeOverallScore ?? 0).stars ? (
-                      <StarSolid key={s} className="w-5 h-5 text-warning-500" />
-                    ) : (
-                      <StarIcon key={s} className="w-5 h-5 text-neutral-300" />
-                    )
-                  ))}
-                </div>
-              </div>
-
-              {/* Detailed Performance Deliverables Breakdown */}
-              <div className="space-y-3 pt-2">
-                <h4 className="text-xs font-bold text-neutral-900 uppercase tracking-wide">
-                  Deliverable-Level Evaluation Breakdown
-                </h4>
-                <div className="overflow-x-auto rounded-2xl border border-neutral-200">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-50 text-slate-700 font-bold border-b border-neutral-200">
-                      <tr>
-                        <th className="px-4 py-3">Deliverable Metric</th>
-                        <th className="px-3 py-3 text-center">Target Goal</th>
-                        <th className="px-3 py-3 text-center">Weight %</th>
-                        <th className="px-3 py-3 text-center bg-primary-50/40">Self Actual</th>
-                        <th className="px-3 py-3 text-center bg-primary-50/40">Self Score</th>
-                        <th className="px-4 py-3">Self Remarks</th>
-                        <th className="px-3 py-3 text-center bg-emerald-50/60 border-l border-emerald-100">Manager Actual</th>
-                        <th className="px-3 py-3 text-center bg-emerald-50/60">Manager Score</th>
-                        <th className="px-4 py-3 bg-emerald-50/60">Manager Remarks</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100 bg-white">
-                      {activeCategories.map((cat, catIdx) => (
-                        <React.Fragment key={cat.id}>
-                          <tr className="bg-slate-100/70 font-bold text-slate-800">
-                            <td colSpan={9} className="px-4 py-2 text-xs">
-                              {catIdx + 1}. {cat.name} ({cat.weightage}% Allocation)
-                            </td>
-                          </tr>
-                          {cat.kpis.map(kpi => {
-                            const respItem = getKpiResponseItem(kpi);
-                            const selfVal = respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
-                              ? respItem.actualValue 
-                              : (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '');
-                            const selfScore = calculateKPIScore(kpi, selfVal).earnedScore;
-                            const selfRemarks = respItem?.employeeRemarks || (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '') || '';
-                            const hasMgrActual = respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== null && respItem?.managerActualValue !== '';
-                            const mgrVal = hasMgrActual ? respItem.managerActualValue : '';
-                            const isAdjusted = hasMgrActual && String(mgrVal).trim() !== String(selfVal).trim();
-                            const mgrScore = (respItem?.managerScore !== undefined && respItem?.managerScore !== null) 
-                              ? Number(respItem.managerScore) 
-                              : (hasMgrActual ? calculateKPIScore(kpi, mgrVal).earnedScore : null);
-                            const mgrRemarks = respItem?.managerRemarks || '';
-
-                            return (
-                              <tr key={kpi.id} className="hover:bg-slate-50/50">
-                                <td className="px-4 py-2.5 align-middle">
-                                  <span className="font-bold text-neutral-900">{kpi.name}</span>
-                                </td>
-                                <td className="px-3 py-2.5 text-center align-middle font-medium text-slate-600">
-                                  {kpi.targetFromManager || '—'} {kpi.unit || ''}
-                                </td>
-                                <td className="px-3 py-2.5 text-center align-middle font-bold text-slate-700">
-                                  {kpi.targetScore}%
-                                </td>
-                                <td className="px-3 py-2.5 text-center align-middle bg-primary-50/20 font-bold text-primary-900">
-                                  {selfVal !== '' ? `${selfVal} ${kpi.unit || ''}` : '—'}
-                                </td>
-                                <td className="px-3 py-2.5 text-center align-middle bg-primary-50/20 font-black text-primary-800">
-                                  {selfScore.toFixed(2)}%
-                                </td>
-                                <td className="px-4 py-2.5 align-middle text-slate-600 text-[11px] italic">
-                                  {selfRemarks || '—'}
-                                </td>
-                                <td className="px-3 py-2.5 text-center align-middle bg-emerald-50/20 border-l border-emerald-100 font-bold">
-                                  {hasMgrActual && mgrVal !== '' ? (
-                                    <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-lg text-xs font-bold ${
-                                      isAdjusted 
-                                        ? 'bg-amber-100 text-amber-900 border border-amber-300' 
-                                        : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
-                                    }`}>
-                                      {mgrVal} {kpi.unit || ''}
-                                    </span>
-                                  ) : '—'}
-                                </td>
-                                <td className="px-3 py-2.5 text-center align-middle bg-emerald-50/20 font-black text-emerald-900">
-                                  {mgrScore !== null ? `${mgrScore.toFixed(2)}%` : '—'}
-                                </td>
-                                <td className="px-4 py-2.5 align-middle bg-emerald-50/20 text-slate-700 text-[11px] font-medium">
-                                  {mgrRemarks || '—'}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })())}
         </div>
       )}
-
-      {/* ========================================================================= */}
       {/* 4. MANAGER REVIEW & DOWNLINE TEAMS VIEW — PEOPLEHUB CLEAN PROFESSIONAL SUITE */}
       {/* ========================================================================= */}
       {(activeRole === 'manager' || activeRole === 'downline_teams') && (
         <div className="space-y-5 animate-in fade-in duration-200">
-          {/* Action Header: Clean PeopleHub Header Card */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* Action Header: Clean Software Engineering Style Header Card */}
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200/80 flex items-center justify-center text-teal-600 shrink-0 shadow-2xs">
+              <div className="w-10 h-10 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
                 {activeRole === 'manager' ? (
                   <BriefcaseIcon className="w-5 h-5" />
                 ) : (
@@ -4466,102 +5087,195 @@ export const EvaluationTab: React.FC = () => {
               </div>
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-base font-bold text-slate-900">
+                  <h3 className="text-base font-bold text-slate-900 tracking-tight">
                     {activeRole === 'manager'
-                      ? (isTeamLead ? 'Squad Performance & Evaluation Hub' : 'Team Performance & Calibration Hub')
-                      : 'Downline Teams Performance Hub'}
+                      ? (isTeamLead ? 'Squad Evaluation' : 'Team Evaluation')
+                      : 'Downline Teams'}
                   </h3>
-                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-primary-50 text-primary-700 border border-primary-200/60">
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200/80 uppercase">
                     {activeRole === 'manager'
-                      ? (isTeamLead ? 'Team Leader Review Desk' : 'Direct Reporting Manager Desk')
-                      : 'Downline Teams Desk'}
+                      ? (isTeamLead ? 'Squad Desk' : 'Manager Desk')
+                      : 'Downline Desk'}
+                  </span>
+                  <span className="text-xs text-slate-400 font-medium hidden md:inline">•</span>
+                  <span className="text-xs font-medium text-slate-500 truncate">
+                    {effectiveTeamName || (managerDepartments.length > 0 ? managerDepartments.join(', ') : 'Team Scope')}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500">
-                  {activeRole === 'manager'
-                    ? `${managerStats.total} ${isTeamLead ? 'Squad Members' : 'Direct Reports'} • ${effectiveTeamName || (managerDepartments.length > 0 ? managerDepartments.join(', ') : (isTeamLead ? 'Direct Squad' : 'Direct Team'))}`
-                    : `${managerStats.total} Downline Reports • Sub-Manager Teams`}
-                </p>
               </div>
             </div>
 
             {canCreateMetrics && (
-              <div className="flex items-center gap-2.5 self-end sm:self-auto shrink-0">
+              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                 <button
                   type="button"
                   onClick={handleOpenMgrCreateModal}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
+                  className="flex items-center gap-2 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
                 >
                   <PlusIcon className="w-4 h-4 stroke-[2.5]" />
-                  <span>Create & Assign Metrics</span>
+                  <span>Assign Metrics</span>
                 </button>
               </div>
             )}
           </div>
 
-          {/* PeopleHub Clean Metric Stat Cards (Matching Employee Attendance Style) */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {/* Stat 1: Direct Reports / Downline Reports */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs flex items-center gap-4">
-              <div className="w-11 h-11 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-600 shrink-0">
-                <UserGroupIcon className="w-5 h-5" />
-              </div>
-              <div className="space-y-0.5 min-w-0">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                  {activeRole === 'manager' ? 'Direct Reports' : 'Downline Reports'}
-                </span>
-                <div className="text-2xl font-bold text-slate-800 leading-tight">{managerStats.total}</div>
-                <p className="text-[11px] text-slate-400 truncate">
-                  {activeRole === 'manager'
-                    ? (managerDepartments.join(', ') || effectiveTeamName || 'Assigned Scope')
-                    : 'Sub-Manager Teams'}
-                </p>
-              </div>
-            </div>
-
-            {/* Stat 2: Self Submissions */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs flex items-center gap-4">
-              <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
-                <CheckBadgeIcon className="w-5 h-5" />
-              </div>
-              <div className="space-y-0.5 min-w-0">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Self Submissions</span>
-                <div className="text-2xl font-bold text-slate-800 leading-tight">
-                  {managerStats.submitted} <span className="text-xs font-normal text-slate-400">/ {managerStats.total}</span>
+          {/* Executive Stat Cards & Team Performance Race Leaderboard */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
+            {/* Left: 4 Stat Cards in 2x2 Grid (8 Columns) */}
+            <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              {/* Stat 1: Direct Reports */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between">
+                <div className="flex flex-col justify-between min-w-0">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    {activeRole === 'manager' ? 'Direct Reports' : 'Downline Reports'}
+                  </span>
+                  <div className="flex items-baseline gap-1.5 mt-1.5">
+                    <span className="text-2xl font-extrabold text-slate-800 leading-tight">
+                      {managerStats.total}
+                    </span>
+                    <span className="text-xs text-slate-400 font-semibold">reports</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-medium mt-1 truncate">
+                    {activeRole === 'manager'
+                      ? (managerDepartments.join(', ') || effectiveTeamName || 'Assigned Scope')
+                      : 'Sub-Manager Teams'}
+                  </div>
                 </div>
-                <p className="text-[11px] text-emerald-600 font-semibold">
-                  {managerStats.submissionRate}% Submitted
-                </p>
-              </div>
-            </div>
-
-            {/* Stat 3: Pending Reviews */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs flex items-center gap-4">
-              <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-500 shrink-0">
-                <ClockIcon className="w-5 h-5" />
-              </div>
-              <div className="space-y-0.5 min-w-0">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Pending Review</span>
-                <div className="text-2xl font-bold text-slate-800 leading-tight">{managerStats.pending}</div>
-                <p className="text-[11px] text-slate-400">
-                  {managerStats.pending === 0 ? 'All reviews completed' : 'Awaiting calibration'}
-                </p>
-              </div>
-            </div>
-
-            {/* Stat 4: Team Avg Score */}
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs flex items-center gap-4">
-              <div className="w-11 h-11 rounded-2xl bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 shrink-0">
-                <ChartBarIcon className="w-5 h-5" />
-              </div>
-              <div className="space-y-0.5 min-w-0">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Team Avg Score</span>
-                <div className="text-2xl font-bold text-slate-800 leading-tight">
-                  {managerStats.avgScore.toFixed(1)}%
+                <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-600 shrink-0 ml-3">
+                  <UserGroupIcon className="w-5 h-5" />
                 </div>
-                <p className="text-[11px] text-slate-400 truncate">
-                  {getRatingForScore(managerStats.avgScore).name}
-                </p>
+              </div>
+
+              {/* Stat 2: Self Submissions */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between">
+                <div className="flex flex-col justify-between min-w-0">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Self Submissions
+                  </span>
+                  <div className="flex items-baseline gap-1.5 mt-1.5">
+                    <span className="text-2xl font-extrabold text-slate-800 leading-tight">
+                      {managerStats.submitted}
+                    </span>
+                    <span className="text-xs text-slate-400 font-semibold">/ {managerStats.total}</span>
+                  </div>
+                  <div className="text-[11px] text-emerald-600 font-semibold mt-1">
+                    {managerStats.submissionRate}% Submitted
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 ml-3">
+                  <CheckBadgeIcon className="w-5 h-5" />
+                </div>
+              </div>
+
+              {/* Stat 3: Pending Review */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between">
+                <div className="flex flex-col justify-between min-w-0">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Pending Review
+                  </span>
+                  <div className="flex items-baseline gap-1.5 mt-1.5">
+                    <span className="text-2xl font-extrabold text-slate-800 leading-tight">
+                      {managerStats.pending}
+                    </span>
+                    <span className="text-xs text-slate-400 font-semibold">pending</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-medium mt-1">
+                    {managerStats.pending === 0 ? 'All reviews completed' : 'Awaiting calibration'}
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shrink-0 ml-3">
+                  <ClockIcon className="w-5 h-5" />
+                </div>
+              </div>
+
+              {/* Stat 4: Team Avg Score */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between">
+                <div className="flex flex-col justify-between min-w-0">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Team Avg Score
+                  </span>
+                  <div className="flex items-baseline gap-1 mt-1.5">
+                    <span className="text-2xl font-extrabold text-slate-800 leading-tight">
+                      {managerStats.avgScore.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-medium mt-1 truncate">
+                    {getRatingForScore(managerStats.avgScore).name}
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 shrink-0 ml-3">
+                  <ChartBarIcon className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Top 3 Teams Leaderboard Card (4 Columns) */}
+            <div className="lg:col-span-4 bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0">
+                      <FireIcon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 tracking-tight">Team Performance Race</h4>
+                      <span className="text-[10px] text-slate-400 font-medium block">Top 3 Performing Teams</span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200/60 uppercase">
+                    RACING
+                  </span>
+                </div>
+
+                {topThreeTeams.length > 0 ? (
+                  <div className="space-y-2.5">
+                    {topThreeTeams.map((team, idx) => {
+                      const scoreVal = team.teamAvgScore ?? team.teamAvgMgrScore ?? team.completionPercentage ?? 0;
+                      const rankBadges = [
+                        { icon: '🥇', label: '#1', bg: 'bg-amber-50 text-amber-800 border-amber-300', bar: 'bg-amber-500' },
+                        { icon: '🥈', label: '#2', bg: 'bg-slate-100 text-slate-700 border-slate-300', bar: 'bg-slate-500' },
+                        { icon: '🥉', label: '#3', bg: 'bg-amber-100/60 text-amber-900 border-amber-300/80', bar: 'bg-teal-500' },
+                      ];
+                      const badge = rankBadges[idx] || rankBadges[2];
+
+                      return (
+                        <div key={team.department} className="p-2 rounded-xl bg-slate-50/70 border border-slate-200/70 space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${badge.bg}`}>
+                                {badge.icon} {badge.label}
+                              </span>
+                              <span className="text-xs font-bold text-slate-800 truncate" title={team.department}>
+                                {team.department}
+                              </span>
+                            </div>
+                            <span className="text-xs font-mono font-bold text-slate-900 shrink-0">
+                              {scoreVal.toFixed(1)}%
+                            </span>
+                          </div>
+                          {/* Mini Progress Bar */}
+                          <div className="w-full h-1.5 bg-slate-200/80 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${badge.bar}`}
+                              style={{ width: `${Math.min(100, Math.max(8, scoreVal))}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="py-5 text-center space-y-1">
+                    <div className="text-xl">🏆</div>
+                    <p className="text-xs font-bold text-slate-700">No Team Rankings Yet</p>
+                    <p className="text-[10px] text-slate-400">Rankings update as teams are evaluated</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-slate-100 text-[10px] text-slate-400 font-medium flex items-center justify-between">
+                <span>Scope: {teamWiseCardsData.length} Teams</span>
+                <span className="font-semibold text-teal-700">Live Rankings</span>
               </div>
             </div>
           </div>
@@ -4704,16 +5418,11 @@ export const EvaluationTab: React.FC = () => {
           {/* Section 2: Manager Reviews Queue & Calibration Desk (or Downline Team Overview) */}
           <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 shadow-2xs space-y-5">
             {/* Desk Header & Interactive Queue Toolbar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  {activeRole === 'manager' ? 'Team Assessment Desk' : 'Downline Teams Performance Desk'}
+                <h3 className="text-sm font-bold text-slate-900 tracking-tight">
+                  {activeRole === 'manager' ? 'Assessment Desk' : 'Downline Teams'}
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {activeRole === 'manager'
-                    ? 'Review and calibrate self-assessments submitted by your direct reporting team'
-                    : 'Click on any sub-manager team card below to view its specific member reports and scorecards in a popup modal.'}
-                </p>
               </div>
 
               {activeRole === 'manager' && (
@@ -4725,11 +5434,14 @@ export const EvaluationTab: React.FC = () => {
                       onChange={e => setManagerFilterDept(e.target.value)}
                       className="h-8 pl-3 pr-7 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none cursor-pointer transition shadow-2xs appearance-none"
                     >
+                      <option value="">
+                        Select Team / Department
+                      </option>
                       <option value="all">
-                        All Departments ({deduplicatedManagerResponses.length} Reports)
+                        All Departments ({allDeduplicatedManagerResponses.length} Reports)
                       </option>
                       {managerDepartments.map(dept => {
-                        const deptCount = deduplicatedManagerResponses.filter(r => getEmployeeDisplayInfo(r).teamName.toLowerCase() === dept.toLowerCase()).length;
+                        const deptCount = allDeduplicatedManagerResponses.filter(r => getEmployeeDisplayInfo(r).teamName.toLowerCase() === dept.toLowerCase()).length;
                         if (deptCount === 0) return null;
                         return (
                           <option key={dept} value={dept}>
@@ -4774,7 +5486,7 @@ export const EvaluationTab: React.FC = () => {
               )}
             </div>
 
-            {deduplicatedManagerResponses.length === 0 ? (
+            {activeScopedResponsesForCards.length === 0 ? (
               <div className="py-14 px-4 text-center space-y-4 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
                 <div className="w-12 h-12 mx-auto rounded-2xl bg-teal-50 border border-teal-200/80 flex items-center justify-center text-teal-600 shadow-2xs">
                   <UserGroupIcon className="w-6 h-6" />
@@ -4815,13 +5527,13 @@ export const EvaluationTab: React.FC = () => {
                         • {activeRole === 'downline_teams' ? 'Click a team card to open member reports in a popup' : 'Click a card to filter direct reports below'}
                       </span>
                     </div>
-                    {activeRole === 'manager' && managerFilterDept !== 'all' && teamWiseCardsData.length > 1 && (
+                    {activeRole === 'manager' && Boolean(managerFilterDept) && (
                       <button
                         type="button"
-                        onClick={() => setManagerFilterDept('all')}
+                        onClick={() => setManagerFilterDept('')}
                         className="text-xs font-semibold text-teal-600 hover:text-teal-700 hover:underline cursor-pointer flex items-center gap-1"
                       >
-                        <span>View All Teams</span>
+                        <span>Clear Selection</span>
                         <XMarkIcon className="w-3.5 h-3.5" />
                       </button>
                     )}
@@ -4831,7 +5543,7 @@ export const EvaluationTab: React.FC = () => {
                     {/* All Teams Card - Shown ONLY when managing 2 or more distinct departments in Direct Manager view */}
                     {activeRole === 'manager' && teamWiseCardsData.length > 1 && (
                       <div
-                        onClick={() => setManagerFilterDept('all')}
+                        onClick={() => setManagerFilterDept(managerFilterDept === 'all' ? '' : 'all')}
                         className={`relative p-3.5 rounded-xl border transition-all duration-200 cursor-pointer ${
                           managerFilterDept === 'all'
                             ? 'bg-gradient-to-br from-teal-50/70 to-emerald-50/40 border-teal-400 ring-2 ring-teal-400/20 shadow-xs'
@@ -4909,7 +5621,10 @@ export const EvaluationTab: React.FC = () => {
 
                   {/* Department / Team Cards */}
                   {teamWiseCardsData.map(team => {
-                      const isSelected = managerFilterDept.toLowerCase() === team.department.toLowerCase() || (managerFilterDept === 'all' && teamWiseCardsData.length === 1);
+                      const isSelected = Boolean(managerFilterDept) && (
+                        managerFilterDept.toLowerCase() === team.department.toLowerCase() || 
+                        managerFilterDept === 'all'
+                      );
                       return (
                         <div
                           key={team.department}
@@ -4919,8 +5634,8 @@ export const EvaluationTab: React.FC = () => {
                               setDownlineModalSearchQuery('');
                               setDownlineModalStatusFilter('all');
                             } else {
-                              if (isSelected) {
-                                setManagerFilterDept('all');
+                              if (managerFilterDept.toLowerCase() === team.department.toLowerCase()) {
+                                setManagerFilterDept('');
                               } else {
                                 setManagerFilterDept(team.department);
                               }
@@ -5017,39 +5732,51 @@ export const EvaluationTab: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Individual Employee Evaluation Review Queue — ONLY shown in Direct Manager Reviews tab */}
+                {/* Individual Employee Evaluation Review Queue — ONLY shown in Direct Manager Reviews tab when a team card is selected */}
                 {activeRole === 'manager' && (
-                  <div className="space-y-4 pt-2 border-t border-slate-100">
-                    {/* Search & Status Filter Bar */}
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/60 p-2.5 rounded-2xl border border-slate-200/80">
-                      {/* Search Bar */}
-                      <div className="relative w-full md:w-80">
-                        <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        <input
-                          type="text"
-                          value={mgrSearchQuery}
-                          onChange={e => setMgrSearchQuery(e.target.value)}
-                          placeholder="Search direct report, code, role..."
-                          className="w-full h-8.5 pl-10 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition shadow-2xs"
-                        />
-                        {mgrSearchQuery && (
+                  Boolean(managerFilterDept) ? (
+                    <div className="space-y-4 pt-2 border-t border-slate-100 animate-in fade-in duration-200">
+                      {/* Search & Status Filter Bar */}
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/60 p-2.5 rounded-2xl border border-slate-200/80">
+                        {/* Search Bar & Selected Team Close Button */}
+                        <div className="flex items-center gap-2 w-full md:w-auto">
+                          <div className="relative w-full md:w-80">
+                            <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={mgrSearchQuery}
+                              onChange={e => setMgrSearchQuery(e.target.value)}
+                              placeholder={`Search ${managerFilterDept === 'all' ? 'all' : managerFilterDept} reports, code, role...`}
+                              className="w-full h-8.5 pl-10 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition shadow-2xs"
+                            />
+                            {mgrSearchQuery && (
+                              <button
+                                type="button"
+                                onClick={() => setMgrSearchQuery('')}
+                                className="p-1 rounded-full text-slate-400 hover:text-slate-600 absolute right-2 top-1/2 -translate-y-1/2"
+                              >
+                                <XMarkIcon className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                           <button
                             type="button"
-                            onClick={() => setMgrSearchQuery('')}
-                            className="p-1 rounded-full text-slate-400 hover:text-slate-600 absolute right-2 top-1/2 -translate-y-1/2"
+                            onClick={() => setManagerFilterDept('')}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-rose-600 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 transition shrink-0 cursor-pointer shadow-2xs"
+                            title="Clear team selection and hide details"
                           >
                             <XMarkIcon className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Close</span>
                           </button>
-                        )}
-                      </div>
+                        </div>
 
                       {/* Status Segment Filter Chips */}
                       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
                         {[
-                          { id: 'all', label: 'All', count: deduplicatedManagerResponses.length },
-                          { id: 'pending', label: 'Pending Review', count: managerStats.pending },
-                          { id: 'submitted', label: 'Submitted', count: managerStats.submitted },
-                          { id: 'approved', label: 'Calibrated', count: managerStats.approved },
+                          { id: 'all', label: 'All', count: queueStats.total },
+                          { id: 'pending', label: 'Pending Review', count: queueStats.pending },
+                          { id: 'submitted', label: 'Submitted', count: queueStats.submitted },
+                          { id: 'approved', label: 'Calibrated', count: queueStats.approved },
                         ].map(tab => (
                           <button
                             key={tab.id}
@@ -5092,7 +5819,7 @@ export const EvaluationTab: React.FC = () => {
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {filteredManagerResponses.map(r => {
                           const { employeeCode, employeeName, teamName, empInDb } = getEmployeeDisplayInfo(r);
-                          const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
+                          const isCalibrated = r.managerScore != null && (r.status as string) !== 'manager_review' && (r.status as string) !== 'Submitted to Manager';
                           const initials = (employeeName || 'EM').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
                           return (
@@ -5100,14 +5827,14 @@ export const EvaluationTab: React.FC = () => {
                               key={r.id} 
                               className="group relative bg-white hover:bg-slate-50/50 rounded-2xl p-5 border border-slate-200/90 hover:border-primary-300 shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between"
                             >
-                              <div className="space-y-3.5">
-                                {/* Card Top: Candidate Avatar & Info */}
+                              <div className="space-y-3">
+                                {/* Card Header */}
                                 <div className="flex items-start justify-between gap-3">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200/80 text-teal-700 font-bold text-xs flex items-center justify-center shrink-0">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-10 h-10 rounded-xl bg-linear-to-br from-primary-600 to-indigo-700 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
                                       {initials}
                                     </div>
-                                    <div className="space-y-0.5">
+                                    <div className="min-w-0">
                                       <h4 className="text-sm font-bold text-slate-900 group-hover:text-primary-800 transition">
                                         {employeeName || r.employeeName}
                                       </h4>
@@ -5125,9 +5852,17 @@ export const EvaluationTab: React.FC = () => {
                                   {renderStatusBadge(r.status)}
                                 </div>
 
-                                {/* Designation */}
+                                {/* Designation & Metric Form */}
                                 <div className="text-xs text-slate-500 italic flex items-center gap-1.5 flex-wrap">
                                   <span>{r.designation || 'Team Member'}</span>
+                                  {(r.periodName || (r as any).form) && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200/60 text-[10px] not-italic">
+                                        {r.periodName || (r as any).form}
+                                      </span>
+                                    </>
+                                  )}
                                 </div>
 
                                 {/* Score Comparison Gauge */}
@@ -5187,7 +5922,7 @@ export const EvaluationTab: React.FC = () => {
                           <tbody className="divide-y divide-slate-100">
                             {filteredManagerResponses.map(r => {
                               const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(r);
-                              const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
+                              const isCalibrated = r.managerScore != null && (r.status as string) !== 'manager_review' && (r.status as string) !== 'Submitted to Manager';
 
                               return (
                                 <tr key={r.id} className="hover:bg-slate-50/70 transition">
@@ -5198,6 +5933,14 @@ export const EvaluationTab: React.FC = () => {
                                     </div>
                                     <div className="text-[11px] font-normal text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
                                       <span>{r.designation || 'Team Member'}</span>
+                                      {(r.periodName || (r as any).form) && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200/60 text-[10px]">
+                                            {r.periodName || (r as any).form}
+                                          </span>
+                                        </>
+                                      )}
                                     </div>
                                   </td>
                                   <td className="px-4 py-3.5">
@@ -5247,7 +5990,8 @@ export const EvaluationTab: React.FC = () => {
                       </div>
                     )}
                   </div>
-                )}
+                ) : null
+              )}
               </>
             )}
           </div>
@@ -5488,17 +6232,23 @@ export const EvaluationTab: React.FC = () => {
         const cycleForResp = cycles.find(c => c.id === selectedMgrResponse!.cycleId);
         const cyclePeriod = cycleForResp?.periodName || (selectedMgrResponse as any)?.periodName || 'Active Cycle';
 
-        const isAlreadyCalibrated = Boolean(
+        const isPendingManagerReview = Boolean(
+          selectedMgrResponse!.status === 'manager_review' ||
+          (selectedMgrResponse!.status as string) === 'Submitted to Manager' ||
+          String(selectedMgrResponse!.status || '').toLowerCase().includes('submitted') ||
+          String(selectedMgrResponse!.status || '').toLowerCase().includes('manager_review') ||
+          selectedMgrResponse!.managerScore == null
+        );
+
+        const isAlreadyCalibrated = !isPendingManagerReview && Boolean(
           selectedMgrResponse!.status === 'approved' ||
           selectedMgrResponse!.status === 'sm_final_approval' ||
           (selectedMgrResponse!.status as string) === 'completed' ||
           String(selectedMgrResponse!.status).toLowerCase().includes('approved') ||
-          String(selectedMgrResponse!.status).toLowerCase().includes('calibrated') ||
-          selectedMgrResponse!.managerReviewedAt ||
-          (selectedMgrResponse!.managerScore != null && Number(selectedMgrResponse!.managerScore) > 0 && selectedMgrResponse!.status !== 'employee_in_progress')
-        );
+          String(selectedMgrResponse!.status).toLowerCase().includes('calibrated')
+        ) && selectedMgrResponse!.managerScore != null;
 
-        const isReadOnly = activeRole === 'downline_teams' || isAlreadyCalibrated;
+        const isReadOnly = activeRole === 'downline_teams' || selectedMgrResponse!.status === 'sm_final_approval';
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/65 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
@@ -5522,7 +6272,7 @@ export const EvaluationTab: React.FC = () => {
                       <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg bg-teal-50 text-teal-800 border border-teal-200/70 shadow-2xs">
                         {teamName}
                       </span>
-                      {renderStatusBadge(selectedMgrResponse!.status || (isAlreadyCalibrated ? 'approved' : 'manager_review'))}
+                      {renderStatusBadge(isPendingManagerReview ? 'manager_review' : (selectedMgrResponse!.status || (isAlreadyCalibrated ? 'approved' : 'manager_review')))}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-500">
                       <span>Designation: <strong className="text-slate-700 font-semibold">{selectedMgrResponse!.designation || 'Team Member'}</strong></span>
@@ -5543,7 +6293,9 @@ export const EvaluationTab: React.FC = () => {
 
                     {/* Manager Calibrated Score Card */}
                     <div className="bg-teal-50 px-4 py-2 rounded-2xl border border-teal-200 text-center min-w-[100px] shadow-2xs ring-2 ring-teal-500/10">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-teal-700 block">Manager Score</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-teal-700 block">
+                        {isPendingManagerReview ? 'Calibrated Score' : 'Manager Score'}
+                      </span>
                       <span className="text-sm font-black text-teal-900">{mgrScore.toFixed(1)}%</span>
                     </div>
 
@@ -5747,27 +6499,17 @@ export const EvaluationTab: React.FC = () => {
                                   </td>
 
                                   {/* Manager Remarks Column */}
-                                  <td className="px-4 py-3">
+                                  <td className="px-4 py-3 min-w-[220px]">
                                     {isReadOnly ? (
-                                      <div className="text-xs text-slate-700 font-medium">
-                                        {currentMgrRemark ? (
-                                          <div className="p-2 bg-slate-50 rounded-xl border border-slate-200/80 text-slate-800 text-[11px] leading-relaxed italic">
-                                            "{currentMgrRemark}"
-                                          </div>
-                                        ) : (
-                                          <span className="text-slate-400 italic text-[11px]">—</span>
-                                        )}
-                                      </div>
+                                      <ExpandableRemarkView text={currentMgrRemark} fallback="—" />
                                     ) : (
-                                      <input
-                                        type="text"
+                                      <ExpandableRemarkInput
                                         value={currentMgrRemark}
-                                        onChange={e => handleMgrRowRemarkChange(kpi.id, e.target.value)}
+                                        onChange={val => handleMgrRowRemarkChange(kpi.id, val)}
                                         placeholder={isGoalModified ? 'Required: reason for goal change...' : 'Add manager remarks...'}
-                                        className={`w-full h-7.5 px-3 text-xs rounded-xl focus:outline-none transition ${isGoalModified && !currentMgrRemark.trim()
-                                            ? 'bg-amber-50/90 border-2 border-amber-400 focus:border-amber-600 text-slate-900 placeholder:text-amber-700 font-medium ring-2 ring-amber-400/20'
-                                            : 'bg-slate-50/80 focus:bg-white border border-slate-200 focus:border-teal-500 text-slate-800 shadow-2xs focus:ring-2 focus:ring-teal-500/20'
-                                          }`}
+                                        className={isGoalModified && !currentMgrRemark.trim()
+                                          ? 'bg-amber-50/90 border-2 border-amber-400 focus:border-amber-600 text-slate-900 placeholder:text-amber-700 font-medium ring-2 ring-amber-400/20'
+                                          : 'bg-slate-50/80 focus:bg-white border border-slate-200 focus:border-teal-500 text-slate-800 shadow-2xs focus:ring-2 focus:ring-teal-500/20'}
                                       />
                                     )}
                                   </td>
@@ -5844,7 +6586,7 @@ export const EvaluationTab: React.FC = () => {
                         className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow-md transition cursor-pointer"
                       >
                         <CheckCircleIcon className="w-4 h-4 stroke-[2.5]" />
-                        <span>Submit Calibration & Approve</span>
+                        <span>{isAlreadyCalibrated ? 'Update & Recalibrate' : 'Submit Calibration & Approve'}</span>
                       </button>
                     </>
                   )}
@@ -5861,23 +6603,23 @@ export const EvaluationTab: React.FC = () => {
       {isMgrCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/50 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-6xl xl:max-w-7xl my-auto overflow-hidden flex flex-col max-h-[92vh]">
-            {/* Modal Header: Clean PeopleHub Header */}
-            <div className="flex items-center justify-between p-5 bg-white border-b border-slate-200/80 shrink-0">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200/80 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200/80 flex items-center justify-center text-teal-600 shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
                   <PlusIcon className="w-5 h-5 stroke-[2.5]" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-slate-900">
+                    <h3 className="text-sm font-bold text-slate-900 tracking-tight">
                       Assign Performance Metrics
                     </h3>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/60">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200/80">
                       Reporting Manager
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500">
-                    Configure period, direct reports, and deliverable targets
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Configure period, direct reports & deliverable targets
                   </p>
                 </div>
               </div>
@@ -5906,7 +6648,7 @@ export const EvaluationTab: React.FC = () => {
                       Team & Evaluation Period
                     </h4>
                   </div>
-                  <span className="text-[11px] font-bold text-teal-800 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200/70">
+                  <span className="text-[11px] font-bold text-teal-700 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200/80">
                     {mgrAssignEmpIds.length} Selected
                   </span>
                 </div>
@@ -5917,16 +6659,16 @@ export const EvaluationTab: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* 1. Target Department / Team */}
                     <div>
-                      <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
                         Department / Team <span className="text-rose-500">*</span>
                       </label>
                       <select
                         value={mgrAssignTeamId}
                         onChange={e => handleMgrTeamChange(e.target.value)}
-                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 focus:outline-none focus:border-teal-500 shadow-2xs cursor-pointer"
+                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs cursor-pointer"
                       >
                         <option value="all_teams">
-                          All Subordinates ({managerDepartments.length > 0 ? managerDepartments.join(', ') : 'All Teams'})
+                          All Subordinates
                         </option>
                         {managerDepartments.map(dept => (
                           <option key={dept} value={dept}>
@@ -5938,7 +6680,7 @@ export const EvaluationTab: React.FC = () => {
 
                     {/* 2. Frequency / Period Type Selector */}
                     <div>
-                      <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
                         Frequency <span className="text-rose-500">*</span>
                       </label>
                       <select
@@ -5948,7 +6690,7 @@ export const EvaluationTab: React.FC = () => {
                           setMgrPeriodType(newType);
                           syncPeriodAndFormName(newType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, mgrAssignTeamId);
                         }}
-                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 focus:outline-none focus:border-teal-500 shadow-2xs cursor-pointer"
+                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs cursor-pointer"
                       >
                         <option value="quarterly">Quarterly (Stage 1 - 4)</option>
                         <option value="monthly">Monthly</option>
@@ -5961,7 +6703,7 @@ export const EvaluationTab: React.FC = () => {
                     {mgrPeriodType === 'quarterly' && (
                       <>
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                          <label className="block text-[11px] font-medium text-slate-600 mb-1">
                             Period / Stage <span className="text-rose-500">*</span>
                           </label>
                           <select
@@ -5971,7 +6713,7 @@ export const EvaluationTab: React.FC = () => {
                               setMgrPeriodQuarter(newQ);
                               syncPeriodAndFormName(mgrPeriodType, newQ, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, mgrAssignTeamId);
                             }}
-                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 focus:outline-none focus:border-teal-500 shadow-2xs cursor-pointer"
+                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs cursor-pointer"
                           >
                             {QUARTERS_INFO.map(q => (
                               <option key={q.q} value={q.q}>
@@ -5982,7 +6724,7 @@ export const EvaluationTab: React.FC = () => {
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-500 mb-1">Year</label>
+                          <label className="block text-[11px] font-medium text-slate-600 mb-1">Year</label>
                           <input
                             type="number"
                             value={mgrPeriodYear}
@@ -5991,7 +6733,7 @@ export const EvaluationTab: React.FC = () => {
                               setMgrPeriodYear(newYr);
                               syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, newYr, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, mgrAssignTeamId);
                             }}
-                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 focus:outline-none focus:border-teal-500 shadow-2xs"
+                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
                           />
                         </div>
                       </>
@@ -6000,7 +6742,7 @@ export const EvaluationTab: React.FC = () => {
                     {mgrPeriodType === 'monthly' && (
                       <>
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                          <label className="block text-[11px] font-medium text-slate-600 mb-1">
                             Month <span className="text-rose-500">*</span>
                           </label>
                           <select
@@ -6010,7 +6752,7 @@ export const EvaluationTab: React.FC = () => {
                               setMgrPeriodMonth(newM);
                               syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, newM, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, mgrAssignTeamId);
                             }}
-                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 focus:outline-none focus:border-teal-500 shadow-2xs cursor-pointer"
+                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs cursor-pointer"
                           >
                             {MONTH_NAMES.map((name, idx) => (
                               <option key={name} value={idx + 1}>
@@ -6021,7 +6763,7 @@ export const EvaluationTab: React.FC = () => {
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-500 mb-1">Year</label>
+                          <label className="block text-[11px] font-medium text-slate-600 mb-1">Year</label>
                           <input
                             type="number"
                             value={mgrPeriodYear}
@@ -6030,7 +6772,7 @@ export const EvaluationTab: React.FC = () => {
                               setMgrPeriodYear(newYr);
                               syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, newYr, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, mgrAssignTeamId);
                             }}
-                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 focus:outline-none focus:border-teal-500 shadow-2xs"
+                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
                           />
                         </div>
                       </>
@@ -6039,7 +6781,7 @@ export const EvaluationTab: React.FC = () => {
                     {mgrPeriodType === 'weekly' && (
                       <>
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                          <label className="block text-[11px] font-medium text-slate-600 mb-1">
                             From Date <span className="text-rose-500">*</span>
                           </label>
                           <input
@@ -6050,12 +6792,12 @@ export const EvaluationTab: React.FC = () => {
                               setMgrPeriodFromDate(newFrom);
                               syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, newFrom, mgrPeriodToDate, mgrPeriodDueDate, mgrAssignTeamId);
                             }}
-                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 focus:outline-none focus:border-teal-500 shadow-2xs"
+                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                          <label className="block text-[11px] font-medium text-slate-600 mb-1">
                             To Date <span className="text-rose-500">*</span>
                           </label>
                           <input
@@ -6066,7 +6808,7 @@ export const EvaluationTab: React.FC = () => {
                               setMgrPeriodToDate(newTo);
                               syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, newTo, mgrPeriodDueDate, mgrAssignTeamId);
                             }}
-                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 focus:outline-none focus:border-teal-500 shadow-2xs"
+                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
                           />
                         </div>
                       </>
@@ -6074,7 +6816,7 @@ export const EvaluationTab: React.FC = () => {
 
                     {mgrPeriodType === 'daily' && (
                       <div className="sm:col-span-2">
-                        <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                        <label className="block text-[11px] font-medium text-slate-600 mb-1">
                           Due Date <span className="text-rose-500">*</span>
                         </label>
                         <input
@@ -6085,7 +6827,7 @@ export const EvaluationTab: React.FC = () => {
                             setMgrPeriodDueDate(newDue);
                             syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, newDue, mgrAssignTeamId);
                           }}
-                          className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 focus:outline-none focus:border-teal-500 shadow-2xs"
+                          className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
                         />
                       </div>
                     )}
@@ -6094,7 +6836,7 @@ export const EvaluationTab: React.FC = () => {
                   {/* Row 2: Form Title & Period Tag */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2.5 border-t border-slate-200/60">
                     <div>
-                      <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
                         Form Title <span className="text-rose-500">*</span>
                       </label>
                       <input
@@ -6102,12 +6844,12 @@ export const EvaluationTab: React.FC = () => {
                         value={mgrAssignFormName}
                         onChange={e => setMgrAssignFormName(e.target.value)}
                         placeholder="e.g. Q3 2026 KPI Assessment"
-                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 focus:outline-none focus:border-teal-500 shadow-2xs"
+                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
                         Period Tag / Label
                       </label>
                       <input
@@ -6115,7 +6857,7 @@ export const EvaluationTab: React.FC = () => {
                         value={mgrAssignPeriod}
                         onChange={e => setMgrAssignPeriod(e.target.value)}
                         placeholder="e.g. Q3 2026 (Jul - Sep) - Stage 3"
-                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 focus:outline-none focus:border-teal-500 shadow-2xs"
+                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
                       />
                     </div>
                   </div>
@@ -6140,10 +6882,10 @@ export const EvaluationTab: React.FC = () => {
                       <div className="pt-3 border-t border-slate-200/70 space-y-2.5">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-800">
-                              Assign Team & Squad Members
+                            <span className="text-xs font-bold text-slate-900">
+                              Assign Members
                             </span>
-                            <span className="text-[10px] font-medium text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
+                            <span className="text-[10px] font-semibold text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
                               {mgrAssignEmpIds.length} of {baseTeamMembers.length} selected
                             </span>
                           </div>
@@ -6156,7 +6898,7 @@ export const EvaluationTab: React.FC = () => {
                                   value={mgrModalEmpSearch}
                                   onChange={e => setMgrModalEmpSearch(e.target.value)}
                                   placeholder="Search member..."
-                                  className="w-36 sm:w-44 h-7 pl-2.5 pr-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-teal-500"
+                                  className="w-36 sm:w-44 h-7 pl-2.5 pr-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                                 />
                               </div>
                             )}
@@ -6164,21 +6906,27 @@ export const EvaluationTab: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleMgrToggleSelectAll(baseTeamMembers)}
-                              className="text-[11px] font-semibold text-teal-700 hover:text-teal-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
+                              className="text-[11px] font-semibold text-teal-700 hover:text-teal-800 bg-white px-2.5 py-1 rounded-lg border border-teal-200 shadow-2xs hover:bg-teal-50/50 transition cursor-pointer"
                             >
-                              {baseTeamMembers.length > 0 && baseTeamMembers.every((e: any) => mgrAssignEmpIds.includes(String(e.employee_id || e.id))) ? 'Deselect All' : 'Select All'}
+                              {(() => {
+                                const availableMembers = baseTeamMembers.filter((e: any) => !isEmpAlreadyAssignedForPeriod(String(e.employee_id || e.id)));
+                                const availableIds = availableMembers.map((e: any) => String(e.employee_id || e.id));
+                                const allSelected = availableIds.length > 0 && availableIds.every((id: string) => mgrAssignEmpIds.includes(id));
+                                return allSelected ? 'Deselect All' : 'Select All';
+                              })()}
                             </button>
                           </div>
                         </div>
 
                         {filteredMembers.length === 0 ? (
                           <p className="text-xs text-slate-400 italic py-2 text-center">
-                            {baseTeamMembers.length === 0 ? 'No team members found under this department.' : 'No members match the search query.'}
+                            {baseTeamMembers.length === 0 ? 'No team members found under this department.' : 'No members match search query.'}
                           </p>
                         ) : (
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
                             {filteredMembers.map((emp: any) => {
                               const empId = String(emp.employee_id || emp.id);
+                              const isAlreadyAssigned = isEmpAlreadyAssignedForPeriod(empId);
                               const isSelected = mgrAssignEmpIds.includes(empId);
                               const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || 'Employee';
                               const initials = (fullName.split(' ').filter(Boolean).map((n: string) => n[0]).join('') || 'E').slice(0, 2).toUpperCase();
@@ -6187,26 +6935,40 @@ export const EvaluationTab: React.FC = () => {
                                 <button
                                   type="button"
                                   key={empId}
-                                  onClick={() => handleMgrToggleEmp(empId)}
-                                  className={`flex items-center gap-2.5 p-2 rounded-xl border text-left transition cursor-pointer select-none ${
-                                    isSelected
-                                      ? 'bg-teal-50/50 border-teal-400 ring-1 ring-teal-400/30 shadow-2xs'
-                                      : 'bg-white border-slate-200/80 hover:bg-slate-50/80 hover:border-slate-300'
+                                  disabled={isAlreadyAssigned}
+                                  onClick={() => !isAlreadyAssigned && handleMgrToggleEmp(empId)}
+                                  className={`flex items-center gap-2.5 p-2 rounded-xl border text-left transition select-none ${
+                                    isAlreadyAssigned
+                                      ? 'bg-slate-100/90 border-slate-200/80 opacity-70 cursor-not-allowed'
+                                      : isSelected
+                                        ? 'bg-teal-50/70 border-teal-600 ring-1 ring-teal-600/30 shadow-2xs cursor-pointer'
+                                        : 'bg-white border-slate-200/80 hover:bg-slate-50 hover:border-slate-300 cursor-pointer'
                                   }`}
+                                  title={isAlreadyAssigned ? `Already has performance metrics assigned for ${mgrAssignPeriod || 'this period'}` : `Click to toggle assignment for ${fullName}`}
                                 >
                                   <div className={`w-7 h-7 rounded-lg font-bold text-[10px] flex items-center justify-center shrink-0 ${
-                                    isSelected
-                                      ? 'bg-teal-600 text-white shadow-2xs'
-                                      : 'bg-slate-100 text-slate-500 border border-slate-200/60'
+                                    isAlreadyAssigned
+                                      ? 'bg-amber-100 text-amber-800 border border-amber-300 font-extrabold'
+                                      : isSelected
+                                        ? 'bg-teal-700 text-white shadow-2xs'
+                                        : 'bg-slate-100 text-slate-600 border border-slate-200/60'
                                   }`}>
-                                    {initials}
+                                    {isAlreadyAssigned ? '✓' : initials}
                                   </div>
                                   <div className="min-w-0 flex-1">
-                                    <p className={`text-xs truncate leading-tight ${isSelected ? 'font-bold text-teal-950' : 'font-medium text-slate-800'}`}>
+                                    <p className={`text-xs truncate leading-tight ${
+                                      isAlreadyAssigned ? 'font-semibold text-slate-500' : isSelected ? 'font-bold text-teal-950' : 'font-medium text-slate-800'
+                                    }`}>
                                       {fullName}
                                     </p>
-                                    <p className="text-[10px] text-slate-400 truncate leading-tight mt-0.5">
-                                      #{empId} • {emp.designation || emp.role || emp.department || 'Member'}
+                                    <p className="text-[10px] truncate leading-tight mt-0.5">
+                                      {isAlreadyAssigned ? (
+                                        <span className="text-amber-800 font-extrabold bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200/80 inline-block">
+                                          Assigned ({mgrPeriodQuarter ? `Stage ${mgrPeriodQuarter}` : 'Period'})
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400">#{empId} • {emp.designation || emp.role || emp.department || 'Member'}</span>
+                                      )}
                                     </p>
                                   </div>
                                 </button>
@@ -6229,7 +6991,7 @@ export const EvaluationTab: React.FC = () => {
                         Step 2
                       </span>
                       <h4 className="text-xs font-bold text-slate-900">
-                        Deliverable Metrics & Targets
+                        Deliverables & Targets
                       </h4>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
@@ -6241,7 +7003,7 @@ export const EvaluationTab: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setMgrAssignCategories(DEFAULT_KPI_CATEGORIES)}
-                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
                     >
                       Reset Template
                     </button>
@@ -6249,9 +7011,9 @@ export const EvaluationTab: React.FC = () => {
                       type="button"
                       onClick={handleMgrAddCategory}
                       disabled={mgrTotalWeightage >= 100}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${mgrTotalWeightage >= 100
-                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                          : 'bg-primary-50 text-primary-800 border border-primary-200 hover:bg-primary-100 cursor-pointer'
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs ${mgrTotalWeightage >= 100
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                          : 'bg-teal-700 hover:bg-teal-800 text-white cursor-pointer'
                         }`}
                     >
                       <PlusIcon className="w-3.5 h-3.5" />
@@ -6262,18 +7024,18 @@ export const EvaluationTab: React.FC = () => {
 
                 {/* Weightage Status Alert */}
                 <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 ${mgrTotalWeightage === 100 && areAllMgrCategoriesBalanced
-                    ? 'bg-primary-50 border border-primary-200 text-primary-900'
+                    ? 'bg-teal-50 border border-teal-200 text-teal-900'
                     : 'bg-amber-50 border border-amber-200 text-amber-900'
                   }`}>
                   <div className="flex items-center gap-2">
                     {mgrTotalWeightage === 100 && areAllMgrCategoriesBalanced ? (
-                      <CheckCircleIcon className="w-4 h-4 text-primary-600 shrink-0" />
+                      <CheckCircleIcon className="w-4 h-4 text-teal-600 shrink-0" />
                     ) : (
                       <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 shrink-0" />
                     )}
                     <span>
                       Total Category Weight: <strong>{mgrTotalWeightage}% / 100%</strong>
-                      {!areAllMgrCategoriesBalanced && ' — Please balance deliverable scores.'}
+                      {!areAllMgrCategoriesBalanced && ' — Balance deliverable scores.'}
                     </span>
                   </div>
                 </div>
@@ -6289,7 +7051,7 @@ export const EvaluationTab: React.FC = () => {
                         {/* Category Header */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/70">
                           <div className="flex items-center gap-2 flex-1">
-                            <span className="w-5 h-5 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                            <span className="w-5 h-5 rounded-full bg-teal-700 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
                               {catIdx + 1}
                             </span>
                             <input
@@ -6297,7 +7059,7 @@ export const EvaluationTab: React.FC = () => {
                               value={cat.name}
                               onChange={e => handleMgrUpdateCategoryName(cat.id, e.target.value)}
                               placeholder="Category name..."
-                              className="font-bold text-xs text-slate-900 bg-transparent border-b border-dashed border-slate-300 focus:border-primary-600 focus:outline-none px-1 py-0.5 w-full max-w-md"
+                              className="font-bold text-xs text-slate-900 bg-transparent border-b border-dashed border-slate-300 focus:border-teal-600 focus:outline-none px-1 py-0.5 w-full max-w-md"
                             />
                           </div>
 
@@ -6310,7 +7072,7 @@ export const EvaluationTab: React.FC = () => {
                                 max={100}
                                 value={cat.weightage}
                                 onChange={e => handleMgrUpdateCategoryWeight(cat.id, Number(e.target.value))}
-                                className="w-12 text-xs font-bold text-primary-800 text-center focus:outline-none"
+                                className="w-12 text-xs font-bold text-teal-800 text-center focus:outline-none"
                               />
                               <span className="text-[11px] font-bold text-slate-400">%</span>
                             </div>
@@ -6357,7 +7119,7 @@ export const EvaluationTab: React.FC = () => {
                                       value={kpi.name}
                                       onChange={e => handleMgrUpdateKPI(cat.id, kpi.id, 'name', e.target.value)}
                                       placeholder="Deliverable description..."
-                                      className="w-full h-8 px-2.5 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-primary-500 rounded-lg text-xs font-medium text-slate-800 focus:outline-none transition"
+                                      className="w-full h-8 px-2.5 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-teal-600 rounded-lg text-xs font-medium text-slate-800 focus:outline-none transition"
                                     />
                                   </td>
                                   <td className="px-3 py-2 align-middle text-center">
@@ -6366,11 +7128,11 @@ export const EvaluationTab: React.FC = () => {
                                       value={kpi.targetFromManager ?? ''}
                                       onChange={e => handleMgrUpdateKPI(cat.id, kpi.id, 'targetFromManager', e.target.value)}
                                       placeholder="e.g. 3, 11, 1950, <2"
-                                      className="w-full h-8 px-2 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-primary-500 rounded-lg text-xs font-bold text-center text-primary-900 focus:outline-none transition"
+                                      className="w-full h-8 px-2 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-teal-600 rounded-lg text-xs font-bold text-center text-teal-900 focus:outline-none transition"
                                     />
                                   </td>
                                   <td className="px-3 py-2 align-middle text-center">
-                                    <div className="flex items-center justify-center bg-slate-50/70 focus-within:bg-white border border-slate-200 focus-within:border-primary-500 rounded-lg px-2 h-8 transition">
+                                    <div className="flex items-center justify-center bg-slate-50/70 focus-within:bg-white border border-slate-200 focus-within:border-teal-600 rounded-lg px-2 h-8 transition">
                                       <input
                                         type="number"
                                         step="any"
@@ -6387,7 +7149,7 @@ export const EvaluationTab: React.FC = () => {
                                       value={kpi.unit}
                                       onChange={e => handleMgrUpdateKPI(cat.id, kpi.id, 'unit', e.target.value)}
                                       placeholder="units"
-                                      className="w-full h-8 px-2 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-primary-500 rounded-lg text-xs font-medium text-center text-slate-700 focus:outline-none transition"
+                                      className="w-full h-8 px-2 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-teal-600 rounded-lg text-xs font-medium text-center text-slate-700 focus:outline-none transition"
                                     />
                                   </td>
                                   <td className="px-2 py-2 align-middle text-center">
@@ -6410,7 +7172,7 @@ export const EvaluationTab: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleMgrAddKPI(cat.id)}
-                            className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-primary-800 bg-white hover:bg-primary-50 rounded-xl transition shadow-2xs border border-primary-200/80 cursor-pointer"
+                            className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-teal-700 bg-white hover:bg-teal-50 rounded-xl transition shadow-2xs border border-teal-200/80 cursor-pointer"
                           >
                             <PlusIcon className="w-3.5 h-3.5" />
                             <span>Add Row</span>
@@ -6435,8 +7197,8 @@ export const EvaluationTab: React.FC = () => {
                 <button
                   type="submit"
                   disabled={!isMgrWeightageValid || !areAllMgrCategoriesBalanced || mgrAssignEmpIds.length === 0 || isAssigning}
-                  className={`flex items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-2xs transition-all cursor-pointer ${isMgrWeightageValid && areAllMgrCategoriesBalanced && mgrAssignEmpIds.length > 0 && !isAssigning
-                      ? 'bg-primary-600 hover:bg-primary-700'
+                  className={`flex items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all cursor-pointer ${isMgrWeightageValid && areAllMgrCategoriesBalanced && mgrAssignEmpIds.length > 0 && !isAssigning
+                      ? 'bg-teal-700 hover:bg-teal-800 shadow-teal-900/10'
                       : 'bg-slate-300 cursor-not-allowed opacity-60'
                     }`}
                 >
@@ -6459,20 +7221,20 @@ export const EvaluationTab: React.FC = () => {
           <div className="bg-white rounded-3xl max-w-4xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col my-8">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
                   <PencilSquareIcon className="w-5 h-5 stroke-[2]" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-slate-900">
+                    <h3 className="text-sm font-bold text-slate-900 tracking-tight">
                       Edit Deliverables Matrix
                     </h3>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200/80">
                       Unlocked (0 Submissions)
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500">
-                    {mgrEditTeamName || 'Team'} • Modify category weights and targets
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {mgrEditTeamName || 'Team'} • Modify category weights & targets
                   </p>
                 </div>
               </div>
@@ -6489,23 +7251,23 @@ export const EvaluationTab: React.FC = () => {
               {/* Form & Period Metadata */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Form Title</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Form Title</label>
                   <input
                     type="text"
                     value={mgrEditFormName}
                     onChange={e => setMgrEditFormName(e.target.value)}
-                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-primary-500"
+                    className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
                     placeholder="Form title..."
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Period Tag</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Period Tag</label>
                   <input
                     type="text"
                     value={mgrEditPeriod}
                     onChange={e => setMgrEditPeriod(e.target.value)}
-                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-primary-500"
+                    className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
                     placeholder="Period..."
                     required
                   />
@@ -6516,8 +7278,8 @@ export const EvaluationTab: React.FC = () => {
               <div className="space-y-3.5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-2">
                   <div>
-                    <span className="text-xs font-bold uppercase text-slate-500 tracking-wider flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-primary-600"></span>
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-teal-600"></span>
                       Deliverables & Weights
                     </span>
                     <p className="text-[11px] text-slate-500 mt-0.5">
@@ -6529,7 +7291,7 @@ export const EvaluationTab: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setMgrEditCategories(DEFAULT_KPI_CATEGORIES)}
-                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
                     >
                       Reset Template
                     </button>
@@ -6537,14 +7299,14 @@ export const EvaluationTab: React.FC = () => {
                       type="button"
                       onClick={handleMgrAddEditCategory}
                       disabled={mgrEditTotalWeightage >= 100}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs ${
                         mgrEditTotalWeightage >= 100
-                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                          : 'bg-primary-50 text-primary-800 border border-primary-200 hover:bg-primary-100 cursor-pointer'
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                          : 'bg-teal-700 hover:bg-teal-800 text-white cursor-pointer'
                       }`}
                     >
                       <PlusIcon className="w-3.5 h-3.5" />
-                      <span>Add Metric Category</span>
+                      <span>Add Category</span>
                     </button>
                   </div>
                 </div>
@@ -6552,18 +7314,18 @@ export const EvaluationTab: React.FC = () => {
                 {/* Weightage Status Alert */}
                 <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 ${
                   mgrEditTotalWeightage === 100 && areAllMgrEditCategoriesBalanced
-                    ? 'bg-primary-50 border border-primary-200 text-primary-900'
+                    ? 'bg-teal-50 border border-teal-200 text-teal-900'
                     : 'bg-amber-50 border border-amber-200 text-amber-900'
                 }`}>
                   <div className="flex items-center gap-2">
                     {mgrEditTotalWeightage === 100 && areAllMgrEditCategoriesBalanced ? (
-                      <CheckCircleIcon className="w-4 h-4 text-primary-600 shrink-0" />
+                      <CheckCircleIcon className="w-4 h-4 text-teal-600 shrink-0" />
                     ) : (
                       <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 shrink-0" />
                     )}
                     <span>
-                      Total Category Weightage: <strong>{mgrEditTotalWeightage}% / 100%</strong>
-                      {!areAllMgrEditCategoriesBalanced && ' — Deliverable target scores must equal category weight.'}
+                      Total Category Weight: <strong>{mgrEditTotalWeightage}% / 100%</strong>
+                      {!areAllMgrEditCategoriesBalanced && ' — Balance deliverable scores.'}
                     </span>
                   </div>
                 </div>
@@ -6579,15 +7341,15 @@ export const EvaluationTab: React.FC = () => {
                         {/* Category Header */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/70">
                           <div className="flex items-center gap-2 flex-1">
-                            <span className="w-5 h-5 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                            <span className="w-5 h-5 rounded-full bg-teal-700 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
                               {catIdx + 1}
                             </span>
                             <input
                               type="text"
                               value={cat.name}
                               onChange={e => handleMgrUpdateEditCategoryName(cat.id, e.target.value)}
-                              placeholder="Performance Metric Category Name..."
-                              className="font-bold text-xs text-slate-900 bg-transparent border-b border-dashed border-slate-300 focus:border-primary-600 focus:outline-none px-1 py-0.5 w-full max-w-md"
+                              placeholder="Category name..."
+                              className="font-bold text-xs text-slate-900 bg-transparent border-b border-dashed border-slate-300 focus:border-teal-600 focus:outline-none px-1 py-0.5 w-full max-w-md"
                             />
                           </div>
 
@@ -6600,7 +7362,7 @@ export const EvaluationTab: React.FC = () => {
                                 max={100}
                                 value={cat.weightage}
                                 onChange={e => handleMgrUpdateEditCategoryWeight(cat.id, Number(e.target.value))}
-                                className="w-12 text-xs font-black text-primary-800 text-center focus:outline-none"
+                                className="w-12 text-xs font-bold text-teal-800 text-center focus:outline-none"
                               />
                               <span className="text-[11px] font-bold text-slate-400">%</span>
                             </div>
@@ -6631,9 +7393,9 @@ export const EvaluationTab: React.FC = () => {
                           <table className="w-full text-left text-xs bg-white rounded-xl border border-slate-200/80 overflow-hidden">
                             <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200">
                               <tr>
-                                <th className="px-3 py-2 text-left">Deliverable Name / Specification</th>
-                                <th className="px-3 py-2 w-36 text-center">Target from Manager</th>
-                                <th className="px-3 py-2 w-28 text-center">Target Score %</th>
+                                <th className="px-3 py-2 text-left">Deliverable Name</th>
+                                <th className="px-3 py-2 w-36 text-center">Target</th>
+                                <th className="px-3 py-2 w-28 text-center">Score %</th>
                                 <th className="px-3 py-2 w-24 text-center">Unit</th>
                                 <th className="px-2 py-2 w-10 text-center"></th>
                               </tr>
@@ -6647,7 +7409,7 @@ export const EvaluationTab: React.FC = () => {
                                       value={kpi.name}
                                       onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'name', e.target.value)}
                                       placeholder="Deliverable description..."
-                                      className="w-full h-8 px-2.5 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-primary-500 rounded-lg text-xs font-medium text-slate-800 focus:outline-none transition"
+                                      className="w-full h-8 px-2.5 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-teal-600 rounded-lg text-xs font-medium text-slate-800 focus:outline-none transition"
                                     />
                                   </td>
                                   <td className="px-3 py-2 align-middle text-center">
@@ -6656,11 +7418,11 @@ export const EvaluationTab: React.FC = () => {
                                       value={kpi.targetFromManager ?? ''}
                                       onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'targetFromManager', e.target.value)}
                                       placeholder="e.g. 3, 11, 1950, <2"
-                                      className="w-full h-8 px-2 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-primary-500 rounded-lg text-xs font-bold text-center text-primary-900 focus:outline-none transition"
+                                      className="w-full h-8 px-2 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-teal-600 rounded-lg text-xs font-bold text-center text-teal-900 focus:outline-none transition"
                                     />
                                   </td>
                                   <td className="px-3 py-2 align-middle text-center">
-                                    <div className="flex items-center justify-center bg-slate-50/70 focus-within:bg-white border border-slate-200 focus-within:border-primary-500 rounded-lg px-2 h-8 transition">
+                                    <div className="flex items-center justify-center bg-slate-50/70 focus-within:bg-white border border-slate-200 focus-within:border-teal-600 rounded-lg px-2 h-8 transition">
                                       <input
                                         type="number"
                                         step="any"
@@ -6676,8 +7438,8 @@ export const EvaluationTab: React.FC = () => {
                                       type="text"
                                       value={kpi.unit}
                                       onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'unit', e.target.value)}
-                                      placeholder="projects"
-                                      className="w-full h-8 px-2 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-primary-500 rounded-lg text-xs font-medium text-center text-slate-700 focus:outline-none transition"
+                                      placeholder="units"
+                                      className="w-full h-8 px-2 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-teal-600 rounded-lg text-xs font-medium text-center text-slate-700 focus:outline-none transition"
                                     />
                                   </td>
                                   <td className="px-2 py-2 align-middle text-center">
@@ -6700,10 +7462,10 @@ export const EvaluationTab: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleMgrAddEditKPI(cat.id)}
-                            className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-primary-800 bg-white hover:bg-primary-50 rounded-xl transition shadow-2xs border border-primary-200/80 cursor-pointer"
+                            className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-teal-700 bg-white hover:bg-teal-50 rounded-xl transition shadow-2xs border border-teal-200/80 cursor-pointer"
                           >
                             <PlusIcon className="w-3.5 h-3.5" />
-                            <span>Add Deliverable Row</span>
+                            <span>Add Row</span>
                           </button>
                         </div>
                       </div>
@@ -6725,15 +7487,14 @@ export const EvaluationTab: React.FC = () => {
                 <button
                   type="submit"
                   disabled={!isMgrEditWeightageValid || !areAllMgrEditCategoriesBalanced || isSavingMatrixEdit}
-                  className={`flex items-center justify-center gap-2 px-8 py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all cursor-pointer ${
-                    isMgrEditWeightageValid && areAllMgrEditCategoriesBalanced && !isSavingMatrixEdit
-                      ? 'bg-primary-600 hover:bg-primary-700 shadow-primary-600/25 transform hover:-translate-y-0.5'
+                  className={`flex items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all cursor-pointer ${isMgrEditWeightageValid && areAllMgrEditCategoriesBalanced && !isSavingMatrixEdit
+                      ? 'bg-teal-700 hover:bg-teal-800 shadow-teal-900/10'
                       : 'bg-slate-300 cursor-not-allowed opacity-60'
-                  }`}
+                    }`}
                 >
-                  <SparklesIcon className="w-4 h-4 text-warning-300" />
+                  <CheckCircleIcon className="w-4 h-4 stroke-[2]" />
                   <span>
-                    {isSavingMatrixEdit ? 'Saving Matrix Changes...' : 'Save Matrix Changes'}
+                    {isSavingMatrixEdit ? 'Saving...' : 'Save Matrix Changes'}
                   </span>
                 </button>
               </div>

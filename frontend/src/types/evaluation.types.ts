@@ -93,6 +93,11 @@ export interface EvaluationResponse {
   employeeSubmittedAt?: string;
   managerReviewedAt?: string;
   serviceManagerApprovedAt?: string;
+  periodName?: string;
+  form?: string;
+  description?: string;
+  categories?: KPICategory[];
+  metrics_data?: any;
   createdAt: string;
   updatedAt: string;
 }

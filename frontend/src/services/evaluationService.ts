@@ -550,7 +550,9 @@ export const evaluationService = {
     const current = responses[index];
     const cycles = this.getCycles();
     const cycle = cycles.find(c => c.id === current.cycleId);
-    const categories = cycle?.categories || DEFAULT_KPI_CATEGORIES;
+    const categories: KPICategory[] = (current as any).categories && Array.isArray((current as any).categories) && (current as any).categories.length > 0
+      ? (current as any).categories
+      : (cycle?.categories || DEFAULT_KPI_CATEGORIES);
 
     const { overallScore } = calculateOverallScore(categories, managerData.kpiResponses);
     const finalScore = managerData.managerScore !== undefined ? managerData.managerScore : overallScore;
@@ -584,6 +586,7 @@ export const evaluationService = {
 
     const updated: EvaluationResponse = {
       ...current,
+      categories: updatedCategories,
       kpiResponses: managerData.kpiResponses,
       managerScore: finalScore,
       serviceManagerScore: finalScore,
@@ -600,6 +603,7 @@ export const evaluationService = {
     // Also sync to Postgres kpi_evaluations table
     try {
       const token = localStorage.getItem('token') || '';
+      const recId = String(updated.id || '').replace('resp_', '').trim();
       await fetch(`${API_URL}/api/performance/kpi-evaluations/review-manager`, {
         method: 'POST',
         headers: {
@@ -607,7 +611,9 @@ export const evaluationService = {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
+          id: recId && !isNaN(Number(recId)) ? Number(recId) : updated.id,
           employee_id: updated.employeeCode || updated.employeeId,
+          form: (updated as any).form || updated.periodName,
           manager_score: finalScore,
           manager_approve_score: String(finalScore),
           manager_remark: managerData.managerRemarks || '',
@@ -767,6 +773,7 @@ export const evaluationService = {
         employeeName: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || 'Team Member',
         employeeCode: empCode,
         designation: emp.designation || 'Team Member',
+        periodName: data.periodName,
         status: 'employee_in_progress',
         kpiResponses: initialKpiResponses,
         employeeOverallScore: 0,

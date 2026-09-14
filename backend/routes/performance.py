@@ -150,8 +150,12 @@ def sync_postgres_kpi_to_store_and_back():
                 mgr_name = (emp_obj.reporting_manager if emp_obj else None) or cycle_obj.get("managerName") or "Murali B"
                 mgr_id = str(emp_obj.reporting_manager_id if (emp_obj and emp_obj.reporting_manager_id) else (cycle_obj.get("managerId") or "2150"))
                 
-                # Check if evaluation record already exists for this employee
-                existing_eval = KpiEvaluation.query.filter(KpiEvaluation.employee_id == emp_id).first()
+                # Check if evaluation record already exists for this employee for this specific cycle/form
+                cycle_name = cycle_obj.get("name") or "Performance Evaluation"
+                existing_eval = KpiEvaluation.query.filter(
+                    KpiEvaluation.employee_id == emp_id,
+                    or_(KpiEvaluation.form == cycle_name, KpiEvaluation.performance_metrics == cycle_name)
+                ).first()
                 if existing_eval:
                     continue
 
@@ -159,7 +163,7 @@ def sync_postgres_kpi_to_store_and_back():
                     form=cycle_obj.get("name") or "Q3 2026 KPI Assessment",
                     team_id=str(r.get("teamId") or cycle_obj.get("teamId") or ""),
                     team_name=team_name,
-                    metrics_data=categories_data,
+                    metrics_data=r.get("kpiResponses") or cycle_obj.get("categories") or [],
                     performance_metrics=cycle_obj.get("name") or "Performance Evaluation",
                     description=f"KPI deliverables evaluation for {team_name}",
                     target_score="100",
@@ -312,11 +316,19 @@ def get_evaluation_data():
             t_key = rec.team_name or rec.team_id or "General"
             f_name = rec.form or "Performance Evaluation"
             group_key = f"{t_key}_{f_name}"
+            
+            # Extract period if encoded in description e.g. "Performance evaluation for Media (Daily (14 Sep 2026))"
+            extracted_period = ""
+            if rec.description and "(" in rec.description and ")" in rec.description:
+                extracted_period = rec.description.split("(", 1)[1].rsplit(")", 1)[0].strip()
+
             if group_key not in team_eval_groups:
                 team_eval_groups[group_key] = {
                     "teamName": rec.team_name or rec.team_id or "General",
                     "teamId": rec.team_id or rec.team_name or "team_general",
                     "form": f_name,
+                    "periodName": extracted_period,
+                    "description": rec.description or "",
                     "managerName": rec.reporting_manager,
                     "managerId": str(rec.reporting_manager_id or rec.manager_id or ""),
                     "serviceManagerName": rec.service_manager,
@@ -324,20 +336,25 @@ def get_evaluation_data():
                     "metrics_data": rec.metrics_data,
                     "employeeIds": []
                 }
+            elif extracted_period and not team_eval_groups[group_key].get("periodName"):
+                team_eval_groups[group_key]["periodName"] = extracted_period
+
             emp_id = str(rec.employee_id or "").strip()
             if emp_id and emp_id not in team_eval_groups[group_key]["employeeIds"]:
                 team_eval_groups[group_key]["employeeIds"].append(emp_id)
 
         for g_key, g_info in team_eval_groups.items():
-            matching_cycle = next((c for c in cycles if (c.get("teamName") == g_info["teamName"] or c.get("teamId") == g_info["teamId"]) and c.get("name") == g_info["form"]), None)
-            if not matching_cycle:
-                matching_cycle = next((c for c in cycles if c.get("teamName") == g_info["teamName"] or c.get("teamId") == g_info["teamId"]), None)
+            matching_cycle = next((c for c in cycles if (c.get("teamName") == g_info["teamName"] or c.get("teamId") == g_info["teamId"]) and (c.get("name") == g_info["form"] or c.get("form") == g_info["form"])), None)
             
             categories_from_db = g_info["metrics_data"] if isinstance(g_info["metrics_data"], list) else []
             if matching_cycle:
                 matching_cycle["employeeIds"] = list(set((matching_cycle.get("employeeIds") or []) + g_info["employeeIds"]))
-                if categories_from_db and not matching_cycle.get("categories"):
+                if categories_from_db:
                     matching_cycle["categories"] = categories_from_db
+                if g_info.get("periodName"):
+                    matching_cycle["periodName"] = g_info["periodName"]
+                if g_info.get("description"):
+                    matching_cycle["description"] = g_info["description"]
                 if g_info["managerName"]:
                     matching_cycle["managerName"] = g_info["managerName"]
                 if g_info["managerId"]:
@@ -347,15 +364,18 @@ def get_evaluation_data():
                 cycles.append({
                     "id": new_c_id,
                     "name": g_info["form"],
+                    "form": g_info["form"],
+                    "periodName": g_info.get("periodName") or "",
+                    "description": g_info.get("description") or "",
                     "teamId": g_info["teamId"],
                     "teamName": g_info["teamName"],
                     "managerId": g_info["managerId"],
                     "managerName": g_info["managerName"] or "Reporting Manager",
                     "serviceManagerId": g_info["serviceManagerId"],
                     "serviceManagerName": g_info["serviceManagerName"] or "Service Manager",
-                    "employeeIds": g_info["employeeIds"],
-                    "status": "active",
                     "categories": categories_from_db,
+                    "employeeIds": g_info["employeeIds"],
+                    "isActive": True,
                     "createdAt": datetime.utcnow().isoformat(),
                     "updatedAt": datetime.utcnow().isoformat()
                 })
@@ -372,26 +392,40 @@ def get_evaluation_data():
 
             db_kpis = extract_kpi_responses_from_metrics_data(rec.metrics_data)
 
-            # Find matching cycle id
-            resp_cycle = next((c for c in cycles if (c.get("teamName") == rec.team_name or c.get("teamId") == rec.team_id) and c.get("name") == rec.form), None)
-            if not resp_cycle:
-                resp_cycle = next((c for c in cycles if c.get("teamName") == rec.team_name or c.get("teamId") == rec.team_id), None)
-            cycle_id = resp_cycle["id"] if resp_cycle else "cycle_default"
+            # Find matching cycle id distinctly by team and form
+            resp_cycle = next((c for c in cycles if (c.get("teamName") == rec.team_name or c.get("teamId") == rec.team_id) and (c.get("name") == rec.form or c.get("form") == rec.form)), None)
+            cycle_id = resp_cycle["id"] if resp_cycle else f"cycle_db_{abs(hash(f'{rec.team_name}_{rec.form}')) % 1000000}"
 
-            existing_resp = next((r for r in responses if str(r.get("employeeCode") or r.get("employeeId")) in [emp_id, actual_code]), None)
+            # Match response distinctly by rec.id or cycleId + employeeCode
+            rec_resp_id = f"resp_{rec.id}"
+            existing_resp = next((r for r in responses if str(r.get("id")) == rec_resp_id or str(r.get("id")) == str(rec.id)), None)
+            if not existing_resp and rec.form:
+                existing_resp = next((r for r in responses if r.get("periodName") == rec.form and str(r.get("employeeCode") or r.get("employeeId")) in [emp_id, actual_code]), None)
+
+            extracted_period = ""
+            if rec.description and "(" in rec.description and ")" in rec.description:
+                extracted_period = rec.description.split("(", 1)[1].rsplit(")", 1)[0].strip()
+
             if existing_resp:
+                existing_resp["id"] = existing_resp.get("id") or rec_resp_id
                 existing_resp["employeeCode"] = actual_code
                 existing_resp["employeeId"] = actual_code
-                existing_resp["cycleId"] = existing_resp.get("cycleId") or cycle_id
+                existing_resp["cycleId"] = cycle_id
                 existing_resp["teamId"] = resolved_team
                 existing_resp["employeeName"] = resolved_name
+                existing_resp["periodName"] = extracted_period or existing_resp.get("periodName") or rec.form
+                existing_resp["description"] = rec.description or existing_resp.get("description", "")
+                if rec.submitted_at:
+                    existing_resp["employeeSubmittedAt"] = rec.submitted_at.isoformat()
+                existing_resp["managerReviewedAt"] = rec.reviewed_at.isoformat() if rec.reviewed_at else None
+                existing_resp["serviceManagerApprovedAt"] = rec.approved_at.isoformat() if rec.approved_at else None
                 existing_resp["managerId"] = str(rec.manager_id or "")
                 existing_resp["employeeOverallScore"] = rec.employee_overall_score or float(rec.earned_score or 0)
                 existing_resp["employeeRemarks"] = rec.employee_remark or existing_resp.get("employeeRemarks", "")
-                if rec.manager_score is not None:
-                    existing_resp["managerScore"] = rec.manager_score
-                if rec.manager_remark:
-                    existing_resp["managerRemarks"] = rec.manager_remark
+                existing_resp["managerScore"] = rec.manager_score
+                existing_resp["managerRemarks"] = rec.manager_remark or ""
+                existing_resp["form"] = rec.form or rec.performance_metrics or "Performance Evaluation"
+                existing_resp["performance_metrics"] = rec.performance_metrics or rec.form or ""
                 if rec.service_manager_score:
                     try:
                         existing_resp["serviceManagerScore"] = float(rec.service_manager_score)
@@ -399,6 +433,8 @@ def get_evaluation_data():
                         pass
                 if rec.status:
                     existing_resp["status"] = rec.status
+                existing_resp["categories"] = rec.metrics_data if isinstance(rec.metrics_data, list) else []
+                existing_resp["metrics_data"] = rec.metrics_data
                 
                 # Merge DB KPI responses
                 if db_kpis:
@@ -410,20 +446,41 @@ def get_evaluation_data():
                                 existing_resp["kpiResponses"][k] = v
             else:
                 responses.append({
-                    "id": f"resp_{rec.id}",
+                    "id": rec_resp_id,
                     "cycleId": cycle_id,
                     "teamId": resolved_team,
                     "employeeId": actual_code,
                     "employeeCode": actual_code,
                     "employeeName": resolved_name,
+                    "form": rec.form or rec.performance_metrics or "Performance Evaluation",
+                    "performance_metrics": rec.performance_metrics or rec.form or "",
+                    "periodName": extracted_period or rec.form,
+                    "description": rec.description or "",
+                    "employeeSubmittedAt": rec.submitted_at.isoformat() if rec.submitted_at else None,
+                    "managerReviewedAt": rec.reviewed_at.isoformat() if rec.reviewed_at else None,
+                    "serviceManagerApprovedAt": rec.approved_at.isoformat() if rec.approved_at else None,
                     "managerId": str(rec.manager_id or ""),
                     "status": rec.status or "employee_in_progress",
                     "employeeOverallScore": rec.employee_overall_score or 0,
                     "employeeRemarks": rec.employee_remark or "",
                     "managerScore": rec.manager_score,
                     "managerRemarks": rec.manager_remark or "",
+                    "categories": rec.metrics_data if isinstance(rec.metrics_data, list) else [],
+                    "metrics_data": rec.metrics_data,
                     "kpiResponses": db_kpis
                 })
+
+        # Deduplicate responses distinctly by ID
+        dedup_responses = []
+        seen_r_ids = set()
+        for r in responses:
+            rid = str(r.get("id") or "")
+            if rid and rid in seen_r_ids:
+                continue
+            if rid:
+                seen_r_ids.add(rid)
+            dedup_responses.append(r)
+        responses = dedup_responses
 
         store["cycles"] = cycles
         store["responses"] = responses
@@ -620,11 +677,25 @@ def save_evaluation_responses():
 
             # Also persist directly into PostgreSQL KpiEvaluation table
             emp_id = str(item.get("employeeCode") or item.get("employeeId") or "").strip()
+            resp_id = str(item.get("id") or "").strip()
+            form_name = item.get("form") or item.get("performance_metrics") or item.get("periodName") or ""
+
             if emp_id:
-                eval_row = KpiEvaluation.query.filter(KpiEvaluation.employee_id == emp_id).first()
+                eval_row = None
+                if resp_id.startswith("resp_") and resp_id.replace("resp_", "").isdigit():
+                    eval_row = KpiEvaluation.query.get(int(resp_id.replace("resp_", "")))
+                elif resp_id.isdigit():
+                    eval_row = KpiEvaluation.query.get(int(resp_id))
+
+                if not eval_row and form_name:
+                    eval_row = KpiEvaluation.query.filter(
+                        KpiEvaluation.employee_id == emp_id,
+                        or_(KpiEvaluation.form == form_name, KpiEvaluation.performance_metrics == form_name)
+                    ).first()
+
                 if not eval_row:
                     eval_row = KpiEvaluation(
-                        form=item.get("form") or "Q3 2026 KPI Assessment",
+                        form=form_name or "Performance Evaluation",
                         team_id=str(item.get("teamId") or ""),
                         team_name=item.get("teamName") or "Editorial Services",
                         employee_id=emp_id,
@@ -858,20 +929,14 @@ def assign_kpi_metrics():
             emp_id = str(emp.get("id") or emp.get("employee_id") or emp.get("code") or "")
             emp_name = emp.get("name") or emp.get("employee_name") or f"Employee {emp_id}"
 
-            # Check if an evaluation record already exists for this employee (strictly 1 row per employee)
-            all_emp_records = KpiEvaluation.query.filter(
-                KpiEvaluation.employee_id == emp_id
-            ).order_by(KpiEvaluation.id.desc()).all()
-
-            record = all_emp_records[0] if all_emp_records else None
-            
-            # Remove any older duplicate records for this employee to keep strictly 1 row
-            if len(all_emp_records) > 1:
-                for old_rec in all_emp_records[1:]:
-                    db.session.delete(old_rec)
-
             period_label = data.get("periodName") or data.get("period_name") or data.get("period") or ""
             desc_text = f"Performance evaluation for {team_name}" + (f" ({period_label})" if period_label else "")
+
+            # Check if an evaluation record already exists for this employee for this specific form/period
+            record = KpiEvaluation.query.filter(
+                KpiEvaluation.employee_id == emp_id,
+                or_(KpiEvaluation.form == form_name, KpiEvaluation.performance_metrics == form_name)
+            ).order_by(KpiEvaluation.id.desc()).first()
 
             if not record:
                 record = KpiEvaluation(
@@ -1043,7 +1108,12 @@ def review_manager_kpi():
         store_responses = store.get("responses", [])
 
         for item in items:
-            rec_id = item.get("id")
+            raw_id = item.get("id")
+            rec_id = None
+            if raw_id:
+                clean_id = str(raw_id).replace("resp_", "").strip()
+                if clean_id.isdigit():
+                    rec_id = int(clean_id)
             emp_id = str(item.get("employee_id") or "")
             form_name = item.get("form")
             raw_responses = item.get("responses") or item.get("kpiResponses") or {}
@@ -1051,7 +1121,7 @@ def review_manager_kpi():
             record = None
             if rec_id:
                 record = KpiEvaluation.query.get(rec_id)
-            elif emp_id:
+            if not record and emp_id:
                 q = KpiEvaluation.query.filter(KpiEvaluation.employee_id == emp_id)
                 if form_name:
                     q = q.filter(KpiEvaluation.form == form_name)
@@ -1085,7 +1155,12 @@ def review_manager_kpi():
                 record.updated_at = now
                 updated_records.append(record)
 
-                store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id), None)
+                target_r_ids = [str(raw_id), f"resp_{record.id}", str(record.id)]
+                store_resp = next((r for r in store_responses if str(r.get("id")) in target_r_ids), None)
+                if not store_resp and form_name:
+                    store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id and r.get("periodName") == form_name), None)
+                if not store_resp:
+                    store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id), None)
                 if store_resp:
                     store_resp["status"] = "approved"
                     if raw_responses:
