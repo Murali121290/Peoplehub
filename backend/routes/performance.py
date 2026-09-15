@@ -102,6 +102,59 @@ from utils.uploads import get_uploads_dir
 from models.employee import Employee
 from models.user import User
 
+DEFAULT_RATING_SCALE = [
+    {
+        "grade": "A",
+        "letterGrade": "A",
+        "scoreRangeText": "91 to 100",
+        "name": "Outstanding",
+        "minScore": 91,
+        "maxScore": 100,
+        "stars": 5,
+        "description": "Outstanding - the highest possible performance rating given to an employee who consistently exceeds expectations on all evaluations."
+    },
+    {
+        "grade": "B",
+        "letterGrade": "B",
+        "scoreRangeText": "81 to 90",
+        "name": "Exceeds Expectations",
+        "minScore": 81,
+        "maxScore": 90.99,
+        "stars": 4,
+        "description": "Exceeds Expectation - the performance rating given to employees who exhibit high overall performance, routinely go beyond what is expected in order to substantially surpass all of their key performance expectations/goals and will have met or exceeded expectations on the Competencies."
+    },
+    {
+        "grade": "C",
+        "letterGrade": "C",
+        "scoreRangeText": "66 to 80",
+        "name": "Meets Expectations",
+        "minScore": 66,
+        "maxScore": 80.99,
+        "stars": 3,
+        "description": "Meets Expectation - the performance rating given to employees who (1) are fully successful in meeting all of the performance expectations/goals that are important to his or her job and (2) will have demonstrated a satisfactory performance."
+    },
+    {
+        "grade": "D",
+        "letterGrade": "D",
+        "scoreRangeText": "51 to 65",
+        "name": "Needs Improvement",
+        "minScore": 51,
+        "maxScore": 65.99,
+        "stars": 2,
+        "description": "Needs Improvement - the performance rating given to employees who sometimes perform at an acceptable level but are not consistent and need improvement to meet expectations."
+    },
+    {
+        "grade": "E",
+        "letterGrade": "E",
+        "scoreRangeText": "Below 50",
+        "name": "Does Not Meet Expectation",
+        "minScore": 0,
+        "maxScore": 50.99,
+        "stars": 1,
+        "description": "Does Not Meet Expectation - the performance rating given to employees who fail to achieve any one or more key performance expectations/goals or cannot demonstrate proficiency in the Competencies needed for the job."
+    }
+]
+
 def get_eval_store_path():
     uploads_dir = get_uploads_dir()
     os.makedirs(uploads_dir, exist_ok=True)
@@ -110,15 +163,20 @@ def get_eval_store_path():
 def read_eval_store():
     path = get_eval_store_path()
     if not os.path.exists(path):
-        return {"cycles": [], "responses": []}
+        return {"cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            if "ratingScale" not in data or not data["ratingScale"]:
+                data["ratingScale"] = DEFAULT_RATING_SCALE
+            return data
     except Exception:
-        return {"cycles": [], "responses": []}
+        return {"cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}
 
 def write_eval_store(data):
     path = get_eval_store_path()
+    if "ratingScale" not in data or not data["ratingScale"]:
+        data["ratingScale"] = DEFAULT_RATING_SCALE
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -130,7 +188,7 @@ def sync_postgres_kpi_to_store_and_back():
         return eval_records, store
     except Exception as e:
         print(f"Error reading Postgres KPI records: {e}")
-        return [], {"cycles": [], "responses": []}
+        return [], {"cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}
 
 def merge_kpi_responses_into_categories(categories, responses_dict):
     if not categories or not isinstance(categories, list) or not responses_dict or not isinstance(responses_dict, dict):
@@ -361,12 +419,38 @@ def get_evaluation_data():
         else:
             responses = store.get("responses", [])
 
+        rating_scale = store.get("ratingScale", DEFAULT_RATING_SCALE)
         store["cycles"] = cycles
         store["responses"] = responses
+        store["ratingScale"] = rating_scale
         write_eval_store(store)
-        return jsonify({"success": True, "cycles": cycles, "responses": responses}), 200
+        return jsonify({"success": True, "cycles": cycles, "responses": responses, "ratingScale": rating_scale}), 200
     except Exception as e:
-        return jsonify({"error": str(e), "cycles": [], "responses": []}), 500
+        return jsonify({"error": str(e), "cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}), 500
+
+@performance_bp.route("/rating-scale", methods=["GET"])
+def get_rating_scale():
+    try:
+        store = read_eval_store()
+        scale = store.get("ratingScale", DEFAULT_RATING_SCALE)
+        return jsonify({"success": True, "ratingScale": scale}), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "ratingScale": DEFAULT_RATING_SCALE}), 500
+
+@performance_bp.route("/rating-scale", methods=["POST", "PUT"])
+@auth_required
+def update_rating_scale():
+    try:
+        data = request.get_json() or {}
+        scale = data.get("ratingScale") if isinstance(data, dict) and "ratingScale" in data else data
+        if not isinstance(scale, list):
+            return jsonify({"error": "ratingScale must be a list"}), 400
+        store = read_eval_store()
+        store["ratingScale"] = scale
+        write_eval_store(store)
+        return jsonify({"success": True, "ratingScale": scale}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @performance_bp.route("/evaluation/cycles", methods=["POST", "PUT"])
 def save_evaluation_cycle():
@@ -487,6 +571,10 @@ def delete_evaluation_response(resp_id_or_emp_id):
 
         emp_ids_to_del = {x for x in emp_ids_to_del if x}
 
+        # Prevent deleting calibrated/published records
+        if target_resp and (target_resp.get("managerScore") is not None or target_resp.get("status") in ["Calibrated & Approved", "Published", "Approved", "Completed"]):
+            return jsonify({"error": "Published and calibrated evaluation records cannot be deleted."}), 400
+
         store["responses"] = [
             r for r in responses 
             if str(r.get("id")) != str(resp_id_or_emp_id) and 
@@ -513,6 +601,8 @@ def delete_evaluation_response(resp_id_or_emp_id):
         if conditions:
             records = KpiEvaluation.query.filter(or_(*conditions)).all()
             for rec in records:
+                if rec.manager_score is not None or rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
+                    return jsonify({"error": "Published and calibrated evaluation records cannot be deleted."}), 400
                 db.session.delete(rec)
             db.session.commit()
 

@@ -211,7 +211,7 @@ function App() {
           path="/appraisal"
           element={
             <ProtectedRoute>
-              <AppraisalDashboard />
+              <EvaluationRootPage />
             </ProtectedRoute>
           }
         />

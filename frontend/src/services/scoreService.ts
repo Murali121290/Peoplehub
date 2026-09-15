@@ -1,17 +1,89 @@
 import { KPIItem, KPICategory, KPIResponseItem, RatingLevel } from '../types/evaluation.types';
 
 export const DEFAULT_RATING_SCALE: RatingLevel[] = [
-  { grade: 5, name: 'Outstanding', minScore: 91, maxScore: 100, stars: 5, description: 'Far exceeds performance expectations with exceptional deliverable quality.' },
-  { grade: 4, name: 'Exceeds Expectations', minScore: 81, maxScore: 90.99, stars: 4, description: 'Consistently delivers above targets and demonstrates strong ownership.' },
-  { grade: 3, name: 'Meets Expectations', minScore: 66, maxScore: 80.99, stars: 3, description: 'Fully achieves planned KPI deliverables reliably on schedule.' },
-  { grade: 2, name: 'Needs Improvement', minScore: 51, maxScore: 65.99, stars: 2, description: 'Achieves baseline results but requires development and support.' },
-  { grade: 1, name: 'Does Not Meet Expectation', minScore: 0, maxScore: 50.99, stars: 1, description: 'Significantly below standard deliverables; action plan required.' }
+  {
+    grade: 'A',
+    letterGrade: 'A',
+    scoreRangeText: '91 to 100',
+    name: 'Outstanding',
+    minScore: 91,
+    maxScore: 100,
+    stars: 5,
+    description: 'Outstanding - the highest possible performance rating given to an employee who consistently exceeds expectations on all evaluations.'
+  },
+  {
+    grade: 'B',
+    letterGrade: 'B',
+    scoreRangeText: '81 to 90',
+    name: 'Exceeds Expectations',
+    minScore: 81,
+    maxScore: 90.99,
+    stars: 4,
+    description: 'Exceeds Expectation - the performance rating given to employees who exhibit high overall performance, routinely go beyond what is expected in order to substantially surpass all of their key performance expectations/goals and will have met or exceeded expectations on the Competencies.'
+  },
+  {
+    grade: 'C',
+    letterGrade: 'C',
+    scoreRangeText: '66 to 80',
+    name: 'Meets Expectations',
+    minScore: 66,
+    maxScore: 80.99,
+    stars: 3,
+    description: 'Meets Expectation - the performance rating given to employees who (1) are fully successful in meeting all of the performance expectations/goals that are important to his or her job and (2) will have demonstrated a satisfactory performance.'
+  },
+  {
+    grade: 'D',
+    letterGrade: 'D',
+    scoreRangeText: '51 to 65',
+    name: 'Needs Improvement',
+    minScore: 51,
+    maxScore: 65.99,
+    stars: 2,
+    description: 'Needs Improvement - the performance rating given to employees who sometimes perform at an acceptable level but are not consistent and need improvement to meet expectations.'
+  },
+  {
+    grade: 'E',
+    letterGrade: 'E',
+    scoreRangeText: 'Below 50',
+    name: 'Does Not Meet Expectation',
+    minScore: 0,
+    maxScore: 50.99,
+    stars: 1,
+    description: 'Does Not Meet Expectation - the performance rating given to employees who fail to achieve any one or more key performance expectations/goals or cannot demonstrate proficiency in the Competencies needed for the job.'
+  }
 ];
 
+let activeRatingScale: RatingLevel[] = [...DEFAULT_RATING_SCALE];
+
+export const setRatingScale = (scale: RatingLevel[]): void => {
+  if (Array.isArray(scale) && scale.length > 0) {
+    activeRatingScale = scale.map(item => ({
+      ...item,
+      letterGrade: item.letterGrade || (typeof item.grade === 'string' ? item.grade : (
+        item.grade === 5 ? 'A' :
+        item.grade === 4 ? 'B' :
+        item.grade === 3 ? 'C' :
+        item.grade === 2 ? 'D' : 'E'
+      )),
+      grade: typeof item.grade === 'string' ? item.grade : (
+        item.grade === 5 ? 'A' :
+        item.grade === 4 ? 'B' :
+        item.grade === 3 ? 'C' :
+        item.grade === 2 ? 'D' : (item.letterGrade || 'E')
+      )
+    }));
+  }
+};
+
+export const getRatingScale = (): RatingLevel[] => {
+  return activeRatingScale && activeRatingScale.length > 0 ? activeRatingScale : DEFAULT_RATING_SCALE;
+};
+
 export const getRatingForScore = (score: number): RatingLevel => {
+  const currentScale = getRatingScale();
   const clamped = Math.max(0, Math.min(100, score));
-  const found = DEFAULT_RATING_SCALE.find(r => clamped >= r.minScore && clamped <= r.maxScore);
-  return found || DEFAULT_RATING_SCALE[DEFAULT_RATING_SCALE.length - 1];
+  const found = currentScale.find(r => clamped >= r.minScore && clamped <= r.maxScore);
+  return found || currentScale[currentScale.length - 1];
 };
 
 /**
@@ -68,6 +140,60 @@ export const parseTargetExpression = (
   }
 
   return { operator: 'exact', threshold: fallbackTargetValue, isLowerBetter: false };
+};
+
+/**
+ * Helper to identify negative / reverse KPI items (e.g. lower is better, escalations, delays, misses, compliance errors)
+ */
+export const isNegativeKpi = (kpi?: Partial<KPIItem> | null): boolean => {
+  if (!kpi) return false;
+  if (kpi.scoringDirection === 'lower_is_better') return true;
+
+  const name = String(kpi.name || '').toLowerCase();
+  const desc = String(kpi.description || '').toLowerCase();
+  const target = String(kpi.targetFromManager ?? kpi.targetValue ?? '').toLowerCase();
+  const unit = String(kpi.unit || '').toLowerCase();
+
+  // 1. Target expressions starting with < or containing penalty keywords
+  if (
+    target.startsWith('<') ||
+    target.includes('miss') ||
+    target.includes('delay') ||
+    target.includes('unplanned') ||
+    target.includes('escalat') ||
+    target.includes('followup') ||
+    target.includes('error') ||
+    target.includes('defect')
+  ) {
+    return true;
+  }
+
+  // 2. Metric names / descriptions matching negative KPI areas
+  const negativeKeywords = [
+    'effective communication',
+    'mail reply',
+    'ontime status',
+    'status reporting',
+    'escalation',
+    'process compliance',
+    'supervision',
+    'leave/wfh',
+    'wfh notification',
+    'leave notification',
+    'prior notification',
+    'defect',
+    'error',
+    'penalty',
+    'delay',
+    'miss',
+    'unplanned'
+  ];
+
+  if (negativeKeywords.some(kw => name.includes(kw) || desc.includes(kw) || unit.includes(kw))) {
+    return true;
+  }
+
+  return false;
 };
 
 /**

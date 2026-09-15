@@ -103,7 +103,9 @@ export interface EvaluationResponse {
 }
 
 export interface RatingLevel {
-  grade: number;
+  grade: string | number; // "A", "B", "C", "D", "E"
+  letterGrade: string; // "A", "B", "C", "D", "E"
+  scoreRangeText: string; // e.g. "91 to 100", "81 to 90", "66 to 80", "51 to 65", "Below 50"
   name: string;
   minScore: number;
   maxScore: number;

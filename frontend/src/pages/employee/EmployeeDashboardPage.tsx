@@ -147,7 +147,6 @@ const tabs = [
   { id: "requests", label: "My Requests", icon: CalendarDaysIcon },
   { id: "attendance", label: "Attendance", icon: ClockIcon },
   { id: "payroll", label: "Payroll", icon: BanknotesIcon },
-  { id: "evaluation", label: "Evaluation & Report", icon: ChartBarIcon },
   { id: "job-openings", label: "Job Openings", icon: BriefcaseIcon },
   { id: "new-hire", label: "New Hire", icon: SparklesIcon },
   { id: "profile", label: "Profile", icon: UserCircleIcon },
@@ -160,7 +159,13 @@ const EmployeeDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const queryParams = new URLSearchParams(location.search);
   const initialTab = queryParams.get("tab") || "overview";
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const [activeTab, setActiveTab] = useState(initialTab === "evaluation" ? "overview" : initialTab);
+
+  useEffect(() => {
+    if (queryParams.get("tab") === "evaluation") {
+      navigate("/evaluation", { replace: true });
+    }
+  }, [location.search, navigate]);
 
   // Blinking notification states for new unseen job openings
   const [hasNewJobOpenings, setHasNewJobOpenings] = useState(false);
@@ -2277,7 +2282,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
             )}
             {activeTab === "profile" && <ProfileTab />}
             {activeTab === "payroll" && <EmployeePayrollTab />}
-            {activeTab === "evaluation" && <EvaluationTab />}
             {activeTab === "job-openings" && <JobOpeningsTab user={user} />}
           </motion.div>
         </main>

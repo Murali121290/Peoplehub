@@ -6,12 +6,24 @@ import {
   KPICategory, 
   KPIItem,
   KPIResponseItem,
-  EvaluationStage 
+  EvaluationStage,
+  RatingLevel
 } from '../types/evaluation.types';
-import { calculateOverallScore } from './scoreService';
+import { calculateOverallScore, setRatingScale, getRatingScale } from './scoreService';
 
 const CYCLES_STORAGE_KEY = 'peoplehub_evaluation_cycles_v2';
 const RESPONSES_STORAGE_KEY = 'peoplehub_evaluation_responses_v2';
+const RATING_SCALE_STORAGE_KEY = 'peoplehub_rating_scale_v2';
+
+// Initialize rating scale from localStorage if available
+try {
+  const cachedScale = localStorage.getItem(RATING_SCALE_STORAGE_KEY);
+  if (cachedScale) {
+    setRatingScale(JSON.parse(cachedScale));
+  }
+} catch (e) {
+  // ignore
+}
 
 export const DEFAULT_KPI_CATEGORIES: KPICategory[] = [
   {
@@ -244,12 +256,13 @@ export const evaluationService = {
   async fetchDBTeams(): Promise<any[]> {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/api/teams/`, {
+      const res = await fetch(`${API_URL}/api/users/teams`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       if (!res.ok) throw new Error('Failed to fetch teams');
       const data = await res.json();
-      return Array.isArray(data) ? data : [];
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.teams) ? data.teams : []);
+      return list;
     } catch (e) {
       // If teams API not available, construct dynamic teams from employee departments/teams
       const employees = await this.fetchDBEmployees();
@@ -279,6 +292,12 @@ export const evaluationService = {
         const data = await res.json();
         const serverCycles = Array.isArray(data.cycles) ? data.cycles : [];
         const serverResponses = Array.isArray(data.responses) ? data.responses : [];
+        const serverRatingScale = Array.isArray(data.ratingScale) ? data.ratingScale : null;
+
+        if (serverRatingScale && serverRatingScale.length > 0) {
+          setRatingScale(serverRatingScale);
+          localStorage.setItem(RATING_SCALE_STORAGE_KEY, JSON.stringify(serverRatingScale));
+        }
         
         // Save server data to localStorage
         this.saveCyclesLocal(serverCycles);
@@ -289,6 +308,44 @@ export const evaluationService = {
       console.warn('Evaluation backend API offline, using local storage cache', e);
     }
     return { cycles: this.getCycles(), responses: this.getResponses() };
+  },
+
+  async fetchRatingScale(): Promise<RatingLevel[]> {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/performance/rating-scale`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.ratingScale) && data.ratingScale.length > 0) {
+          setRatingScale(data.ratingScale);
+          localStorage.setItem(RATING_SCALE_STORAGE_KEY, JSON.stringify(data.ratingScale));
+          return getRatingScale();
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch rating scale from backend, using active scale', e);
+    }
+    return getRatingScale();
+  },
+
+  async saveRatingScale(scale: RatingLevel[]): Promise<void> {
+    setRatingScale(scale);
+    localStorage.setItem(RATING_SCALE_STORAGE_KEY, JSON.stringify(scale));
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/api/performance/rating-scale`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ ratingScale: scale })
+      });
+    } catch (err) {
+      console.warn('Failed to save rating scale to backend', err);
+    }
   },
 
   getCycles(): EvaluationCycle[] {
@@ -302,6 +359,9 @@ export const evaluationService = {
 
   saveCyclesLocal(cycles: EvaluationCycle[]): void {
     localStorage.setItem(CYCLES_STORAGE_KEY, JSON.stringify(cycles));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('evaluationUpdated'));
+    }
   },
 
   async saveCycles(cycles: EvaluationCycle[]): Promise<void> {
@@ -332,6 +392,9 @@ export const evaluationService = {
 
   saveResponsesLocal(responses: EvaluationResponse[]): void {
     localStorage.setItem(RESPONSES_STORAGE_KEY, JSON.stringify(responses));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('evaluationUpdated'));
+    }
   },
 
   async saveResponses(responses: EvaluationResponse[]): Promise<void> {
