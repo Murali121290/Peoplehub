@@ -66,7 +66,10 @@ const WorkAnniversaryCard: React.FC = () => {
       );
 
       if (response.data.success) {
-        setEmployees(response.data.employees);
+        const validEmps = (response.data.employees || []).filter(
+          (e) => Number(e.years_completed) >= 1
+        );
+        setEmployees(validEmps);
       }
     } catch (err) {
       console.error(err);

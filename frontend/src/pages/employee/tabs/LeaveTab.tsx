@@ -1206,8 +1206,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         <th className="p-3">Type</th>
                         <th className="p-3">Date / Time Slot</th>
                         <th className="p-3">Duration</th>
-                        <th className="p-3">Applied At</th>
-                        <th className="p-3">Actioned At</th>
+                        <th className="p-3">Applied On</th>
+                        <th className="p-3">Actioned On</th>
                         <th className="p-3">Reason</th>
                         <th className="p-3 text-center">Status</th>
                       </tr>
@@ -1309,8 +1309,8 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
                         <th className="p-3">Type</th>
                         <th className="p-3">Date / Time Slot</th>
                         <th className="p-3">Duration</th>
-                        <th className="p-3">Applied At</th>
-                        <th className="p-3">Actioned At</th>
+                        <th className="p-3">Applied On</th>
+                        <th className="p-3">Actioned On</th>
                         <th className="p-3">Reason</th>
                         <th className="p-3 text-center">Status</th>
                       </tr>

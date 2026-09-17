@@ -274,10 +274,10 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
       if (targetCycle) {
         const dStr = req.from_date || req.date;
         if (dStr) {
-           const reqDate = new Date(dStr);
-           if (reqDate < targetCycle.start || reqDate > targetCycle.end) {
-              return false;
-           }
+          const reqDate = new Date(dStr);
+          if (reqDate < targetCycle.start || reqDate > targetCycle.end) {
+            return false;
+          }
         }
       }
     }
@@ -465,8 +465,8 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
                 <th className="p-4">Requested Shift / Mode</th>
                 <th className="p-4">Date Range</th>
                 <th className="p-4">Reason</th>
-                <th className="p-4">Applied At</th>
-                <th className="p-4">Actioned At</th>
+                <th className="p-4">Applied On</th>
+                <th className="p-4">Actioned On</th>
                 <th className="p-4 text-center">Status</th>
                 <th className="p-4 text-center">Action</th>
               </tr>
@@ -519,9 +519,9 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
                               <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${isWorkMode
                                 ? "bg-purple-50 text-purple-700 border-purple-200"
                                 : isOneDayWages
-                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                : "bg-blue-50 text-blue-700 border-blue-200"
-                              }`}>
+                                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                                  : "bg-blue-50 text-blue-700 border-blue-200"
+                                }`}>
                                 {label}
                               </span>
                             );
@@ -772,11 +772,10 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
                     <button
                       type="button"
                       onClick={() => setModalRequestType("WFH")}
-                      className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
-                        modalRequestType === "WFH"
-                          ? "bg-purple-600 text-white border-purple-600 shadow-xs"
-                          : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
-                      }`}
+                      className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${modalRequestType === "WFH"
+                        ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                        : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
+                        }`}
                     >
                       🏠 WFH
                     </button>
@@ -784,11 +783,10 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
                   <button
                     type="button"
                     onClick={() => setModalRequestType("Office")}
-                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
-                      modalRequestType === "Office"
-                        ? "bg-blue-600 text-white border-blue-600 shadow-xs"
-                        : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
-                    }`}
+                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${modalRequestType === "Office"
+                      ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                      : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
+                      }`}
                   >
                     🏢 Office Mode
                   </button>
@@ -796,11 +794,10 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
                     <button
                       type="button"
                       onClick={() => setModalRequestType("Shift")}
-                      className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
-                        modalRequestType === "Shift"
-                          ? "bg-amber-600 text-white border-amber-600 shadow-xs"
-                          : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
-                      }`}
+                      className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${modalRequestType === "Shift"
+                        ? "bg-amber-600 text-white border-amber-600 shadow-xs"
+                        : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
+                        }`}
                     >
                       ⏱️ Shift Change
                     </button>

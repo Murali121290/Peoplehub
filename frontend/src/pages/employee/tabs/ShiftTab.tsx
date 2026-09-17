@@ -278,8 +278,8 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="flex items-start gap-4">
                         <div className={`p-2 rounded-xl border ${(isWFH || isOffice)
-                            ? "bg-purple-50 border-purple-100 text-purple-600"
-                            : isOneDayWages
+                          ? "bg-purple-50 border-purple-100 text-purple-600"
+                          : isOneDayWages
                             ? "bg-amber-50 border-amber-100 text-amber-600"
                             : "bg-blue-50 border-blue-100 text-blue-600"
                           }`}>
@@ -294,8 +294,8 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                             {isOneDayWages
                               ? `Claim for: ${formatDateStr(req.from_date)}`
                               : (isWFH || isOffice)
-                              ? `Schedule: ${formatDateStr(req.from_date)} to ${formatDateStr(req.to_date)}`
-                              : `Change: ${req.current_shift} ➔ ${req.requested_shift} (${formatDateStr(req.from_date)} to ${formatDateStr(req.to_date)})`
+                                ? `Schedule: ${formatDateStr(req.from_date)} to ${formatDateStr(req.to_date)}`
+                                : `Change: ${req.current_shift} ➔ ${req.requested_shift} (${formatDateStr(req.from_date)} to ${formatDateStr(req.to_date)})`
                             }
                           </p>
                           {req.supportive_document && (
@@ -325,10 +325,10 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                           ].map((step, i) => (
                             <div key={step.title} className="flex flex-col items-center relative z-10">
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 text-xs font-bold transition-all shadow-sm ${step.completed
-                                  ? "bg-success-500 border-success-500 text-white"
-                                  : step.active
-                                    ? "bg-white border-warning-500 text-warning-700 ring-4 ring-warning-100"
-                                    : "bg-white border-neutral-300 text-neutral-400"
+                                ? "bg-success-500 border-success-500 text-white"
+                                : step.active
+                                  ? "bg-white border-warning-500 text-warning-700 ring-4 ring-warning-100"
+                                  : "bg-white border-neutral-300 text-neutral-400"
                                 }`}>
                                 {step.completed ? <CheckIcon className="w-3.5 h-3.5" /> : (i + 1)}
                               </div>
@@ -425,8 +425,8 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                   <th className="text-left p-4">{mode === "odw" ? "From Time" : "Current Shift"}</th>
                   <th className="text-left p-4">{mode === "odw" ? "To Time" : "Requested Shift"}</th>
                   <th className="text-left p-4">Date Range</th>
-                  <th className="text-left p-4">Applied At</th>
-                  <th className="text-left p-4">Actioned At</th>
+                  <th className="text-left p-4">Applied On</th>
+                  <th className="text-left p-4">Actioned On</th>
                   <th className="text-left p-4">Reason</th>
                   <th className="text-center p-4">Status</th>
                 </tr>
@@ -493,8 +493,8 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                               const isOneDayWages = item.request_type === "One Day Wages";
                               return (
                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${isWorkMode
-                                    ? "bg-purple-50 text-purple-700 border-purple-200"
-                                    : isOneDayWages
+                                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                                  : isOneDayWages
                                     ? "bg-amber-50 text-amber-700 border-amber-200"
                                     : "bg-blue-50 text-blue-700 border-blue-200"
                                   }`}>
@@ -578,8 +578,8 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
                           <td className="p-4 text-center">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getStatusColor(item.status)}`}>
                               <span className={`h-1 w-1 rounded-full ${isApproved ? "bg-success-600" :
-                                  isRejected ? "bg-danger-600" :
-                                    "bg-warning-500 animate-pulse"
+                                isRejected ? "bg-danger-600" :
+                                  "bg-warning-500 animate-pulse"
                                 }`} />
                               {item.status}
                             </span>

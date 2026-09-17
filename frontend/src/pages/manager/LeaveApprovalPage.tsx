@@ -245,10 +245,10 @@ const LeaveApprovalPage: React.FC = () => {
       if (targetCycle) {
         const dStr = l.from_date || l.date;
         if (dStr) {
-           const reqDate = new Date(dStr);
-           if (reqDate < targetCycle.start || reqDate > targetCycle.end) {
-              return false;
-           }
+          const reqDate = new Date(dStr);
+          if (reqDate < targetCycle.start || reqDate > targetCycle.end) {
+            return false;
+          }
         }
       }
     }
@@ -424,8 +424,8 @@ const LeaveApprovalPage: React.FC = () => {
                 <th className="p-4">Request Type</th>
                 <th className="p-4">Date Range / Details</th>
                 <th className="p-4">Reason</th>
-                <th className="p-4">Applied At</th>
-                <th className="p-4">Actioned At</th>
+                <th className="p-4">Applied On</th>
+                <th className="p-4">Actioned On</th>
                 <th className="p-4 text-center">Status</th>
                 <th className="p-4 text-center">Action</th>
               </tr>
@@ -673,10 +673,10 @@ const LeaveApprovalPage: React.FC = () => {
                     <label
                       key={dateStr}
                       className={`flex items-center justify-between p-3.5 text-sm transition-colors cursor-pointer ${isDisabled
-                          ? "bg-neutral-50/50 cursor-not-allowed opacity-75"
-                          : isSelected
-                            ? "bg-primary-50/30"
-                            : "hover:bg-neutral-50/30"
+                        ? "bg-neutral-50/50 cursor-not-allowed opacity-75"
+                        : isSelected
+                          ? "bg-primary-50/30"
+                          : "hover:bg-neutral-50/30"
                         }`}
                     >
                       <div className="flex items-center gap-3">

@@ -66,7 +66,7 @@ const WFHApprovalPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [expandedReasons, setExpandedReasons] = useState<Record<number, boolean>>({});
-  
+
   // WFH Cancellation Confirmation State
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [cancelTargetId, setCancelTargetId] = useState<number | null>(null);
@@ -248,10 +248,10 @@ const WFHApprovalPage: React.FC = () => {
       if (targetCycle) {
         const dStr = req.from_date || req.date;
         if (dStr) {
-           const reqDate = new Date(dStr);
-           if (reqDate < targetCycle.start || reqDate > targetCycle.end) {
-              return false;
-           }
+          const reqDate = new Date(dStr);
+          if (reqDate < targetCycle.start || reqDate > targetCycle.end) {
+            return false;
+          }
         }
       }
     }
@@ -422,8 +422,8 @@ const WFHApprovalPage: React.FC = () => {
                 <th className="p-4">Requested Shift</th>
                 <th className="p-4">Date Range</th>
                 <th className="p-4">Reason</th>
-                <th className="p-4">Applied At</th>
-                <th className="p-4">Actioned At</th>
+                <th className="p-4">Applied On</th>
+                <th className="p-4">Actioned On</th>
                 <th className="p-4 text-center">Status</th>
                 <th className="p-4 text-center">Action</th>
               </tr>
