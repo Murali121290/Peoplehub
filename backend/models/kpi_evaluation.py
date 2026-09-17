@@ -43,6 +43,18 @@ class KpiEvaluation(db.Model):
     service_manager = db.Column(db.String(255), nullable=True)
     service_manager_id = db.Column(db.String(100), nullable=True)
     
+    # Frequency & Evaluation Period
+    frequency = db.Column(db.String(50), nullable=True, default="quarterly") # 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'
+    from_date = db.Column(db.Date, nullable=True)
+    to_date = db.Column(db.Date, nullable=True)
+    working_days = db.Column(db.Integer, nullable=True, default=0)
+    leave_days = db.Column(db.Integer, nullable=True, default=0)
+    holiday_days = db.Column(db.Integer, nullable=True, default=0)
+
+    # Archival & Conversion (Option B: Soft Delete)
+    is_archived = db.Column(db.Boolean, nullable=True, default=False)
+    converted_to_id = db.Column(db.Integer, nullable=True)
+
     # Status & Timestamps
     status = db.Column(db.String(50), nullable=True, default="Draft")
     submitted_at = db.Column(db.DateTime, nullable=True)
@@ -81,7 +93,15 @@ class KpiEvaluation(db.Model):
             "manager_id": self.manager_id or self.reporting_manager_id,
             "service_manager": self.service_manager or self.service_manager_id,
             "service_manager_id": self.service_manager_id,
+            "frequency": self.frequency or "quarterly",
+            "from_date": self.from_date.isoformat() if self.from_date else None,
+            "to_date": self.to_date.isoformat() if self.to_date else None,
+            "working_days": self.working_days or 0,
+            "leave_days": self.leave_days or 0,
+            "holiday_days": self.holiday_days or 0,
             "status": self.status,
+            "is_archived": bool(self.is_archived) if self.is_archived is not None else False,
+            "converted_to_id": self.converted_to_id,
             "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "approved_at": self.approved_at.isoformat() if self.approved_at else None,

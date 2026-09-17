@@ -568,12 +568,25 @@ export const evaluationService = {
       updatedAt: new Date().toISOString()
     };
 
-    responses[index] = updated;
-    await this.saveResponses(responses);
+    // Save only this single updated response — do NOT send the full responses array.
+    // Sending the full array would overwrite the server-side JSON store with the frontend's
+    // potentially stale localStorage, wiping monthly/quarterly assignments.
+    await this.saveResponses([updated]);
+
+    // Update localStorage: patch only the changed entry (or append if missing)
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
 
     // Also sync to Postgres kpi_evaluations table
     try {
       const token = localStorage.getItem('token') || '';
+      const rawRecId = String(updated.id || '').replace('resp_', '').replace('eval_', '').trim();
       await fetch(`${API_URL}/api/performance/kpi-evaluations/submit-employee`, {
         method: 'POST',
         headers: {
@@ -581,7 +594,10 @@ export const evaluationService = {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
+          id: rawRecId && !isNaN(Number(rawRecId)) ? Number(rawRecId) : updated.id,
           employee_id: updated.employeeCode || updated.employeeId,
+          form: (updated as any).form || updated.periodName || '',
+          periodName: updated.periodName || (updated as any).form || '',
           employee_overall_score: overallScore,
           earned_score: String(overallScore),
           employee_remark: employeeRemarks || '',
@@ -661,7 +677,12 @@ export const evaluationService = {
     };
 
     responses[index] = updated;
-    await this.saveResponses(responses);
+    // Send only the single updated response — do NOT send the full array (would overwrite server JSON store)
+    await this.saveResponses([updated]);
+    const localResponses2 = this.getResponses();
+    const localIdx2 = localResponses2.findIndex(r => r.id === updated.id);
+    if (localIdx2 >= 0) { localResponses2[localIdx2] = updated; } else { localResponses2.push(updated); }
+    this.saveResponsesLocal(localResponses2);
 
     // Also sync to Postgres kpi_evaluations table
     try {
@@ -719,7 +740,12 @@ export const evaluationService = {
     };
 
     responses[index] = updated;
-    await this.saveResponses(responses);
+    // Send only the single updated response — do NOT send the full array (would overwrite server JSON store)
+    await this.saveResponses([updated]);
+    const localResponses3 = this.getResponses();
+    const localIdx3 = localResponses3.findIndex(r => r.id === updated.id);
+    if (localIdx3 >= 0) { localResponses3[localIdx3] = updated; } else { localResponses3.push(updated); }
+    this.saveResponsesLocal(localResponses3);
 
     // Also sync to Postgres kpi_evaluations table
     try {
@@ -767,6 +793,74 @@ export const evaluationService = {
     return updated;
   },
 
+  async triggerEvaluationRollup(): Promise<{ success: boolean; message: string; rolled_up_count: number }> {
+    const token = localStorage.getItem('token') || '';
+    const res = await fetch(`${API_URL}/api/performance/kpi-evaluations/rollup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
+    });
+    if (!res.ok) throw new Error('Rollup failed');
+    return res.json();
+  },
+
+  async convertDailyToWeekly(params: {
+    employeeId?: string;
+    weekStart?: string;
+    weekEnd?: string;
+    recordIds?: (string | number)[];
+  }): Promise<{ success: boolean; message: string; weekly_evaluation?: any }> {
+    const token = localStorage.getItem('token') || '';
+    const res = await fetch(`${API_URL}/api/performance/kpi-evaluations/convert-daily-to-weekly`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        employee_id: params.employeeId,
+        week_start: params.weekStart,
+        week_end: params.weekEnd,
+        record_ids: params.recordIds
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Conversion to weekly failed');
+    }
+    return res.json();
+  },
+
+  async convertEvaluations(params: {
+    employeeId?: string;
+    fromFrequency: 'daily' | 'weekly' | 'monthly' | 'quarterly';
+    toFrequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+    recordIds?: (string | number)[];
+  }): Promise<{ success: boolean; message: string; evaluation?: any; weekly_evaluation?: any }> {
+    const token = localStorage.getItem('token') || '';
+    const res = await fetch(`${API_URL}/api/performance/kpi-evaluations/convert`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        employee_id: params.employeeId,
+        from_frequency: params.fromFrequency,
+        to_frequency: params.toFrequency,
+        record_ids: params.recordIds
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Conversion from ${params.fromFrequency} to ${params.toFrequency} failed`);
+    }
+    return res.json();
+  },
+
+
   async createAndAssignKpiMetrics(data: {
     formName: string;
     teamId: string;
@@ -781,6 +875,7 @@ export const evaluationService = {
     endDate: string;
     categories: KPICategory[];
     allEmployees: any[];
+    frequency?: string;
   }): Promise<{ cycle: EvaluationCycle; responses: EvaluationResponse[] }> {
     const targetEmployees = data.allEmployees.filter(e => 
       data.employeeIds.includes(String(e.id)) || 
@@ -801,6 +896,9 @@ export const evaluationService = {
           team_id: data.teamId,
           team_name: data.teamName,
           periodName: data.periodName,
+          frequency: data.frequency || 'quarterly',
+          startDate: data.startDate,
+          endDate: data.endDate,
           reporting_manager: data.managerName,
           reporting_manager_id: data.managerId,
           service_manager: data.serviceManagerName,

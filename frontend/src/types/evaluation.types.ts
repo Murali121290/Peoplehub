@@ -63,6 +63,7 @@ export interface EvaluationCycle {
   startDate: string;
   endDate: string;
   periodName: string;
+  frequency?: string;
   status: 'pending_sm_launch_approval' | 'active' | 'completed';
   categories: KPICategory[];
   createdAt: string;
@@ -73,6 +74,7 @@ export interface EvaluationResponse {
   id: string;
   cycleId: string;
   teamId: string;
+  teamName?: string;
   department?: string;
   employeeId: string;
   employeeName: string;
@@ -98,6 +100,13 @@ export interface EvaluationResponse {
   description?: string;
   categories?: KPICategory[];
   metrics_data?: any;
+  frequency?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | string;
+  fromDate?: string;
+  toDate?: string;
+  from_date?: string;
+  to_date?: string;
+  is_archived?: boolean;
+  converted_to_id?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -143,5 +152,21 @@ export interface KpiEvaluationRecord {
   approved_at?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+export type RollupTier = 'daily_to_weekly' | 'weekly_to_monthly' | 'monthly_to_quarterly' | 'quarterly_to_yearly';
+
+export interface ConvertEvaluationsPayload {
+  employeeId?: string;
+  fromFrequency: 'daily' | 'weekly' | 'monthly' | 'quarterly';
+  toFrequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  recordIds?: number[];
+}
+
+export interface ConvertEvaluationsResponse {
+  success: boolean;
+  message: string;
+  evaluation?: EvaluationResponse;
+  weekly_evaluation?: EvaluationResponse;
 }
 

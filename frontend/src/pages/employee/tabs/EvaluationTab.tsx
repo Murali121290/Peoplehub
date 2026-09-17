@@ -5,7 +5,8 @@ import {
   EvaluationResponse,
   KPIResponseItem,
   KPICategory,
-  KPIItem
+  KPIItem,
+  RollupTier
 } from '../../../types/evaluation.types';
 import {
   evaluationService,
@@ -21,6 +22,7 @@ import {
   DEFAULT_RATING_SCALE
 } from '../../../services/scoreService';
 import { useAuthStore } from '../../../store/authStore';
+import { DatePicker } from '../../../components/ui/DatePicker';
 import {
   PlusIcon,
   CheckIcon,
@@ -39,6 +41,8 @@ import {
   TableCellsIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  ChevronRightIcon,
+  ChevronLeftIcon,
   ClipboardDocumentListIcon,
   ClipboardDocumentCheckIcon,
   DocumentChartBarIcon,
@@ -53,9 +57,13 @@ import {
   ChartBarIcon,
   AdjustmentsHorizontalIcon,
   EyeIcon,
-  BuildingOfficeIcon
+  BuildingOfficeIcon,
+  ArrowDownTrayIcon,
+  FolderIcon,
+  BellAlertIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolid } from '@heroicons/react/24/solid';
+import * as XLSX from 'xlsx';
 import { ConfirmDialog } from '../../../components/ui/Modal/ConfirmDialog';
 
 const ExpandableRemarkInput: React.FC<{
@@ -123,31 +131,32 @@ const ExpandableRemarkView: React.FC<{
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
   if (!text || !text.trim()) {
-    return <span className="text-slate-400 italic text-[11px]">{fallback}</span>;
+    return <span className="text-slate-400 font-medium text-xs">—</span>;
   }
 
-  const isLong = text.length > 25 || text.includes('\n');
+  const cleanText = text.trim().replace(/^["']|["']$/g, '');
+  const isLong = cleanText.length > 35 || cleanText.includes('\n');
 
   if (!isLong) {
     return (
-      <div className="bg-slate-50/90 px-3.5 py-1 rounded-full border border-slate-200/80 text-xs text-slate-700 italic break-words inline-block">
-        "{text}"
+      <div className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80 text-xs text-slate-700 font-medium break-words inline-block max-w-[240px]">
+        {cleanText}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-start gap-1 text-[11px] text-slate-700 max-w-[240px]">
-      <div className={`bg-slate-50/90 p-2 rounded-xl border border-slate-200/80 italic text-slate-700 transition-all ${isExpanded ? "break-words leading-relaxed max-h-60 overflow-y-auto" : "line-clamp-2"
+    <div className="flex flex-col items-start gap-1 text-xs text-slate-700 max-w-[250px]">
+      <div className={`w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 text-slate-700 font-medium transition-all ${isExpanded ? "break-words leading-relaxed max-h-60 overflow-y-auto shadow-2xs" : "line-clamp-2"
         }`}>
-        "{text}"
+        {cleanText}
       </div>
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-800 hover:text-teal-900 bg-teal-50 hover:bg-teal-100/90 px-2 py-0.5 rounded-md border border-teal-200 transition cursor-pointer self-end"
+        className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-700 hover:text-teal-800 bg-teal-50 hover:bg-teal-100/80 px-2 py-0.5 rounded-md border border-teal-200 transition cursor-pointer self-end mt-0.5"
       >
-        <span>{isExpanded ? 'Collapse' : 'Expand'}</span>
+        <span>{isExpanded ? 'Show less' : 'Show more'}</span>
         {isExpanded ? (
           <ChevronUpIcon className="w-2.5 h-2.5 stroke-[2.5]" />
         ) : (
@@ -156,6 +165,55 @@ const ExpandableRemarkView: React.FC<{
       </button>
     </div>
   );
+};
+
+export const parseEvalDateTimestamp = (r: EvaluationResponse): number => {
+  if (!r) return 0;
+  const str = `${(r as any).periodName || ''} ${(r as any).form || ''} ${(r as any).name || ''} ${r.cycleId || ''}`;
+
+  // 1. Match Month Day, Year e.g. "Sep 16, 2026" or "September 16, 2026"
+  const m1 = str.match(/(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2}),?\s+(\d{4})/i);
+  if (m1) {
+    const d = new Date(`${m1[1]} ${m1[2]}, ${m1[3]}`).getTime();
+    if (!isNaN(d) && d > 0) return d;
+  }
+
+  // 2. Match YYYY-MM-DD
+  const m2 = str.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m2) {
+    const d = new Date(m2[0]).getTime();
+    if (!isNaN(d) && d > 0) return d;
+  }
+
+  // 3. Match Month Year e.g. "September 2026"
+  const m3 = str.match(/(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})/i);
+  if (m3) {
+    const d = new Date(`${m3[1]} 1, ${m3[2]}`).getTime();
+    if (!isNaN(d) && d > 0) return d;
+  }
+
+  // 4. Timestamp fields
+  const time = new Date(r.serviceManagerApprovedAt || r.managerReviewedAt || r.employeeSubmittedAt || r.createdAt || r.updatedAt || 0).getTime();
+  if (!isNaN(time) && time > 0) return time;
+
+  // 5. Numeric ID fallback (e.g. resp_16 -> 16)
+  const num = parseInt(String(r.id || '').replace(/\D/g, ''), 10) || 0;
+  return num;
+};
+
+// Helper to verify if an employee is currently active (filters out deactive/inactive employees)
+export const isEmployeeActive = (emp: any): boolean => {
+  if (!emp) return false;
+  // Check boolean flag (false, 'false', 0, '0')
+  if (emp.is_active === false || emp.is_active === 'false' || emp.is_active === 0 || emp.is_active === '0') {
+    return false;
+  }
+  // Check text status string (e.g. Inactive, deactive, deactivated)
+  const status = String(emp.status || '').toLowerCase().trim();
+  if (status === 'inactive' || status === 'deactive' || status === 'deactivated' || status === 'disabled') {
+    return false;
+  }
+  return true;
 };
 
 export const EvaluationTab: React.FC = () => {
@@ -242,11 +300,15 @@ export const EvaluationTab: React.FC = () => {
     if (!dateStr) return '';
     try {
       const dt = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00'));
-      return dt.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+      const dd = String(dt.getDate()).padStart(2, '0');
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const yyyy = dt.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
     } catch {
       return dateStr;
     }
   };
+
 
   const syncPeriodAndFormName = (
     pType = mgrPeriodType,
@@ -307,7 +369,9 @@ export const EvaluationTab: React.FC = () => {
   const [isSubmittingEmp, setIsSubmittingEmp] = useState<boolean>(false);
   const [empSearchQuery, setEmpSearchQuery] = useState<string>('');
   const [empFilterTab, setEmpFilterTab] = useState<'all' | 'adjusted' | 'pending'>('all');
-  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [expandedAuditCategories, setExpandedAuditCategories] = useState<Record<string, boolean>>({});
+  const [expandedPeriodBreakdowns, setExpandedPeriodBreakdowns] = useState<Record<string, boolean>>({});
 
   // Manager Form State
   const [selectedMgrResponseId, setSelectedMgrResponseId] = useState<string>('');
@@ -324,6 +388,49 @@ export const EvaluationTab: React.FC = () => {
   const [selectedDownlineTeamModal, setSelectedDownlineTeamModal] = useState<any | null>(null);
   const [downlineModalSearchQuery, setDownlineModalSearchQuery] = useState<string>('');
   const [downlineModalStatusFilter, setDownlineModalStatusFilter] = useState<'all' | 'pending' | 'submitted' | 'approved'>('all');
+  const [raceLeaderboardType, setRaceLeaderboardType] = useState<'teams' | 'members'>('teams');
+  const [selectedRaceTeam, setSelectedRaceTeam] = useState<string>('');
+
+  // Report View Filter States (for Direct Reviews & Department Oversight matching user design)
+  const [reportViewTab, setReportViewTab] = useState<'all' | 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'top_weekly' | 'top_monthly' | 'top_quarterly' | 'top_annual'>('all');
+  const [reportDateInPeriod, setReportDateInPeriod] = useState<string>(() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  });
+  const [reportFilterDept, setReportFilterDept] = useState<string>('all');
+  const [reportFilterTeam, setReportFilterTeam] = useState<string>('all');
+  const [reportFilterDate, setReportFilterDate] = useState<string>('all');
+  const [reportFilterState, setReportFilterState] = useState<'all' | 'pending' | 'submitted' | 'approved'>('all');
+  const [selectedWeekPeriod, setSelectedWeekPeriod] = useState<string>('all');
+  const [selectedReportMonthKey, setSelectedReportMonthKey] = useState<string>(() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  });
+  const [selectedReportQuarterKey, setSelectedReportQuarterKey] = useState<string>(() => {
+    const d = new Date();
+    const q = Math.ceil((d.getMonth() + 1) / 3);
+    return `${d.getFullYear()}-Q${q}`;
+  });
+
+  // Multi-tier Conversion Modal State (Option B: Soft Archive)
+  const [isConvertModalOpen, setIsConvertModalOpen] = useState<boolean>(false);
+  const [activeRollupTier, setActiveRollupTier] = useState<RollupTier>('quarterly_to_yearly');
+  const [convertingTarget, setConvertingTarget] = useState<{
+    employeeId: string;
+    employeeName: string;
+    employeeCode: string;
+    teamName: string;
+    weekLabel?: string;
+    weekStart?: string;
+    weekEnd?: string;
+    records: EvaluationResponse[];
+    avgScore: number;
+    avgMgrScore: number | null;
+    count: number;
+  } | null>(null);
+  const [isConverting, setIsConverting] = useState<boolean>(false);
 
   // Service Manager State
   const [smSubTab, setSmSubTab] = useState<'launch_approvals' | 'final_approvals'>('launch_approvals');
@@ -496,14 +603,8 @@ export const EvaluationTab: React.FC = () => {
       prevResponseIdRef.current = selectedResponseId;
       const resp = responses.find(r => r.id === selectedResponseId && isResponseForUser(r));
       if (resp) {
-        const isSubmitted = resp.status === 'manager_review' || resp.status === 'approved' || resp.status === 'sm_final_approval' || Boolean(resp.employeeSubmittedAt);
-        if (isSubmitted) {
-          setKpiInputs(resp.kpiResponses || {});
-          setEmpRemarks(resp.employeeRemarks || '');
-        } else if (resp.kpiResponses && Object.keys(resp.kpiResponses).length > 0) {
-          setKpiInputs(prev => (Object.keys(prev).length > 0 ? prev : (resp.kpiResponses || {})));
-          setEmpRemarks(prev => prev || (resp.employeeRemarks || ''));
-        }
+        setKpiInputs(resp.kpiResponses || {});
+        setEmpRemarks(resp.employeeRemarks || '');
       } else if (!selectedResponseId) {
         setKpiInputs({});
         setEmpRemarks('');
@@ -548,15 +649,22 @@ export const EvaluationTab: React.FC = () => {
 
   useEffect(() => {
     loadAllData();
-    // Auto-sync every 5 seconds while preserving in-progress employee inputs
+    // Auto-sync every 30 seconds while preserving in-progress employee inputs
     const interval = setInterval(() => {
       evaluationService.fetchRemoteEvaluationData().then(data => {
         if (data?.cycles) setCycles(data.cycles);
         if (data?.responses) {
           setResponses(prev => {
-            return data.responses.map(remoteResp => {
+            const remoteIds = new Set(data.responses.map((r: any) => r.id));
+            // Preserve locally-known "Assigned to Employee" or Draft responses that the server hasn't
+            // returned yet (e.g. just assigned — DB sync may have a brief delay on first poll).
+            const preservedLocal = prev.filter(p =>
+              !remoteIds.has(p.id) &&
+              ((p.status as string) === 'Assigned to Employee' || (p.status as string) === 'Draft' || (p.status as string) === 'employee_in_progress')
+            );
+            const merged = data.responses.map((remoteResp: any) => {
               const localResp = prev.find(p => p.id === remoteResp.id);
-              if (remoteResp.status === 'employee_in_progress' && localResp?.kpiResponses && Object.keys(localResp.kpiResponses).length > 0) {
+              if ((remoteResp.status === 'employee_in_progress' || (remoteResp.status as string) === 'Assigned to Employee') && localResp?.kpiResponses && Object.keys(localResp.kpiResponses).length > 0) {
                 return {
                   ...remoteResp,
                   kpiResponses: localResp.kpiResponses,
@@ -565,10 +673,11 @@ export const EvaluationTab: React.FC = () => {
               }
               return remoteResp;
             });
+            return [...merged, ...preservedLocal];
           });
         }
       }).catch(() => { });
-    }, 5000);
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -595,6 +704,7 @@ export const EvaluationTab: React.FC = () => {
   // Determine active team details for HR creation
   const selectedTeam = dbTeams.find(t => t.id === selectedTeamId || t.name === selectedTeamId) || dbTeams[0];
   const teamEmployees = dbEmployees.filter(e => {
+    if (!isEmployeeActive(e)) return false;
     const teamName = selectedTeam?.name || '';
     return (e.team || e.department || '').toLowerCase() === teamName.toLowerCase() || (selectedTeam?.id && e.team_id === selectedTeam.id);
   });
@@ -1253,8 +1363,9 @@ export const EvaluationTab: React.FC = () => {
   // - Direct reports (Manager -> Employee)
   // - Squad members under Team Leads (Manager 1 -> Team Lead -> Employee)
   // - STOP traversal at intermediate Managers (so Manager 2/3/4 cannot assign metrics for Manager 1's team)
+  // - Exclude deactivated/inactive employees
   const isAssignableSubordinate = (emp: any): boolean => {
-    if (!emp) return false;
+    if (!emp || !isEmployeeActive(emp)) return false;
     if (isDirectReport(emp)) return true;
     if (isTeamLead) return false;
     if (isHrOrAdmin || isServiceManager) return true;
@@ -1316,18 +1427,20 @@ export const EvaluationTab: React.FC = () => {
     return false;
   };
 
-  // Manager's direct reporting team members strictly scoped from DB
+  // Manager's direct reporting team members strictly scoped from DB (active members only)
   const managerDirectReports: any[] = useMemo(() => {
+    const activeEmps = dbEmployees.filter(isEmployeeActive);
     if (activeRole === 'downline_teams') {
-      return dbEmployees.filter(e => isDownlineReport(e) && !isDirectReport(e));
+      return activeEmps.filter(e => isDownlineReport(e) && !isDirectReport(e));
     }
-    return dbEmployees.filter(isDirectReport);
+    return activeEmps.filter(isDirectReport);
   }, [dbEmployees, user, userId, currentDbUser, activeRole]);
 
-  // All subordinates eligible for metric assignment by the manager (Direct Reports + Downline Reports under Team Leads)
+  // All subordinates eligible for metric assignment by the manager (Active Direct Reports + Downline Reports under Team Leads)
   const managerAssignableEmployees: any[] = useMemo(() => {
+    const activeCandidates = dbEmployees.filter(isEmployeeActive);
     if (isHrOrAdmin || isServiceManager) {
-      return dbEmployees;
+      return activeCandidates;
     }
     const myIds = [
       String(userId || ''),
@@ -1338,7 +1451,7 @@ export const EvaluationTab: React.FC = () => {
       String(userAny?.employee_id || '')
     ].filter(Boolean);
 
-    return dbEmployees.filter(e => {
+    return activeCandidates.filter(e => {
       const eId = String(e.employee_id || e.id || '');
       if (myIds.includes(eId)) return false;
       return isAssignableSubordinate(e);
@@ -1349,7 +1462,7 @@ export const EvaluationTab: React.FC = () => {
   const managerDepartments: string[] = useMemo(() => {
     const depts = new Set<string>();
     const sourceList = activeRole === 'downline_teams'
-      ? dbEmployees.filter(e => isDownlineReport(e) && !isDirectReport(e))
+      ? dbEmployees.filter(e => isEmployeeActive(e) && isDownlineReport(e) && !isDirectReport(e))
       : managerAssignableEmployees;
     sourceList.forEach((e: any) => {
       const d = (e.department || e.team || '').trim();
@@ -1369,26 +1482,37 @@ export const EvaluationTab: React.FC = () => {
     const defaultTeamVal = targetDept || (managerDepartments.length > 1 ? 'all_teams' : (managerDepartments[0] || 'all_teams'));
     setMgrAssignTeamId(defaultTeamVal);
 
-    // Initial selected employees = default to ALL eligible subordinates selected
-    const baseTeamMembers = defaultTeamVal === 'all_teams'
-      ? managerAssignableEmployees
-      : managerAssignableEmployees.filter((e: any) => (e.department || e.team || '').toLowerCase() === defaultTeamVal.toLowerCase());
-    setMgrAssignEmpIds(baseTeamMembers.map((e: any) => String(e.employee_id || e.id)).filter(Boolean));
+    // Initial selected employees = only employees NOT already assigned for this stage/period
     setMgrPeriodType('quarterly');
     setMgrPeriodQuarter(currentQuarter);
     setMgrPeriodYear(currentYear);
     syncPeriodAndFormName('quarterly', currentQuarter, currentYear, currentMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, defaultTeamVal);
     setMgrAssignCategories(DEFAULT_KPI_CATEGORIES);
+
+    const baseTeamMembers = (defaultTeamVal === 'all_teams'
+      ? managerAssignableEmployees
+      : managerAssignableEmployees.filter((e: any) => (e.department || e.team || '').toLowerCase() === defaultTeamVal.toLowerCase())
+    ).filter(isEmployeeActive);
+    const unassignedMembers = baseTeamMembers.filter((e: any) => {
+      const empId = String(e.employee_id || e.id);
+      return !isEmpAlreadyAssignedForPeriod(empId, undefined, 'quarterly', currentQuarter, currentYear);
+    });
+    setMgrAssignEmpIds(unassignedMembers.map((e: any) => String(e.employee_id || e.id)).filter(Boolean));
     setIsMgrCreateModalOpen(true);
   };
 
   const handleMgrTeamChange = (newTeamId: string) => {
     setMgrAssignTeamId(newTeamId);
-    // Default to all selected on team/department change
-    const baseTeamMembers = newTeamId === 'all_teams'
+    // Only pre-select unassigned team members
+    const baseTeamMembers = (newTeamId === 'all_teams'
       ? managerAssignableEmployees
-      : managerAssignableEmployees.filter((e: any) => (e.department || e.team || '').toLowerCase() === newTeamId.toLowerCase());
-    setMgrAssignEmpIds(baseTeamMembers.map((e: any) => String(e.employee_id || e.id)).filter(Boolean));
+      : managerAssignableEmployees.filter((e: any) => (e.department || e.team || '').toLowerCase() === newTeamId.toLowerCase())
+    ).filter(isEmployeeActive);
+    const unassignedMembers = baseTeamMembers.filter((e: any) => {
+      const empId = String(e.employee_id || e.id);
+      return !isEmpAlreadyAssignedForPeriod(empId);
+    });
+    setMgrAssignEmpIds(unassignedMembers.map((e: any) => String(e.employee_id || e.id)).filter(Boolean));
     syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, newTeamId);
   };
 
@@ -1405,74 +1529,142 @@ export const EvaluationTab: React.FC = () => {
     pTo = mgrPeriodToDate
   ) => {
     if (!empId) return false;
-    const cleanTag = (periodStr || '').trim().toLowerCase();
-
-    const matchesPeriod = (cPeriodRaw: string) => {
-      const cPeriod = (cPeriodRaw || '').trim().toLowerCase();
-      if (!cPeriod) return false;
-
-      // 1. Direct tag match or exact substring match
-      if (cleanTag && (cPeriod === cleanTag || cPeriod.includes(cleanTag) || cleanTag.includes(cPeriod))) {
-        return true;
-      }
-
-      // 2. Frequency-specific precise match
-      if (pType === 'quarterly') {
-        const qStr = `q${pQuarter}`;
-        const yStr = `${pYear}`;
-        if (cPeriod.includes(qStr) && cPeriod.includes(yStr)) return true;
-      } else if (pType === 'monthly') {
-        const mName = (MONTH_NAMES[pMonth - 1] || '').toLowerCase();
-        const yStr = `${pYear}`;
-        if (mName && cPeriod.includes(mName) && cPeriod.includes(yStr)) return true;
-      } else if (pType === 'daily' && pDue) {
-        const dueFmt = formatDisplayDate(pDue).toLowerCase();
-        if (dueFmt && cPeriod.includes(dueFmt)) return true;
-        if (cPeriod.includes(pDue.toLowerCase())) return true;
-      } else if (pType === 'weekly' && pFrom && pTo) {
-        const fromFmt = formatDisplayDate(pFrom).toLowerCase();
-        const toFmt = formatDisplayDate(pTo).toLowerCase();
-        if (fromFmt && toFmt && cPeriod.includes(fromFmt) && cPeriod.includes(toFmt)) return true;
-      }
-
-      return false;
-    };
+    const cleanEmpId = String(empId).trim().toLowerCase();
 
     // Check in cycles
     const hasInCycles = cycles.some(c => {
       const empList = (c.employeeIds || []).map(id => String(id).trim().toLowerCase());
-      const isEmpIn = empList.includes(String(empId).trim().toLowerCase());
-      if (!isEmpIn) return false;
-      return matchesPeriod(c.periodName || c.name || '');
+      if (!empList.includes(cleanEmpId)) return false;
+
+      const cType = String((c as any).frequency || '').toLowerCase();
+      if (pType && cType && pType !== cType) return false;
+
+      if (pType === 'weekly' && pFrom && pTo) {
+        if (c.startDate === pFrom && c.endDate === pTo) return true;
+        const fromFmt = formatDisplayDate(pFrom).toLowerCase();
+        const toFmt = formatDisplayDate(pTo).toLowerCase();
+        const cText = `${c.periodName || ''} ${c.name || ''} ${c.description || ''}`.toLowerCase();
+        if (fromFmt && toFmt && cText.includes(fromFmt) && cText.includes(toFmt)) return true;
+        return false;
+      }
+      if (pType === 'daily' && pDue) {
+        if (c.startDate === pDue) return true;
+        const dueFmt = formatDisplayDate(pDue).toLowerCase();
+        const cText = `${c.periodName || ''} ${c.name || ''} ${c.description || ''}`.toLowerCase();
+        if (dueFmt && cText.includes(dueFmt)) return true;
+        return false;
+      }
+      if (pType === 'monthly') {
+        const mName = (MONTH_NAMES[pMonth - 1] || '').toLowerCase();
+        const yStr = `${pYear}`;
+        const cText = `${c.periodName || ''} ${c.name || ''} ${c.description || ''}`.toLowerCase();
+        if (mName && cText.includes(mName) && cText.includes(yStr)) return true;
+        return false;
+      }
+      if (pType === 'quarterly') {
+        const qStr = `q${pQuarter}`;
+        const stageStr = `stage ${pQuarter}`;
+        const yStr = `${pYear}`;
+        const cText = `${c.periodName || ''} ${c.name || ''} ${c.description || ''}`.toLowerCase();
+        if ((cText.includes(qStr) || cText.includes(stageStr)) && cText.includes(yStr)) return true;
+        return false;
+      }
+      return false;
     });
     if (hasInCycles) return true;
 
     // Check in responses
     const hasInResponses = responses.some(r => {
       const cleanEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase();
-      if (cleanEmpCode !== String(empId).trim().toLowerCase()) return false;
+      if (cleanEmpCode !== cleanEmpId) return false;
 
-      const rCycle = cycles.find(c => c.id === r.cycleId);
-      const rPeriod = rCycle?.periodName || rCycle?.name || (r as any).periodName || '';
-      return matchesPeriod(rPeriod);
+      const rType = String(r.frequency || (r as any).periodType || '').toLowerCase();
+      if (pType && rType && pType !== rType) return false;
+
+      const rStart = (r as any).startDate || (r as any).start_date || (r as any).fromDate;
+      const rEnd = (r as any).endDate || (r as any).end_date || (r as any).toDate;
+
+      if (pType === 'weekly' && pFrom && pTo) {
+        if (rStart === pFrom && rEnd === pTo) return true;
+        const fromFmt = formatDisplayDate(pFrom).toLowerCase();
+        const toFmt = formatDisplayDate(pTo).toLowerCase();
+        const rText = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''}`.toLowerCase();
+        if (fromFmt && toFmt && rText.includes(fromFmt) && rText.includes(toFmt)) return true;
+        return false;
+      }
+      if (pType === 'daily' && pDue) {
+        if (rStart === pDue) return true;
+        const dueFmt = formatDisplayDate(pDue).toLowerCase();
+        const rText = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''}`.toLowerCase();
+        if (dueFmt && rText.includes(dueFmt)) return true;
+        return false;
+      }
+      if (pType === 'monthly') {
+        const mName = (MONTH_NAMES[pMonth - 1] || '').toLowerCase();
+        const yStr = `${pYear}`;
+        const rText = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''}`.toLowerCase();
+        if (mName && rText.includes(mName) && rText.includes(yStr)) return true;
+        return false;
+      }
+      if (pType === 'quarterly') {
+        if ((r as any).quarter === pQuarter && (r as any).year === pYear) return true;
+        const qStr = `q${pQuarter}`;
+        const stageStr = `stage ${pQuarter}`;
+        const yStr = `${pYear}`;
+        const rText = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''}`.toLowerCase();
+        if ((rText.includes(qStr) || rText.includes(stageStr)) && rText.includes(yStr)) return true;
+        return false;
+      }
+      return false;
     });
 
     return hasInResponses;
   };
 
+  // Auto-deselect any employee that is already assigned whenever period or modal opens
+  useEffect(() => {
+    if (isMgrCreateModalOpen) {
+      setMgrAssignEmpIds(prev => prev.filter(id => !isEmpAlreadyAssignedForPeriod(id)));
+    }
+  }, [
+    isMgrCreateModalOpen,
+    mgrPeriodType,
+    mgrPeriodQuarter,
+    mgrPeriodYear,
+    mgrPeriodMonth,
+    mgrPeriodDueDate,
+    mgrPeriodFromDate,
+    mgrPeriodToDate,
+    mgrAssignPeriod,
+    cycles,
+    responses
+  ]);
+
   const handleMgrToggleEmp = (empId: string) => {
+    if (isEmpAlreadyAssignedForPeriod(empId)) {
+      showToast('This team member is already assigned for this evaluation period and cannot be booked again.');
+      return;
+    }
     setMgrAssignEmpIds(prev =>
       prev.includes(empId) ? prev.filter(id => id !== empId) : [...prev, empId]
     );
   };
 
   const handleMgrToggleSelectAll = (teamEmps: any[]) => {
-    const allIds = teamEmps.map(e => String(e.employee_id || e.id)).filter(Boolean);
-    const allSelected = allIds.length > 0 && allIds.every(id => mgrAssignEmpIds.includes(id));
+    const activeEmps = (teamEmps || []).filter(isEmployeeActive);
+    const assignableEmps = activeEmps.filter(e => !isEmpAlreadyAssignedForPeriod(String(e.employee_id || e.id)));
+    const assignableIds = assignableEmps.map(e => String(e.employee_id || e.id)).filter(Boolean);
+
+    if (assignableIds.length === 0) {
+      showToast('All team members under this selection are already assigned for this evaluation period.');
+      return;
+    }
+
+    const allSelected = assignableIds.every(id => mgrAssignEmpIds.includes(id));
     if (allSelected) {
-      setMgrAssignEmpIds(prev => prev.filter(id => !allIds.includes(id)));
+      setMgrAssignEmpIds(prev => prev.filter(id => !assignableIds.includes(id)));
     } else {
-      setMgrAssignEmpIds(prev => Array.from(new Set([...prev, ...allIds])));
+      setMgrAssignEmpIds(prev => Array.from(new Set([...prev, ...assignableIds])));
     }
   };
 
@@ -1721,25 +1913,44 @@ export const EvaluationTab: React.FC = () => {
         effectiveEndDate = new Date(mgrPeriodYear, mgrPeriodQuarter * 3, 0).toISOString().split('T')[0];
       }
 
+      const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.id || '');
+      const smObj = dbEmployees.find(e => String(e.id) === String(selectedSmId) || String(e.employee_id) === String(selectedSmId));
+      const resolvedSmCode = smObj?.employee_id || selectedSmId;
+
+      const activeAssignEmpIds = mgrAssignEmpIds.filter(id => {
+        const emp = dbEmployees.find(e => String(e.employee_id || e.id) === id);
+        return emp ? isEmployeeActive(emp) : true;
+      });
+
+      // Filter out any employees already assigned for this period
+      const unassignedToBook = activeAssignEmpIds.filter(id => !isEmpAlreadyAssignedForPeriod(id));
+
+      if (unassignedToBook.length === 0) {
+        showAlert('All selected team members are already assigned for this evaluation period. No duplicate assignments can be created.', 'Already Assigned');
+        setIsAssigning(false);
+        return;
+      }
+
       await evaluationService.createAndAssignKpiMetrics({
         formName: mgrAssignFormName,
         teamId: mgrAssignTeamId,
         teamName: selectedTeamName,
-        managerId: String(user?.id || userAny?.employee_id || ''),
+        managerId: currentMgrEmpCode,
         managerName: currentMgrName,
-        serviceManagerId: selectedSmId,
-        serviceManagerName: 'Service Manager',
-        employeeIds: mgrAssignEmpIds,
+        serviceManagerId: resolvedSmCode,
+        serviceManagerName: smObj ? (`${smObj.first_name || ''} ${smObj.last_name || ''}`.trim() || smObj.name) : 'Service Manager',
+        employeeIds: unassignedToBook,
         periodName: mgrAssignPeriod,
         startDate: effectiveStartDate,
         endDate: effectiveEndDate,
         categories: mgrAssignCategories,
-        allEmployees: dbEmployees
+        allEmployees: dbEmployees.filter(isEmployeeActive),
+        frequency: mgrPeriodType
       });
 
       setIsMgrCreateModalOpen(false);
       await loadAllData();
-      showToast(`Performance Metrics successfully assigned to ${mgrAssignEmpIds.length} team member(s)!`);
+      showToast(`Performance Metrics successfully assigned to ${activeAssignEmpIds.length} team member(s)!`);
     } catch (err: any) {
       console.error('Error assigning metrics:', err);
       showAlert('Failed to assign metrics: ' + (err?.message || 'Unknown error'), 'Assignment Error', 'danger');
@@ -1859,28 +2070,34 @@ export const EvaluationTab: React.FC = () => {
   // 4. Employee Active Cycle & Response (Strictly for the employee's own record)
   const allUserResponses = useMemo(() => {
     const rawList = responses.filter(isResponseForUser).sort((a, b) => {
+      // 1. Pending evaluations requiring employee action sort first
+      const aPending = (a.status as string) === 'employee_in_progress' || (a.status as string) === 'Draft' || (a.status as string) === 'Assigned to Employee' || (!a.employeeSubmittedAt && (a.status as string) !== 'manager_review' && (a.status as string) !== 'approved' && (a.status as string) !== 'sm_final_approval');
+      const bPending = (b.status as string) === 'employee_in_progress' || (b.status as string) === 'Draft' || (b.status as string) === 'Assigned to Employee' || (!b.employeeSubmittedAt && (b.status as string) !== 'manager_review' && (b.status as string) !== 'approved' && (b.status as string) !== 'sm_final_approval');
+      if (aPending && !bPending) return -1;
+      if (!aPending && bPending) return 1;
+
+      // 2. Latest date descending (e.g. Sep 16 before Sep 15 before Sep 14)
+      const dateA = parseEvalDateTimestamp(a);
+      const dateB = parseEvalDateTimestamp(b);
+      if (dateB !== dateA) return dateB - dateA;
+
+      // 3. Highest ID descending (e.g. resp_16 before resp_15)
+      const numA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+      if (numA !== numB) return numB - numA;
+
       const timeA = new Date(a.createdAt || a.employeeSubmittedAt || a.updatedAt || 0).getTime();
       const timeB = new Date(b.createdAt || b.employeeSubmittedAt || b.updatedAt || 0).getTime();
-      if (timeB !== timeA) return timeB - timeA;
-      return (b.id || '').localeCompare(a.id || '');
+      return timeB - timeA;
     });
 
-    // Deduplicate so each evaluation period appears ONCE for the employee, prioritizing records with full categories
+    // Deduplicate so each distinct evaluation period / DB record appears ONCE
     const periodMap = new Map<string, EvaluationResponse>();
     rawList.forEach(r => {
       const pKey = (r.periodName || (r as any).form || '').trim().toLowerCase();
-      const key = pKey || r.id;
-      const existing = periodMap.get(key);
-      if (!existing) {
+      const key = `${r.id}_${pKey}`;
+      if (!periodMap.has(key)) {
         periodMap.set(key, r);
-      } else {
-        const hasCats = (resp: any) => Boolean(resp.categories?.length > 0 || resp.metrics_data?.length > 0);
-        const isDb = (resp: any) => String(resp.id || '').startsWith('resp_') && /\d+/.test(String(resp.id || ''));
-        if (hasCats(r) && !hasCats(existing)) {
-          periodMap.set(key, r);
-        } else if (isDb(r) && !isDb(existing)) {
-          periodMap.set(key, r);
-        }
       }
     });
 
@@ -2447,17 +2664,15 @@ export const EvaluationTab: React.FC = () => {
     }
     const { employeeName, employeeCode } = getEmployeeDisplayInfo(resp);
     showConfirm(
-      `Are you sure you want to delete the evaluation record for ${employeeName || resp.employeeName} (${employeeCode || resp.employeeCode})?`,
+      `Are you sure you want to delete this evaluation record for ${employeeName || resp.employeeName} (${employeeCode || resp.employeeCode})?`,
       async () => {
         try {
           const respId = resp.id;
-          const empCode = String(resp.employeeCode || resp.employeeId || '');
-          const empName = resp.employeeName || employeeName || '';
 
-          // 1. Call backend delete with full identifiers so DB rows are completely purged
+          // 1. Call backend delete with specific response ID
           try {
             const token = localStorage.getItem('token') || '';
-            const deleteUrl = `${API_URL}/api/performance/evaluation/responses/${encodeURIComponent(respId)}?employeeCode=${encodeURIComponent(empCode)}&employeeName=${encodeURIComponent(empName)}&employeeId=${encodeURIComponent(String(resp.employeeId || ''))}`;
+            const deleteUrl = `${API_URL}/api/performance/evaluation/responses/${encodeURIComponent(respId)}`;
             await fetch(deleteUrl, {
               method: 'DELETE',
               headers: {
@@ -2466,9 +2681,6 @@ export const EvaluationTab: React.FC = () => {
               },
               body: JSON.stringify({
                 respId,
-                employeeCode: empCode,
-                employeeId: resp.employeeId,
-                employeeName: empName,
                 cycleId: resp.cycleId
               })
             });
@@ -2476,13 +2688,13 @@ export const EvaluationTab: React.FC = () => {
             console.warn('Backend delete error:', delErr);
           }
 
-          // 2. Remove from local state & cache
-          const updatedResponses = responses.filter(r => r.id !== respId && String(r.employeeCode || r.employeeId || '') !== empCode);
+          // 2. Remove ONLY this single response by ID from local state & cache
+          const updatedResponses = responses.filter(r => r.id !== respId);
           setResponses(updatedResponses);
           evaluationService.saveResponsesLocal(updatedResponses);
 
           await loadAllData();
-          showToast(`Evaluation for ${employeeName || empCode} permanently deleted from DB.`);
+          showToast(`Evaluation record deleted successfully.`);
         } catch (err: any) {
           showAlert('Failed to delete evaluation record: ' + (err?.message || 'Unknown error'), 'Delete Error', 'danger');
         }
@@ -2513,7 +2725,7 @@ export const EvaluationTab: React.FC = () => {
       String(activeEmpResponse.status).toLowerCase().includes('manager') ||
       String(activeEmpResponse.status).toLowerCase().includes('approved') ||
       Boolean(activeEmpResponse.employeeSubmittedAt)
-    ) : anySubmittedUserResponse
+    ) : false
   );
 
   // Robust helper to retrieve filled / submitted response item for any KPI
@@ -2624,22 +2836,25 @@ export const EvaluationTab: React.FC = () => {
   }, [activeCategories, kpiInputs, activeEmpResponse?.kpiResponses, activeEmpResponse?.employeeOverallScore, isEmpSubmitted]);
 
   // Keep kpiInputs in sync with activeEmpResponse when loaded or refreshed
+  const lastActiveRespIdRef = React.useRef<string>('');
   useEffect(() => {
     if (activeEmpResponse && isResponseForUser(activeEmpResponse)) {
-      if (activeEmpResponse.kpiResponses && Object.keys(activeEmpResponse.kpiResponses).length > 0) {
-        if (isEmpSubmitted) {
-          setKpiInputs(activeEmpResponse.kpiResponses);
-        } else {
-          setKpiInputs(prev => {
-            const merged = { ...activeEmpResponse.kpiResponses };
-            for (const [k, v] of Object.entries(prev)) {
-              if (v && (v.actualValue !== '' || v.employeeRemarks !== '')) {
-                merged[k] = v;
-              }
+      const isDifferentResp = lastActiveRespIdRef.current !== activeEmpResponse.id;
+      lastActiveRespIdRef.current = activeEmpResponse.id;
+
+      if (isDifferentResp || isEmpSubmitted) {
+        setKpiInputs(activeEmpResponse.kpiResponses || {});
+        setEmpRemarks(activeEmpResponse.employeeRemarks || '');
+      } else if (activeEmpResponse.kpiResponses && Object.keys(activeEmpResponse.kpiResponses).length > 0) {
+        setKpiInputs(prev => {
+          const merged = { ...activeEmpResponse.kpiResponses };
+          for (const [k, v] of Object.entries(prev)) {
+            if (v && (v.actualValue !== '' || v.employeeRemarks !== '')) {
+              merged[k] = v;
             }
-            return merged;
-          });
-        }
+          }
+          return merged;
+        });
         if (activeEmpResponse.employeeRemarks) {
           setEmpRemarks(activeEmpResponse.employeeRemarks);
         }
@@ -2840,23 +3055,27 @@ export const EvaluationTab: React.FC = () => {
       return false;
     });
 
-    const employeeCode = empInDb?.employee_id || r.employeeCode || r.employeeId || '8888';
-    const employeeName = empInDb ? `${empInDb.first_name || ''} ${empInDb.last_name || ''}`.trim() : (r.employeeName || `Employee #${employeeCode}`);
+    const employeeCode = empInDb?.employee_id || r.employeeCode || r.employeeId || '';
+    const employeeName = empInDb ? `${empInDb.first_name || ''} ${empInDb.last_name || ''}`.trim() : (r.employeeName || (employeeCode ? `Employee #${employeeCode}` : 'Employee'));
 
-    // Exact canonical department resolution: Prefer employee's actual department from DB
-    const dbDept = (empInDb?.department || empInDb?.team || '').trim();
-    let teamName = dbDept;
-    if (!teamName) {
-      const respDept = (r.department || '').trim();
-      if (respDept && respDept !== 'all_teams' && !respDept.includes(',')) {
-        teamName = respDept;
-      } else if (r.teamId && r.teamId !== 'all_teams' && !r.teamId.includes(',')) {
-        teamName = r.teamId.trim();
-      } else {
-        teamName = 'Editorial Services';
-      }
-    }
-    return { employeeCode, employeeName, teamName, empInDb };
+    // Match team in dbTeams table by team_id, name, or employee team
+    const matchingTeam = dbTeams.find(t =>
+      (empInDb?.team_id && String(t.id) === String(empInDb.team_id)) ||
+      (empInDb?.team && t.name?.toLowerCase() === empInDb.team.toLowerCase()) ||
+      (r.teamId && (String(t.id) === String(r.teamId) || t.name?.toLowerCase() === String(r.teamId).toLowerCase())) ||
+      (Boolean((r as any).teamName) && t.name?.toLowerCase() === String((r as any).teamName).toLowerCase())
+    );
+
+    // Exact canonical department & team resolution strictly from PostgreSQL DB
+    const dbDept = (empInDb?.department || matchingTeam?.department || '').trim();
+    const dbTeam = (empInDb?.team || matchingTeam?.name || '').trim();
+    const respDept = (r.department || '').trim();
+    const respTeam = (r.teamId || '').trim();
+
+    const departmentName = dbDept || (respDept && respDept !== 'all_teams' && !respDept.includes(',') ? respDept : '') || effectiveTeamName || dbTeam || 'Department';
+    const teamName = dbTeam || (respTeam && respTeam !== 'all_teams' && !respTeam.includes(',') ? respTeam : '') || (respDept && respDept !== departmentName ? respDept : '') || departmentName || 'Team';
+
+    return { employeeCode, employeeName, teamName, departmentName, empInDb };
   };
 
   // Helper to render distinct status badges across all lifecycle stages
@@ -2865,7 +3084,7 @@ export const EvaluationTab: React.FC = () => {
 
     if (s.includes('approved') || s.includes('calibrated') || s === 'completed') {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
           <span>Calibrated & Approved</span>
         </span>
@@ -2873,7 +3092,7 @@ export const EvaluationTab: React.FC = () => {
     }
     if (s.includes('service') || s.includes('sm') || s === 'sm final approval') {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/80 shadow-2xs shrink-0">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200/80 shadow-2xs shrink-0">
           <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
           <span>SM Approved</span>
         </span>
@@ -2881,14 +3100,14 @@ export const EvaluationTab: React.FC = () => {
     }
     if (s.includes('manager') || s.includes('submitted') || s.includes('review')) {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200/80 shadow-2xs shrink-0">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-sky-50 text-sky-700 border border-sky-200/80 shadow-2xs shrink-0">
           <span className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0 animate-pulse" />
           <span>Submitted to Manager</span>
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs shrink-0">
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs shrink-0">
         <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
         <span>Assigned to Employee</span>
       </span>
@@ -2907,14 +3126,14 @@ export const EvaluationTab: React.FC = () => {
       // Filter out logged in user's own response
       if (isResponseForUser(r)) return;
 
-      // Distinct key per employee and evaluation period (so multiple assigned metrics in different periods appear distinctly, but duplicates in the same period are merged)
+      // Distinct key per employee and evaluation record (so multiple assigned metrics in different periods appear distinctly, but duplicates of the exact record are merged)
       const rawPeriod = (r.periodName || (r as any).form || '').trim().toLowerCase();
       let canonicalPeriod = rawPeriod;
       if (rawPeriod.includes('(') && rawPeriod.includes(')')) {
         const parts = rawPeriod.split('(');
         canonicalPeriod = parts[parts.length - 1].replace(')', '').trim();
       }
-      const key = `${String(employeeCode).trim().toLowerCase()}_${canonicalPeriod || r.cycleId || r.id}`;
+      const key = `${String(employeeCode).trim().toLowerCase()}_${r.id}_${canonicalPeriod}`;
       const existing = map.get(key);
       const normalizedResponse: EvaluationResponse = {
         ...r,
@@ -3002,13 +3221,13 @@ export const EvaluationTab: React.FC = () => {
   const myPendingEvaluationsCount = useMemo(() => {
     return allUserResponses.filter(r => {
       const st = String(r.status || '');
-      const isSubmitted = st === 'manager_review' || 
-                          st === 'approved' || 
-                          st === 'sm_final_approval' || 
-                          st === 'Calibrated & Approved' || 
-                          st === 'Completed' || 
-                          (r.status as string) === 'Submitted to Manager' ||
-                          Boolean(r.employeeSubmittedAt);
+      const isSubmitted = st === 'manager_review' ||
+        st === 'approved' ||
+        st === 'sm_final_approval' ||
+        st === 'Calibrated & Approved' ||
+        st === 'Completed' ||
+        (r.status as string) === 'Submitted to Manager' ||
+        Boolean(r.employeeSubmittedAt);
       return !isSubmitted;
     }).length;
   }, [allUserResponses]);
@@ -3159,6 +3378,64 @@ export const EvaluationTab: React.FC = () => {
       .slice(0, 3);
   }, [teamWiseCardsData]);
 
+  // Active selected race team for team member top 3 prize leaderboard
+  const effectiveRaceTeam = useMemo(() => {
+    if (selectedRaceTeam && selectedRaceTeam !== 'all') return selectedRaceTeam;
+    if (teamWiseCardsData.length > 0) return teamWiseCardsData[0].department;
+    return managerDepartments[0] || effectiveTeamName || 'Team';
+  }, [selectedRaceTeam, teamWiseCardsData, managerDepartments, effectiveTeamName]);
+
+  // Top 3 Performing Team Members Leaderboard (Filtered by Selected Team for Prize Winners)
+  const topPerformingMembers = useMemo(() => {
+    if (!activeScopedResponsesForCards || activeScopedResponsesForCards.length === 0) return [];
+
+    const targetDept = (effectiveRaceTeam || '').trim().toLowerCase();
+    const filteredResponses = targetDept
+      ? activeScopedResponsesForCards.filter(r => {
+        const { empInDb, teamName } = getEmployeeDisplayInfo(r);
+        const dept = (empInDb?.department || empInDb?.team || teamName || '').trim().toLowerCase();
+        return dept === targetDept;
+      })
+      : activeScopedResponsesForCards;
+
+    const memberMap = new Map<string, {
+      employeeCode: string;
+      employeeName: string;
+      teamName: string;
+      score: number;
+      isManagerCalibrated: boolean;
+      status: string;
+    }>();
+
+    filteredResponses.forEach(r => {
+      const { employeeCode, employeeName, teamName, empInDb } = getEmployeeDisplayInfo(r);
+      if (!empInDb && !employeeName) return;
+
+      const scoreVal = r.managerScore != null && !isNaN(Number(r.managerScore))
+        ? Number(r.managerScore)
+        : (r.employeeOverallScore != null && !isNaN(Number(r.employeeOverallScore)) ? Number(r.employeeOverallScore) : 0);
+
+      const isManagerCalibrated = r.managerScore != null;
+      const key = String(employeeCode).trim().toLowerCase() || String(r.id);
+
+      const existing = memberMap.get(key);
+      if (!existing || scoreVal > existing.score || (isManagerCalibrated && !existing.isManagerCalibrated)) {
+        memberMap.set(key, {
+          employeeCode,
+          employeeName,
+          teamName: teamName || effectiveRaceTeam,
+          score: scoreVal,
+          isManagerCalibrated,
+          status: r.status
+        });
+      }
+    });
+
+    return Array.from(memberMap.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+  }, [activeScopedResponsesForCards, effectiveRaceTeam, dbEmployees]);
+
   // Overall calculations across current scoped teams for the summary card
   const allTeamsTotalEmps = activeScopedResponsesForCards.length;
   const allTeamsCompletedCount = activeScopedResponsesForCards.filter(r =>
@@ -3258,6 +3535,1603 @@ export const EvaluationTab: React.FC = () => {
     });
   }, [deduplicatedManagerResponses, mgrStatusFilter, mgrSearchQuery, dbEmployees]);
 
+  const isDailyResponse = (r: EvaluationResponse) => {
+    const respCycle = cycles.find(c => c.id === r.cycleId);
+    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
+    if (f === 'daily') return true;
+    if (f && f !== 'daily') return false;
+    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
+    return p.includes('daily');
+  };
+
+  const isWeeklyResponse = (r: EvaluationResponse) => {
+    const respCycle = cycles.find(c => c.id === r.cycleId);
+    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
+    if (f === 'weekly') return true;
+    if (f && f !== 'weekly') return false;
+    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
+    return p.includes('weekly') || p.includes('week');
+  };
+
+  const isMonthlyResponse = (r: EvaluationResponse) => {
+    const respCycle = cycles.find(c => c.id === r.cycleId);
+    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
+    if (f === 'monthly') return true;
+    if (f && f !== 'monthly') return false;
+    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
+    return (p.includes('monthly') || p.includes('month')) && !p.includes('weekly') && !p.includes('daily');
+  };
+
+  const isQuarterlyResponse = (r: EvaluationResponse) => {
+    const respCycle = cycles.find(c => c.id === r.cycleId);
+    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
+    if (f === 'quarterly') return true;
+    if (f && f !== 'quarterly') return false;
+    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
+    return p.includes('quarter') || p.includes('stage') || /q[1-4]/i.test(p);
+  };
+
+  const isYearlyResponse = (r: EvaluationResponse) => {
+    const respCycle = cycles.find(c => c.id === r.cycleId);
+    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
+    if (f === 'yearly' || f === 'annual') return true;
+    if (f && f !== 'yearly' && f !== 'annual') return false;
+    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
+    return p.includes('annual') || p.includes('yearly') || p.includes('year');
+  };
+
+  // Dynamic notification counts of evaluations and pending reviews per frequency tab
+  const frequencyCounts = useMemo(() => {
+    let all = activeScopedResponsesForCards.length;
+    let allPending = 0;
+    let daily = 0;
+    let dailyPending = 0;
+    let weekly = 0;
+    let weeklyPending = 0;
+    let monthly = 0;
+    let monthlyPending = 0;
+    let quarterly = 0;
+    let quarterlyPending = 0;
+
+    activeScopedResponsesForCards.forEach(r => {
+      const isPending = (r.status as string) === 'manager_review' || (r.status as string) === 'Submitted to Manager' || r.managerScore == null;
+      if (isPending) allPending++;
+
+      if (isDailyResponse(r)) {
+        daily++;
+        if (isPending) dailyPending++;
+      } else if (isWeeklyResponse(r)) {
+        weekly++;
+        if (isPending) weeklyPending++;
+      } else if (isMonthlyResponse(r)) {
+        monthly++;
+        if (isPending) monthlyPending++;
+      } else if (isQuarterlyResponse(r)) {
+        quarterly++;
+        if (isPending) quarterlyPending++;
+      } else {
+        quarterly++;
+        if (isPending) quarterlyPending++;
+      }
+    });
+
+    return {
+      all,
+      allPending,
+      daily,
+      dailyPending,
+      weekly,
+      weeklyPending,
+      monthly,
+      monthlyPending,
+      quarterly,
+      quarterlyPending,
+    };
+  }, [activeScopedResponsesForCards, cycles]);
+
+  const getEvaluationDateRange = (r: EvaluationResponse): { startDate: Date | null; endDate: Date | null } => {
+    let start: Date | null = null;
+    let end: Date | null = null;
+
+    const rawStart = (r as any).startDate || (r as any).start_date || (r as any).fromDate || (r as any).from_date;
+    if (rawStart) {
+      const d = new Date(rawStart);
+      if (!isNaN(d.getTime())) start = d;
+    }
+
+    const rawEnd = (r as any).endDate || (r as any).end_date || (r as any).toDate || (r as any).to_date;
+    if (rawEnd) {
+      const d = new Date(rawEnd);
+      if (!isNaN(d.getTime())) end = d;
+    }
+
+    const text = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''}`;
+
+    // 1. Match Quarter e.g. "Q3 2026", "Q3"
+    const qMatch = text.match(/Q([1-4])/i);
+    if (qMatch) {
+      const qNum = parseInt(qMatch[1], 10);
+      const qYearMatch = text.match(/20\d{2}/);
+      const qYear = qYearMatch ? parseInt(qYearMatch[0], 10) : (start ? start.getFullYear() : 2026);
+      if (!start) start = new Date(qYear, (qNum - 1) * 3, 1);
+      if (!end) end = new Date(qYear, qNum * 3, 0);
+    }
+
+    // 2. Match Month Year e.g. "Sep 2026" or "September 2026"
+    const mMatch = text.match(/(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})/i);
+    if (mMatch) {
+      const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const mIdx = months.indexOf(mMatch[1].toLowerCase().slice(0, 3));
+      const mYear = parseInt(mMatch[2], 10);
+      if (mIdx !== -1) {
+        if (!start) start = new Date(mYear, mIdx, 1);
+        if (!end) end = new Date(mYear, mIdx + 1, 0);
+      }
+    }
+
+    // 3. Match Date Range e.g. "14 Sep 2026 - 20 Sep 2026"
+    const rangeMatch = text.match(/(\d{1,2})\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*(\d{4})?\s*[-–]\s*(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*(\d{4})/i);
+    if (rangeMatch) {
+      const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const endMonthIdx = months.indexOf(rangeMatch[4].toLowerCase().slice(0, 3));
+      const endYear = parseInt(rangeMatch[5], 10);
+      const startYear = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : endYear;
+      if (!start) start = new Date(startYear, endMonthIdx, parseInt(rangeMatch[1], 10));
+      if (!end) end = new Date(endYear, endMonthIdx, parseInt(rangeMatch[3], 10));
+    }
+
+    // 4. Match Single Date e.g. "15 Sep 2026"
+    const singleMatch = text.match(/(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i);
+    if (singleMatch && !start) {
+      const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const mIdx = months.indexOf(singleMatch[2].toLowerCase().slice(0, 3));
+      if (mIdx !== -1) {
+        start = new Date(Number(singleMatch[3]), mIdx, Number(singleMatch[1]));
+        end = new Date(Number(singleMatch[3]), mIdx, Number(singleMatch[1]));
+      }
+    }
+
+    // 5. Match slash format e.g. 15/09/2026
+    const matchSlash = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (matchSlash && !start) {
+      start = new Date(Number(matchSlash[3]), Number(matchSlash[2]) - 1, Number(matchSlash[1]));
+      end = start;
+    }
+
+    // 6. Match dash format e.g. 2026-09-15
+    const matchDash = text.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (matchDash && !start) {
+      start = new Date(Number(matchDash[1]), Number(matchDash[2]) - 1, Number(matchDash[3]));
+      end = start;
+    }
+
+    if (!start && r.createdAt) {
+      const d = new Date(r.createdAt);
+      if (!isNaN(d.getTime())) {
+        start = d;
+        end = d;
+      }
+    }
+
+    if (start && !end) end = start;
+    if (end && !start) start = end;
+
+    return { startDate: start, endDate: end };
+  };
+
+  const getResponseDate = (r: EvaluationResponse): Date | null => {
+    return getEvaluationDateRange(r).startDate;
+  };
+
+  const getMondayToSundayWeek = (d: Date) => {
+    const day = d.getDay(); // 0 is Sunday, 1 is Monday, ..., 6 is Saturday
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() + diffToMonday);
+    const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const startStr = `${monday.getFullYear()}-${pad(monday.getMonth() + 1)}-${pad(monday.getDate())}`;
+    const endStr = `${sunday.getFullYear()}-${pad(sunday.getMonth() + 1)}-${pad(sunday.getDate())}`;
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const label = `${pad(monday.getDate())} ${months[monday.getMonth()]} - ${pad(sunday.getDate())} ${months[sunday.getMonth()]} ${sunday.getFullYear()}`;
+
+    return { monday, sunday, startStr, endStr, weekKey: `${startStr}_${endStr}`, label };
+  };
+
+  // Active week calculation for reference UI
+  const activeWeekInfo = useMemo(() => {
+    const [y, m, d] = (reportDateInPeriod || '').split('-').map(Number);
+    const baseDate = (!isNaN(y) && !isNaN(m) && !isNaN(d)) ? new Date(y, m - 1, d) : new Date();
+    return getMondayToSundayWeek(baseDate);
+  }, [reportDateInPeriod]);
+
+  // Dynamically extract all available weekly evaluation periods (supporting standard Mon-Sun and custom ranges like Wed-Tue)
+  const availableWeeklyPeriods = useMemo(() => {
+    const weeklyResponses = activeScopedResponsesForCards.filter(isWeeklyResponse);
+    const periodsMap = new Map<string, { label: string; startStr: string; endStr: string; count: number; monday: Date }>();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    weeklyResponses.forEach(r => {
+      const range = getEvaluationDateRange(r);
+      if (range.startDate) {
+        const startStr = `${range.startDate.getFullYear()}-${pad(range.startDate.getMonth() + 1)}-${pad(range.startDate.getDate())}`;
+        const endD = range.endDate || range.startDate;
+        const endStr = `${endD.getFullYear()}-${pad(endD.getMonth() + 1)}-${pad(endD.getDate())}`;
+        const label = `${pad(range.startDate.getDate())} ${months[range.startDate.getMonth()]} - ${pad(endD.getDate())} ${months[endD.getMonth()]} ${endD.getFullYear()}`;
+
+        if (!periodsMap.has(startStr)) {
+          periodsMap.set(startStr, {
+            label,
+            startStr,
+            endStr,
+            count: 0,
+            monday: range.startDate
+          });
+        }
+        periodsMap.get(startStr)!.count += 1;
+      }
+    });
+
+    return Array.from(periodsMap.values()).sort((a, b) => b.monday.getTime() - a.monday.getTime());
+  }, [activeScopedResponsesForCards, cycles]);
+
+  // Dynamically extract all available months for filtering
+  const availableMonths = useMemo(() => {
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const monthMap = new Map<string, { key: string; label: string; year: number; month: number }>();
+
+    // From active responses
+    activeScopedResponsesForCards.forEach(r => {
+      const d = getResponseDate(r);
+      if (d) {
+        const y = d.getFullYear();
+        const m = d.getMonth();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const key = `${y}-${pad(m + 1)}`;
+        if (!monthMap.has(key)) {
+          monthMap.set(key, { key, label: `${months[m]} ${y}`, year: y, month: m });
+        }
+      }
+    });
+
+    // Also include months from cycles
+    cycles.forEach(c => {
+      const d = c.startDate ? new Date(c.startDate) : null;
+      if (d && !isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const m = d.getMonth();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const key = `${y}-${pad(m + 1)}`;
+        if (!monthMap.has(key)) {
+          monthMap.set(key, { key, label: `${months[m]} ${y}`, year: y, month: m });
+        }
+      }
+    });
+
+    // Include all 12 months for current year and previous/next year if needed
+    const now = new Date();
+    const curYear = now.getFullYear();
+    for (let m = 0; m < 12; m++) {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const key = `${curYear}-${pad(m + 1)}`;
+      if (!monthMap.has(key)) {
+        monthMap.set(key, { key, label: `${months[m]} ${curYear}`, year: curYear, month: m });
+      }
+    }
+
+    return Array.from(monthMap.values()).sort((a, b) => {
+      if (b.year !== a.year) return b.year - a.year;
+      return b.month - a.month;
+    });
+  }, [activeScopedResponsesForCards, cycles]);
+
+  // Compute all weekly periods (From date to To date) for the selected month (showing only actual evaluation weeks from DB)
+  const weeksForSelectedMonth = useMemo(() => {
+    const [yStr, mStr] = (selectedReportMonthKey || '').split('-');
+    const y = parseInt(yStr, 10);
+    const m = parseInt(mStr, 10) - 1;
+    if (isNaN(y) || isNaN(m)) return availableWeeklyPeriods;
+
+    // Filter available weekly evaluation periods from DB that fall in / overlap this month
+    return availableWeeklyPeriods.filter(wp => {
+      const [wpY, wpM] = wp.startStr.split('-').map(Number);
+      return wpY === y && (wpM - 1 === m || wp.monday.getMonth() === m);
+    });
+  }, [selectedReportMonthKey, availableWeeklyPeriods]);
+
+  const handleReportMonthChange = (monthKey: string) => {
+    setSelectedReportMonthKey(monthKey);
+    if (monthKey !== 'all') {
+      const [yStr, mStr] = monthKey.split('-');
+      const y = parseInt(yStr, 10);
+      const m = parseInt(mStr, 10) - 1;
+      if (!isNaN(y) && !isNaN(m)) {
+        const firstDay = new Date(y, m, 1);
+        const dayOfWeek = firstDay.getDay();
+        const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const firstMon = new Date(y, m, 1 + diffToMonday);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const firstMonStr = `${firstMon.getFullYear()}-${pad(firstMon.getMonth() + 1)}-${pad(firstMon.getDate())}`;
+        setReportDateInPeriod(firstMonStr);
+        setSelectedWeekPeriod('all');
+      }
+    }
+  };
+
+  // Dynamically extract all available quarters for filtering
+  const availableQuarters = useMemo(() => {
+    const qMap = new Map<string, { key: string; label: string; year: number; quarter: number }>();
+    const quarters = [
+      { q: 1, label: 'Jan - Mar' },
+      { q: 2, label: 'Apr - Jun' },
+      { q: 3, label: 'Jul - Sep' },
+      { q: 4, label: 'Oct - Dec' }
+    ];
+
+    // From active responses
+    activeScopedResponsesForCards.forEach(r => {
+      const d = getResponseDate(r);
+      if (d) {
+        const y = d.getFullYear();
+        const q = Math.ceil((d.getMonth() + 1) / 3);
+        const key = `${y}-Q${q}`;
+        if (!qMap.has(key)) {
+          const qObj = quarters.find(item => item.q === q) || quarters[0];
+          qMap.set(key, { key, label: `Q${q} ${y} (${qObj.label})`, year: y, quarter: q });
+        }
+      }
+    });
+
+    // From cycles
+    cycles.forEach(c => {
+      const d = c.startDate ? new Date(c.startDate) : null;
+      if (d && !isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const q = Math.ceil((d.getMonth() + 1) / 3);
+        const key = `${y}-Q${q}`;
+        if (!qMap.has(key)) {
+          const qObj = quarters.find(item => item.q === q) || quarters[0];
+          qMap.set(key, { key, label: `Q${q} ${y} (${qObj.label})`, year: y, quarter: q });
+        }
+      }
+    });
+
+    // Current year all 4 quarters
+    const now = new Date();
+    const curYear = now.getFullYear();
+    for (let q = 1; q <= 4; q++) {
+      const key = `${curYear}-Q${q}`;
+      if (!qMap.has(key)) {
+        const qObj = quarters[q - 1];
+        qMap.set(key, { key, label: `Q${q} ${curYear} (${qObj.label})`, year: curYear, quarter: q });
+      }
+    }
+
+    return Array.from(qMap.values()).sort((a, b) => {
+      if (b.year !== a.year) return b.year - a.year;
+      return b.quarter - a.quarter;
+    });
+  }, [activeScopedResponsesForCards, cycles]);
+
+  const handleReportQuarterChange = (qKey: string) => {
+    setSelectedReportQuarterKey(qKey);
+    if (qKey !== 'all') {
+      const [yStr, qStr] = qKey.split('-Q');
+      const y = parseInt(yStr, 10);
+      const q = parseInt(qStr, 10);
+      if (!isNaN(y) && !isNaN(q)) {
+        const startMonth = (q - 1) * 3;
+        const pad = (n: number) => String(n).padStart(2, '0');
+        setReportDateInPeriod(`${y}-${pad(startMonth + 1)}-01`);
+      }
+    }
+  };
+
+  // Week days & actual evaluation dates dynamically extracted from database records
+  const availableFilterDates = useMemo(() => {
+    const datesMap = new Map<string, string>(); // dateStr -> formatted label
+
+    // 1. Gather all actual evaluation dates present in the DB records
+    activeScopedResponsesForCards.forEach(r => {
+      const d = getResponseDate(r);
+      if (d) {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const label = `${d.getDate()} ${months[d.getMonth()]} (${dayNames[d.getDay()]})`;
+        if (!datesMap.has(dateStr)) {
+          datesMap.set(dateStr, label);
+        }
+      }
+    });
+
+    // 2. Include the calendar days of the active week period
+    const monday = new Date(activeWeekInfo.monday);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    for (let i = 0; i < 7; i++) {
+      const cur = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const dateStr = `${cur.getFullYear()}-${pad(cur.getMonth() + 1)}-${pad(cur.getDate())}`;
+      const label = `${cur.getDate()} ${months[cur.getMonth()]} (${dayNames[i]})`;
+      if (!datesMap.has(dateStr)) {
+        datesMap.set(dateStr, label);
+      }
+    }
+
+    return Array.from(datesMap.entries()).map(([dateStr, label]) => ({ dateStr, label }));
+  }, [activeScopedResponsesForCards, activeWeekInfo]);
+
+  // Available departments dynamically populated directly from database employees & teams within scope
+  const availableFilterDepartments = useMemo(() => {
+    const depts = new Set<string>();
+    // From evaluation records in this role scope
+    activeScopedResponsesForCards.forEach(r => {
+      const { departmentName } = getEmployeeDisplayInfo(r);
+      if (departmentName && departmentName.trim() && departmentName !== 'Department') {
+        depts.add(departmentName.trim());
+      }
+    });
+    // From direct / downline reports in DB for this manager
+    managerDirectReports.forEach((e: any) => {
+      const d = (e.department || '').trim();
+      if (d) depts.add(d);
+    });
+    // Fallback to all manager departments if none yet
+    if (depts.size === 0) {
+      managerDepartments.forEach(d => depts.add(d));
+    }
+    return Array.from(depts).filter(Boolean).sort();
+  }, [activeScopedResponsesForCards, managerDirectReports, managerDepartments, dbEmployees, dbTeams]);
+
+  // Available teams dynamically populated directly from database employees & teams within scope
+  const availableFilterTeams = useMemo(() => {
+    const teams = new Set<string>();
+    // From evaluation records in this role scope
+    activeScopedResponsesForCards.forEach(r => {
+      const { departmentName, teamName } = getEmployeeDisplayInfo(r);
+      if (reportFilterDept !== 'all' && departmentName.toLowerCase() !== reportFilterDept.toLowerCase()) {
+        return;
+      }
+      if (teamName && teamName.trim() && teamName !== 'Team') {
+        teams.add(teamName.trim());
+      }
+    });
+    // From direct / downline reports in DB for this manager
+    managerDirectReports.forEach((e: any) => {
+      const dept = (e.department || '').trim();
+      if (reportFilterDept !== 'all' && dept.toLowerCase() !== reportFilterDept.toLowerCase()) {
+        return;
+      }
+      const t = (e.team || '').trim();
+      if (t) teams.add(t);
+    });
+    return Array.from(teams).filter(Boolean).sort();
+  }, [activeScopedResponsesForCards, managerDirectReports, reportFilterDept, dbEmployees, dbTeams]);
+
+  // Comprehensive report filtered responses from database
+  const reportFilteredResponses = useMemo(() => {
+    let list = [...activeScopedResponsesForCards];
+
+    // 1. Search Query filter (Employee Name, Code, Team, Department, Designation)
+    if (mgrSearchQuery.trim()) {
+      const q = mgrSearchQuery.toLowerCase().trim();
+      list = list.filter(r => {
+        const { employeeCode, employeeName, teamName, departmentName, empInDb } = getEmployeeDisplayInfo(r);
+        return (
+          (employeeName || '').toLowerCase().includes(q) ||
+          String(employeeCode).toLowerCase().includes(q) ||
+          teamName.toLowerCase().includes(q) ||
+          departmentName.toLowerCase().includes(q) ||
+          (r.designation || empInDb?.designation || '').toLowerCase().includes(q)
+        );
+      });
+    }
+
+    // 2. Department filter directly matching DB values
+    if (reportFilterDept !== 'all') {
+      const targetDept = reportFilterDept.toLowerCase().trim();
+      list = list.filter(r => {
+        const { departmentName, empInDb } = getEmployeeDisplayInfo(r);
+        const empDept = (empInDb?.department || departmentName || '').toLowerCase().trim();
+        return empDept === targetDept;
+      });
+    }
+
+    // 3. Team filter directly matching DB values
+    if (reportFilterTeam !== 'all') {
+      const targetTeam = reportFilterTeam.toLowerCase().trim();
+      list = list.filter(r => {
+        const { teamName, empInDb } = getEmployeeDisplayInfo(r);
+        const empTeam = (empInDb?.team || teamName || '').toLowerCase().trim();
+        return empTeam === targetTeam;
+      });
+    }
+
+    // 4. State filter
+    if (reportFilterState === 'pending') {
+      list = list.filter(r =>
+        r.status === 'employee_in_progress' ||
+        (r.status as string) === 'manager_review' ||
+        (r.status as string) === 'Submitted to Manager' ||
+        (r.managerScore == null && r.status !== 'approved' && r.status !== 'sm_final_approval')
+      );
+    } else if (reportFilterState === 'submitted') {
+      list = list.filter(r =>
+        (r.status as string) === 'manager_review' ||
+        (r.status as string) === 'Submitted to Manager' ||
+        (r.employeeOverallScore != null && r.employeeOverallScore > 0 && r.managerScore == null)
+      );
+    } else if (reportFilterState === 'approved') {
+      list = list.filter(r =>
+        (r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
+        (r.status as string) !== 'manager_review' &&
+        (r.status as string) !== 'Submitted to Manager'
+      );
+    }
+
+    // 5. Date & Frequency Filter strictly matching reportViewTab and reportDateInPeriod
+    const [targetY, targetM, targetD] = (reportDateInPeriod || '').split('-').map(Number);
+    const hasTargetDate = !isNaN(targetY) && !isNaN(targetM) && !isNaN(targetD);
+    const targetDateObj = hasTargetDate ? new Date(targetY, targetM - 1, targetD) : new Date();
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const targetDateStr = hasTargetDate ? `${targetDateObj.getFullYear()}-${pad2(targetDateObj.getMonth() + 1)}-${pad2(targetDateObj.getDate())}` : '';
+    const targetWeekBounds = getMondayToSundayWeek(targetDateObj);
+    const targetQuarter = Math.ceil((targetDateObj.getMonth() + 1) / 3);
+    const targetYear = targetDateObj.getFullYear();
+    const targetMonth = targetDateObj.getMonth();
+
+    if (reportViewTab === 'all') {
+      // Display all evaluations across all frequencies
+    } else if (reportViewTab === 'daily') {
+      list = list.filter(r => {
+        if (!isDailyResponse(r)) return false;
+        if (!targetDateStr) return true;
+        const range = getEvaluationDateRange(r);
+        if (!range.startDate) return false;
+        const rStartStr = `${range.startDate.getFullYear()}-${pad2(range.startDate.getMonth() + 1)}-${pad2(range.startDate.getDate())}`;
+        const rEndStr = range.endDate ? `${range.endDate.getFullYear()}-${pad2(range.endDate.getMonth() + 1)}-${pad2(range.endDate.getDate())}` : rStartStr;
+        return rStartStr <= targetDateStr && targetDateStr <= rEndStr;
+      });
+    } else if (reportViewTab === 'weekly') {
+      list = list.filter(r => {
+        if (!isWeeklyResponse(r)) return false;
+        const range = getEvaluationDateRange(r);
+        if (!range.startDate) return true;
+        const rStartStr = `${range.startDate.getFullYear()}-${pad2(range.startDate.getMonth() + 1)}-${pad2(range.startDate.getDate())}`;
+        const rWeekInfo = getMondayToSundayWeek(range.startDate);
+        if (selectedWeekPeriod && selectedWeekPeriod !== 'all') {
+          return rStartStr === selectedWeekPeriod || rWeekInfo.startStr === selectedWeekPeriod;
+        }
+        if (selectedReportMonthKey) {
+          const [mY, mM] = selectedReportMonthKey.split('-').map(Number);
+          if (!isNaN(mY) && !isNaN(mM)) {
+            const rStartMon = range.startDate.getMonth();
+            const rStartYear = range.startDate.getFullYear();
+            const rEndMon = range.endDate ? range.endDate.getMonth() : rStartMon;
+            const rEndYear = range.endDate ? range.endDate.getFullYear() : rStartYear;
+            const targetM = mM - 1;
+            const inMonth = (rStartYear === mY && rStartMon === targetM) || (rEndYear === mY && rEndMon === targetM);
+            return inMonth;
+          }
+        }
+        return true;
+      });
+    } else if (reportViewTab === 'monthly') {
+      list = list.filter(r => {
+        if (!isMonthlyResponse(r)) return false;
+        if (selectedReportMonthKey && selectedReportMonthKey !== 'all') {
+          const [mY, mM] = selectedReportMonthKey.split('-').map(Number);
+          const range = getEvaluationDateRange(r);
+          if (!range.startDate) return true;
+          return range.startDate.getFullYear() === mY && range.startDate.getMonth() === (mM - 1);
+        }
+        return true;
+      });
+    } else if (reportViewTab === 'quarterly') {
+      list = list.filter(r => {
+        if (!isQuarterlyResponse(r)) return false;
+        if (selectedReportQuarterKey && selectedReportQuarterKey !== 'all') {
+          const [qY, qNum] = selectedReportQuarterKey.split('-Q').map(Number);
+          const range = getEvaluationDateRange(r);
+          if (!range.startDate) return true;
+          const rQuarter = Math.ceil((range.startDate.getMonth() + 1) / 3);
+          return range.startDate.getFullYear() === qY && rQuarter === qNum;
+        }
+        return true;
+      });
+    } else if (reportViewTab === 'top_weekly') {
+      list = list.filter(r => {
+        if (selectedReportMonthKey && selectedReportMonthKey !== 'all') {
+          const [mY, mM] = selectedReportMonthKey.split('-').map(Number);
+          const range = getEvaluationDateRange(r);
+          if (!range.startDate) return true;
+          return range.startDate.getFullYear() === mY && range.startDate.getMonth() === (mM - 1);
+        }
+        return true;
+      });
+      list.sort((a, b) => {
+        const scoreA = a.managerScore != null ? Number(a.managerScore) : Number(a.employeeOverallScore || 0);
+        const scoreB = b.managerScore != null ? Number(b.managerScore) : Number(b.employeeOverallScore || 0);
+        return scoreB - scoreA;
+      });
+    } else if (reportViewTab === 'top_monthly') {
+      list = list.filter(r => {
+        if (!isMonthlyResponse(r)) return false;
+        if (selectedReportMonthKey && selectedReportMonthKey !== 'all') {
+          const [mY, mM] = selectedReportMonthKey.split('-').map(Number);
+          const range = getEvaluationDateRange(r);
+          if (!range.startDate) return true;
+          return range.startDate.getFullYear() === mY && range.startDate.getMonth() === (mM - 1);
+        }
+        return true;
+      });
+      list.sort((a, b) => {
+        const scoreA = a.managerScore != null ? Number(a.managerScore) : Number(a.employeeOverallScore || 0);
+        const scoreB = b.managerScore != null ? Number(b.managerScore) : Number(b.employeeOverallScore || 0);
+        return scoreB - scoreA;
+      });
+    } else if (reportViewTab === 'top_quarterly') {
+      list = list.filter(r => {
+        if (!isQuarterlyResponse(r)) return false;
+        if (selectedReportQuarterKey && selectedReportQuarterKey !== 'all') {
+          const [qY, qNum] = selectedReportQuarterKey.split('-Q').map(Number);
+          const range = getEvaluationDateRange(r);
+          if (!range.startDate) return true;
+          const rQuarter = Math.ceil((range.startDate.getMonth() + 1) / 3);
+          return range.startDate.getFullYear() === qY && rQuarter === qNum;
+        }
+        return true;
+      });
+      list.sort((a, b) => {
+        const scoreA = a.managerScore != null ? Number(a.managerScore) : Number(a.employeeOverallScore || 0);
+        const scoreB = b.managerScore != null ? Number(b.managerScore) : Number(b.employeeOverallScore || 0);
+        return scoreB - scoreA;
+      });
+    } else if (reportViewTab === 'top_annual') {
+      list = list.filter(r => {
+        if (!isYearlyResponse(r)) return false;
+        if (!hasTargetDate) return true;
+        const range = getEvaluationDateRange(r);
+        if (!range.startDate) return true;
+        return range.startDate.getFullYear() === targetYear;
+      });
+      list.sort((a, b) => {
+        const scoreA = a.managerScore != null ? Number(a.managerScore) : Number(a.employeeOverallScore || 0);
+        const scoreB = b.managerScore != null ? Number(b.managerScore) : Number(b.employeeOverallScore || 0);
+        return scoreB - scoreA;
+      });
+    }
+
+    // 6. Specific single day sub-filter (from Row 2 dropdown)
+    if (reportFilterDate !== 'all') {
+      list = list.filter(r => {
+        const range = getEvaluationDateRange(r);
+        if (!range.startDate) return true;
+        const rStartStr = `${range.startDate.getFullYear()}-${pad2(range.startDate.getMonth() + 1)}-${pad2(range.startDate.getDate())}`;
+        return rStartStr === reportFilterDate;
+      });
+    }
+
+    return list;
+  }, [
+    activeScopedResponsesForCards,
+    mgrSearchQuery,
+    reportFilterDept,
+    reportFilterTeam,
+    reportFilterState,
+    reportFilterDate,
+    reportDateInPeriod,
+    selectedWeekPeriod,
+    selectedReportMonthKey,
+    selectedReportQuarterKey,
+    reportViewTab,
+    dbEmployees
+  ]);
+
+  // Hierarchical Department -> Team -> Employee grouping strictly from database records
+  const groupedReportHierarchy = useMemo(() => {
+    const deptMap = new Map<string, Map<string, any[]>>();
+
+    reportFilteredResponses.forEach((r, idx) => {
+      const { employeeCode, employeeName, teamName, departmentName, empInDb } = getEmployeeDisplayInfo(r);
+      const isCalibrated = r.managerScore != null && (r.status as string) !== 'manager_review' && (r.status as string) !== 'Submitted to Manager';
+      const initials = (employeeName || 'EM').split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase() || 'EM';
+
+      const avatarColors = [
+        'bg-[#5a5720] text-white',
+        'bg-[#4a3480] text-white',
+        'bg-[#2e7d32] text-white',
+        'bg-[#8d4218] text-white',
+        'bg-[#0f2e5c] text-white',
+        'bg-[#00796b] text-white',
+        'bg-[#c2185b] text-white',
+        'bg-[#455a64] text-white',
+      ];
+      const str = `${employeeName}_${employeeCode}`;
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) hash = (hash << 5) - hash + str.charCodeAt(i);
+      const avatarBg = avatarColors[Math.abs(hash) % avatarColors.length];
+
+      // Self score strictly from DB
+      const selfScoreNum = r.employeeOverallScore != null
+        ? Number(r.employeeOverallScore)
+        : ((r as any).earned_score != null && !isNaN(Number((r as any).earned_score)) ? Number((r as any).earned_score) : null);
+
+      const dateScoreDisplay = selfScoreNum != null && selfScoreNum > 0
+        ? `${selfScoreNum.toFixed(1)}%`
+        : '—';
+
+      // Manager score strictly from DB
+      const mgrScoreNum = r.managerScore != null
+        ? Number(r.managerScore)
+        : ((r as any).manager_score != null && !isNaN(Number((r as any).manager_score)) ? Number((r as any).manager_score) : null);
+
+      const averageScoreDisplay = mgrScoreNum != null
+        ? `${mgrScoreNum.toFixed(1)}%`
+        : '—';
+
+      const range = getEvaluationDateRange(r);
+      const respCycle = cycles.find(cy => cy.id === r.cycleId);
+      const monthsShortList = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const pad2 = (n: number) => String(n).padStart(2, '0');
+
+      let freqLabel = 'Evaluation';
+      let freqColor = 'bg-slate-100 text-slate-700 border-slate-200';
+      let dateText = '';
+
+      if (isDailyResponse(r)) {
+        freqLabel = 'Daily';
+        freqColor = 'bg-amber-50 text-amber-900 border-amber-300';
+        if (range.startDate) {
+          dateText = `${range.startDate.getDate()} ${monthsShortList[range.startDate.getMonth()]} ${range.startDate.getFullYear()}`;
+        }
+      } else if (isWeeklyResponse(r)) {
+        freqLabel = 'Weekly';
+        freqColor = 'bg-blue-50 text-blue-900 border-blue-300';
+        if (range.startDate) {
+          const startD = range.startDate;
+          const endD = range.endDate || range.startDate;
+          dateText = `${pad2(startD.getDate())} ${monthsShortList[startD.getMonth()]} - ${pad2(endD.getDate())} ${monthsShortList[endD.getMonth()]} ${endD.getFullYear()}`;
+        }
+      } else if (isMonthlyResponse(r)) {
+        freqLabel = 'Monthly';
+        freqColor = 'bg-purple-50 text-purple-900 border-purple-300';
+        if (range.startDate) {
+          dateText = `${monthsShortList[range.startDate.getMonth()]} ${range.startDate.getFullYear()}`;
+        }
+      } else if (isQuarterlyResponse(r)) {
+        freqLabel = 'Quarterly';
+        freqColor = 'bg-emerald-50 text-emerald-900 border-emerald-300';
+        if (range.startDate) {
+          const qNum = Math.ceil((range.startDate.getMonth() + 1) / 3);
+          dateText = `Q${qNum} ${range.startDate.getFullYear()}`;
+        }
+      } else if (isYearlyResponse(r)) {
+        freqLabel = 'Annual';
+        freqColor = 'bg-indigo-50 text-indigo-900 border-indigo-300';
+        if (range.startDate) {
+          dateText = `${range.startDate.getFullYear()}`;
+        }
+      }
+
+      if (!dateText) {
+        dateText = respCycle?.periodName || respCycle?.name || (r as any).periodName || (r as any).form || 'Evaluation Period';
+      }
+
+      const memberItem = {
+        response: r,
+        employeeName,
+        employeeCode,
+        departmentName,
+        teamName,
+        initials,
+        avatarBg,
+        dateScoreDisplay,
+        averageScoreDisplay,
+        isCalibrated,
+        periodInfo: {
+          freqLabel,
+          freqColor,
+          dateText
+        },
+        designation: r.designation || empInDb?.designation || empInDb?.job_title || 'Team Member',
+        rank: reportViewTab.startsWith('top_') ? idx + 1 : undefined
+      };
+
+      if (!deptMap.has(departmentName)) {
+        deptMap.set(departmentName, new Map<string, any[]>());
+      }
+      const teamMap = deptMap.get(departmentName)!;
+      if (!teamMap.has(teamName)) {
+        teamMap.set(teamName, []);
+      }
+      teamMap.get(teamName)!.push(memberItem);
+    });
+
+    const result: Array<{
+      departmentName: string;
+      totalPeople: number;
+      teams: Array<{
+        teamName: string;
+        members: any[];
+      }>;
+    }> = [];
+
+    deptMap.forEach((teamMap, deptName) => {
+      let deptTotal = 0;
+      const teams: Array<{ teamName: string; members: any[] }> = [];
+
+      teamMap.forEach((members, tName) => {
+        deptTotal += members.length;
+        // Sort: Submitted to Manager / pending review evaluations appear at the top
+        const sortedMembers = [...members].sort((a, b) => {
+          const isPendingA = Boolean(
+            (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted')) &&
+            a.response.managerScore == null
+          );
+          const isPendingB = Boolean(
+            (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted')) &&
+            b.response.managerScore == null
+          );
+          if (isPendingA && !isPendingB) return -1;
+          if (!isPendingA && isPendingB) return 1;
+          return 0;
+        });
+        teams.push({ teamName: tName, members: sortedMembers });
+      });
+
+      result.push({
+        departmentName: deptName,
+        totalPeople: deptTotal,
+        teams
+      });
+    });
+
+    return result;
+  }, [reportFilteredResponses, reportViewTab, dbEmployees]);
+
+  // Formatted date column header dynamically derived from DB records & user selection
+  const formattedDateColumnHeader = useMemo(() => {
+    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    if (reportFilterDate !== 'all') {
+      const [y, m, d] = reportFilterDate.split('-').map(Number);
+      if (!isNaN(d) && !isNaN(m)) return `${d} ${months[m - 1]}`;
+      return reportFilterDate.toUpperCase();
+    }
+
+    const [y, m, d] = (reportDateInPeriod || '').split('-').map(Number);
+    if (reportViewTab === 'all') {
+      return 'SELF SCORE';
+    }
+    if (reportViewTab === 'daily' && !isNaN(d) && !isNaN(m)) {
+      return `${d} ${months[m - 1]}`;
+    }
+    if (reportViewTab === 'weekly') {
+      const mon = activeWeekInfo.monday;
+      const sun = activeWeekInfo.sunday;
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${pad(mon.getDate())} ${months[mon.getMonth()]} - ${pad(sun.getDate())} ${months[sun.getMonth()]}`;
+    }
+    if (reportViewTab === 'monthly') {
+      const activeMonth = !isNaN(m) ? m - 1 : new Date().getMonth();
+      const activeYear = !isNaN(y) ? y : new Date().getFullYear();
+      return `${months[activeMonth]} ${activeYear}`;
+    }
+    if (reportViewTab === 'quarterly') {
+      const activeQuarter = !isNaN(m) ? Math.ceil(m / 3) : Math.ceil((new Date().getMonth() + 1) / 3);
+      const activeYear = !isNaN(y) ? y : new Date().getFullYear();
+      return `Q${activeQuarter} ${activeYear}`;
+    }
+
+    return 'SCORE';
+  }, [reportFilterDate, reportDateInPeriod, reportViewTab, activeWeekInfo]);
+
+  // Dynamic header info for the report title banner strictly respecting selected date & frequency
+  const reportHeaderInfo = useMemo(() => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    const [y, m, d] = (reportDateInPeriod || '').split('-').map(Number);
+    const activeDate = (!isNaN(y) && !isNaN(m) && !isNaN(d)) ? new Date(y, m - 1, d) : new Date();
+
+    const weekInfo = getMondayToSundayWeek(activeDate);
+    const curDateFormatted = `${activeDate.getDate()} ${months[activeDate.getMonth()]} ${activeDate.getFullYear()}`;
+    const monthLabel = `${months[activeDate.getMonth()]} ${activeDate.getFullYear()}`;
+    const qNum = Math.ceil((activeDate.getMonth() + 1) / 3);
+    const qMonthsLabel = qNum === 1 ? 'Jan - Mar' : qNum === 2 ? 'Apr - Jun' : qNum === 3 ? 'Jul - Sep' : 'Oct - Dec';
+
+    const totalCount = reportFilteredResponses.length;
+    const completedCount = reportFilteredResponses.filter(r => r.managerScore != null).length;
+    const countBadge = `${totalCount} ${totalCount === 1 ? 'person' : 'people'} (${completedCount} calibrated)`;
+
+    if (reportViewTab === 'all') {
+      return {
+        title: 'All Evaluations Overview',
+        badge: countBadge
+      };
+    }
+    if (reportViewTab === 'daily') {
+      return {
+        title: `Daily Report — ${curDateFormatted}`,
+        badge: countBadge
+      };
+    }
+    if (reportViewTab === 'weekly') {
+      let weekTitle = weekInfo.label;
+      if (selectedWeekPeriod === 'all') {
+        weekTitle = availableWeeklyPeriods.length > 1
+          ? `All Active Weeks (${availableWeeklyPeriods.length} Periods)`
+          : (availableWeeklyPeriods[0]?.label || weekInfo.label);
+      } else {
+        const found = availableWeeklyPeriods.find(p => p.startStr === selectedWeekPeriod);
+        if (found) weekTitle = found.label;
+      }
+      return {
+        title: `Weekly Report — ${weekTitle}`,
+        badge: countBadge
+      };
+    }
+    if (reportViewTab === 'monthly') {
+      let mTitle = monthLabel;
+      if (selectedReportMonthKey && selectedReportMonthKey !== 'all') {
+        const found = availableMonths.find(m => m.key === selectedReportMonthKey);
+        if (found) mTitle = found.label;
+      } else if (selectedReportMonthKey === 'all') {
+        mTitle = `All Months`;
+      }
+      return {
+        title: `Monthly Report — ${mTitle}`,
+        badge: countBadge
+      };
+    }
+    if (reportViewTab === 'quarterly') {
+      let qTitle = `Q${qNum} ${activeDate.getFullYear()} (${qMonthsLabel})`;
+      if (selectedReportQuarterKey && selectedReportQuarterKey !== 'all') {
+        const found = availableQuarters.find(q => q.key === selectedReportQuarterKey);
+        if (found) qTitle = found.label;
+      } else if (selectedReportQuarterKey === 'all') {
+        qTitle = `All Quarters`;
+      }
+      return {
+        title: `Quarterly Report — ${qTitle}`,
+        badge: countBadge
+      };
+    }
+    if (reportViewTab === 'top_weekly') {
+      let mTitle = monthLabel;
+      if (selectedReportMonthKey && selectedReportMonthKey !== 'all') {
+        const found = availableMonths.find(m => m.key === selectedReportMonthKey);
+        if (found) mTitle = found.label;
+      }
+      return {
+        title: `Top Performers — Weekly (${mTitle})`,
+        badge: 'ranked by score'
+      };
+    }
+    if (reportViewTab === 'top_monthly') {
+      let mTitle = monthLabel;
+      if (selectedReportMonthKey && selectedReportMonthKey !== 'all') {
+        const found = availableMonths.find(m => m.key === selectedReportMonthKey);
+        if (found) mTitle = found.label;
+      }
+      return {
+        title: `Top Performers — Monthly (${mTitle})`,
+        badge: 'ranked by score'
+      };
+    }
+    if (reportViewTab === 'top_quarterly') {
+      let qTitle = `Q${qNum} ${activeDate.getFullYear()}`;
+      if (selectedReportQuarterKey && selectedReportQuarterKey !== 'all') {
+        const found = availableQuarters.find(q => q.key === selectedReportQuarterKey);
+        if (found) qTitle = found.label;
+      }
+      return {
+        title: `Top Performers — Quarterly (${qTitle})`,
+        badge: 'ranked by score'
+      };
+    }
+    return {
+      title: `Top Performers — Annual (${activeDate.getFullYear()})`,
+      badge: 'ranked by score'
+    };
+  }, [reportViewTab, reportDateInPeriod, selectedWeekPeriod, selectedReportMonthKey, selectedReportQuarterKey, availableWeeklyPeriods, availableMonths, availableQuarters, reportFilteredResponses]);
+
+  // Handle switching report tab with automatic period date sync so evaluations are immediately visible
+  const handleSwitchReportTab = (tabId: string) => {
+    setReportViewTab(tabId as any);
+    if (tabId === 'all') {
+      setReportFilterDate('all');
+      setSelectedWeekPeriod('all');
+      return;
+    }
+    if (tabId === 'weekly') {
+      setSelectedWeekPeriod('all');
+    }
+    if (tabId.startsWith('top_')) {
+      return;
+    }
+
+    const responsesInTab = activeScopedResponsesForCards.filter(r => {
+      if (tabId === 'daily') return isDailyResponse(r);
+      if (tabId === 'weekly') return isWeeklyResponse(r);
+      if (tabId === 'monthly') return isMonthlyResponse(r);
+      if (tabId === 'quarterly') return isQuarterlyResponse(r);
+      return true;
+    });
+
+    if (responsesInTab.length > 0) {
+      const sample = responsesInTab[0];
+      const range = getEvaluationDateRange(sample);
+      if (range.startDate) {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const qNum = Math.ceil((range.startDate.getMonth() + 1) / 3);
+        setReportDateInPeriod(`${range.startDate.getFullYear()}-${pad(range.startDate.getMonth() + 1)}-${pad(range.startDate.getDate())}`);
+        setSelectedReportMonthKey(`${range.startDate.getFullYear()}-${pad(range.startDate.getMonth() + 1)}`);
+        setSelectedReportQuarterKey(`${range.startDate.getFullYear()}-Q${qNum}`);
+        setReportFilterDate('all');
+      }
+    }
+  };
+
+  // Pastel header colors for Team headers inside Top Performers card (matching reference UI)
+  const getTeamHeaderColor = (name: string) => {
+    const palettes = [
+      { bg: 'bg-[#f3edf5]', text: 'text-[#5e2b6b]', sub: 'text-[#7a3b8c]' },
+      { bg: 'bg-[#eef5ee]', text: 'text-[#2c592e]', sub: 'text-[#38733b]' },
+      { bg: 'bg-[#edf4fb]', text: 'text-[#245480]', sub: 'text-[#2e689e]' },
+      { bg: 'bg-[#fdf0f4]', text: 'text-[#8c2e4f]', sub: 'text-[#ab3b63]' },
+      { bg: 'bg-[#fcf7ee]', text: 'text-[#7a5214]', sub: 'text-[#96651d]' },
+      { bg: 'bg-[#f0f9f8]', text: 'text-[#165a54]', sub: 'text-[#1d756d]' }
+    ];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = (hash << 5) - hash + name.charCodeAt(i);
+    return palettes[Math.abs(hash) % palettes.length];
+  };
+
+  // Top Performers Active Year & Quarter Info
+  const [topPerfYearStr, topPerfMonthStr] = (selectedReportMonthKey || reportDateInPeriod || '').split('-');
+  const topPerformersYear = parseInt(topPerfYearStr, 10) || new Date().getFullYear();
+  const topPerformersMonth = parseInt(topPerfMonthStr, 10) ? parseInt(topPerfMonthStr, 10) - 1 : new Date().getMonth();
+  const topPerformersQ = Math.floor(topPerformersMonth / 3) + 1;
+
+  const topPerformersQuarterRangeText = useMemo(() => {
+    if (topPerformersQ === 1) return `1 Jan - 31 Mar ${topPerformersYear}`;
+    if (topPerformersQ === 2) return `1 Apr - 30 Jun ${topPerformersYear}`;
+    if (topPerformersQ === 3) return `1 Jul - 30 Sep ${topPerformersYear}`;
+    return `1 Oct - 31 Dec ${topPerformersYear}`;
+  }, [topPerformersQ, topPerformersYear]);
+
+  // Helper to deduplicate employees and compute their average score for a given set of evaluation responses (converting weekly cycles to monthly/quarterly averages)
+  const computeTopPerformersGroups = (
+    responses: typeof activeScopedResponsesForCards,
+    filterDept: string,
+    filterTeam: string,
+    searchQ: string
+  ) => {
+    let filtered = responses;
+    if (filterDept !== 'all') {
+      filtered = filtered.filter(r => {
+        const { departmentName, empInDb } = getEmployeeDisplayInfo(r);
+        return (empInDb?.department || departmentName || '').toLowerCase().trim() === filterDept.toLowerCase().trim();
+      });
+    }
+    if (filterTeam !== 'all') {
+      filtered = filtered.filter(r => {
+        const { teamName, empInDb } = getEmployeeDisplayInfo(r);
+        return (empInDb?.team || teamName || '').toLowerCase().trim() === filterTeam.toLowerCase().trim();
+      });
+    }
+    if (searchQ.trim()) {
+      const q = searchQ.toLowerCase().trim();
+      filtered = filtered.filter(r => {
+        const { employeeCode, employeeName, teamName, departmentName } = getEmployeeDisplayInfo(r);
+        return (
+          (employeeName || '').toLowerCase().includes(q) ||
+          String(employeeCode).toLowerCase().includes(q) ||
+          teamName.toLowerCase().includes(q) ||
+          departmentName.toLowerCase().includes(q)
+        );
+      });
+    }
+
+    // Map unique employee to their array of scores across cycles in this period
+    const empMap = new Map<string, { employeeName: string; employeeCode: string; departmentName: string; teamName: string; scores: number[] }>();
+
+    filtered.forEach(r => {
+      const { employeeName, employeeCode, departmentName, teamName } = getEmployeeDisplayInfo(r);
+      const scoreVal = r.managerScore != null
+        ? Number(r.managerScore)
+        : (r.employeeOverallScore != null ? Number(r.employeeOverallScore) : null);
+
+      if (scoreVal == null || scoreVal <= 0) return;
+
+      const empKey = `${employeeCode || employeeName}`;
+      if (!empMap.has(empKey)) {
+        empMap.set(empKey, { employeeName, employeeCode, departmentName, teamName, scores: [] });
+      }
+      empMap.get(empKey)!.scores.push(scoreVal);
+    });
+
+    // Group unique employees by Department and Team with calculated average score
+    const teamMap = new Map<string, { departmentName: string; teamName: string; members: Array<{ name: string; code: string; score: number; rank: number }> }>();
+
+    empMap.forEach(emp => {
+      const avgScore = emp.scores.reduce((a, b) => a + b, 0) / emp.scores.length;
+      const key = `${emp.departmentName}___${emp.teamName}`;
+      if (!teamMap.has(key)) {
+        teamMap.set(key, { departmentName: emp.departmentName, teamName: emp.teamName, members: [] });
+      }
+      teamMap.get(key)!.members.push({
+        name: emp.employeeName,
+        code: emp.employeeCode,
+        score: avgScore,
+        rank: 1
+      });
+    });
+
+    // Sort team members by average score descending and assign rank
+    return Array.from(teamMap.values()).map(g => {
+      const sorted = [...g.members].sort((a, b) => b.score - a.score);
+      sorted.forEach((m, idx) => { m.rank = idx + 1; });
+      return {
+        departmentName: g.departmentName,
+        teamName: g.teamName,
+        members: sorted
+      };
+    });
+  };
+
+  // Top Performers — Weekly (All weeks of the active month + Month Summary Column)
+  const topPerformersWeeklyColumns = useMemo(() => {
+    const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    // Filter responses for the active month
+    const curMonthResponses = activeScopedResponsesForCards.filter(r => {
+      const range = getEvaluationDateRange(r);
+      if (!range.startDate) return false;
+      return range.startDate.getFullYear() === topPerformersYear && range.startDate.getMonth() === topPerformersMonth;
+    });
+
+    const firstDate = new Date(topPerformersYear, topPerformersMonth, 1);
+    const lastDate = new Date(topPerformersYear, topPerformersMonth + 1, 0);
+
+    const dayOfWeek = firstDate.getDay();
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    let currMon = new Date(topPerformersYear, topPerformersMonth, 1 + diffToMonday);
+
+    const now = new Date();
+    const isCurrentMonthNow = now.getFullYear() === topPerformersYear && now.getMonth() === topPerformersMonth;
+
+    const weekCols: Array<{
+      key: string;
+      label: string;
+      subLabel?: string;
+      isSummaryYear: boolean;
+      totalEvaluations: number;
+      groups: Array<{
+        departmentName: string;
+        teamName: string;
+        members: Array<{ name: string; code: string; score: number; rank: number }>;
+      }>;
+    }> = [];
+
+    let weekNum = 1;
+    while (currMon <= lastDate) {
+      const currSun = new Date(currMon.getFullYear(), currMon.getMonth(), currMon.getDate() + 6);
+      const startStr = `${currMon.getFullYear()}-${pad(currMon.getMonth() + 1)}-${pad(currMon.getDate())}`;
+      const isCurrentWeek = isCurrentMonthNow && now >= currMon && now <= currSun;
+
+      // Filter all responses falling in this week
+      const weekResponses = curMonthResponses.filter(r => {
+        const range = getEvaluationDateRange(r);
+        if (!range.startDate) return false;
+        const rStart = range.startDate;
+        const rEnd = range.endDate || range.startDate;
+        return (rStart >= currMon && rStart <= currSun) || (rEnd >= currMon && rEnd <= currSun);
+      });
+
+      const groups = computeTopPerformersGroups(weekResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+      const weekLabel = `${currMon.getDate()} ${monthNamesShort[currMon.getMonth()]} - ${currSun.getDate()} ${monthNamesShort[currSun.getMonth()]}`;
+
+      weekCols.push({
+        key: `week_${startStr}`,
+        label: `W${weekNum}: ${weekLabel}`,
+        subLabel: undefined,
+        isSummaryYear: isCurrentWeek,
+        totalEvaluations: weekResponses.length,
+        groups
+      });
+
+      weekNum++;
+      currMon = new Date(currMon.getFullYear(), currMon.getMonth(), currMon.getDate() + 7);
+    }
+
+    // Month Summary Column (e.g. Sep'26 (month))
+    const yearShort = String(topPerformersYear).slice(-2);
+    const monthGroups = computeTopPerformersGroups(curMonthResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+    const monthSummaryCol = {
+      key: `week_month_summary_${topPerformersYear}_${topPerformersMonth}`,
+      label: `${monthNamesShort[topPerformersMonth]}'${yearShort} (month)`,
+      subLabel: undefined,
+      isSummaryYear: !weekCols.some(w => w.isSummaryYear),
+      totalEvaluations: curMonthResponses.length,
+      groups: monthGroups
+    };
+
+    return [...weekCols, monthSummaryCol];
+  }, [activeScopedResponsesForCards, topPerformersYear, topPerformersMonth, reportFilterDept, reportFilterTeam, mgrSearchQuery]);
+
+  // Top Performers — Monthly multi-column data (matching Image 1 layout)
+  const topPerformersMonthlyColumns = useMemo(() => {
+    const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const qMonthsIndices = [(topPerformersQ - 1) * 3, (topPerformersQ - 1) * 3 + 1, (topPerformersQ - 1) * 3 + 2];
+    const yearShort = String(topPerformersYear).slice(-2);
+
+    return qMonthsIndices.map(mIdx => {
+      const monthLabel = `${monthNamesShort[mIdx]}'${yearShort}`;
+
+      // Find all responses (weekly / monthly) falling in this month
+      const monthResponses = activeScopedResponsesForCards.filter(r => {
+        const range = getEvaluationDateRange(r);
+        if (!range.startDate) return false;
+        return range.startDate.getFullYear() === topPerformersYear && range.startDate.getMonth() === mIdx;
+      });
+
+      const groups = computeTopPerformersGroups(monthResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+
+      return {
+        key: `month_${mIdx}`,
+        label: monthLabel,
+        subLabel: undefined as string | undefined,
+        isSummaryYear: mIdx === topPerformersMonth,
+        totalEvaluations: monthResponses.length,
+        groups
+      };
+    });
+  }, [activeScopedResponsesForCards, topPerformersQ, topPerformersMonth, topPerformersYear, reportFilterDept, reportFilterTeam, mgrSearchQuery]);
+
+  // Top Performers — Quarterly (3 Months of the Quarter + Quarter Summary Column, matching reference UI)
+  const topPerformersQuarterlyColumns = useMemo(() => {
+    const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const qMonthsIndices = [(topPerformersQ - 1) * 3, (topPerformersQ - 1) * 3 + 1, (topPerformersQ - 1) * 3 + 2];
+    const yearShort = String(topPerformersYear).slice(-2);
+
+    // 1. Three monthly columns of this quarter
+    const months = qMonthsIndices.map(mIdx => {
+      const monthLabel = `${monthNamesShort[mIdx]}'${yearShort}`;
+
+      const monthResponses = activeScopedResponsesForCards.filter(r => {
+        const range = getEvaluationDateRange(r);
+        if (!range.startDate) return false;
+        return range.startDate.getFullYear() === topPerformersYear && range.startDate.getMonth() === mIdx;
+      });
+
+      const groups = computeTopPerformersGroups(monthResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+
+      return {
+        key: `quarter_month_${mIdx}`,
+        label: monthLabel,
+        subLabel: undefined as string | undefined,
+        isSummaryYear: false,
+        totalEvaluations: monthResponses.length,
+        groups
+      };
+    });
+
+    // 2. Fourth column: Quarter Summary Column (e.g. Q3 2026 (quarter))
+    const quarterResponses = activeScopedResponsesForCards.filter(r => {
+      const range = getEvaluationDateRange(r);
+      if (!range.startDate) return false;
+      const rQ = Math.ceil((range.startDate.getMonth() + 1) / 3);
+      return range.startDate.getFullYear() === topPerformersYear && rQ === topPerformersQ;
+    });
+
+    const quarterGroups = computeTopPerformersGroups(quarterResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+
+    const quarterColumn = {
+      key: `quarter_summary_Q${topPerformersQ}`,
+      label: `Q${topPerformersQ} ${topPerformersYear} (quarter)`,
+      subLabel: undefined as string | undefined,
+      isSummaryYear: true,
+      totalEvaluations: quarterResponses.length,
+      groups: quarterGroups
+    };
+
+    return [...months, quarterColumn];
+  }, [activeScopedResponsesForCards, topPerformersQ, topPerformersYear, reportFilterDept, reportFilterTeam, mgrSearchQuery]);
+
+  // Top Performers — Annual (12 months + Year Summary Column, matching reference screenshot)
+  const topPerformersAnnualColumns = useMemo(() => {
+    const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const yearShort = String(topPerformersYear).slice(-2);
+
+    const months = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(mIdx => {
+      const monthLabel = `${monthNamesShort[mIdx]}'${yearShort}`;
+
+      const monthResponses = activeScopedResponsesForCards.filter(r => {
+        const range = getEvaluationDateRange(r);
+        if (!range.startDate) return false;
+        return range.startDate.getFullYear() === topPerformersYear && range.startDate.getMonth() === mIdx;
+      });
+
+      const groups = computeTopPerformersGroups(monthResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+
+      return {
+        key: `annual_month_${mIdx}`,
+        label: monthLabel,
+        subLabel: undefined as string | undefined,
+        isSummaryYear: false,
+        totalEvaluations: monthResponses.length,
+        groups
+      };
+    });
+
+    // 13th Column: Overall Year Summary (e.g. 2026 (year))
+    const yearResponses = activeScopedResponsesForCards.filter(r => {
+      const range = getEvaluationDateRange(r);
+      if (!range.startDate) return false;
+      return range.startDate.getFullYear() === topPerformersYear;
+    });
+
+    const yearGroups = computeTopPerformersGroups(yearResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+
+    const yearColumn = {
+      key: `annual_summary_${topPerformersYear}`,
+      label: `${topPerformersYear} (year)`,
+      subLabel: undefined as string | undefined,
+      isSummaryYear: true,
+      totalEvaluations: yearResponses.length,
+      groups: yearGroups
+    };
+
+    return [...months, yearColumn];
+  }, [activeScopedResponsesForCards, topPerformersYear, reportFilterDept, reportFilterTeam, mgrSearchQuery]);
+
+  const reportTabs = activeRole === 'downline_teams'
+    ? [
+        { id: 'top_weekly', label: 'Top performers — Weekly' },
+        { id: 'top_monthly', label: 'Top performers — Monthly' },
+        { id: 'top_quarterly', label: 'Top performers — Quarterly' },
+        { id: 'top_annual', label: 'Top performers — Annual' },
+      ]
+    : [
+        { id: 'all', label: 'All', count: frequencyCounts.all, pending: frequencyCounts.allPending },
+        { id: 'daily', label: 'Daily', count: frequencyCounts.daily, pending: frequencyCounts.dailyPending },
+        { id: 'weekly', label: 'Weekly', count: frequencyCounts.weekly, pending: frequencyCounts.weeklyPending },
+        { id: 'monthly', label: 'Monthly', count: frequencyCounts.monthly, pending: frequencyCounts.monthlyPending },
+        { id: 'quarterly', label: 'Quarterly', count: frequencyCounts.quarterly, pending: frequencyCounts.quarterlyPending },
+        { id: 'top_weekly', label: 'Top performers — Weekly' },
+        { id: 'top_monthly', label: 'Top performers — Monthly' },
+        { id: 'top_quarterly', label: 'Top performers — Quarterly' },
+        { id: 'top_annual', label: 'Top performers — Annual' },
+      ];
+
+  // Direct Excel Export using XLSX from database data
+  const handleDownloadExcel = () => {
+    if (reportFilteredResponses.length === 0) {
+      alert('No evaluation records to export.');
+      return;
+    }
+
+    const dataToExport = reportFilteredResponses.map((r, index) => {
+      const { employeeCode, employeeName, teamName, departmentName, empInDb } = getEmployeeDisplayInfo(r);
+      const isCalibrated = r.managerScore != null;
+      const selfScoreNum = r.employeeOverallScore != null
+        ? Number(r.employeeOverallScore)
+        : ((r as any).earned_score != null && !isNaN(Number((r as any).earned_score)) ? Number((r as any).earned_score) : null);
+      const mgrScoreNum = r.managerScore != null
+        ? Number(r.managerScore)
+        : ((r as any).manager_score != null && !isNaN(Number((r as any).manager_score)) ? Number((r as any).manager_score) : null);
+
+      return {
+        'S.No': index + 1,
+        'Department': departmentName,
+        'Team': teamName,
+        'Employee Code': employeeCode,
+        'Employee Name': employeeName,
+        'Designation': r.designation || empInDb?.designation || empInDb?.job_title || 'Team Member',
+        'Evaluation Period': r.periodName || (r as any).form || r.frequency || 'Performance Evaluation',
+        'Employee Self Score': selfScoreNum != null && selfScoreNum > 0 ? `${selfScoreNum.toFixed(1)}%` : '—',
+        'Manager / Calibrated Score': mgrScoreNum != null ? `${mgrScoreNum.toFixed(1)}%` : '—',
+        'Status': isCalibrated ? 'Calibrated & Approved' : ((r.status === 'manager_review' || (r.status as string) === 'Submitted to Manager') ? 'Submitted to Manager' : 'Pending Review')
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Evaluations');
+    XLSX.writeFile(workbook, `Evaluation_Report_${reportViewTab}_${reportDateInPeriod}.xlsx`);
+  };
+
+  // Helper to group manager responses for any frequency by employee and strictly by calendar week (Monday to Sunday) for daily
+  const buildGroupedByEmployee = (filterFn: (r: EvaluationResponse) => boolean) => {
+    const map = new Map<string, {
+      employeeId: string;
+      employeeName: string;
+      employeeCode: string;
+      teamName: string;
+      weekLabel?: string;
+      weekStart?: string;
+      weekEnd?: string;
+      records: EvaluationResponse[];
+    }>();
+
+    managerTeamResponses.forEach(r => {
+      if (!filterFn(r)) return;
+      const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(r);
+      const empId = String(r.employeeId || employeeCode || employeeName);
+
+      // For daily evaluations, group strictly by Monday-to-Sunday week
+      let groupKey = empId;
+      let weekInfo: ReturnType<typeof getMondayToSundayWeek> | null = null;
+      if (isDailyResponse(r)) {
+        const d = getResponseDate(r) || new Date();
+        weekInfo = getMondayToSundayWeek(d);
+        groupKey = `${empId}_week_${weekInfo.weekKey}`;
+      }
+
+      if (!map.has(groupKey)) {
+        map.set(groupKey, {
+          employeeId: empId,
+          employeeName: employeeName || r.employeeName,
+          employeeCode: employeeCode || '',
+          teamName: teamName || '',
+          weekLabel: weekInfo ? weekInfo.label : undefined,
+          weekStart: weekInfo ? weekInfo.startStr : undefined,
+          weekEnd: weekInfo ? weekInfo.endStr : undefined,
+          records: []
+        });
+      }
+      map.get(groupKey)!.records.push(r);
+    });
+
+    return Array.from(map.values()).map(group => {
+      const validScores = group.records
+        .map(r => Number(r.employeeOverallScore))
+        .filter(s => !isNaN(s) && s > 0);
+      const avgScore = validScores.length > 0
+        ? Number((validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(2))
+        : 0;
+
+      const validMgrScores = group.records
+        .map(r => r.managerScore != null ? Number(r.managerScore) : null)
+        .filter((s): s is number => s !== null && !isNaN(s) && s > 0);
+      const avgMgrScore = validMgrScores.length > 0
+        ? Number((validMgrScores.reduce((a, b) => a + b, 0) / validMgrScores.length).toFixed(2))
+        : null;
+
+      return {
+        ...group,
+        avgScore,
+        avgMgrScore,
+        count: group.records.length
+      };
+    });
+  };
+
+  const allDailyGroupsForManager = useMemo(() => buildGroupedByEmployee(isDailyResponse), [managerTeamResponses]);
+  const allWeeklyGroupsForManager = useMemo(() => buildGroupedByEmployee(isWeeklyResponse), [managerTeamResponses]);
+  const allMonthlyGroupsForManager = useMemo(() => buildGroupedByEmployee(isMonthlyResponse), [managerTeamResponses]);
+  const allQuarterlyGroupsForManager = useMemo(() => buildGroupedByEmployee(isQuarterlyResponse), [managerTeamResponses]);
+
+  // Total convertible records available across all frequencies
+  const totalConvertibleCount = useMemo(() => {
+    return allDailyGroupsForManager.reduce((acc, g) => acc + g.count, 0) +
+      allWeeklyGroupsForManager.reduce((acc, g) => acc + g.count, 0) +
+      allMonthlyGroupsForManager.reduce((acc, g) => acc + g.count, 0) +
+      allQuarterlyGroupsForManager.reduce((acc, g) => acc + g.count, 0);
+  }, [allDailyGroupsForManager, allWeeklyGroupsForManager, allMonthlyGroupsForManager, allQuarterlyGroupsForManager]);
+
+  const dailyGroupsByEmployee = allDailyGroupsForManager;
+
+  const handleOpenConvertModal = (
+    tierOrTarget?: RollupTier | {
+      employeeId: string;
+      employeeName: string;
+      employeeCode: string;
+      teamName: string;
+      weekLabel?: string;
+      weekStart?: string;
+      weekEnd?: string;
+      records: EvaluationResponse[];
+      avgScore: number;
+      avgMgrScore: number | null;
+      count: number;
+    },
+    target?: {
+      employeeId: string;
+      employeeName: string;
+      employeeCode: string;
+      teamName: string;
+      weekLabel?: string;
+      weekStart?: string;
+      weekEnd?: string;
+      records: EvaluationResponse[];
+      avgScore: number;
+      avgMgrScore: number | null;
+      count: number;
+    }
+  ) => {
+    let chosenTier: RollupTier = activeRollupTier;
+    let chosenTarget = target;
+
+    if (typeof tierOrTarget === 'string') {
+      chosenTier = tierOrTarget as RollupTier;
+    } else if (tierOrTarget && typeof tierOrTarget === 'object') {
+      chosenTarget = tierOrTarget;
+      // Auto-detect tier from target record frequency
+      const firstRec = chosenTarget.records?.[0];
+      if (firstRec) {
+        if (isDailyResponse(firstRec)) chosenTier = 'daily_to_weekly';
+        else if (isWeeklyResponse(firstRec)) chosenTier = 'weekly_to_monthly';
+        else if (isMonthlyResponse(firstRec)) chosenTier = 'monthly_to_quarterly';
+        else if (isQuarterlyResponse(firstRec)) chosenTier = 'quarterly_to_yearly';
+      }
+    }
+
+    if (!tierOrTarget) {
+      if (allDailyGroupsForManager.length > 0) chosenTier = 'daily_to_weekly';
+      else if (allWeeklyGroupsForManager.length > 0) chosenTier = 'weekly_to_monthly';
+      else if (allMonthlyGroupsForManager.length > 0) chosenTier = 'monthly_to_quarterly';
+      else if (allQuarterlyGroupsForManager.length > 0) chosenTier = 'quarterly_to_yearly';
+    }
+    setActiveRollupTier(chosenTier);
+
+    if (!chosenTarget) {
+      const groups = chosenTier === 'daily_to_weekly' ? allDailyGroupsForManager :
+        chosenTier === 'weekly_to_monthly' ? allWeeklyGroupsForManager :
+          chosenTier === 'monthly_to_quarterly' ? allMonthlyGroupsForManager : allQuarterlyGroupsForManager;
+      if (groups.length > 0) chosenTarget = groups[0];
+    }
+    setConvertingTarget(chosenTarget || null);
+    setIsConvertModalOpen(true);
+  };
+
+  const handleConfirmConvert = async () => {
+    if (!convertingTarget) return;
+    try {
+      setIsConverting(true);
+      const recordIds = convertingTarget.records.map(r => r.id);
+
+      let fromF: 'daily' | 'weekly' | 'monthly' | 'quarterly' = 'daily';
+      let toF: 'weekly' | 'monthly' | 'quarterly' | 'yearly' = 'weekly';
+
+      if (activeRollupTier === 'daily_to_weekly') {
+        fromF = 'daily'; toF = 'weekly';
+      } else if (activeRollupTier === 'weekly_to_monthly') {
+        fromF = 'weekly'; toF = 'monthly';
+      } else if (activeRollupTier === 'monthly_to_quarterly') {
+        fromF = 'monthly'; toF = 'quarterly';
+      } else if (activeRollupTier === 'quarterly_to_yearly') {
+        fromF = 'quarterly'; toF = 'yearly';
+      }
+
+      const res = await evaluationService.convertEvaluations({
+        employeeId: convertingTarget.employeeId,
+        fromFrequency: fromF,
+        toFrequency: toF,
+        recordIds
+      });
+
+      showToast(res.message || `Successfully rolled up ${convertingTarget.count} ${fromF} evaluation(s) into ${toF} record!`);
+      setIsConvertModalOpen(false);
+      setConvertingTarget(null);
+      await loadAllData();
+    } catch (err: any) {
+      showAlert(err.message || 'Failed to convert evaluations', 'Conversion Error', 'danger');
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  const handleConfirmConvertWeekly = handleConfirmConvert;
+
+
   // 4. Employee Submit to Manager
   const handleEmployeeSubmit = async () => {
     if (isEmpSubmitted) {
@@ -3353,15 +5227,21 @@ export const EvaluationTab: React.FC = () => {
           const currentEmpName = user?.full_name || `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || userAny?.name || 'Employee';
           const currentEmpCode = String(userAny?.employee_id || currentDbUser?.employee_id || user?.id || 'EMP001');
 
+          const targetRespId = (activeEmpResponse as any)?.id || `resp_${Date.now()}_${user?.id || 'emp'}`;
           const newResp: EvaluationResponse = {
-            id: `resp_${Date.now()}_${user?.id || 'emp'}`,
+            id: targetRespId,
             cycleId: cycleToUse.id,
             teamId: cycleToUse.teamId,
+            department: cycleToUse.teamName,
+            form: (cycleToUse as any).form || cycleToUse.name || 'Performance Evaluation',
+            periodName: cycleToUse.periodName || cycleToUse.name || '',
+            description: cycleToUse.description || '',
             employeeId: String(userAny?.employee_id || currentDbUser?.employee_id || user?.id || 'emp_1'),
             employeeName: currentEmpName,
             employeeCode: currentEmpCode,
             designation: userAny?.designation || currentDbUser?.designation || 'Team Member',
             status: 'manager_review',
+            categories: activeCategories,
             kpiResponses: payloadKpiInputs,
             employeeOverallScore: liveEmployeeScore.overallScore,
             employeeRemarks: aggregatedRemarks,
@@ -3369,7 +5249,7 @@ export const EvaluationTab: React.FC = () => {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           };
-          const updatedResponses = [newResp, ...responses];
+          const updatedResponses = [newResp, ...responses.filter(r => r.id !== newResp.id)];
           await evaluationService.saveResponses(updatedResponses);
           setResponses(updatedResponses);
           setSelectedResponseId(newResp.id);
@@ -3583,6 +5463,70 @@ export const EvaluationTab: React.FC = () => {
     );
   };
 
+  const handleManagerSubmitWithNext = async (nextResp?: EvaluationResponse) => {
+    if (!selectedMgrResponseId) return;
+    const resp = responses.find(r => r.id === selectedMgrResponseId);
+    if (!resp) return;
+
+    const missingRemarksDeliverables: string[] = [];
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const respItem = resp.kpiResponses?.[kpi.id];
+        const empActual = String(respItem?.actualValue ?? '').trim();
+        const currentMgrActual = String(mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual).trim();
+        const currentRemark = (mgrKpiRemarks[kpi.id] || '').trim();
+
+        if (currentMgrActual !== empActual && !currentRemark) {
+          missingRemarksDeliverables.push(`"${kpi.name}"`);
+        }
+      });
+    });
+
+    if (missingRemarksDeliverables.length > 0) {
+      showAlert(
+        'Please enter remarks for all adjusted deliverables.',
+        'Remarks Required',
+        'warning'
+      );
+      return;
+    }
+
+    const updatedKpiResponses: Record<string, KPIResponseItem> = { ...(resp.kpiResponses || kpiInputs) };
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const currentItem = updatedKpiResponses[kpi.id] || {
+          kpiId: kpi.id,
+          actualValue: '',
+          achievementPercentage: 0,
+          earnedScore: 0
+        };
+        const empActual = currentItem.actualValue ?? '';
+        const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
+        const calc = calculateKPIScore(kpi, mgrActual);
+
+        updatedKpiResponses[kpi.id] = {
+          ...currentItem,
+          managerActualValue: mgrActual,
+          managerScore: Number(calc.earnedScore.toFixed(2)),
+          managerRemarks: mgrKpiRemarks[kpi.id] || ''
+        };
+      });
+    });
+
+    await evaluationService.submitManagerReview(selectedMgrResponseId, {
+      kpiResponses: updatedKpiResponses,
+      managerScore: mgrScore,
+      managerRemarks: mgrRemarks
+    });
+    await loadAllData();
+    showToast('Evaluation approved! Loading next pending submission...');
+    if (nextResp) {
+      handleSelectMgrResponse(nextResp);
+    } else {
+      setSelectedMgrResponseId('');
+    }
+  };
+
   // 6. Service Manager Final Approval
   const handleSMFinalApprove = async () => {
     if (!selectedSmResponseId) return;
@@ -3622,7 +5566,7 @@ export const EvaluationTab: React.FC = () => {
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-                Evaluation & Report
+                Employee Rewards & Recognition System
               </h2>
             </div>
           </div>
@@ -3690,6 +5634,9 @@ export const EvaluationTab: React.FC = () => {
                 onClick={() => {
                   setActiveRole('downline_teams');
                   setManagerFilterDept('all');
+                  if (!['top_weekly', 'top_monthly', 'top_quarterly', 'top_annual'].includes(reportViewTab)) {
+                    setReportViewTab('top_weekly');
+                  }
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${activeRole === 'downline_teams'
                   ? 'bg-teal-700 text-white shadow-xs'
@@ -4345,53 +6292,51 @@ export const EvaluationTab: React.FC = () => {
                 {/* 1. Ultra-Compact Executive Tracking Progress Header */}
                 <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-2xs space-y-3">
                   {/* Cycle Info & Summary Pill Badges */}
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                    <div className="flex items-center gap-2.5 shrink-0">
+                  <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-wrap sm:flex-nowrap">
                       <div className="w-8 h-8 rounded-lg bg-teal-700 text-white flex items-center justify-center shadow-xs shrink-0">
                         <SparklesIcon className="w-4 h-4" />
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-xs font-bold text-slate-900 whitespace-nowrap">
-                            {activeCycle?.name || 'Performance Evaluation Cycle'}
-                          </h3>
-                          {/* Period Selector Dropdown (Allows switching between previous & latest periods) */}
-                          <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full shadow-2xs">
-                            <CalendarDaysIcon className="w-3.5 h-3.5 text-teal-700 shrink-0" />
-                            <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Period:</span>
-                            <select
-                              value={selectedResponseId || activeEmpResponse?.id || ''}
-                              onChange={(e) => {
-                                const newId = e.target.value;
-                                setSelectedResponseId(newId);
-                                setSelectedReportResponseId(newId);
-                              }}
-                              className="bg-transparent text-[11px] font-extrabold text-teal-900 border-none outline-none cursor-pointer pr-1"
-                            >
-                              {allUserResponses.length > 0 ? (
-                                allUserResponses.map((r, idx) => {
-                                  const c = cycles.find(cy => cy.id === r.cycleId);
-                                  const label = c?.periodName || c?.name || (r as any).periodName || `Cycle ${idx + 1}`;
-                                  const isLatest = idx === 0;
-                                  const isSubmitted = r.status === 'manager_review' || r.status === 'approved' || r.status === 'sm_final_approval' || Boolean(r.employeeSubmittedAt);
-                                  const statusLabel = isSubmitted ? 'Submitted' : 'In Progress';
-                                  return (
-                                    <option key={r.id} value={r.id}>
-                                      {label} {isLatest ? '(Latest)' : ''} — {statusLabel}
-                                    </option>
-                                  );
-                                })
-                              ) : (
-                                <option value="">{activeCycle?.periodName || activeCycle?.name || 'Q3 2026'}</option>
-                              )}
-                            </select>
-                          </div>
+                      <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                        <h3 className="text-xs font-bold text-slate-900 truncate">
+                          {activeCycle?.name || 'Performance Evaluation Cycle'}
+                        </h3>
+                        {/* Period Selector Dropdown (Allows switching between previous & latest periods) */}
+                        <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs shrink-0">
+                          <CalendarDaysIcon className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                          <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Period:</span>
+                          <select
+                            value={selectedResponseId || activeEmpResponse?.id || ''}
+                            onChange={(e) => {
+                              const newId = e.target.value;
+                              setSelectedResponseId(newId);
+                              setSelectedReportResponseId(newId);
+                            }}
+                            className="bg-transparent text-[11px] font-extrabold text-teal-900 border-none outline-none cursor-pointer pr-1"
+                          >
+                            {allUserResponses.length > 0 ? (
+                              allUserResponses.map((r, idx) => {
+                                const c = cycles.find(cy => cy.id === r.cycleId);
+                                const label = c?.periodName || c?.name || (r as any).periodName || `Cycle ${idx + 1}`;
+                                const isLatest = idx === 0;
+                                const isSubmitted = r.status === 'manager_review' || r.status === 'approved' || r.status === 'sm_final_approval' || Boolean(r.employeeSubmittedAt);
+                                const statusLabel = isSubmitted ? 'Submitted' : 'In Progress';
+                                return (
+                                  <option key={r.id} value={r.id}>
+                                    {label} {isLatest ? '(Latest)' : ''} — {statusLabel}
+                                  </option>
+                                );
+                              })
+                            ) : (
+                              <option value="">{activeCycle?.periodName || activeCycle?.name || 'Q3 2026'}</option>
+                            )}
+                          </select>
                         </div>
                       </div>
                     </div>
 
-                    {/* Summary Pill Badges - Single Line Non-Wrapping Row */}
-                    <div className="flex items-center gap-1.5 sm:gap-2 text-xs flex-nowrap overflow-x-auto shrink-0 py-0.5">
+                    {/* Summary Pill Badges + Fill Form & Report Actions */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 text-xs flex-wrap xl:flex-nowrap shrink-0 py-0.5">
                       <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 whitespace-nowrap">
                         <span className="text-[10px] text-slate-500 font-medium">Self Score:</span>
                         <strong className="text-teal-900 font-bold">{selfScoreNum.toFixed(1)}%</strong>
@@ -4410,6 +6355,25 @@ export const EvaluationTab: React.FC = () => {
                         <span className="text-[10px] text-slate-500 font-medium">Progress:</span>
                         <strong className="text-slate-900 font-bold">{completedKpiCount}/{totalKpiCount}</strong>
                       </div>
+
+                      {/* Fill Form Button (Opens/Expands all category dropdowns) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allOpen = activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]);
+                          const nextState: Record<string, boolean> = {};
+                          activeCategories.forEach(c => {
+                            nextState[c.id] = !allOpen;
+                          });
+                          setExpandedCategories(nextState);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-bold shadow-2xs transition cursor-pointer whitespace-nowrap"
+                        title="Click to open/expand all categories and fill the evaluation form"
+                      >
+                        <PencilSquareIcon className="w-3.5 h-3.5 text-white" />
+                        <span>{activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]) ? 'Collapse Form' : 'Fill Form'}</span>
+                        <ChevronDownIcon className={`w-3.5 h-3.5 text-white transition-transform duration-200 ${activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]) ? 'rotate-180' : ''}`} />
+                      </button>
 
                       <button
                         type="button"
@@ -4445,8 +6409,8 @@ export const EvaluationTab: React.FC = () => {
                       {/* Step 1: Submitted */}
                       <div className="flex flex-col items-center gap-1.5 text-center">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all shadow-2xs ${isEmpSubmitted
-                            ? 'bg-emerald-500 text-white ring-4 ring-emerald-50'
-                            : 'bg-emerald-500 text-white ring-4 ring-emerald-100'
+                          ? 'bg-emerald-500 text-white ring-4 ring-emerald-50'
+                          : 'bg-emerald-500 text-white ring-4 ring-emerald-100'
                           }`}>
                           {isEmpSubmitted ? <CheckIcon className="w-4 h-4 stroke-[3]" /> : '1'}
                         </div>
@@ -4460,10 +6424,10 @@ export const EvaluationTab: React.FC = () => {
                           return (
                             <>
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${isManagerDone
-                                  ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 shadow-2xs'
-                                  : isEmpSubmitted
-                                    ? 'bg-amber-50 text-amber-700 border-2 border-amber-500 ring-4 ring-amber-100 shadow-2xs'
-                                    : 'bg-white text-slate-400 border-2 border-slate-300'
+                                ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 shadow-2xs'
+                                : isEmpSubmitted
+                                  ? 'bg-amber-50 text-amber-700 border-2 border-amber-500 ring-4 ring-amber-100 shadow-2xs'
+                                  : 'bg-white text-slate-400 border-2 border-slate-300'
                                 }`}>
                                 {isManagerDone ? (
                                   <CheckIcon className="w-4 h-4 stroke-[3]" />
@@ -4480,8 +6444,8 @@ export const EvaluationTab: React.FC = () => {
                       {/* Step 3: Final Status */}
                       <div className="flex flex-col items-center gap-1.5 text-center">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${activeEmpResponse?.status === 'approved'
-                            ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 shadow-2xs'
-                            : 'bg-white text-slate-400 border-2 border-slate-300'
+                          ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 shadow-2xs'
+                          : 'bg-white text-slate-400 border-2 border-slate-300'
                           }`}>
                           {activeEmpResponse?.status === 'approved' ? (
                             <CheckBadgeIcon className="w-4.5 h-4.5 text-white" />
@@ -4494,6 +6458,87 @@ export const EvaluationTab: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Interactive Assigned Evaluation Periods Navigation */}
+                {allUserResponses.length > 1 && (
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-2xs space-y-2.5">
+                    <div className="flex items-center justify-between gap-2 px-0.5">
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                        <CalendarDaysIcon className="w-4 h-4 text-teal-700" />
+                        <span>Manager Assigned Evaluation Periods</span>
+                        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                          {allUserResponses.length} Periods
+                        </span>
+                      </div>
+                      {allUserResponses.some(r => !r.employeeSubmittedAt && r.status !== 'manager_review' && r.status !== 'approved' && r.status !== 'sm_final_approval') && (
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          Pending Self-Assessment
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5">
+                      {allUserResponses.map((r, idx) => {
+                        const c = cycles.find(cy => cy.id === r.cycleId);
+                        const periodTitle = c?.periodName || c?.name || (r as any).periodName || (r as any).form || `Period ${idx + 1}`;
+                        const isSelected = (selectedResponseId || activeEmpResponse?.id) === r.id;
+                        const isSubmitted = r.status === 'manager_review' || r.status === 'approved' || r.status === 'sm_final_approval' || Boolean(r.employeeSubmittedAt);
+                        const isApproved = r.status === 'approved' || (r.managerScore != null && r.status !== 'manager_review');
+                        const scoreVal = r.managerScore != null ? `${Number(r.managerScore).toFixed(1)}%` : (r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : null);
+
+                        return (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedResponseId(r.id);
+                              setSelectedReportResponseId(r.id);
+                            }}
+                            className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-xs font-medium transition cursor-pointer shrink-0 border text-left ${isSelected
+                              ? 'bg-teal-50/90 border-teal-500 text-teal-950 shadow-xs ring-1 ring-teal-500'
+                              : 'bg-slate-50/70 hover:bg-slate-100/80 border-slate-200 text-slate-700'
+                              }`}
+                          >
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-xs font-bold ${isSelected ? 'text-teal-950' : 'text-slate-800'}`}>
+                                  {periodTitle}
+                                </span>
+                                {idx === 0 && (
+                                  <span className="text-[9px] font-extrabold uppercase tracking-wider bg-teal-100 text-teal-800 px-1.5 py-0.2 rounded">
+                                    Latest
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {isApproved ? (
+                                  <span className="text-[10px] font-semibold text-emerald-700 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                    Approved {scoreVal ? `(${scoreVal})` : ''}
+                                  </span>
+                                ) : isSubmitted ? (
+                                  <span className="text-[10px] font-semibold text-sky-700 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+                                    Submitted to Manager
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-bold text-amber-700 flex items-center gap-1 animate-pulse">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                    Pending Self-Assessment
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <span className="w-2 h-2 rounded-full bg-teal-600 ml-1 shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
 
                 {/* 2. Smart Deliverables Toolbar: Search & Filters */}
                 <div className="bg-white rounded-2xl border border-slate-200/90 p-3 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -4525,8 +6570,8 @@ export const EvaluationTab: React.FC = () => {
                         type="button"
                         onClick={() => setEmpFilterTab('all')}
                         className={`px-3 py-1 rounded-lg transition ${empFilterTab === 'all'
-                            ? 'bg-white text-slate-900 shadow-2xs'
-                            : 'text-slate-600 hover:text-slate-900'
+                          ? 'bg-white text-slate-900 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
                           }`}
                       >
                         All ({totalKpiCount})
@@ -4536,8 +6581,8 @@ export const EvaluationTab: React.FC = () => {
                           type="button"
                           onClick={() => setEmpFilterTab('adjusted')}
                           className={`px-3 py-1 rounded-lg transition flex items-center gap-1 ${empFilterTab === 'adjusted'
-                              ? 'bg-amber-100 text-amber-950 shadow-2xs font-bold'
-                              : 'text-amber-800 hover:text-amber-950'
+                            ? 'bg-amber-100 text-amber-950 shadow-2xs font-bold'
+                            : 'text-amber-800 hover:text-amber-950'
                             }`}
                         >
                           <span>Adjusted ({adjustedKpiCount})</span>
@@ -4548,252 +6593,400 @@ export const EvaluationTab: React.FC = () => {
                 </div>
 
                 {/* 3. Deliverable-Level Evaluation Breakdown Table */}
-                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
-                  <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-xs font-bold text-slate-900 tracking-tight">
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  {/* Table Header Bar */}
+                  <div className="px-5 py-3.5 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200/90 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-2 h-2 rounded-full bg-teal-500" />
+                      <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
                         Deliverable Breakdown
                       </h4>
                       {isEmpSubmitted && (
-                        <span className="text-[10px] font-medium text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded-md">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2.5 py-0.5 rounded-full shadow-2xs">
+                          <CheckCircleIcon className="w-3 h-3 text-teal-600" />
                           Submitted & Locked
                         </span>
                       )}
                     </div>
-                    <span className="text-[10px] font-bold text-teal-800 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200/80 shrink-0">
-                      100% Allocation
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allOpen = activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]);
+                          const nextState: Record<string, boolean> = {};
+                          activeCategories.forEach(c => {
+                            nextState[c.id] = !allOpen;
+                          });
+                          setExpandedCategories(nextState);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
+                        title="Click to open/collapse all deliverable categories"
+                      >
+                        <PencilSquareIcon className="w-3.5 h-3.5 text-white" />
+                        <span>{activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]) ? 'Collapse Form' : 'Fill Form'}</span>
+                        <ChevronDownIcon className={`w-3.5 h-3.5 text-white transition-transform duration-200 ${activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]) ? 'rotate-180' : ''}`} />
+                      </button>
+                      <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200/70">
+                        {filteredCategories.length} Categories
+                      </span>
+                      <span className="text-[11px] font-extrabold text-teal-800 bg-teal-50 px-3 py-1 rounded-full border border-teal-200/90 shadow-2xs">
+                        100% Total WeightAge
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-100/70 text-slate-700 font-bold border-b border-slate-200">
-                        <tr>
-                          <th className="px-4 py-3 text-left whitespace-nowrap">Deliverable</th>
-                          <th className="px-3 py-3 text-center whitespace-nowrap">Target</th>
-                          <th className="px-3 py-3 text-center whitespace-nowrap">Weight</th>
-                          <th className="px-3 py-3 text-center whitespace-nowrap">Self Actual</th>
-                          <th className="px-3 py-3 text-center whitespace-nowrap">Self Score</th>
-                          <th className="px-4 py-3 text-left whitespace-nowrap">Self Remarks</th>
-                          {isEmpSubmitted && (
-                            <>
-                              <th className="px-3 py-3 text-center bg-teal-50/50 text-slate-800 border-l border-teal-100 whitespace-nowrap">Mgr Actual</th>
-                              <th className="px-3 py-3 text-center bg-teal-50/50 text-slate-800 whitespace-nowrap">Mgr Score</th>
-                              <th className="px-4 py-3 text-left bg-teal-50/50 text-slate-800 whitespace-nowrap">Mgr Remarks</th>
-                            </>
-                          )}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {filteredCategories.map((cat, catIdx) => {
-                          const catEarned = cat.kpis.reduce((sum, k) => {
-                            const respItem = getKpiResponseItem(k);
-                            const val = respItem?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? '');
-                            return sum + calculateKPIScore(k, val).earnedScore;
-                          }, 0);
+                  <div className="rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
+                    {filteredCategories.map((cat, catIdx) => {
+                      const catEarned = cat.kpis.reduce((sum, k) => {
+                        const respItem = getKpiResponseItem(k);
+                        const val = respItem?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? '');
+                        return sum + calculateKPIScore(k, val).earnedScore;
+                      }, 0);
 
-                          const catMgrEarned = cat.kpis.reduce((sum, k) => {
-                            const respItem = getKpiResponseItem(k);
-                            if (respItem?.managerScore !== undefined && respItem?.managerScore !== null) return sum + Number(respItem.managerScore);
-                            if (respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== '') return sum + calculateKPIScore(k, respItem.managerActualValue).earnedScore;
-                            return sum;
-                          }, 0);
+                      const catMgrEarned = cat.kpis.reduce((sum, k) => {
+                        const respItem = getKpiResponseItem(k);
+                        if (respItem?.managerScore !== undefined && respItem?.managerScore !== null) return sum + Number(respItem.managerScore);
+                        if (respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== '') return sum + calculateKPIScore(k, respItem.managerActualValue).earnedScore;
+                        return sum;
+                      }, 0);
+                      const isExpanded = Boolean(expandedCategories[cat.id]);
 
-                          return (
-                            <React.Fragment key={cat.id}>
-                              {/* Category Subheading Row */}
-                              <tr className="bg-slate-100/80 font-bold text-slate-900 border-t border-b border-slate-200/80">
-                                <td colSpan={isEmpSubmitted ? 9 : 6} className="px-4 py-2 text-xs">
-                                  {catIdx + 1}. {cat.name} ({cat.weightage}% Allocation)
-                                </td>
-                              </tr>
+                      return (
+                        <div key={cat.id} className="bg-white">
+                          {/* Modern Category Subheading Banner (Muted Dull Slate Theme) */}
+                          <div
+                            onClick={() => setExpandedCategories(prev => ({ ...prev, [cat.id]: !prev[cat.id] }))}
+                            className="bg-slate-100/90 hover:bg-slate-200/70 text-slate-800 px-4 py-2.5 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className="p-1 rounded-md text-slate-400 group-hover:text-slate-700 group-hover:bg-slate-200/70 transition-colors shrink-0"
+                                title={isExpanded ? "Collapse category details" : "Expand category details"}
+                              >
+                                <ChevronDownIcon className={`w-4 h-4 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                              </span>
+                              <span className="w-5 h-5 rounded-md bg-slate-300/90 text-slate-700 border border-slate-300 flex items-center justify-center font-bold text-[11px] shadow-2xs shrink-0">
+                                {catIdx + 1}
+                              </span>
+                              <span className="font-semibold text-xs text-slate-800 group-hover:text-slate-900 transition-colors truncate">
+                                {cat.name}
+                              </span>
+                              <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200/90 px-2 py-0.5 rounded-full shadow-2xs shrink-0">
+                                {cat.matchingKpis.length} {cat.matchingKpis.length === 1 ? 'deliverable' : 'deliverables'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200/90 px-2.5 py-0.5 rounded-full shadow-2xs whitespace-nowrap">
+                                Earned: <strong className="text-slate-800 font-bold">{catEarned.toFixed(2)}%</strong> / {cat.weightage}%
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-700 bg-slate-200/80 border border-slate-300/80 px-2.5 py-0.5 rounded-full shadow-2xs whitespace-nowrap">
+                                {cat.weightage}% WeightAge
+                              </span>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-teal-50 text-teal-800 border border-teal-200/90 shadow-2xs group-hover:bg-teal-100 transition">
+                                <PencilSquareIcon className="w-3 h-3 text-teal-700" />
+                                <span>{isExpanded ? 'Hide' : 'Fill Form'}</span>
+                                <ChevronDownIcon className={`w-3 h-3 text-teal-700 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                              </span>
+                            </div>
+                          </div>
 
-                              {/* KPI Metric Rows */}
-                              {cat.matchingKpis.map((kpi) => {
-                                const respItem = getKpiResponseItem(kpi);
-                                const val = respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
-                                  ? respItem.actualValue
-                                  : (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '');
-                                const calc = calculateKPIScore(kpi, val);
-                                const remarks = respItem?.employeeRemarks !== undefined && respItem?.employeeRemarks !== null
-                                  ? respItem.employeeRemarks
-                                  : (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '');
-                                const targetThreshold = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1).threshold;
-
-                                // Manager reviewed values
-                                const hasMgrActual = respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== null && respItem?.managerActualValue !== '';
-                                const mgrActualVal = hasMgrActual ? respItem.managerActualValue : '';
-                                const isActualModifiedByMgr = hasMgrActual && String(mgrActualVal).trim() !== String(val).trim();
-                                const mgrCalc = calculateKPIScore(kpi, hasMgrActual ? mgrActualVal : val);
-                                const mgrEarnedScore = (respItem?.managerScore !== undefined && respItem?.managerScore !== null)
-                                  ? Number(respItem.managerScore)
-                                  : (hasMgrActual ? mgrCalc.earnedScore : null);
-                                const mgrRemarks = respItem?.managerRemarks || '';
-
-                                const isNeg = isNegativeKpi(kpi);
-
-                                return (
-                                  <tr key={kpi.id} className={`transition ${isNeg ? 'bg-rose-50/25 hover:bg-rose-50/50' : 'hover:bg-slate-50/50'}`}>
-                                    {/* Deliverable Metric */}
-                                    <td className="px-4 py-3 align-middle">
-                                      <span className={`text-xs ${isNeg ? 'font-bold text-rose-600' : 'font-semibold text-slate-900'}`}>{kpi.name}</span>
-                                    </td>
-
-                                    {/* Target Goal */}
-                                    <td className={`px-3 py-3 text-center align-middle font-bold text-xs whitespace-nowrap ${isNeg ? 'text-rose-600' : 'text-slate-700'}`}>
-                                      {(() => {
-                                        const t = String(kpi.targetFromManager || '').trim();
-                                        const u = String(kpi.unit || '').trim();
-                                        if (!t) return '—';
-                                        if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
-                                        return `${t} ${u}`;
-                                      })()}
-                                    </td>
-
-                                    {/* Weight % */}
-                                    <td className="px-3 py-3 text-center align-middle font-bold text-slate-700 text-xs whitespace-nowrap">
-                                      {kpi.targetScore}%
-                                    </td>
-
-                                    {/* Self Actual */}
-                                    <td className="px-3 py-3 text-center align-middle text-xs whitespace-nowrap">
-                                      {(() => {
-                                        const numericVal = val !== '' && val !== undefined && val !== null ? Number(val) : null;
-                                        const isOverTarget = numericVal !== null && !isNaN(numericVal) && (
-                                          isNeg ? numericVal > targetThreshold : (targetThreshold > 0 && numericVal > targetThreshold)
-                                        );
-                                        const isMetTarget = numericVal !== null && !isNaN(numericVal) && (
-                                          isNeg ? numericVal <= targetThreshold : (targetThreshold > 0 && numericVal >= targetThreshold)
-                                        );
-
-                                        return isEmpSubmitted ? (
-                                          <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs transition ${
-                                            isNeg && isOverTarget
-                                              ? 'bg-rose-50 text-rose-900 border-rose-300'
-                                              : isOverTarget
-                                                ? 'bg-emerald-50 text-emerald-950 border border-emerald-400 shadow-2xs'
-                                                : isMetTarget && !isNeg
-                                                  ? 'bg-teal-50 text-teal-900 border border-teal-300'
-                                                  : 'bg-slate-50 text-slate-900 border-slate-200'
-                                          }`}>
-                                            <span>{val !== '' ? `${val} ${kpi.unit || ''}` : '—'}</span>
-                                            {isOverTarget && !isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
-                                            {isOverTarget && isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">OVER LIMIT</span>}
-                                          </span>
-                                        ) : (
-                                          <div className="flex flex-col items-center justify-center gap-1">
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              value={val}
-                                              disabled={isSubmittingEmp}
-                                              onChange={e => handleKPIChange(kpi, e.target.value)}
-                                              placeholder="0"
-                                              className={`w-24 h-8 px-2 text-center font-bold text-xs rounded-xl transition shadow-2xs focus:outline-none ${
-                                                isNeg && isOverTarget
-                                                  ? 'bg-rose-50 text-rose-950 border-2 border-rose-500 ring-2 ring-rose-400/30 font-black'
-                                                  : isOverTarget
-                                                    ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-500 ring-2 ring-emerald-400/30 font-black'
-                                                    : isMetTarget && !isNeg
-                                                      ? 'bg-teal-50/80 text-teal-950 border-2 border-teal-400 font-bold focus:border-teal-600'
-                                                      : 'bg-white text-teal-950 border border-slate-200 focus:border-teal-600 focus:ring-1 focus:ring-teal-600'
-                                              }`}
-                                            />
-                                            {isOverTarget && !isNeg && (
-                                              <span className="text-[9px] font-black text-emerald-700 bg-emerald-100/90 px-1.5 py-0.2 rounded uppercase tracking-wider animate-in fade-in">
-                                                Exceeded Target
-                                              </span>
-                                            )}
-                                            {isOverTarget && isNeg && (
-                                              <span className="text-[9px] font-black text-rose-700 bg-rose-100/90 px-1.5 py-0.2 rounded uppercase tracking-wider animate-in fade-in">
-                                                Over Limit
-                                              </span>
-                                            )}
-                                          </div>
-                                        );
-                                      })()}
-                                    </td>
-
-                                    {/* Self Score */}
-                                    <td className="px-3 py-3 text-center align-middle text-xs whitespace-nowrap">
-                                      <span className="font-bold text-slate-900">
-                                        {calc.earnedScore.toFixed(2)}%
-                                      </span>
-                                    </td>
-
-                                    {/* Self Remarks */}
-                                    <td className="px-4 py-3 align-middle text-xs min-w-[200px] max-w-[260px]">
-                                      {isEmpSubmitted ? (
-                                        <ExpandableRemarkView text={remarks} fallback="—" />
-                                      ) : (
-                                        <ExpandableRemarkInput
-                                          value={remarks}
-                                          disabled={isSubmittingEmp}
-                                          onChange={val => handleKPIRemarksChange(kpi, val)}
-                                          placeholder="Enter remarks..."
-                                          required={true}
-                                          className={
-                                            !remarks.trim()
-                                              ? 'bg-amber-50/40 focus:bg-white border border-amber-300 focus:border-teal-600 text-slate-800 focus:outline-none shadow-2xs'
-                                              : 'bg-slate-50/60 focus:bg-white border border-slate-200 focus:border-teal-600 text-slate-800 focus:outline-none shadow-2xs'
-                                          }
-                                        />
-                                      )}
-                                    </td>
-
-                                    {/* Manager Reviewed Fields Display */}
+                          {/* Deliverables Table for Expanded Category */}
+                          {isExpanded && (
+                            <div className="overflow-x-auto border-t border-slate-200/80">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead className="bg-slate-50/95 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider select-none">
+                                  <tr>
+                                    <th className="px-4 py-2.5 text-left whitespace-nowrap">Deliverable Metric</th>
+                                    <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Target Goal</th>
+                                    <th className="px-2 py-2.5 text-center whitespace-nowrap">Weight</th>
+                                    <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Actual</th>
+                                    <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Self Score</th>
+                                    <th className="px-3.5 py-2.5 text-left whitespace-nowrap">Self Remarks</th>
                                     {isEmpSubmitted && (
                                       <>
-                                        <td className="px-3 py-3 text-center align-middle bg-teal-50/30 border-l border-teal-100 whitespace-nowrap">
-                                          {hasMgrActual && mgrActualVal !== '' ? (
-                                            <span className={`inline-flex items-center justify-center px-3.5 py-1 rounded-full text-xs font-bold transition shadow-2xs ${isActualModifiedByMgr
-                                                ? 'bg-amber-100/90 text-amber-950 border border-amber-300'
-                                                : 'bg-teal-100/80 text-teal-950 border border-teal-300'
-                                              }`}>
-                                              {mgrActualVal} {kpi.unit || ''}
-                                            </span>
-                                          ) : (
-                                            <span className="text-slate-400 font-medium">—</span>
-                                          )}
-                                        </td>
-
-                                        <td className="px-3 py-3 text-center align-middle bg-teal-50/30 whitespace-nowrap">
-                                          <span className="font-bold text-slate-900 text-xs">
-                                            {mgrEarnedScore !== null ? `${mgrEarnedScore.toFixed(2)}%` : '—'}
-                                          </span>
-                                        </td>
-
-                                        <td className="px-4 py-3 align-middle bg-teal-50/30 text-xs min-w-[200px] max-w-[260px]">
-                                          <ExpandableRemarkView text={mgrRemarks} fallback="—" />
-                                        </td>
+                                        <th className="px-3 py-2.5 text-center bg-teal-50/50 text-teal-950 border-l border-teal-200/60 whitespace-nowrap font-extrabold">Mgr Actual</th>
+                                        <th className="px-2.5 py-2.5 text-center bg-teal-50/50 text-teal-950 whitespace-nowrap font-extrabold">Mgr Score</th>
+                                        <th className="px-3.5 py-2.5 text-left bg-teal-50/50 text-teal-950 whitespace-nowrap font-extrabold">Mgr Remarks</th>
                                       </>
                                     )}
                                   </tr>
-                                );
-                              })}
-                            </React.Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white">
+                                  {cat.matchingKpis.map((kpi) => {
+                                    const respItem = getKpiResponseItem(kpi);
+                                    const val = respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
+                                      ? respItem.actualValue
+                                      : (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '');
+                                    const calc = calculateKPIScore(kpi, val);
+                                    const remarks = respItem?.employeeRemarks !== undefined && respItem?.employeeRemarks !== null
+                                      ? respItem.employeeRemarks
+                                      : (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '');
+                                    const parsedTarget = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
+                                    const targetThreshold = parsedTarget.threshold;
+
+                                    // Manager reviewed values
+                                    const hasMgrActual = respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== null && respItem?.managerActualValue !== '';
+                                    const mgrActualVal = hasMgrActual ? respItem.managerActualValue : (mgrKpiActuals[kpi.id] ?? '');
+                                    const isActualModifiedByMgr = hasMgrActual && String(mgrActualVal).trim() !== String(val).trim();
+                                    const mgrCalc = calculateKPIScore(kpi, hasMgrActual ? mgrActualVal : val);
+                                    const mgrEarnedScore = (respItem?.managerScore !== undefined && respItem?.managerScore !== null)
+                                      ? Number(respItem.managerScore)
+                                      : (hasMgrActual ? mgrCalc.earnedScore : null);
+                                    const mgrRemarks = respItem?.managerRemarks ?? mgrKpiRemarks[kpi.id] ?? '';
+
+                                    const isNeg = isNegativeKpi(kpi);
+
+                                    return (
+                                      <tr
+                                        key={kpi.id}
+                                        className="hover:bg-slate-50/80 transition-colors border-b border-slate-100 last:border-b-0"
+                                      >
+                                        {/* 1. Deliverable Name & Description */}
+                                        <td className="px-4 py-3 align-middle max-w-[240px]">
+                                          <div className="flex flex-col gap-1">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className="font-bold text-xs text-slate-900 leading-snug">
+                                                {kpi.name}
+                                              </span>
+                                            </div>
+                                            {kpi.description && (
+                                              <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+                                                {kpi.description}
+                                              </p>
+                                            )}
+                                          </div>
+                                        </td>
+
+                                        {/* 2. Target Goal */}
+                                        <td className="px-2.5 py-3 align-middle text-center whitespace-nowrap">
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                            {(() => {
+                                              const t = String(kpi.targetFromManager || '').trim();
+                                              const u = String(kpi.unit || '').trim();
+                                              if (!t) return targetThreshold;
+                                              if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
+                                              return `${t} ${u}`;
+                                            })()}
+                                          </span>
+                                        </td>
+
+                                        {/* 3. Weight */}
+                                        <td className="px-2 py-3 align-middle text-center whitespace-nowrap">
+                                          <span className="text-xs font-bold text-slate-700">
+                                            {kpi.weightage || kpi.targetScore}%
+                                          </span>
+                                        </td>
+
+                                        {/* 4. Self Actual */}
+                                        <td className="px-3 py-3 align-middle text-center text-xs whitespace-nowrap">
+                                          {(() => {
+                                            const numericVal = val !== '' && val !== undefined && val !== null ? Number(val) : null;
+                                            const isOverTarget = numericVal !== null && !isNaN(numericVal) && (
+                                              isNeg
+                                                ? (parsedTarget.operator === '<' ? numericVal >= targetThreshold : (targetThreshold === 0 ? numericVal > 0 : numericVal > targetThreshold))
+                                                : (targetThreshold > 0 && numericVal > targetThreshold)
+                                            );
+                                            const isMetTarget = numericVal !== null && !isNaN(numericVal) && (
+                                              isNeg
+                                                ? (parsedTarget.operator === '<' ? numericVal < targetThreshold : (targetThreshold === 0 ? numericVal === 0 : numericVal <= targetThreshold))
+                                                : (targetThreshold > 0 && numericVal >= targetThreshold)
+                                            );
+
+                                            if (isEmpSubmitted) {
+                                              if (val === '' || val === undefined || val === null) {
+                                                return <span className="text-slate-400 font-medium">—</span>;
+                                              }
+                                              // All negative deliverables (delays, misses, escalations) use the red rose pill
+                                              if (isNeg) {
+                                                return (
+                                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-900 border border-rose-300 font-bold text-xs shadow-2xs">
+                                                    <span>{val} {kpi.unit || ''}</span>
+                                                    {isOverTarget && (
+                                                      <span className="text-[9px] bg-rose-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                        Exceeded
+                                                      </span>
+                                                    )}
+                                                  </span>
+                                                );
+                                              }
+                                              if (isOverTarget) {
+                                                return (
+                                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-950 border border-emerald-400 font-bold text-xs shadow-2xs">
+                                                    <span>{val} {kpi.unit || ''}</span>
+                                                    <span className="text-[9px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                      Exceeded
+                                                    </span>
+                                                  </span>
+                                                );
+                                              }
+                                              if (isMetTarget) {
+                                                return (
+                                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-teal-950 border border-teal-300 font-bold text-xs shadow-2xs">
+                                                    <span>{val} {kpi.unit || ''}</span>
+                                                  </span>
+                                                );
+                                              }
+                                              return (
+                                                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold text-xs shadow-2xs ${calc.earnedScore === 0
+                                                    ? 'bg-rose-50 text-rose-900 border border-rose-300'
+                                                    : 'bg-slate-100 text-slate-800 border border-slate-200'
+                                                  }`}>
+                                                  <span>{val} {kpi.unit || ''}</span>
+                                                  {calc.earnedScore === 0 && (
+                                                    <span className="text-[9px] bg-rose-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                      Not Met
+                                                    </span>
+                                                  )}
+                                                </span>
+                                              );
+                                            }
+
+                                            return (
+                                              <div className="flex flex-col items-center justify-center gap-1">
+                                                <input
+                                                  type="number"
+                                                  min="0"
+                                                  value={val}
+                                                  disabled={isSubmittingEmp}
+                                                  onChange={e => handleKPIChange(kpi, e.target.value)}
+                                                  placeholder="0"
+                                                  className={`w-24 h-8 px-2 text-center font-bold text-xs rounded-xl transition shadow-2xs focus:outline-none ${isNeg && isOverTarget
+                                                      ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
+                                                      : !isNeg && calc.earnedScore === 0 && val !== ''
+                                                        ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
+                                                        : isOverTarget
+                                                          ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-500 ring-2 ring-emerald-400/30 font-black'
+                                                          : isMetTarget
+                                                            ? 'bg-teal-50/80 text-teal-950 border-2 border-teal-400 font-bold focus:border-teal-600'
+                                                            : 'bg-white text-slate-900 border border-slate-200 focus:border-teal-600'
+                                                    }`}
+                                                />
+                                                {isNeg && isOverTarget && (
+                                                  <span className="text-[9px] font-black text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
+                                                    Exceeded Limit
+                                                  </span>
+                                                )}
+                                                {!isNeg && isOverTarget && (
+                                                  <span className="text-[9px] font-black text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
+                                                    Exceeded Target
+                                                  </span>
+                                                )}
+                                                {!isNeg && !isMetTarget && calc.earnedScore === 0 && numericVal !== null && val !== '' && (
+                                                  <span className="text-[9px] font-black text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
+                                                    Not Met
+                                                  </span>
+                                                )}
+                                              </div>
+                                            );
+                                          })()}
+                                        </td>
+
+                                        {/* Self Score */}
+                                        <td className="px-2.5 py-3 text-center align-middle whitespace-nowrap">
+                                          <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${calc.earnedScore > 0
+                                              ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90'
+                                              : 'bg-rose-50 text-rose-900 border border-rose-200/90'
+                                            }`}>
+                                            {calc.earnedScore.toFixed(2)}%
+                                          </span>
+                                        </td>
+
+                                        {/* Self Remarks */}
+                                        <td className="px-3.5 py-3 align-middle text-xs min-w-[130px] max-w-[200px]">
+                                          {isEmpSubmitted ? (
+                                            <ExpandableRemarkView text={remarks} fallback="—" />
+                                          ) : (
+                                            <ExpandableRemarkInput
+                                              value={remarks}
+                                              disabled={isSubmittingEmp}
+                                              onChange={val => handleKPIRemarksChange(kpi, val)}
+                                              placeholder="Enter remarks..."
+                                              required={true}
+                                              className={
+                                                !remarks.trim()
+                                                  ? 'bg-amber-50/40 focus:bg-white border border-amber-300 focus:border-teal-600 text-slate-800 focus:outline-none shadow-2xs'
+                                                  : 'bg-slate-50/60 focus:bg-white border border-slate-200 focus:border-teal-600 text-slate-800 focus:outline-none shadow-2xs'
+                                              }
+                                            />
+                                          )}
+                                        </td>
+
+                                        {/* Manager Reviewed Fields Display */}
+                                        {isEmpSubmitted && (
+                                          <>
+                                            <td className="px-3 py-3 text-center align-middle bg-teal-50/30 border-l border-teal-100 whitespace-nowrap">
+                                              {hasMgrActual && mgrActualVal !== '' ? (() => {
+                                                const numMgrVal = Number(mgrActualVal);
+                                                const isMgrOver = isNeg && !isNaN(numMgrVal) && (parsedTarget.operator === '<' ? numMgrVal >= targetThreshold : (targetThreshold === 0 ? numMgrVal > 0 : numMgrVal > targetThreshold));
+                                                if (isNeg) {
+                                                  return (
+                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-900 border border-rose-300 font-bold text-xs shadow-2xs">
+                                                      <span>{mgrActualVal} {kpi.unit || ''}</span>
+                                                      {isMgrOver && (
+                                                        <span className="text-[9px] bg-rose-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                          Exceeded
+                                                        </span>
+                                                      )}
+                                                    </span>
+                                                  );
+                                                }
+                                                return (
+                                                  <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold transition shadow-2xs ${isActualModifiedByMgr
+                                                      ? 'bg-amber-100 text-amber-950 border border-amber-300'
+                                                      : 'bg-teal-100 text-teal-950 border border-teal-300'
+                                                    }`}>
+                                                    {mgrActualVal} {kpi.unit || ''}
+                                                  </span>
+                                                );
+                                              })() : (
+                                                <span className="text-slate-400 font-medium">—</span>
+                                              )}
+                                            </td>
+
+                                            <td className="px-2.5 py-3 text-center align-middle bg-teal-50/30 whitespace-nowrap">
+                                              <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${mgrEarnedScore !== null && mgrEarnedScore > 0
+                                                  ? 'bg-teal-100 text-teal-950 border border-teal-300'
+                                                  : mgrEarnedScore !== null
+                                                    ? 'bg-rose-50 text-rose-900 border border-rose-200/90'
+                                                    : 'bg-slate-50 text-slate-500 border border-slate-200/60'
+                                                }`}>
+                                                {mgrEarnedScore !== null ? `${mgrEarnedScore.toFixed(2)}%` : '—'}
+                                              </span>
+                                            </td>
+
+                                            <td className="px-3.5 py-3 align-middle bg-teal-50/30 text-xs min-w-[130px] max-w-[200px]">
+                                              <ExpandableRemarkView text={mgrRemarks} fallback="—" />
+                                            </td>
+                                          </>
+                                        )}
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* Scorecard Summary Footer */}
-                  <div className="p-4 sm:p-5 bg-slate-50/80 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="p-5 bg-gradient-to-r from-slate-50 via-teal-50/20 to-slate-50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex flex-wrap items-center gap-3 text-xs">
-                      <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
-                        <span className="text-slate-500 font-medium">Self Overall Score:</span>
-                        <strong className="text-teal-900 text-sm font-extrabold">{selfScoreNum.toFixed(1)}%</strong>
+                      <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-slate-500 font-semibold">Self Overall Score:</span>
+                        <strong className="text-teal-900 text-sm font-black">{selfScoreNum.toFixed(1)}%</strong>
                       </div>
                       {activeEmpResponse?.managerScore !== undefined && (
-                        <div className="flex items-center gap-2 bg-teal-50 px-3.5 py-2 rounded-xl border border-teal-200 shadow-2xs">
+                        <div className="flex items-center gap-2.5 bg-teal-50 px-4 py-2.5 rounded-xl border border-teal-200 shadow-2xs">
                           <span className="text-teal-800 font-bold">Manager Official Score:</span>
-                          <strong className="text-teal-950 text-sm font-extrabold">{Number(activeEmpResponse.managerScore).toFixed(1)}%</strong>
+                          <strong className="text-teal-950 text-sm font-black">{Number(activeEmpResponse.managerScore).toFixed(1)}%</strong>
                         </div>
                       )}
-                      <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
-                        <span className="text-slate-500 font-medium">Grade Tier:</span>
-                        <strong className="text-teal-900 text-sm font-extrabold">
+                      <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-slate-500 font-semibold">Grade Tier:</span>
+                        <strong className="text-teal-900 text-sm font-black bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/70">
                           {(() => {
                             const r = getRatingForScore(activeEmpResponse?.managerScore ?? selfScoreNum);
                             return `Grade ${r.letterGrade || r.grade}`;
@@ -5029,8 +7222,8 @@ export const EvaluationTab: React.FC = () => {
                               </span>
 
                               <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${itemIsApproved
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
                                 }`}>
                                 {itemIsApproved ? '● Published' : '○ In Review'}
                               </span>
@@ -5163,10 +7356,10 @@ export const EvaluationTab: React.FC = () => {
                               <span className="text-slate-500 text-[11px] font-bold">Consensus Status:</span>
                               {itemMgrScore !== null ? (
                                 <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold border ${Math.abs(itemMgrScore - itemSelfScore) <= 2
-                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                    : itemMgrScore > itemSelfScore
-                                      ? 'bg-teal-50 text-teal-800 border-teal-200'
-                                      : 'bg-amber-50 text-amber-800 border-amber-200'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : itemMgrScore > itemSelfScore
+                                    ? 'bg-teal-50 text-teal-800 border-teal-200'
+                                    : 'bg-amber-50 text-amber-800 border-amber-200'
                                   }`}>
                                   {itemMgrScore === itemSelfScore
                                     ? '100% Aligned Consensus'
@@ -5196,138 +7389,176 @@ export const EvaluationTab: React.FC = () => {
                               </button>
                             </div>
 
-                            <div className="overflow-x-auto rounded-2xl border border-slate-200/90 shadow-2xs">
-                              <table className="w-full text-left text-xs border-collapse">
-                                <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
-                                  <tr>
-                                    <th className="px-4 py-2.5 whitespace-nowrap">Deliverable Metric</th>
-                                    <th className="px-3 py-2.5 text-center whitespace-nowrap">Target</th>
-                                    <th className="px-3 py-2.5 text-center whitespace-nowrap">Weight</th>
-                                    <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Actual</th>
-                                    <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Score</th>
-                                    <th className="px-4 py-2.5 whitespace-nowrap">Self Remarks</th>
-                                    <th className="px-3 py-2.5 text-center bg-teal-50/50 text-slate-800 border-l border-teal-100 whitespace-nowrap">Mgr Actual</th>
-                                    <th className="px-3 py-2.5 text-center bg-teal-50/50 text-slate-800 whitespace-nowrap">Mgr Score</th>
-                                    <th className="px-4 py-2.5 bg-teal-50/50 text-slate-800 whitespace-nowrap">Mgr Remarks</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 bg-white">
-                                  {itemCategories.map((cat, catIdx) => (
-                                    <React.Fragment key={cat.id}>
-                                      <tr className="bg-slate-100/90 font-black text-slate-900 border-t border-b border-slate-200/90">
-                                        <td colSpan={9} className="px-4 py-2 text-xs uppercase tracking-wider text-slate-800">
-                                          {catIdx + 1}. {cat.name} ({cat.weightage}% Weight)
-                                        </td>
-                                      </tr>
-                                      {cat.kpis.map((kpi) => {
-                                        const selfRes = r.kpiResponses?.[kpi.id];
-                                        const selfActual = selfRes?.actualValue !== undefined && selfRes?.actualValue !== null && selfRes?.actualValue !== ''
-                                          ? selfRes.actualValue
-                                          : '—';
-                                        const selfScore = selfRes?.earnedScore !== undefined ? selfRes.earnedScore : 0;
-                                        const selfRemarks = selfRes?.employeeRemarks || '';
+                            <div className="rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
+                              {itemCategories.map((cat, catIdx) => {
+                                const catEarned = cat.kpis.reduce((sum, k) => {
+                                  const selfRes = r.kpiResponses?.[k.id];
+                                  return sum + (selfRes?.earnedScore !== undefined ? Number(selfRes.earnedScore) : 0);
+                                }, 0);
+                                const isCatExpanded = Boolean(expandedAuditCategories[`${r.id}_${cat.id || catIdx}`]);
 
-                                        const mgrActual = selfRes?.managerActualValue !== undefined && selfRes?.managerActualValue !== null && selfRes?.managerActualValue !== ''
-                                          ? selfRes.managerActualValue
-                                          : '—';
-                                        const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null
-                                          ? Number(selfRes.managerScore)
-                                          : null;
-                                        const mgrRemarks = selfRes?.managerRemarks || '';
-                                        const isNeg = isNegativeKpi(kpi);
+                                return (
+                                  <div key={cat.id} className="bg-white">
+                                    {/* Modern Category Subheading Banner (Muted Dull Slate Theme) */}
+                                    <div
+                                      onClick={() => setExpandedAuditCategories(prev => ({ ...prev, [`${r.id}_${cat.id || catIdx}`]: !prev[`${r.id}_${cat.id || catIdx}`] }))}
+                                      className="bg-slate-100/90 hover:bg-slate-200/70 text-slate-800 px-4 py-2.5 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span
+                                          className="p-1 rounded-md text-slate-400 group-hover:text-slate-700 group-hover:bg-slate-200/70 transition-colors shrink-0"
+                                          title={isCatExpanded ? "Collapse category details" : "Expand category details"}
+                                        >
+                                          <ChevronDownIcon className={`w-4 h-4 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isCatExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                                        </span>
+                                        <span className="w-5 h-5 rounded-md bg-slate-300/90 text-slate-700 border border-slate-300 flex items-center justify-center font-bold text-[11px] shadow-2xs shrink-0">
+                                          {catIdx + 1}
+                                        </span>
+                                        <span className="font-semibold text-xs text-slate-800 group-hover:text-slate-900 transition-colors truncate">
+                                          {cat.name}
+                                        </span>
+                                        <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200/90 px-2 py-0.5 rounded-full shadow-2xs shrink-0">
+                                          {cat.kpis.length} {cat.kpis.length === 1 ? 'deliverable' : 'deliverables'}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200/90 px-2.5 py-0.5 rounded-full shadow-2xs whitespace-nowrap">
+                                          Earned: <strong className="text-slate-800 font-bold">{catEarned.toFixed(2)}%</strong> / {cat.weightage}%
+                                        </span>
+                                        <span className="text-[11px] font-bold text-slate-700 bg-slate-200/80 border border-slate-300/80 px-2.5 py-0.5 rounded-full shadow-2xs whitespace-nowrap">
+                                          {cat.weightage}% WeightAge
+                                        </span>
+                                      </div>
+                                    </div>
 
-                                        return (
-                                          <tr key={kpi.id} className={`transition ${isNeg ? 'bg-rose-50/20 hover:bg-rose-50/40' : 'hover:bg-slate-50/80'}`}>
-                                            <td className="px-4 py-2.5 align-middle">
-                                              <span className={`text-xs ${isNeg ? 'font-bold text-rose-600' : 'font-bold text-slate-800'}`}>{kpi.name}</span>
-                                              {kpi.description && (
-                                                <div className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">{kpi.description}</div>
-                                              )}
-                                            </td>
-                                            <td className={`px-3 py-2.5 text-center align-middle font-bold text-xs whitespace-nowrap ${isNeg ? 'text-rose-600' : 'text-slate-600'}`}>
-                                              {(() => {
-                                                const t = String(kpi.targetFromManager !== undefined && kpi.targetFromManager !== '' ? kpi.targetFromManager : (kpi.targetValue ?? '')).trim();
-                                                const u = String(kpi.unit || '').trim();
-                                                if (!t) return '—';
-                                                if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
-                                                return `${t} ${u}`;
-                                              })()}
-                                            </td>
-                                            <td className="px-3 py-2.5 text-center align-middle font-semibold text-slate-600 whitespace-nowrap">
-                                              {kpi.weightage || Math.round(cat.weightage / Math.max(1, cat.kpis.length))}%
-                                            </td>
-                                            <td className="px-3 py-2.5 text-center align-middle text-slate-800 whitespace-nowrap">
-                                              {(() => {
-                                                if (selfActual === '—') return <span className="text-slate-400 font-bold">—</span>;
-                                                const parsedT = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
-                                                const numSelf = parseFloat(String(selfActual));
-                                                const isOverT = !isNaN(numSelf) && (isNeg ? numSelf > parsedT.threshold : (parsedT.threshold > 0 && numSelf > parsedT.threshold));
-                                                const isMetT = !isNaN(numSelf) && (isNeg ? numSelf <= parsedT.threshold : (parsedT.threshold > 0 && numSelf >= parsedT.threshold));
+                                    {/* Deliverables Table for Expanded Category */}
+                                    {isCatExpanded && (
+                                      <div className="overflow-x-auto border-t border-slate-200/80">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                          <thead className="bg-slate-50/95 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider select-none">
+                                            <tr>
+                                              <th className="px-4 py-2.5 text-left whitespace-nowrap">Deliverable Metric</th>
+                                              <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Target</th>
+                                              <th className="px-2 py-2.5 text-center whitespace-nowrap">Weight</th>
+                                              <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Actual</th>
+                                              <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Self Score</th>
+                                              <th className="px-3.5 py-2.5 text-left whitespace-nowrap">Self Remarks</th>
+                                              <th className="px-3 py-2.5 text-center bg-teal-50/50 text-teal-950 border-l border-teal-200/60 whitespace-nowrap font-extrabold">Mgr Actual</th>
+                                              <th className="px-2.5 py-2.5 text-center bg-teal-50/50 text-teal-950 whitespace-nowrap font-extrabold">Mgr Score</th>
+                                              <th className="px-3.5 py-2.5 text-left bg-teal-50/50 text-teal-950 whitespace-nowrap font-extrabold">Mgr Remarks</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-slate-100 bg-white">
+                                            {cat.kpis.map((kpi) => {
+                                              const selfRes = r.kpiResponses?.[kpi.id];
+                                              const selfActual = selfRes?.actualValue !== undefined && selfRes?.actualValue !== null && selfRes?.actualValue !== ''
+                                                ? selfRes.actualValue
+                                                : '—';
+                                              const selfScore = selfRes?.earnedScore !== undefined ? selfRes.earnedScore : 0;
+                                              const selfRemarks = selfRes?.employeeRemarks || '';
 
-                                                return (
-                                                  <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs ${
-                                                    isNeg && isOverT
-                                                      ? 'bg-rose-50 text-rose-900 border-rose-300'
-                                                      : isOverT
-                                                        ? 'bg-emerald-50 text-emerald-950 border border-emerald-400 shadow-2xs'
-                                                        : isMetT && !isNeg
-                                                          ? 'bg-teal-50 text-teal-900 border border-teal-300'
-                                                          : 'bg-slate-50 text-slate-900 border-slate-200'
-                                                  }`}>
-                                                    <span>{selfActual} {kpi.unit || ''}</span>
-                                                    {isOverT && !isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
-                                                    {isOverT && isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">OVER LIMIT</span>}
-                                                  </span>
-                                                );
-                                              })()}
-                                            </td>
-                                            <td className="px-3 py-2.5 text-center align-middle font-extrabold text-slate-900 whitespace-nowrap">
-                                              {selfScore.toFixed(2)}%
-                                            </td>
-                                            <td className="px-4 py-2.5 align-middle text-xs min-w-[180px] max-w-[240px]">
-                                              <ExpandableRemarkView text={selfRemarks} fallback="—" />
-                                            </td>
-                                            <td className="px-3 py-2.5 text-center align-middle bg-teal-50/30 font-bold text-slate-900 border-l border-teal-100 whitespace-nowrap">
-                                              {(() => {
-                                                if (mgrActual === '—') return <span className="text-slate-400 font-bold">—</span>;
-                                                const parsedT = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
-                                                const numMgr = parseFloat(String(mgrActual));
-                                                const isOverT = !isNaN(numMgr) && (isNeg ? numMgr > parsedT.threshold : (parsedT.threshold > 0 && numMgr > parsedT.threshold));
-                                                const isMetT = !isNaN(numMgr) && (isNeg ? numMgr <= parsedT.threshold : (parsedT.threshold > 0 && numMgr >= parsedT.threshold));
-                                                const isModified = String(mgrActual).trim() !== String(selfActual).trim();
+                                              const mgrActual = selfRes?.managerActualValue !== undefined && selfRes?.managerActualValue !== null && selfRes?.managerActualValue !== ''
+                                                ? selfRes.managerActualValue
+                                                : '—';
+                                              const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null
+                                                ? Number(selfRes.managerScore)
+                                                : null;
+                                              const mgrRemarks = selfRes?.managerRemarks || '';
+                                              const isNeg = isNegativeKpi(kpi);
 
-                                                return (
-                                                  <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${
-                                                    isModified
-                                                      ? 'bg-amber-100/90 text-amber-950 border-amber-300'
-                                                      : isNeg && isOverT
-                                                        ? 'bg-rose-50 text-rose-900 border-rose-300'
-                                                        : isOverT
-                                                          ? 'bg-teal-100/80 text-teal-950 border-teal-300'
-                                                          : isMetT && !isNeg
-                                                            ? 'bg-teal-50 text-teal-900 border-teal-300'
-                                                            : 'bg-slate-50 text-slate-900 border-slate-200'
-                                                  }`}>
-                                                    <span>{mgrActual} {kpi.unit || ''}</span>
-                                                    {isOverT && !isNeg && !isModified && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
-                                                    {isOverT && isNeg && !isModified && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">OVER LIMIT</span>}
-                                                  </span>
-                                                );
-                                              })()}
-                                            </td>
-                                            <td className="px-3 py-2.5 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-slate-900">
-                                              {mgrScore !== null ? `${mgrScore.toFixed(2)}%` : '—'}
-                                            </td>
-                                            <td className="px-4 py-2.5 align-middle bg-teal-50/30 text-xs min-w-[180px] max-w-[240px]">
-                                              <ExpandableRemarkView text={mgrRemarks} fallback="—" />
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </React.Fragment>
-                                  ))}
-                                </tbody>
-                              </table>
+                                              return (
+                                                <tr key={kpi.id} className={`transition ${isNeg ? 'bg-rose-50/20 hover:bg-rose-50/40' : 'hover:bg-slate-50/80'}`}>
+                                                  <td className="px-4 py-2.5 align-middle max-w-[240px]">
+                                                    <span className={`text-xs ${isNeg ? 'font-bold text-rose-600' : 'font-bold text-slate-800'}`}>{kpi.name}</span>
+                                                    {kpi.description && (
+                                                      <div className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">{kpi.description}</div>
+                                                    )}
+                                                  </td>
+                                                  <td className={`px-2.5 py-2.5 text-center align-middle font-bold text-xs whitespace-nowrap ${isNeg ? 'text-rose-600' : 'text-slate-600'}`}>
+                                                    {(() => {
+                                                      const t = String(kpi.targetFromManager !== undefined && kpi.targetFromManager !== '' ? kpi.targetFromManager : (kpi.targetValue ?? '')).trim();
+                                                      const u = String(kpi.unit || '').trim();
+                                                      if (!t) return '—';
+                                                      if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
+                                                      return `${t} ${u}`;
+                                                    })()}
+                                                  </td>
+                                                  <td className="px-2 py-2.5 text-center align-middle font-semibold text-slate-600 whitespace-nowrap">
+                                                    {kpi.weightage || Math.round(cat.weightage / Math.max(1, cat.kpis.length))}%
+                                                  </td>
+                                                  <td className="px-3 py-2.5 text-center align-middle text-slate-800 whitespace-nowrap">
+                                                    {(() => {
+                                                      if (selfActual === '—') return <span className="text-slate-400 font-bold">—</span>;
+                                                      const parsedT = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
+                                                      const numSelf = parseFloat(String(selfActual));
+                                                      const isOverT = !isNaN(numSelf) && (isNeg ? numSelf > parsedT.threshold : (parsedT.threshold > 0 && numSelf > parsedT.threshold));
+                                                      const isMetT = !isNaN(numSelf) && (isNeg ? numSelf <= parsedT.threshold : (parsedT.threshold > 0 && numSelf >= parsedT.threshold));
+
+                                                      return (
+                                                        <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs ${isNeg && isOverT
+                                                          ? 'bg-rose-50 text-rose-900 border-rose-300'
+                                                          : isOverT
+                                                            ? 'bg-emerald-50 text-emerald-950 border border-emerald-400 shadow-2xs'
+                                                            : isMetT && !isNeg
+                                                              ? 'bg-teal-50 text-teal-900 border border-teal-300'
+                                                              : 'bg-slate-50 text-slate-900 border-slate-200'
+                                                          }`}>
+                                                          <span>{selfActual} {kpi.unit || ''}</span>
+                                                          {isOverT && !isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
+                                                          {isOverT && isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED TARGET</span>}
+                                                        </span>
+                                                      );
+                                                    })()}
+                                                  </td>
+                                                  <td className="px-2.5 py-2.5 text-center align-middle font-extrabold text-slate-900 whitespace-nowrap">
+                                                    {selfScore.toFixed(2)}%
+                                                  </td>
+                                                  <td className="px-3.5 py-2.5 align-middle text-xs min-w-[130px] max-w-[200px]">
+                                                    <ExpandableRemarkView text={selfRemarks} fallback="—" />
+                                                  </td>
+                                                  <td className="px-3 py-2.5 text-center align-middle bg-teal-50/30 font-bold text-slate-900 border-l border-teal-100 whitespace-nowrap">
+                                                    {(() => {
+                                                      if (mgrActual === '—') return <span className="text-slate-400 font-bold">—</span>;
+                                                      const parsedT = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
+                                                      const numMgr = parseFloat(String(mgrActual));
+                                                      const isOverT = !isNaN(numMgr) && (isNeg ? numMgr > parsedT.threshold : (parsedT.threshold > 0 && numMgr > parsedT.threshold));
+                                                      const isMetT = !isNaN(numMgr) && (isNeg ? numMgr <= parsedT.threshold : (parsedT.threshold > 0 && numMgr >= parsedT.threshold));
+                                                      const isModified = String(mgrActual).trim() !== String(selfActual).trim();
+
+                                                      return (
+                                                        <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${isModified
+                                                          ? 'bg-amber-100/90 text-amber-950 border-amber-300'
+                                                          : isNeg && isOverT
+                                                            ? 'bg-rose-50 text-rose-900 border-rose-300'
+                                                            : isOverT
+                                                              ? 'bg-teal-100/80 text-teal-950 border-teal-300'
+                                                              : isMetT && !isNeg
+                                                                ? 'bg-teal-50 text-teal-900 border-teal-300'
+                                                                : 'bg-slate-50 text-slate-900 border-slate-200'
+                                                          }`}>
+                                                          <span>{mgrActual} {kpi.unit || ''}</span>
+                                                          {isOverT && !isNeg && !isModified && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
+                                                          {isOverT && isNeg && !isModified && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED TARGET</span>}
+                                                        </span>
+                                                      );
+                                                    })()}
+                                                  </td>
+                                                  <td className="px-2.5 py-2.5 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-slate-900">
+                                                    {mgrScore !== null ? `${mgrScore.toFixed(2)}%` : '—'}
+                                                  </td>
+                                                  <td className="px-3.5 py-2.5 align-middle bg-teal-50/30 text-xs min-w-[130px] max-w-[200px]">
+                                                    <ExpandableRemarkView text={mgrRemarks} fallback="—" />
+                                                  </td>
+                                                </tr>
+                                              );
+                                            })}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         )}
@@ -5387,23 +7618,21 @@ export const EvaluationTab: React.FC = () => {
                           return (
                             <tr
                               key={tier.letterGrade || tier.grade || tierIdx}
-                              className={`transition-colors ${
-                                isCurrentTier
-                                  ? 'bg-teal-50/70 font-semibold'
-                                  : 'hover:bg-slate-50/60'
-                              }`}
+                              className={`transition-colors ${isCurrentTier
+                                ? 'bg-teal-50/70 font-semibold'
+                                : 'hover:bg-slate-50/60'
+                                }`}
                             >
                               {/* Rating Name + Stars */}
                               <td className="px-4 py-3.5 align-top">
                                 <div className="flex flex-col gap-1">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className={`font-black text-xs ${
-                                      (tier.letterGrade === 'A' || tier.grade === 5 || tier.grade === 'A') ? 'text-emerald-800' :
+                                    <span className={`font-black text-xs ${(tier.letterGrade === 'A' || tier.grade === 5 || tier.grade === 'A') ? 'text-emerald-800' :
                                       (tier.letterGrade === 'B' || tier.grade === 4 || tier.grade === 'B') ? 'text-teal-800' :
-                                      (tier.letterGrade === 'C' || tier.grade === 3 || tier.grade === 'C') ? 'text-blue-800' :
-                                      (tier.letterGrade === 'D' || tier.grade === 2 || tier.grade === 'D') ? 'text-amber-800' :
-                                      'text-rose-800'
-                                    }`}>
+                                        (tier.letterGrade === 'C' || tier.grade === 3 || tier.grade === 'C') ? 'text-blue-800' :
+                                          (tier.letterGrade === 'D' || tier.grade === 2 || tier.grade === 'D') ? 'text-amber-800' :
+                                            'text-rose-800'
+                                      }`}>
                                       {tier.name}
                                     </span>
                                     {isCurrentTier && (
@@ -5488,727 +7717,618 @@ export const EvaluationTab: React.FC = () => {
               </div>
             </div>
 
-            {canCreateMetrics && (
-              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+            {activeRole === 'manager' && (
+              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => handleOpenMgrCreateModal()}
-                  className="flex items-center gap-2 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+                  onClick={() => handleOpenConvertModal()}
+                  className="flex items-center gap-2 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
+                  title="Rollup & Convert Evaluations across frequencies (Daily -> Weekly, Weekly -> Monthly, Monthly -> Quarterly, Quarterly -> Yearly)"
                 >
-                  <PlusIcon className="w-4 h-4 stroke-[2.5]" />
-                  <span>Assign Metrics</span>
+                  <ArrowPathIcon className="w-4 h-4 text-amber-700" />
+                  <span>Rollup & Convert</span>
+                  {totalConvertibleCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-amber-200 text-amber-900">
+                      {totalConvertibleCount}
+                    </span>
+                  )}
                 </button>
+
+                {canCreateMetrics && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenMgrCreateModal()}
+                    className="flex items-center gap-2 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+                  >
+                    <PlusIcon className="w-4 h-4 stroke-[2.5]" />
+                    <span>Assign Metrics</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
 
-          {/* Executive Stat Cards & Team Performance Race Leaderboard */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
-            {/* Left: 4 Stat Cards in 2x2 Grid (8 Columns) */}
-            <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              {/* Stat 1: Direct Reports */}
-              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between">
-                <div className="flex flex-col justify-between min-w-0">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                    {activeRole === 'manager' ? 'Direct Reports' : 'Department Reports'}
-                  </span>
-                  <div className="flex items-baseline gap-1.5 mt-1.5">
-                    <span className="text-2xl font-extrabold text-slate-800 leading-tight">
-                      {managerStats.total}
-                    </span>
-                    <span className="text-xs text-slate-400 font-semibold">reports</span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 font-medium mt-1 truncate">
-                    {activeRole === 'manager'
-                      ? (managerDepartments.join(', ') || effectiveTeamName || 'Assigned Scope')
-                      : 'Sub-Manager Squads'}
-                  </div>
-                </div>
-                <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-600 shrink-0 ml-3">
-                  <UserGroupIcon className="w-5 h-5" />
-                </div>
-              </div>
-
-              {/* Stat 2: Self Submissions */}
-              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between">
-                <div className="flex flex-col justify-between min-w-0">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Self Submissions
-                  </span>
-                  <div className="flex items-baseline gap-1.5 mt-1.5">
-                    <span className="text-2xl font-extrabold text-slate-800 leading-tight">
-                      {managerStats.submitted}
-                    </span>
-                    <span className="text-xs text-slate-400 font-semibold">/ {managerStats.total}</span>
-                  </div>
-                  <div className="text-[11px] text-emerald-600 font-semibold mt-1">
-                    {managerStats.submissionRate}% Submitted
-                  </div>
-                </div>
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 ml-3">
-                  <CheckBadgeIcon className="w-5 h-5" />
-                </div>
-              </div>
-
-              {/* Stat 3: Pending Review */}
-              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between">
-                <div className="flex flex-col justify-between min-w-0">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Pending Review
-                  </span>
-                  <div className="flex items-baseline gap-1.5 mt-1.5">
-                    <span className="text-2xl font-extrabold text-slate-800 leading-tight">
-                      {managerStats.pending}
-                    </span>
-                    <span className="text-xs text-slate-400 font-semibold">pending</span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 font-medium mt-1">
-                    {managerStats.pending === 0 ? 'All reviews completed' : 'Awaiting calibration'}
-                  </div>
-                </div>
-                <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shrink-0 ml-3">
-                  <ClockIcon className="w-5 h-5" />
-                </div>
-              </div>
-
-              {/* Stat 4: Team Avg Score */}
-              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between">
-                <div className="flex flex-col justify-between min-w-0">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Team Avg Score
-                  </span>
-                  <div className="flex items-baseline gap-1 mt-1.5">
-                    <span className="text-2xl font-extrabold text-slate-800 leading-tight">
-                      {managerStats.avgScore.toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 font-medium mt-1 truncate">
-                    {getRatingForScore(managerStats.avgScore).name}
-                  </div>
-                </div>
-                <div className="w-10 h-10 rounded-2xl bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 shrink-0 ml-3">
-                  <ChartBarIcon className="w-5 h-5" />
-                </div>
-              </div>
-            </div>
-
-            {/* Right: Top 3 Teams Leaderboard Card (4 Columns) */}
-            <div className="lg:col-span-4 bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0">
-                      <FireIcon className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900 tracking-tight">Team Performance Race</h4>
-                      <span className="text-[10px] text-slate-400 font-medium block">Top 3 Performing Teams</span>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200/60 uppercase">
-                    RACING
-                  </span>
-                </div>
-
-                {topThreeTeams.length > 0 ? (
-                  <div className="space-y-2.5">
-                    {topThreeTeams.map((team, idx) => {
-                      const scoreVal = team.teamAvgScore ?? team.teamAvgMgrScore ?? team.completionPercentage ?? 0;
-                      const rankBadges = [
-                        { icon: '🥇', label: '#1', bg: 'bg-amber-50 text-amber-800 border-amber-300', bar: 'bg-amber-500' },
-                        { icon: '🥈', label: '#2', bg: 'bg-slate-100 text-slate-700 border-slate-300', bar: 'bg-slate-500' },
-                        { icon: '🥉', label: '#3', bg: 'bg-amber-100/60 text-amber-900 border-amber-300/80', bar: 'bg-teal-500' },
-                      ];
-                      const badge = rankBadges[idx] || rankBadges[2];
-
-                      return (
-                        <div key={team.department} className="p-2 rounded-xl bg-slate-50/70 border border-slate-200/70 space-y-1.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${badge.bg}`}>
-                                {badge.icon} {badge.label}
-                              </span>
-                              <span className="text-xs font-bold text-slate-800 truncate" title={team.department}>
-                                {team.department}
-                              </span>
-                            </div>
-                            <span className="text-xs font-mono font-bold text-slate-900 shrink-0">
-                              {scoreVal.toFixed(1)}%
-                            </span>
-                          </div>
-                          {/* Mini Progress Bar */}
-                          <div className="w-full h-1.5 bg-slate-200/80 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-500 ${badge.bar}`}
-                              style={{ width: `${Math.min(100, Math.max(8, scoreVal))}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="py-5 text-center space-y-1">
-                    <div className="text-xl">🏆</div>
-                    <p className="text-xs font-bold text-slate-700">No Team Rankings Yet</p>
-                    <p className="text-[10px] text-slate-400">Rankings update as teams are evaluated</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-3 pt-2 border-t border-slate-100 text-[10px] text-slate-400 font-medium flex items-center justify-between">
-                <span>Scope: {teamWiseCardsData.length} Teams</span>
-                <span className="font-semibold text-teal-700">Live Rankings</span>
-              </div>
-            </div>
-          </div>
-
           {/* Section 2: Manager Reviews Queue & Calibration Desk (or Downline Team Overview) */}
-          <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 shadow-2xs space-y-5">
-            {/* Desk Header & Interactive Queue Toolbar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200/70 flex items-center justify-center text-teal-700 shrink-0">
-                  <ClipboardDocumentCheckIcon className="w-4 h-4 stroke-[2.2]" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
-                    {activeRole === 'manager' ? 'Direct Reviews Desk' : 'Department Oversight'}
-                  </h3>
-                  <span className="text-[11px] text-slate-400 font-medium block">
-                    {activeRole === 'manager' ? 'Monitor progress & calibrate individual scores' : 'Extended oversight of sub-manager squads'}
-                  </span>
-                </div>
-              </div>
+          <div className="space-y-5">
+            {/* Section 2.2: Advanced Filter Toolbar & Grouped Evaluation Report Table (Matching User Design) */}
+            {(activeRole === 'manager' || activeRole === 'downline_teams') && (
+              <div className="space-y-4 animate-in fade-in duration-200">
 
-              {activeRole === 'manager' && (
-                <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0 flex-wrap">
-                  {/* Department Selector */}
-                  <div className="relative">
-                    <select
-                      value={managerFilterDept}
-                      onChange={e => setManagerFilterDept(e.target.value)}
-                      className="h-8.5 pl-3 pr-8 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
-                    >
-                      <option value="">Select Team / Department</option>
-                      <option value="all">All Teams ({teamWiseCardsData.length})</option>
-                      {teamWiseCardsData.map(t => (
-                        <option key={t.department} value={t.department}>
-                          {t.department} ({t.totalEmployees})
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-
-                  {/* View Mode Toggle */}
-                  <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/80 shadow-2xs">
-                    <button
-                      type="button"
-                      onClick={() => setMgrViewMode('table')}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${mgrViewMode === 'table'
-                          ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                          : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                    >
-                      <TableCellsIcon className="w-3.5 h-3.5" />
-                      <span>Table</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMgrViewMode('cards')}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${mgrViewMode === 'cards'
-                          ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                          : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                    >
-                      <DocumentChartBarIcon className="w-3.5 h-3.5" />
-                      <span>Cards</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Section 2.1: Team Cards Overview */}
-            <div>
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                    Team Performance & Progress Overview
-                  </h4>
-                  <span className="text-[10px] text-slate-400 hidden sm:inline">• Click a card to filter direct reports below</span>
-                </div>
-                {Boolean(managerFilterDept) && (
-                  <button
-                    type="button"
-                    onClick={() => setManagerFilterDept('')}
-                    className="text-[11px] font-bold text-teal-700 hover:text-teal-800 hover:underline cursor-pointer"
-                  >
-                    Reset Filter
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                {/* All Teams Overview Card */}
-                {teamWiseCardsData.length > 1 && (
-                  <div
-                    onClick={() => setManagerFilterDept(managerFilterDept === 'all' ? '' : 'all')}
-                    className={`p-4 rounded-2xl border transition-all duration-200 cursor-pointer ${managerFilterDept === 'all'
-                        ? 'bg-gradient-to-br from-teal-50/80 via-white to-emerald-50/50 border-teal-400 ring-2 ring-teal-400/25 shadow-sm'
-                        : 'bg-white hover:bg-slate-50/80 border-slate-200/90 hover:border-slate-300 shadow-2xs hover:shadow-xs'
-                      }`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${managerFilterDept === 'all' ? 'bg-teal-700 text-white shadow-xs' : 'bg-slate-100 text-slate-600'}`}>
-                          <UserGroupIcon className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="text-xs font-bold text-slate-900 truncate">All Teams Overview</h4>
-                          <p className="text-[11px] text-slate-400 font-medium">
-                            {allTeamsTotalEmps} Employees Total
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {allTeamsAvgMgrScore !== null && (
-                          <span className="text-[10px] font-mono font-extrabold text-teal-900 bg-teal-100/90 px-2 py-0.5 rounded-md border border-teal-300 shadow-2xs">
-                            {allTeamsAvgMgrScore}%
-                          </span>
-                        )}
-                        {managerFilterDept === 'all' && (
-                          <span className="text-[10px] font-bold text-teal-800 bg-teal-100/80 px-2 py-0.5 rounded-md shrink-0">
-                            Active
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Progress Bar & Rate */}
-                    <div className="space-y-1.5 mb-3 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-500 font-medium">Avg Manager Score</span>
-                        <span className="font-extrabold text-slate-800">
-                          {allTeamsAvgMgrScore !== null ? (
-                            <span className="text-teal-700 font-black">{allTeamsAvgMgrScore}%</span>
-                          ) : (
-                            <span className="text-slate-400 font-normal">Pending</span>
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-500 font-medium">Completion Rate</span>
-                        <span className="font-mono font-bold text-slate-800">{allTeamsOverallProgress}% ({allTeamsCompletedCount}/{allTeamsTotalEmps})</span>
-                      </div>
-                      <div className="w-full bg-slate-200/80 rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="bg-gradient-to-r from-teal-500 to-emerald-500 h-full rounded-full transition-all duration-300"
-                          style={{ width: `${allTeamsOverallProgress}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Status Badges */}
-                    <div className="grid grid-cols-3 gap-1.5 text-[10px] font-medium pt-1">
-                      <span className="text-center py-1 px-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold" title="Calibrated / Approved">
-                        {allTeamsCompletedCount} Done
-                      </span>
-                      <span className="text-center py-1 px-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold" title="Pending Assessment">
-                        {allTeamsPendingCount} Pending
-                      </span>
-                      <span className={`text-center py-1 px-1 rounded-lg border font-mono font-extrabold ${allTeamsAvgMgrScore !== null
-                          ? 'bg-teal-50 text-teal-900 border-teal-200'
-                          : 'bg-slate-50 text-slate-500 border-slate-200'
-                        }`} title="Overall Average Manager Score">
-                        {allTeamsAvgMgrScore !== null ? `${allTeamsAvgMgrScore}%` : 'Pending'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Department / Team Cards */}
-                {teamWiseCardsData.map(team => {
-                  const isSelected = Boolean(managerFilterDept) && (
-                    managerFilterDept.toLowerCase() === team.department.toLowerCase() ||
-                    managerFilterDept === 'all'
-                  );
-
-                  // Resolve team cycle
-                  const teamCycle = managerDirectCycles.find(c =>
-                    (c.teamName || '').toLowerCase() === team.department.toLowerCase()
-                  ) || cycles.find(c => (c.teamName || '').toLowerCase() === team.department.toLowerCase());
-
-                  const cycleLockedInfo = getCycleLockedInfo(teamCycle);
-
-                  return (
-                    <div
-                      key={team.department}
-                      onClick={() => {
-                        if (activeRole === 'downline_teams') {
-                          setSelectedDownlineTeamModal(team);
-                          setDownlineModalSearchQuery('');
-                          setDownlineModalStatusFilter('all');
-                        } else {
-                          if (managerFilterDept.toLowerCase() === team.department.toLowerCase()) {
-                            setManagerFilterDept('');
-                          } else {
-                            setManagerFilterDept(team.department);
-                          }
-                        }
-                      }}
-                      className={`relative p-4 rounded-2xl border transition-all duration-200 cursor-pointer flex flex-col justify-between ${isSelected && activeRole === 'manager'
-                          ? 'bg-gradient-to-br from-teal-50/80 via-white to-emerald-50/50 border-teal-400 ring-2 ring-teal-400/25 shadow-sm'
-                          : 'bg-white hover:bg-slate-50/80 border-slate-200/90 hover:border-slate-300 shadow-2xs hover:shadow-xs'
-                        }`}
-                    >
-                      <div>
-                        <div className="flex items-start justify-between gap-2 mb-3">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isSelected && activeRole === 'manager' ? 'bg-teal-700 text-white shadow-xs' : 'bg-teal-50 text-teal-700 border border-teal-200/70'}`}>
-                              <BriefcaseIcon className="w-4 h-4" />
-                            </div>
-                            <div className="min-w-0">
-                              <h4 className="text-xs font-bold text-slate-900 truncate" title={team.department}>
-                                {team.department}
-                              </h4>
-                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                <p className="text-[11px] text-slate-400 font-medium">
-                                  {team.totalEmployees} {team.totalEmployees === 1 ? 'Employee' : 'Employees'}
-                                </p>
-                                {team.subManagerName && (
-                                  <span className="text-[10px] font-semibold text-teal-800 bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200/80">
-                                    Manager: {team.subManagerName}
-                                  </span>
-                                )}
-                              </div>
+                {/* Row 1: Mode Navigation Pills + Date In Period (Date slightly at top & left side) */}
+                <div className="flex flex-col gap-2.5 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs">
+                  {/* Top Line: Date in Period set on the left side + Month & Week dropdowns for Weekly */}
+                  {activeRole !== 'downline_teams' && (
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      {reportViewTab === 'weekly' ? (
+                        <div className="flex items-center gap-3 flex-wrap">
+                          {/* Month dropdown */}
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-slate-700 font-semibold whitespace-nowrap flex items-center gap-1.5">
+                              <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                              Month:
+                            </span>
+                            <div className="relative">
+                              <select
+                                value={selectedReportMonthKey}
+                                onChange={e => handleReportMonthChange(e.target.value)}
+                                className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
+                              >
+                                {availableMonths.map(m => (
+                                  <option key={m.key} value={m.key}>
+                                    {m.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {team.teamAvgMgrScore !== null && (
-                              <span className="text-[10px] font-mono font-extrabold text-teal-900 bg-teal-100/90 px-2 py-0.5 rounded-md border border-teal-300 shadow-2xs">
-                                {team.teamAvgMgrScore}%
-                              </span>
-                            )}
-                            {isSelected && activeRole === 'manager' && (
-                              <span className="text-[10px] font-bold text-teal-800 bg-teal-100/80 px-2 py-0.5 rounded-md shrink-0">
-                                Active
-                              </span>
-                            )}
+
+                          {/* Week dropdown (From Date - To Date) */}
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-slate-700 font-semibold whitespace-nowrap">
+                              Week:
+                            </span>
+                            <div className="relative">
+                              <select
+                                value={selectedWeekPeriod}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setSelectedWeekPeriod(val);
+                                  if (val !== 'all') {
+                                    setReportDateInPeriod(val);
+                                  }
+                                }}
+                                className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
+                              >
+                                <option value="all">All Weeks ({frequencyCounts.weekly})</option>
+                                {weeksForSelectedMonth.map(w => (
+                                  <option key={w.startStr} value={w.startStr}>
+                                    {w.label} {w.count ? `(${w.count})` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            </div>
                           </div>
                         </div>
-
-                        {/* Progress Bar & Rate */}
-                        <div className="space-y-1.5 mb-3 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-slate-500 font-medium">Avg Manager Score</span>
-                            <span className="font-extrabold text-slate-800">
-                              {team.teamAvgMgrScore !== null ? (
-                                <span className="text-teal-700 font-black">{team.teamAvgMgrScore}%</span>
-                              ) : team.teamAvgScore !== null ? (
-                                <span className="text-slate-600 font-bold">{team.teamAvgScore}% (Self)</span>
-                              ) : (
-                                <span className="text-slate-400 font-normal">Pending</span>
-                              )}
-                            </span>
+                      ) : (reportViewTab === 'monthly' || reportViewTab === 'top_monthly') ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-700 font-semibold whitespace-nowrap flex items-center gap-1.5">
+                            <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                            Month:
+                          </span>
+                          <div className="relative">
+                            <select
+                              value={selectedReportMonthKey}
+                              onChange={e => handleReportMonthChange(e.target.value)}
+                              className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
+                            >
+                              <option value="all">All Months ({frequencyCounts.monthly})</option>
+                              {availableMonths.map(m => (
+                                <option key={m.key} value={m.key}>
+                                  {m.label}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                           </div>
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-slate-500 font-medium">Completion Rate</span>
-                            <span className="font-mono font-bold text-slate-800">
-                              {team.completionPercentage}% ({team.completedCount}/{team.totalEmployees})
-                            </span>
+                        </div>
+                      ) : (reportViewTab === 'quarterly' || reportViewTab === 'top_quarterly') ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-700 font-semibold whitespace-nowrap flex items-center gap-1.5">
+                            <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                            Quarter:
+                          </span>
+                          <div className="relative">
+                            <select
+                              value={selectedReportQuarterKey}
+                              onChange={e => handleReportQuarterChange(e.target.value)}
+                              className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
+                            >
+                              <option value="all">All Quarters ({frequencyCounts.quarterly})</option>
+                              {availableQuarters.map(q => (
+                                <option key={q.key} value={q.key}>
+                                  {q.label}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                           </div>
-                          <div className="w-full bg-slate-200/80 rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="bg-gradient-to-r from-teal-500 to-emerald-500 h-full rounded-full transition-all duration-300"
-                              style={{ width: `${team.completionPercentage}%` }}
+                        </div>
+                      ) : reportViewTab === 'daily' ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs text-slate-700 font-semibold whitespace-nowrap flex items-center gap-1.5">
+                            <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                            Date:
+                          </span>
+                          <div className="w-48">
+                            <DatePicker
+                              value={reportDateInPeriod}
+                              onChange={(newDate: string) => {
+                                setReportDateInPeriod(newDate);
+                                setSelectedWeekPeriod('');
+                              }}
+                              placeholder="Select date"
+                              align="left"
+                              className="!h-8.5 !py-1.5 !px-3 !text-xs !rounded-lg border-slate-200 shadow-2xs font-medium"
                             />
                           </div>
                         </div>
-
-                        {/* Status Badges */}
-                        <div className="grid grid-cols-3 gap-1.5 text-[10px] font-medium pt-1">
-                          <span className="text-center py-1 px-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold" title="Calibrated / Approved">
-                            {team.completedCount} Done
+                      ) : (
+                        <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 font-medium">
+                          <span className="flex items-center gap-1.5 font-semibold text-slate-700">
+                            <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                            {reportViewTab === 'top_annual' ? 'Annual Cycle:' : 'Period Scope:'}
                           </span>
-                          <span className="text-center py-1 px-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold" title="Pending Assessment">
-                            {team.pendingCount} Pending
+                          <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200">
+                            {reportViewTab === 'top_annual' ? 'Full Year Performance' : `All Cycles (${frequencyCounts.all} records)`}
                           </span>
-                          <span className={`text-center py-1 px-1 rounded-lg border font-mono font-extrabold ${team.teamAvgMgrScore !== null
-                              ? 'bg-teal-50 text-teal-900 border-teal-200'
-                              : 'bg-slate-50 text-slate-500 border-slate-200'
-                            }`} title="Department Average Manager Score">
-                            {team.teamAvgMgrScore !== null ? `${team.teamAvgMgrScore}%` : 'Pending'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Direct Deliverables Matrix Controls on Each Team Card */}
-                      {activeRole === 'manager' && (
-                        <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-1.5 flex-wrap">
-                          {teamCycle ? (
-                            <>
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span
-                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0 ${cycleLockedInfo.isLocked
-                                      ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                                      : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                    }`}
-                                  title={cycleLockedInfo.isLocked ? `Locked (${cycleLockedInfo.activeCount} active evaluations in progress)` : 'Active Deliverables Matrix (Editable)'}
-                                >
-                                  <span className={`w-1.5 h-1.5 rounded-full ${cycleLockedInfo.isLocked ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                                  <span>{cycleLockedInfo.isLocked ? `Locked (${cycleLockedInfo.activeCount})` : 'Matrix: 100%'}</span>
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-1 shrink-0 ml-auto">
-                                {/* Edit Matrix */}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenMgrEditMatrixModal(teamCycle);
-                                  }}
-                                  disabled={cycleLockedInfo.isLocked}
-                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${cycleLockedInfo.isLocked
-                                      ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
-                                      : 'bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 shadow-2xs'
-                                    }`}
-                                  title={cycleLockedInfo.isLocked ? 'Matrix locked because evaluations are in progress' : 'Edit Deliverables Matrix'}
-                                >
-                                  <PencilSquareIcon className="w-3 h-3 text-slate-500" />
-                                  <span>Edit</span>
-                                </button>
-
-                                {/* Delete Matrix */}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleMgrDeleteMatrix(teamCycle);
-                                  }}
-                                  disabled={cycleLockedInfo.isLocked}
-                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${cycleLockedInfo.isLocked
-                                      ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
-                                      : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/80 shadow-2xs'
-                                    }`}
-                                  title={cycleLockedInfo.isLocked ? 'Matrix locked because evaluations are in progress' : 'Delete Deliverables Matrix'}
-                                >
-                                  <TrashIcon className="w-3 h-3" />
-                                  <span>Delete</span>
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <div className="w-full flex items-center justify-between text-[11px]">
-                              <span className="text-slate-400 font-medium text-[10px]">No Matrix Configured</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenMgrCreateModal(team.department);
-                                }}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 transition cursor-pointer"
-                              >
-                                <span>+ Assign Matrix</span>
-                              </button>
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
+                  )}
 
-            {/* Individual Employee Evaluation Review Queue — ONLY shown in Direct Manager Reviews tab when a team card is selected */}
-            {activeRole === 'manager' && (
-              Boolean(managerFilterDept) ? (
-                <div className="space-y-4 pt-2 border-t border-slate-100 animate-in fade-in duration-200">
-                  {/* Search & Status Filter Bar */}
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/70 p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
-                    {/* Search Bar & Selected Team Pill */}
-                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                      <div className="relative flex-1 max-w-sm">
-                        <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  {/* Mode Navigation Pills */}
+                  <div className={`flex items-center gap-1.5 flex-wrap ${activeRole !== 'downline_teams' ? 'pt-2 border-t border-slate-100' : ''}`}>
+                    {reportTabs.map(tab => {
+                      const isActive = (activeRole === 'downline_teams' && !['top_weekly', 'top_monthly', 'top_quarterly', 'top_annual'].includes(reportViewTab) && tab.id === 'top_weekly') || reportViewTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => handleSwitchReportTab(tab.id as any)}
+                          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${isActive
+                              ? 'bg-teal-700 text-white shadow-xs font-bold'
+                              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90'
+                            }`}
+                        >
+                          <span>{tab.label}</span>
+                          {tab.count !== undefined && (
+                            <span
+                              className={`inline-flex items-center justify-center min-w-[20px] px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold transition-colors ${isActive
+                                  ? 'bg-white/20 text-white'
+                                  : tab.count > 0
+                                    ? tab.pending && tab.pending > 0
+                                      ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
+                                      : 'bg-teal-50 text-teal-800 border border-teal-200 shadow-2xs'
+                                    : 'bg-slate-100 text-slate-400'
+                                }`}
+                              title={tab.pending ? `${tab.pending} pending review` : `${tab.count} evaluations`}
+                            >
+                              {tab.count}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Row 2: Search Input + Department + Team + Date + State Dropdowns + Clear + People Counter */}
+                {activeRole !== 'downline_teams' && (
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs">
+                    <div className="flex items-center gap-2 flex-1 flex-wrap min-w-0">
+                      {/* Search name or code */}
+                      <div className="relative flex-1 min-w-[200px] max-w-sm">
+                        <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                         <input
                           type="text"
                           value={mgrSearchQuery}
                           onChange={e => setMgrSearchQuery(e.target.value)}
-                          placeholder={`Search ${managerFilterDept === 'all' ? 'all reports' : managerFilterDept}...`}
-                          className="w-full h-9 pl-10 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition shadow-2xs"
+                          placeholder="Search name or employee code..."
+                          className="w-full h-8.5 pl-9 pr-7 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition shadow-2xs"
                         />
                         {mgrSearchQuery && (
                           <button
                             type="button"
                             onClick={() => setMgrSearchQuery('')}
-                            className="p-1 rounded-full text-slate-400 hover:text-slate-600 absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                            className="p-1 rounded-full text-slate-400 hover:text-slate-600 absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
                           >
                             <XMarkIcon className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
 
-                      {managerFilterDept && (
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-teal-50 text-teal-800 border border-teal-200/70 shrink-0">
-                          <BuildingOfficeIcon className="w-3.5 h-3.5 text-teal-600" />
-                          <span>{managerFilterDept}</span>
-                          <button
-                            type="button"
-                            onClick={() => setManagerFilterDept('')}
-                            className="ml-1 p-0.5 rounded-full hover:bg-teal-200/60 text-teal-600 hover:text-teal-900 transition cursor-pointer"
-                            title="Clear team selection"
-                          >
-                            <XMarkIcon className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                      {/* All departments dropdown */}
+                      <div className="relative">
+                        <select
+                          value={reportFilterDept}
+                          onChange={e => {
+                            setReportFilterDept(e.target.value);
+                            setReportFilterTeam('all');
+                            setManagerFilterDept(e.target.value === 'all' ? '' : e.target.value);
+                          }}
+                          className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
+                        >
+                          <option value="all">All departments</option>
+                          {availableFilterDepartments.map(dept => (
+                            <option key={dept} value={dept}>{dept}</option>
+                          ))}
+                        </select>
+                        <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+
+                      {/* All teams dropdown */}
+                      <div className="relative">
+                        <select
+                          value={reportFilterTeam}
+                          onChange={e => setReportFilterTeam(e.target.value)}
+                          className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
+                        >
+                          <option value="all">All teams</option>
+                          {availableFilterTeams.map(team => (
+                            <option key={team} value={team}>{team}</option>
+                          ))}
+                        </select>
+                        <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+
+                      {/* All dates / Week Days dropdown */}
+                      <div className="relative">
+                        <select
+                          value={reportFilterDate}
+                          onChange={e => setReportFilterDate(e.target.value)}
+                          className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
+                        >
+                          <option value="all">All dates</option>
+                          {availableFilterDates.map(day => (
+                            <option key={day.dateStr} value={day.dateStr}>
+                              {day.label}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+
+                      {/* Any state dropdown */}
+                      <div className="relative">
+                        <select
+                          value={reportFilterState}
+                          onChange={e => setReportFilterState(e.target.value as any)}
+                          className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
+                        >
+                          <option value="all">Any state</option>
+                          <option value="pending">Pending Review</option>
+                          <option value="submitted">Submitted</option>
+                          <option value="approved">Calibrated / Approved</option>
+                        </select>
+                        <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+
+                      {/* Clear button */}
+                      {(reportFilterDept !== 'all' || reportFilterTeam !== 'all' || reportFilterDate !== 'all' || reportFilterState !== 'all' || mgrSearchQuery.trim() !== '' || Boolean(managerFilterDept)) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReportFilterDept('all');
+                            setReportFilterTeam('all');
+                            setReportFilterDate('all');
+                            setReportFilterState('all');
+                            setMgrSearchQuery('');
+                            setManagerFilterDept('');
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                        >
+                          <XMarkIcon className="w-3.5 h-3.5" />
+                          <span>Clear</span>
+                        </button>
                       )}
                     </div>
 
-                    {/* Status Segment Filter Chips */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-                      {[
-                        { id: 'all', label: 'All', count: queueStats.total },
-                        { id: 'pending', label: 'Pending Review', count: queueStats.pending },
-                        { id: 'submitted', label: 'Submitted', count: queueStats.submitted },
-                        { id: 'approved', label: 'Calibrated', count: queueStats.approved },
-                      ].map(tab => (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          onClick={() => setMgrStatusFilter(tab.id as any)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition whitespace-nowrap cursor-pointer ${mgrStatusFilter === tab.id
-                              ? 'bg-teal-700 text-white shadow-xs'
-                              : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/80'
+                    {/* People Count */}
+                    <div className="text-xs font-bold text-slate-800 shrink-0 self-end lg:self-auto">
+                      {reportFilteredResponses.length} of {activeScopedResponsesForCards.length} people
+                    </div>
+                  </div>
+                )}
+
+                {/* Report Section Header */}
+                <div className="flex items-center gap-3 pt-2">
+                  <h4 className="text-sm font-bold text-slate-900">
+                    {reportHeaderInfo.title}
+                  </h4>
+                  <span className="px-3 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                    {reportHeaderInfo.badge}
+                  </span>
+                </div>
+
+                {/* Report Content: Top Performers (Image 1) OR Empty state OR Cards OR Grouped Table */}
+                {reportViewTab.startsWith('top_') ? (
+                  /* Top Performers Multi-Column Layout (Matching Image 1 Reference UI) */
+                  <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs space-y-4 animate-in fade-in duration-200">
+                    <div className="flex items-baseline gap-3 pb-3 border-b border-slate-100">
+                      <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                        {reportViewTab === 'top_weekly'
+                          ? 'Top Performers - Weekly'
+                          : reportViewTab === 'top_monthly'
+                            ? 'Top Performers - Monthly'
+                            : reportViewTab === 'top_quarterly'
+                              ? 'Top Performers - Quarterly'
+                              : 'Top Performers - Annual'}
+                      </h3>
+                      <span className="text-xs text-slate-500 font-medium">
+                        {reportViewTab === 'top_weekly' || reportViewTab === 'top_monthly'
+                          ? topPerformersQuarterRangeText
+                          : reportViewTab === 'top_quarterly'
+                            ? topPerformersQuarterRangeText
+                            : `1 Jan - 31 Dec ${topPerformersYear}`}
+                      </span>
+                    </div>
+
+                    {/* Multi-column Side-Scroll Container */}
+                    <div className="flex items-stretch gap-4 overflow-x-auto pb-3 pt-1 scroll-smooth">
+                      {(reportViewTab === 'top_weekly'
+                        ? topPerformersWeeklyColumns
+                        : reportViewTab === 'top_monthly'
+                          ? topPerformersMonthlyColumns
+                          : reportViewTab === 'top_quarterly'
+                            ? topPerformersQuarterlyColumns
+                            : topPerformersAnnualColumns
+                      ).map(col => (
+                        <div
+                          key={col.key}
+                          className={`min-w-[280px] max-w-[340px] flex-1 rounded-2xl overflow-hidden shadow-2xs bg-white flex flex-col shrink-0 ${(col as any).isSummaryYear
+                              ? 'border-2 border-[#a28089] shadow-md ring-1 ring-[#a28089]/20'
+                              : 'border border-slate-200/80'
                             }`}
                         >
-                          <span>{tab.label}</span>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${mgrStatusFilter === tab.id
-                              ? 'bg-white/20 text-white'
-                              : 'bg-slate-100 text-slate-600'
+                          {/* Column Header */}
+                          <div className={`px-4 py-2.5 font-bold text-xs flex items-center justify-between ${(col as any).isSummaryYear
+                              ? 'bg-[#a28089] text-white'
+                              : 'bg-slate-50 text-slate-800 border-b border-slate-200/80'
                             }`}>
-                            {tab.count}
-                          </span>
-                        </button>
+                            <span>{col.label}</span>
+                            {col.subLabel && (
+                              <span className="text-[10px] font-normal text-slate-400">{col.subLabel}</span>
+                            )}
+                          </div>
+
+                          {/* Column Body */}
+                          <div className="p-3 flex-1 flex flex-col justify-start space-y-3">
+                            {col.groups.length === 0 ? (
+                              <div className="py-14 text-center my-auto">
+                                <p className="text-xs text-slate-400 font-medium italic">Nothing approved.</p>
+                              </div>
+                            ) : (
+                              col.groups.map((group: any) => {
+                                const color = getTeamHeaderColor(group.teamName);
+                                return (
+                                  <div key={`${group.departmentName}_${group.teamName}`} className="space-y-2 pt-2 first:pt-0 border-t first:border-t-0 border-slate-100">
+                                    {/* Team Header Banner with pastel colors matching Image 1 */}
+                                    <div className={`px-2.5 py-1.5 rounded-lg ${color.bg} space-y-0.5`}>
+                                      <div className={`text-[9px] font-bold uppercase tracking-wider ${color.sub}`}>
+                                        {group.departmentName}
+                                      </div>
+                                      <div className={`text-xs font-extrabold ${color.text}`}>
+                                        Team: {group.teamName}
+                                      </div>
+                                    </div>
+
+                                    {/* Member Rows */}
+                                    <div className="space-y-1.5 px-1">
+                                      {group.members.map((member: any) => (
+                                        <div key={member.code || member.name} className="flex items-center justify-between text-xs py-0.5">
+                                          <div className="flex items-center gap-1.5 min-w-0">
+                                            <span className="text-xs font-bold text-slate-600 shrink-0 inline-flex items-center gap-1 whitespace-nowrap">
+                                              {member.rank === 1 ? '🥇 1.' : member.rank === 2 ? '🥈 2.' : member.rank === 3 ? '🥉 3.' : <span className="text-slate-400">{member.rank}.</span>}
+                                            </span>
+                                            <span className="font-semibold text-slate-800 truncate text-xs" title={member.name}>
+                                              {member.name}
+                                            </span>
+                                          </div>
+                                          <span className="font-mono font-bold text-slate-900 shrink-0 ml-2">
+                                            {member.score.toFixed(2)}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
-
-                  {/* Queue Content — Switch between Table and Cards Mode */}
-                  {filteredManagerResponses.length === 0 ? (
-                    <div className="py-12 text-center space-y-3 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                      <div className="w-12 h-12 mx-auto rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
-                        <UserGroupIcon className="w-6 h-6" />
-                      </div>
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-bold text-slate-800">No evaluation records found</h4>
-                        <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                          No direct report evaluation submissions match your current filters.
-                        </p>
-                      </div>
+                ) : reportFilteredResponses.length === 0 ? (
+                  <div className="py-12 px-4 text-center space-y-4 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                    <div className="w-12 h-12 mx-auto rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
+                      <UserGroupIcon className="w-6 h-6" />
                     </div>
-                  ) : mgrViewMode === 'cards' ? (
-                    /* Cards Grid View */
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredManagerResponses.map(r => {
-                        const { employeeCode, employeeName, teamName, empInDb } = getEmployeeDisplayInfo(r);
-                        const isCalibrated = r.managerScore != null && (r.status as string) !== 'manager_review' && (r.status as string) !== 'Submitted to Manager';
-                        const initials = (employeeName || 'EM').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold text-slate-800 capitalize">
+                        No {reportViewTab === 'all' ? 'Evaluations' : reportViewTab.replace('top_', 'Top ') + ' Evaluations'} Found
+                      </h4>
+                      <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                        No team member evaluations match the current filters {reportDateInPeriod ? `for ${reportDateInPeriod}` : ''}.
+                      </p>
+                    </div>
 
-                        return (
-                          <div
-                            key={r.id}
-                            className="group relative bg-white hover:bg-slate-50/50 rounded-2xl p-5 border border-slate-200/90 hover:border-primary-300 shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between"
-                          >
-                            <div className="space-y-3">
-                              {/* Card Header */}
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className="w-10 h-10 rounded-xl bg-linear-to-br from-primary-600 to-indigo-700 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
-                                    {initials}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <h4 className="text-sm font-bold text-slate-900 group-hover:text-primary-800 transition">
-                                      {employeeName || r.employeeName}
-                                    </h4>
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                                        #{employeeCode}
-                                      </span>
-                                      <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60">
-                                        {teamName}
-                                      </span>
-                                    </div>
-                                  </div>
+                    {/* Quick navigation helpers: direct buttons so user doesn't have to search manually */}
+                    <div className="flex items-center justify-center gap-2 flex-wrap max-w-lg mx-auto pt-1">
+                      {reportViewTab !== 'all' && frequencyCounts.all > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchReportTab('all')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#a28089] text-white rounded-lg text-xs font-semibold shadow-2xs hover:bg-[#8e6e76] cursor-pointer transition"
+                        >
+                          <span>View All Scoped Evaluations ({frequencyCounts.all})</span>
+                        </button>
+                      )}
+
+                      {reportViewTab !== 'quarterly' && frequencyCounts.quarterly > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchReportTab('quarterly')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs hover:bg-slate-50 cursor-pointer transition"
+                        >
+                          <span>Jump to Quarterly ({frequencyCounts.quarterly})</span>
+                        </button>
+                      )}
+
+                      {reportViewTab !== 'monthly' && frequencyCounts.monthly > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchReportTab('monthly')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs hover:bg-slate-50 cursor-pointer transition"
+                        >
+                          <span>Jump to Monthly ({frequencyCounts.monthly})</span>
+                        </button>
+                      )}
+
+                      {reportViewTab !== 'weekly' && frequencyCounts.weekly > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchReportTab('weekly')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs hover:bg-slate-50 cursor-pointer transition"
+                        >
+                          <span>Jump to Weekly ({frequencyCounts.weekly})</span>
+                        </button>
+                      )}
+
+                      {reportViewTab !== 'daily' && frequencyCounts.daily > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchReportTab('daily')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs hover:bg-slate-50 cursor-pointer transition"
+                        >
+                          <span>Jump to Daily ({frequencyCounts.daily})</span>
+                        </button>
+                      )}
+
+                      {/* Reset Filters button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReportFilterDept('all');
+                          setReportFilterTeam('all');
+                          setReportFilterDate('all');
+                          setReportFilterState('all');
+                          setMgrSearchQuery('');
+                          setManagerFilterDept('');
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs hover:bg-slate-50 cursor-pointer"
+                      >
+                        <span>Reset Filters</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : mgrViewMode === 'cards' ? (
+                  /* Cards Mode */
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {reportFilteredResponses.map(r => {
+                      const { employeeCode, employeeName, teamName, departmentName } = getEmployeeDisplayInfo(r);
+                      const isCalibrated = r.managerScore != null && (r.status as string) !== 'manager_review' && (r.status as string) !== 'Submitted to Manager';
+                      const initials = (employeeName || 'EM').split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
+
+                      return (
+                        <div
+                          key={r.id}
+                          className="group relative bg-white hover:bg-slate-50/50 rounded-2xl p-5 border border-slate-200/90 hover:border-teal-300 shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between"
+                        >
+                          <div className="space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                                  {initials}
                                 </div>
-
-                                {renderStatusBadge(r.status)}
-                              </div>
-
-                              {/* Designation & Metric Form */}
-                              <div className="text-xs text-slate-500 italic flex items-center gap-1.5 flex-wrap">
-                                <span>{r.designation || 'Team Member'}</span>
-                                {(r.periodName || (r as any).form) && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200/60 text-[10px] not-italic">
-                                      {r.periodName || (r as any).form}
+                                <div className="min-w-0">
+                                  <h4 className="text-sm font-bold text-slate-900 group-hover:text-teal-900 transition">
+                                    {employeeName || r.employeeName}
+                                  </h4>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                                      #{employeeCode}
                                     </span>
-                                  </>
-                                )}
-                              </div>
-
-                              {/* Score Comparison Gauge */}
-                              <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                                <div className="space-y-0.5">
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Self Score</span>
-                                  <span className="text-sm font-bold text-slate-800">
-                                    {r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : '0.0%'}
-                                  </span>
-                                </div>
-                                <div className="space-y-0.5 border-l border-slate-200 pl-2.5">
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Manager Score</span>
-                                  <span className="text-sm font-bold text-primary-700">
-                                    {r.managerScore != null ? `${Number(r.managerScore).toFixed(1)}%` : 'Pending'}
-                                  </span>
-                                </div>
-                                <div className="space-y-0.5 border-l border-slate-200 pl-2.5">
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Grade</span>
-                                  {r.managerScore != null ? (
-                                    (() => {
-                                      const cardRating = getRatingForScore(Number(r.managerScore));
-                                      return (
-                                        <div className="leading-tight">
-                                          <span className="text-sm font-black text-emerald-800 block leading-tight">{cardRating.letterGrade || cardRating.grade}</span>
-                                          <span className="text-[9px] font-medium text-emerald-700 block truncate leading-tight" title={cardRating.name}>{cardRating.name}</span>
-                                        </div>
-                                      );
-                                    })()
-                                  ) : (
-                                    <span className="text-xs text-slate-400">—</span>
-                                  )}
+                                    <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60">
+                                      {departmentName} • {teamName}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
+                              {renderStatusBadge(r.status)}
                             </div>
 
-                            {/* Card Bottom Actions */}
-                            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleSelectMgrResponse(r)}
-                                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
-                              >
-                                <PencilSquareIcon className="w-3.5 h-3.5" />
-                                <span>{isCalibrated ? 'Recalibrate' : 'Review & Score'}</span>
-                              </button>
+                            <div className="text-xs text-slate-500 italic flex items-center gap-1.5 flex-wrap">
+                              <span>{r.designation || 'Team Member'}</span>
+                              {(r.periodName || (r as any).form) && (
+                                <>
+                                  <span>•</span>
+                                  <span className="font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200/60 text-[10px] not-italic">
+                                    {r.periodName || (r as any).form}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                              <div className="space-y-0.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Self Score</span>
+                                <span className="text-sm font-bold text-slate-800">
+                                  {r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : '0.0%'}
+                                </span>
+                              </div>
+                              <div className="space-y-0.5 border-l border-slate-200 pl-2.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Manager Score</span>
+                                <span className="text-sm font-bold text-teal-700">
+                                  {r.managerScore != null ? `${Number(r.managerScore).toFixed(1)}%` : 'Pending'}
+                                </span>
+                              </div>
+                              <div className="space-y-0.5 border-l border-slate-200 pl-2.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Grade</span>
+                                {r.managerScore != null ? (
+                                  (() => {
+                                    const cardRating = getRatingForScore(Number(r.managerScore));
+                                    return (
+                                      <div className="leading-tight">
+                                        <span className="text-sm font-black text-emerald-800 block leading-tight">{cardRating.letterGrade || cardRating.grade}</span>
+                                        <span className="text-[9px] font-medium text-emerald-700 block truncate leading-tight" title={cardRating.name}>{cardRating.name}</span>
+                                      </div>
+                                    );
+                                  })()
+                                ) : (
+                                  <span className="text-xs text-slate-400">—</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleSelectMgrResponse(r)}
+                              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
+                            >
+                              <PencilSquareIcon className="w-3.5 h-3.5" />
+                              <span>{isCalibrated ? 'Recalibrate' : 'Review & Score'}</span>
+                            </button>
                               {!isCalibrated && r.managerScore == null && (
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteMgrResponseRow(r)}
                                   className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer border border-transparent hover:border-rose-200"
-                                  title="Delete evaluation record from database"
+                                  title="Delete evaluation record"
                                 >
                                   <TrashIcon className="w-4 h-4" />
                                 </button>
@@ -6219,111 +8339,290 @@ export const EvaluationTab: React.FC = () => {
                       })}
                     </div>
                   ) : (
-                    /* Table View */
-                    <div className="overflow-x-auto rounded-2xl border border-slate-200/90 shadow-2xs bg-white">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50/80 text-slate-500 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200/80">
-                          <tr>
-                            <th className="px-5 py-3.5">Employee</th>
-                            <th className="px-4 py-3.5">Team / Department</th>
-                            <th className="px-4 py-3.5 text-center">Self Score</th>
-                            <th className="px-4 py-3.5 text-center">Manager Score</th>
-                            <th className="px-4 py-3.5 text-center">Status</th>
-                            <th className="px-5 py-3.5 text-right">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {filteredManagerResponses.map(r => {
-                            const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(r);
-                            const isCalibrated = r.managerScore != null && (r.status as string) !== 'manager_review' && (r.status as string) !== 'Submitted to Manager';
-                            const initials = (employeeName || 'EM').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+                    /* Grouped Report Table Matching Image 2 Exactly */
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-2xs bg-white">
+                      <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-white text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                          <th className="py-3 px-4 w-[30%]">NAME OF THE EMPLOYEE</th>
+                          <th className="py-3 px-4 text-center w-[24%]">EVALUATION PERIOD / DATE</th>
+                          <th className="py-3 px-4 text-center w-[12%]">{reportViewTab === 'all' ? 'SELF SCORE' : formattedDateColumnHeader}</th>
+                          <th className="py-3 px-4 text-center w-[12%]">AVERAGE SCORE</th>
+                          <th className="py-3 px-4 text-center w-[11%]">STATUS</th>
+                          <th className="py-3 px-4 text-right w-[11%]">ACTION</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groupedReportHierarchy.map(deptGroup => (
+                          <React.Fragment key={deptGroup.departmentName}>
+                            {/* Department Group Banner */}
+                            <tr>
+                              <td colSpan={6} className="p-0">
+                                <div className="bg-[#a28089] text-white px-4 py-2.5 flex items-center gap-2 font-bold text-xs">
+                                  <FolderIcon className="w-4 h-4 text-white" />
+                                  <span>{deptGroup.departmentName}</span>
+                                  <span className="font-normal opacity-90">{deptGroup.totalPeople} people</span>
+                                </div>
+                              </td>
+                            </tr>
 
-                            return (
-                              <tr key={r.id} className="hover:bg-slate-50/70 transition-colors group">
-                                <td className="px-5 py-4">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-8.5 h-8.5 rounded-xl bg-linear-to-br from-slate-700 to-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
-                                      {initials}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="font-bold text-xs text-slate-900 group-hover:text-teal-900 transition">
-                                          {employeeName || r.employeeName}
-                                        </span>
-                                        <span className="text-[10px] font-medium text-slate-400 font-mono">
-                                          #{employeeCode}
-                                        </span>
-                                      </div>
-                                      <div className="text-[11px] font-normal text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                        <span>{r.designation || 'Team Member'}</span>
-                                        {(r.periodName || (r as any).form) && (
-                                          <>
-                                            <span className="text-slate-300">•</span>
-                                            <span className="font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200/60 text-[10px]">
-                                              {r.periodName || (r as any).form}
+                            {/* Teams inside Department */}
+                            {deptGroup.teams.map((teamGroup, tIdx) => {
+                              const matchingDbTeam = dbTeams.find(t =>
+                                t.name?.toLowerCase() === teamGroup.teamName.toLowerCase() ||
+                                String(t.id) === teamGroup.teamName.toLowerCase()
+                              );
+
+                              const teamCycle = managerDirectCycles.find(c => {
+                                const cName = (c.teamName || '').toLowerCase();
+                                const cId = String(c.teamId || '').toLowerCase();
+                                const tName = teamGroup.teamName.toLowerCase();
+                                const dbTeamId = matchingDbTeam ? String(matchingDbTeam.id).toLowerCase() : '';
+                                const dbTeamName = matchingDbTeam?.name?.toLowerCase() || '';
+
+                                return (
+                                  cName === tName ||
+                                  cId === tName ||
+                                  (dbTeamId && (cId === dbTeamId || cName === dbTeamId)) ||
+                                  (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
+                                );
+                              }) || cycles.find(c => {
+                                const cName = (c.teamName || '').toLowerCase();
+                                const cId = String(c.teamId || '').toLowerCase();
+                                const tName = teamGroup.teamName.toLowerCase();
+                                const dbTeamId = matchingDbTeam ? String(matchingDbTeam.id).toLowerCase() : '';
+                                const dbTeamName = matchingDbTeam?.name?.toLowerCase() || '';
+
+                                return (
+                                  cName === tName ||
+                                  cId === tName ||
+                                  (dbTeamId && (cId === dbTeamId || cName === dbTeamId)) ||
+                                  (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
+                                );
+                              });
+
+                              const cycleLockedInfo = getCycleLockedInfo(teamCycle);
+                              const teamPendingCount = teamGroup.members.filter(m =>
+                                (m.response.status === 'manager_review' || m.response.status === 'Submitted to Manager' || String(m.response.status || '').toLowerCase().includes('submitted')) &&
+                                m.response.managerScore == null
+                              ).length;
+
+                              return (
+                                <React.Fragment key={teamGroup.teamName}>
+                                  {/* Team Sub-banner with Deliverables Matrix Controls */}
+                                  <tr>
+                                    <td colSpan={6} className="p-0">
+                                      <div className={`px-4 py-2 flex items-center justify-between gap-3 font-bold text-xs ${tIdx % 2 === 0
+                                          ? 'bg-[#f3edf5] text-[#5e2b6b]'
+                                          : 'bg-[#eef5ee] text-[#2c592e]'
+                                        }`}>
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <UserGroupIcon className="w-4 h-4 shrink-0" />
+                                          <span className="truncate">Team: {teamGroup.teamName}</span>
+                                          <span className="text-[11px] font-normal opacity-80 shrink-0">
+                                            ({teamGroup.members.length} {teamGroup.members.length === 1 ? 'person' : 'people'})
+                                          </span>
+                                          {teamPendingCount > 0 && (
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-2xs animate-pulse shrink-0">
+                                              <BellAlertIcon className="w-3 h-3 text-white" />
+                                              <span>{teamPendingCount} Submissions Awaiting Approval</span>
                                             </span>
-                                          </>
+                                          )}
+                                        </div>
+
+                                        {(activeRole === 'manager' || activeRole === 'downline_teams' || canCreateMetrics) && (
+                                          <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                                            {teamCycle ? (
+                                              <>
+                                                {/* Matrix Status Badge */}
+                                                <span
+                                                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0 shadow-2xs ${cycleLockedInfo.isLocked
+                                                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                                      : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                                    }`}
+                                                  title={
+                                                    cycleLockedInfo.isLocked
+                                                      ? `Locked (${cycleLockedInfo.activeCount} active evaluations in progress)`
+                                                      : 'Active Deliverables Matrix (Editable)'
+                                                  }
+                                                >
+                                                  <span className={`w-1.5 h-1.5 rounded-full ${cycleLockedInfo.isLocked ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+                                                  <span>{cycleLockedInfo.isLocked ? 'Locked' : 'Matrix: 100%'}</span>
+                                                </span>
+
+                                                {/* Edit Matrix */}
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleOpenMgrEditMatrixModal(teamCycle)}
+                                                  disabled={cycleLockedInfo.isLocked}
+                                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer ${cycleLockedInfo.isLocked
+                                                      ? 'bg-white/50 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
+                                                      : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 shadow-2xs'
+                                                    }`}
+                                                  title={cycleLockedInfo.isLocked ? 'Matrix locked because evaluations are in progress' : 'Edit Deliverables Matrix'}
+                                                >
+                                                  <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
+                                                  <span>Edit</span>
+                                                </button>
+
+                                                {/* Delete Matrix */}
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleMgrDeleteMatrix(teamCycle)}
+                                                  disabled={cycleLockedInfo.isLocked}
+                                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer ${cycleLockedInfo.isLocked
+                                                      ? 'bg-white/50 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
+                                                      : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 shadow-2xs'
+                                                    }`}
+                                                  title={cycleLockedInfo.isLocked ? 'Matrix locked because evaluations are in progress' : 'Delete Deliverables Matrix'}
+                                                >
+                                                  <TrashIcon className="w-3.5 h-3.5" />
+                                                  <span>Delete</span>
+                                                </button>
+                                              </>
+                                            ) : (
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-[10px] font-medium opacity-70">No Matrix Configured</span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleOpenMgrCreateModal(teamGroup.teamName)}
+                                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold text-teal-700 bg-white hover:bg-teal-50 border border-teal-300 shadow-2xs transition cursor-pointer"
+                                                >
+                                                  <span>+ Assign Matrix</span>
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
                                         )}
                                       </div>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="px-4 py-4">
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-100/80 text-slate-700 border border-slate-200/80 shadow-2xs">
-                                    <BuildingOfficeIcon className="w-3 h-3 text-slate-400" />
-                                    <span>{teamName}</span>
-                                  </span>
-                                </td>
-                                <td className="px-4 py-4 text-center">
-                                  <span className="font-mono text-xs font-semibold text-slate-800">
-                                    {r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : '0.0%'}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-4 text-center">
-                                  {r.managerScore != null ? (
-                                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold text-teal-800 bg-teal-50 border border-teal-200/80 font-mono shadow-2xs">
-                                      {Number(r.managerScore).toFixed(1)}%
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-400 border border-slate-200/60">
-                                      Pending
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-4 text-center">
-                                  {renderStatusBadge(r.status)}
-                                </td>
-                                <td className="px-5 py-4 text-right">
-                                  <div className="flex items-center justify-end gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSelectMgrResponse(r)}
-                                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-2xs transition-all hover:shadow cursor-pointer"
-                                    >
-                                      <PencilSquareIcon className="w-3.5 h-3.5" />
-                                      <span>{isCalibrated ? 'Recalibrate' : 'Review & Score'}</span>
-                                    </button>
-                                    {!isCalibrated && r.managerScore == null && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteMgrResponseRow(r)}
-                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer border border-transparent hover:border-rose-200"
-                                        title="Delete evaluation record from database"
+                                    </td>
+                                  </tr>
+
+                                  {/* Member Rows in Team */}
+                                  {teamGroup.members.map(member => {
+                                    const isSubmittedPending = Boolean(
+                                      (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || String(member.response.status || '').toLowerCase().includes('submitted')) &&
+                                      member.response.managerScore == null
+                                    );
+
+                                    return (
+                                      <tr
+                                        key={member.response.id || member.employeeCode}
+                                        className={`border-b border-slate-100 hover:bg-slate-50/80 transition ${isSubmittedPending ? 'bg-teal-50/20 border-l-4 border-l-teal-600' : 'bg-white'
+                                          }`}
                                       >
-                                        <TrashIcon className="w-4 h-4" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              ) : null
+                                        {/* 1. Name of the employee with avatar */}
+                                        <td className="py-3.5 px-4">
+                                          <div className="flex items-center gap-3">
+                                            <div className={`w-8.5 h-8.5 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${member.avatarBg}`}>
+                                              {member.initials}
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                                {member.rank && (
+                                                  <span className="font-bold text-xs text-amber-600 mr-0.5">
+                                                    {member.rank === 1 ? '🥇 #1' : member.rank === 2 ? '🥈 #2' : member.rank === 3 ? '🥉 #3' : `#${member.rank}`}
+                                                  </span>
+                                                )}
+                                                <span className={`font-semibold text-xs ${isSubmittedPending ? 'text-teal-950 font-bold' : 'text-slate-900'}`}>
+                                                  {member.employeeName}
+                                                </span>
+                                                <span className="text-xs text-slate-400 font-normal">
+                                                  (Emp Code {member.employeeCode})
+                                                </span>
+                                                {isSubmittedPending && (
+                                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-300 shrink-0 inline-flex items-center gap-1 shadow-2xs animate-pulse">
+                                                    <SparklesIcon className="w-3 h-3 text-teal-700" />
+                                                    <span>Ready for Review</span>
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </td>
+
+                                        {/* 2. Evaluation Period / Date Badge */}
+                                        <td className="py-3.5 px-4 text-center">
+                                          <div className="inline-flex flex-col items-center gap-0.5">
+                                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold border shadow-2xs ${member.periodInfo?.freqColor || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                                              <CalendarDaysIcon className="w-3 h-3 shrink-0" />
+                                              <span>{member.periodInfo?.freqLabel || 'Evaluation'}</span>
+                                            </span>
+                                            <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">
+                                              {member.periodInfo?.dateText}
+                                            </span>
+                                          </div>
+                                        </td>
+
+                                        {/* 3. Date Score / Self Score */}
+                                        <td className="py-3.5 px-4 text-center">
+                                          <span className="text-xs font-medium text-slate-700">
+                                            {member.dateScoreDisplay}
+                                          </span>
+                                        </td>
+
+                                        {/* 4. Average Score */}
+                                        <td className="py-3.5 px-4 text-center">
+                                          <span className="text-xs font-semibold text-slate-800">
+                                            {member.averageScoreDisplay}
+                                          </span>
+                                        </td>
+
+                                        {/* 5. Status Badge */}
+                                        <td className="py-3.5 px-4 text-center">
+                                          {renderStatusBadge(member.response.status)}
+                                        </td>
+
+                                        {/* 6. Action Button */}
+                                        <td className="py-3.5 px-4 text-right">
+                                          <div className="flex items-center justify-end gap-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleSelectMgrResponse(member.response)}
+                                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs ${isSubmittedPending
+                                                  ? 'bg-gradient-to-r from-teal-700 to-emerald-700 hover:from-teal-800 hover:to-emerald-800 text-white ring-2 ring-teal-500/30'
+                                                  : member.isCalibrated
+                                                    ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
+                                                    : 'bg-teal-700 hover:bg-teal-800 text-white'
+                                                }`}
+                                            >
+                                              {isSubmittedPending ? (
+                                                <>
+                                                  <SparklesIcon className="w-3.5 h-3.5 text-amber-300" />
+                                                  <span>Review & Score</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <PencilSquareIcon className="w-3.5 h-3.5" />
+                                                  <span>{member.isCalibrated ? 'Recalibrate' : 'Review & Score'}</span>
+                                                </>
+                                              )}
+                                            </button>
+                                            {!member.isCalibrated && member.response.managerScore == null && (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteMgrResponseRow(member.response)}
+                                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                                title="Delete evaluation record"
+                                              >
+                                                <TrashIcon className="w-3.5 h-3.5" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </React.Fragment>
+                              );
+                            })}
+                          </React.Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -6373,24 +8672,24 @@ export const EvaluationTab: React.FC = () => {
               <div className="p-5 bg-gradient-to-r from-teal-50/60 via-white to-slate-50/60 border-b border-slate-200/80 shrink-0">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-center gap-3.5 min-w-0">
-                    <div className="w-11 h-11 rounded-2xl bg-teal-50 border border-teal-200 text-teal-700 font-bold flex items-center justify-center shrink-0 shadow-2xs">
+                    <div className="w-11 h-11 rounded-2xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center shrink-0 shadow-2xs">
                       <BriefcaseIcon className="w-6 h-6" />
                     </div>
                     <div className="space-y-0.5 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-base font-bold text-slate-900 truncate">
+                        <h3 className="text-base font-semibold text-slate-800 truncate">
                           {team.department} Team Performance Overview
                         </h3>
-                        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg bg-teal-50 text-teal-800 border border-teal-200/70 shadow-2xs">
+                        <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/70 shadow-2xs">
                           {team.totalEmployees} {team.totalEmployees === 1 ? 'Member' : 'Members'}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap font-normal">
                         {team.subManagerName && (
-                          <span>Reporting Manager: <strong className="text-slate-700 font-semibold">{team.subManagerName}</strong></span>
+                          <span>Reporting Manager: <span className="text-slate-700 font-medium">{team.subManagerName}</span></span>
                         )}
                         <span className="text-slate-300">•</span>
-                        <span>Avg Team Score: <strong className="text-teal-700 font-bold">{team.teamAvgMgrScore !== null ? `${team.teamAvgMgrScore}%` : (team.teamAvgScore !== null ? `${team.teamAvgScore}% (Self)` : 'Pending')}</strong></span>
+                        <span>Avg Team Score: <span className="text-teal-700 font-semibold">{team.teamAvgMgrScore !== null ? `${team.teamAvgMgrScore}%` : (team.teamAvgScore !== null ? `${team.teamAvgScore}% (Self)` : 'Pending')}</span></span>
                       </div>
                     </div>
                   </div>
@@ -6400,32 +8699,32 @@ export const EvaluationTab: React.FC = () => {
                     onClick={() => setSelectedDownlineTeamModal(null)}
                     className="w-8.5 h-8.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition cursor-pointer shrink-0 shadow-2xs"
                   >
-                    <XMarkIcon className="w-4 h-4 stroke-[2.2]" />
+                    <XMarkIcon className="w-4 h-4 stroke-[2]" />
                   </button>
                 </div>
 
                 {/* Team Progress Telemetry Bar */}
                 <div className="mt-4 pt-3.5 border-t border-slate-200/60 grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
-                    <span className="text-[10px] uppercase font-semibold text-slate-400 block">Total Headcount</span>
-                    <span className="text-sm font-bold text-slate-800">{allCount}</span>
+                    <span className="text-[10px] uppercase font-medium tracking-wide text-slate-400 block">Total Headcount</span>
+                    <span className="text-sm font-semibold text-slate-800">{allCount}</span>
                   </div>
                   <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
-                    <span className="text-[10px] uppercase font-semibold text-teal-600 block">Completion Rate</span>
+                    <span className="text-[10px] uppercase font-medium tracking-wide text-teal-600 block">Completion Rate</span>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-sm font-bold text-teal-900">{team.completionPercentage}%</span>
+                      <span className="text-sm font-semibold text-teal-800">{team.completionPercentage}%</span>
                       <div className="flex-1 bg-slate-100 h-1.5 rounded-full overflow-hidden">
                         <div className="bg-teal-600 h-full rounded-full transition-all duration-500" style={{ width: `${team.completionPercentage}%` }} />
                       </div>
                     </div>
                   </div>
                   <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
-                    <span className="text-[10px] uppercase font-semibold text-amber-600 block">Pending / In Progress</span>
-                    <span className="text-sm font-bold text-amber-800">{pendingCount}</span>
+                    <span className="text-[10px] uppercase font-medium tracking-wide text-amber-600 block">Pending / In Progress</span>
+                    <span className="text-sm font-semibold text-amber-700">{pendingCount}</span>
                   </div>
                   <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
-                    <span className="text-[10px] uppercase font-semibold text-emerald-600 block">Calibrated / Final</span>
-                    <span className="text-sm font-bold text-emerald-800">{approvedCount}</span>
+                    <span className="text-[10px] uppercase font-medium tracking-wide text-emerald-600 block">Calibrated / Final</span>
+                    <span className="text-sm font-semibold text-emerald-700">{approvedCount}</span>
                   </div>
                 </div>
               </div>
@@ -6463,15 +8762,15 @@ export const EvaluationTab: React.FC = () => {
                       key={tab.id}
                       type="button"
                       onClick={() => setDownlineModalStatusFilter(tab.id as any)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition whitespace-nowrap cursor-pointer ${downlineModalStatusFilter === tab.id
-                          ? 'bg-teal-700 text-white shadow-xs'
-                          : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/80'
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition whitespace-nowrap cursor-pointer ${downlineModalStatusFilter === tab.id
+                        ? 'bg-teal-700 text-white shadow-xs'
+                        : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/80'
                         }`}
                     >
                       <span>{tab.label}</span>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${downlineModalStatusFilter === tab.id
-                          ? 'bg-white/20 text-white'
-                          : 'bg-slate-100 text-slate-600'
+                      <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded-full ${downlineModalStatusFilter === tab.id
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-100 text-slate-600'
                         }`}>
                         {tab.count}
                       </span>
@@ -6485,24 +8784,24 @@ export const EvaluationTab: React.FC = () => {
                 {teamResponses.length === 0 ? (
                   <div className="py-12 text-center space-y-2 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
                     <UserGroupIcon className="w-8 h-8 mx-auto text-slate-400" />
-                    <h5 className="text-xs font-bold text-slate-700">No member records match criteria</h5>
+                    <h5 className="text-xs font-semibold text-slate-700">No member records match criteria</h5>
                     <p className="text-[11px] text-slate-400">Try changing the search query or status filter.</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-2xl border border-slate-200/90 shadow-2xs bg-white">
                     <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50/80 text-slate-500 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200/80">
+                      <thead className="bg-slate-50/80 text-slate-400 font-medium text-[10px] uppercase tracking-wider border-b border-slate-200/80">
                         <tr>
-                          <th className="px-5 py-3.5">Team Member</th>
+                          <th className="px-5 py-3.5">Employee & Squad</th>
                           <th className="px-4 py-3.5 text-center">Self Score</th>
                           <th className="px-4 py-3.5 text-center">Manager Score</th>
                           <th className="px-4 py-3.5 text-center">Status</th>
                           <th className="px-5 py-3.5 text-right">Action</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-slate-100 font-normal">
                         {teamResponses.map(r => {
-                          const { employeeCode, employeeName } = getEmployeeDisplayInfo(r);
+                          const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(r);
                           const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
                           const initials = (employeeName || 'EM').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
@@ -6510,36 +8809,45 @@ export const EvaluationTab: React.FC = () => {
                             <tr key={r.id} className="hover:bg-slate-50/70 transition-colors group">
                               <td className="px-5 py-4">
                                 <div className="flex items-center gap-3">
-                                  <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-br from-teal-700 to-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                                  <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-br from-teal-700 to-slate-800 text-white font-medium text-xs flex items-center justify-center shrink-0 shadow-2xs">
                                     {initials}
                                   </div>
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-bold text-xs text-slate-900 group-hover:text-teal-900 transition">
+                                      <span className="font-medium text-xs text-slate-800 group-hover:text-teal-900 transition">
                                         {employeeName || r.employeeName}
                                       </span>
-                                      <span className="text-[10px] font-medium text-slate-400 font-mono">
+                                      <span className="text-[10px] text-slate-400 font-mono">
                                         #{employeeCode}
                                       </span>
                                     </div>
-                                    <div className="text-[11px] font-normal text-slate-500 mt-0.5">
-                                      {r.designation || 'Team Member'}
+                                    <div className="text-[11px] font-normal text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200/70 shadow-2xs">
+                                        <BuildingOfficeIcon className="w-3 h-3 text-teal-600" />
+                                        <span>{teamName}</span>
+                                      </span>
+                                      {r.designation && r.designation.toLowerCase() !== 'team member' && (
+                                        <>
+                                          <span className="text-slate-300">•</span>
+                                          <span className="text-slate-500 font-normal">{r.designation}</span>
+                                        </>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
                               </td>
                               <td className="px-4 py-4 text-center">
-                                <span className="font-mono text-xs font-semibold text-slate-800">
+                                <span className="font-normal text-xs text-slate-700">
                                   {r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : '0.0%'}
                                 </span>
                               </td>
                               <td className="px-4 py-4 text-center">
                                 {r.managerScore != null ? (
-                                  <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold text-teal-800 bg-teal-50 border border-teal-200/80 font-mono shadow-2xs">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200/80 shadow-2xs">
                                     {Number(r.managerScore).toFixed(1)}%
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-400 border border-slate-200/60">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-normal bg-slate-100 text-slate-400 border border-slate-200/60">
                                     Pending
                                   </span>
                                 )}
@@ -6551,7 +8859,7 @@ export const EvaluationTab: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => handleSelectMgrResponse(r)}
-                                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-2xs transition-all hover:shadow cursor-pointer"
+                                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-medium shadow-2xs transition-all hover:shadow cursor-pointer"
                                 >
                                   <EyeIcon className="w-3.5 h-3.5" />
                                   <span>{isCalibrated ? 'View Scorecard' : 'View Report'}</span>
@@ -6569,12 +8877,12 @@ export const EvaluationTab: React.FC = () => {
               {/* Modal Footer */}
               <div className="p-4 bg-slate-50/80 border-t border-slate-200 flex items-center justify-between shrink-0">
                 <span className="text-xs text-slate-500">
-                  Showing <strong>{teamResponses.length}</strong> of <strong>{allCount}</strong> members in {team.department}
+                  Showing <span className="font-medium text-slate-700">{teamResponses.length}</span> of <span className="font-medium text-slate-700">{allCount}</span> members in {team.department}
                 </span>
                 <button
                   type="button"
                   onClick={() => setSelectedDownlineTeamModal(null)}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer border border-slate-200 shadow-2xs"
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-medium transition cursor-pointer border border-slate-200 shadow-2xs"
                 >
                   Close
                 </button>
@@ -6594,21 +8902,20 @@ export const EvaluationTab: React.FC = () => {
         const cycleForResp = cycles.find(c => c.id === selectedMgrResponse!.cycleId);
         const cyclePeriod = cycleForResp?.periodName || (selectedMgrResponse as any)?.periodName || 'Active Cycle';
 
+        const rawStatus = String(selectedMgrResponse!.status || '').toLowerCase().trim();
         const isPendingManagerReview = Boolean(
-          selectedMgrResponse!.status === 'manager_review' ||
-          (selectedMgrResponse!.status as string) === 'Submitted to Manager' ||
-          String(selectedMgrResponse!.status || '').toLowerCase().includes('submitted') ||
-          String(selectedMgrResponse!.status || '').toLowerCase().includes('manager_review') ||
-          selectedMgrResponse!.managerScore == null
+          rawStatus === 'manager_review' ||
+          rawStatus === 'submitted to manager' ||
+          rawStatus.includes('submitted')
         );
 
-        const isAlreadyCalibrated = !isPendingManagerReview && Boolean(
-          selectedMgrResponse!.status === 'approved' ||
-          selectedMgrResponse!.status === 'sm_final_approval' ||
-          (selectedMgrResponse!.status as string) === 'completed' ||
-          String(selectedMgrResponse!.status).toLowerCase().includes('approved') ||
-          String(selectedMgrResponse!.status).toLowerCase().includes('calibrated')
-        ) && selectedMgrResponse!.managerScore != null;
+        const isAlreadyCalibrated = Boolean(
+          rawStatus === 'approved' ||
+          rawStatus === 'sm_final_approval' ||
+          rawStatus === 'completed' ||
+          rawStatus.includes('calibrated') ||
+          (selectedMgrResponse!.managerScore != null && !isPendingManagerReview)
+        );
 
         const isReadOnly = activeRole === 'downline_teams' || selectedMgrResponse!.status === 'sm_final_approval';
 
@@ -6634,7 +8941,7 @@ export const EvaluationTab: React.FC = () => {
                       <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
                         {teamName}
                       </span>
-                      {renderStatusBadge(isPendingManagerReview ? 'manager_review' : (selectedMgrResponse!.status || (isAlreadyCalibrated ? 'approved' : 'manager_review')))}
+                      {renderStatusBadge(selectedMgrResponse!.status)}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-500">
                       <span>Designation: <strong className="text-slate-700 font-medium">{selectedMgrResponse!.designation || 'Team Member'}</strong></span>
@@ -6793,22 +9100,29 @@ export const EvaluationTab: React.FC = () => {
                                     {empActual !== '' && empActual !== null && empActual !== undefined ? (
                                       (() => {
                                         const num = parseFloat(String(empActual));
-                                        const isOver = !isNaN(num) && (isNeg ? num > targetThreshold : (targetThreshold > 0 && num > targetThreshold));
-                                        const isMet = !isNaN(num) && (isNeg ? num <= targetThreshold : (targetThreshold > 0 && num >= targetThreshold));
+                                        const isOver = !isNaN(num) && (
+                                          isNeg
+                                            ? (parsedTarget.operator === '<' ? num >= targetThreshold : (targetThreshold === 0 ? num > 0 : num > targetThreshold))
+                                            : (targetThreshold > 0 && num > targetThreshold)
+                                        );
+                                        const isMet = !isNaN(num) && (
+                                          isNeg
+                                            ? (parsedTarget.operator === '<' ? num < targetThreshold : (targetThreshold === 0 ? num === 0 : num <= targetThreshold))
+                                            : (targetThreshold > 0 && num >= targetThreshold)
+                                        );
 
                                         return (
-                                          <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${
-                                            isNeg && isOver
-                                              ? 'bg-rose-50 text-rose-900 border-rose-300'
-                                              : isOver
-                                                ? 'bg-emerald-50 text-emerald-950 border border-emerald-400'
-                                                : isMet && !isNeg
-                                                  ? 'bg-teal-50 text-teal-900 border border-teal-300'
-                                                  : 'bg-slate-50 text-slate-900 border-slate-200'
-                                          }`}>
+                                          <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${isNeg && isOver
+                                            ? 'bg-rose-50 text-rose-900 border-rose-300'
+                                            : isOver
+                                              ? 'bg-emerald-50 text-emerald-950 border border-emerald-400'
+                                              : isMet && !isNeg
+                                                ? 'bg-teal-50 text-teal-900 border border-teal-300'
+                                                : 'bg-slate-50 text-slate-900 border-slate-200'
+                                            }`}>
                                             <span>{empActual} {kpi.unit}</span>
                                             {isOver && !isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
-                                            {isOver && isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">OVER LIMIT</span>}
+                                            {isOver && isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED TARGET</span>}
                                           </span>
                                         );
                                       })()
@@ -6838,15 +9152,14 @@ export const EvaluationTab: React.FC = () => {
                                         <div className="flex flex-col items-center justify-center gap-1">
                                           {isReadOnly ? (
                                             <div className="font-semibold text-xs text-slate-900">
-                                              <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${
-                                                isGoalModified
-                                                  ? 'bg-amber-100/90 text-amber-950 border-amber-300'
-                                                  : isNeg && isOverMgr
-                                                    ? 'bg-rose-50 text-rose-900 border-rose-300'
-                                                    : isOverMgr
-                                                      ? 'bg-teal-100/80 text-teal-950 border-teal-300'
-                                                      : 'bg-white text-slate-900 border-slate-200'
-                                              }`}>
+                                              <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${isGoalModified
+                                                ? 'bg-amber-100/90 text-amber-950 border-amber-300'
+                                                : isNeg && isOverMgr
+                                                  ? 'bg-rose-50 text-rose-900 border-rose-300'
+                                                  : isOverMgr
+                                                    ? 'bg-teal-100/80 text-teal-950 border-teal-300'
+                                                    : 'bg-white text-slate-900 border-slate-200'
+                                                }`}>
                                                 <span>{currentMgrActual !== '' && currentMgrActual !== null && currentMgrActual !== undefined ? currentMgrActual : (empActual || '—')} {kpi.unit || ''}</span>
                                               </span>
                                             </div>
@@ -6859,17 +9172,16 @@ export const EvaluationTab: React.FC = () => {
                                                   value={currentMgrActual}
                                                   onChange={e => handleMgrRowActualChange(kpi, e.target.value)}
                                                   placeholder="0"
-                                                  className={`w-16 h-8 px-2 text-center font-bold text-xs rounded-full transition shadow-2xs focus:outline-none ${
-                                                    isGoalModified
-                                                      ? 'bg-amber-50 text-amber-950 border-2 border-amber-400 focus:border-amber-600 ring-2 ring-amber-200/50'
-                                                      : isNeg && isOverMgr
-                                                        ? 'bg-rose-50 text-rose-950 border-2 border-rose-500 ring-2 ring-rose-400/30 font-black'
-                                                        : isOverMgr
-                                                          ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-400 ring-2 ring-emerald-300/30 font-black'
-                                                          : isMetMgr && !isNeg
-                                                            ? 'bg-teal-50 text-teal-950 border-2 border-teal-300 font-bold'
-                                                            : 'bg-white text-slate-900 border border-slate-300 focus:border-teal-500'
-                                                  }`}
+                                                  className={`w-16 h-8 px-2 text-center font-bold text-xs rounded-full transition shadow-2xs focus:outline-none ${isGoalModified
+                                                    ? 'bg-amber-50 text-amber-950 border-2 border-amber-400 focus:border-amber-600 ring-2 ring-amber-200/50'
+                                                    : isNeg && isOverMgr
+                                                      ? 'bg-rose-50 text-rose-950 border-2 border-rose-500 ring-2 ring-rose-400/30 font-black'
+                                                      : isOverMgr
+                                                        ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-400 ring-2 ring-emerald-300/30 font-black'
+                                                        : isMetMgr && !isNeg
+                                                          ? 'bg-teal-50 text-teal-950 border-2 border-teal-300 font-bold'
+                                                          : 'bg-white text-slate-900 border border-slate-300 focus:border-teal-500'
+                                                    }`}
                                                 />
                                                 {kpi.unit && <span className="text-[11px] text-slate-500 font-semibold">{kpi.unit}</span>}
                                               </div>
@@ -6887,7 +9199,7 @@ export const EvaluationTab: React.FC = () => {
                                                   </span>
                                                 ) : isOverMgr && isNeg ? (
                                                   <span className="text-[9px] font-bold uppercase text-rose-800 px-1.5 py-0.2 rounded-full bg-rose-100 border border-rose-300">
-                                                    OVER LIMIT
+                                                    EXCEEDED TARGET
                                                   </span>
                                                 ) : null}
                                               </div>
@@ -6958,7 +9270,7 @@ export const EvaluationTab: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2.5 justify-end">
+                <div className="flex items-center gap-2.5 justify-end flex-wrap">
                   {isReadOnly ? (
                     <button
                       type="button"
@@ -6976,14 +9288,38 @@ export const EvaluationTab: React.FC = () => {
                       >
                         Cancel
                       </button>
-                      <button
-                        type="button"
-                        onClick={handleManagerSubmit}
-                        className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
-                      >
-                        <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
-                        <span>{isAlreadyCalibrated ? 'Update & Recalibrate' : 'Submit Calibration & Approve'}</span>
-                      </button>
+
+                      {(() => {
+                        const otherPendingSubmittedList = (activeScopedResponsesForCards || []).filter(r =>
+                          r.id !== selectedMgrResponseId &&
+                          ((r.status as string) === 'manager_review' || (r.status as string) === 'Submitted to Manager' || String(r.status || '').toLowerCase().includes('submitted')) &&
+                          r.managerScore == null
+                        );
+
+                        return (
+                          <>
+                            {otherPendingSubmittedList.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => handleManagerSubmitWithNext(otherPendingSubmittedList[0])}
+                                className="flex items-center justify-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
+                              >
+                                <SparklesIcon className="w-4 h-4 text-amber-300" />
+                                <span>Submit & Next ({otherPendingSubmittedList.length} Left)</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={handleManagerSubmit}
+                              className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+                            >
+                              <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
+                              <span>{isAlreadyCalibrated ? 'Update & Recalibrate' : 'Submit Calibration & Approve'}</span>
+                            </button>
+                          </>
+                        );
+                      })()}
                     </>
                   )}
                 </div>
@@ -7063,14 +9399,19 @@ export const EvaluationTab: React.FC = () => {
                         onChange={e => handleMgrTeamChange(e.target.value)}
                         className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs cursor-pointer"
                       >
-                        <option value="all_teams">
-                          All Subordinates
-                        </option>
+                        {managerDepartments.length > 1 && (
+                          <option value="all_teams">
+                            All Subordinates
+                          </option>
+                        )}
                         {managerDepartments.map(dept => (
                           <option key={dept} value={dept}>
                             {dept}
                           </option>
                         ))}
+                        {managerDepartments.length === 0 && (
+                          <option value="all_teams">All Subordinates</option>
+                        )}
                       </select>
                     </div>
 
@@ -7180,15 +9521,14 @@ export const EvaluationTab: React.FC = () => {
                           <label className="block text-[11px] font-medium text-slate-600 mb-1">
                             From Date <span className="text-rose-500">*</span>
                           </label>
-                          <input
-                            type="date"
+                          <DatePicker
                             value={mgrPeriodFromDate}
-                            onChange={e => {
-                              const newFrom = e.target.value;
+                            onChange={(newFrom: string) => {
                               setMgrPeriodFromDate(newFrom);
                               syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, newFrom, mgrPeriodToDate, mgrPeriodDueDate, mgrAssignTeamId);
                             }}
-                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
+                            placeholder="Select From Date"
+                            className="w-full"
                           />
                         </div>
 
@@ -7196,15 +9536,14 @@ export const EvaluationTab: React.FC = () => {
                           <label className="block text-[11px] font-medium text-slate-600 mb-1">
                             To Date <span className="text-rose-500">*</span>
                           </label>
-                          <input
-                            type="date"
+                          <DatePicker
                             value={mgrPeriodToDate}
-                            onChange={e => {
-                              const newTo = e.target.value;
+                            onChange={(newTo: string) => {
                               setMgrPeriodToDate(newTo);
                               syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, newTo, mgrPeriodDueDate, mgrAssignTeamId);
                             }}
-                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
+                            placeholder="Select To Date"
+                            className="w-full"
                           />
                         </div>
                       </>
@@ -7215,54 +9554,50 @@ export const EvaluationTab: React.FC = () => {
                         <label className="block text-[11px] font-medium text-slate-600 mb-1">
                           Due Date <span className="text-rose-500">*</span>
                         </label>
-                        <input
-                          type="date"
+                        <DatePicker
                           value={mgrPeriodDueDate}
-                          onChange={e => {
-                            const newDue = e.target.value;
+                          onChange={(newDue: string) => {
                             setMgrPeriodDueDate(newDue);
                             syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, newDue, mgrAssignTeamId);
                           }}
-                          className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
+                          placeholder="Select Due Date"
+                          className="w-full"
                         />
                       </div>
                     )}
                   </div>
 
-                  {/* Row 2: Form Title & Period Tag */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2.5 border-t border-slate-200/60">
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                        Form Title <span className="text-rose-500">*</span>
+                  {/* Clean Inline Editable Form Title Bar */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-3 py-2 bg-slate-50/70 border border-slate-200/80 rounded-xl text-xs">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <label className="text-slate-500 font-medium shrink-0 flex items-center gap-1.5">
+                        <PencilSquareIcon className="w-3.5 h-3.5 text-teal-600" />
+                        <span>Form Title:</span>
                       </label>
                       <input
                         type="text"
                         value={mgrAssignFormName}
                         onChange={e => setMgrAssignFormName(e.target.value)}
-                        placeholder="e.g. Q3 2026 KPI Assessment"
-                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
+                        placeholder="Evaluation Form Title"
+                        className="flex-1 min-w-[220px] h-7 px-2.5 bg-white border border-slate-200 rounded-lg text-xs font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600/20 shadow-2xs transition"
                       />
                     </div>
-
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                        Period Tag / Label
-                      </label>
-                      <input
-                        type="text"
-                        value={mgrAssignPeriod}
-                        onChange={e => setMgrAssignPeriod(e.target.value)}
-                        placeholder="e.g. Q3 2026 (Jul - Sep) - Stage 3"
-                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
-                      />
-                    </div>
+                    {mgrAssignPeriod && (
+                      <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
+                        <span className="text-[10px] text-slate-400 font-normal">Period:</span>
+                        <span className="text-[11px] font-normal text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/60">
+                          {mgrAssignPeriod}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Row 3: Subordinates Multi-Select Box */}
+                  {/* Row 2: Subordinates Multi-Select Box */}
                   {(() => {
-                    const baseTeamMembers = mgrAssignTeamId === 'all_teams'
+                    const baseTeamMembers = (mgrAssignTeamId === 'all_teams'
                       ? managerAssignableEmployees
-                      : managerAssignableEmployees.filter((e: any) => (e.department || e.team || '').toLowerCase() === mgrAssignTeamId.toLowerCase());
+                      : managerAssignableEmployees.filter((e: any) => (e.department || e.team || '').toLowerCase() === mgrAssignTeamId.toLowerCase())
+                    ).filter(isEmployeeActive);
 
                     const filteredMembers = mgrModalEmpSearch.trim()
                       ? baseTeamMembers.filter((e: any) => {
@@ -7274,16 +9609,26 @@ export const EvaluationTab: React.FC = () => {
                       })
                       : baseTeamMembers;
 
+                    const alreadyAssignedCount = baseTeamMembers.filter((m: any) => isEmpAlreadyAssignedForPeriod(String(m.employee_id || m.id))).length;
+                    const assignableMembers = baseTeamMembers.filter((m: any) => !isEmpAlreadyAssignedForPeriod(String(m.employee_id || m.id)));
+                    const activeSelectedCount = mgrAssignEmpIds.filter(id => assignableMembers.some((m: any) => String(m.employee_id || m.id) === id)).length;
+
                     return (
                       <div className="pt-3 border-t border-slate-200/70 space-y-2.5">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-900">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold text-slate-800">
                               Assign Members
                             </span>
-                            <span className="text-[10px] font-semibold text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
-                              {mgrAssignEmpIds.length} of {baseTeamMembers.length} selected
+                            <span className="text-[10px] font-medium text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
+                              {activeSelectedCount} of {assignableMembers.length} available selected
                             </span>
+                            {alreadyAssignedCount > 0 && (
+                              <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 shadow-2xs flex items-center gap-1">
+                                <span>🔒</span>
+                                <span>{alreadyAssignedCount} already booked ({mgrPeriodType === 'quarterly' ? `Stage ${mgrPeriodQuarter}` : 'this period'})</span>
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-2">
@@ -7294,19 +9639,24 @@ export const EvaluationTab: React.FC = () => {
                                   value={mgrModalEmpSearch}
                                   onChange={e => setMgrModalEmpSearch(e.target.value)}
                                   placeholder="Search member..."
-                                  className="w-36 sm:w-44 h-7 pl-2.5 pr-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+                                  className="w-36 sm:w-44 h-7 pl-2.5 pr-2 bg-white border border-slate-200 rounded-lg text-xs font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600/20"
                                 />
                               </div>
                             )}
 
                             <button
                               type="button"
+                              disabled={assignableMembers.length === 0}
                               onClick={() => handleMgrToggleSelectAll(baseTeamMembers)}
-                              className="text-[11px] font-semibold text-teal-700 hover:text-teal-800 bg-white px-2.5 py-1 rounded-lg border border-teal-200 shadow-2xs hover:bg-teal-50/50 transition cursor-pointer"
+                              className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border shadow-2xs transition cursor-pointer ${assignableMembers.length === 0
+                                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                  : 'text-teal-700 hover:text-teal-800 bg-white border-teal-200 hover:bg-teal-50/50'
+                                }`}
                             >
                               {(() => {
-                                const allIds = baseTeamMembers.map((e: any) => String(e.employee_id || e.id)).filter(Boolean);
-                                const allSelected = allIds.length > 0 && allIds.every((id: string) => mgrAssignEmpIds.includes(id));
+                                if (assignableMembers.length === 0) return 'All Booked';
+                                const assignableIds = assignableMembers.map((e: any) => String(e.employee_id || e.id)).filter(Boolean);
+                                const allSelected = assignableIds.length > 0 && assignableIds.every((id: string) => mgrAssignEmpIds.includes(id));
                                 return allSelected ? 'Deselect All' : 'Select All';
                               })()}
                             </button>
@@ -7322,42 +9672,53 @@ export const EvaluationTab: React.FC = () => {
                             {filteredMembers.map((emp: any) => {
                               const empId = String(emp.employee_id || emp.id);
                               const isAlreadyAssigned = isEmpAlreadyAssignedForPeriod(empId);
-                              const isSelected = mgrAssignEmpIds.includes(empId);
+                              const isSelected = !isAlreadyAssigned && mgrAssignEmpIds.includes(empId);
                               const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || 'Employee';
-                              const initials = (fullName.split(' ').filter(Boolean).map((n: string) => n[0]).join('') || 'E').slice(0, 2).toUpperCase();
 
                               return (
                                 <button
                                   type="button"
                                   key={empId}
+                                  disabled={isAlreadyAssigned}
                                   onClick={() => handleMgrToggleEmp(empId)}
-                                  className={`flex items-center gap-2.5 p-2 rounded-xl border text-left transition select-none cursor-pointer ${isSelected
-                                      ? 'bg-teal-50/70 border-teal-600 ring-1 ring-teal-600/30 shadow-2xs'
-                                      : 'bg-white border-slate-200/80 hover:bg-slate-50 hover:border-slate-300'
+                                  className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition select-none ${isAlreadyAssigned
+                                      ? 'bg-slate-100/80 border-slate-200 text-slate-400 cursor-not-allowed opacity-75'
+                                      : isSelected
+                                        ? 'bg-teal-50/70 border-teal-500 ring-1 ring-teal-500/30 text-teal-950 shadow-2xs cursor-pointer'
+                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 cursor-pointer'
                                     }`}
-                                  title={`Click to toggle assignment for ${fullName}${isAlreadyAssigned ? ` (Already assigned for ${mgrAssignPeriod || 'this period'})` : ''}`}
+                                  title={
+                                    isAlreadyAssigned
+                                      ? `${fullName} is already assigned metrics for ${mgrAssignPeriod || 'this period'} and cannot be booked again.`
+                                      : `Click to toggle assignment for ${fullName}`
+                                  }
                                 >
-                                  <div className={`w-7 h-7 rounded-lg font-bold text-[10px] flex items-center justify-center shrink-0 ${isSelected
-                                      ? 'bg-teal-700 text-white shadow-2xs'
-                                      : 'bg-slate-100 text-slate-600 border border-slate-200/60'
-                                    }`}>
-                                    {isSelected ? '✓' : initials}
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span className={`w-2 h-2 rounded-full shrink-0 ${isAlreadyAssigned ? 'bg-slate-300' : isSelected ? 'bg-teal-600' : 'bg-slate-300'
+                                      }`} />
+                                    <span className={`text-xs truncate ${isAlreadyAssigned
+                                        ? 'font-normal text-slate-400'
+                                        : isSelected
+                                          ? 'font-medium text-teal-950'
+                                          : 'font-normal text-slate-700'
+                                      }`}>
+                                      {fullName}
+                                    </span>
                                   </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center justify-between gap-1">
-                                      <p className={`text-xs truncate leading-tight ${isSelected ? 'font-bold text-teal-950' : 'font-medium text-slate-800'
-                                        }`}>
-                                        {fullName}
-                                      </p>
-                                      {isAlreadyAssigned && (
-                                        <span className="text-[9px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
-                                          {mgrPeriodQuarter ? `Stage ${mgrPeriodQuarter}` : 'Assigned'}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p className="text-[10px] truncate leading-tight mt-0.5 text-slate-400">
-                                      #{empId} • {emp.designation || emp.role || emp.department || 'Member'}
-                                    </p>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <span className="text-[10px] text-slate-400 font-normal">
+                                      #{empId}
+                                    </span>
+                                    {isAlreadyAssigned ? (
+                                      <span className="text-[9px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 shadow-2xs flex items-center gap-1">
+                                        <span>🔒</span>
+                                        <span>{mgrPeriodType === 'quarterly' ? `Stage ${mgrPeriodQuarter}` : 'Booked'}</span>
+                                      </span>
+                                    ) : isSelected ? (
+                                      <span className="text-[9px] font-semibold text-teal-800 bg-teal-100/80 px-1.5 py-0.5 rounded">
+                                        Selected
+                                      </span>
+                                    ) : null}
                                   </div>
                                 </button>
                               );
@@ -7510,11 +9871,10 @@ export const EvaluationTab: React.FC = () => {
                                         value={kpi.name}
                                         onChange={e => handleMgrUpdateKPI(cat.id, kpi.id, 'name', e.target.value)}
                                         placeholder="Deliverable description..."
-                                        className={`w-full h-8 px-2.5 rounded-lg text-xs font-semibold focus:outline-none transition border ${
-                                          isNeg
-                                            ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
-                                            : 'bg-slate-50/70 text-slate-800 border-slate-200 focus:bg-white focus:border-teal-600'
-                                        }`}
+                                        className={`w-full h-8 px-2.5 rounded-lg text-xs font-semibold focus:outline-none transition border ${isNeg
+                                          ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
+                                          : 'bg-slate-50/70 text-slate-800 border-slate-200 focus:bg-white focus:border-teal-600'
+                                          }`}
                                       />
                                     </td>
                                     <td className="px-3 py-2 align-middle text-center">
@@ -7523,25 +9883,22 @@ export const EvaluationTab: React.FC = () => {
                                         value={kpi.targetFromManager ?? ''}
                                         onChange={e => handleMgrUpdateKPI(cat.id, kpi.id, 'targetFromManager', e.target.value)}
                                         placeholder="e.g. 3, 11, 1950, <2"
-                                        className={`w-full h-8 px-2 rounded-lg text-xs font-bold text-center focus:outline-none transition border ${
-                                          isNeg
-                                            ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
-                                            : 'bg-slate-50/70 text-teal-900 border-slate-200 focus:bg-white focus:border-teal-600'
-                                        }`}
+                                        className={`w-full h-8 px-2 rounded-lg text-xs font-bold text-center focus:outline-none transition border ${isNeg
+                                          ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
+                                          : 'bg-slate-50/70 text-teal-900 border-slate-200 focus:bg-white focus:border-teal-600'
+                                          }`}
                                       />
                                     </td>
                                     <td className="px-3 py-2 align-middle text-center">
-                                      <div className={`flex items-center justify-center focus-within:bg-white border rounded-lg px-2 h-8 transition ${
-                                        isNeg ? 'bg-rose-50/40 border-rose-200 focus-within:border-rose-500' : 'bg-slate-50/70 border-slate-200 focus-within:border-teal-600'
-                                      }`}>
+                                      <div className={`flex items-center justify-center focus-within:bg-white border rounded-lg px-2 h-8 transition ${isNeg ? 'bg-rose-50/40 border-rose-200 focus-within:border-rose-500' : 'bg-slate-50/70 border-slate-200 focus-within:border-teal-600'
+                                        }`}>
                                         <input
                                           type="number"
                                           step="any"
                                           value={kpi.targetScore}
                                           onChange={e => handleMgrUpdateKPI(cat.id, kpi.id, 'targetScore', Number(e.target.value))}
-                                          className={`w-14 text-xs font-bold text-center bg-transparent focus:outline-none p-0 ${
-                                            isNeg ? 'text-rose-700' : 'text-slate-800'
-                                          }`}
+                                          className={`w-14 text-xs font-bold text-center bg-transparent focus:outline-none p-0 ${isNeg ? 'text-rose-700' : 'text-slate-800'
+                                            }`}
                                         />
                                         <span className="text-[11px] text-slate-400 font-bold ml-0.5">%</span>
                                       </div>
@@ -7559,29 +9916,28 @@ export const EvaluationTab: React.FC = () => {
                                       <button
                                         type="button"
                                         onClick={() => handleMgrUpdateKPI(cat.id, kpi.id, 'scoringDirection', isNeg ? 'higher_is_better' : 'lower_is_better')}
-                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition shadow-2xs cursor-pointer whitespace-nowrap ${
-                                          isNeg
-                                            ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
-                                            : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                                        }`}
+                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition shadow-2xs cursor-pointer whitespace-nowrap ${isNeg
+                                          ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                                          }`}
                                         title={isNeg ? 'Negative / Penalty metric (Lower is better). Click to switch to Standard.' : 'Standard metric (Higher is better). Click to switch to Negative.'}
                                       >
                                         {isNeg ? '− Negative' : '+ Standard'}
                                       </button>
                                     </td>
-                                  <td className="px-2 py-2 align-middle text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleMgrDeleteKPI(cat.id, kpi.id)}
-                                      className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
-                                      title="Delete deliverable"
-                                    >
-                                      <TrashIcon className="w-3.5 h-3.5" />
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                                    <td className="px-2 py-2 align-middle text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleMgrDeleteKPI(cat.id, kpi.id)}
+                                        className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                                        title="Delete deliverable"
+                                      >
+                                        <TrashIcon className="w-3.5 h-3.5" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -7718,8 +10074,8 @@ export const EvaluationTab: React.FC = () => {
                       onClick={handleMgrAddEditCategory}
                       disabled={mgrEditTotalWeightage >= 100}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs ${mgrEditTotalWeightage >= 100
-                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                          : 'bg-teal-700 hover:bg-teal-800 text-white cursor-pointer'
+                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                        : 'bg-teal-700 hover:bg-teal-800 text-white cursor-pointer'
                         }`}
                     >
                       <PlusIcon className="w-3.5 h-3.5" />
@@ -7730,8 +10086,8 @@ export const EvaluationTab: React.FC = () => {
 
                 {/* Weightage Status Alert */}
                 <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 ${mgrEditTotalWeightage === 100 && areAllMgrEditCategoriesBalanced
-                    ? 'bg-teal-50 border border-teal-200 text-teal-900'
-                    : 'bg-amber-50 border border-amber-200 text-amber-900'
+                  ? 'bg-teal-50 border border-teal-200 text-teal-900'
+                  : 'bg-amber-50 border border-amber-200 text-amber-900'
                   }`}>
                   <div className="flex items-center gap-2">
                     {mgrEditTotalWeightage === 100 && areAllMgrEditCategoriesBalanced ? (
@@ -7828,11 +10184,10 @@ export const EvaluationTab: React.FC = () => {
                                         value={kpi.name}
                                         onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'name', e.target.value)}
                                         placeholder="Deliverable description..."
-                                        className={`w-full h-8 px-2.5 rounded-lg text-xs font-semibold focus:outline-none transition border ${
-                                          isNeg
-                                            ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
-                                            : 'bg-slate-50/70 text-slate-800 border-slate-200 focus:bg-white focus:border-teal-600'
-                                        }`}
+                                        className={`w-full h-8 px-2.5 rounded-lg text-xs font-semibold focus:outline-none transition border ${isNeg
+                                          ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
+                                          : 'bg-slate-50/70 text-slate-800 border-slate-200 focus:bg-white focus:border-teal-600'
+                                          }`}
                                       />
                                     </td>
                                     <td className="px-3 py-2 align-middle text-center">
@@ -7841,25 +10196,22 @@ export const EvaluationTab: React.FC = () => {
                                         value={kpi.targetFromManager ?? ''}
                                         onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'targetFromManager', e.target.value)}
                                         placeholder="e.g. 3, 11, 1950, <2"
-                                        className={`w-full h-8 px-2 rounded-lg text-xs font-bold text-center focus:outline-none transition border ${
-                                          isNeg
-                                            ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
-                                            : 'bg-slate-50/70 text-teal-900 border-slate-200 focus:bg-white focus:border-teal-600'
-                                        }`}
+                                        className={`w-full h-8 px-2 rounded-lg text-xs font-bold text-center focus:outline-none transition border ${isNeg
+                                          ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
+                                          : 'bg-slate-50/70 text-teal-900 border-slate-200 focus:bg-white focus:border-teal-600'
+                                          }`}
                                       />
                                     </td>
                                     <td className="px-3 py-2 align-middle text-center">
-                                      <div className={`flex items-center justify-center focus-within:bg-white border rounded-lg px-2 h-8 transition ${
-                                        isNeg ? 'bg-rose-50/40 border-rose-200 focus-within:border-rose-500' : 'bg-slate-50/70 border-slate-200 focus-within:border-teal-600'
-                                      }`}>
+                                      <div className={`flex items-center justify-center focus-within:bg-white border rounded-lg px-2 h-8 transition ${isNeg ? 'bg-rose-50/40 border-rose-200 focus-within:border-rose-500' : 'bg-slate-50/70 border-slate-200 focus-within:border-teal-600'
+                                        }`}>
                                         <input
                                           type="number"
                                           step="any"
                                           value={kpi.targetScore}
                                           onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'targetScore', Number(e.target.value))}
-                                          className={`w-14 text-xs font-bold text-center bg-transparent focus:outline-none p-0 ${
-                                            isNeg ? 'text-rose-700' : 'text-slate-800'
-                                          }`}
+                                          className={`w-14 text-xs font-bold text-center bg-transparent focus:outline-none p-0 ${isNeg ? 'text-rose-700' : 'text-slate-800'
+                                            }`}
                                         />
                                         <span className="text-[11px] text-slate-400 font-bold ml-0.5">%</span>
                                       </div>
@@ -7877,11 +10229,10 @@ export const EvaluationTab: React.FC = () => {
                                       <button
                                         type="button"
                                         onClick={() => handleMgrUpdateEditKPI(cat.id, kpi.id, 'scoringDirection', isNeg ? 'higher_is_better' : 'lower_is_better')}
-                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition shadow-2xs cursor-pointer whitespace-nowrap ${
-                                          isNeg
-                                            ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
-                                            : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                                        }`}
+                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition shadow-2xs cursor-pointer whitespace-nowrap ${isNeg
+                                          ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                                          }`}
                                         title={isNeg ? 'Negative / Penalty metric (Lower is better). Click to switch to Standard.' : 'Standard metric (Higher is better). Click to switch to Negative.'}
                                       >
                                         {isNeg ? '− Negative' : '+ Standard'}
@@ -7948,6 +10299,336 @@ export const EvaluationTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* 5. MULTI-TIER EVALUATION CONVERT & ROLLUP MODAL (Option B: Soft Archive) */}
+      {/* ========================================================================= */}
+      {isConvertModalOpen && (() => {
+        const ROLLUP_TIERS: {
+          id: RollupTier;
+          label: string;
+          fromName: string;
+          toName: string;
+          badgeCount: number;
+          formulaLabel: string;
+          formulaDesc: string;
+          createFreq: 'daily' | 'weekly' | 'monthly' | 'quarterly';
+          createLabel: string;
+        }[] = [
+            {
+              id: 'daily_to_weekly',
+              label: 'Daily → Weekly',
+              fromName: 'Daily',
+              toName: 'Weekly',
+              badgeCount: allDailyGroupsForManager.reduce((a, b) => a + b.count, 0),
+              formulaLabel: 'Daily to Weekly Average (% ÷ Evaluated Days)',
+              formulaDesc: 'Weekly Score = Sum of Daily % ÷ Number of Evaluated Days',
+              createFreq: 'daily',
+              createLabel: '+ Assign Daily Deliverables Matrix'
+            },
+            {
+              id: 'weekly_to_monthly',
+              label: 'Weekly → Monthly',
+              fromName: 'Weekly',
+              toName: 'Monthly',
+              badgeCount: allWeeklyGroupsForManager.reduce((a, b) => a + b.count, 0),
+              formulaLabel: 'Weekly to Monthly Average (% ÷ Active Weeks)',
+              formulaDesc: 'Monthly Score = Sum of Weekly % ÷ Number of Active Weeks',
+              createFreq: 'weekly',
+              createLabel: '+ Assign Weekly Deliverables Matrix'
+            },
+            {
+              id: 'monthly_to_quarterly',
+              label: 'Monthly → Quarterly',
+              fromName: 'Monthly',
+              toName: 'Quarterly',
+              badgeCount: allMonthlyGroupsForManager.reduce((a, b) => a + b.count, 0),
+              formulaLabel: 'Monthly to Quarterly Average (% ÷ Months in Quarter)',
+              formulaDesc: 'Quarterly Score = Sum of Monthly % ÷ Number of Months',
+              createFreq: 'monthly',
+              createLabel: '+ Assign Monthly Deliverables Matrix'
+            },
+            {
+              id: 'quarterly_to_yearly',
+              label: 'Quarterly → Yearly',
+              fromName: 'Quarterly',
+              toName: 'Yearly (Annual)',
+              badgeCount: allQuarterlyGroupsForManager.reduce((a, b) => a + b.count, 0),
+              formulaLabel: 'Quarterly to Annual Average (% ÷ Quarters in Year)',
+              formulaDesc: 'Yearly Score = Sum of Quarterly % ÷ Number of Quarters',
+              createFreq: 'quarterly',
+              createLabel: '+ Assign Quarterly Deliverables Matrix'
+            }
+          ];
+
+        const currentTierConfig = ROLLUP_TIERS.find(t => t.id === activeRollupTier) || ROLLUP_TIERS[0];
+        const currentTierGroups = activeRollupTier === 'daily_to_weekly' ? allDailyGroupsForManager :
+          activeRollupTier === 'weekly_to_monthly' ? allWeeklyGroupsForManager :
+            activeRollupTier === 'monthly_to_quarterly' ? allMonthlyGroupsForManager : allQuarterlyGroupsForManager;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+            <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-5 sm:p-6 border-b border-slate-100 bg-linear-to-r from-teal-50/80 via-white to-amber-50/40">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <ArrowPathIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900 tracking-tight">
+                      Rollup & Convert Evaluations
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Multi-tier conversion ladder with Option B soft archiving and automatic score averaging.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsConvertModalOpen(false)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Conversion Tier Tabs */}
+              <div className="p-3 bg-slate-50/80 border-b border-slate-200/80 overflow-x-auto">
+                <div className="flex items-center gap-1.5 min-w-max">
+                  {ROLLUP_TIERS.map(tier => {
+                    const isActive = activeRollupTier === tier.id;
+                    return (
+                      <button
+                        key={tier.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveRollupTier(tier.id);
+                          const groups = tier.id === 'daily_to_weekly' ? allDailyGroupsForManager :
+                            tier.id === 'weekly_to_monthly' ? allWeeklyGroupsForManager :
+                              tier.id === 'monthly_to_quarterly' ? allMonthlyGroupsForManager : allQuarterlyGroupsForManager;
+                          setConvertingTarget(groups[0] || null);
+                        }}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${isActive
+                          ? 'bg-teal-700 text-white shadow-xs'
+                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70'
+                          }`}
+                      >
+                        <span>{tier.label}</span>
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${isActive
+                          ? 'bg-white/20 text-white'
+                          : tier.badgeCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-400'
+                          }`}>
+                          {tier.badgeCount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-5 sm:p-6 space-y-5 overflow-y-auto">
+                {convertingTarget ? (
+                  <>
+                    {/* Multiple Employees Selector if applicable */}
+                    {currentTierGroups.length > 1 && (
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                          Select Team Member to Convert ({currentTierConfig.label})
+                        </label>
+                        <select
+                          value={convertingTarget.employeeId + (convertingTarget.weekStart || '')}
+                          onChange={e => {
+                            const found = currentTierGroups.find(g => (g.employeeId + (g.weekStart || '')) === e.target.value);
+                            if (found) setConvertingTarget(found);
+                          }}
+                          className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-teal-600 cursor-pointer shadow-2xs"
+                        >
+                          {currentTierGroups.map((g, idx) => (
+                            <option key={g.employeeId + (g.weekStart || '') + idx} value={g.employeeId + (g.weekStart || '')}>
+                              {g.employeeName} (#{g.employeeCode}){g.weekLabel ? ` [${g.weekLabel}]` : ''} — {g.count} {currentTierConfig.fromName.toLowerCase()} records ({g.avgScore}% avg)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Employee & Summary Banner */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50/90 rounded-2xl border border-slate-200 gap-3">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                          Target Member & Scope
+                        </span>
+                        <div className="text-sm font-extrabold text-slate-900 flex items-center gap-2 flex-wrap">
+                          <span>{convertingTarget.employeeName}</span>
+                          <span className="text-xs font-mono font-bold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                            #{convertingTarget.employeeCode}
+                          </span>
+                          {convertingTarget.weekLabel && (
+                            <span className="text-xs font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                              Week: {convertingTarget.weekLabel}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-slate-500 font-medium block">
+                          {convertingTarget.teamName} • Target: <strong className="text-teal-900">{currentTierConfig.toName} Record</strong>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 shrink-0">
+                        <div className="text-right">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                            Rolled-Up {currentTierConfig.toName} Score
+                          </span>
+                          <span className="text-lg font-black text-teal-700 font-mono">
+                            {convertingTarget.avgScore.toFixed(2)}%
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-bold px-2 py-1 rounded-lg bg-teal-50 text-teal-800 border border-teal-200">
+                          {getRatingForScore(convertingTarget.avgScore).name}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Math Formula Card */}
+                    <div className="p-4 bg-teal-50/50 rounded-2xl border border-teal-200/80 space-y-2">
+                      <div className="flex items-center gap-2 text-xs font-bold text-teal-950 uppercase tracking-wider">
+                        <SparklesIcon className="w-4 h-4 text-teal-700" />
+                        <span>{currentTierConfig.formulaLabel}</span>
+                      </div>
+                      <div className="text-xs text-slate-700 space-y-1 font-medium leading-relaxed">
+                        <p>
+                          <strong>Total Percentage:</strong> {convertingTarget.records.map(r => `${Number(r.employeeOverallScore || 0).toFixed(1)}%`).join(' + ')} = <strong className="font-mono text-teal-900">{convertingTarget.records.reduce((acc, r) => acc + Number(r.employeeOverallScore || 0), 0).toFixed(1)}%</strong>
+                        </p>
+                        <p>
+                          <strong>No. of {currentTierConfig.fromName} Evaluations:</strong> {convertingTarget.count}
+                        </p>
+                        <p className="pt-1 text-teal-950 font-bold border-t border-teal-200/60 font-mono">
+                          {currentTierConfig.toName} Score = {convertingTarget.records.reduce((acc, r) => acc + Number(r.employeeOverallScore || 0), 0).toFixed(1)}% ÷ {convertingTarget.count} = {convertingTarget.avgScore.toFixed(2)}%
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Records Being Consolidated Table */}
+                    <div className="space-y-2">
+                      <span className="text-xs font-bold uppercase text-slate-400 tracking-wider block">
+                        {convertingTarget.count} {currentTierConfig.fromName} Records Being Consolidated
+                      </span>
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                            <tr>
+                              <th className="px-3 py-2">Evaluation Period / Description</th>
+                              <th className="px-3 py-2 text-center">Self Score</th>
+                              <th className="px-3 py-2 text-center">Manager Score</th>
+                              <th className="px-3 py-2">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {convertingTarget.records.map((r, idx) => (
+                              <tr key={r.id || idx} className="hover:bg-slate-50/50">
+                                <td className="px-3 py-2 font-medium text-slate-800">
+                                  {r.periodName || (r as any).form || `${currentTierConfig.fromName} Record ${idx + 1}`}
+                                </td>
+                                <td className="px-3 py-2 text-center font-mono font-bold text-slate-800">
+                                  {r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : '0.0%'}
+                                </td>
+                                <td className="px-3 py-2 text-center font-mono font-bold text-teal-800">
+                                  {r.managerScore != null ? `${Number(r.managerScore).toFixed(1)}%` : '—'}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {renderStatusBadge(r.status)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Option B Architecture Notice */}
+                    <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
+                      <CheckCircleIcon className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <p className="font-medium leading-relaxed">
+                        <strong>Option B Soft Archive:</strong> 1 consolidated {currentTierConfig.toName} row will be created. The {convertingTarget.count} {currentTierConfig.fromName.toLowerCase()} records will be soft-archived in PostgreSQL, meaning they will disappear from active review queues while preserving full historical audit logs.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  /* Empty state when no records exist for the selected tier */
+                  <div className="py-8 text-center space-y-4">
+                    <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 shadow-2xs">
+                      <CalendarDaysIcon className="w-7 h-7" />
+                    </div>
+                    <div className="space-y-1.5 max-w-md mx-auto">
+                      <h4 className="text-base font-extrabold text-slate-900">
+                        No Active {currentTierConfig.fromName} Records to Convert
+                      </h4>
+                      <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                        There are currently 0 un-archived {currentTierConfig.fromName.toLowerCase()} evaluation records ready for {currentTierConfig.label} conversion.
+                      </p>
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-left text-xs text-slate-600 space-y-1.5 font-medium mt-2">
+                        <p className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <SparklesIcon className="w-4 h-4 text-teal-700" />
+                          How {currentTierConfig.label} Conversion works:
+                        </p>
+                        <p>
+                          1. Assign a <strong>{currentTierConfig.fromName} Deliverables Matrix</strong> to your squad.
+                        </p>
+                        <p>
+                          2. As employees submit and you calibrate scores, their {currentTierConfig.fromName.toLowerCase()} evaluations accumulate.
+                        </p>
+                        <p>
+                          3. Clicking <strong>Convert to {currentTierConfig.toName}</strong> aggregates the scores ({currentTierConfig.formulaDesc}), creates 1 consolidated {currentTierConfig.toName} entry, and soft-archives the source records!
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsConvertModalOpen(false);
+                          setMgrPeriodType(currentTierConfig.createFreq);
+                          handleOpenMgrCreateModal();
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+                      >
+                        <PlusIcon className="w-4 h-4 stroke-[2.5]" />
+                        <span>{currentTierConfig.createLabel}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsConvertModalOpen(false)}
+                  disabled={isConverting}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
+                >
+                  Close
+                </button>
+                {convertingTarget && (
+                  <button
+                    type="button"
+                    onClick={handleConfirmConvert}
+                    disabled={isConverting}
+                    className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-60"
+                  >
+                    <ArrowPathIcon className={`w-4 h-4 ${isConverting ? 'animate-spin' : ''}`} />
+                    <span>{isConverting ? 'Converting...' : `Confirm & Convert to ${currentTierConfig.toName}`}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Website Confirmation & Alert Dialog */}
       <ConfirmDialog

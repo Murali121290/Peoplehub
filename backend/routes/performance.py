@@ -1,7 +1,8 @@
 from datetime import datetime
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from utils.compat import Blueprint, request, jsonify
 from models.database import db
+from models.employee import Employee
 from models.performance import EmployeePerformance
 from models.kpi_evaluation import KpiEvaluation
 from middleware.auth import auth_required, access_level_required
@@ -157,8 +158,18 @@ DEFAULT_RATING_SCALE = [
 
 def get_eval_store_path():
     uploads_dir = get_uploads_dir()
-    os.makedirs(uploads_dir, exist_ok=True)
-    return os.path.join(uploads_dir, "evaluation_store.json")
+    eval_dir = os.path.join(uploads_dir, "evaluations")
+    os.makedirs(eval_dir, exist_ok=True)
+    new_path = os.path.join(eval_dir, "evaluation_store.json")
+    old_path = os.path.join(uploads_dir, "evaluation_store.json")
+    # Seamless migration: if old path exists and new doesn't, copy over
+    if os.path.exists(old_path) and not os.path.exists(new_path):
+        try:
+            import shutil
+            shutil.copy2(old_path, new_path)
+        except Exception:
+            pass
+    return new_path
 
 def read_eval_store():
     path = get_eval_store_path()
@@ -167,6 +178,8 @@ def read_eval_store():
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+            if not isinstance(data, dict):
+                return {"cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}
             if "ratingScale" not in data or not data["ratingScale"]:
                 data["ratingScale"] = DEFAULT_RATING_SCALE
             return data
@@ -181,14 +194,47 @@ def write_eval_store(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def sync_postgres_kpi_to_store_and_back():
-    """Ensure PostgreSQL kpi_evaluations table is the single source of truth"""
+    """
+    Tiered Storage Separation:
+    - Daily & Weekly evaluations are stored strictly in JSON format (data/uploads/evaluations/evaluation_store.json).
+    - Monthly, Quarterly & Yearly evaluations are stored in PostgreSQL database (kpi_evaluations table).
+    """
     try:
-        eval_records = KpiEvaluation.query.order_by(KpiEvaluation.id.desc()).all()
         store = read_eval_store()
+
+        # One-time migration: migrate any legacy daily or weekly rows from DB into JSON store, then clean up from DB
+        legacy_db_daily_weekly = KpiEvaluation.query.filter(
+            KpiEvaluation.frequency.in_(["daily", "weekly"])
+        ).all()
+        if legacy_db_daily_weekly:
+            existing_ids = {str(r.get("id")) for r in store.get("responses", [])}
+            existing_db_ids = {r.get("db_id") for r in store.get("responses", []) if r.get("db_id")}
+            for rec in legacy_db_daily_weekly:
+                if rec.id not in existing_db_ids and f"resp_{rec.id}" not in existing_ids:
+                    store.setdefault("responses", []).append(rec.to_dict())
+                db.session.delete(rec)
+            db.session.commit()
+            write_eval_store(store)
+
+        # Query PostgreSQL strictly for Monthly, Quarterly, and Yearly evaluations
+        eval_records = KpiEvaluation.query.filter(
+            or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None)),
+            or_(
+                KpiEvaluation.frequency.in_(["monthly", "quarterly", "yearly"]),
+                KpiEvaluation.frequency.is_(None)
+            )
+        ).order_by(KpiEvaluation.id.desc()).all()
+
         return eval_records, store
     except Exception as e:
-        print(f"Error reading Postgres KPI records: {e}")
-        return [], {"cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}
+        print(f"Error syncing KPI records: {e}")
+        db.session.rollback()
+        # IMPORTANT: Do NOT return empty eval_records on exception.
+        # Previously returning [] caused get_evaluation_data() to wipe all monthly/quarterly
+        # responses from JSON on every DB error. Instead, return whatever is in the JSON store
+        # as a lightweight fallback so data persists through temporary DB issues.
+        fallback_store = read_eval_store()
+        return None, fallback_store  # None signals "use JSON fallback, do not wipe"
 
 def merge_kpi_responses_into_categories(categories, responses_dict):
     if not categories or not isinstance(categories, list) or not responses_dict or not isinstance(responses_dict, dict):
@@ -297,13 +343,19 @@ def extract_kpi_responses_from_metrics_data(metrics_data):
 def get_evaluation_data():
     try:
         eval_records, store = sync_postgres_kpi_to_store_and_back()
+        db_unavailable = eval_records is None  # DB had an exception; use JSON-only fallback
+        if db_unavailable:
+            eval_records = []
 
         # 1. Dynamically build and maintain cycles directly from PostgreSQL KpiEvaluation records
         team_eval_groups = {}
         for rec in eval_records:
             t_key = rec.team_name or rec.team_id or "General"
             f_name = rec.form or "Performance Evaluation"
-            group_key = f"{t_key}_{f_name}"
+            f_date_str = rec.from_date.isoformat() if rec.from_date else ""
+            t_date_str = rec.to_date.isoformat() if rec.to_date else ""
+            freq_str = rec.frequency or "quarterly"
+            group_key = f"{t_key}_{f_name}_{freq_str}_{f_date_str}_{t_date_str}"
             
             # Extract period if encoded in description e.g. "Performance evaluation for Media (Daily (14 Sep 2026))"
             extracted_period = ""
@@ -315,6 +367,9 @@ def get_evaluation_data():
                     "teamName": rec.team_name or rec.team_id or "General",
                     "teamId": rec.team_id or rec.team_name or "team_general",
                     "form": f_name,
+                    "frequency": freq_str,
+                    "startDate": f_date_str,
+                    "endDate": t_date_str,
                     "periodName": extracted_period,
                     "description": rec.description or "",
                     "managerName": rec.reporting_manager,
@@ -342,6 +397,9 @@ def get_evaluation_data():
                     "id": new_c_id,
                     "name": g_info["form"],
                     "form": g_info["form"],
+                    "frequency": g_info.get("frequency") or "quarterly",
+                    "startDate": g_info.get("startDate") or "",
+                    "endDate": g_info.get("endDate") or "",
                     "periodName": g_info.get("periodName") or "",
                     "description": g_info.get("description") or "",
                     "teamId": g_info["teamId"],
@@ -373,8 +431,25 @@ def get_evaluation_data():
 
                 db_kpis = extract_kpi_responses_from_metrics_data(rec.metrics_data)
 
-                resp_cycle = next((c for c in cycles if (c.get("teamName") == rec.team_name or c.get("teamId") == rec.team_id) and (c.get("name") == rec.form or c.get("form") == rec.form)), None)
-                cycle_id = resp_cycle["id"] if resp_cycle else f"cycle_db_{abs(hash(f'{rec.team_name}_{rec.form}')) % 1000000}"
+                f_date_str = rec.from_date.isoformat() if rec.from_date else ""
+                t_date_str = rec.to_date.isoformat() if rec.to_date else ""
+                freq_str = rec.frequency or "quarterly"
+                resp_cycle = next((
+                    c for c in cycles
+                    if (c.get("teamName") == rec.team_name or c.get("teamId") == rec.team_id) and
+                       (c.get("name") == rec.form or c.get("form") == rec.form) and
+                       c.get("frequency") == freq_str and
+                       c.get("startDate") == f_date_str and
+                       c.get("endDate") == t_date_str
+                ), None)
+                if not resp_cycle:
+                    resp_cycle = next((
+                        c for c in cycles
+                        if (c.get("teamName") == rec.team_name or c.get("teamId") == rec.team_id) and
+                           (c.get("name") == rec.form or c.get("form") == rec.form)
+                    ), None)
+
+                cycle_id = resp_cycle["id"] if resp_cycle else f"cycle_db_{abs(hash(f'{rec.team_name}_{rec.form}_{freq_str}_{f_date_str}_{t_date_str}')) % 1000000}"
 
                 extracted_period = ""
                 if rec.description and "(" in rec.description and ")" in rec.description:
@@ -410,6 +485,12 @@ def get_evaluation_data():
                     "managerRemarks": rec.manager_remark or "",
                     "serviceManagerScore": float(rec.service_manager_score) if (rec.service_manager_score and rec.service_manager_score.replace('.', '', 1).isdigit()) else None,
                     "serviceManagerRemarks": rec.remark or "",
+                    "frequency": rec.frequency or "quarterly",
+                    "startDate": rec.from_date.isoformat() if rec.from_date else "",
+                    "endDate": rec.to_date.isoformat() if rec.to_date else "",
+                    "workingDays": rec.working_days or 0,
+                    "leaveDays": rec.leave_days or 0,
+                    "holidayDays": rec.holiday_days or 0,
                     "categories": rec.metrics_data if isinstance(rec.metrics_data, list) else [],
                     "metrics_data": rec.metrics_data,
                     "kpiResponses": db_kpis,
@@ -417,14 +498,46 @@ def get_evaluation_data():
                     "updatedAt": rec.updated_at.isoformat() if rec.updated_at else None
                 })
         else:
-            responses = store.get("responses", [])
+            responses = []
+
+        # Preserve ALL non-archived cycles and responses from JSON store (daily, weekly, monthly, quarterly, yearly).
+        # JSON is lightweight metadata only; DB is the authoritative source for full KPI data.
+        json_all_cycles = list(store.get("cycles", []))
+        json_all_responses = [
+            r for r in store.get("responses", [])
+            if not r.get("is_archived")
+        ]
+
+        if db_unavailable:
+            # DB had an error — serve entirely from JSON store, do NOT write back (preserve existing data)
+            merged_cycles = json_all_cycles
+            merged_responses = json_all_responses
+            rating_scale = store.get("ratingScale", DEFAULT_RATING_SCALE)
+            return jsonify({"success": True, "cycles": merged_cycles, "responses": merged_responses, "ratingScale": rating_scale}), 200
+
+        # Combine: DB records take precedence (authoritative source), JSON fills in anything not yet in DB.
+        # Start with DB-derived cycles, then append any JSON-only cycles not already present.
+        merged_cycles = list(cycles)
+        existing_cycle_keys = {(c.get("id"), c.get("name"), c.get("startDate"), c.get("endDate")) for c in merged_cycles}
+        for c in json_all_cycles:
+            c_key = (c.get("id"), c.get("name"), c.get("startDate"), c.get("endDate"))
+            if c_key not in existing_cycle_keys:
+                merged_cycles.append(c)
+                existing_cycle_keys.add(c_key)
+
+        # Start with DB-derived responses, then append any JSON-only responses not already present.
+        merged_responses = list(responses)
+        existing_resp_ids = {r.get("id") for r in merged_responses}
+        # Also track by db_id to avoid duplicating records already fetched from DB
+        existing_db_ids = {r.get("db_id") for r in merged_responses if r.get("db_id")}
+        for r in json_all_responses:
+            r_id = r.get("id")
+            r_db_id = r.get("db_id")
+            if r_id not in existing_resp_ids and (not r_db_id or r_db_id not in existing_db_ids):
+                merged_responses.append(r)
 
         rating_scale = store.get("ratingScale", DEFAULT_RATING_SCALE)
-        store["cycles"] = cycles
-        store["responses"] = responses
-        store["ratingScale"] = rating_scale
-        write_eval_store(store)
-        return jsonify({"success": True, "cycles": cycles, "responses": responses, "ratingScale": rating_scale}), 200
+        return jsonify({"success": True, "cycles": merged_cycles, "responses": merged_responses, "ratingScale": rating_scale}), 200
     except Exception as e:
         return jsonify({"error": str(e), "cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}), 500
 
@@ -497,20 +610,16 @@ def delete_evaluation_cycle(cycle_id):
         store["cycles"] = [c for c in cycles if str(c.get("id")) != str(cycle_id)]
         store["responses"] = [
             r for r in responses 
-            if str(r.get("cycleId")) != str(cycle_id) and str(r.get("employeeCode") or r.get("employeeId") or "") not in emp_ids
+            if str(r.get("cycleId")) != str(cycle_id)
         ]
         write_eval_store(store)
 
         # Also delete matching unstarted/unsubmitted records in Postgres kpi_evaluations
         conditions = []
-        if emp_ids:
-            conditions.append(KpiEvaluation.employee_id.in_(list(emp_ids)))
-        if team_id:
-            conditions.append(KpiEvaluation.team_id == team_id)
-        if team_name:
-            conditions.append(KpiEvaluation.team_name == team_name)
         if form_name:
             conditions.append(KpiEvaluation.form == form_name)
+        if team_id:
+            conditions.append(KpiEvaluation.team_id == team_id)
 
         if conditions:
             records = KpiEvaluation.query.filter(or_(*conditions)).all()
@@ -528,82 +637,58 @@ def delete_evaluation_cycle(cycle_id):
 def delete_evaluation_response(resp_id_or_emp_id):
     try:
         req_data = request.get_json(silent=True) or {}
+        cycle_id = request.args.get("cycleId") or req_data.get("cycleId") or ""
         emp_code = request.args.get("employeeCode") or req_data.get("employeeCode") or ""
-        emp_id_arg = request.args.get("employeeId") or req_data.get("employeeId") or ""
-        emp_name = request.args.get("employeeName") or req_data.get("employeeName") or ""
 
         store = read_eval_store()
         responses = store.get("responses", [])
         
-        target_resp = next((r for r in responses if str(r.get("id")) == str(resp_id_or_emp_id) or str(r.get("employeeCode")) == str(resp_id_or_emp_id) or str(r.get("employeeId")) == str(resp_id_or_emp_id)), None)
-        if target_resp:
-            if not emp_code:
-                emp_code = str(target_resp.get("employeeCode") or target_resp.get("employeeId") or "")
-            if not emp_name:
-                emp_name = target_resp.get("employeeName") or ""
+        # 1. Find the exact target response by ID first
+        target_resp = next((r for r in responses if str(r.get("id")) == str(resp_id_or_emp_id)), None)
+        
+        # If not found directly by ID, match by cycleId + employeeCode combination
+        if not target_resp and cycle_id and emp_code:
+            target_resp = next((r for r in responses if str(r.get("cycleId")) == str(cycle_id) and str(r.get("employeeCode") or r.get("employeeId")) == str(emp_code)), None)
 
-        # Collect all possible identifier strings for this employee
-        emp_ids_to_del = {
-            str(resp_id_or_emp_id).strip(),
-            str(emp_code).strip(),
-            str(emp_id_arg).strip(),
-            str(emp_code).replace("EMP", "").replace("emp", "").strip() if emp_code else "",
-            f"EMP{str(emp_code).replace('EMP', '').replace('emp', '').strip()}" if emp_code else ""
-        } - {""}
-
-        # Find employee in DB to get their numeric DB ID, user_id, and employee_id
-        for candidate_id in list(emp_ids_to_del):
-            emp_obj = Employee.query.filter(
-                or_(
-                    Employee.employee_id == candidate_id,
-                    Employee.id == int(candidate_id) if candidate_id.isdigit() else False
-                )
-            ).first()
-            if emp_obj:
-                if emp_obj.employee_id:
-                    emp_ids_to_del.add(str(emp_obj.employee_id))
-                if emp_obj.id:
-                    emp_ids_to_del.add(str(emp_obj.id))
-                if emp_obj.user_id:
-                    emp_ids_to_del.add(str(emp_obj.user_id))
-                if not emp_name:
-                    emp_name = f"{emp_obj.first_name} {emp_obj.last_name}".strip()
-
-        emp_ids_to_del = {x for x in emp_ids_to_del if x}
+        if not target_resp and not resp_id_or_emp_id.isdigit() and not resp_id_or_emp_id.startswith("resp_"):
+            target_resp = next((r for r in responses if str(r.get("employeeCode")) == str(resp_id_or_emp_id) or str(r.get("employeeId")) == str(resp_id_or_emp_id)), None)
 
         # Prevent deleting calibrated/published records
         if target_resp and (target_resp.get("managerScore") is not None or target_resp.get("status") in ["Calibrated & Approved", "Published", "Approved", "Completed"]):
             return jsonify({"error": "Published and calibrated evaluation records cannot be deleted."}), 400
 
-        store["responses"] = [
-            r for r in responses 
-            if str(r.get("id")) != str(resp_id_or_emp_id) and 
-               str(r.get("employeeCode") or "").strip() not in emp_ids_to_del and
-               str(r.get("employeeId") or "").strip() not in emp_ids_to_del
-        ]
+        # Remove ONLY this specific single response from JSON store
+        target_id = str(target_resp.get("id")) if target_resp else str(resp_id_or_emp_id)
+        store["responses"] = [r for r in responses if str(r.get("id")) != target_id]
         write_eval_store(store)
 
-        # Remove from PostgreSQL kpi_evaluations
+        # Remove ONLY this specific single record from PostgreSQL kpi_evaluations
         rec_id = int(resp_id_or_emp_id) if resp_id_or_emp_id.isdigit() else None
-        clean_resp_id = resp_id_or_emp_id.replace("resp_", "")
-        rec_from_resp = int(clean_resp_id) if clean_resp_id.isdigit() else None
+        clean_resp_id = resp_id_or_emp_id.replace("resp_", "") if resp_id_or_emp_id.startswith("resp_") else None
+        rec_from_resp = int(clean_resp_id) if clean_resp_id and clean_resp_id.isdigit() else None
 
-        conditions = []
-        if emp_ids_to_del:
-            conditions.append(KpiEvaluation.employee_id.in_(list(emp_ids_to_del)))
+        db_rec = None
         if rec_id:
-            conditions.append(KpiEvaluation.id == rec_id)
-        if rec_from_resp:
-            conditions.append(KpiEvaluation.id == rec_from_resp)
-        if emp_name and len(emp_name) > 2:
-            conditions.append(KpiEvaluation.employee_name.ilike(f"%{emp_name.strip()}%"))
+            db_rec = KpiEvaluation.query.get(rec_id)
+        elif rec_from_resp:
+            db_rec = KpiEvaluation.query.get(rec_from_resp)
+        elif target_resp:
+            target_form = target_resp.get("form") or ""
+            target_start = target_resp.get("periodStartDate") or target_resp.get("startDate") or ""
+            target_emp = str(target_resp.get("employeeCode") or target_resp.get("employeeId") or "")
+            query = KpiEvaluation.query
+            if target_emp:
+                query = query.filter(or_(KpiEvaluation.employee_id == target_emp, KpiEvaluation.employee_name == target_resp.get("employeeName")))
+            if target_form:
+                query = query.filter(KpiEvaluation.form == target_form)
+            if target_start:
+                query = query.filter(KpiEvaluation.period_start_date == target_start)
+            db_rec = query.first()
 
-        if conditions:
-            records = KpiEvaluation.query.filter(or_(*conditions)).all()
-            for rec in records:
-                if rec.manager_score is not None or rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
-                    return jsonify({"error": "Published and calibrated evaluation records cannot be deleted."}), 400
-                db.session.delete(rec)
+        if db_rec:
+            if db_rec.manager_score is not None or db_rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
+                return jsonify({"error": "Published and calibrated evaluation records cannot be deleted."}), 400
+            db.session.delete(db_rec)
             db.session.commit()
 
         return jsonify({"success": True, "message": "Evaluation response deleted from DB successfully"}), 200
@@ -619,19 +704,16 @@ def save_evaluation_responses():
         responses = store.get("responses", [])
 
         def is_same_response(r1, r2):
-            if r1.get("id") and r2.get("id") and r1.get("id") == r2.get("id"):
+            # 1. Exact ID match
+            if r1.get("id") and r2.get("id") and str(r1.get("id")) == str(r2.get("id")):
                 return True
-            c1 = str(r1.get("cycleId") or "")
-            c2 = str(r2.get("cycleId") or "")
-            if c1 and c2 and c1 == c2:
-                e1_ids = {str(r1.get("employeeId") or "").strip(), str(r1.get("employeeCode") or "").strip()} - {""}
-                e2_ids = {str(r2.get("employeeId") or "").strip(), str(r2.get("employeeCode") or "").strip()} - {""}
-                if e1_ids & e2_ids:
-                    return True
-                n1 = (r1.get("employeeName") or "").strip().lower()
-                n2 = (r2.get("employeeName") or "").strip().lower()
-                if n1 and n2 and (n1 == n2 or n1 in n2 or n2 in n1):
-                    return True
+            # 2. Match only if exact period / form AND employee match
+            p1 = (r1.get("periodName") or r1.get("form") or "").strip().lower()
+            p2 = (r2.get("periodName") or r2.get("form") or "").strip().lower()
+            e1_ids = {str(r1.get("employeeId") or "").strip(), str(r1.get("employeeCode") or "").strip()} - {""}
+            e2_ids = {str(r2.get("employeeId") or "").strip(), str(r2.get("employeeCode") or "").strip()} - {""}
+            if p1 and p2 and p1 == p2 and (e1_ids & e2_ids):
+                return True
             return False
 
         items = req_data if isinstance(req_data, list) else [req_data]
@@ -648,6 +730,7 @@ def save_evaluation_responses():
             emp_id = str(item.get("employeeCode") or item.get("employeeId") or "").strip()
             resp_id = str(item.get("id") or "").strip()
             form_name = item.get("form") or item.get("performance_metrics") or item.get("periodName") or ""
+            period_name = str(item.get("periodName") or "").strip()
 
             if emp_id:
                 clean_id = resp_id.replace("resp_", "").replace("eval_", "").strip()
@@ -655,20 +738,23 @@ def save_evaluation_responses():
                 if clean_id.isdigit():
                     eval_row = KpiEvaluation.query.get(int(clean_id))
 
-                period_name = str(item.get("periodName") or "").strip()
                 if not eval_row and (form_name or period_name):
-                    eval_row = KpiEvaluation.query.filter(
-                        KpiEvaluation.employee_id == emp_id,
-                        or_(
-                            KpiEvaluation.form == form_name,
-                            KpiEvaluation.performance_metrics == form_name,
-                            KpiEvaluation.description.ilike(f"%{period_name}%") if period_name else False
-                        )
-                    ).order_by(KpiEvaluation.id.desc()).first()
+                    sub_conds = []
+                    if form_name:
+                        sub_conds.extend([KpiEvaluation.form == form_name, KpiEvaluation.performance_metrics == form_name])
+                    if period_name:
+                        sub_conds.append(KpiEvaluation.description.ilike(f"%{period_name}%"))
+                    if sub_conds:
+                        eval_row = KpiEvaluation.query.filter(
+                            KpiEvaluation.employee_id == emp_id,
+                            or_(*sub_conds)
+                        ).order_by(KpiEvaluation.id.desc()).first()
 
                 if not eval_row:
+                    # Only match un-calibrated/pending evaluations to prevent destroying published historical records
                     eval_row = KpiEvaluation.query.filter(
-                        KpiEvaluation.employee_id == emp_id
+                        KpiEvaluation.employee_id == emp_id,
+                        KpiEvaluation.status.in_(["Assigned to Employee", "employee_in_progress", "Pending", "draft", "Draft", "manager_review", "Submitted to Manager"])
                     ).order_by(KpiEvaluation.id.desc()).first()
 
                 if eval_row:
@@ -701,6 +787,29 @@ def save_evaluation_responses():
                     eval_row.updated_at = now
 
         db.session.commit()
+
+        # IMPORTANT FIX: Do NOT replace store["responses"] with the incoming list.
+        # The frontend sends its full localStorage array which may be stale/incomplete.
+        # Instead, merge each incoming response INTO the existing store using upsert logic.
+        # This preserves all DB-assigned monthly/quarterly entries that the frontend may not have.
+        store_resp_map = {str(r.get("id") or ""): i for i, r in enumerate(responses) if r.get("id")}
+
+        for item in items:
+            item_id = str(item.get("id") or "")
+            # Try to find existing store entry by ID
+            if item_id and item_id in store_resp_map:
+                responses[store_resp_map[item_id]].update(item)
+            else:
+                # Try by employee + form/period match
+                matched_idx = next((
+                    i for i, r in enumerate(responses)
+                    if is_same_response(r, item)
+                ), -1)
+                if matched_idx >= 0:
+                    responses[matched_idx].update(item)
+                else:
+                    responses.append(item)
+
         store["responses"] = responses
         write_eval_store(store)
         return jsonify({"success": True, "responses": responses}), 200
@@ -725,8 +834,11 @@ def get_kpi_evaluations():
         service_manager_id_filter = request.args.get("service_manager_id")
         status_filter = request.args.get("status")
         team_id_filter = request.args.get("team_id")
+        include_archived = request.args.get("include_archived", "false").lower() == "true"
         
         query = KpiEvaluation.query
+        if not include_archived:
+            query = query.filter(or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None)))
         if form_filter:
             query = query.filter(KpiEvaluation.form == form_filter)
         if employee_id_filter:
@@ -745,7 +857,27 @@ def get_kpi_evaluations():
             query = query.filter(KpiEvaluation.team_id == str(team_id_filter))
             
         records = query.order_by(KpiEvaluation.updated_at.desc(), KpiEvaluation.id.desc()).all()
-        return jsonify({"success": True, "evaluations": [r.to_dict() for r in records]}), 200
+        eval_list = [r.to_dict() for r in records]
+
+        # Also include matching daily & weekly evaluations from JSON store (data/uploads/evaluations/evaluation_store.json)
+        store = read_eval_store()
+        for r in store.get("responses", []):
+            freq = str(r.get("frequency") or "").lower()
+            if freq not in ["daily", "weekly"]:
+                continue
+            if not include_archived and (r.get("is_archived") or str(r.get("status") or "").lower() == "archived"):
+                continue
+            if employee_id_filter and str(r.get("employeeCode") or r.get("employeeId")) != str(employee_id_filter):
+                continue
+            if form_filter and r.get("form") != form_filter and r.get("performance_metrics") != form_filter:
+                continue
+            if status_filter and r.get("status") != status_filter:
+                continue
+            if team_id_filter and str(r.get("teamId") or r.get("team_id")) != str(team_id_filter):
+                continue
+            eval_list.append(r)
+
+        return jsonify({"success": True, "evaluations": eval_list}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -884,6 +1016,55 @@ def assign_kpi_metrics():
         reporting_manager_id = str(data.get("reporting_manager_id", ""))
         service_manager = data.get("service_manager", "")
         service_manager_id = str(data.get("service_manager_id", ""))
+
+        # Resolve canonical Employee.employee_id for reporting manager
+        if reporting_manager_id or reporting_manager:
+            mgr_emp = None
+            if reporting_manager_id and reporting_manager_id.isdigit():
+                mgr_emp = Employee.query.filter(
+                    or_(
+                        Employee.employee_id == reporting_manager_id,
+                        Employee.id == int(reporting_manager_id),
+                        Employee.user_id == int(reporting_manager_id)
+                    )
+                ).first()
+            elif reporting_manager_id:
+                mgr_emp = Employee.query.filter(Employee.employee_id == reporting_manager_id).first()
+
+            if not mgr_emp and reporting_manager:
+                mgr_emp = Employee.query.filter(
+                    func.lower(Employee.name) == reporting_manager.lower().strip()
+                ).first()
+
+            if mgr_emp and mgr_emp.employee_id:
+                reporting_manager_id = str(mgr_emp.employee_id)
+                if not reporting_manager and mgr_emp.name:
+                    reporting_manager = mgr_emp.name
+
+        # Resolve canonical Employee.employee_id for service manager
+        if service_manager_id or service_manager:
+            sm_emp = None
+            if service_manager_id and service_manager_id.isdigit():
+                sm_emp = Employee.query.filter(
+                    or_(
+                        Employee.employee_id == service_manager_id,
+                        Employee.id == int(service_manager_id),
+                        Employee.user_id == int(service_manager_id)
+                    )
+                ).first()
+            elif service_manager_id:
+                sm_emp = Employee.query.filter(Employee.employee_id == service_manager_id).first()
+
+            if not sm_emp and service_manager:
+                sm_emp = Employee.query.filter(
+                    func.lower(Employee.name) == service_manager.lower().strip()
+                ).first()
+
+            if sm_emp and sm_emp.employee_id:
+                service_manager_id = str(sm_emp.employee_id)
+                if not service_manager and sm_emp.name:
+                    service_manager = sm_emp.name
+
         employees = data.get("employees", [])
         
         # Accept categories (hierarchical tree) or metrics_data or fallback list
@@ -894,25 +1075,211 @@ def assign_kpi_metrics():
         if not categories_data:
             return jsonify({"error": "Please specify performance metrics categories"}), 400
 
+        frequency = (data.get("frequency") or data.get("periodType") or data.get("period_type") or "quarterly").lower()
+        start_date_str = data.get("startDate") or data.get("start_date") or data.get("from_date")
+        end_date_str = data.get("endDate") or data.get("end_date") or data.get("to_date")
+        from_date = None
+        to_date = None
+        if start_date_str:
+            try:
+                from_date = datetime.strptime(str(start_date_str)[:10], "%Y-%m-%d").date()
+            except Exception:
+                pass
+        if end_date_str:
+            try:
+                to_date = datetime.strptime(str(end_date_str)[:10], "%Y-%m-%d").date()
+            except Exception:
+                pass
+
+        if from_date and not to_date:
+            to_date = from_date
+        elif to_date and not from_date:
+            from_date = to_date
+
+        from services.kpi_evaluation_rollup_service import calculate_evaluation_working_days
+
         now = datetime.utcnow()
         created_records = []
 
+        if frequency in ["daily", "weekly"]:
+            store = read_eval_store()
+            from_str = from_date.isoformat() if from_date else ""
+            to_str = to_date.isoformat() if to_date else ""
+            period_label = data.get("periodName") or data.get("period_name") or data.get("period") or ""
+            cycle_id = f"cycle_json_{abs(hash(f'{team_name}_{form_name}_{frequency}_{from_str}_{to_str}_{period_label}')) % 1000000}"
+
+            existing_cycle = next((
+                c for c in store.get("cycles", [])
+                if c.get("id") == cycle_id or (
+                    c.get("name") == form_name and
+                    c.get("frequency") == frequency and
+                    c.get("startDate") == from_str and
+                    c.get("endDate") == to_str
+                )
+            ), None)
+            if not existing_cycle:
+                period_label_cycle = period_label
+                new_cycle = {
+                    "id": cycle_id,
+                    "name": form_name,
+                    "form": form_name,
+                    "frequency": frequency,
+                    "startDate": from_str,
+                    "endDate": to_str,
+                    "periodName": period_label_cycle or form_name,
+                    "description": f"Performance evaluation for {team_name}" + (f" ({period_label_cycle})" if period_label_cycle else ""),
+                    "teamId": str(team_id) if team_id else "General",
+                    "teamName": team_name or "General",
+                    "managerId": str(reporting_manager_id),
+                    "managerName": reporting_manager or "Reporting Manager",
+                    "serviceManagerId": str(service_manager_id),
+                    "serviceManagerName": service_manager or "Service Manager",
+                    "categories": categories_data,
+                    "employeeIds": [],
+                    "isActive": True,
+                    "createdAt": now.isoformat(),
+                    "updatedAt": now.isoformat()
+                }
+                store.setdefault("cycles", []).append(new_cycle)
+                existing_cycle = new_cycle
+
+            for emp in employees:
+                emp_id = str(emp.get("id") or emp.get("employee_id") or emp.get("code") or "")
+                if not emp_id:
+                    continue
+
+                db_emp = Employee.query.filter(
+                    or_(
+                        Employee.employee_id == emp_id,
+                        Employee.id == int(emp_id) if emp_id.isdigit() else False
+                    )
+                ).first()
+                if db_emp and (db_emp.is_active is False or str(db_emp.status or "").strip().lower() in ["inactive", "deactive", "deactivated"]):
+                    continue
+
+                emp_name = emp.get("name") or emp.get("employee_name") or (f"{db_emp.first_name or ''} {db_emp.last_name or ''}".strip() if db_emp else f"Employee {emp_id}")
+
+                if emp_id not in existing_cycle.get("employeeIds", []):
+                    existing_cycle.setdefault("employeeIds", []).append(emp_id)
+
+                desc_text = f"Performance evaluation for {team_name}" + (f" ({period_label})" if period_label else "")
+
+                stats = calculate_evaluation_working_days(emp_id, from_date, to_date) if (from_date and to_date) else {"working_days": 0, "leave_days": 0, "holiday_days": 0}
+
+                existing_resp = next((
+                    r for r in store.get("responses", [])
+                    if str(r.get("employeeCode") or r.get("employeeId")) == emp_id and
+                       (r.get("cycleId") == cycle_id or (
+                           (r.get("form") == form_name or r.get("performance_metrics") == form_name) and
+                           r.get("frequency") == frequency and
+                           r.get("startDate") == from_str and
+                           r.get("endDate") == to_str
+                       ))
+                ), None)
+
+                if existing_resp:
+                    existing_resp["categories"] = categories_data
+                    existing_resp["metrics_data"] = categories_data
+                    existing_resp["description"] = desc_text
+                    existing_resp["workingDays"] = stats["working_days"]
+                    existing_resp["leaveDays"] = stats["leave_days"]
+                    existing_resp["holidayDays"] = stats["holiday_days"]
+                    existing_resp["reportingManager"] = reporting_manager if reporting_manager else existing_resp.get("reportingManager")
+                    existing_resp["reporting_manager"] = existing_resp["reportingManager"]
+                    existing_resp["reporting_manager_id"] = reporting_manager_id if reporting_manager_id else existing_resp.get("reporting_manager_id")
+                    existing_resp["serviceManager"] = service_manager if service_manager else existing_resp.get("serviceManager")
+                    existing_resp["service_manager"] = existing_resp["serviceManager"]
+                    existing_resp["service_manager_id"] = service_manager_id if service_manager_id else existing_resp.get("service_manager_id")
+                    existing_resp["frequency"] = frequency
+                    existing_resp["startDate"] = from_str
+                    existing_resp["endDate"] = to_str
+                    existing_resp["status"] = "Assigned to Employee"
+                    existing_resp["updatedAt"] = now.isoformat()
+                    created_records.append(existing_resp)
+                else:
+                    new_resp = {
+                        "id": f"resp_json_{abs(hash(f'{emp_id}_{form_name}_{period_label}_{now.isoformat()}')) % 10000000}",
+                        "cycleId": existing_cycle["id"],
+                        "teamId": str(team_id) if team_id else "General",
+                        "teamName": team_name or "General",
+                        "employeeId": emp_id,
+                        "employeeCode": emp_id,
+                        "employeeName": emp_name,
+                        "form": form_name,
+                        "performance_metrics": form_name,
+                        "periodName": period_label or form_name,
+                        "description": desc_text,
+                        "status": "Assigned to Employee",
+                        "employeeOverallScore": 0.0,
+                        "employeeRemarks": "",
+                        "managerScore": None,
+                        "managerRemarks": "",
+                        "serviceManagerScore": None,
+                        "serviceManagerRemarks": "",
+                        "reportingManager": reporting_manager,
+                        "reporting_manager": reporting_manager,
+                        "reporting_manager_id": str(reporting_manager_id),
+                        "serviceManager": service_manager,
+                        "service_manager": service_manager,
+                        "service_manager_id": str(service_manager_id),
+                        "frequency": frequency,
+                        "startDate": from_str,
+                        "endDate": to_str,
+                        "workingDays": stats["working_days"],
+                        "leaveDays": stats["leave_days"],
+                        "holidayDays": stats["holiday_days"],
+                        "categories": categories_data,
+                        "metrics_data": categories_data,
+                        "kpiResponses": {},
+                        "createdAt": now.isoformat(),
+                        "updatedAt": now.isoformat()
+                    }
+                    store.setdefault("responses", []).append(new_resp)
+                    created_records.append(new_resp)
+
+            write_eval_store(store)
+            return jsonify({
+                "success": True, 
+                "message": f"Assigned {frequency.capitalize()} KPI metrics to {len(created_records)} employee(s) (saved in folder store)",
+                "evaluations": created_records
+            }), 201
+
+        # For Monthly, Quarterly, and Yearly evaluations: store directly in PostgreSQL database (kpi_evaluations table)
         for emp in employees:
             emp_id = str(emp.get("id") or emp.get("employee_id") or emp.get("code") or "")
-            emp_name = emp.get("name") or emp.get("employee_name") or f"Employee {emp_id}"
+            if not emp_id:
+                continue
+
+            # Skip inactive / deactivated employees
+            db_emp = Employee.query.filter(
+                or_(
+                    Employee.employee_id == emp_id,
+                    Employee.id == int(emp_id) if emp_id.isdigit() else False
+                )
+            ).first()
+            if db_emp and (db_emp.is_active is False or str(db_emp.status or "").strip().lower() in ["inactive", "deactive", "deactivated"]):
+                continue
+
+            emp_name = emp.get("name") or emp.get("employee_name") or (f"{db_emp.first_name or ''} {db_emp.last_name or ''}".strip() if db_emp else f"Employee {emp_id}")
 
             period_label = data.get("periodName") or data.get("period_name") or data.get("period") or ""
             desc_text = f"Performance evaluation for {team_name}" + (f" ({period_label})" if period_label else "")
 
+            stats = calculate_evaluation_working_days(emp_id, from_date, to_date) if (from_date and to_date) else {"working_days": 0, "leave_days": 0, "holiday_days": 0}
+
             # Check if evaluation records already exist for this employee for this specific form/period
-            existing_records = KpiEvaluation.query.filter(
+            filter_conditions = [
                 KpiEvaluation.employee_id == emp_id,
-                or_(
-                    KpiEvaluation.form == form_name, 
-                    KpiEvaluation.performance_metrics == form_name,
-                    KpiEvaluation.description.ilike(f"%{period_label}%") if period_label else False
-                )
-            ).order_by(KpiEvaluation.id.desc()).all()
+                KpiEvaluation.form == form_name,
+            ]
+            if from_date:
+                filter_conditions.append(KpiEvaluation.from_date == from_date)
+            if to_date:
+                filter_conditions.append(KpiEvaluation.to_date == to_date)
+            if frequency:
+                filter_conditions.append(KpiEvaluation.frequency == frequency)
+
+            existing_records = KpiEvaluation.query.filter(*filter_conditions).order_by(KpiEvaluation.id.desc()).all()
 
             if existing_records:
                 record = existing_records[0]
@@ -933,6 +1300,12 @@ def assign_kpi_metrics():
                 record.manager_id = reporting_manager_id if reporting_manager_id else record.manager_id
                 record.service_manager = service_manager if service_manager else record.service_manager
                 record.service_manager_id = service_manager_id if service_manager_id else record.service_manager_id
+                record.frequency = frequency
+                record.from_date = from_date
+                record.to_date = to_date
+                record.working_days = stats["working_days"]
+                record.leave_days = stats["leave_days"]
+                record.holiday_days = stats["holiday_days"]
                 record.status = "Assigned to Employee"
                 record.updated_at = now
             else:
@@ -962,6 +1335,12 @@ def assign_kpi_metrics():
                     manager_id=reporting_manager_id,
                     service_manager=service_manager,
                     service_manager_id=service_manager_id,
+                    frequency=frequency,
+                    from_date=from_date,
+                    to_date=to_date,
+                    working_days=stats["working_days"],
+                    leave_days=stats["leave_days"],
+                    holiday_days=stats["holiday_days"],
                     status="Assigned to Employee",
                     created_at=now,
                     updated_at=now
@@ -972,14 +1351,242 @@ def assign_kpi_metrics():
             created_records.append(record)
 
         db.session.commit()
+
+        # Dual-write to JSON store as backup so the assignment is visible immediately on the next poll
+        # even if the DB query has a momentary delay or connection issue.
+        try:
+            period_label_json = data.get("periodName") or data.get("period_name") or data.get("period") or ""
+            store_json = read_eval_store()
+
+            # Upsert a cycle entry in JSON store for this assignment group
+            cycle_id_json = f"cycle_db_{abs(hash(f'{team_name}_{form_name}')) % 1000000}"
+            existing_json_cycle = next((
+                c for c in store_json.get("cycles", [])
+                if c.get("id") == cycle_id_json or
+                   (c.get("name") == form_name and str(c.get("teamName") or "").lower() == str(team_name or "").lower())
+            ), None)
+            if not existing_json_cycle:
+                existing_json_cycle = {
+                    "id": cycle_id_json,
+                    "name": form_name,
+                    "form": form_name,
+                    "frequency": frequency,
+                    "startDate": from_date.isoformat() if from_date else "",
+                    "endDate": to_date.isoformat() if to_date else "",
+                    "periodName": period_label_json or form_name,
+                    "description": f"Performance evaluation for {team_name}" + (f" ({period_label_json})" if period_label_json else ""),
+                    "teamId": str(team_id) if team_id else "General",
+                    "teamName": team_name or "General",
+                    "managerId": str(reporting_manager_id),
+                    "managerName": reporting_manager or "Reporting Manager",
+                    "serviceManagerId": str(service_manager_id),
+                    "serviceManagerName": service_manager or "Service Manager",
+                    # NOTE: categories/metrics NOT stored in JSON — DB is authoritative for full KPI data
+                    "employeeIds": [],
+                    "isActive": True,
+                    "createdAt": now.isoformat(),
+                    "updatedAt": now.isoformat()
+                }
+                store_json.setdefault("cycles", []).append(existing_json_cycle)
+            else:
+                # Update existing cycle metadata (no categories — kept in DB only)
+                existing_json_cycle["updatedAt"] = now.isoformat()
+
+            # Upsert each employee's response in JSON store
+            for record in created_records:
+                emp_id_json = str(record.employee_id or "")
+                if emp_id_json and emp_id_json not in existing_json_cycle.get("employeeIds", []):
+                    existing_json_cycle.setdefault("employeeIds", []).append(emp_id_json)
+
+                resp_id_json = f"resp_{record.id}"
+                existing_json_resp = next((
+                    r for r in store_json.get("responses", [])
+                    if r.get("id") == resp_id_json or r.get("db_id") == record.id
+                ), None)
+                if not existing_json_resp:
+                    store_json.setdefault("responses", []).append({
+                        "id": resp_id_json,
+                        "db_id": record.id,
+                        "cycleId": existing_json_cycle["id"],
+                        "teamId": str(record.team_id or ""),
+                        "teamName": str(record.team_name or ""),
+                        "employeeId": emp_id_json,
+                        "employeeCode": emp_id_json,
+                        "employeeName": record.employee_name or "",
+                        "form": record.form or "",
+                        "performance_metrics": record.performance_metrics or record.form or "",
+                        "periodName": period_label_json or record.form or "",
+                        "description": record.description or "",
+                        "status": record.status or "Assigned to Employee",
+                        "employeeOverallScore": record.employee_overall_score or 0.0,
+                        "employeeRemarks": record.employee_remark or "",
+                        "managerScore": record.manager_score,
+                        "managerRemarks": record.manager_remark or "",
+                        "serviceManagerScore": float(record.service_manager_score) if (record.service_manager_score and str(record.service_manager_score).replace('.', '', 1).isdigit()) else None,
+                        "serviceManagerRemarks": record.remark or "",
+                        "reportingManager": record.reporting_manager or "",
+                        "reporting_manager": record.reporting_manager or "",
+                        "reporting_manager_id": str(record.reporting_manager_id or ""),
+                        "serviceManager": record.service_manager or "",
+                        "service_manager": record.service_manager or "",
+                        "service_manager_id": str(record.service_manager_id or ""),
+                        "frequency": record.frequency or "quarterly",
+                        "startDate": record.from_date.isoformat() if record.from_date else "",
+                        "endDate": record.to_date.isoformat() if record.to_date else "",
+                        "workingDays": record.working_days or 0,
+                        "leaveDays": record.leave_days or 0,
+                        "holidayDays": record.holiday_days or 0,
+                        # NOTE: categories/metrics_data NOT stored in JSON — DB is authoritative for full KPI data
+                        # This keeps the JSON file lightweight even as assignments grow over years
+                        "kpiResponses": {},
+                        "createdAt": record.created_at.isoformat() if record.created_at else now.isoformat(),
+                        "updatedAt": record.updated_at.isoformat() if record.updated_at else now.isoformat()
+                    })
+                else:
+                    # Update existing JSON record — minimal fields only, no categories bulk
+                    existing_json_resp["status"] = record.status or "Assigned to Employee"
+                    existing_json_resp["frequency"] = record.frequency or "quarterly"
+                    existing_json_resp["startDate"] = record.from_date.isoformat() if record.from_date else existing_json_resp.get("startDate", "")
+                    existing_json_resp["endDate"] = record.to_date.isoformat() if record.to_date else existing_json_resp.get("endDate", "")
+                    existing_json_resp["updatedAt"] = now.isoformat()
+
+            write_eval_store(store_json)
+        except Exception as json_sync_err:
+            print(f"Warning: Could not dual-write assignment to JSON store: {json_sync_err}")
+
         return jsonify({
-            "success": True, 
-            "message": f"Assigned KPI metrics JSON to {len(created_records)} employee(s) (strictly 1 row per employee in DB)",
-            "evaluations": [r.to_dict() for r in created_records]
+            "success": True,
+            "message": f"Assigned KPI metrics to {len(created_records)} employee(s) (stored in DB)",
+            "evaluations": [r.to_dict() if hasattr(r, 'to_dict') else r for r in created_records]
         }), 201
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@performance_bp.route("/kpi-evaluations/rollup", methods=["POST"])
+@auth_required
+def trigger_kpi_evaluation_rollup():
+    """Manually triggers hierarchical rolling aggregation on kpi_evaluations."""
+    try:
+        from services.kpi_evaluation_rollup_service import auto_rollup_kpi_evaluations_job
+        count = auto_rollup_kpi_evaluations_job()
+        return jsonify({
+            "success": True,
+            "message": f"Rollup completed. Processed {count} period(s).",
+            "rolled_up_count": count
+        }), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
+
+@performance_bp.route("/kpi-evaluations/convert-daily-to-weekly", methods=["POST"])
+@auth_required
+def convert_daily_kpi_to_weekly():
+    """
+    Explicit conversion of daily evaluations into 1 consolidated weekly evaluation.
+    Calculates average percentage score across evaluated days (Sum / Count),
+    creates 1 weekly record, and soft-archives daily records (Option B).
+    """
+    try:
+        data = request.get_json() or {}
+        employee_id = data.get("employee_id") or data.get("employeeId")
+        week_start_str = data.get("week_start") or data.get("weekStart")
+        week_end_str = data.get("week_end") or data.get("weekEnd")
+        record_ids = data.get("record_ids") or data.get("recordIds") or []
+
+        week_start = None
+        week_end = None
+        if week_start_str:
+            try:
+                week_start = datetime.strptime(str(week_start_str).split("T")[0], "%Y-%m-%d").date()
+            except Exception:
+                pass
+        if week_end_str:
+            try:
+                week_end = datetime.strptime(str(week_end_str).split("T")[0], "%Y-%m-%d").date()
+            except Exception:
+                pass
+
+        from services.kpi_evaluation_rollup_service import convert_daily_to_weekly_records
+        weekly_rec = convert_daily_to_weekly_records(
+            employee_id=str(employee_id) if employee_id else None,
+            week_start=week_start,
+            week_end=week_end,
+            record_ids=record_ids
+        )
+
+        if not weekly_rec:
+            return jsonify({"success": False, "message": "No active daily evaluation records found to convert."}), 404
+
+        score = weekly_rec.employee_overall_score if hasattr(weekly_rec, "employee_overall_score") else (weekly_rec.get("employeeOverallScore") or weekly_rec.get("employee_overall_score") or 0.0)
+        rec_dict = weekly_rec.to_dict() if hasattr(weekly_rec, "to_dict") else weekly_rec
+        return jsonify({
+            "success": True,
+            "message": f"Successfully converted daily evaluations into weekly record (Score: {score}%).",
+            "weekly_evaluation": rec_dict
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@performance_bp.route("/kpi-evaluations/convert", methods=["POST"])
+@auth_required
+def convert_evaluations():
+    """
+    Unified multi-tier evaluation rollup & conversion endpoint:
+    - daily -> weekly
+    - weekly -> monthly
+    - monthly -> quarterly
+    - quarterly -> yearly
+    """
+    try:
+        data = request.get_json() or {}
+        employee_id = data.get("employee_id") or data.get("employeeId")
+        from_frequency = (data.get("from_frequency") or data.get("fromFrequency") or "").strip().lower()
+        to_frequency = (data.get("to_frequency") or data.get("toFrequency") or "").strip().lower()
+        record_ids = data.get("record_ids") or data.get("recordIds") or []
+
+        if not from_frequency or not to_frequency:
+            return jsonify({"success": False, "message": "Both from_frequency and to_frequency are required."}), 400
+
+        from services.kpi_evaluation_rollup_service import convert_evaluations_tier
+        new_record = convert_evaluations_tier(
+            employee_id=str(employee_id) if employee_id else None,
+            from_frequency=from_frequency,
+            to_frequency=to_frequency,
+            record_ids=record_ids
+        )
+
+        if not new_record:
+            return jsonify({
+                "success": False,
+                "message": f"No active {from_frequency} records found to convert into {to_frequency}."
+            }), 404
+
+        score = new_record.employee_overall_score if hasattr(new_record, "employee_overall_score") else (new_record.get("employeeOverallScore") or new_record.get("employee_overall_score") or 0.0)
+        rec_dict = new_record.to_dict() if hasattr(new_record, "to_dict") else new_record
+        return jsonify({
+            "success": True,
+            "message": f"Successfully converted {from_frequency} evaluation(s) into {to_frequency} record (Score: {score}%).",
+            "evaluation": rec_dict,
+            "weekly_evaluation": rec_dict
+        }), 200
+    except ValueError as ve:
+        return jsonify({"success": False, "message": str(ve)}), 400
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
+
+
 
 
 @performance_bp.route("/kpi-evaluations/submit-employee", methods=["POST"])
@@ -998,19 +1605,32 @@ def submit_employee_kpi():
         store_responses = store.get("responses", [])
 
         for item in items:
-            rec_id = item.get("id")
+            raw_id = item.get("id")
+            rec_id = None
+            if raw_id:
+                clean_id = str(raw_id).replace("resp_", "").replace("eval_", "").strip()
+                if clean_id.isdigit():
+                    rec_id = int(clean_id)
             emp_id = str(item.get("employee_id") or "")
-            form_name = item.get("form")
+            form_name = item.get("form") or item.get("periodName") or item.get("performance_metrics")
+            period_name = str(item.get("periodName") or "").strip()
             raw_responses = item.get("responses") or item.get("kpiResponses") or {}
 
             record = None
             if rec_id:
                 record = KpiEvaluation.query.get(rec_id)
-            elif emp_id:
+            if not record and emp_id:
                 q = KpiEvaluation.query.filter(KpiEvaluation.employee_id == emp_id)
-                if form_name:
-                    q = q.filter(KpiEvaluation.form == form_name)
-                record = q.order_by(KpiEvaluation.updated_at.desc()).first()
+                if form_name or period_name:
+                    sub_conds = []
+                    if form_name:
+                        sub_conds.extend([KpiEvaluation.form == form_name, KpiEvaluation.performance_metrics == form_name])
+                    if period_name:
+                        sub_conds.append(KpiEvaluation.description.ilike(f"%{period_name}%"))
+                    q = q.filter(or_(*sub_conds))
+                # Prioritize active pending/draft record to avoid overwriting calibrated historical ones
+                q_pending = q.filter(KpiEvaluation.status.in_(["Assigned to Employee", "employee_in_progress", "Pending", "draft", "Draft", "manager_review", "Submitted to Manager"]))
+                record = q_pending.order_by(KpiEvaluation.id.desc()).first() or q.order_by(KpiEvaluation.id.desc()).first()
 
             if record:
                 # Update metrics_data with merged responses
@@ -1041,8 +1661,15 @@ def submit_employee_kpi():
                 record.updated_at = now
                 updated_records.append(record)
 
-                # Sync to store_responses as well
-                store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id), None)
+                # Sync to store_responses targeting the exact record
+                target_r_ids = [str(raw_id), f"resp_{record.id}", str(record.id)]
+                store_resp = next((r for r in store_responses if str(r.get("id")) in target_r_ids), None)
+                if not store_resp and (form_name or period_name):
+                    target_p = form_name or period_name
+                    store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id and (r.get("periodName") == target_p or r.get("form") == target_p)), None)
+                if not store_resp:
+                    store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id and r.get("status") not in ["Calibrated & Approved", "Published", "approved", "Approved"]), None)
+
                 if store_resp:
                     store_resp["status"] = "manager_review"
                     if raw_responses:
@@ -1059,6 +1686,40 @@ def submit_employee_kpi():
                         store_resp["employeeRemarks"] = record.employee_remark
                     store_resp["employeeSubmittedAt"] = now.isoformat()
                     store_resp["updatedAt"] = now.isoformat()
+            else:
+                # Target JSON evaluation in store_responses directly (Daily & Weekly)
+                target_r_ids = [str(raw_id), f"resp_{rec_id}" if rec_id else "", str(rec_id) if rec_id else ""]
+                target_r_ids = [x for x in target_r_ids if x]
+                store_resp = next((r for r in store_responses if str(r.get("id")) in target_r_ids), None)
+                if not store_resp and (form_name or period_name):
+                    target_p = form_name or period_name
+                    store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id and (r.get("periodName") == target_p or r.get("form") == target_p)), None)
+                if not store_resp and emp_id:
+                    store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id and r.get("status") not in ["Calibrated & Approved", "Published", "approved", "Approved"]), None)
+
+                if store_resp:
+                    cats = item.get("metrics_data") or item.get("categories") or store_resp.get("categories") or store_resp.get("metrics_data") or []
+                    if isinstance(cats, list) and raw_responses:
+                        store_resp["categories"] = merge_kpi_responses_into_categories(cats, raw_responses)
+                        store_resp["metrics_data"] = store_resp["categories"]
+                    score_val = item.get("employee_overall_score") or item.get("earned_score") or item.get("actual_earned_mark")
+                    if score_val is not None:
+                        try:
+                            store_resp["employeeOverallScore"] = float(score_val)
+                        except (ValueError, TypeError):
+                            pass
+                    emp_rem = item.get("employee_remark") or item.get("employeeRemarks")
+                    if emp_rem:
+                        store_resp["employeeRemarks"] = emp_rem
+                    if raw_responses:
+                        if "kpiResponses" not in store_resp or not store_resp["kpiResponses"]:
+                            store_resp["kpiResponses"] = raw_responses
+                        else:
+                            store_resp["kpiResponses"].update(raw_responses)
+                    store_resp["status"] = "manager_review"
+                    store_resp["employeeSubmittedAt"] = now.isoformat()
+                    store_resp["updatedAt"] = now.isoformat()
+                    updated_records.append(store_resp)
 
         db.session.commit()
         store["responses"] = store_responses
@@ -1067,7 +1728,7 @@ def submit_employee_kpi():
         return jsonify({
             "success": True, 
             "message": "Evaluation submitted to reporting manager successfully",
-            "evaluations": [r.to_dict() for r in updated_records]
+            "evaluations": [r.to_dict() if hasattr(r, 'to_dict') else r for r in updated_records]
         }), 200
     except Exception as e:
         db.session.rollback()
@@ -1091,11 +1752,12 @@ def review_manager_kpi():
             raw_id = item.get("id")
             rec_id = None
             if raw_id:
-                clean_id = str(raw_id).replace("resp_", "").strip()
+                clean_id = str(raw_id).replace("resp_", "").replace("eval_", "").strip()
                 if clean_id.isdigit():
                     rec_id = int(clean_id)
             emp_id = str(item.get("employee_id") or "")
-            form_name = item.get("form")
+            form_name = item.get("form") or item.get("periodName") or item.get("performance_metrics")
+            period_name = str(item.get("periodName") or "").strip()
             raw_responses = item.get("responses") or item.get("kpiResponses") or {}
 
             record = None
@@ -1103,9 +1765,14 @@ def review_manager_kpi():
                 record = KpiEvaluation.query.get(rec_id)
             if not record and emp_id:
                 q = KpiEvaluation.query.filter(KpiEvaluation.employee_id == emp_id)
-                if form_name:
-                    q = q.filter(KpiEvaluation.form == form_name)
-                record = q.order_by(KpiEvaluation.updated_at.desc()).first()
+                if form_name or period_name:
+                    sub_conds = []
+                    if form_name:
+                        sub_conds.extend([KpiEvaluation.form == form_name, KpiEvaluation.performance_metrics == form_name])
+                    if period_name:
+                        sub_conds.append(KpiEvaluation.description.ilike(f"%{period_name}%"))
+                    q = q.filter(or_(*sub_conds))
+                record = q.order_by(KpiEvaluation.id.desc()).first()
 
             if record:
                 cats = item.get("metrics_data") or item.get("categories") or record.metrics_data or []
@@ -1137,8 +1804,9 @@ def review_manager_kpi():
 
                 target_r_ids = [str(raw_id), f"resp_{record.id}", str(record.id)]
                 store_resp = next((r for r in store_responses if str(r.get("id")) in target_r_ids), None)
-                if not store_resp and form_name:
-                    store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id and r.get("periodName") == form_name), None)
+                if not store_resp and (form_name or period_name):
+                    target_p = form_name or period_name
+                    store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id and (r.get("periodName") == target_p or r.get("form") == target_p)), None)
                 if not store_resp:
                     store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id), None)
                 if store_resp:
@@ -1159,6 +1827,42 @@ def review_manager_kpi():
                     store_resp["managerReviewedAt"] = now.isoformat()
                     store_resp["serviceManagerApprovedAt"] = now.isoformat()
                     store_resp["updatedAt"] = now.isoformat()
+            else:
+                # Target JSON evaluation in store_responses directly (Daily & Weekly)
+                target_r_ids = [str(raw_id), f"resp_{rec_id}" if rec_id else "", str(rec_id) if rec_id else ""]
+                target_r_ids = [x for x in target_r_ids if x]
+                store_resp = next((r for r in store_responses if str(r.get("id")) in target_r_ids), None)
+                if not store_resp and (form_name or period_name):
+                    target_p = form_name or period_name
+                    store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id and (r.get("periodName") == target_p or r.get("form") == target_p)), None)
+                if not store_resp and emp_id:
+                    store_resp = next((r for r in store_responses if str(r.get("employeeCode") or r.get("employeeId")) == emp_id), None)
+
+                if store_resp:
+                    cats = item.get("metrics_data") or item.get("categories") or store_resp.get("categories") or store_resp.get("metrics_data") or []
+                    if isinstance(cats, list) and raw_responses:
+                        store_resp["categories"] = merge_kpi_responses_into_categories(cats, raw_responses)
+                        store_resp["metrics_data"] = store_resp["categories"]
+                    mgr_score = item.get("manager_score") or item.get("manager_approve_score") or item.get("managerScore")
+                    if mgr_score is not None:
+                        try:
+                            store_resp["managerScore"] = float(mgr_score)
+                            store_resp["serviceManagerScore"] = float(mgr_score)
+                        except (ValueError, TypeError):
+                            pass
+                    mgr_rem = item.get("manager_remark") or item.get("managerRemarks")
+                    if mgr_rem:
+                        store_resp["managerRemarks"] = mgr_rem
+                    if raw_responses:
+                        if "kpiResponses" not in store_resp or not store_resp["kpiResponses"]:
+                            store_resp["kpiResponses"] = raw_responses
+                        else:
+                            store_resp["kpiResponses"].update(raw_responses)
+                    store_resp["status"] = "approved"
+                    store_resp["managerReviewedAt"] = now.isoformat()
+                    store_resp["serviceManagerApprovedAt"] = now.isoformat()
+                    store_resp["updatedAt"] = now.isoformat()
+                    updated_records.append(store_resp)
 
         db.session.commit()
         store["responses"] = store_responses
@@ -1167,7 +1871,7 @@ def review_manager_kpi():
         return jsonify({
             "success": True, 
             "message": "Evaluation approved and published to employee report successfully",
-            "evaluations": [r.to_dict() for r in updated_records]
+            "evaluations": [r.to_dict() if hasattr(r, 'to_dict') else r for r in updated_records]
         }), 200
     except Exception as e:
         db.session.rollback()

@@ -102,6 +102,12 @@ def init_db(app=None):
             conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP"))
             conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
             conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
+            conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS frequency VARCHAR(50) DEFAULT 'quarterly'"))
+            conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS from_date DATE"))
+            conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS to_date DATE"))
+            conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS working_days INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS leave_days INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS holiday_days INTEGER DEFAULT 0"))
             conn.commit()
     except Exception as dberr:
         print(f"Error checking/adding employee status columns: {dberr}")

@@ -937,6 +937,43 @@ if (isHalfDayLeave(leave.total_days)) return false;
       const todayStr = today.toISOString().split("T")[0];
       const todayDay = today.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
 
+      // Helper: check if a date string is an approved leave day for the current employee
+      const isApprovedLeaveDay = (dateStr: string): boolean => {
+        if (!leaveRequests.length) return false;
+        const dateObj = new Date(dateStr);
+        const empIdStr = String(currentEmployee?.id || '');
+        const empCodeStr = String(currentEmployee?.employee_id || '');
+        return leaveRequests.some((leave: any) => {
+          if (leave.status !== 'Approved') return false;
+          if (leave.request_type !== 'Leave') return false;
+          if (isHalfDayLeave(leave.total_days)) return false;
+          const leaveEmpId = String(leave.employee_id || '');
+          if (leaveEmpId !== empIdStr && leaveEmpId !== empCodeStr) return false;
+          if (!leave.from_date || !leave.to_date) return false;
+          const from = new Date(leave.from_date);
+          const to = new Date(leave.to_date);
+          const isCancelled = leave.cancelled_dates?.includes(dateStr);
+          return dateObj >= from && dateObj <= to && !isCancelled;
+        });
+      };
+
+      // Helper: find the last working day before a given date (skips weekends + approved leave days)
+      const getPrevWorkingDay = (dateStr: string): string => {
+        const d = new Date(dateStr);
+        d.setDate(d.getDate() - 1);
+        let safety = 0;
+        while (safety < 7) {
+          const dayOfWeek = d.getDay();
+          const dStr = d.toISOString().split("T")[0];
+          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+          const isLeave = isApprovedLeaveDay(dStr);
+          if (!isWeekend && !isLeave) return dStr;
+          d.setDate(d.getDate() - 1);
+          safety++;
+        }
+        return new Date(new Date(dateStr).getTime() - 86400000).toISOString().split("T")[0];
+      };
+
       for (const resp of userResponses) {
         const cycle = (cycles || []).find((c) => c.id === resp.cycleId);
 
@@ -947,8 +984,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
         const endDay = endDateObj.getDay();
 
         const isDueToday = endDateStr === todayStr;
-        const isWeekly = periodName.toLowerCase().includes("week") || (cycle?.name || "").toLowerCase().includes("week");
         const isWeekendDue = endDay === 6 || endDay === 0;
+        // Check if to_date itself is an approved leave day (e.g. public holiday or employee leave)
+        const isLeaveDue = !isDueToday && isApprovedLeaveDay(endDateStr);
 
         const diffTime = endDateObj.getTime() - new Date(todayStr).getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -956,11 +994,30 @@ if (isHalfDayLeave(leave.total_days)) return false;
         // Check if today is Friday (5) and due date is on Saturday or Sunday of this weekend
         const isPreWeekoff = todayDay === 5 && isWeekendDue && diffDays >= 0 && diffDays <= 2;
 
-        if (isDueToday || isPreWeekoff || (diffDays >= 0 && diffDays <= 1) || isWeekly) {
+        // If to_date is a leave day or weekend, find the actual last working day before it
+        const prevWorkingDay = (isLeaveDue || isWeekendDue) ? getPrevWorkingDay(endDateStr) : null;
+        // Prompt if today IS that last working day before a leave-covered due date
+        const isPreLeaveDay = Boolean(prevWorkingDay && todayStr === prevWorkingDay);
+
+        // Prompt only when:
+        // - due is today
+        // - tomorrow is due date (diffDays = 1)
+        // - today is Friday before a weekend-due eval
+        // - today is the last working day before a leave-day due date
+        if (isDueToday || isPreWeekoff || isPreLeaveDay || (diffDays >= 0 && diffDays <= 1)) {
+          // Format date as DD/MM/YYYY
+          const formatDDMMYYYY = (isoStr: string) => {
+            try {
+              const d = new Date(isoStr + 'T00:00:00');
+              const dd = String(d.getDate()).padStart(2, '0');
+              const mm = String(d.getMonth() + 1).padStart(2, '0');
+              return `${dd}/${mm}/${d.getFullYear()}`;
+            } catch { return isoStr; }
+          };
           return {
             periodName,
-            dueDateText: isDueToday ? "Today" : endDateStr,
-            isPreWeekoff,
+            dueDateText: isDueToday ? "Today" : formatDDMMYYYY(endDateStr),
+            isPreWeekoff: isPreWeekoff || isPreLeaveDay,
           };
         }
       }

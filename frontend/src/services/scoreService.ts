@@ -198,10 +198,10 @@ export const isNegativeKpi = (kpi?: Partial<KPIItem> | null): boolean => {
 
 /**
  * Accurately calculates KPI achievement % and earned score handling operators:
- * - "<2 delays": If actual < 2 (e.g. 0 or 1) -> 100%. If >= 2 -> applies graduated reduction.
- * - "<=2": If actual <= 2 -> 100%. If > 2 -> applies graduated reduction.
- * - "0 misses": If actual is 0 -> 100%. If > 0 -> applies penalty.
- * - "1950": Standard ratio actual / target.
+ * - "<2 delays": If actual is 0 -> 100% (full score). If actual is 1 -> 50% (half score). If actual >= 2 -> 0%.
+ * - "0 misses" / "0 escalations": If actual is 0 -> 100% (full score). If actual >= 1 -> 0%.
+ * - ">= X" / "> X": Standard threshold check.
+ * - Standard numeric target: Higher is better ratio (actual / target * maxScore).
  */
 export const calculateKPIScore = (
   kpi: KPIItem,
@@ -216,36 +216,44 @@ export const calculateKPIScore = (
     return { achievementPercentage: 0, earnedScore: 0 };
   }
 
-  const maxScore = Number(kpi.targetScore) || 0; // e.g. 10 or 3.33
+  const maxScore = Number(kpi.targetScore) || 0; // e.g. 20 or 10
   const parsed = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
   const target = parsed.threshold;
   const isLowerBetter = kpi.scoringDirection === 'lower_is_better' || parsed.isLowerBetter;
 
   // 1. Strictly Less Than: "< X" (e.g. "<2 delays")
   if (parsed.operator === '<') {
-    if (numericActual < target) {
-      // 0 or 1 delays strictly satisfies "< 2 delays" -> 100% full score
+    if (numericActual <= 0) {
+      // 0 delays -> 100% full score
       return { achievementPercentage: 100, earnedScore: maxScore };
+    } else if (numericActual < target) {
+      // 1 delay out of <2 -> (2 - 1) / 2 = 50% (half of the percentage)
+      const ratio = target > 0 ? (target - numericActual) / target : 0;
+      const earned = Number((ratio * maxScore).toFixed(2));
+      const pct = Number((ratio * 100).toFixed(2));
+      return { achievementPercentage: pct, earnedScore: earned };
     } else {
-      // 2 delays or more missed the "< 2" target -> graduated penalty
-      const excess = (numericActual - target) + 1; // e.g. 2 delays -> excess 1
-      const penalty = excess * (maxScore * 0.5);
-      const earned = Math.max(0, Math.min(maxScore, maxScore - penalty));
-      const pct = Math.min(100, (earned / maxScore) * 100);
-      return { achievementPercentage: Number(pct.toFixed(2)), earnedScore: Number(earned.toFixed(2)) };
+      // 2 or more delays -> 0%
+      return { achievementPercentage: 0, earnedScore: 0 };
     }
   }
 
-  // 2. Less Than or Equal To: "<= X" (e.g. "<=2 delays" or "0 misses")
+  // 2. Zero Tolerance or Less Than or Equal To: (e.g. "0 misses", "0 escalations", "<= X")
   if (parsed.operator === '<=' || isLowerBetter) {
-    if (numericActual <= target) {
-      return { achievementPercentage: 100, earnedScore: maxScore };
+    if (target === 0) {
+      // 0 misses / 0 escalations: 0 gives 100%, 1 or more gives 0%
+      if (numericActual <= 0) {
+        return { achievementPercentage: 100, earnedScore: maxScore };
+      } else {
+        return { achievementPercentage: 0, earnedScore: 0 };
+      }
     } else {
-      const excess = numericActual - target;
-      const penalty = excess * (maxScore * 0.5);
-      const earned = Math.max(0, Math.min(maxScore, maxScore - penalty));
-      const pct = Math.min(100, (earned / maxScore) * 100);
-      return { achievementPercentage: Number(pct.toFixed(2)), earnedScore: Number(earned.toFixed(2)) };
+      // Threshold > 0
+      if (numericActual <= target) {
+        return { achievementPercentage: 100, earnedScore: maxScore };
+      } else {
+        return { achievementPercentage: 0, earnedScore: 0 };
+      }
     }
   }
 

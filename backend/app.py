@@ -204,6 +204,22 @@ def create_app():
             minute=1
         )
 
+        # Auto-rollup KPI evaluations nightly at 00:05 AM (Daily -> Weekly -> Monthly -> Quarterly -> Yearly)
+        def run_nightly_kpi_evaluation_rollup():
+            try:
+                from services.kpi_evaluation_rollup_service import auto_rollup_kpi_evaluations_job
+                count = auto_rollup_kpi_evaluations_job()
+                print(f"[Scheduler] Nightly KPI Evaluation Rollup: {count} period(s) rolled up.")
+            except Exception as e:
+                print(f"[Scheduler] Nightly KPI Evaluation Rollup error: {e}")
+
+        scheduler.add_job(
+            run_nightly_kpi_evaluation_rollup,
+            "cron",
+            hour=0,
+            minute=5
+        )
+
         scheduler.start()
         print(f"[Scheduler] Started in worker PID {os.getpid()}")
     else:
