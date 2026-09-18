@@ -255,7 +255,9 @@ const WorkAnniversaryModal: React.FC<WorkAnniversaryModalProps> = ({
           </div>
         ) : (
           <div className="max-h-[420px] overflow-y-auto p-5 space-y-4">
-            {anniversaryEmployees.map((emp: any) => (
+            {anniversaryEmployees
+              .filter((emp: any) => Number(emp.years_completed) >= 1)
+              .map((emp: any) => (
               <div
                 key={emp.id}
                 className="flex items-center gap-4 p-4 rounded-xl bg-indigo-50/30 border border-indigo-100 hover:bg-indigo-50/60 transition-colors"

@@ -384,7 +384,7 @@ const EmployeeDashboardPage: React.FC = () => {
 
 
   const isMyAnniversary = anniversaryEmployees.some(
-    (emp: any) => Number(emp.user_id) === Number(user?.id)
+    (emp: any) => Number(emp.user_id) === Number(user?.id) && Number(emp.years_completed) >= 1
   );
   const isMyBirthday = birthdayEmployees.some(
     (emp: any) => Number(emp.user_id) === Number(user?.id),
@@ -569,7 +569,10 @@ if (isHalfDayLeave(leave.total_days)) return false;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to load work anniversaries");
       const data = await res.json();
-      setAnniversaryEmployees(Array.isArray(data.employees) ? data.employees : []);
+      const validEmps = Array.isArray(data.employees)
+        ? data.employees.filter((e: any) => Number(e.years_completed) >= 1)
+        : [];
+      setAnniversaryEmployees(validEmps);
     } catch (err) {
       setAnniversaryEmployees([]);
     }
