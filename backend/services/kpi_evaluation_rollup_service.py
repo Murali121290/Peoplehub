@@ -83,7 +83,15 @@ def _get_field(obj, *field_names, default=None):
                 val = getattr(obj, f)
                 if val is not None:
                     return val
-    return default
+def _parse_int_rids(record_ids):
+    if not record_ids:
+        return []
+    res = []
+    for rid in record_ids:
+        clean = str(rid).replace("resp_", "").replace("resp-", "").strip()
+        if clean.isdigit():
+            res.append(int(clean))
+    return res
 
 
 def is_date_week_off(d: date) -> bool:
@@ -346,7 +354,11 @@ def convert_daily_to_weekly_records(employee_id: str = None, week_start: date = 
             or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None))
         )
         if record_ids and len(record_ids) > 0:
-            query = query.filter(KpiEvaluation.id.in_([int(rid) for rid in record_ids if str(rid).replace("resp_", "").isdigit()]))
+            int_rids = _parse_int_rids(record_ids)
+            if int_rids:
+                query = query.filter(KpiEvaluation.id.in_(int_rids))
+            else:
+                query = query.filter(False)
         elif employee_id:
             query = query.filter(KpiEvaluation.employee_id == str(employee_id))
             if week_start and week_end:
@@ -605,7 +617,11 @@ def convert_weekly_to_monthly_records(employee_id: str = None, record_ids: list 
             or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None))
         )
         if record_ids and len(record_ids) > 0:
-            query = query.filter(KpiEvaluation.id.in_([int(rid) for rid in record_ids if str(rid).replace("resp_", "").isdigit()]))
+            int_rids = _parse_int_rids(record_ids)
+            if int_rids:
+                query = query.filter(KpiEvaluation.id.in_(int_rids))
+            else:
+                query = query.filter(False)
         elif employee_id:
             query = query.filter(
                 KpiEvaluation.employee_id == str(employee_id),
@@ -756,30 +772,87 @@ def convert_weekly_to_monthly_records(employee_id: str = None, record_ids: list 
 
 
 
-def convert_monthly_to_quarterly_records(employee_id: str, record_ids: list = None, quarter: int = None, year: int = None) -> KpiEvaluation:
+def convert_monthly_to_quarterly_records(employee_id: str = None, record_ids: list = None, quarter: int = None, year: int = None) -> KpiEvaluation:
     """
     On-demand conversion from Monthly records to 1 Quarterly record.
-    Calculates average score across months (sum / count), merges metrics,
-    creates 1 consolidated Quarterly record, and soft-archives monthly records.
+    Supports both JSON store and PostgreSQL database records.
     """
-    query = KpiEvaluation.query.filter(
-        or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None))
-    )
-    if record_ids and len(record_ids) > 0:
-        query = query.filter(KpiEvaluation.id.in_([int(rid) for rid in record_ids if str(rid).isdigit()]))
-    elif employee_id:
-        query = query.filter(
-            KpiEvaluation.employee_id == str(employee_id),
-            or_(KpiEvaluation.frequency == "monthly", KpiEvaluation.form.ilike("%monthly%"))
-        )
+    store = read_eval_store()
+    json_responses = store.get("responses", [])
 
-    monthly_records = query.order_by(KpiEvaluation.from_date.asc(), KpiEvaluation.id.asc()).all()
-    if not monthly_records:
+    matched_json_monthly = []
+    rid_set = set()
+    if record_ids and len(record_ids) > 0:
+        for rid in record_ids:
+            s = str(rid).strip()
+            rid_set.add(s)
+            rid_set.add(s.replace("resp_", ""))
+            rid_set.add(f"resp_{s.replace('resp_', '')}")
+
+    for r in json_responses:
+        freq = str(r.get("frequency") or "").strip().lower()
+        form_name = str(r.get("form") or "").lower()
+        if freq != "monthly" and "monthly" not in form_name and "month" not in form_name:
+            continue
+        if r.get("is_archived") or str(r.get("status") or "").lower() == "archived":
+            continue
+
+        r_id = str(r.get("id") or "")
+        r_db_id = str(r.get("db_id") or "")
+        r_emp = str(r.get("employeeCode") or r.get("employeeId") or "").strip()
+
+        if rid_set:
+            if r_id not in rid_set and r_db_id not in rid_set:
+                continue
+        elif employee_id:
+            if r_emp != str(employee_id).strip() and str(r.get("employeeId") or "").strip() != str(employee_id).strip():
+                continue
+        matched_json_monthly.append(r)
+
+    db_monthly = []
+    if not matched_json_monthly:
+        query = KpiEvaluation.query.filter(
+            or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None))
+        )
+        if record_ids and len(record_ids) > 0:
+            int_rids = _parse_int_rids(record_ids)
+            if int_rids:
+                query = query.filter(KpiEvaluation.id.in_(int_rids))
+            else:
+                query = query.filter(False)
+        elif employee_id:
+            query = query.filter(
+                KpiEvaluation.employee_id == str(employee_id),
+                or_(KpiEvaluation.frequency == "monthly", KpiEvaluation.form.ilike("%monthly%"))
+            )
+        db_monthly = query.order_by(KpiEvaluation.from_date.asc(), KpiEvaluation.id.asc()).all()
+
+    eval_sources = matched_json_monthly or db_monthly
+    if not eval_sources:
         return None
 
-    sample = monthly_records[0]
-    emp_id = sample.employee_id
-    ref_date = sample.from_date or sample.to_date or date.today()
+    sample = eval_sources[0]
+    emp_id = _get_field(sample, "employeeId", "employeeCode", "employee_id", default="")
+    emp_name = _get_field(sample, "employeeName", "employee_name", default=f"Employee {emp_id}")
+    team_id = _get_field(sample, "teamId", "team_id", default="General")
+    team_name = _get_field(sample, "teamName", "team_name", default="Team")
+    reporting_manager = _get_field(sample, "reportingManager", "reporting_manager", default="")
+    reporting_manager_id = _get_field(sample, "reporting_manager_id", "manager_id", "managerId", default="")
+    service_manager = _get_field(sample, "serviceManager", "service_manager", default="")
+    service_manager_id = _get_field(sample, "service_manager_id", "serviceManagerId", default="")
+
+    dates = []
+    for r in eval_sources:
+        d_val = _get_field(r, "startDate", "from_date", "endDate", "to_date")
+        if isinstance(d_val, (date, datetime)):
+            dates.append(d_val if isinstance(d_val, date) else d_val.date())
+        elif isinstance(d_val, str) and d_val[:10]:
+            try:
+                dates.append(datetime.strptime(d_val[:10], "%Y-%m-%d").date())
+            except Exception:
+                pass
+
+    ref_date = dates[0] if dates else date.today()
     q = quarter or ((ref_date.month - 1) // 3 + 1)
     y = year or ref_date.year
 
@@ -792,29 +865,51 @@ def convert_monthly_to_quarterly_records(employee_id: str, record_ids: list = No
 
     stats = calculate_evaluation_working_days(emp_id, q_start, q_end)
     working_days_count = max(stats.get("working_days", 1), 1)
-    aggregated_cats = aggregate_categories_metrics(monthly_records, working_days_count)
+    aggregated_cats = aggregate_categories_metrics(eval_sources, working_days_count)
 
-    emp_scores = [float(r.employee_overall_score) for r in monthly_records if r.employee_overall_score is not None and float(r.employee_overall_score) > 0]
+    emp_scores = []
+    for r in eval_sources:
+        val = _get_field(r, "employeeOverallScore", "employee_overall_score", "earned_score")
+        try:
+            if val is not None and float(val) > 0:
+                emp_scores.append(float(val))
+        except (ValueError, TypeError):
+            pass
     avg_emp_score = round(sum(emp_scores) / len(emp_scores), 2) if emp_scores else 0.0
 
-    mgr_scores = [float(r.manager_score) for r in monthly_records if r.manager_score is not None and float(r.manager_score) > 0]
+    mgr_scores = []
+    for r in eval_sources:
+        val = _get_field(r, "managerScore", "manager_score")
+        try:
+            if val is not None and float(val) > 0:
+                mgr_scores.append(float(val))
+        except (ValueError, TypeError):
+            pass
     avg_mgr_score = round(sum(mgr_scores) / len(mgr_scores), 2) if mgr_scores else None
 
-    all_remarks = [r.employee_remark.strip() for r in monthly_records if r.employee_remark and r.employee_remark.strip()]
-    joined_emp_remarks = " | ".join(dict.fromkeys(all_remarks)) if all_remarks else f"Quarterly aggregation from {len(monthly_records)} monthly evaluations"
+    all_remarks = []
+    for r in eval_sources:
+        rem = _get_field(r, "employeeRemarks", "employee_remark", default="")
+        if rem and str(rem).strip():
+            all_remarks.append(str(rem).strip())
+    joined_emp_remarks = " | ".join(dict.fromkeys(all_remarks)) if all_remarks else f"Quarterly aggregation from {len(eval_sources)} monthly evaluations"
 
-    mgr_remarks = [r.manager_remark.strip() for r in monthly_records if r.manager_remark and r.manager_remark.strip()]
+    mgr_remarks = []
+    for r in eval_sources:
+        rem = _get_field(r, "managerRemarks", "manager_remark", default="")
+        if rem and str(rem).strip():
+            mgr_remarks.append(str(rem).strip())
     joined_mgr_remarks = " | ".join(dict.fromkeys(mgr_remarks)) if mgr_remarks else None
 
     period_str = f"Q{q} {y} - Stage {q}"
-    form_title = f"Q{q} Performance Metrics - {sample.team_name or 'Team'}"
-    desc_text = f"Performance evaluation for {sample.team_name or 'Team'} ({period_str})"
+    form_title = f"Q{q} Performance Metrics - {team_name}"
+    desc_text = f"Performance evaluation for {team_name} ({period_str})"
 
     now = datetime.utcnow()
     quarterly_record = KpiEvaluation(
         form=form_title,
-        team_id=sample.team_id,
-        team_name=sample.team_name,
+        team_id=str(team_id),
+        team_name=team_name,
         metrics_data=aggregated_cats,
         performance_metrics=form_title,
         description=desc_text,
@@ -825,13 +920,13 @@ def convert_monthly_to_quarterly_records(employee_id: str, record_ids: list = No
         manager_score=avg_mgr_score,
         manager_approve_score=str(avg_mgr_score) if avg_mgr_score is not None else "",
         manager_remark=joined_mgr_remarks,
-        employee_id=sample.employee_id,
-        employee_name=sample.employee_name,
-        reporting_manager=sample.reporting_manager,
-        reporting_manager_id=sample.reporting_manager_id,
-        manager_id=sample.manager_id,
-        service_manager=sample.service_manager,
-        service_manager_id=sample.service_manager_id,
+        employee_id=str(emp_id),
+        employee_name=emp_name,
+        reporting_manager=reporting_manager,
+        reporting_manager_id=str(reporting_manager_id),
+        manager_id=str(reporting_manager_id),
+        service_manager=service_manager,
+        service_manager_id=str(service_manager_id),
         frequency="quarterly",
         from_date=q_start,
         to_date=q_end,
@@ -847,48 +942,116 @@ def convert_monthly_to_quarterly_records(employee_id: str, record_ids: list = No
     db.session.add(quarterly_record)
     db.session.flush()
 
-    # Option B: Soft archive monthly records
-    for m in monthly_records:
-        m.is_archived = True
-        m.status = "Archived"
-        m.converted_to_id = quarterly_record.id
+    # Soft archive monthly records in JSON store
+    matched_ids = {r.get("id") for r in matched_json_monthly}
+    for r in store.get("responses", []):
+        if r.get("id") in matched_ids:
+            r["is_archived"] = True
+            r["status"] = "Archived"
+            r["converted_to_id"] = quarterly_record.id
+    write_eval_store(store)
+
+    if db_monthly:
+        for m in db_monthly:
+            m.is_archived = True
+            m.status = "Archived"
+            m.converted_to_id = quarterly_record.id
 
     db.session.commit()
-    logger.info(f"[KPI Manual Convert] Converted {len(monthly_records)} monthly evaluation(s) for emp={emp_id} into quarterly entry (id={quarterly_record.id}).")
+    logger.info(f"[KPI Manual Convert] Converted {len(eval_sources)} monthly evaluation(s) into quarterly entry (id={quarterly_record.id}).")
     return quarterly_record
 
 
-def convert_quarterly_to_yearly_records(employee_id: str, record_ids: list = None, year: int = None) -> KpiEvaluation:
+def convert_quarterly_to_yearly_records(employee_id: str = None, record_ids: list = None, year: int = None) -> KpiEvaluation:
     """
     On-demand conversion from Quarterly records to 1 Annual/Yearly record.
-    Calculates average score across quarters (sum / count), merges metrics,
-    creates 1 consolidated Yearly record, and soft-archives quarterly records.
+    Supports both JSON store and PostgreSQL database records.
     """
-    query = KpiEvaluation.query.filter(
-        or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None))
-    )
-    if record_ids and len(record_ids) > 0:
-        query = query.filter(KpiEvaluation.id.in_([int(rid) for rid in record_ids if str(rid).isdigit()]))
-    elif employee_id:
-        query = query.filter(
-            KpiEvaluation.employee_id == str(employee_id),
-            or_(
-                KpiEvaluation.frequency == "quarterly",
-                KpiEvaluation.form.ilike("%Q1%"),
-                KpiEvaluation.form.ilike("%Q2%"),
-                KpiEvaluation.form.ilike("%Q3%"),
-                KpiEvaluation.form.ilike("%Q4%"),
-                KpiEvaluation.form.ilike("%quarter%")
-            )
-        )
+    store = read_eval_store()
+    json_responses = store.get("responses", [])
 
-    quarterly_records = query.order_by(KpiEvaluation.from_date.asc(), KpiEvaluation.id.asc()).all()
-    if not quarterly_records:
+    matched_json_quarterly = []
+    rid_set = set()
+    if record_ids and len(record_ids) > 0:
+        for rid in record_ids:
+            s = str(rid).strip()
+            rid_set.add(s)
+            rid_set.add(s.replace("resp_", ""))
+            rid_set.add(f"resp_{s.replace('resp_', '')}")
+
+    for r in json_responses:
+        freq = str(r.get("frequency") or "").strip().lower()
+        form_name = str(r.get("form") or "").lower()
+        period_name = str(r.get("periodName") or "").lower()
+        is_quarter = freq == "quarterly" or "quarter" in form_name or "quarter" in period_name or any(q in form_name for q in ["q1", "q2", "q3", "q4"])
+        if not is_quarter:
+            continue
+        if r.get("is_archived") or str(r.get("status") or "").lower() == "archived":
+            continue
+
+        r_id = str(r.get("id") or "")
+        r_db_id = str(r.get("db_id") or "")
+        r_emp = str(r.get("employeeCode") or r.get("employeeId") or "").strip()
+
+        if rid_set:
+            if r_id not in rid_set and r_db_id not in rid_set:
+                continue
+        elif employee_id:
+            if r_emp != str(employee_id).strip() and str(r.get("employeeId") or "").strip() != str(employee_id).strip():
+                continue
+        matched_json_quarterly.append(r)
+
+    db_quarterly = []
+    if not matched_json_quarterly:
+        query = KpiEvaluation.query.filter(
+            or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None))
+        )
+        if record_ids and len(record_ids) > 0:
+            int_rids = _parse_int_rids(record_ids)
+            if int_rids:
+                query = query.filter(KpiEvaluation.id.in_(int_rids))
+            else:
+                query = query.filter(False)
+        elif employee_id:
+            query = query.filter(
+                KpiEvaluation.employee_id == str(employee_id),
+                or_(
+                    KpiEvaluation.frequency == "quarterly",
+                    KpiEvaluation.form.ilike("%Q1%"),
+                    KpiEvaluation.form.ilike("%Q2%"),
+                    KpiEvaluation.form.ilike("%Q3%"),
+                    KpiEvaluation.form.ilike("%Q4%"),
+                    KpiEvaluation.form.ilike("%quarter%")
+                )
+            )
+        db_quarterly = query.order_by(KpiEvaluation.from_date.asc(), KpiEvaluation.id.asc()).all()
+
+    eval_sources = matched_json_quarterly or db_quarterly
+    if not eval_sources:
         return None
 
-    sample = quarterly_records[0]
-    emp_id = sample.employee_id
-    ref_date = sample.from_date or sample.to_date or date.today()
+    sample = eval_sources[0]
+    emp_id = _get_field(sample, "employeeId", "employeeCode", "employee_id", default="")
+    emp_name = _get_field(sample, "employeeName", "employee_name", default=f"Employee {emp_id}")
+    team_id = _get_field(sample, "teamId", "team_id", default="General")
+    team_name = _get_field(sample, "teamName", "team_name", default="Team")
+    reporting_manager = _get_field(sample, "reportingManager", "reporting_manager", default="")
+    reporting_manager_id = _get_field(sample, "reporting_manager_id", "manager_id", "managerId", default="")
+    service_manager = _get_field(sample, "serviceManager", "service_manager", default="")
+    service_manager_id = _get_field(sample, "service_manager_id", "serviceManagerId", default="")
+
+    dates = []
+    for r in eval_sources:
+        d_val = _get_field(r, "startDate", "from_date", "endDate", "to_date")
+        if isinstance(d_val, (date, datetime)):
+            dates.append(d_val if isinstance(d_val, date) else d_val.date())
+        elif isinstance(d_val, str) and d_val[:10]:
+            try:
+                dates.append(datetime.strptime(d_val[:10], "%Y-%m-%d").date())
+            except Exception:
+                pass
+
+    ref_date = dates[0] if dates else date.today()
     y = year or ref_date.year
 
     y_start = date(y, 1, 1)
@@ -896,29 +1059,51 @@ def convert_quarterly_to_yearly_records(employee_id: str, record_ids: list = Non
 
     stats = calculate_evaluation_working_days(emp_id, y_start, y_end)
     working_days_count = max(stats.get("working_days", 1), 1)
-    aggregated_cats = aggregate_categories_metrics(quarterly_records, working_days_count)
+    aggregated_cats = aggregate_categories_metrics(eval_sources, working_days_count)
 
-    emp_scores = [float(r.employee_overall_score) for r in quarterly_records if r.employee_overall_score is not None and float(r.employee_overall_score) > 0]
+    emp_scores = []
+    for r in eval_sources:
+        val = _get_field(r, "employeeOverallScore", "employee_overall_score", "earned_score")
+        try:
+            if val is not None and float(val) > 0:
+                emp_scores.append(float(val))
+        except (ValueError, TypeError):
+            pass
     avg_emp_score = round(sum(emp_scores) / len(emp_scores), 2) if emp_scores else 0.0
 
-    mgr_scores = [float(r.manager_score) for r in quarterly_records if r.manager_score is not None and float(r.manager_score) > 0]
+    mgr_scores = []
+    for r in eval_sources:
+        val = _get_field(r, "managerScore", "manager_score")
+        try:
+            if val is not None and float(val) > 0:
+                mgr_scores.append(float(val))
+        except (ValueError, TypeError):
+            pass
     avg_mgr_score = round(sum(mgr_scores) / len(mgr_scores), 2) if mgr_scores else None
 
-    all_remarks = [r.employee_remark.strip() for r in quarterly_records if r.employee_remark and r.employee_remark.strip()]
-    joined_emp_remarks = " | ".join(dict.fromkeys(all_remarks)) if all_remarks else f"Annual executive aggregation from {len(quarterly_records)} quarterly evaluations"
+    all_remarks = []
+    for r in eval_sources:
+        rem = _get_field(r, "employeeRemarks", "employee_remark", default="")
+        if rem and str(rem).strip():
+            all_remarks.append(str(rem).strip())
+    joined_emp_remarks = " | ".join(dict.fromkeys(all_remarks)) if all_remarks else f"Annual executive aggregation from {len(eval_sources)} quarterly evaluations"
 
-    mgr_remarks = [r.manager_remark.strip() for r in quarterly_records if r.manager_remark and r.manager_remark.strip()]
+    mgr_remarks = []
+    for r in eval_sources:
+        rem = _get_field(r, "managerRemarks", "manager_remark", default="")
+        if rem and str(rem).strip():
+            mgr_remarks.append(str(rem).strip())
     joined_mgr_remarks = " | ".join(dict.fromkeys(mgr_remarks)) if mgr_remarks else None
 
     period_str = f"Year {y} Annual Executive Evaluation"
-    form_title = f"{y} Annual Performance Metrics - {sample.team_name or 'Team'}"
-    desc_text = f"Annual executive evaluation for {sample.team_name or 'Team'} ({period_str})"
+    form_title = f"{y} Annual Performance Metrics - {team_name}"
+    desc_text = f"Annual executive evaluation for {team_name} ({period_str})"
 
     now = datetime.utcnow()
     yearly_record = KpiEvaluation(
         form=form_title,
-        team_id=sample.team_id,
-        team_name=sample.team_name,
+        team_id=str(team_id),
+        team_name=team_name,
         metrics_data=aggregated_cats,
         performance_metrics=form_title,
         description=desc_text,
@@ -929,13 +1114,13 @@ def convert_quarterly_to_yearly_records(employee_id: str, record_ids: list = Non
         manager_score=avg_mgr_score,
         manager_approve_score=str(avg_mgr_score) if avg_mgr_score is not None else "",
         manager_remark=joined_mgr_remarks,
-        employee_id=sample.employee_id,
-        employee_name=sample.employee_name,
-        reporting_manager=sample.reporting_manager,
-        reporting_manager_id=sample.reporting_manager_id,
-        manager_id=sample.manager_id,
-        service_manager=sample.service_manager,
-        service_manager_id=sample.service_manager_id,
+        employee_id=str(emp_id),
+        employee_name=emp_name,
+        reporting_manager=reporting_manager,
+        reporting_manager_id=str(reporting_manager_id),
+        manager_id=str(reporting_manager_id),
+        service_manager=service_manager,
+        service_manager_id=str(service_manager_id),
         frequency="yearly",
         from_date=y_start,
         to_date=y_end,
@@ -951,14 +1136,23 @@ def convert_quarterly_to_yearly_records(employee_id: str, record_ids: list = Non
     db.session.add(yearly_record)
     db.session.flush()
 
-    # Option B: Soft archive quarterly records
-    for q in quarterly_records:
-        q.is_archived = True
-        q.status = "Archived"
-        q.converted_to_id = yearly_record.id
+    # Soft archive quarterly records in JSON store
+    matched_ids = {r.get("id") for r in matched_json_quarterly}
+    for r in store.get("responses", []):
+        if r.get("id") in matched_ids:
+            r["is_archived"] = True
+            r["status"] = "Archived"
+            r["converted_to_id"] = yearly_record.id
+    write_eval_store(store)
+
+    if db_quarterly:
+        for q in db_quarterly:
+            q.is_archived = True
+            q.status = "Archived"
+            q.converted_to_id = yearly_record.id
 
     db.session.commit()
-    logger.info(f"[KPI Manual Convert] Converted {len(quarterly_records)} quarterly evaluation(s) for emp={emp_id} into yearly entry (id={yearly_record.id}).")
+    logger.info(f"[KPI Manual Convert] Converted {len(eval_sources)} quarterly evaluation(s) into yearly entry (id={yearly_record.id}).")
     return yearly_record
 
 

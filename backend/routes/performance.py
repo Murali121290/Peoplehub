@@ -536,6 +536,35 @@ def get_evaluation_data():
             if r_id not in existing_resp_ids and (not r_db_id or r_db_id not in existing_db_ids):
                 merged_responses.append(r)
 
+        # Clean and sanitize merged_cycles: ensure employeeIds only include active employees with valid responses or unassigned templates
+        valid_merged_cycles = []
+        for c in merged_cycles:
+            c_id = str(c.get("id"))
+            c_emps = [str(x) for x in c.get("employeeIds", [])]
+            # Match responses belonging to this cycle
+            c_resps = [
+                r for r in merged_responses
+                if str(r.get("cycleId")) == c_id or (
+                    r.get("frequency") == c.get("frequency") and
+                    (r.get("form") == c.get("name") or r.get("performance_metrics") == c.get("name")) and
+                    r.get("startDate") == c.get("startDate")
+                )
+            ]
+            active_resp_emp_codes = {str(r.get("employeeCode") or r.get("employeeId") or "") for r in c_resps}
+            
+            # If responses exist for this cycle, employeeIds should match employees with active responses
+            if c_resps:
+                synced_emp_ids = [eid for eid in c_emps if eid in active_resp_emp_codes]
+                synced_emp_ids = list(dict.fromkeys(synced_emp_ids + [eid for eid in active_resp_emp_codes if eid]))
+            else:
+                synced_emp_ids = c_emps
+
+            c["employeeIds"] = synced_emp_ids
+            # Keep cycle only if it has remaining employees or responses
+            if len(synced_emp_ids) > 0 or len(c_resps) > 0:
+                valid_merged_cycles.append(c)
+
+        merged_cycles = valid_merged_cycles
         rating_scale = store.get("ratingScale", DEFAULT_RATING_SCALE)
         return jsonify({"success": True, "cycles": merged_cycles, "responses": merged_responses, "ratingScale": rating_scale}), 200
     except Exception as e:
@@ -659,7 +688,40 @@ def delete_evaluation_response(resp_id_or_emp_id):
 
         # Remove ONLY this specific single response from JSON store
         target_id = str(target_resp.get("id")) if target_resp else str(resp_id_or_emp_id)
-        store["responses"] = [r for r in responses if str(r.get("id")) != target_id]
+        target_emp_code = str(target_resp.get("employeeCode") or target_resp.get("employeeId") or emp_code or "")
+        target_cycle_id = str(target_resp.get("cycleId") or cycle_id or "")
+        target_form = target_resp.get("form") or ""
+        target_start = target_resp.get("startDate") or ""
+
+        remaining_resps = [r for r in responses if str(r.get("id")) != target_id]
+        store["responses"] = remaining_resps
+
+        # Also clean up employee from cycle's employeeIds or remove empty cycle
+        updated_cycles = []
+        for c in store.get("cycles", []):
+            c_id = str(c.get("id"))
+            c_emp_ids = [str(x) for x in c.get("employeeIds", [])]
+            is_matching_cycle = (target_cycle_id and c_id == target_cycle_id) or (target_form and c.get("name") == target_form and c.get("startDate") == target_start)
+
+            if is_matching_cycle and target_emp_code:
+                # Check if this employee has any other response in this cycle
+                has_other_resp_for_emp = any(
+                    (str(r.get("cycleId")) == c_id or (r.get("form") == c.get("name") and r.get("startDate") == c.get("startDate"))) and
+                    str(r.get("employeeCode") or r.get("employeeId")) == target_emp_code
+                    for r in remaining_resps
+                )
+                if not has_other_resp_for_emp:
+                    c_emp_ids = [eid for eid in c_emp_ids if eid != target_emp_code]
+                    c["employeeIds"] = c_emp_ids
+
+            cycle_has_responses = any(
+                str(r.get("cycleId")) == c_id or (r.get("form") == c.get("name") and r.get("startDate") == c.get("startDate"))
+                for r in remaining_resps
+            )
+            if len(c_emp_ids) > 0 or cycle_has_responses:
+                updated_cycles.append(c)
+
+        store["cycles"] = updated_cycles
         write_eval_store(store)
 
         # Remove ONLY this specific single record from PostgreSQL kpi_evaluations
@@ -673,16 +735,16 @@ def delete_evaluation_response(resp_id_or_emp_id):
         elif rec_from_resp:
             db_rec = KpiEvaluation.query.get(rec_from_resp)
         elif target_resp:
-            target_form = target_resp.get("form") or ""
-            target_start = target_resp.get("periodStartDate") or target_resp.get("startDate") or ""
-            target_emp = str(target_resp.get("employeeCode") or target_resp.get("employeeId") or "")
+            target_form_db = target_resp.get("form") or ""
+            target_start_db = target_resp.get("periodStartDate") or target_resp.get("startDate") or ""
+            target_emp_db = str(target_resp.get("employeeCode") or target_resp.get("employeeId") or "")
             query = KpiEvaluation.query
-            if target_emp:
-                query = query.filter(or_(KpiEvaluation.employee_id == target_emp, KpiEvaluation.employee_name == target_resp.get("employeeName")))
-            if target_form:
-                query = query.filter(KpiEvaluation.form == target_form)
-            if target_start:
-                query = query.filter(KpiEvaluation.period_start_date == target_start)
+            if target_emp_db:
+                query = query.filter(or_(KpiEvaluation.employee_id == target_emp_db, KpiEvaluation.employee_name == target_resp.get("employeeName")))
+            if target_form_db:
+                query = query.filter(KpiEvaluation.form == target_form_db)
+            if target_start_db:
+                query = query.filter(KpiEvaluation.period_start_date == target_start_db)
             db_rec = query.first()
 
         if db_rec:

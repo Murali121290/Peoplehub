@@ -13,11 +13,11 @@ export const useNavigation = (user: any) => {
 
     const commonItems = [
       { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
-      { name: "Organization", icon: BookOpenIcon, path: "/organization" },
+      { name: "Evaluation & Report", icon: ChartBarIcon, path: "/evaluation" },
       { name: "Announcements", icon: BellIcon, path: "/announcements" },
+      { name: "Organization", icon: BookOpenIcon, path: "/organization" },
       { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
       { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
-      { name: "Evaluation & Report", icon: ChartBarIcon, path: "/evaluation" },
       { name: "Help & FAQ", icon: QuestionMarkCircleIcon, path: "/faq" },
     ];
 
@@ -36,11 +36,11 @@ export const useNavigation = (user: any) => {
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         { name: "HR Management", icon: UserGroupIcon, path: "/hrms" },
         teamManagementNode,
+        { name: "Evaluation & Report", icon: ChartBarIcon, path: "/evaluation" },
+        { name: "Announcements", icon: BellIcon, path: "/announcements" },
         { name: "Organization", icon: BookOpenIcon, path: "/organization" },
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
-        { name: "Announcements", icon: BellIcon, path: "/announcements" },
-        { name: "Evaluation & Report", icon: ChartBarIcon, path: "/evaluation" },
         { name: "Help & FAQ", icon: QuestionMarkCircleIcon, path: "/faq" },
       ];
     }
@@ -49,11 +49,11 @@ export const useNavigation = (user: any) => {
       return [
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         teamManagementNode,
-        { name: "Organization", icon: BookOpenIcon, path: "/organization" },
+        { name: "Evaluation & Report", icon: ChartBarIcon, path: "/evaluation" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
+        { name: "Organization", icon: BookOpenIcon, path: "/organization" },
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
-        { name: "Evaluation & Report", icon: ChartBarIcon, path: "/evaluation" },
         { name: "Help & FAQ", icon: QuestionMarkCircleIcon, path: "/faq" },
       ];
     }
@@ -61,13 +61,14 @@ export const useNavigation = (user: any) => {
     if (isHr) {
       return [
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
+        
         { name: "HR Management", icon: UserGroupIcon, path: "/hrms" },
         teamManagementNode,
+        { name: "Evaluation & Report", icon: ChartBarIcon, path: "/evaluation" },
+        { name: "Announcements", icon: BellIcon, path: "/announcements" },
         { name: "Organization", icon: BookOpenIcon, path: "/organization" },
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
         { name: "Meeting Rooms", icon: BuildingOffice2Icon, path: "/meeting-rooms" },
-        { name: "Announcements", icon: BellIcon, path: "/announcements" },
-        { name: "Evaluation & Report", icon: ChartBarIcon, path: "/evaluation" },
         { name: "Help & FAQ", icon: QuestionMarkCircleIcon, path: "/faq" },
       ];
     }
