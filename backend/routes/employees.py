@@ -1223,6 +1223,7 @@ def today_anniversaries():
                 "profile_image": get_profile_image_url(e)
             }
             for e in employees
+            if (today.year - e.joining_date.year) >= 1
         ])
     except Exception as err:
         print("ERROR IN TODAY ANNIVERSARIES:", str(err))

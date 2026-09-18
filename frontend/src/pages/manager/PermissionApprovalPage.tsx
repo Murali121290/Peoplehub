@@ -187,10 +187,10 @@ const PermissionApprovalPage: React.FC = () => {
       if (targetCycle) {
         const dStr = l.permission_date || l.date || l.from_date;
         if (dStr) {
-           const reqDate = new Date(dStr);
-           if (reqDate < targetCycle.start || reqDate > targetCycle.end) {
-              return false;
-           }
+          const reqDate = new Date(dStr);
+          if (reqDate < targetCycle.start || reqDate > targetCycle.end) {
+            return false;
+          }
         }
       }
     }
@@ -371,8 +371,8 @@ const PermissionApprovalPage: React.FC = () => {
                 <th className="p-4">Request Type</th>
                 <th className="p-4">Date / Details</th>
                 <th className="p-4">Reason</th>
-                <th className="p-4">Applied At</th>
-                <th className="p-4">Actioned At</th>
+                <th className="p-4">Applied On</th>
+                <th className="p-4">Actioned On</th>
                 <th className="p-4 text-center">Status</th>
                 <th className="p-4 text-center">Action</th>
               </tr>

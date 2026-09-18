@@ -22,8 +22,10 @@ def get_today_work_anniversaries():
     sender_id = int(sender_id_str) if sender_id_str and sender_id_str.isdigit() else None
 
     employees = Employee.query.filter(
+        Employee.joining_date.isnot(None),
         extract("month", Employee.joining_date) == today.month,
         extract("day", Employee.joining_date) == today.day,
+        extract("year", Employee.joining_date) < today.year,
         Employee.is_active != False
     ).all()
 
@@ -46,6 +48,10 @@ def get_today_work_anniversaries():
             joining_date.day == today.day
         ):
             years_completed = today.year - joining_date.year
+            # Must have completed at least 1 year to celebrate an anniversary
+            if years_completed < 1:
+                continue
+
             # Exclude self and employees who have already been wished today
             if (sender_id and employee.id == sender_id) or (employee.id in wished_receiver_ids):
                 continue

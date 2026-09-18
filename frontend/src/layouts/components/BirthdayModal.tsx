@@ -138,7 +138,9 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
 
   const allCelebrators = [
     ...birthdayEmployees.map((e) => ({ ...e, eventType: "birthday" })),
-    ...anniversaryEmployees.map((e) => ({ ...e, eventType: "anniversary" })),
+    ...anniversaryEmployees
+      .filter((e) => Number(e.years_completed) >= 1)
+      .map((e) => ({ ...e, eventType: "anniversary" })),
   ].filter((emp) => {
     const isSelf =
       (currentEmpId && Number(emp.id) === Number(currentEmpId)) ||
@@ -538,7 +540,7 @@ const BirthdayModal: React.FC<BirthdayModalProps> = ({
                     <p className="text-sm text-neutral-500 truncate">{emp.designation}</p>
                     <p className="text-sm text-primary-700 font-semibold mt-1">
                       {isAnniv
-                        ? `🎗️ ${emp.years_completed || 1}-Year Work Anniversary Today`
+                        ? `🎗️ ${emp.years_completed} ${emp.years_completed === 1 ? "Year" : "Years"} Work Anniversary Today`
                         : "🎂 Birthday Today"}
                     </p>
                   </div>

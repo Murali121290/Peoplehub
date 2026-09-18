@@ -271,7 +271,10 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
         : `${BASE_URL}/work-anniversary/today`;
       const res = await fetch(url);
       const data = await res.json();
-      setAnniversaryEmployees(Array.isArray(data.employees) ? data.employees : []);
+      const validEmps = Array.isArray(data.employees)
+        ? data.employees.filter((e: any) => Number(e.years_completed) >= 1)
+        : [];
+      setAnniversaryEmployees(validEmps);
     } catch (err) {
       setAnniversaryEmployees([]);
     }
