@@ -788,42 +788,52 @@ def convert_monthly_to_quarterly_records(employee_id: str = None, record_ids: li
             rid_set.add(s)
             rid_set.add(s.replace("resp_", ""))
             rid_set.add(f"resp_{s.replace('resp_', '')}")
-
-    for r in json_responses:
-        freq = str(r.get("frequency") or "").strip().lower()
-        form_name = str(r.get("form") or "").lower()
-        if freq != "monthly" and "monthly" not in form_name and "month" not in form_name:
+    json_data = read_eval_store()
+    store = json_data
+    for r in json_data.get("responses", []):
+        if r.get("is_archived") or r.get("status") == "Archived":
             continue
-        if r.get("is_archived") or str(r.get("status") or "").lower() == "archived":
+        freq = (r.get("frequency") or r.get("periodType") or "").lower()
+        form_name = (r.get("form") or "").lower()
+        period_name = (r.get("periodName") or "").lower()
+        is_month = freq == "monthly" or "month" in form_name or "month" in period_name
+        if not is_month:
             continue
 
-        r_id = str(r.get("id") or "")
-        r_db_id = str(r.get("db_id") or "")
-        r_emp = str(r.get("employeeCode") or r.get("employeeId") or "").strip()
-
-        if rid_set:
-            if r_id not in rid_set and r_db_id not in rid_set:
-                continue
-        elif employee_id:
-            if r_emp != str(employee_id).strip() and str(r.get("employeeId") or "").strip() != str(employee_id).strip():
-                continue
+        emp_code = str(r.get("employeeCode") or r.get("employeeId") or "")
+        emp_db_id = str(r.get("employee_db_id") or "")
+        target_emp = str(employee_id or "")
+        if target_emp and emp_code != target_emp and emp_db_id != target_emp:
+            continue
+        if record_ids and r.get("id") not in record_ids:
+            continue
         matched_json_monthly.append(r)
 
+    # 2. Fetch from DB if not in JSON
     db_monthly = []
     if not matched_json_monthly:
         query = KpiEvaluation.query.filter(
-            or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None))
+            or_(
+                KpiEvaluation.is_archived.is_(False),
+                KpiEvaluation.is_archived.is_(None)
+            )
         )
-        if record_ids and len(record_ids) > 0:
-            int_rids = _parse_int_rids(record_ids)
-            if int_rids:
-                query = query.filter(KpiEvaluation.id.in_(int_rids))
-            else:
-                query = query.filter(False)
-        elif employee_id:
+        if employee_id:
             query = query.filter(
-                KpiEvaluation.employee_id == str(employee_id),
-                or_(KpiEvaluation.frequency == "monthly", KpiEvaluation.form.ilike("%monthly%"))
+                or_(
+                    KpiEvaluation.employee_id == str(employee_id),
+                    KpiEvaluation.employee_name == str(employee_id)
+                )
+            )
+        if record_ids:
+            query = query.filter(KpiEvaluation.id.in_(record_ids))
+        else:
+            query = query.filter(
+                or_(
+                    KpiEvaluation.frequency == "monthly",
+                    KpiEvaluation.form.ilike("%month%"),
+                    KpiEvaluation.description.ilike("%month%")
+                )
             )
         db_monthly = query.order_by(KpiEvaluation.from_date.asc(), KpiEvaluation.id.asc()).all()
 
@@ -831,15 +841,15 @@ def convert_monthly_to_quarterly_records(employee_id: str = None, record_ids: li
     if not eval_sources:
         return None
 
-    sample = eval_sources[0]
-    emp_id = _get_field(sample, "employeeId", "employeeCode", "employee_id", default="")
-    emp_name = _get_field(sample, "employeeName", "employee_name", default=f"Employee {emp_id}")
-    team_id = _get_field(sample, "teamId", "team_id", default="General")
-    team_name = _get_field(sample, "teamName", "team_name", default="Team")
-    reporting_manager = _get_field(sample, "reportingManager", "reporting_manager", default="")
-    reporting_manager_id = _get_field(sample, "reporting_manager_id", "manager_id", "managerId", default="")
-    service_manager = _get_field(sample, "serviceManager", "service_manager", default="")
-    service_manager_id = _get_field(sample, "service_manager_id", "serviceManagerId", default="")
+    first_src = eval_sources[0]
+    team_name = _get_field(first_src, "team_name", "teamName", "department", default="Team")
+    team_id = _get_field(first_src, "team_id", "teamId", default="")
+    emp_id = _get_field(first_src, "employee_id", "employeeCode", "employeeId", default=employee_id or "")
+    emp_name = _get_field(first_src, "employee_name", "employeeName", default="Employee")
+    reporting_manager = _get_field(first_src, "reporting_manager", "managerName", default="")
+    reporting_manager_id = _get_field(first_src, "reporting_manager_id", "managerId", default="")
+    service_manager = _get_field(first_src, "service_manager", default="")
+    service_manager_id = _get_field(first_src, "service_manager_id", default="")
 
     dates = []
     for r in eval_sources:
@@ -853,15 +863,10 @@ def convert_monthly_to_quarterly_records(employee_id: str = None, record_ids: li
                 pass
 
     ref_date = dates[0] if dates else date.today()
-    q = quarter or ((ref_date.month - 1) // 3 + 1)
+    q = quarter or get_quarter_from_month(ref_date.month)
     y = year or ref_date.year
 
-    months = [(q - 1) * 3 + 1, (q - 1) * 3 + 2, (q - 1) * 3 + 3]
-    q_start = date(y, months[0], 1)
-    if months[2] == 12:
-        q_end = date(y, 12, 31)
-    else:
-        q_end = date(y, months[2] + 1, 1) - timedelta(days=1)
+    months, q_start, q_end = get_quarter_months_and_dates(q, y)
 
     stats = calculate_evaluation_working_days(emp_id, q_start, q_end)
     working_days_count = max(stats.get("working_days", 1), 1)
@@ -1272,7 +1277,7 @@ def try_rollup_weekly_to_monthly_evaluations(employee_id: str, month: int, year:
     logger.info(f"[KPI Rollup] Rolled up {len(weekly_records)} weekly evaluation(s) for emp={employee_id} into monthly entry (id={monthly_record.id}).")
 
     # Cascade to Quarterly
-    quarter = (month - 1) // 3 + 1
+    quarter = get_quarter_from_month(month)
     try_rollup_monthly_to_quarterly_evaluations(employee_id, quarter, year)
     return monthly_record
 
@@ -1282,9 +1287,9 @@ def try_rollup_monthly_to_quarterly_evaluations(employee_id: str, quarter: int, 
     Rolls up 3 'monthly' kpi_evaluations into a 'quarterly' entry.
     HARD DELETES the monthly rows once quarterly entry is stored!
     """
-    months = [(quarter - 1) * 3 + 1, (quarter - 1) * 3 + 2, (quarter - 1) * 3 + 3]
+    months, q_start, q_end = get_quarter_months_and_dates(quarter, year)
     today = date.today()
-    curr_q = (today.month - 1) // 3 + 1
+    curr_q = get_quarter_from_month(today.month)
 
     # Only roll up completed quarters
     if year == today.year and quarter >= curr_q:
@@ -1301,11 +1306,6 @@ def try_rollup_monthly_to_quarterly_evaluations(employee_id: str, quarter: int, 
         return None
 
     sample = monthly_records[0]
-    q_start = date(year, months[0], 1)
-    if months[2] == 12:
-        q_end = date(year, 12, 31)
-    else:
-        q_end = date(year, months[2] + 1, 1) - timedelta(days=1)
 
     stats = calculate_evaluation_working_days(employee_id, q_start, q_end)
     aggregated_cats = aggregate_categories_metrics(monthly_records, stats["working_days"])

@@ -210,10 +210,25 @@ export const parseEvalDateTimestamp = (r: EvaluationResponse): number => {
   return num;
 };
 
-// Helper to format ISO date timestamps into clean readable dates with time (e.g. "26 Aug 2026, 5:21 PM")
+// Helper to format ISO date timestamps into clean readable dates with time in system local time (e.g. "18 Sep 2026, 11:51 AM")
 export const formatEvalDateTime = (dateVal?: string | Date | null): string | null => {
   if (!dateVal) return null;
-  const d = new Date(dateVal);
+  let d: Date;
+  if (typeof dateVal === 'string') {
+    let s = dateVal.trim();
+    if (s.includes(' ') && !s.includes('T')) {
+      s = s.replace(' ', 'T');
+    }
+    if (s.includes('T') && !s.endsWith('Z') && !s.includes('+') && !s.slice(10).includes('-')) {
+      s = s + 'Z';
+    }
+    d = new Date(s);
+    if (isNaN(d.getTime())) {
+      d = new Date(dateVal);
+    }
+  } else {
+    d = new Date(dateVal);
+  }
   if (isNaN(d.getTime()) || d.getTime() <= 0) return null;
   const day = d.getDate();
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -262,8 +277,8 @@ export const EvaluationTab: React.FC = () => {
 
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
-  const currentQuarter = Math.ceil(currentMonth / 3);
-  const quarterLabel = currentQuarter === 1 ? 'Jan - Mar' : currentQuarter === 2 ? 'Apr - Jun' : currentQuarter === 3 ? 'Jul - Sep' : 'Oct - Dec';
+  const currentQuarter = currentMonth >= 4 && currentMonth <= 6 ? 1 : currentMonth >= 7 && currentMonth <= 9 ? 2 : currentMonth >= 10 && currentMonth <= 12 ? 3 : 4;
+  const quarterLabel = currentQuarter === 1 ? 'Apr - Jun' : currentQuarter === 2 ? 'Jul - Sep' : currentQuarter === 3 ? 'Oct - Dec' : 'Jan - Mar';
 
   // HR Form State
   const [cycleName, setCycleName] = useState(`Q${currentQuarter} Performance Evaluation`);
@@ -271,8 +286,16 @@ export const EvaluationTab: React.FC = () => {
   const [selectedSmId, setSelectedSmId] = useState<string>('');
   const [selectedMgrId, setSelectedMgrId] = useState<string>('');
   const [periodName, setPeriodName] = useState(`Q${currentQuarter} ${currentYear} (${quarterLabel})`);
-  const [startDate, setStartDate] = useState(`${currentYear}-${String((currentQuarter - 1) * 3 + 1).padStart(2, '0')}-01`);
-  const [endDate, setEndDate] = useState(new Date(currentYear, currentQuarter * 3, 0).toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(
+    currentQuarter === 1 ? `${currentYear}-04-01` :
+    currentQuarter === 2 ? `${currentYear}-07-01` :
+    currentQuarter === 3 ? `${currentYear}-10-01` : `${currentYear}-01-01`
+  );
+  const [endDate, setEndDate] = useState(
+    currentQuarter === 1 ? `${currentYear}-06-30` :
+    currentQuarter === 2 ? `${currentYear}-09-30` :
+    currentQuarter === 3 ? `${currentYear}-12-31` : `${currentYear}-03-31`
+  );
   const [hrCategories, setHrCategories] = useState<KPICategory[]>(DEFAULT_KPI_CATEGORIES);
 
   // Manager Create & Assign Metrics Modal State
@@ -316,16 +339,20 @@ export const EvaluationTab: React.FC = () => {
   ];
 
   const QUARTERS_INFO = [
-    { q: 1, stage: 1, label: 'Jan - Mar', name: 'Stage 1 (Q1: Jan - Mar)' },
-    { q: 2, stage: 2, label: 'Apr - Jun', name: 'Stage 2 (Q2: Apr - Jun)' },
-    { q: 3, stage: 3, label: 'Jul - Sep', name: 'Stage 3 (Q3: Jul - Sep)' },
-    { q: 4, stage: 4, label: 'Oct - Dec', name: 'Stage 4 (Q4: Oct - Dec)' }
+    { q: 1, stage: 1, label: 'Apr - Jun', name: 'Stage 1 (Q1: Apr - Jun)', months: 'April - June' },
+    { q: 2, stage: 2, label: 'Jul - Sep', name: 'Stage 2 (Q2: Jul - Sep)', months: 'July - September' },
+    { q: 3, stage: 3, label: 'Oct - Dec', name: 'Stage 3 (Q3: Oct - Dec)', months: 'October - December' },
+    { q: 4, stage: 4, label: 'Jan - Mar', name: 'Stage 4 (Q4: Jan - Mar)', months: 'January - March' }
   ];
 
   const formatDisplayDate = (dateStr: string) => {
     if (!dateStr) return '';
     try {
-      const dt = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00'));
+      let s = dateStr.trim();
+      if (s.includes('T') && !s.endsWith('Z') && !s.includes('+') && !s.slice(10).includes('-')) {
+        s = s + 'Z';
+      }
+      const dt = new Date(s + (s.includes('T') ? '' : 'T00:00:00'));
       const dd = String(dt.getDate()).padStart(2, '0');
       const mm = String(dt.getMonth() + 1).padStart(2, '0');
       const yyyy = dt.getFullYear();
@@ -392,6 +419,9 @@ export const EvaluationTab: React.FC = () => {
   const [selectedReportResponseId, setSelectedReportResponseId] = useState<string>('');
   const [showReportAuditBreakdown, setShowReportAuditBreakdown] = useState<boolean>(false);
   const [historyAuditBreakdownOpen, setHistoryAuditBreakdownOpen] = useState<Record<string, boolean>>({});
+  const [historySearchQuery, setHistorySearchQuery] = useState<string>('');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'published' | 'in_review'>('all');
+  const [showRubricMatrix, setShowRubricMatrix] = useState<boolean>(false);
   const [kpiInputs, setKpiInputs] = useState<Record<string, KPIResponseItem>>({});
   const [empRemarks, setEmpRemarks] = useState('');
   const [employeeSubTab, setEmployeeSubTab] = useState<'worksheet' | 'reports'>('worksheet');
@@ -429,6 +459,7 @@ export const EvaluationTab: React.FC = () => {
   });
   const [reportFilterDept, setReportFilterDept] = useState<string>('all');
   const [reportFilterTeam, setReportFilterTeam] = useState<string>('all');
+  const [reportFilterDesignation, setReportFilterDesignation] = useState<string>('all');
   const [reportFilterDate, setReportFilterDate] = useState<string>('all');
   const [reportFilterState, setReportFilterState] = useState<'all' | 'pending' | 'submitted' | 'approved'>('all');
   const [selectedWeekPeriod, setSelectedWeekPeriod] = useState<string>('all');
@@ -439,7 +470,8 @@ export const EvaluationTab: React.FC = () => {
   });
   const [selectedReportQuarterKey, setSelectedReportQuarterKey] = useState<string>(() => {
     const d = new Date();
-    const q = Math.ceil((d.getMonth() + 1) / 3);
+    const m = d.getMonth() + 1;
+    const q = m >= 4 && m <= 6 ? 1 : m >= 7 && m <= 9 ? 2 : m >= 10 && m <= 12 ? 3 : 4;
     return `${d.getFullYear()}-Q${q}`;
   });
   const [selectedReportYearKey, setSelectedReportYearKey] = useState<string>('all');
@@ -449,7 +481,12 @@ export const EvaluationTab: React.FC = () => {
   const [submissionStatusFilter, setSubmissionStatusFilter] = useState<'all' | 'with_manager' | 'approved' | 'completed' | 'with_gm' | 'with_admin' | 'sent_back'>('all');
   const [submissionGroupBy, setSubmissionGroupBy] = useState<'none' | 'department' | 'team'>('team');
   const [expandedSubmissionGroups, setExpandedSubmissionGroups] = useState<Record<string, boolean>>({});
+  const [expandedSubmissionDesigs, setExpandedSubmissionDesigs] = useState<Record<string, boolean>>({});
   const [submissionSearchQuery, setSubmissionSearchQuery] = useState<string>('');
+
+  // Department & Team Hierarchy Dropdown/Collapse States (Default: collapsed/hidden)
+  const [expandedTeams, setExpandedTeams] = useState<Record<string, boolean>>({});
+  const [expandedDesignations, setExpandedDesignations] = useState<Record<string, boolean>>({});
 
   // Multi-tier Conversion Modal State (Option B: Soft Archive)
   const [isConvertModalOpen, setIsConvertModalOpen] = useState<boolean>(false);
@@ -2002,8 +2039,19 @@ export const EvaluationTab: React.FC = () => {
         effectiveStartDate = `${mgrPeriodYear}-${String(mgrPeriodMonth).padStart(2, '0')}-01`;
         effectiveEndDate = new Date(mgrPeriodYear, mgrPeriodMonth, 0).toISOString().split('T')[0];
       } else if (mgrPeriodType === 'quarterly') {
-        effectiveStartDate = `${mgrPeriodYear}-${String((mgrPeriodQuarter - 1) * 3 + 1).padStart(2, '0')}-01`;
-        effectiveEndDate = new Date(mgrPeriodYear, mgrPeriodQuarter * 3, 0).toISOString().split('T')[0];
+        if (mgrPeriodQuarter === 1) {
+          effectiveStartDate = `${mgrPeriodYear}-04-01`;
+          effectiveEndDate = `${mgrPeriodYear}-06-30`;
+        } else if (mgrPeriodQuarter === 2) {
+          effectiveStartDate = `${mgrPeriodYear}-07-01`;
+          effectiveEndDate = `${mgrPeriodYear}-09-30`;
+        } else if (mgrPeriodQuarter === 3) {
+          effectiveStartDate = `${mgrPeriodYear}-10-01`;
+          effectiveEndDate = `${mgrPeriodYear}-12-31`;
+        } else {
+          effectiveStartDate = `${mgrPeriodYear}-01-01`;
+          effectiveEndDate = `${mgrPeriodYear}-03-31`;
+        }
       } else if (mgrPeriodType === 'yearly' || (mgrPeriodType as string) === 'annual') {
         effectiveStartDate = `${mgrPeriodYear}-01-01`;
         effectiveEndDate = `${mgrPeriodYear}-12-31`;
@@ -3184,11 +3232,13 @@ export const EvaluationTab: React.FC = () => {
     const departmentName = dbDept || (respDept && respDept !== 'all_teams' && !respDept.includes(',') ? respDept : '') || effectiveTeamName || dbTeam || 'Department';
     const teamName = dbTeam || (respTeam && respTeam !== 'all_teams' && !respTeam.includes(',') ? respTeam : '') || (respDept && respDept !== departmentName ? respDept : '') || departmentName || 'Team';
 
+    const designation = (empInDb?.designation || (r as any).designation || empInDb?.job_title || (r as any).role || '').trim();
+
     const profileImage = empInDb?.profile_image
       ? getProfileImageUrl(empInDb.profile_image, empInDb.employee_id || empInDb.id)
       : null;
 
-    return { employeeCode, employeeName, teamName, departmentName, empInDb, profileImage };
+    return { employeeCode, employeeName, teamName, departmentName, designation, empInDb, profileImage };
   };
 
   // Helper to render distinct status badges across all lifecycle stages
@@ -3355,11 +3405,11 @@ export const EvaluationTab: React.FC = () => {
     if (s === 'sm_review' || s.includes('service') || s.includes('general')) {
       return 'with_gm';
     }
-    
+
     // Check if truly submitted to manager
     const isSubmittedByEmp = Boolean(r.employeeSubmittedAt) || Boolean((r as any).submitted_at);
     const isExplicitMgrStatus = s === 'manager_review' || s === 'manager review' || s === 'with_manager' || s === 'with manager' || s === 'assigned to manager' || s === 'submitted';
-    
+
     if (isSubmittedByEmp || isExplicitMgrStatus) {
       return 'with_manager';
     }
@@ -3500,6 +3550,9 @@ export const EvaluationTab: React.FC = () => {
       let openCount = 0;
       let completedCount = 0;
 
+      // Group filtered items by designation
+      const desigMap = new Map<string, { designationName: string; items: EvaluationResponse[]; peopleSet: Set<string> }>();
+
       // Calculate totals across all items in group
       g.allGroupItems.forEach(r => {
         const s = String(r.status || '').toLowerCase().trim();
@@ -3522,13 +3575,40 @@ export const EvaluationTab: React.FC = () => {
           filteredScoreSum += score;
           filteredScoreCount++;
         }
+
+        const desigName = (
+          info.designation ||
+          (info.empInDb as any)?.designation ||
+          (info.empInDb as any)?.job_title ||
+          r.designation ||
+          (r as any).role ||
+          'General Staff'
+        ).trim() || 'General Staff';
+
+        if (!desigMap.has(desigName)) {
+          desigMap.set(desigName, {
+            designationName: desigName,
+            items: [],
+            peopleSet: new Set<string>()
+          });
+        }
+        const dObj = desigMap.get(desigName)!;
+        dObj.items.push(r);
+        if (personIdentifier) dObj.peopleSet.add(personIdentifier);
       });
+
+      const designations = Array.from(desigMap.values()).map(d => ({
+        designationName: d.designationName,
+        items: d.items,
+        peopleCount: d.peopleSet.size || d.items.length
+      })).sort((a, b) => a.designationName.localeCompare(b.designationName));
 
       const avgScore = filteredScoreCount > 0 ? (filteredScoreSum / filteredScoreCount) : 0;
 
       return {
         groupName: g.groupName,
         items: g.items,
+        designations,
         totalItemsCount: g.allGroupItems.length,
         filteredCount: g.items.length,
         peopleCount: filteredPeopleSet.size || g.items.length,
@@ -4210,18 +4290,25 @@ export const EvaluationTab: React.FC = () => {
   const availableQuarters = useMemo(() => {
     const qMap = new Map<string, { key: string; label: string; year: number; quarter: number }>();
     const quarters = [
-      { q: 1, label: 'Jan - Mar' },
-      { q: 2, label: 'Apr - Jun' },
-      { q: 3, label: 'Jul - Sep' },
-      { q: 4, label: 'Oct - Dec' }
+      { q: 1, label: 'Apr - Jun' },
+      { q: 2, label: 'Jul - Sep' },
+      { q: 3, label: 'Oct - Dec' },
+      { q: 4, label: 'Jan - Mar' }
     ];
+
+    const getQ = (month1Indexed: number) => {
+      if (month1Indexed >= 4 && month1Indexed <= 6) return 1;
+      if (month1Indexed >= 7 && month1Indexed <= 9) return 2;
+      if (month1Indexed >= 10 && month1Indexed <= 12) return 3;
+      return 4;
+    };
 
     // From active responses
     activeScopedResponsesForCards.forEach(r => {
       const d = getResponseDate(r);
       if (d) {
         const y = d.getFullYear();
-        const q = Math.ceil((d.getMonth() + 1) / 3);
+        const q = getQ(d.getMonth() + 1);
         const key = `${y}-Q${q}`;
         if (!qMap.has(key)) {
           const qObj = quarters.find(item => item.q === q) || quarters[0];
@@ -4235,7 +4322,7 @@ export const EvaluationTab: React.FC = () => {
       const d = c.startDate ? new Date(c.startDate) : null;
       if (d && !isNaN(d.getTime())) {
         const y = d.getFullYear();
-        const q = Math.ceil((d.getMonth() + 1) / 3);
+        const q = getQ(d.getMonth() + 1);
         const key = `${y}-Q${q}`;
         if (!qMap.has(key)) {
           const qObj = quarters.find(item => item.q === q) || quarters[0];
@@ -4384,6 +4471,35 @@ export const EvaluationTab: React.FC = () => {
     return Array.from(teams).filter(Boolean).sort();
   }, [activeScopedResponsesForCards, managerDirectReports, reportFilterDept, dbEmployees, dbTeams]);
 
+  // Available designations dynamically populated directly from database employees & teams within scope
+  const availableFilterDesignations = useMemo(() => {
+    const desigs = new Set<string>();
+    activeScopedResponsesForCards.forEach(r => {
+      const { departmentName, teamName, empInDb } = getEmployeeDisplayInfo(r);
+      if (reportFilterDept !== 'all' && departmentName.toLowerCase() !== reportFilterDept.toLowerCase()) {
+        return;
+      }
+      if (reportFilterTeam !== 'all' && teamName.toLowerCase() !== reportFilterTeam.toLowerCase()) {
+        return;
+      }
+      const d = (r.designation || empInDb?.designation || empInDb?.job_title || (r as any).role || '').trim();
+      if (d) desigs.add(d);
+    });
+    managerDirectReports.forEach((e: any) => {
+      const dept = (e.department || '').trim();
+      const t = (e.team || '').trim();
+      if (reportFilterDept !== 'all' && dept.toLowerCase() !== reportFilterDept.toLowerCase()) {
+        return;
+      }
+      if (reportFilterTeam !== 'all' && t.toLowerCase() !== reportFilterTeam.toLowerCase()) {
+        return;
+      }
+      const d = (e.designation || e.job_title || '').trim();
+      if (d) desigs.add(d);
+    });
+    return Array.from(desigs).filter(Boolean).sort();
+  }, [activeScopedResponsesForCards, managerDirectReports, reportFilterDept, reportFilterTeam, dbEmployees, dbTeams]);
+
   // Comprehensive report filtered responses from database
   const reportFilteredResponses = useMemo(() => {
     let list = [...activeScopedResponsesForCards];
@@ -4420,6 +4536,16 @@ export const EvaluationTab: React.FC = () => {
         const { teamName, empInDb } = getEmployeeDisplayInfo(r);
         const empTeam = (empInDb?.team || teamName || '').toLowerCase().trim();
         return empTeam === targetTeam;
+      });
+    }
+
+    // 4. Designation filter directly matching DB values
+    if (reportFilterDesignation !== 'all') {
+      const targetDesig = reportFilterDesignation.toLowerCase().trim();
+      list = list.filter(r => {
+        const { empInDb } = getEmployeeDisplayInfo(r);
+        const empDesig = (r.designation || empInDb?.designation || empInDb?.job_title || (r as any).role || '').toLowerCase().trim();
+        return empDesig === targetDesig;
       });
     }
 
@@ -4510,7 +4636,8 @@ export const EvaluationTab: React.FC = () => {
           const [qY, qNum] = selectedReportQuarterKey.split('-Q').map(Number);
           const range = getEvaluationDateRange(r);
           if (!range.startDate) return true;
-          const rQuarter = Math.ceil((range.startDate.getMonth() + 1) / 3);
+          const mNum = range.startDate.getMonth() + 1;
+          const rQuarter = mNum >= 4 && mNum <= 6 ? 1 : mNum >= 7 && mNum <= 9 ? 2 : mNum >= 10 && mNum <= 12 ? 3 : 4;
           return range.startDate.getFullYear() === qY && rQuarter === qNum;
         }
         return true;
@@ -4564,7 +4691,8 @@ export const EvaluationTab: React.FC = () => {
           const [qY, qNum] = selectedReportQuarterKey.split('-Q').map(Number);
           const range = getEvaluationDateRange(r);
           if (!range.startDate) return true;
-          const rQuarter = Math.ceil((range.startDate.getMonth() + 1) / 3);
+          const mNum = range.startDate.getMonth() + 1;
+          const rQuarter = mNum >= 4 && mNum <= 6 ? 1 : mNum >= 7 && mNum <= 9 ? 2 : mNum >= 10 && mNum <= 12 ? 3 : 4;
           return range.startDate.getFullYear() === qY && rQuarter === qNum;
         }
         return true;
@@ -4605,6 +4733,7 @@ export const EvaluationTab: React.FC = () => {
     mgrSearchQuery,
     reportFilterDept,
     reportFilterTeam,
+    reportFilterDesignation,
     reportFilterState,
     reportFilterDate,
     reportDateInPeriod,
@@ -4615,12 +4744,11 @@ export const EvaluationTab: React.FC = () => {
     dbEmployees
   ]);
 
-  // Hierarchical Department -> Team -> Employee grouping strictly from database records
   const groupedReportHierarchy = useMemo(() => {
-    const deptMap = new Map<string, Map<string, any[]>>();
+    const teamMap = new Map<string, Map<string, any[]>>();
 
     reportFilteredResponses.forEach((r, idx) => {
-      const { employeeCode, employeeName, teamName, departmentName, empInDb, profileImage } = getEmployeeDisplayInfo(r);
+      const { employeeCode, employeeName, teamName, departmentName, designation, empInDb, profileImage } = getEmployeeDisplayInfo(r);
       const isCalibrated = r.managerScore != null && (r.status as string) !== 'manager_review' && (r.status as string) !== 'Submitted to Manager';
       const initials = (employeeName || 'EM').split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase() || 'EM';
 
@@ -4690,7 +4818,8 @@ export const EvaluationTab: React.FC = () => {
         freqLabel = 'Quarterly';
         freqColor = 'bg-emerald-50 text-emerald-900 border-emerald-300';
         if (range.startDate) {
-          const qNum = Math.ceil((range.startDate.getMonth() + 1) / 3);
+          const mNum = range.startDate.getMonth() + 1;
+          const qNum = mNum >= 4 && mNum <= 6 ? 1 : mNum >= 7 && mNum <= 9 ? 2 : mNum >= 10 && mNum <= 12 ? 3 : 4;
           dateText = `Q${qNum} ${range.startDate.getFullYear()}`;
         }
       } else if (isYearlyResponse(r)) {
@@ -4704,6 +4833,15 @@ export const EvaluationTab: React.FC = () => {
       if (!dateText) {
         dateText = respCycle?.periodName || respCycle?.name || (r as any).periodName || (r as any).form || 'Evaluation Period';
       }
+
+      const designationName = (
+        designation ||
+        empInDb?.designation ||
+        empInDb?.job_title ||
+        r.designation ||
+        (r as any).role ||
+        'General Staff'
+      ).trim() || 'General Staff';
 
       const memberItem = {
         response: r,
@@ -4722,61 +4860,77 @@ export const EvaluationTab: React.FC = () => {
           freqColor,
           dateText
         },
-        designation: r.designation || empInDb?.designation || empInDb?.job_title || 'Team Member',
+        designation: designationName,
         rank: reportViewTab.startsWith('top_') ? idx + 1 : undefined
       };
 
-      if (!deptMap.has(departmentName)) {
-        deptMap.set(departmentName, new Map<string, any[]>());
+      const effectiveTeam = teamName || departmentName || 'General Team';
+
+      if (!teamMap.has(effectiveTeam)) {
+        teamMap.set(effectiveTeam, new Map<string, any[]>());
       }
-      const teamMap = deptMap.get(departmentName)!;
-      if (!teamMap.has(teamName)) {
-        teamMap.set(teamName, []);
+      const desigMap = teamMap.get(effectiveTeam)!;
+      if (!desigMap.has(designationName)) {
+        desigMap.set(designationName, []);
       }
-      teamMap.get(teamName)!.push(memberItem);
+      desigMap.get(designationName)!.push(memberItem);
     });
 
     const result: Array<{
-      departmentName: string;
+      teamName: string;
       totalPeople: number;
-      teams: Array<{
-        teamName: string;
+      designations: Array<{
+        designationName: string;
         members: any[];
       }>;
     }> = [];
 
-    deptMap.forEach((teamMap, deptName) => {
-      let deptTotal = 0;
-      const teams: Array<{ teamName: string; members: any[] }> = [];
+    teamMap.forEach((desigMap, tName) => {
+      let teamTotal = 0;
+      const designations: Array<{ designationName: string; members: any[] }> = [];
 
-      teamMap.forEach((members, tName) => {
-        deptTotal += members.length;
-        // Sort: Submitted to Manager / pending review evaluations appear at the top
-        const sortedMembers = [...members].sort((a, b) => {
-          const isPendingA = Boolean(
-            (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted')) &&
-            a.response.managerScore == null
-          );
-          const isPendingB = Boolean(
-            (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted')) &&
-            b.response.managerScore == null
-          );
-          if (isPendingA && !isPendingB) return -1;
-          if (!isPendingA && isPendingB) return 1;
-          return 0;
+      desigMap.forEach((members, dName) => {
+        if (members.length > 0) {
+          teamTotal += members.length;
+          const sortedMembers = [...members].sort((a, b) => {
+            const isPendingA = Boolean(
+              (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted')) &&
+              a.response.managerScore == null
+            );
+            const isPendingB = Boolean(
+              (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted')) &&
+              b.response.managerScore == null
+            );
+            if (isPendingA && !isPendingB) return -1;
+            if (!isPendingA && isPendingB) return 1;
+            return a.employeeName.localeCompare(b.employeeName);
+          });
+          designations.push({
+            designationName: dName,
+            members: sortedMembers
+          });
+        }
+      });
+
+      if (teamTotal > 0 && designations.length > 0) {
+        designations.sort((a, b) => a.designationName.localeCompare(b.designationName));
+        result.push({
+          teamName: tName,
+          totalPeople: teamTotal,
+          designations
         });
-        teams.push({ teamName: tName, members: sortedMembers });
-      });
-
-      result.push({
-        departmentName: deptName,
-        totalPeople: deptTotal,
-        teams
-      });
+      }
     });
 
-    return result;
-  }, [reportFilteredResponses, reportViewTab, dbEmployees]);
+    return result.sort((a, b) => a.teamName.localeCompare(b.teamName));
+  }, [
+    reportFilteredResponses,
+    cycles,
+    reportViewTab,
+    dbEmployees,
+    dbTeams,
+    effectiveTeamName
+  ]);
 
   // Formatted date column header dynamically derived from DB records & user selection
   const formattedDateColumnHeader = useMemo(() => {
@@ -4806,7 +4960,8 @@ export const EvaluationTab: React.FC = () => {
       return `${months[activeMonth]} ${activeYear}`;
     }
     if (reportViewTab === 'quarterly') {
-      const activeQuarter = !isNaN(m) ? Math.ceil(m / 3) : Math.ceil((new Date().getMonth() + 1) / 3);
+      const mVal = !isNaN(m) ? m : new Date().getMonth() + 1;
+      const activeQuarter = mVal >= 4 && mVal <= 6 ? 1 : mVal >= 7 && mVal <= 9 ? 2 : mVal >= 10 && mVal <= 12 ? 3 : 4;
       const activeYear = !isNaN(y) ? y : new Date().getFullYear();
       return `Q${activeQuarter} ${activeYear}`;
     }
@@ -4828,8 +4983,9 @@ export const EvaluationTab: React.FC = () => {
     const weekInfo = getMondayToSundayWeek(activeDate);
     const curDateFormatted = `${activeDate.getDate()} ${months[activeDate.getMonth()]} ${activeDate.getFullYear()}`;
     const monthLabel = `${months[activeDate.getMonth()]} ${activeDate.getFullYear()}`;
-    const qNum = Math.ceil((activeDate.getMonth() + 1) / 3);
-    const qMonthsLabel = qNum === 1 ? 'Jan - Mar' : qNum === 2 ? 'Apr - Jun' : qNum === 3 ? 'Jul - Sep' : 'Oct - Dec';
+    const mActive = activeDate.getMonth() + 1;
+    const qNum = mActive >= 4 && mActive <= 6 ? 1 : mActive >= 7 && mActive <= 9 ? 2 : mActive >= 10 && mActive <= 12 ? 3 : 4;
+    const qMonthsLabel = qNum === 1 ? 'Apr - Jun' : qNum === 2 ? 'Jul - Sep' : qNum === 3 ? 'Oct - Dec' : 'Jan - Mar';
 
     const totalCount = reportFilteredResponses.length;
     const completedCount = reportFilteredResponses.filter(r => r.managerScore != null).length;
@@ -4968,7 +5124,8 @@ export const EvaluationTab: React.FC = () => {
       const range = getEvaluationDateRange(sample);
       if (range.startDate) {
         const pad = (n: number) => String(n).padStart(2, '0');
-        const qNum = Math.ceil((range.startDate.getMonth() + 1) / 3);
+        const mNum = range.startDate.getMonth() + 1;
+        const qNum = mNum >= 4 && mNum <= 6 ? 1 : mNum >= 7 && mNum <= 9 ? 2 : mNum >= 10 && mNum <= 12 ? 3 : 4;
         setReportDateInPeriod(`${range.startDate.getFullYear()}-${pad(range.startDate.getMonth() + 1)}-${pad(range.startDate.getDate())}`);
         setSelectedReportMonthKey(`${range.startDate.getFullYear()}-${pad(range.startDate.getMonth() + 1)}`);
         setSelectedReportQuarterKey(`${range.startDate.getFullYear()}-Q${qNum}`);
@@ -4981,12 +5138,12 @@ export const EvaluationTab: React.FC = () => {
   // Pastel header colors for Team headers inside Top Performers card (matching reference UI)
   const getTeamHeaderColor = (name: string) => {
     const palettes = [
-      { bg: 'bg-[#f3edf5]', text: 'text-[#5e2b6b]', sub: 'text-[#7a3b8c]' },
-      { bg: 'bg-[#eef5ee]', text: 'text-[#2c592e]', sub: 'text-[#38733b]' },
-      { bg: 'bg-[#edf4fb]', text: 'text-[#245480]', sub: 'text-[#2e689e]' },
-      { bg: 'bg-[#fdf0f4]', text: 'text-[#8c2e4f]', sub: 'text-[#ab3b63]' },
-      { bg: 'bg-[#fcf7ee]', text: 'text-[#7a5214]', sub: 'text-[#96651d]' },
-      { bg: 'bg-[#f0f9f8]', text: 'text-[#165a54]', sub: 'text-[#1d756d]' }
+      { bg: 'bg-[#f3edf5]', text: 'text-[#5e2b6b]', sub: 'text-[#7a3b8c]', border: 'border-[#e3d7e7]' },
+      { bg: 'bg-[#eef5ee]', text: 'text-[#2c592e]', sub: 'text-[#38733b]', border: 'border-[#d7e7d7]' },
+      { bg: 'bg-[#edf4fb]', text: 'text-[#245480]', sub: 'text-[#2e689e]', border: 'border-[#d4e4f5]' },
+      { bg: 'bg-[#fdf0f4]', text: 'text-[#8c2e4f]', sub: 'text-[#ab3b63]', border: 'border-[#f7d6e1]' },
+      { bg: 'bg-[#fcf7ee]', text: 'text-[#7a5214]', sub: 'text-[#96651d]', border: 'border-[#f2e5cf]' },
+      { bg: 'bg-[#f0f9f8]', text: 'text-[#165a54]', sub: 'text-[#1d756d]', border: 'border-[#d3ece9]' }
     ];
     let hash = 0;
     for (let i = 0; i < name.length; i++) hash = (hash << 5) - hash + name.charCodeAt(i);
@@ -4997,13 +5154,14 @@ export const EvaluationTab: React.FC = () => {
   const [topPerfYearStr, topPerfMonthStr] = (selectedReportMonthKey || reportDateInPeriod || '').split('-');
   const topPerformersYear = parseInt(topPerfYearStr, 10) || new Date().getFullYear();
   const topPerformersMonth = parseInt(topPerfMonthStr, 10) ? parseInt(topPerfMonthStr, 10) - 1 : new Date().getMonth();
-  const topPerformersQ = Math.floor(topPerformersMonth / 3) + 1;
+  const topPerformersMonth1Indexed = topPerformersMonth + 1;
+  const topPerformersQ = topPerformersMonth1Indexed >= 4 && topPerformersMonth1Indexed <= 6 ? 1 : topPerformersMonth1Indexed >= 7 && topPerformersMonth1Indexed <= 9 ? 2 : topPerformersMonth1Indexed >= 10 && topPerformersMonth1Indexed <= 12 ? 3 : 4;
 
   const topPerformersQuarterRangeText = useMemo(() => {
-    if (topPerformersQ === 1) return `1 Jan - 31 Mar ${topPerformersYear}`;
-    if (topPerformersQ === 2) return `1 Apr - 30 Jun ${topPerformersYear}`;
-    if (topPerformersQ === 3) return `1 Jul - 30 Sep ${topPerformersYear}`;
-    return `1 Oct - 31 Dec ${topPerformersYear}`;
+    if (topPerformersQ === 1) return `1 Apr - 30 Jun ${topPerformersYear}`;
+    if (topPerformersQ === 2) return `1 Jul - 30 Sep ${topPerformersYear}`;
+    if (topPerformersQ === 3) return `1 Oct - 31 Dec ${topPerformersYear}`;
+    return `1 Jan - 31 Mar ${topPerformersYear}`;
   }, [topPerformersQ, topPerformersYear]);
 
   // Helper to deduplicate employees and compute their average score for a given set of evaluation responses (converting weekly cycles to monthly/quarterly averages)
@@ -5206,7 +5364,7 @@ export const EvaluationTab: React.FC = () => {
   // Top Performers — Quarterly (3 Months of the Quarter + Quarter Summary Column, matching reference UI)
   const topPerformersQuarterlyColumns = useMemo(() => {
     const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const qMonthsIndices = [(topPerformersQ - 1) * 3, (topPerformersQ - 1) * 3 + 1, (topPerformersQ - 1) * 3 + 2];
+    const qMonthsIndices = topPerformersQ === 1 ? [3, 4, 5] : topPerformersQ === 2 ? [6, 7, 8] : topPerformersQ === 3 ? [9, 10, 11] : [0, 1, 2];
     const yearShort = String(topPerformersYear).slice(-2);
 
     // 1. Three monthly columns of this quarter
@@ -5235,7 +5393,8 @@ export const EvaluationTab: React.FC = () => {
     const quarterResponses = activeScopedResponsesForCards.filter(r => {
       const range = getEvaluationDateRange(r);
       if (!range.startDate) return false;
-      const rQ = Math.ceil((range.startDate.getMonth() + 1) / 3);
+      const mNum = range.startDate.getMonth() + 1;
+      const rQ = mNum >= 4 && mNum <= 6 ? 1 : mNum >= 7 && mNum <= 9 ? 2 : mNum >= 10 && mNum <= 12 ? 3 : 4;
       return range.startDate.getFullYear() === topPerformersYear && rQ === topPerformersQ;
     });
 
@@ -5956,43 +6115,26 @@ export const EvaluationTab: React.FC = () => {
       )}
 
       {/* Top Header & Navigation Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200/80 flex items-center justify-center text-teal-700 shrink-0">
-              <ChartBarIcon className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-                Employee Rewards & Recognition System
-              </h2>
-            </div>
+      <div className="bg-white rounded-2xl px-4 py-2.5 border border-slate-200/80 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+        {/* Left: Title + Brand */}
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-200/80 flex items-center justify-center text-teal-700 shrink-0">
+            <ChartBarIcon className="w-4 h-4" />
           </div>
-
-          {/* Sync Button */}
-          <div className="flex items-center gap-2 self-start sm:self-center">
-            <button
-              type="button"
-              onClick={() => loadAllData(true)}
-              disabled={isRefreshing}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer"
-              title="Sync latest evaluations from server"
-            >
-              <ArrowPathIcon className={`w-3.5 h-3.5 text-teal-700 ${isRefreshing ? 'animate-spin' : ''}`} />
-              <span>{isRefreshing ? 'Syncing...' : 'Sync Data'}</span>
-            </button>
-          </div>
+          <h2 className="text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">
+            Employee Rewards & Recognition
+          </h2>
         </div>
 
-        {/* Clean Segmented Navigation Tabs */}
+        {/* Center: Segmented Navigation Tabs */}
         {(isHrOrAdmin || isServiceManager || isManager) && (
-          <div className="bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 flex flex-wrap gap-1 items-center w-fit">
+          <div className="bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 flex flex-wrap gap-1 items-center">
             {isHrOrAdmin && (
               <button
                 type="button"
                 onClick={() => setActiveRole('hr')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${activeRole === 'hr'
-                  ? 'bg-teal-700 text-white shadow-xs'
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${activeRole === 'hr'
+                  ? 'bg-primary-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
                   }`}
               >
@@ -6011,8 +6153,8 @@ export const EvaluationTab: React.FC = () => {
                     setReportViewTab('all');
                   }
                 }}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${activeRole === 'manager'
-                  ? 'bg-teal-700 text-white shadow-xs'
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${activeRole === 'manager'
+                  ? 'bg-primary-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
                   }`}
               >
@@ -6021,7 +6163,7 @@ export const EvaluationTab: React.FC = () => {
                 {directResponsesCount > 0 && (
                   <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${activeRole === 'manager'
                     ? 'bg-white/20 text-white'
-                    : 'bg-teal-100 text-teal-800'
+                    : 'bg-primary-100 text-primary-800'
                     }`}>
                     {directResponsesCount}
                   </span>
@@ -6038,8 +6180,8 @@ export const EvaluationTab: React.FC = () => {
                   setOversightSubView('submissions');
                   setSubmissionStatusFilter('all');
                 }}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${activeRole === 'downline_teams'
-                  ? 'bg-teal-700 text-white shadow-xs'
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${activeRole === 'downline_teams'
+                  ? 'bg-primary-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
                   }`}
               >
@@ -6051,8 +6193,8 @@ export const EvaluationTab: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveRole('employee')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${activeRole === 'employee'
-                ? 'bg-teal-700 text-white shadow-xs'
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${activeRole === 'employee'
+                ? 'bg-primary-600 text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
                 }`}
             >
@@ -6062,8 +6204,8 @@ export const EvaluationTab: React.FC = () => {
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${activeRole === 'employee'
                   ? 'bg-white/20 text-white'
                   : myPendingEvaluationsCount > 0
-                    ? 'bg-teal-100 text-teal-800 ring-2 ring-teal-400 animate-pulse'
-                    : 'bg-teal-100 text-teal-800'
+                    ? 'bg-primary-100 text-primary-800 ring-2 ring-primary-400 animate-pulse'
+                    : 'bg-primary-100 text-primary-800'
                   }`}>
                   {myEvaluationsCount}
                 </span>
@@ -6071,6 +6213,20 @@ export const EvaluationTab: React.FC = () => {
             </button>
           </div>
         )}
+
+        {/* Right: Sync Button */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => loadAllData(true)}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/90 shadow-2xs transition cursor-pointer"
+            title="Sync latest evaluations from server"
+          >
+            <ArrowPathIcon className={`w-3.5 h-3.5 text-teal-700 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">{isRefreshing ? 'Syncing...' : 'Sync Data'}</span>
+          </button>
+        </div>
       </div>
 
       {/* ========================================================================= */}
@@ -6540,30 +6696,30 @@ export const EvaluationTab: React.FC = () => {
       {activeRole === 'employee' && (
         <div className="space-y-5">
           {/* Sub Tab Navigation */}
-          <div className="bg-white border border-neutral-200/90 rounded-2xl p-1.5 shadow-2xs w-fit">
-            <div className="flex items-center gap-1.5">
+          <div className="bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 w-fit">
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => setEmployeeSubTab('worksheet')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${employeeSubTab === 'worksheet'
-                  ? 'bg-primary-600 text-white shadow-md shadow-primary-500/20'
-                  : 'text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900'
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${employeeSubTab === 'worksheet'
+                  ? 'bg-primary-700 text-white shadow-2xs font-bold'
+                  : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
                   }`}
               >
-                <ClipboardDocumentListIcon className="w-4 h-4" />
+                <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
                 <span>Self-Assessment Worksheet</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setEmployeeSubTab('reports')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${employeeSubTab === 'reports'
-                  ? 'bg-primary-600 text-white shadow-md shadow-primary-500/20'
-                  : 'text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900'
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${employeeSubTab === 'reports'
+                  ? 'bg-primary-700 text-white shadow-2xs font-bold'
+                  : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
                   }`}
               >
-                <DocumentChartBarIcon className="w-4 h-4" />
-                <span>Official Performance Report</span>
+                <DocumentChartBarIcon className="w-3.5 h-3.5" />
+                <span>Performance History</span>
               </button>
             </div>
           </div>
@@ -6680,327 +6836,84 @@ export const EvaluationTab: React.FC = () => {
             }).filter(cat => cat.matchingKpis.length > 0 || !empSearchQuery.trim());
 
             return (
-              <div className="space-y-5 animate-in fade-in duration-200">
-                {/* 1. Ultra-Compact Executive Tracking Progress Header */}
-                <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-2xs space-y-3">
-                  {/* Cycle Info & Summary Pill Badges */}
-                  <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-wrap sm:flex-nowrap">
-                      <div className="w-8 h-8 rounded-lg bg-teal-700 text-white flex items-center justify-center shadow-xs shrink-0">
+              <div className="space-y-4 animate-in fade-in duration-200">
+                {/* 1. Ultra-Clean Executive Header & Workflow Ribbon */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                  {/* Top Bar: Title, Period Selector & Score Badges */}
+                  <div className="px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-primary-50 text-primary-700 border border-primary-200/60 flex items-center justify-center shrink-0">
                         <SparklesIcon className="w-4 h-4" />
                       </div>
-                      <div className="flex items-center gap-2.5 flex-wrap min-w-0">
-                        <h3 className="text-xs font-bold text-slate-900 truncate">
-                          {activeCycle?.name || 'Performance Evaluation Cycle'}
-                        </h3>
-                        {/* Period Selector Dropdown (Allows switching between previous & latest periods) */}
-                        <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs shrink-0">
-                          <CalendarDaysIcon className="w-3.5 h-3.5 text-teal-700 shrink-0" />
-                          <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Period:</span>
-                          <select
-                            value={selectedResponseId || activeEmpResponse?.id || ''}
-                            onChange={(e) => {
-                              const newId = e.target.value;
-                              setSelectedResponseId(newId);
-                              setSelectedReportResponseId(newId);
-                            }}
-                            className="bg-transparent text-[11px] font-extrabold text-teal-900 border-none outline-none cursor-pointer pr-1"
-                          >
-                            {allUserResponses.length > 0 ? (
-                              allUserResponses.map((r, idx) => {
-                                const c = cycles.find(cy => cy.id === r.cycleId);
-                                const label = c?.periodName || c?.name || (r as any).periodName || `Cycle ${idx + 1}`;
-                                const isLatest = idx === 0;
-                                const isSubmitted = r.status === 'manager_review' || r.status === 'approved' || r.status === 'sm_final_approval' || Boolean(r.employeeSubmittedAt);
-                                const statusLabel = isSubmitted ? 'Submitted' : 'In Progress';
-                                return (
-                                  <option key={r.id} value={r.id}>
-                                    {label} {isLatest ? '(Latest)' : ''} — {statusLabel}
-                                  </option>
-                                );
-                              })
-                            ) : (
-                              <option value="">{activeCycle?.periodName || activeCycle?.name || 'Q3 2026'}</option>
-                            )}
-                          </select>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-sm font-bold text-slate-900 truncate">
+                            {activeCycle?.name || 'Performance Evaluation'}
+                          </h3>
+                          {/* Period Selector Dropdown */}
+                          <div className="inline-flex items-center gap-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg text-xs font-semibold text-slate-700 transition cursor-pointer">
+                            <CalendarDaysIcon className="w-3.5 h-3.5 text-primary-700 shrink-0" />
+                            <select
+                              value={selectedResponseId || activeEmpResponse?.id || ''}
+                              onChange={(e) => {
+                                const newId = e.target.value;
+                                setSelectedResponseId(newId);
+                                setSelectedReportResponseId(newId);
+                              }}
+                              className="bg-transparent text-xs font-semibold text-primary-900 border-none outline-none cursor-pointer pr-1"
+                            >
+                              {allUserResponses.length > 0 ? (
+                                allUserResponses.map((r, idx) => {
+                                  const c = cycles.find(cy => cy.id === r.cycleId);
+                                  const raw = c?.periodName || c?.name || (r as any).periodName || `Cycle ${idx + 1}`;
+                                  // Clean up wordy phrases from the label
+                                  const cleanLabel = raw.replace(/Executive Evaluation/gi, '').replace(/\s+/g, ' ').trim();
+                                  const isLatest = idx === 0;
+                                  return (
+                                    <option key={r.id} value={r.id}>
+                                      {cleanLabel} {isLatest ? '(Latest)' : ''}
+                                    </option>
+                                  );
+                                })
+                              ) : (
+                                <option value="">{activeCycle?.periodName || activeCycle?.name || 'Q3 2026'}</option>
+                              )}
+                            </select>
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Summary Pill Badges + Fill Form & Report Actions */}
-                    <div className="flex items-center gap-1.5 sm:gap-2 text-xs flex-wrap xl:flex-nowrap shrink-0 py-0.5">
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 whitespace-nowrap">
-                        <span className="text-[10px] text-slate-500 font-medium">Self Score:</span>
-                        <strong className="text-teal-900 font-bold">{selfScoreNum.toFixed(1)}%</strong>
+                    {/* Right: Scores & Actions */}
+                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+                      <div className="flex items-center divide-x divide-slate-200 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden text-xs">
+                        <div className="px-2.5 py-1 flex items-center gap-1">
+                          <span className="text-[10px] text-slate-400 font-medium">Self</span>
+                          <strong className="text-primary-950 font-bold">{selfScoreNum.toFixed(1)}%</strong>
+                        </div>
+                        <div className="px-2.5 py-1 flex items-center gap-1">
+                          <span className="text-[10px] text-slate-400 font-medium">Mgr</span>
+                          <strong className="text-primary-950 font-bold">
+                            {activeEmpResponse && (activeEmpResponse.status === 'approved' || activeEmpResponse.status === 'sm_final_approval' || (activeEmpResponse.managerReviewedAt && activeEmpResponse.status !== 'manager_review')) && activeEmpResponse.managerScore != null
+                              ? `${Number(activeEmpResponse.managerScore).toFixed(1)}%`
+                              : 'Pending'}
+                          </strong>
+                        </div>
+                        <div className="px-2.5 py-1 flex items-center gap-1">
+                          <span className="text-[10px] text-slate-400 font-medium">KPIs</span>
+                          <strong className="text-slate-800 font-bold">{completedKpiCount}/{totalKpiCount}</strong>
+                        </div>
                       </div>
-
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 whitespace-nowrap">
-                        <span className="text-[10px] text-slate-500 font-medium">Mgr Score:</span>
-                        <strong className="text-teal-950 font-bold">
-                          {activeEmpResponse && (activeEmpResponse.status === 'approved' || activeEmpResponse.status === 'sm_final_approval' || (activeEmpResponse.managerReviewedAt && activeEmpResponse.status !== 'manager_review')) && activeEmpResponse.managerScore != null
-                            ? `${Number(activeEmpResponse.managerScore).toFixed(1)}%`
-                            : 'Pending'}
-                        </strong>
-                      </div>
-
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 whitespace-nowrap">
-                        <span className="text-[10px] text-slate-500 font-medium">Progress:</span>
-                        <strong className="text-slate-900 font-bold">{completedKpiCount}/{totalKpiCount}</strong>
-                      </div>
-
-                      {/* Fill Form Button (Opens/Expands all category dropdowns) */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const allOpen = activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]);
-                          const nextState: Record<string, boolean> = {};
-                          activeCategories.forEach(c => {
-                            nextState[c.id] = !allOpen;
-                          });
-                          setExpandedCategories(nextState);
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-bold shadow-2xs transition cursor-pointer whitespace-nowrap"
-                        title="Click to open/expand all categories and fill the evaluation form"
-                      >
-                        <PencilSquareIcon className="w-3.5 h-3.5 text-white" />
-                        <span>{activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]) ? 'Collapse Form' : 'Fill Form'}</span>
-                        <ChevronDownIcon className={`w-3.5 h-3.5 text-white transition-transform duration-200 ${activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]) ? 'rotate-180' : ''}`} />
-                      </button>
 
                       <button
                         type="button"
                         onClick={() => setEmployeeSubTab('reports')}
-                        className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer whitespace-nowrap"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold transition cursor-pointer"
                       >
-                        <DocumentChartBarIcon className="w-3.5 h-3.5 text-teal-700" />
-                        <span>Official Report</span>
+                        <DocumentChartBarIcon className="w-3.5 h-3.5 text-primary-700" />
+                        <span>Report</span>
                       </button>
-                    </div>
-                  </div>
 
-                  {/* Visual Process Tracker Line */}
-                  <div className="relative py-2 px-6 max-w-xl mx-auto">
-                    {/* Base Track Line */}
-                    <div className="absolute left-10 right-10 top-5 h-0.5 bg-slate-200" />
-
-                    {/* Active Progress Fill Line */}
-                    <div
-                      className="absolute left-10 top-5 h-0.5 bg-emerald-500 transition-all duration-500"
-                      style={{
-                        width: activeEmpResponse?.status === 'approved'
-                          ? 'calc(100% - 5rem)'
-                          : (activeEmpResponse?.status === 'sm_final_approval' || (activeEmpResponse?.managerReviewedAt && activeEmpResponse?.status !== 'manager_review'))
-                            ? 'calc(75% - 2.5rem)'
-                            : isEmpSubmitted
-                              ? 'calc(50% - 2.5rem)'
-                              : '0%'
-                      }}
-                    />
-
-                    <div className="flex items-center justify-between relative z-10">
-                      {/* Step 1: Submitted */}
-                      <div className="flex flex-col items-center gap-1.5 text-center">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all shadow-2xs ${isEmpSubmitted
-                          ? 'bg-emerald-500 text-white ring-4 ring-emerald-50'
-                          : 'bg-emerald-500 text-white ring-4 ring-emerald-100'
-                          }`}>
-                          {isEmpSubmitted ? <CheckIcon className="w-4 h-4 stroke-[3]" /> : '1'}
-                        </div>
-                        <span className="text-xs font-bold text-slate-800">Submitted</span>
-                      </div>
-
-                      {/* Step 2: Manager Review */}
-                      <div className="flex flex-col items-center gap-1.5 text-center">
-                        {(() => {
-                          const isManagerDone = activeEmpResponse?.status === 'approved' || activeEmpResponse?.status === 'sm_final_approval' || (Boolean(activeEmpResponse?.managerReviewedAt) && activeEmpResponse?.status !== 'manager_review');
-                          return (
-                            <>
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${isManagerDone
-                                ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 shadow-2xs'
-                                : isEmpSubmitted
-                                  ? 'bg-amber-50 text-amber-700 border-2 border-amber-500 ring-4 ring-amber-100 shadow-2xs'
-                                  : 'bg-white text-slate-400 border-2 border-slate-300'
-                                }`}>
-                                {isManagerDone ? (
-                                  <CheckIcon className="w-4 h-4 stroke-[3]" />
-                                ) : (
-                                  '2'
-                                )}
-                              </div>
-                              <span className="text-xs font-bold text-slate-800">Manager Review</span>
-                            </>
-                          );
-                        })()}
-                      </div>
-
-                      {/* Step 3: Final Status */}
-                      <div className="flex flex-col items-center gap-1.5 text-center">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${activeEmpResponse?.status === 'approved'
-                          ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 shadow-2xs'
-                          : 'bg-white text-slate-400 border-2 border-slate-300'
-                          }`}>
-                          {activeEmpResponse?.status === 'approved' ? (
-                            <CheckBadgeIcon className="w-4.5 h-4.5 text-white" />
-                          ) : (
-                            '3'
-                          )}
-                        </div>
-                        <span className="text-xs font-bold text-slate-800">Final Status</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Interactive Assigned Evaluation Periods Navigation */}
-                {allUserResponses.length > 1 && (
-                  <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-2xs space-y-2.5">
-                    <div className="flex items-center justify-between gap-2 px-0.5">
-                      <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                        <CalendarDaysIcon className="w-4 h-4 text-teal-700" />
-                        <span>Manager Assigned Evaluation Periods</span>
-                        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                          {allUserResponses.length} Periods
-                        </span>
-                      </div>
-                      {allUserResponses.some(r => !r.employeeSubmittedAt && r.status !== 'manager_review' && r.status !== 'approved' && r.status !== 'sm_final_approval') && (
-                        <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                          Pending Self-Assessment
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5">
-                      {allUserResponses.map((r, idx) => {
-                        const c = cycles.find(cy => cy.id === r.cycleId);
-                        const periodTitle = c?.periodName || c?.name || (r as any).periodName || (r as any).form || `Period ${idx + 1}`;
-                        const isSelected = (selectedResponseId || activeEmpResponse?.id) === r.id;
-                        const isSubmitted = r.status === 'manager_review' || r.status === 'approved' || r.status === 'sm_final_approval' || Boolean(r.employeeSubmittedAt);
-                        const isApproved = r.status === 'approved' || (r.managerScore != null && r.status !== 'manager_review');
-                        const scoreVal = r.managerScore != null ? `${Number(r.managerScore).toFixed(1)}%` : (r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : null);
-
-                        return (
-                          <button
-                            key={r.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedResponseId(r.id);
-                              setSelectedReportResponseId(r.id);
-                            }}
-                            className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-xs font-medium transition cursor-pointer shrink-0 border text-left ${isSelected
-                              ? 'bg-teal-50/90 border-teal-500 text-teal-950 shadow-xs ring-1 ring-teal-500'
-                              : 'bg-slate-50/70 hover:bg-slate-100/80 border-slate-200 text-slate-700'
-                              }`}
-                          >
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`text-xs font-bold ${isSelected ? 'text-teal-950' : 'text-slate-800'}`}>
-                                  {periodTitle}
-                                </span>
-                                {idx === 0 && (
-                                  <span className="text-[9px] font-extrabold uppercase tracking-wider bg-teal-100 text-teal-800 px-1.5 py-0.2 rounded">
-                                    Latest
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                {isApproved ? (
-                                  <span className="text-[10px] font-semibold text-emerald-700 flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                    Approved {scoreVal ? `(${scoreVal})` : ''}
-                                  </span>
-                                ) : isSubmitted ? (
-                                  <span className="text-[10px] font-semibold text-sky-700 flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
-                                    Submitted to Manager
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] font-bold text-amber-700 flex items-center gap-1 animate-pulse">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                    Pending Self-Assessment
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            {isSelected && (
-                              <span className="w-2 h-2 rounded-full bg-teal-600 ml-1 shrink-0" />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-
-                {/* 2. Smart Deliverables Toolbar: Search & Filters */}
-                <div className="bg-white rounded-2xl border border-slate-200/90 p-3 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2 flex-1">
-                    {/* Search Input */}
-                    <div className="relative flex-1 min-w-[200px] max-w-sm">
-                      <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={empSearchQuery}
-                        onChange={e => setEmpSearchQuery(e.target.value)}
-                        placeholder="Search deliverable..."
-                        className="w-full h-8 pl-9 pr-7 text-xs bg-white border border-slate-200 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 rounded-xl focus:outline-none transition shadow-2xs"
-                      />
-                      {empSearchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => setEmpSearchQuery('')}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                        >
-                          <XMarkIcon className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Filter Tabs */}
-                    <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl text-xs font-bold">
-                      <button
-                        type="button"
-                        onClick={() => setEmpFilterTab('all')}
-                        className={`px-3 py-1 rounded-lg transition ${empFilterTab === 'all'
-                          ? 'bg-white text-slate-900 shadow-2xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                      >
-                        All ({totalKpiCount})
-                      </button>
-                      {adjustedKpiCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setEmpFilterTab('adjusted')}
-                          className={`px-3 py-1 rounded-lg transition flex items-center gap-1 ${empFilterTab === 'adjusted'
-                            ? 'bg-amber-100 text-amber-950 shadow-2xs font-bold'
-                            : 'text-amber-800 hover:text-amber-950'
-                            }`}
-                        >
-                          <span>Adjusted ({adjustedKpiCount})</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. Deliverable-Level Evaluation Breakdown Table */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                  {/* Table Header Bar */}
-                  <div className="px-5 py-3.5 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200/90 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-2 h-2 rounded-full bg-teal-500" />
-                      <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
-                        Deliverable Breakdown
-                      </h4>
-                      {isEmpSubmitted && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2.5 py-0.5 rounded-full shadow-2xs">
-                          <CheckCircleIcon className="w-3 h-3 text-teal-600" />
-                          Submitted & Locked
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => {
@@ -7011,18 +6924,156 @@ export const EvaluationTab: React.FC = () => {
                           });
                           setExpandedCategories(nextState);
                         }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
-                        title="Click to open/collapse all deliverable categories"
+                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
                       >
                         <PencilSquareIcon className="w-3.5 h-3.5 text-white" />
-                        <span>{activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]) ? 'Collapse Form' : 'Fill Form'}</span>
-                        <ChevronDownIcon className={`w-3.5 h-3.5 text-white transition-transform duration-200 ${activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]) ? 'rotate-180' : ''}`} />
+                        <span>{activeCategories.length > 0 && activeCategories.every(c => expandedCategories[c.id]) ? 'Collapse All' : 'Expand All'}</span>
                       </button>
-                      <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200/70">
-                        {filteredCategories.length} Categories
-                      </span>
-                      <span className="text-[11px] font-extrabold text-teal-800 bg-teal-50 px-3 py-1 rounded-full border border-teal-200/90 shadow-2xs">
-                        100% Total WeightAge
+                    </div>
+                  </div>
+
+                  {/* Sleek Compact Evaluation Tracking Strip */}
+                  {(() => {
+                    const isS1Done = Boolean(isEmpSubmitted);
+                    const isS2Done = activeEmpResponse?.status === 'approved' || activeEmpResponse?.status === 'sm_final_approval' || (Boolean(activeEmpResponse?.managerReviewedAt) && activeEmpResponse?.status !== 'manager_review');
+                    const isS2Active = isS1Done && !isS2Done;
+                    const isS3Done = activeEmpResponse?.status === 'approved';
+                    const isS3Active = !isS3Done && (activeEmpResponse?.status === 'sm_final_approval' || (Boolean(activeEmpResponse?.managerReviewedAt) && activeEmpResponse?.status !== 'manager_review'));
+
+                    return (
+                      <div className="px-4 py-2.5 bg-slate-50/70 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                        {/* Status Badge */}
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-0.5 rounded-full border ${
+                            isS3Done
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : isS2Active
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : isS3Active
+                              ? 'bg-primary-50 text-primary-800 border-primary-200'
+                              : 'bg-slate-100 text-slate-700 border-slate-200'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              isS3Done ? 'bg-emerald-500' : isS2Active ? 'bg-amber-500' : isS3Active ? 'bg-primary-500' : 'bg-slate-400'
+                            }`} />
+                            {isS3Done ? 'Approved' : isS2Active ? 'Under Review' : isS3Active ? 'Executive Sign-off' : 'In Progress'}
+                          </span>
+                        </div>
+
+                        {/* Minimalist 3-Step Progress Trail */}
+                        <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                          <span className={`inline-flex items-center gap-1 font-semibold ${isS1Done ? 'text-emerald-700' : 'text-slate-700'}`}>
+                            <span className={`w-4 h-4 rounded-full inline-flex items-center justify-center text-[10px] font-bold ${
+                              isS1Done ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'
+                            }`}>
+                              {isS1Done ? '✓' : '1'}
+                            </span>
+                            <span>Self Review</span>
+                          </span>
+
+                          <span className="text-slate-300">→</span>
+
+                          <span className={`inline-flex items-center gap-1 font-semibold ${
+                            isS2Done ? 'text-emerald-700' : isS2Active ? 'text-amber-700' : 'text-slate-400'
+                          }`}>
+                            <span className={`w-4 h-4 rounded-full inline-flex items-center justify-center text-[10px] font-bold ${
+                              isS2Done
+                                ? 'bg-emerald-600 text-white'
+                                : isS2Active
+                                ? 'bg-amber-500 text-white'
+                                : 'bg-slate-200 text-slate-500'
+                            }`}>
+                              {isS2Done ? '✓' : '2'}
+                            </span>
+                            <span>Manager Review</span>
+                          </span>
+
+                          <span className="text-slate-300">→</span>
+
+                          <span className={`inline-flex items-center gap-1 font-semibold ${
+                            isS3Done ? 'text-emerald-700' : 'text-slate-400'
+                          }`}>
+                            <span className={`w-4 h-4 rounded-full inline-flex items-center justify-center text-[10px] font-bold ${
+                              isS3Done ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'
+                            }`}>
+                              {isS3Done ? '✓' : '3'}
+                            </span>
+                            <span>Final Calibration</span>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* 2. Deliverable-Level Evaluation Breakdown Table with Integrated Toolbar */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                  {/* Integrated Table Header Bar (Clean & Compact) */}
+                  <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    {/* Left: Deliverable Title & Category Filters */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        Deliverables
+                      </h4>
+
+                      {/* Filter Pills */}
+                      <div className="inline-flex items-center gap-1 bg-white border border-slate-200 p-0.5 rounded-lg text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setEmpFilterTab('all')}
+                          className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer ${empFilterTab === 'all'
+                            ? 'bg-teal-700 text-white'
+                            : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                        >
+                          All ({totalKpiCount})
+                        </button>
+                        {adjustedKpiCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setEmpFilterTab('adjusted')}
+                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 ${empFilterTab === 'adjusted'
+                              ? 'bg-amber-100 text-amber-950 font-bold'
+                              : 'text-amber-800 hover:text-amber-950'
+                              }`}
+                          >
+                            <span>Adjusted ({adjustedKpiCount})</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {isEmpSubmitted && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
+                          <CheckCircleIcon className="w-3 h-3 text-teal-600" />
+                          Locked
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Right: Search & Badges */}
+                    <div className="flex items-center gap-2">
+                      <div className="relative w-44 sm:w-52">
+                        <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={empSearchQuery}
+                          onChange={e => setEmpSearchQuery(e.target.value)}
+                          placeholder="Search..."
+                          className="w-full h-7 pl-8 pr-6 text-xs bg-white border border-slate-200 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 rounded-lg focus:outline-none transition"
+                        />
+                        {empSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setEmpSearchQuery('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          >
+                            <XMarkIcon className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+
+                      <span className="text-[11px] font-bold text-teal-800 bg-teal-50 px-2 py-1 rounded-md border border-teal-200/80 shrink-0">
+                        100% Weight
                       </span>
                     </div>
                   </div>
@@ -7045,39 +7096,30 @@ export const EvaluationTab: React.FC = () => {
 
                       return (
                         <div key={cat.id} className="bg-white">
-                          {/* Modern Category Subheading Banner (Muted Dull Slate Theme) */}
+                          {/* Clean Category Bar */}
                           <div
                             onClick={() => setExpandedCategories(prev => ({ ...prev, [cat.id]: !prev[cat.id] }))}
-                            className="bg-slate-100/90 hover:bg-slate-200/70 text-slate-800 px-4 py-2.5 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
+                            className="bg-slate-50 hover:bg-slate-100/80 text-slate-800 px-4 py-2 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <span
-                                className="p-1 rounded-md text-slate-400 group-hover:text-slate-700 group-hover:bg-slate-200/70 transition-colors shrink-0"
-                                title={isExpanded ? "Collapse category details" : "Expand category details"}
+                                className="p-0.5 rounded text-slate-400 group-hover:text-slate-700 transition-colors shrink-0"
                               >
-                                <ChevronDownIcon className={`w-4 h-4 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                                <ChevronDownIcon className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'}`} />
                               </span>
-                              <span className="w-5 h-5 rounded-md bg-slate-300/90 text-slate-700 border border-slate-300 flex items-center justify-center font-bold text-[11px] shadow-2xs shrink-0">
-                                {catIdx + 1}
+                              <span className="font-semibold text-xs text-slate-900 group-hover:text-teal-900 transition-colors truncate">
+                                {catIdx + 1}. {cat.name}
                               </span>
-                              <span className="font-semibold text-xs text-slate-800 group-hover:text-slate-900 transition-colors truncate">
-                                {cat.name}
-                              </span>
-                              <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200/90 px-2 py-0.5 rounded-full shadow-2xs shrink-0">
-                                {cat.matchingKpis.length} {cat.matchingKpis.length === 1 ? 'deliverable' : 'deliverables'}
+                              <span className="text-[10px] text-slate-400">
+                                ({cat.matchingKpis.length})
                               </span>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200/90 px-2.5 py-0.5 rounded-full shadow-2xs whitespace-nowrap">
-                                Earned: <strong className="text-slate-800 font-bold">{catEarned.toFixed(2)}%</strong> / {cat.weightage}%
+                            <div className="flex items-center gap-2.5 shrink-0 text-xs">
+                              <span className="text-[11px] text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
+                                <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
                               </span>
-                              <span className="text-[11px] font-bold text-slate-700 bg-slate-200/80 border border-slate-300/80 px-2.5 py-0.5 rounded-full shadow-2xs whitespace-nowrap">
-                                {cat.weightage}% WeightAge
-                              </span>
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-teal-50 text-teal-800 border border-teal-200/90 shadow-2xs group-hover:bg-teal-100 transition">
-                                <PencilSquareIcon className="w-3 h-3 text-teal-700" />
-                                <span>{isExpanded ? 'Hide' : 'Fill Form'}</span>
-                                <ChevronDownIcon className={`w-3 h-3 text-teal-700 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                              <span className="text-[11px] font-medium text-teal-700 group-hover:text-teal-900 flex items-center gap-0.5">
+                                {isExpanded ? 'Collapse' : 'Expand'}
                               </span>
                             </div>
                           </div>
@@ -7220,8 +7262,8 @@ export const EvaluationTab: React.FC = () => {
                                               }
                                               return (
                                                 <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold text-xs shadow-2xs ${calc.earnedScore === 0
-                                                    ? 'bg-rose-50 text-rose-900 border border-rose-300'
-                                                    : 'bg-slate-100 text-slate-800 border border-slate-200'
+                                                  ? 'bg-rose-50 text-rose-900 border border-rose-300'
+                                                  : 'bg-slate-100 text-slate-800 border border-slate-200'
                                                   }`}>
                                                   <span>{val} {kpi.unit || ''}</span>
                                                   {calc.earnedScore === 0 && (
@@ -7243,14 +7285,14 @@ export const EvaluationTab: React.FC = () => {
                                                   onChange={e => handleKPIChange(kpi, e.target.value)}
                                                   placeholder="0"
                                                   className={`w-24 h-8 px-2 text-center font-bold text-xs rounded-xl transition shadow-2xs focus:outline-none ${isNeg && isOverTarget
+                                                    ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
+                                                    : !isNeg && calc.earnedScore === 0 && val !== ''
                                                       ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
-                                                      : !isNeg && calc.earnedScore === 0 && val !== ''
-                                                        ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
-                                                        : isOverTarget
-                                                          ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-500 ring-2 ring-emerald-400/30 font-black'
-                                                          : isMetTarget
-                                                            ? 'bg-teal-50/80 text-teal-950 border-2 border-teal-400 font-bold focus:border-teal-600'
-                                                            : 'bg-white text-slate-900 border border-slate-200 focus:border-teal-600'
+                                                      : isOverTarget
+                                                        ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-500 ring-2 ring-emerald-400/30 font-black'
+                                                        : isMetTarget
+                                                          ? 'bg-teal-50/80 text-teal-950 border-2 border-teal-400 font-bold focus:border-teal-600'
+                                                          : 'bg-white text-slate-900 border border-slate-200 focus:border-teal-600'
                                                     }`}
                                                 />
                                                 {isNeg && isOverTarget && (
@@ -7276,8 +7318,8 @@ export const EvaluationTab: React.FC = () => {
                                         {/* Self Score */}
                                         <td className="px-2.5 py-3 text-center align-middle whitespace-nowrap">
                                           <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${calc.earnedScore > 0
-                                              ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90'
-                                              : 'bg-rose-50 text-rose-900 border border-rose-200/90'
+                                            ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90'
+                                            : 'bg-rose-50 text-rose-900 border border-rose-200/90'
                                             }`}>
                                             {calc.earnedScore.toFixed(2)}%
                                           </span>
@@ -7324,8 +7366,8 @@ export const EvaluationTab: React.FC = () => {
                                                 }
                                                 return (
                                                   <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold transition shadow-2xs ${isActualModifiedByMgr
-                                                      ? 'bg-amber-100 text-amber-950 border border-amber-300'
-                                                      : 'bg-teal-100 text-teal-950 border border-teal-300'
+                                                    ? 'bg-amber-100 text-amber-950 border border-amber-300'
+                                                    : 'bg-teal-100 text-teal-950 border border-teal-300'
                                                     }`}>
                                                     {mgrActualVal} {kpi.unit || ''}
                                                   </span>
@@ -7337,10 +7379,10 @@ export const EvaluationTab: React.FC = () => {
 
                                             <td className="px-2.5 py-3 text-center align-middle bg-teal-50/30 whitespace-nowrap">
                                               <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${mgrEarnedScore !== null && mgrEarnedScore > 0
-                                                  ? 'bg-teal-100 text-teal-950 border border-teal-300'
-                                                  : mgrEarnedScore !== null
-                                                    ? 'bg-rose-50 text-rose-900 border border-rose-200/90'
-                                                    : 'bg-slate-50 text-slate-500 border border-slate-200/60'
+                                                ? 'bg-teal-100 text-teal-950 border border-teal-300'
+                                                : mgrEarnedScore !== null
+                                                  ? 'bg-rose-50 text-rose-900 border border-rose-200/90'
+                                                  : 'bg-slate-50 text-slate-500 border border-slate-200/60'
                                                 }`}>
                                                 {mgrEarnedScore !== null ? `${mgrEarnedScore.toFixed(2)}%` : '—'}
                                               </span>
@@ -7458,1636 +7500,1358 @@ export const EvaluationTab: React.FC = () => {
               return (b.id || '').localeCompare(a.id || '');
             });
 
+            // Calculate aggregate statistics for executive summary cards
+            const totalRecords = allEmpResponses.length;
+            const publishedCount = allEmpResponses.filter(r => r.status === 'approved' || r.status === 'sm_final_approval').length;
+            const inReviewCount = totalRecords - publishedCount;
+
+            let sumScores = 0;
+            let validScoresCount = 0;
+            allEmpResponses.forEach(r => {
+              const rawSelf = r.employeeOverallScore != null ? Number(r.employeeOverallScore) : 0;
+              const mgrSc = r.managerScore != null ? Number(r.managerScore) : (r.serviceManagerScore != null ? Number(r.serviceManagerScore) : null);
+              const finalSc = mgrSc ?? rawSelf;
+              if (finalSc > 0) {
+                sumScores += finalSc;
+                validScoresCount++;
+              }
+            });
+            const avgHistoricalScore = validScoresCount > 0 ? sumScores / validScoresCount : 0;
+            const latestResponse = allEmpResponses[0];
+            const latestScore = latestResponse
+              ? (latestResponse.managerScore != null
+                  ? Number(latestResponse.managerScore)
+                  : (latestResponse.serviceManagerScore != null
+                      ? Number(latestResponse.serviceManagerScore)
+                      : Number(latestResponse.employeeOverallScore ?? 0)))
+              : 0;
+            const latestRating = getRatingForScore(latestScore);
+
+            const filteredHistoryResponses = allEmpResponses.filter(r => {
+              const itemCycle = cycles.find(cy => cy.id === r.cycleId);
+              const itemTitle = itemCycle?.name || itemCycle?.periodName || (r as any).periodName || '';
+              const desc = itemCycle?.description || (r as any).description || '';
+              const matchesSearch = !historySearchQuery.trim() ||
+                itemTitle.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
+                desc.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
+                (r.periodName || '').toLowerCase().includes(historySearchQuery.toLowerCase());
+
+              const isPublished = r.status === 'approved' || r.status === 'sm_final_approval';
+              if (historyStatusFilter === 'published') return matchesSearch && isPublished;
+              if (historyStatusFilter === 'in_review') return matchesSearch && !isPublished;
+              return matchesSearch;
+            });
+
+            const getGradeBadgeColor = (grade: string | number) => {
+              const g = String(grade).toUpperCase();
+              if (g === 'A' || g === '5') return 'bg-emerald-50 text-emerald-800 border border-emerald-200';
+              if (g === 'B' || g === '4') return 'bg-indigo-50 text-indigo-800 border border-indigo-200';
+              if (g === 'C' || g === '3') return 'bg-blue-50 text-blue-800 border border-blue-200';
+              if (g === 'D' || g === '2') return 'bg-amber-50 text-amber-800 border border-amber-200';
+              return 'bg-rose-50 text-rose-800 border border-rose-200';
+            };
+
             return (
-              <div className="space-y-8 animate-in fade-in duration-200">
-                {/* Executive Overview Header */}
-                <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-teal-700 text-white shadow-xs">
-                        <CheckBadgeIcon className="w-3.5 h-3.5" />
-                        Evaluation History
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400">
-                        {allEmpResponses.length} {allEmpResponses.length === 1 ? 'Record' : 'Records'}
+              <div className="space-y-4 animate-in fade-in duration-200">
+                {/* 1. Sleek Compact Header Bar */}
+                <div className="bg-white rounded-2xl px-4 py-3 border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <AcademicCapIcon className="w-4 h-4" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+                        Evaluation History & Scorecards
+                      </h2>
+                      <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-teal-50 text-teal-800 border border-teal-200">
+                        {totalRecords} {totalRecords === 1 ? 'Record' : 'Records'}
                       </span>
                     </div>
-                    <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-                      Evaluation History & Scorecards
-                    </h2>
-                    <p className="text-xs text-slate-500 font-medium">
-                      Official performance scorecards and evaluation records.
-                    </p>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
                       onClick={() => setEmployeeSubTab('worksheet')}
-                      className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer"
                     >
-                      <PencilSquareIcon className="w-4 h-4 text-slate-500" />
+                      <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
                       <span>Back to Worksheet</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => window.print()}
-                      className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded-xl shadow-xs transition cursor-pointer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shadow-xs transition cursor-pointer"
                     >
-                      <PrinterIcon className="w-4 h-4" />
+                      <PrinterIcon className="w-3.5 h-3.5" />
                       <span>Print PDF</span>
                     </button>
                   </div>
                 </div>
 
-                {/* Stack of Full Executive Scorecards — One per Stage Response in DB */}
-                <div className="space-y-8">
-                  {allEmpResponses.map((r, idx) => {
-                    const itemCycle = cycles.find(cy => cy.id === r.cycleId);
-                    const itemTitle = itemCycle?.name || itemCycle?.periodName || (r as any).periodName || `Performance Evaluation Stage ${allEmpResponses.length - idx}`;
-                    const itemCategories = (itemCycle?.categories && itemCycle.categories.length > 0) ? itemCycle.categories : activeCategories;
+                {/* 2. Performance Scorecards Table */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                  {/* Table Toolbar: Search + Filter Tabs */}
+                  <div className="px-4 py-2.5 bg-slate-50/60 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="relative flex-1 max-w-sm">
+                      <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Search period or form..."
+                        value={historySearchQuery}
+                        onChange={e => setHistorySearchQuery(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-teal-700 text-slate-800 placeholder-slate-400 shadow-2xs"
+                      />
+                    </div>
 
-                    // Resolve descriptive period time from cycle, response, or DB fields
-                    const resolvePeriodTime = () => {
-                      // 1. Check description from DB for embedded period (e.g. "Performance evaluation for Media (Daily (14 Sep 2026))")
-                      const desc = String(itemCycle?.description || (r as any).description || '').trim();
-                      if (desc.includes('(') && desc.includes(')')) {
-                        const extracted = desc.substring(desc.lastIndexOf('(') + 1, desc.lastIndexOf(')')).trim();
-                        if (extracted && extracted.toLowerCase() !== (itemCycle?.name || '').toLowerCase()) {
-                          return extracted;
-                        }
-                      }
-
-                      // 2. Check if single day (Daily) by dates: startDate === endDate
-                      if (itemCycle?.startDate && itemCycle?.endDate && itemCycle.startDate === itemCycle.endDate) {
-                        return `Daily (${formatDisplayDate(itemCycle.startDate)})`;
-                      }
-
-                      // 3. Check cycle.periodName or (r as any).periodName
-                      let rawPeriod = String(itemCycle?.periodName || (r as any).periodName || (r as any).reviewPeriod || '').trim();
-
-                      // If rawPeriod has a specific period format (Daily, Weekly, Monthly, Due Date, Q1-Q4, Stage)
-                      const isDescriptive = rawPeriod && rawPeriod.toLowerCase() !== (itemCycle?.name || '').toLowerCase() && (
-                        rawPeriod.toLowerCase().includes('daily') ||
-                        rawPeriod.toLowerCase().includes('due') ||
-                        rawPeriod.toLowerCase().includes('week') ||
-                        rawPeriod.toLowerCase().includes('stage') ||
-                        rawPeriod.includes('(') ||
-                        /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(rawPeriod)
-                      );
-
-                      if (isDescriptive) {
-                        return rawPeriod;
-                      }
-
-                      // 4. Date range if present
-                      const hasCycleDates = Boolean(itemCycle?.startDate && itemCycle?.endDate);
-                      const formattedDates = hasCycleDates
-                        ? `${formatDisplayDate(itemCycle!.startDate)} – ${formatDisplayDate(itemCycle!.endDate)}`
-                        : '';
-
-                      // 5. Check for Quarter in title / form name / rawPeriod
-                      const textToCheck = `${itemTitle} ${rawPeriod} ${itemCycle?.name || ''}`;
-                      const qMatch = textToCheck.match(/Q([1-4])/i);
-                      if (qMatch) {
-                        const qNum = parseInt(qMatch[1]);
-                        const qLabels: Record<number, string> = { 1: 'Jan - Mar', 2: 'Apr - Jun', 3: 'Jul - Sep', 4: 'Oct - Dec' };
-                        const yr = (itemCycle?.startDate ? new Date(itemCycle.startDate).getFullYear() : (r.createdAt ? new Date(r.createdAt).getFullYear() : currentYear)) || currentYear;
-                        return `Q${qNum} ${yr} (${qLabels[qNum]})`;
-                      }
-
-                      if (formattedDates) {
-                        return formattedDates;
-                      }
-
-                      if (rawPeriod && rawPeriod.toLowerCase() !== (itemCycle?.name || '').toLowerCase()) {
-                        return rawPeriod;
-                      }
-
-                      if (r.createdAt) {
-                        return formatDisplayDate(r.createdAt);
-                      }
-
-                      return `Q${currentQuarter} ${currentYear} (${quarterLabel})`;
-                    };
-
-                    const itemPeriodTime = resolvePeriodTime();
-
-                    const rawSelf = r.employeeOverallScore != null ? Number(r.employeeOverallScore) : 0;
-                    let itemSelfScore = rawSelf;
-                    if (itemSelfScore === 0) {
-                      if (r.managerScore != null && Number(r.managerScore) > 0) {
-                        itemSelfScore = Number(r.managerScore);
-                      } else if (r.kpiResponses && Object.keys(r.kpiResponses).length > 0) {
-                        const kpis = Object.values(r.kpiResponses);
-                        let tot = 0, cnt = 0;
-                        kpis.forEach((item: any) => {
-                          if (typeof item === 'object' && item !== null) {
-                            const sc = item.earnedScore ?? item.earned_score ?? item.score;
-                            if (sc !== undefined && sc !== null && Number(sc) > 0) {
-                              tot += Number(sc);
-                              cnt++;
-                            }
-                          }
-                        });
-                        if (cnt > 0) itemSelfScore = tot / cnt;
-                      }
-                    }
-
-                    const itemMgrScore = r.managerScore != null ? Number(r.managerScore) : (r.serviceManagerScore != null ? Number(r.serviceManagerScore) : null);
-                    const itemFinalScore = itemMgrScore ?? itemSelfScore;
-                    const itemRating = getRatingForScore(itemFinalScore);
-                    const itemSelfRating = getRatingForScore(itemSelfScore);
-                    const itemIsApproved = r.status === 'approved' || r.status === 'sm_final_approval';
-                    // Audit breakdown table is hidden by default; user can toggle it open
-                    const isAuditOpen = historyAuditBreakdownOpen[r.id] === true;
-
-                    return (
-                      <div key={r.id || idx} className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/90 shadow-xs space-y-6 animate-in fade-in duration-200">
-                        {/* Executive Stage Header Banner — Clean & Minimized */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 border-b border-slate-200/80 gap-3">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200/80 shadow-2xs">
-                                <CalendarDaysIcon className="w-3 h-3 text-teal-700 shrink-0" />
-                                <span>Period: <strong className="text-teal-950 font-black">{itemPeriodTime}</strong></span>
-                              </span>
-
-                              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${itemIsApproved
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : 'bg-amber-50 text-amber-800 border-amber-200'
-                                }`}>
-                                {itemIsApproved ? '● Published' : '○ In Review'}
-                              </span>
-                            </div>
-
-                            <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-                              {itemTitle}
-                            </h3>
-                          </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const summary = `PERFORMANCE REPORT: ${itemTitle}\nPeriod: ${itemPeriodTime}\nSelf Score: ${itemSelfScore.toFixed(1)}%\nManager Score: ${itemMgrScore !== null ? `${itemMgrScore.toFixed(1)}%` : 'Pending'}\nFinal Grade: ${itemRating.letterGrade || itemRating.grade} (${itemRating.name})`;
-                                navigator.clipboard.writeText(summary);
-                                alert('Performance Summary copied!');
-                              }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition cursor-pointer"
-                            >
-                              <ClipboardDocumentListIcon className="w-3.5 h-3.5 text-slate-500" />
-                              <span>Copy Summary</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Hero Executive Scorecard & Consensus Grid */}
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                          {/* Dark Green Hero Card */}
-                          <div
-                            onClick={() => setHistoryAuditBreakdownOpen(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
-                            className="lg:col-span-5 bg-gradient-to-br from-teal-900 via-teal-800 to-slate-900 text-white rounded-2xl p-6 shadow-md flex flex-col justify-between space-y-5 relative overflow-hidden cursor-pointer hover:ring-2 hover:ring-teal-400/60 transition-all duration-200 group"
-                            title={isAuditOpen ? "Click to collapse Deliverable Audit Breakdown" : "Click to view detailed Deliverable Audit Breakdown"}
+                    <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                      {(['all', 'published', 'in_review'] as const).map(tabKey => {
+                        const count = tabKey === 'all' ? totalRecords : tabKey === 'published' ? publishedCount : inReviewCount;
+                        if (count === 0 && tabKey !== 'all') return null;
+                        const label = tabKey === 'all' ? 'All' : tabKey === 'published' ? 'Published' : 'In Review';
+                        const isActive = historyStatusFilter === tabKey;
+                        return (
+                          <button
+                            key={tabKey}
+                            type="button"
+                            onClick={() => setHistoryStatusFilter(tabKey)}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
+                              isActive
+                                ? 'bg-teal-700 text-white shadow-2xs'
+                                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                            }`}
                           >
-                            <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
+                            {label} ({count})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-                            <div className="flex items-center justify-between z-10">
-                              <span className="text-[10px] uppercase font-bold text-teal-200 tracking-wider flex items-center gap-1">
-                                <SparklesIcon className="w-3.5 h-3.5 text-teal-300" />
-                                Final Performance Scorecard
-                              </span>
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-teal-700/80 text-teal-100 border border-teal-600/50">
-                                {itemRating.name}
-                              </span>
-                            </div>
+                  {/* Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-bold text-slate-500 tracking-wider select-none">
+                        <tr>
+                          <th className="px-5 py-3 text-left">Evaluation Period & Form</th>
+                          <th className="px-3 py-3 text-center">Status</th>
+                          <th className="px-3 py-3 text-center">Self Score</th>
+                          <th className="px-3 py-3 text-center">Manager Score</th>
+                          <th className="px-3 py-3 text-center">Final Grade</th>
+                          <th className="px-3 py-3 text-center">Consensus</th>
+                          <th className="px-4 py-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {filteredHistoryResponses.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="text-center py-10 text-slate-400 text-xs font-medium">
+                              No evaluation records match your filter criteria.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredHistoryResponses.map((r, idx) => {
+                            const itemCycle = cycles.find(cy => cy.id === r.cycleId);
+                            const itemTitle = itemCycle?.name || itemCycle?.periodName || (r as any).periodName || `Performance Evaluation Stage ${filteredHistoryResponses.length - idx}`;
+                            const itemCategories = (itemCycle?.categories && itemCycle.categories.length > 0) ? itemCycle.categories : activeCategories;
 
-                            <div className="space-y-2 z-10">
-                              <div className="flex items-baseline gap-3">
-                                <span className="text-5xl font-black tracking-tight text-white">
-                                  {itemRating.letterGrade || itemRating.grade}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="text-2xl font-black text-teal-100">
-                                  {itemFinalScore.toFixed(1)}%
-                                </div>
-                                <span className="text-xs text-teal-200/80 font-medium">Cumulative Score</span>
-                              </div>
-                            </div>
+                            const resolvePeriodTime = () => {
+                              const desc = String(itemCycle?.description || (r as any).description || '').trim();
+                              const rawPeriod = String(itemCycle?.periodName || (r as any).periodName || (r as any).reviewPeriod || '').trim();
 
-                            <div className="pt-3 border-t border-teal-700/60 flex items-center justify-between z-10">
-                              <div className="flex items-center gap-1">
-                                {[1, 2, 3, 4, 5].map(s => (
-                                  s <= itemRating.stars ? (
-                                    <StarSolid key={s} className="w-4 h-4 text-amber-400 drop-shadow-xs" />
-                                  ) : (
-                                    <StarIcon key={s} className="w-4 h-4 text-teal-700" />
-                                  )
-                                ))}
-                              </div>
-                              <div className="flex items-center gap-1 text-[11px] font-extrabold text-teal-200 group-hover:text-white transition">
-                                <span>{isAuditOpen ? 'Hide Audit Breakdown' : 'View Audit Breakdown'}</span>
-                                {isAuditOpen ? (
-                                  <ChevronUpIcon className="w-3.5 h-3.5 text-teal-300" />
-                                ) : (
-                                  <ChevronDownIcon className="w-3.5 h-3.5 text-teal-300" />
-                                )}
-                              </div>
-                            </div>
-                          </div>
+                              if (itemCycle?.startDate && itemCycle?.endDate && itemCycle.startDate === itemCycle.endDate) {
+                                return `Daily (${formatDisplayDate(itemCycle.startDate)})`;
+                              }
+                              if (itemCycle?.startDate && itemCycle?.endDate) {
+                                return `${formatDisplayDate(itemCycle.startDate)} – ${formatDisplayDate(itemCycle.endDate)}`;
+                              }
+                              if (desc && desc.toLowerCase() !== (itemCycle?.name || '').toLowerCase()) {
+                                return desc.replace(/^\(/, '').replace(/\)$/, '').trim();
+                              }
+                              if (rawPeriod && rawPeriod.toLowerCase() !== (itemCycle?.name || '').toLowerCase()) {
+                                return rawPeriod.replace(/^\(/, '').replace(/\)$/, '').trim();
+                              }
+                              if (r.createdAt) {
+                                return formatDisplayDate(r.createdAt);
+                              }
+                              return `Q${currentQuarter} ${currentYear}`;
+                            };
 
-                          {/* Evaluation Score Alignment Box */}
-                          <div className="lg:col-span-7 bg-slate-50/90 rounded-2xl p-5 border border-slate-200 shadow-2xs flex flex-col justify-between space-y-4">
-                            <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
-                              <div className="flex items-center gap-2">
-                                <ChartBarIcon className="w-4 h-4 text-teal-700" />
-                                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                                  Evaluation Score Alignment
-                                </h3>
-                              </div>
-                            </div>
+                            const itemPeriodTime = resolvePeriodTime();
 
-                            {/* Dual Metric KPI Stat Cards */}
-                            <div className="grid grid-cols-2 gap-3">
-                              {/* Self Score Card */}
-                              <div className="bg-white rounded-xl p-3.5 border border-slate-200/80 space-y-1">
-                                <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase">
-                                  <span>Self Score</span>
-                                  <span className="text-slate-400">Submitted</span>
-                                </div>
-                                <div className="flex items-baseline justify-between">
-                                  <span className="text-2xl font-black text-slate-900">{itemSelfScore.toFixed(1)}%</span>
-                                  <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/60">
-                                    Grade {itemSelfRating.letterGrade || itemSelfRating.grade}
-                                  </span>
-                                </div>
-                              </div>
+                            const rawSelf = r.employeeOverallScore != null ? Number(r.employeeOverallScore) : 0;
+                            let itemSelfScore = rawSelf;
+                            if (itemSelfScore === 0) {
+                              if (r.managerScore != null && Number(r.managerScore) > 0) {
+                                itemSelfScore = Number(r.managerScore);
+                              } else if (r.kpiResponses && Object.keys(r.kpiResponses).length > 0) {
+                                const kpis = Object.values(r.kpiResponses);
+                                let tot = 0, cnt = 0;
+                                kpis.forEach((item: any) => {
+                                  if (typeof item === 'object' && item !== null) {
+                                    const sc = item.earnedScore ?? item.earned_score ?? item.score;
+                                    if (sc !== undefined && sc !== null && Number(sc) > 0) {
+                                      tot += Number(sc);
+                                      cnt++;
+                                    }
+                                  }
+                                });
+                                if (cnt > 0) itemSelfScore = tot / cnt;
+                              }
+                            }
 
-                              {/* Manager Final Card */}
-                              <div className="bg-white rounded-xl p-3.5 border border-teal-200/80 space-y-1">
-                                <div className="flex items-center justify-between text-[10px] font-bold text-teal-900 uppercase">
-                                  <span>Manager Final</span>
-                                  <span className={itemMgrScore !== null ? 'text-emerald-600 font-extrabold' : 'text-amber-600 font-extrabold'}>
-                                    {itemMgrScore !== null ? 'Published' : 'In Review'}
-                                  </span>
-                                </div>
-                                <div className="flex items-baseline justify-between">
-                                  <span className="text-2xl font-black text-teal-950">
-                                    {itemMgrScore !== null ? `${itemMgrScore.toFixed(1)}%` : '—'}
-                                  </span>
-                                  <span className="text-xs font-bold text-teal-900 bg-teal-100/70 px-2 py-0.5 rounded-md border border-teal-300/80">
-                                    Grade {itemRating.letterGrade || itemRating.grade}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
+                            const itemMgrScore = r.managerScore != null ? Number(r.managerScore) : (r.serviceManagerScore != null ? Number(r.serviceManagerScore) : null);
+                            const itemFinalScore = itemMgrScore ?? itemSelfScore;
+                            const itemRating = getRatingForScore(itemFinalScore);
+                            const itemIsApproved = r.status === 'approved' || r.status === 'sm_final_approval';
+                            const isAuditOpen = historyAuditBreakdownOpen[r.id] === true;
 
-                            {/* Consensus Status Bar */}
-                            <div className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between text-xs font-semibold">
-                              <span className="text-slate-500 text-[11px] font-bold">Consensus Status:</span>
-                              {itemMgrScore !== null ? (
-                                <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold border ${Math.abs(itemMgrScore - itemSelfScore) <= 2
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  : itemMgrScore > itemSelfScore
-                                    ? 'bg-teal-50 text-teal-800 border-teal-200'
-                                    : 'bg-amber-50 text-amber-800 border-amber-200'
-                                  }`}>
-                                  {itemMgrScore === itemSelfScore
-                                    ? '100% Aligned Consensus'
-                                    : `${itemMgrScore > itemSelfScore ? '+' : ''}${(itemMgrScore - itemSelfScore).toFixed(1)}% Manager Adjustment`}
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 italic text-[11px]">Awaiting Manager Official Scoring</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Detailed Performance Deliverables Breakdown Table */}
-                        {isAuditOpen && (
-                          <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-2 duration-200">
-                            <div className="flex items-center justify-between">
-                              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                                <TableCellsIcon className="w-4 h-4 text-teal-700" />
-                                Deliverable Audit Breakdown ({itemTitle} • {itemPeriodTime})
-                              </h3>
-                              <button
-                                type="button"
-                                onClick={() => setHistoryAuditBreakdownOpen(prev => ({ ...prev, [r.id]: false }))}
-                                className="text-[10px] font-bold text-slate-500 hover:text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200 transition cursor-pointer"
-                              >
-                                Close Breakdown ▲
-                              </button>
-                            </div>
-
-                            <div className="rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
-                              {itemCategories.map((cat, catIdx) => {
-                                const catEarned = cat.kpis.reduce((sum, k) => {
-                                  const selfRes = r.kpiResponses?.[k.id];
-                                  return sum + (selfRes?.earnedScore !== undefined ? Number(selfRes.earnedScore) : 0);
-                                }, 0);
-                                const isCatExpanded = Boolean(expandedAuditCategories[`${r.id}_${cat.id || catIdx}`]);
-
-                                return (
-                                  <div key={cat.id} className="bg-white">
-                                    {/* Modern Category Subheading Banner (Muted Dull Slate Theme) */}
-                                    <div
-                                      onClick={() => setExpandedAuditCategories(prev => ({ ...prev, [`${r.id}_${cat.id || catIdx}`]: !prev[`${r.id}_${cat.id || catIdx}`] }))}
-                                      className="bg-slate-100/90 hover:bg-slate-200/70 text-slate-800 px-4 py-2.5 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <span
-                                          className="p-1 rounded-md text-slate-400 group-hover:text-slate-700 group-hover:bg-slate-200/70 transition-colors shrink-0"
-                                          title={isCatExpanded ? "Collapse category details" : "Expand category details"}
-                                        >
-                                          <ChevronDownIcon className={`w-4 h-4 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isCatExpanded ? 'rotate-0' : '-rotate-90'}`} />
-                                        </span>
-                                        <span className="w-5 h-5 rounded-md bg-slate-300/90 text-slate-700 border border-slate-300 flex items-center justify-center font-bold text-[11px] shadow-2xs shrink-0">
-                                          {catIdx + 1}
-                                        </span>
-                                        <span className="font-semibold text-xs text-slate-800 group-hover:text-slate-900 transition-colors truncate">
-                                          {cat.name}
-                                        </span>
-                                        <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200/90 px-2 py-0.5 rounded-full shadow-2xs shrink-0">
-                                          {cat.kpis.length} {cat.kpis.length === 1 ? 'deliverable' : 'deliverables'}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200/90 px-2.5 py-0.5 rounded-full shadow-2xs whitespace-nowrap">
-                                          Earned: <strong className="text-slate-800 font-bold">{catEarned.toFixed(2)}%</strong> / {cat.weightage}%
-                                        </span>
-                                        <span className="text-[11px] font-bold text-slate-700 bg-slate-200/80 border border-slate-300/80 px-2.5 py-0.5 rounded-full shadow-2xs whitespace-nowrap">
-                                          {cat.weightage}% WeightAge
-                                        </span>
-                                      </div>
+                            return (
+                              <React.Fragment key={r.id || idx}>
+                                <tr className={`hover:bg-slate-50/80 transition-colors ${isAuditOpen ? 'bg-teal-50/20' : ''}`}>
+                                  {/* 1. Period & Title */}
+                                  <td className="px-5 py-3 align-middle">
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="font-bold text-xs text-slate-900">{itemTitle}</span>
+                                      <span className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
+                                        <CalendarDaysIcon className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                                        {itemPeriodTime}
+                                      </span>
                                     </div>
+                                  </td>
 
-                                    {/* Deliverables Table for Expanded Category */}
-                                    {isCatExpanded && (
-                                      <div className="overflow-x-auto border-t border-slate-200/80">
-                                        <table className="w-full text-left text-xs border-collapse">
-                                          <thead className="bg-slate-50/95 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider select-none">
-                                            <tr>
-                                              <th className="px-4 py-2.5 text-left whitespace-nowrap">Deliverable Metric</th>
-                                              <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Target</th>
-                                              <th className="px-2 py-2.5 text-center whitespace-nowrap">Weight</th>
-                                              <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Actual</th>
-                                              <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Self Score</th>
-                                              <th className="px-3.5 py-2.5 text-left whitespace-nowrap">Self Remarks</th>
-                                              <th className="px-3 py-2.5 text-center bg-teal-50/50 text-teal-950 border-l border-teal-200/60 whitespace-nowrap font-extrabold">Mgr Actual</th>
-                                              <th className="px-2.5 py-2.5 text-center bg-teal-50/50 text-teal-950 whitespace-nowrap font-extrabold">Mgr Score</th>
-                                              <th className="px-3.5 py-2.5 text-left bg-teal-50/50 text-teal-950 whitespace-nowrap font-extrabold">Mgr Remarks</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody className="divide-y divide-slate-100 bg-white">
-                                            {cat.kpis.map((kpi) => {
-                                              const selfRes = r.kpiResponses?.[kpi.id];
-                                              const selfActual = selfRes?.actualValue !== undefined && selfRes?.actualValue !== null && selfRes?.actualValue !== ''
-                                                ? selfRes.actualValue
-                                                : '—';
-                                              const selfScore = selfRes?.earnedScore !== undefined ? selfRes.earnedScore : 0;
-                                              const selfRemarks = selfRes?.employeeRemarks || '';
+                                  {/* 2. Status */}
+                                  <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
+                                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                      itemIsApproved
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                                    }`}>
+                                      <span className={`w-1.5 h-1.5 rounded-full ${itemIsApproved ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                      {itemIsApproved ? 'Published' : 'In Review'}
+                                    </span>
+                                  </td>
 
-                                              const mgrActual = selfRes?.managerActualValue !== undefined && selfRes?.managerActualValue !== null && selfRes?.managerActualValue !== ''
-                                                ? selfRes.managerActualValue
-                                                : '—';
-                                              const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null
-                                                ? Number(selfRes.managerScore)
-                                                : null;
-                                              const mgrRemarks = selfRes?.managerRemarks || '';
-                                              const isNeg = isNegativeKpi(kpi);
+                                  {/* 3. Self Score */}
+                                  <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
+                                    <span className="font-mono font-bold text-xs text-slate-800">
+                                      {itemSelfScore.toFixed(1)}%
+                                    </span>
+                                  </td>
 
-                                              return (
-                                                <tr key={kpi.id} className={`transition ${isNeg ? 'bg-rose-50/20 hover:bg-rose-50/40' : 'hover:bg-slate-50/80'}`}>
-                                                  <td className="px-4 py-2.5 align-middle max-w-[240px]">
-                                                    <span className={`text-xs ${isNeg ? 'font-bold text-rose-600' : 'font-bold text-slate-800'}`}>{kpi.name}</span>
-                                                    {kpi.description && (
-                                                      <div className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">{kpi.description}</div>
-                                                    )}
-                                                  </td>
-                                                  <td className={`px-2.5 py-2.5 text-center align-middle font-bold text-xs whitespace-nowrap ${isNeg ? 'text-rose-600' : 'text-slate-600'}`}>
-                                                    {(() => {
-                                                      const t = String(kpi.targetFromManager !== undefined && kpi.targetFromManager !== '' ? kpi.targetFromManager : (kpi.targetValue ?? '')).trim();
-                                                      const u = String(kpi.unit || '').trim();
-                                                      if (!t) return '—';
-                                                      if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
-                                                      return `${t} ${u}`;
-                                                    })()}
-                                                  </td>
-                                                  <td className="px-2 py-2.5 text-center align-middle font-semibold text-slate-600 whitespace-nowrap">
-                                                    {kpi.weightage || Math.round(cat.weightage / Math.max(1, cat.kpis.length))}%
-                                                  </td>
-                                                  <td className="px-3 py-2.5 text-center align-middle text-slate-800 whitespace-nowrap">
-                                                    {(() => {
-                                                      if (selfActual === '—') return <span className="text-slate-400 font-bold">—</span>;
-                                                      const parsedT = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
-                                                      const numSelf = parseFloat(String(selfActual));
-                                                      const isOverT = !isNaN(numSelf) && (isNeg ? numSelf > parsedT.threshold : (parsedT.threshold > 0 && numSelf > parsedT.threshold));
-                                                      const isMetT = !isNaN(numSelf) && (isNeg ? numSelf <= parsedT.threshold : (parsedT.threshold > 0 && numSelf >= parsedT.threshold));
-
-                                                      return (
-                                                        <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs ${isNeg && isOverT
-                                                          ? 'bg-rose-50 text-rose-900 border-rose-300'
-                                                          : isOverT
-                                                            ? 'bg-emerald-50 text-emerald-950 border border-emerald-400 shadow-2xs'
-                                                            : isMetT && !isNeg
-                                                              ? 'bg-teal-50 text-teal-900 border border-teal-300'
-                                                              : 'bg-slate-50 text-slate-900 border-slate-200'
-                                                          }`}>
-                                                          <span>{selfActual} {kpi.unit || ''}</span>
-                                                          {isOverT && !isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
-                                                          {isOverT && isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED TARGET</span>}
-                                                        </span>
-                                                      );
-                                                    })()}
-                                                  </td>
-                                                  <td className="px-2.5 py-2.5 text-center align-middle font-extrabold text-slate-900 whitespace-nowrap">
-                                                    {selfScore.toFixed(2)}%
-                                                  </td>
-                                                  <td className="px-3.5 py-2.5 align-middle text-xs min-w-[130px] max-w-[200px]">
-                                                    <ExpandableRemarkView text={selfRemarks} fallback="—" />
-                                                  </td>
-                                                  <td className="px-3 py-2.5 text-center align-middle bg-teal-50/30 font-bold text-slate-900 border-l border-teal-100 whitespace-nowrap">
-                                                    {(() => {
-                                                      if (mgrActual === '—') return <span className="text-slate-400 font-bold">—</span>;
-                                                      const parsedT = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
-                                                      const numMgr = parseFloat(String(mgrActual));
-                                                      const isOverT = !isNaN(numMgr) && (isNeg ? numMgr > parsedT.threshold : (parsedT.threshold > 0 && numMgr > parsedT.threshold));
-                                                      const isMetT = !isNaN(numMgr) && (isNeg ? numMgr <= parsedT.threshold : (parsedT.threshold > 0 && numMgr >= parsedT.threshold));
-                                                      const isModified = String(mgrActual).trim() !== String(selfActual).trim();
-
-                                                      return (
-                                                        <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${isModified
-                                                          ? 'bg-amber-100/90 text-amber-950 border-amber-300'
-                                                          : isNeg && isOverT
-                                                            ? 'bg-rose-50 text-rose-900 border-rose-300'
-                                                            : isOverT
-                                                              ? 'bg-teal-100/80 text-teal-950 border-teal-300'
-                                                              : isMetT && !isNeg
-                                                                ? 'bg-teal-50 text-teal-900 border-teal-300'
-                                                                : 'bg-slate-50 text-slate-900 border-slate-200'
-                                                          }`}>
-                                                          <span>{mgrActual} {kpi.unit || ''}</span>
-                                                          {isOverT && !isNeg && !isModified && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
-                                                          {isOverT && isNeg && !isModified && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED TARGET</span>}
-                                                        </span>
-                                                      );
-                                                    })()}
-                                                  </td>
-                                                  <td className="px-2.5 py-2.5 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-slate-900">
-                                                    {mgrScore !== null ? `${mgrScore.toFixed(2)}%` : '—'}
-                                                  </td>
-                                                  <td className="px-3.5 py-2.5 align-middle bg-teal-50/30 text-xs min-w-[130px] max-w-[200px]">
-                                                    <ExpandableRemarkView text={mgrRemarks} fallback="—" />
-                                                  </td>
-                                                </tr>
-                                              );
-                                            })}
-                                          </tbody>
-                                        </table>
-                                      </div>
+                                  {/* 4. Manager Score */}
+                                  <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
+                                    {itemMgrScore !== null ? (
+                                      <span className="font-mono font-bold text-xs text-slate-800">
+                                        {itemMgrScore.toFixed(1)}%
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 font-medium text-xs">Pending</span>
                                     )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
+                                  </td>
 
-                        {/* Leadership Feedback Box */}
-                        {r.managerRemarks && (
-                          <div className="p-4 bg-teal-50/60 rounded-2xl border border-teal-200/80 space-y-1.5">
-                            <div className="flex items-center gap-2 text-xs font-bold text-teal-900 uppercase tracking-wider">
-                              <SparklesIcon className="w-4 h-4 text-teal-700" />
-                              Leadership Feedback ({itemTitle})
-                            </div>
-                            <p className="text-xs text-slate-700 italic leading-relaxed pl-5 border-l-2 border-teal-600 font-medium">
-                              "{r.managerRemarks}"
-                            </p>
-                          </div>
+                                  {/* 5. Final Grade Badge */}
+                                  <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
+                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-bold text-xs border ${getGradeBadgeColor(itemRating.letterGrade || itemRating.grade)}`}>
+                                      <span className="font-black">Grade {itemRating.letterGrade || itemRating.grade}</span>
+                                      <span className="opacity-90 font-mono text-[10px]">({itemFinalScore.toFixed(0)}%)</span>
+                                    </span>
+                                  </td>
+
+                                  {/* 6. Consensus */}
+                                  <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
+                                    {itemMgrScore !== null ? (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200">
+                                        {itemMgrScore === itemSelfScore
+                                          ? '100% Aligned'
+                                          : `${itemMgrScore > itemSelfScore ? '+' : ''}${(itemMgrScore - itemSelfScore).toFixed(1)}% Calibrated`}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 text-xs">—</span>
+                                    )}
+                                  </td>
+
+                                  {/* 7. Actions */}
+                                  <td className="px-4 py-3 align-middle text-right whitespace-nowrap">
+                                    <div className="inline-flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const summary = `PERFORMANCE REPORT: ${itemTitle}\nPeriod: ${itemPeriodTime}\nSelf Score: ${itemSelfScore.toFixed(1)}%\nManager Score: ${itemMgrScore !== null ? `${itemMgrScore.toFixed(1)}%` : 'Pending'}\nFinal Grade: ${itemRating.letterGrade || itemRating.grade} (${itemRating.name})`;
+                                          navigator.clipboard.writeText(summary);
+                                          alert('Performance Summary copied!');
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                                        title="Copy Summary"
+                                      >
+                                        <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setHistoryAuditBreakdownOpen(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
+                                        className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
+                                          isAuditOpen
+                                            ? 'bg-teal-700 text-white shadow-2xs'
+                                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                        }`}
+                                      >
+                                        <span>{isAuditOpen ? 'Hide' : 'Details'}</span>
+                                        <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-200 ${isAuditOpen ? 'rotate-180' : ''}`} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {/* Collapsible Deliverable Audit Drawer */}
+                                {isAuditOpen && (
+                                  <tr>
+                                    <td colSpan={7} className="p-4 bg-slate-50/70 border-y border-slate-200">
+                                      <div className="space-y-3">
+                                        <div className="flex items-center justify-between">
+                                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                                            <TableCellsIcon className="w-4 h-4 text-teal-700" />
+                                            Deliverable Audit Breakdown ({itemTitle})
+                                          </h4>
+                                          <button
+                                            type="button"
+                                            onClick={() => setHistoryAuditBreakdownOpen(prev => ({ ...prev, [r.id]: false }))}
+                                            className="text-[10px] font-bold text-slate-500 hover:text-slate-700 bg-white px-2.5 py-0.5 rounded-full border border-slate-200 transition cursor-pointer"
+                                          >
+                                            Close ▲
+                                          </button>
+                                        </div>
+
+                                        <div className="rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
+                                          {itemCategories.map((cat, catIdx) => {
+                                            const catEarned = cat.kpis.reduce((sum, k) => {
+                                              const selfRes = r.kpiResponses?.[k.id];
+                                              return sum + (selfRes?.earnedScore !== undefined ? Number(selfRes.earnedScore) : 0);
+                                            }, 0);
+                                            const isCatExpanded = Boolean(expandedAuditCategories[`${r.id}_${cat.id || catIdx}`]);
+
+                                            return (
+                                              <div key={cat.id} className="bg-white">
+                                                <div
+                                                  onClick={() => setExpandedAuditCategories(prev => ({ ...prev, [`${r.id}_${cat.id || catIdx}`]: !prev[`${r.id}_${cat.id || catIdx}`] }))}
+                                                  className="bg-slate-50 hover:bg-slate-100/80 text-slate-800 px-4 py-2 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
+                                                >
+                                                  <div className="flex items-center gap-2 min-w-0">
+                                                    <span className="p-0.5 rounded text-slate-400 group-hover:text-slate-700 transition-colors shrink-0">
+                                                      <ChevronDownIcon className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isCatExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                                                    </span>
+                                                    <span className="font-semibold text-xs text-slate-900 truncate">
+                                                      {catIdx + 1}. {cat.name}
+                                                    </span>
+                                                    <span className="text-[10px] text-slate-400">
+                                                      ({cat.kpis.length})
+                                                    </span>
+                                                  </div>
+                                                  <div className="flex items-center gap-2 shrink-0">
+                                                    <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
+                                                      Earned: <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
+                                                    </span>
+                                                  </div>
+                                                </div>
+
+                                                {isCatExpanded && (
+                                                  <div className="overflow-x-auto border-t border-slate-200/80">
+                                                    <table className="w-full text-left text-xs border-collapse">
+                                                      <thead className="bg-slate-100/80 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider select-none">
+                                                        <tr>
+                                                          <th className="px-3.5 py-2 text-left font-bold">KPI Metric</th>
+                                                          <th className="px-2 py-2 text-center font-bold">Weight</th>
+                                                          <th className="px-2.5 py-2 text-center font-bold">Target</th>
+                                                          <th className="px-3 py-2 text-center font-bold">Self Actual</th>
+                                                          <th className="px-2.5 py-2 text-center font-bold">Self Score</th>
+                                                          <th className="px-3.5 py-2 text-left font-bold">Self Remarks</th>
+                                                          <th className="px-3 py-2 text-center font-bold bg-teal-50/60 text-teal-950 border-l border-teal-100">Mgr Actual</th>
+                                                          <th className="px-2.5 py-2 text-center font-bold bg-teal-50/60 text-teal-950">Mgr Score</th>
+                                                          <th className="px-3.5 py-2 text-left font-bold bg-teal-50/60 text-teal-950">Mgr Remarks</th>
+                                                        </tr>
+                                                      </thead>
+                                                      <tbody className="divide-y divide-slate-100 bg-white">
+                                                        {cat.kpis.map((kpi, kIdx) => {
+                                                          const selfRes = r.kpiResponses?.[kpi.id];
+                                                          const selfActual = selfRes?.actualValue !== undefined && selfRes?.actualValue !== null && selfRes?.actualValue !== ''
+                                                            ? selfRes.actualValue
+                                                            : '—';
+                                                          const selfScore = selfRes?.earnedScore !== undefined ? Number(selfRes.earnedScore) : 0;
+                                                          const selfRemarks = selfRes?.employeeRemarks || (selfRes as any)?.remarks || '';
+
+                                                          const rAny = r as any;
+                                                          const mgrActual = (rAny.managerKpiActuals && rAny.managerKpiActuals[kpi.id] !== undefined)
+                                                            ? rAny.managerKpiActuals[kpi.id]
+                                                            : (selfRes?.managerActualValue !== undefined && selfRes?.managerActualValue !== null && selfRes?.managerActualValue !== ''
+                                                                ? selfRes.managerActualValue
+                                                                : '—');
+                                                          const mgrRemarks = (rAny.managerKpiRemarks && rAny.managerKpiRemarks[kpi.id] !== undefined)
+                                                            ? rAny.managerKpiRemarks[kpi.id]
+                                                            : (selfRes?.managerRemarks || '');
+                                                          const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null ? Number(selfRes.managerScore) : null;
+
+                                                          const targetDisplay = (() => {
+                                                            const t = String(kpi.targetFromManager !== undefined && kpi.targetFromManager !== '' ? kpi.targetFromManager : (kpi.targetValue ?? '')).trim();
+                                                            const u = String(kpi.unit || '').trim();
+                                                            if (!t) return '—';
+                                                            if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
+                                                            return `${t} ${u}`;
+                                                          })();
+
+                                                          return (
+                                                            <tr key={kpi.id || kIdx} className="hover:bg-slate-50/80 transition-colors">
+                                                              <td className="px-3.5 py-2 align-middle">
+                                                                <div className="font-semibold text-slate-800 text-xs">{kpi.name}</div>
+                                                                {kpi.description && (
+                                                                  <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{kpi.description}</div>
+                                                                )}
+                                                              </td>
+                                                              <td className="px-2 py-2 text-center align-middle font-mono font-medium text-slate-600 whitespace-nowrap">
+                                                                {kpi.weightage || Math.round(cat.weightage / Math.max(1, cat.kpis.length))}%
+                                                              </td>
+                                                              <td className="px-2.5 py-2 text-center align-middle font-mono text-slate-600 whitespace-nowrap">
+                                                                {targetDisplay}
+                                                              </td>
+                                                              <td className="px-3 py-2 text-center align-middle text-slate-800 whitespace-nowrap font-medium">
+                                                                {selfActual} {kpi.unit || ''}
+                                                              </td>
+                                                              <td className="px-2.5 py-2 text-center align-middle font-bold text-slate-900 whitespace-nowrap">
+                                                                {selfScore.toFixed(1)}%
+                                                              </td>
+                                                              <td className="px-3.5 py-2 align-middle text-xs min-w-[120px] max-w-[180px]">
+                                                                <ExpandableRemarkView text={selfRemarks} fallback="—" />
+                                                              </td>
+                                                              <td className="px-3 py-2 text-center align-middle bg-teal-50/30 font-medium text-slate-900 border-l border-teal-100 whitespace-nowrap">
+                                                                {mgrActual !== '—' ? `${mgrActual} ${kpi.unit || ''}` : '—'}
+                                                              </td>
+                                                              <td className="px-2.5 py-2 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-teal-950">
+                                                                {mgrScore !== null ? `${mgrScore.toFixed(1)}%` : '—'}
+                                                              </td>
+                                                              <td className="px-3.5 py-2 align-middle bg-teal-50/30 text-xs min-w-[120px] max-w-[180px]">
+                                                                <ExpandableRemarkView text={mgrRemarks} fallback="—" />
+                                                              </td>
+                                                            </tr>
+                                                          );
+                                                        })}
+                                                      </tbody>
+                                                    </table>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+
+                                        {/* Leadership Feedback Box inside drawer */}
+                                        {r.managerRemarks && (
+                                          <div className="p-3 bg-teal-50 rounded-xl border border-teal-200/80 space-y-1">
+                                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-teal-900 uppercase">
+                                              <SparklesIcon className="w-3.5 h-3.5 text-teal-700" />
+                                              Leadership Feedback
+                                            </div>
+                                            <p className="text-xs text-teal-950 leading-relaxed italic">
+                                              "{r.managerRemarks}"
+                                            </p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })
                         )}
-                      </div>
-                    );
-                  })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
-                {/* Official Performance Rating & Grading Scale Reference Matrix */}
-                <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-xs space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                {/* 4. Performance Rating & Grading Scale Rubric Card (Interactive & Sleek) */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                  <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-800 shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-800 shrink-0">
                         <AcademicCapIcon className="w-4 h-4" />
                       </div>
                       <div>
                         <h3 className="text-sm font-black text-slate-900 tracking-tight">Performance Rating & Grading Scale</h3>
-                        <p className="text-[11px] text-slate-500 font-medium">Official benchmark rubric for score ranges, performance criteria, and grade tiers (Grade A to Grade E)</p>
+                        <p className="text-[11px] text-slate-500 font-medium">Official benchmark rubric for score ranges, criteria, and 5-tier grading</p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 shrink-0 self-start sm:self-auto">
-                      5-Level Standard
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowRubricMatrix(!showRubricMatrix)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer self-start sm:self-auto"
+                    >
+                      <span>{showRubricMatrix ? 'Hide Full Matrix' : 'View Full Rubric Table'}</span>
+                      <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-200 ${showRubricMatrix ? 'rotate-180' : ''}`} />
+                    </button>
                   </div>
 
-                  <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                        <tr>
-                          <th className="px-4 py-3 w-48 font-bold text-slate-800 whitespace-nowrap">Rating</th>
-                          <th className="px-4 py-3 font-bold text-slate-800">Measure / Criteria</th>
-                          <th className="px-4 py-3 w-32 text-center font-bold text-slate-800 whitespace-nowrap">Grade</th>
-                          <th className="px-4 py-3 w-36 text-center font-bold text-slate-800 whitespace-nowrap">Scores</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {getRatingScale().map((tier, tierIdx) => {
-                          const latestResp = allEmpResponses[0];
-                          const latestScore = (latestResp?.managerScore != null
-                            ? Number(latestResp.managerScore)
-                            : Number(latestResp?.employeeOverallScore ?? 0));
-                          const isCurrentTier = latestResp && latestScore >= tier.minScore && latestScore <= tier.maxScore;
+                  {/* 5-Card Grade Tier Ribbon */}
+                  <div className="p-4 bg-slate-50/50">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+                      {getRatingScale().map((tier, tierIdx) => {
+                        const isCurrentTier = latestScore >= tier.minScore && latestScore <= tier.maxScore;
+                        return (
+                          <div
+                            key={tier.letterGrade || tier.grade || tierIdx}
+                            className={`p-3 rounded-xl border transition-all ${
+                              isCurrentTier
+                                ? 'bg-teal-50/90 border-teal-500 shadow-xs ring-2 ring-teal-600/20'
+                                : 'bg-white border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <span className={`w-6 h-6 rounded-md flex items-center justify-center font-black text-xs ${getGradeBadgeColor(tier.letterGrade || tier.grade)}`}>
+                                {tier.letterGrade || tier.grade}
+                              </span>
+                              <span className="font-mono text-[10px] font-bold text-slate-600">
+                                {tier.scoreRangeText}%
+                              </span>
+                            </div>
+                            <div className="font-bold text-xs text-slate-900 truncate">{tier.name}</div>
+                            <div className="flex items-center gap-0.5 text-amber-400 mt-1">
+                              {[1, 2, 3, 4, 5].map(s => (
+                                s <= tier.stars ? (
+                                  <StarSolid key={s} className="w-2.5 h-2.5 fill-amber-400" />
+                                ) : (
+                                  <StarIcon key={s} className="w-2.5 h-2.5 text-slate-200" />
+                                )
+                              ))}
+                            </div>
+                            {isCurrentTier && (
+                              <div className="mt-2 text-[9px] font-black text-teal-800 bg-teal-100/80 px-1.5 py-0.5 rounded text-center uppercase tracking-wider">
+                                Your Tier
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-                          return (
-                            <tr
-                              key={tier.letterGrade || tier.grade || tierIdx}
-                              className={`transition-colors ${isCurrentTier
-                                ? 'bg-teal-50/70 font-semibold'
-                                : 'hover:bg-slate-50/60'
-                                }`}
-                            >
-                              {/* Rating Name + Stars */}
-                              <td className="px-4 py-3.5 align-top">
-                                <div className="flex flex-col gap-1">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className={`font-black text-xs ${(tier.letterGrade === 'A' || tier.grade === 5 || tier.grade === 'A') ? 'text-emerald-800' :
-                                      (tier.letterGrade === 'B' || tier.grade === 4 || tier.grade === 'B') ? 'text-teal-800' :
-                                        (tier.letterGrade === 'C' || tier.grade === 3 || tier.grade === 'C') ? 'text-blue-800' :
-                                          (tier.letterGrade === 'D' || tier.grade === 2 || tier.grade === 'D') ? 'text-amber-800' :
-                                            'text-rose-800'
-                                      }`}>
-                                      {tier.name}
-                                    </span>
+                  {/* Expanded Full Details Rubric Table */}
+                  {showRubricMatrix && (
+                    <div className="border-t border-slate-200 overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
+                          <tr>
+                            <th className="px-4 py-2.5 w-44">Rating Tier</th>
+                            <th className="px-4 py-2.5">Measure / Evaluation Criteria</th>
+                            <th className="px-4 py-2.5 w-24 text-center">Grade</th>
+                            <th className="px-4 py-2.5 w-28 text-center">Score Range</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {getRatingScale().map((tier, tierIdx) => {
+                            const isCurrentTier = latestScore >= tier.minScore && latestScore <= tier.maxScore;
+                            return (
+                              <tr
+                                key={tier.letterGrade || tier.grade || tierIdx}
+                                className={`transition-colors ${isCurrentTier ? 'bg-teal-50/70 font-semibold' : 'hover:bg-slate-50/60'}`}
+                              >
+                                <td className="px-4 py-3 align-top">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-xs text-slate-900">{tier.name}</span>
                                     {isCurrentTier && (
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black bg-teal-700 text-white uppercase tracking-wider">
-                                        Your Level
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-teal-700 text-white uppercase">
+                                        Active
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-0.5 text-amber-400">
-                                    {[1, 2, 3, 4, 5].map(s => (
-                                      s <= tier.stars ? (
-                                        <StarSolid key={s} className="w-3.5 h-3.5 fill-amber-400" />
-                                      ) : (
-                                        <StarIcon key={s} className="w-3.5 h-3.5 text-slate-200" />
-                                      )
-                                    ))}
-                                  </div>
-                                </div>
-                              </td>
-
-                              {/* Measure Description */}
-                              <td className="px-4 py-3.5 text-slate-600 leading-relaxed align-top text-[11px]">
-                                {tier.description}
-                              </td>
-
-                              {/* Grade */}
-                              <td className="px-4 py-3.5 text-center align-top whitespace-nowrap">
-                                <div className="inline-flex items-center justify-center px-3 py-1 rounded-lg font-black text-xs bg-slate-100 text-slate-900 border border-slate-200 shadow-2xs">
-                                  {tier.letterGrade || tier.grade}
-                                </div>
-                              </td>
-
-                              {/* Score Range */}
-                              <td className="px-4 py-3.5 text-center align-top whitespace-nowrap">
-                                <span className="font-mono font-bold text-xs text-slate-800 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200">
+                                </td>
+                                <td className="px-4 py-3 text-slate-600 leading-relaxed text-[11px] align-top">
+                                  {tier.description}
+                                </td>
+                                <td className="px-4 py-3 text-center align-top whitespace-nowrap">
+                                  <span className={`inline-flex px-2 py-0.5 rounded font-black text-xs ${getGradeBadgeColor(tier.letterGrade || tier.grade)}`}>
+                                    {tier.letterGrade || tier.grade}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-center align-top whitespace-nowrap font-mono font-bold text-xs text-slate-800">
                                   {tier.scoreRangeText}%
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })()))}
         </div>
       )}
+      {/* ========================================================================= */}
       {/* 4. MANAGER REVIEW VIEW (DIRECT REVIEWS) */}
       {/* ========================================================================= */}
       {activeRole === 'manager' && (
-        <div className="space-y-5 animate-in fade-in duration-200">
-          {/* Action Header: Clean Software Engineering Style Header Card */}
-          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
-                <BriefcaseIcon className="w-5 h-5" />
-              </div>
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-base font-bold text-slate-900 tracking-tight">
-                    {isTeamLead ? 'Squad Evaluation' : 'Direct Reviews'}
-                  </h3>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200/80 uppercase">
-                    {isTeamLead ? 'Squad Desk' : 'Reviewer Desk'}
-                  </span>
-                  <span className="text-xs text-slate-400 font-medium hidden md:inline">•</span>
-                  <span className="text-xs font-medium text-slate-500 truncate">
-                    {effectiveTeamName || (managerDepartments.length > 0 ? managerDepartments.join(', ') : 'Team Scope')}
-                  </span>
+        <div className="space-y-4 animate-in fade-in duration-200">
+          {/* Unified Manager Desk Card (Header + Frequency Navigation + Filters) */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+            {/* 1. Header Bar: Title, Scope, and Desk Actions */}
+            <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-700 border border-primary-100/80 flex items-center justify-center shrink-0 shadow-2xs">
+                  <BriefcaseIcon className="w-5 h-5" />
                 </div>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-bold text-slate-900 tracking-tight">
+                      {isTeamLead ? 'Squad Evaluation' : 'Direct Reviews'}
+                    </h3>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-primary-50 text-primary-800 border border-primary-200/80 uppercase">
+                      {isTeamLead ? 'Squad Desk' : 'Reviewer Desk'}
+                    </span>
+                    <span className="text-xs text-slate-300 font-medium hidden md:inline">•</span>
+                    <span className="text-xs font-semibold text-slate-600 truncate">
+                      {effectiveTeamName || (managerDepartments.length > 0 ? managerDepartments.join(', ') : 'Team Scope')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {activeRole === 'manager' && (
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenConvertModal()}
+                    className="flex items-center gap-2 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
+                    title="Rollup & Convert Evaluations across frequencies (Daily -> Weekly, Weekly -> Monthly, Monthly -> Quarterly, Quarterly -> Yearly)"
+                  >
+                    <ArrowPathIcon className="w-4 h-4 text-amber-700" />
+                    <span>Rollup & Convert</span>
+                    {totalConvertibleCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-amber-200 text-amber-900">
+                        {totalConvertibleCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {canCreateMetrics && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenMgrCreateModal()}
+                      className="flex items-center gap-2 px-3.5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                    >
+                      <PlusIcon className="w-4 h-4 stroke-[2.5]" />
+                      <span>Assign Metrics</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 2. Frequency Tabs & Date in Period Bar */}
+            <div className="px-4 py-3 bg-slate-50/50 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 flex-wrap">
+              {/* Frequency Segmented Pills */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {reportTabs.map(tab => {
+                  const isActive = reportViewTab === tab.id;
+                  const totalCount = tab.count || 0;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => handleSwitchReportTab(tab.id as any)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${isActive
+                        ? 'bg-primary-700 text-white shadow-2xs font-bold'
+                        : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200/80'
+                        }`}
+                    >
+                      <span>{tab.label}</span>
+                      {totalCount > 0 && (
+                        <span
+                          className={`inline-flex items-center justify-center px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold transition-colors ${isActive
+                            ? 'bg-white/20 text-white'
+                            : 'bg-slate-100 text-slate-600'
+                            }`}
+                        >
+                          {totalCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Date / Month / Week Selector inside Frequency */}
+              <div className="flex items-center gap-2 flex-wrap text-xs font-medium">
+                {reportViewTab === 'weekly' ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500 font-semibold whitespace-nowrap flex items-center gap-1">
+                        <CalendarDaysIcon className="w-3.5 h-3.5 text-primary-600" />
+                        Month:
+                      </span>
+                      <select
+                        value={selectedReportMonthKey}
+                        onChange={e => handleReportMonthChange(e.target.value)}
+                        className="h-8 pl-2.5 pr-7 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary-500 shadow-2xs"
+                      >
+                        {availableMonths.map(m => (
+                          <option key={m.key} value={m.key}>{m.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500 font-semibold whitespace-nowrap">Week:</span>
+                      <select
+                        value={selectedWeekPeriod}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setSelectedWeekPeriod(val);
+                          if (val !== 'all') setReportDateInPeriod(val);
+                        }}
+                        className="h-8 pl-2.5 pr-7 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary-500 shadow-2xs"
+                      >
+                        <option value="all">All Weeks ({frequencyCounts.weekly})</option>
+                        {weeksForSelectedMonth.map(w => (
+                          <option key={w.startStr} value={w.startStr}>
+                            {w.label} {w.count ? `(${w.count})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : (reportViewTab === 'monthly' || reportViewTab === 'top_monthly') ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500 font-semibold whitespace-nowrap flex items-center gap-1">
+                      <CalendarDaysIcon className="w-3.5 h-3.5 text-primary-600" />
+                      Month:
+                    </span>
+                    <select
+                      value={selectedReportMonthKey}
+                      onChange={e => handleReportMonthChange(e.target.value)}
+                      className="h-8 pl-2.5 pr-7 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary-500 shadow-2xs"
+                    >
+                      <option value="all">All Months ({frequencyCounts.monthly})</option>
+                      {availableMonths.map(m => (
+                        <option key={m.key} value={m.key}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (reportViewTab === 'quarterly' || reportViewTab === 'top_quarterly') ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500 font-semibold whitespace-nowrap flex items-center gap-1">
+                      <CalendarDaysIcon className="w-3.5 h-3.5 text-primary-600" />
+                      Quarter:
+                    </span>
+                    <select
+                      value={selectedReportQuarterKey}
+                      onChange={e => handleReportQuarterChange(e.target.value)}
+                      className="h-8 pl-2.5 pr-7 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary-500 shadow-2xs"
+                    >
+                      <option value="all">All Quarters ({frequencyCounts.quarterly})</option>
+                      {availableQuarters.map(q => (
+                        <option key={q.key} value={q.key}>{q.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : reportViewTab === 'yearly' ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500 font-semibold whitespace-nowrap flex items-center gap-1">
+                      <CalendarDaysIcon className="w-3.5 h-3.5 text-primary-600" />
+                      Year:
+                    </span>
+                    <select
+                      value={selectedReportYearKey}
+                      onChange={e => handleReportYearChange(e.target.value)}
+                      className="h-8 pl-2.5 pr-7 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-primary-500 shadow-2xs"
+                    >
+                      <option value="all">All Years ({frequencyCounts.yearly})</option>
+                      {availableYears.map(y => (
+                        <option key={y} value={String(y)}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : reportViewTab === 'daily' ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500 font-semibold whitespace-nowrap flex items-center gap-1">
+                      <CalendarDaysIcon className="w-3.5 h-3.5 text-primary-600" />
+                      Date:
+                    </span>
+                    <div className="w-40">
+                      <DatePicker
+                        value={reportDateInPeriod}
+                        onChange={(newDate: string) => {
+                          setReportDateInPeriod(newDate);
+                          setSelectedWeekPeriod('');
+                        }}
+                        placeholder="Select date"
+                        align="left"
+                        className="!h-8 !py-1 !px-2.5 !text-xs !rounded-lg border-slate-200 shadow-2xs font-medium"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <span className="text-slate-500 font-medium bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                    {reportViewTab === 'top_annual' ? 'Full Year Performance' : `All Cycles (${frequencyCounts.all} records)`}
+                  </span>
+                )}
               </div>
             </div>
 
-            {activeRole === 'manager' && (
-              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => handleOpenConvertModal()}
-                  className="flex items-center gap-2 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
-                  title="Rollup & Convert Evaluations across frequencies (Daily -> Weekly, Weekly -> Monthly, Monthly -> Quarterly, Quarterly -> Yearly)"
-                >
-                  <ArrowPathIcon className="w-4 h-4 text-amber-700" />
-                  <span>Rollup & Convert</span>
-                  {totalConvertibleCount > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-amber-200 text-amber-900">
-                      {totalConvertibleCount}
-                    </span>
+            {/* 3. Search & Filter Controls Toolbar */}
+            <div className="px-4 py-2.5 bg-white flex flex-col md:flex-row md:items-center justify-between gap-2.5 border-b border-slate-100">
+              <div className="flex items-center gap-2 flex-1 flex-wrap min-w-0">
+                {/* Search input */}
+                <div className="relative flex-1 min-w-[170px] max-w-xs">
+                  <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={mgrSearchQuery}
+                    onChange={e => setMgrSearchQuery(e.target.value)}
+                    placeholder="Search employee..."
+                    className="w-full h-8 pl-8 pr-7 bg-slate-50/70 hover:bg-white border border-slate-200/90 rounded-lg text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-primary-500 transition shadow-2xs"
+                  />
+                  {mgrSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setMgrSearchQuery('')}
+                      className="p-1 rounded-full text-slate-400 hover:text-slate-600 absolute right-1.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                    >
+                      <XMarkIcon className="w-3.5 h-3.5" />
+                    </button>
                   )}
-                </button>
+                </div>
 
-                {canCreateMetrics && (
+                {/* Team Filter */}
+                {availableFilterTeams.length > 1 && (
+                  <select
+                    value={reportFilterTeam}
+                    onChange={e => {
+                      setReportFilterTeam(e.target.value);
+                      setReportFilterDesignation('all');
+                    }}
+                    className="h-8 pl-2 pr-6 bg-slate-50/70 hover:bg-white border border-slate-200/90 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-primary-500 shadow-2xs cursor-pointer"
+                  >
+                    <option value="all">All Teams</option>
+                    {availableFilterTeams.map(team => (
+                      <option key={team} value={team}>{team}</option>
+                    ))}
+                  </select>
+                )}
+
+                {/* Designation Filter */}
+                <select
+                  value={reportFilterDesignation}
+                  onChange={e => setReportFilterDesignation(e.target.value)}
+                  className="h-8 pl-2 pr-6 bg-slate-50/70 hover:bg-white border border-slate-200/90 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-primary-500 shadow-2xs cursor-pointer max-w-[180px] truncate"
+                >
+                  <option value="all">All Designations</option>
+                  {availableFilterDesignations.map(desig => (
+                    <option key={desig} value={desig}>{desig}</option>
+                  ))}
+                </select>
+
+                {/* State / Status Filter */}
+                <select
+                  value={reportFilterState}
+                  onChange={e => setReportFilterState(e.target.value as any)}
+                  className="h-8 pl-2 pr-6 bg-slate-50/70 hover:bg-white border border-slate-200/90 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-primary-500 shadow-2xs cursor-pointer"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="pending">Pending Review</option>
+                  <option value="submitted">Submitted</option>
+                  <option value="approved">Approved</option>
+                </select>
+
+                {/* Clear */}
+                {(reportFilterDept !== 'all' || reportFilterTeam !== 'all' || reportFilterDesignation !== 'all' || reportFilterDate !== 'all' || reportFilterState !== 'all' || mgrSearchQuery.trim() !== '' || Boolean(managerFilterDept)) && (
                   <button
                     type="button"
-                    onClick={() => handleOpenMgrCreateModal()}
-                    className="flex items-center gap-2 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+                    onClick={() => {
+                      setReportFilterDept('all');
+                      setReportFilterTeam('all');
+                      setReportFilterDesignation('all');
+                      setReportFilterDate('all');
+                      setReportFilterState('all');
+                      setMgrSearchQuery('');
+                      setManagerFilterDept('');
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-danger-600 hover:text-danger-700 bg-danger-50 hover:bg-danger-100 rounded-md transition cursor-pointer"
                   >
-                    <PlusIcon className="w-4 h-4 stroke-[2.5]" />
-                    <span>Assign Metrics</span>
+                    <XMarkIcon className="w-3 h-3" />
+                    <span>Reset</span>
                   </button>
                 )}
               </div>
-            )}
+
+              {/* People Counter Badge */}
+              <div className="text-[11px] font-bold text-slate-600 bg-slate-100/80 px-2.5 py-1 rounded-md border border-slate-200/60 shrink-0 self-end md:self-auto">
+                {reportFilteredResponses.length} {reportFilteredResponses.length === 1 ? 'person' : 'people'}
+              </div>
+            </div>
           </div>
 
-          {/* Section 2: Manager Reviews Queue & Calibration Desk (or Downline Team Overview) */}
-          <div className="space-y-5">
-            {/* Section 2.2: Advanced Filter Toolbar & Grouped Evaluation Report Table (Matching User Design) */}
-            <div className="space-y-4 animate-in fade-in duration-200">
-
-                {/* Row 1: Mode Navigation Pills + Date In Period (Date slightly at top & left side) */}
-                <div className="flex flex-col gap-2.5 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs">
-                  {/* Top Line: Date in Period set on the left side + Month & Week dropdowns for Weekly */}
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    {reportViewTab === 'weekly' ? (
-                      <div className="flex items-center gap-3 flex-wrap">
-                        {/* Month dropdown */}
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-slate-700 font-semibold whitespace-nowrap flex items-center gap-1.5">
-                            <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
-                            Month:
-                          </span>
-                          <div className="relative">
-                            <select
-                              value={selectedReportMonthKey}
-                              onChange={e => handleReportMonthChange(e.target.value)}
-                              className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
-                            >
-                              {availableMonths.map(m => (
-                                <option key={m.key} value={m.key}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                          </div>
-                        </div>
-
-                        {/* Week dropdown (From Date - To Date) */}
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-slate-700 font-semibold whitespace-nowrap">
-                            Week:
-                          </span>
-                          <div className="relative">
-                            <select
-                              value={selectedWeekPeriod}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setSelectedWeekPeriod(val);
-                                if (val !== 'all') {
-                                  setReportDateInPeriod(val);
-                                }
-                              }}
-                              className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
-                            >
-                              <option value="all">All Weeks ({frequencyCounts.weekly})</option>
-                              {weeksForSelectedMonth.map(w => (
-                                <option key={w.startStr} value={w.startStr}>
-                                  {w.label} {w.count ? `(${w.count})` : ''}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                          </div>
-                        </div>
-                      </div>
-                    ) : (reportViewTab === 'monthly' || reportViewTab === 'top_monthly') ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-slate-700 font-semibold whitespace-nowrap flex items-center gap-1.5">
-                          <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
-                          Month:
-                        </span>
-                        <div className="relative">
-                          <select
-                            value={selectedReportMonthKey}
-                            onChange={e => handleReportMonthChange(e.target.value)}
-                            className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
-                          >
-                            <option value="all">All Months ({frequencyCounts.monthly})</option>
-                            {availableMonths.map(m => (
-                              <option key={m.key} value={m.key}>
-                                {m.label}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        </div>
-                      </div>
-                    ) : (reportViewTab === 'quarterly' || reportViewTab === 'top_quarterly') ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-slate-700 font-semibold whitespace-nowrap flex items-center gap-1.5">
-                          <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
-                          Quarter:
-                        </span>
-                        <div className="relative">
-                          <select
-                            value={selectedReportQuarterKey}
-                            onChange={e => handleReportQuarterChange(e.target.value)}
-                            className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
-                          >
-                            <option value="all">All Quarters ({frequencyCounts.quarterly})</option>
-                            {availableQuarters.map(q => (
-                              <option key={q.key} value={q.key}>
-                                {q.label}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        </div>
-                      </div>
-                    ) : reportViewTab === 'yearly' ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-slate-700 font-semibold whitespace-nowrap flex items-center gap-1.5">
-                          <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
-                          Year:
-                        </span>
-                        <div className="relative">
-                          <select
-                            value={selectedReportYearKey}
-                            onChange={e => handleReportYearChange(e.target.value)}
-                            className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
-                          >
-                            <option value="all">All Years ({frequencyCounts.yearly})</option>
-                            {availableYears.map(y => (
-                              <option key={y} value={String(y)}>
-                                {y}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        </div>
-                      </div>
-                    ) : reportViewTab === 'daily' ? (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs text-slate-700 font-semibold whitespace-nowrap flex items-center gap-1.5">
-                          <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
-                          Date:
-                        </span>
-                        <div className="w-48">
-                          <DatePicker
-                            value={reportDateInPeriod}
-                            onChange={(newDate: string) => {
-                              setReportDateInPeriod(newDate);
-                              setSelectedWeekPeriod('');
-                            }}
-                            placeholder="Select date"
-                            align="left"
-                            className="!h-8.5 !py-1.5 !px-3 !text-xs !rounded-lg border-slate-200 shadow-2xs font-medium"
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 font-medium">
-                        <span className="flex items-center gap-1.5 font-semibold text-slate-700">
-                          <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
-                          {reportViewTab === 'top_annual' ? 'Annual Cycle:' : 'Period Scope:'}
-                        </span>
-                        <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200">
-                          {reportViewTab === 'top_annual' ? 'Full Year Performance' : `All Cycles (${frequencyCounts.all} records)`}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Mode Navigation Pills */}
-                  <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-slate-100">
-                    {reportTabs.map(tab => {
-                      const isActive = reportViewTab === tab.id;
-                      return (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          onClick={() => handleSwitchReportTab(tab.id as any)}
-                          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${isActive
-                              ? 'bg-teal-700 text-white shadow-xs font-bold'
-                              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90'
-                            }`}
-                        >
-                          <span>{tab.label}</span>
-                          {tab.count !== undefined && (
-                            <div className="inline-flex items-center gap-1">
-                              {/* 1. Pending Reviews (Yellow / Amber) */}
-                              {tab.pending !== undefined && tab.pending > 0 && (
-                                <span
-                                  className={`inline-flex items-center justify-center min-w-[18px] px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold transition-colors ${
-                                    isActive
-                                      ? 'bg-white/20 text-amber-200 border border-white/20'
-                                      : 'bg-amber-50 text-amber-800 border border-amber-200/90 shadow-2xs'
-                                  }`}
-                                  title={`${tab.pending} pending review`}
-                                >
-                                  {tab.pending}
-                                </span>
-                              )}
-
-                              {/* 2. Completed / Calibrated (Green / Emerald) */}
-                              {(tab as any).completed !== undefined && (tab as any).completed > 0 && (
-                                <span
-                                  className={`inline-flex items-center justify-center min-w-[18px] px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold transition-colors ${
-                                    isActive
-                                      ? 'bg-white/20 text-emerald-200 border border-white/20'
-                                      : 'bg-emerald-50 text-emerald-800 border border-emerald-200/90 shadow-2xs'
-                                  }`}
-                                  title={`${(tab as any).completed} completed`}
-                                >
-                                  {(tab as any).completed}
-                                </span>
-                              )}
-
-                              {/* 3. Empty state if total count is 0 */}
-                              {tab.count === 0 && (
-                                <span
-                                  className={`inline-flex items-center justify-center min-w-[18px] px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
-                                    isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'
-                                  }`}
-                                >
-                                  0
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Row 2: Search Input + Department + Team + Date + State Dropdowns + Clear + People Counter */}
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs">
-                    <div className="flex items-center gap-2 flex-1 flex-wrap min-w-0">
-                      {/* Search name or code */}
-                      <div className="relative flex-1 min-w-[200px] max-w-sm">
-                        <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        <input
-                          type="text"
-                          value={mgrSearchQuery}
-                          onChange={e => setMgrSearchQuery(e.target.value)}
-                          placeholder="Search name or employee code..."
-                          className="w-full h-8.5 pl-9 pr-7 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition shadow-2xs"
-                        />
-                        {mgrSearchQuery && (
-                          <button
-                            type="button"
-                            onClick={() => setMgrSearchQuery('')}
-                            className="p-1 rounded-full text-slate-400 hover:text-slate-600 absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
-                          >
-                            <XMarkIcon className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* All departments dropdown */}
-                      <div className="relative">
-                        <select
-                          value={reportFilterDept}
-                          onChange={e => {
-                            setReportFilterDept(e.target.value);
-                            setReportFilterTeam('all');
-                            setManagerFilterDept(e.target.value === 'all' ? '' : e.target.value);
-                          }}
-                          className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
-                        >
-                          <option value="all">All departments</option>
-                          {availableFilterDepartments.map(dept => (
-                            <option key={dept} value={dept}>{dept}</option>
-                          ))}
-                        </select>
-                        <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      </div>
-
-                      {/* All teams dropdown */}
-                      <div className="relative">
-                        <select
-                          value={reportFilterTeam}
-                          onChange={e => setReportFilterTeam(e.target.value)}
-                          className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
-                        >
-                          <option value="all">All teams</option>
-                          {availableFilterTeams.map(team => (
-                            <option key={team} value={team}>{team}</option>
-                          ))}
-                        </select>
-                        <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      </div>
-
-                      {/* All dates / Week Days dropdown */}
-                      <div className="relative">
-                        <select
-                          value={reportFilterDate}
-                          onChange={e => setReportFilterDate(e.target.value)}
-                          className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
-                        >
-                          <option value="all">All dates</option>
-                          {availableFilterDates.map(day => (
-                            <option key={day.dateStr} value={day.dateStr}>
-                              {day.label}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      </div>
-
-                      {/* Any state dropdown */}
-                      <div className="relative">
-                        <select
-                          value={reportFilterState}
-                          onChange={e => setReportFilterState(e.target.value as any)}
-                          className="h-8.5 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition cursor-pointer appearance-none shadow-2xs"
-                        >
-                          <option value="all">Any state</option>
-                          <option value="pending">Pending Review</option>
-                          <option value="submitted">Submitted</option>
-                          <option value="approved">Calibrated / Approved</option>
-                        </select>
-                        <ChevronDownIcon className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      </div>
-
-                      {/* Clear button */}
-                      {(reportFilterDept !== 'all' || reportFilterTeam !== 'all' || reportFilterDate !== 'all' || reportFilterState !== 'all' || mgrSearchQuery.trim() !== '' || Boolean(managerFilterDept)) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setReportFilterDept('all');
-                            setReportFilterTeam('all');
-                            setReportFilterDate('all');
-                            setReportFilterState('all');
-                            setMgrSearchQuery('');
-                            setManagerFilterDept('');
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-slate-800 transition cursor-pointer"
-                        >
-                          <XMarkIcon className="w-3.5 h-3.5" />
-                          <span>Clear</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {/* People Count */}
-                    <div className="text-xs font-bold text-slate-800 shrink-0 self-end lg:self-auto">
-                      {reportFilteredResponses.length} of {activeScopedResponsesForCards.length} people
-                    </div>
-                  </div>
-
-                {/* Report Section Header */}
-                <div className="flex items-center gap-3 pt-2">
-                  <h4 className="text-sm font-bold text-slate-900">
-                    {reportHeaderInfo.title}
-                  </h4>
-                  <span className="px-3 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                    {reportHeaderInfo.badge}
+          {/* Section 2: Grouped Evaluation Report Table or Top Performers View */}
+          <div className="space-y-4 animate-in fade-in duration-200">
+            {/* Report Content */}
+            {reportViewTab.startsWith('top_') ? (
+              /* Top Performers Multi-Column Layout (Matching Image 1 Reference UI) */
+              <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs space-y-4 animate-in fade-in duration-200">
+                <div className="flex items-baseline gap-3 pb-3 border-b border-slate-100">
+                  <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                    {reportViewTab === 'top_weekly'
+                      ? 'Top Performers - Weekly'
+                      : reportViewTab === 'top_monthly'
+                        ? 'Top Performers - Monthly'
+                        : reportViewTab === 'top_quarterly'
+                          ? 'Top Performers - Quarterly'
+                          : 'Top Performers - Annual'}
+                  </h3>
+                  <span className="text-xs text-slate-500 font-medium">
+                    {reportViewTab === 'top_weekly' || reportViewTab === 'top_monthly'
+                      ? topPerformersQuarterRangeText
+                      : reportViewTab === 'top_quarterly'
+                        ? topPerformersQuarterRangeText
+                        : `1 Jan - 31 Dec ${topPerformersYear}`}
                   </span>
                 </div>
 
-                {/* Report Content: Top Performers (Image 1) OR Empty state OR Cards OR Grouped Table */}
-                {reportViewTab.startsWith('top_') ? (
-                  /* Top Performers Multi-Column Layout (Matching Image 1 Reference UI) */
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs space-y-4 animate-in fade-in duration-200">
-                    <div className="flex items-baseline gap-3 pb-3 border-b border-slate-100">
-                      <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
-                        {reportViewTab === 'top_weekly'
-                          ? 'Top Performers - Weekly'
-                          : reportViewTab === 'top_monthly'
-                            ? 'Top Performers - Monthly'
-                            : reportViewTab === 'top_quarterly'
-                              ? 'Top Performers - Quarterly'
-                              : 'Top Performers - Annual'}
-                      </h3>
-                      <span className="text-xs text-slate-500 font-medium">
-                        {reportViewTab === 'top_weekly' || reportViewTab === 'top_monthly'
-                          ? topPerformersQuarterRangeText
-                          : reportViewTab === 'top_quarterly'
-                            ? topPerformersQuarterRangeText
-                            : `1 Jan - 31 Dec ${topPerformersYear}`}
-                      </span>
-                    </div>
+                {/* Multi-column Side-Scroll Container */}
+                <div className="flex items-stretch gap-4 overflow-x-auto pb-3 pt-1 scroll-smooth">
+                  {(reportViewTab === 'top_weekly'
+                    ? topPerformersWeeklyColumns
+                    : reportViewTab === 'top_monthly'
+                      ? topPerformersMonthlyColumns
+                      : reportViewTab === 'top_quarterly'
+                        ? topPerformersQuarterlyColumns
+                        : topPerformersAnnualColumns
+                  ).map(col => (
+                    <div
+                      key={col.key}
+                      className={`min-w-[280px] max-w-[340px] flex-1 rounded-2xl overflow-hidden shadow-2xs bg-white flex flex-col shrink-0 ${(col as any).isSummaryYear
+                        ? 'border-2 border-primary-600 shadow-md ring-1 ring-primary-600/20'
+                        : 'border border-slate-200/80'
+                        }`}
+                    >
+                      {/* Column Header */}
+                      <div className={`px-4 py-2.5 font-bold text-xs flex items-center justify-between ${(col as any).isSummaryYear
+                        ? 'bg-primary-800 text-white'
+                        : 'bg-slate-50 text-slate-800 border-b border-slate-200/80'
+                        }`}>
+                        <span>{col.label}</span>
+                        {col.subLabel && (
+                          <span className="text-[10px] font-normal text-slate-400">{col.subLabel}</span>
+                        )}
+                      </div>
 
-                    {/* Multi-column Side-Scroll Container */}
-                    <div className="flex items-stretch gap-4 overflow-x-auto pb-3 pt-1 scroll-smooth">
-                      {(reportViewTab === 'top_weekly'
-                        ? topPerformersWeeklyColumns
-                        : reportViewTab === 'top_monthly'
-                          ? topPerformersMonthlyColumns
-                          : reportViewTab === 'top_quarterly'
-                            ? topPerformersQuarterlyColumns
-                            : topPerformersAnnualColumns
-                      ).map(col => (
-                        <div
-                          key={col.key}
-                          className={`min-w-[280px] max-w-[340px] flex-1 rounded-2xl overflow-hidden shadow-2xs bg-white flex flex-col shrink-0 ${(col as any).isSummaryYear
-                              ? 'border-2 border-[#91B5B5] shadow-md ring-1 ring-[#91B5B5]/20'
-                              : 'border border-slate-200/80'
-                            }`}
-                        >
-                          {/* Column Header */}
-                          <div className={`px-4 py-2.5 font-bold text-xs flex items-center justify-between ${(col as any).isSummaryYear
-                              ? 'bg-[#91B5B5] text-white'
-                              : 'bg-slate-50 text-slate-800 border-b border-slate-200/80'
-                            }`}>
-                            <span>{col.label}</span>
-                            {col.subLabel && (
-                              <span className="text-[10px] font-normal text-slate-400">{col.subLabel}</span>
-                            )}
+                      {/* Column Body */}
+                      <div className="p-3 flex-1 flex flex-col justify-start space-y-3">
+                        {col.groups.length === 0 ? (
+                          <div className="py-14 text-center my-auto">
+                            <p className="text-xs text-slate-400 font-medium italic">Nothing approved.</p>
                           </div>
-
-                          {/* Column Body */}
-                          <div className="p-3 flex-1 flex flex-col justify-start space-y-3">
-                            {col.groups.length === 0 ? (
-                              <div className="py-14 text-center my-auto">
-                                <p className="text-xs text-slate-400 font-medium italic">Nothing approved.</p>
-                              </div>
-                            ) : (
-                              col.groups.map((group: any) => {
-                                const color = getTeamHeaderColor(group.teamName);
-                                return (
-                                  <div key={`${group.departmentName}_${group.teamName}`} className="space-y-2 pt-2 first:pt-0 border-t first:border-t-0 border-slate-100">
-                                    {/* Team Header Banner with pastel colors */}
-                                    <div className={`px-2.5 py-1.5 rounded-lg ${color.bg}`}>
-                                      <div className={`text-xs font-extrabold ${color.text} tracking-tight truncate`}>
-                                        Team: {group.teamName}
+                        ) : (
+                          col.groups.map((group: any) => {
+                            const color = getTeamHeaderColor(group.teamName);
+                            return (
+                              <div key={group.teamName} className="space-y-1.5">
+                                <div className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border ${color.bg} ${color.text} ${color.border} flex items-center justify-between`}>
+                                  <span>{group.teamName}</span>
+                                  <span className="text-[10px] opacity-75">{group.members.length} people</span>
+                                </div>
+                                <div className="space-y-1">
+                                  {group.members.map((member: any) => (
+                                    <div
+                                      key={member.employeeCode}
+                                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100/80 transition text-xs border border-slate-100"
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="font-bold text-slate-700 text-[11px] shrink-0">
+                                          {member.rank === 1 ? '🥇' : member.rank === 2 ? '🥈' : member.rank === 3 ? '🥉' : `#${member.rank}`}
+                                        </span>
+                                        <span className="font-semibold text-slate-900 truncate text-[11px]">{member.employeeName}</span>
                                       </div>
+                                      <span className="font-mono font-bold text-xs text-primary-700 shrink-0">
+                                        {member.averageScoreDisplay}
+                                      </span>
                                     </div>
-
-                                    {/* Member Rows */}
-                                    <div className="space-y-1.5 px-1">
-                                      {group.members.map((member: any) => (
-                                        <div key={member.code || member.name} className="flex items-center justify-between text-xs py-0.5">
-                                          <div className="flex items-center gap-1.5 min-w-0">
-                                            <span className="text-xs font-bold text-slate-600 shrink-0 inline-flex items-center gap-1 whitespace-nowrap">
-                                              {member.rank === 1 ? '🥇 1.' : member.rank === 2 ? '🥈 2.' : member.rank === 3 ? '🥉 3.' : <span className="text-slate-400">{member.rank}.</span>}
-                                            </span>
-                                            <span className="font-semibold text-slate-800 truncate text-xs" title={member.name}>
-                                              {member.name}
-                                            </span>
-                                          </div>
-                                          <span className="font-mono font-bold text-slate-900 shrink-0 ml-2">
-                                            {member.score.toFixed(2)}
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* Clean, Modern Grouped Report Table */
+              <div className="overflow-x-auto rounded-2xl border border-slate-200/80 shadow-2xs bg-white">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200/90 bg-slate-50/80 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      <th className="py-3.5 px-4 w-[30%]">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>NAME OF THE EMPLOYEE</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const areAllExpanded = groupedReportHierarchy.length > 0 && groupedReportHierarchy.every(t =>
+                                Boolean(expandedTeams[t.teamName]) &&
+                                t.designations.every(d => Boolean(expandedDesignations[`${t.teamName}_${d.designationName}`]))
+                              );
+                              if (areAllExpanded) {
+                                setExpandedTeams({});
+                                setExpandedDesignations({});
+                              } else {
+                                const nextTeams: Record<string, boolean> = {};
+                                const nextDesigs: Record<string, boolean> = {};
+                                groupedReportHierarchy.forEach(t => {
+                                  nextTeams[t.teamName] = true;
+                                  t.designations.forEach(d => {
+                                    nextDesigs[`${t.teamName}_${d.designationName}`] = true;
+                                  });
+                                });
+                                setExpandedTeams(nextTeams);
+                                setExpandedDesignations(nextDesigs);
+                              }
+                            }}
+                            className="text-[10px] font-bold normal-case tracking-normal text-primary-700 hover:text-primary-800 bg-primary-50 hover:bg-primary-100 px-2.5 py-1 rounded-md border border-primary-200 transition cursor-pointer shadow-2xs"
+                            title="Toggle expand/collapse for all teams and designations"
+                          >
+                            {groupedReportHierarchy.length > 0 && groupedReportHierarchy.every(t =>
+                              Boolean(expandedTeams[t.teamName]) &&
+                              t.designations.every(d => Boolean(expandedDesignations[`${t.teamName}_${d.designationName}`]))
+                            ) ? 'Collapse All' : 'Expand All'}
+                          </button>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : reportFilteredResponses.length === 0 ? (
-                  <div className="py-12 px-4 text-center space-y-4 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                    <div className="w-12 h-12 mx-auto rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
-                      <UserGroupIcon className="w-6 h-6" />
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-bold text-slate-800 capitalize">
-                        No {reportViewTab === 'all' ? 'Evaluations' : reportViewTab.replace('top_', 'Top ') + ' Evaluations'} Found
-                      </h4>
-                      <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                        No team member evaluations match the current filters {reportDateInPeriod ? `for ${reportDateInPeriod}` : ''}.
-                      </p>
-                    </div>
+                      </th>
+                      <th className="py-3.5 px-4 text-center w-[24%]">EVALUATION PERIOD / DATE</th>
+                      <th className="py-3.5 px-4 text-center w-[12%]">{reportViewTab === 'all' ? 'SELF SCORE' : formattedDateColumnHeader}</th>
+                      <th className="py-3.5 px-4 text-center w-[12%]">AVERAGE SCORE</th>
+                      <th className="py-3.5 px-4 text-center w-[11%]">STATUS</th>
+                      <th className="py-3.5 px-4 text-right w-[11%]">ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupedReportHierarchy.map(teamGroup => {
+                      const isTeamExpanded = Boolean(expandedTeams[teamGroup.teamName]);
 
-                    {/* Quick navigation helpers: direct buttons so user doesn't have to search manually */}
-                    <div className="flex items-center justify-center gap-2 flex-wrap max-w-lg mx-auto pt-1">
-                      {reportViewTab !== 'all' && frequencyCounts.all > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => handleSwitchReportTab('all')}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#91B5B5] text-white rounded-lg text-xs font-semibold shadow-2xs hover:bg-[#7e9f9f] cursor-pointer transition"
-                        >
-                          <span>View All Scoped Evaluations ({frequencyCounts.all})</span>
-                        </button>
-                      )}
+                      const matchingDbTeam = dbTeams.find(t =>
+                        t.name?.toLowerCase() === teamGroup.teamName.toLowerCase() ||
+                        String(t.id) === teamGroup.teamName.toLowerCase()
+                      );
 
-                      {reportViewTab !== 'quarterly' && frequencyCounts.quarterly > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => handleSwitchReportTab('quarterly')}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs hover:bg-slate-50 cursor-pointer transition"
-                        >
-                          <span>Jump to Quarterly ({frequencyCounts.quarterly})</span>
-                        </button>
-                      )}
+                      const teamCycle = managerDirectCycles.find(c => {
+                        const cName = (c.teamName || '').toLowerCase();
+                        const cId = String(c.teamId || '').toLowerCase();
+                        const tName = teamGroup.teamName.toLowerCase();
+                        const dbTeamId = matchingDbTeam ? String(matchingDbTeam.id).toLowerCase() : '';
+                        const dbTeamName = matchingDbTeam?.name?.toLowerCase() || '';
 
-                      {reportViewTab !== 'monthly' && frequencyCounts.monthly > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => handleSwitchReportTab('monthly')}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs hover:bg-slate-50 cursor-pointer transition"
-                        >
-                          <span>Jump to Monthly ({frequencyCounts.monthly})</span>
-                        </button>
-                      )}
+                        return (
+                          cName === tName ||
+                          cId === tName ||
+                          (dbTeamId && (cId === dbTeamId || cName === dbTeamId)) ||
+                          (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
+                        );
+                      }) || cycles.find(c => {
+                        const cName = (c.teamName || '').toLowerCase();
+                        const cId = String(c.teamId || '').toLowerCase();
+                        const tName = teamGroup.teamName.toLowerCase();
+                        const dbTeamId = matchingDbTeam ? String(matchingDbTeam.id).toLowerCase() : '';
+                        const dbTeamName = matchingDbTeam?.name?.toLowerCase() || '';
 
-                      {reportViewTab !== 'weekly' && frequencyCounts.weekly > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => handleSwitchReportTab('weekly')}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs hover:bg-slate-50 cursor-pointer transition"
-                        >
-                          <span>Jump to Weekly ({frequencyCounts.weekly})</span>
-                        </button>
-                      )}
+                        return (
+                          cName === tName ||
+                          cId === tName ||
+                          (dbTeamId && (cId === dbTeamId || cName === dbTeamId)) ||
+                          (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
+                        );
+                      });
 
-                      {reportViewTab !== 'daily' && frequencyCounts.daily > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => handleSwitchReportTab('daily')}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs hover:bg-slate-50 cursor-pointer transition"
-                        >
-                          <span>Jump to Daily ({frequencyCounts.daily})</span>
-                        </button>
-                      )}
-
-                      {/* Reset Filters button */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReportFilterDept('all');
-                          setReportFilterTeam('all');
-                          setReportFilterDate('all');
-                          setReportFilterState('all');
-                          setMgrSearchQuery('');
-                          setManagerFilterDept('');
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs hover:bg-slate-50 cursor-pointer"
-                      >
-                        <span>Reset Filters</span>
-                      </button>
-                    </div>
-                  </div>
-                ) : mgrViewMode === 'cards' ? (
-                  /* Cards Mode */
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {reportFilteredResponses.map(r => {
-                      const { employeeCode, employeeName, teamName, departmentName, profileImage } = getEmployeeDisplayInfo(r);
-                      const isCalibrated = r.managerScore != null && (r.status as string) !== 'manager_review' && (r.status as string) !== 'Submitted to Manager';
-                      const initials = (employeeName || 'EM').split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
+                      const cycleLockedInfo = getCycleLockedInfo(teamCycle);
 
                       return (
-                        <div
-                          key={r.id}
-                          className="group relative bg-white hover:bg-slate-50/50 rounded-2xl p-5 border border-slate-200/90 hover:border-teal-300 shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between"
-                        >
-                          <div className="space-y-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex items-center gap-3 min-w-0">
-                                {profileImage ? (
-                                  <img
-                                    src={profileImage}
-                                    alt={employeeName || r.employeeName}
-                                    className="w-10 h-10 rounded-xl object-cover shrink-0 shadow-2xs border border-slate-200"
-                                    onError={(e) => {
-                                      (e.currentTarget as HTMLElement).style.display = 'none';
-                                      const fallback = (e.currentTarget as HTMLElement).nextElementSibling as HTMLElement;
-                                      if (fallback) fallback.style.display = 'flex';
-                                    }}
-                                  />
-                                ) : null}
-                                <div
-                                  className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs"
-                                  style={{ display: profileImage ? 'none' : 'flex' }}
-                                >
-                                  {initials}
-                                </div>
-                                <div className="min-w-0">
-                                  <h4 className="text-sm font-bold text-slate-900 group-hover:text-teal-900 transition">
-                                    {employeeName || r.employeeName}
-                                  </h4>
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                                      #{employeeCode}
-                                    </span>
-                                    <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60">
-                                      {departmentName} • {teamName}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                              {renderStatusBadge(r.status, r)}
-                            </div>
-
-                            <div className="text-xs text-slate-500 italic flex items-center gap-1.5 flex-wrap">
-                              <span>{r.designation || 'Team Member'}</span>
-                              {(r.periodName || (r as any).form) && (
-                                <>
-                                  <span>•</span>
-                                  <span className="font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200/60 text-[10px] not-italic">
-                                    {r.periodName || (r as any).form}
+                        <React.Fragment key={teamGroup.teamName}>
+                          {/* Clean Team Section Row */}
+                          <tr className="border-t border-slate-200">
+                            <td colSpan={6} className="p-0">
+                              <div
+                                onClick={() => setExpandedTeams(prev => ({ ...prev, [teamGroup.teamName]: !isTeamExpanded }))}
+                                className="bg-slate-100/90 hover:bg-slate-200/70 text-slate-800 px-4 py-2.5 flex items-center justify-between font-bold text-xs cursor-pointer select-none transition-colors border-y border-slate-200/70"
+                                title={isTeamExpanded ? `Click to collapse ${teamGroup.teamName}` : `Click to expand ${teamGroup.teamName} (${teamGroup.totalPeople} people)`}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <ChevronDownIcon className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isTeamExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                                  <FolderIcon className="w-4 h-4 text-primary-600 shrink-0" />
+                                  <span className="text-sm font-bold tracking-tight text-slate-900">{teamGroup.teamName}</span>
+                                  <span className="text-[11px] font-semibold bg-white text-slate-600 px-2.5 py-0.5 rounded-full border border-slate-200/80 shadow-2xs">
+                                    {teamGroup.totalPeople} {teamGroup.totalPeople === 1 ? 'person' : 'people'}
                                   </span>
-                                </>
-                              )}
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                              <div className="space-y-0.5">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Self Score</span>
-                                <span className="text-sm font-bold text-slate-800">
-                                  {r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : '0.0%'}
-                                </span>
-                              </div>
-                              <div className="space-y-0.5 border-l border-slate-200 pl-2.5">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Manager Score</span>
-                                <span className="text-sm font-bold text-teal-700">
-                                  {r.managerScore != null ? `${Number(r.managerScore).toFixed(1)}%` : 'Pending'}
-                                </span>
-                              </div>
-                              <div className="space-y-0.5 border-l border-slate-200 pl-2.5">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Grade</span>
-                                {r.managerScore != null ? (
-                                  (() => {
-                                    const cardRating = getRatingForScore(Number(r.managerScore));
-                                    return (
-                                      <div className="leading-tight">
-                                        <span className="text-sm font-black text-emerald-800 block leading-tight">{cardRating.letterGrade || cardRating.grade}</span>
-                                        <span className="text-[9px] font-medium text-emerald-700 block truncate leading-tight" title={cardRating.name}>{cardRating.name}</span>
-                                      </div>
-                                    );
-                                  })()
-                                ) : (
-                                  <span className="text-xs text-slate-400">—</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => handleSelectMgrResponse(r)}
-                              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
-                            >
-                              <PencilSquareIcon className="w-3.5 h-3.5" />
-                              <span>{isCalibrated ? 'Recalibrate' : 'Review & Score'}</span>
-                            </button>
-                              {!isCalibrated && r.managerScore == null && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteMgrResponseRow(r)}
-                                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer border border-transparent hover:border-rose-200"
-                                  title="Delete evaluation record"
-                                >
-                                  <TrashIcon className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    /* Grouped Report Table Matching Image 2 Exactly */
-                    <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-2xs bg-white">
-                      <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-white text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                          <th className="py-3 px-4 w-[30%]">NAME OF THE EMPLOYEE</th>
-                          <th className="py-3 px-4 text-center w-[24%]">EVALUATION PERIOD / DATE</th>
-                          <th className="py-3 px-4 text-center w-[12%]">{reportViewTab === 'all' ? 'SELF SCORE' : formattedDateColumnHeader}</th>
-                          <th className="py-3 px-4 text-center w-[12%]">AVERAGE SCORE</th>
-                          <th className="py-3 px-4 text-center w-[11%]">STATUS</th>
-                          <th className="py-3 px-4 text-right w-[11%]">ACTION</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {groupedReportHierarchy.map(deptGroup => (
-                          <React.Fragment key={deptGroup.departmentName}>
-                            {/* Department Group Banner */}
-                            <tr>
-                              <td colSpan={6} className="p-0">
-                                <div className="bg-[#91B5B5] text-white px-4 py-2.5 flex items-center gap-2 font-bold text-xs">
-                                  <FolderIcon className="w-4 h-4 text-white" />
-                                  <span>{deptGroup.departmentName}</span>
-                                  <span className="font-normal opacity-90">{deptGroup.totalPeople} people</span>
+                                  <span className="text-[10px] font-medium text-slate-400">
+                                    • {teamGroup.designations.length} {teamGroup.designations.length === 1 ? 'designation' : 'designations'}
+                                  </span>
                                 </div>
-                              </td>
-                            </tr>
 
-                            {/* Teams inside Department */}
-                            {deptGroup.teams.map((teamGroup, tIdx) => {
-                              const matchingDbTeam = dbTeams.find(t =>
-                                t.name?.toLowerCase() === teamGroup.teamName.toLowerCase() ||
-                                String(t.id) === teamGroup.teamName.toLowerCase()
-                              );
+                                <div className="flex items-center gap-3">
+                                  {(activeRole === 'manager' || activeRole === 'downline_teams' || canCreateMetrics) && (
+                                    <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                                      {teamCycle ? (
+                                        <>
+                                          {cycleLockedInfo.isLocked ? (
+                                            /* Sleek Locked Badge */
+                                            <span
+                                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs"
+                                              title={`Deliverables matrix is locked because ${cycleLockedInfo.activeCount} evaluation(s) are in progress`}
+                                            >
+                                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                              <span>Locked</span>
+                                            </span>
+                                          ) : (
+                                            /* Editable Matrix Controls */
+                                            <>
+                                              <span
+                                                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs"
+                                                title="Active Deliverables Matrix (Editable)"
+                                              >
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                <span>Matrix: 100%</span>
+                                              </span>
 
-                              const teamCycle = managerDirectCycles.find(c => {
-                                const cName = (c.teamName || '').toLowerCase();
-                                const cId = String(c.teamId || '').toLowerCase();
-                                const tName = teamGroup.teamName.toLowerCase();
-                                const dbTeamId = matchingDbTeam ? String(matchingDbTeam.id).toLowerCase() : '';
-                                const dbTeamName = matchingDbTeam?.name?.toLowerCase() || '';
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenMgrEditMatrixModal(teamCycle)}
+                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer"
+                                                title="Edit Deliverables Matrix"
+                                              >
+                                                <PencilSquareIcon className="w-3 h-3 text-slate-500" />
+                                                <span>Edit</span>
+                                              </button>
 
-                                return (
-                                  cName === tName ||
-                                  cId === tName ||
-                                  (dbTeamId && (cId === dbTeamId || cName === dbTeamId)) ||
-                                  (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
-                                );
-                              }) || cycles.find(c => {
-                                const cName = (c.teamName || '').toLowerCase();
-                                const cId = String(c.teamId || '').toLowerCase();
-                                const tName = teamGroup.teamName.toLowerCase();
-                                const dbTeamId = matchingDbTeam ? String(matchingDbTeam.id).toLowerCase() : '';
-                                const dbTeamName = matchingDbTeam?.name?.toLowerCase() || '';
+                                              <button
+                                                type="button"
+                                                onClick={() => handleMgrDeleteMatrix(teamCycle)}
+                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-danger-50 hover:bg-danger-100 text-danger-600 border border-danger-200 shadow-2xs transition cursor-pointer"
+                                                title="Delete Deliverables Matrix"
+                                              >
+                                                <TrashIcon className="w-3 h-3" />
+                                                <span>Delete</span>
+                                              </button>
+                                            </>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenMgrCreateModal(teamGroup.teamName)}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold text-primary-700 bg-white hover:bg-primary-50 border border-primary-200 shadow-2xs transition cursor-pointer"
+                                          >
+                                            <span>+ Assign Matrix</span>
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
 
-                                return (
-                                  cName === tName ||
-                                  cId === tName ||
-                                  (dbTeamId && (cId === dbTeamId || cName === dbTeamId)) ||
-                                  (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
-                                );
-                              });
+                          {/* Designations inside Team (Rendered when Team is Expanded) */}
+                          {isTeamExpanded && teamGroup.designations.map(desigGroup => {
+                            const desigKey = `${teamGroup.teamName}_${desigGroup.designationName}`;
+                            const isDesigExpanded = Boolean(expandedDesignations[desigKey]);
 
-                              const cycleLockedInfo = getCycleLockedInfo(teamCycle);
-                              const teamPendingCount = teamGroup.members.filter(m =>
-                                (m.response.status === 'manager_review' || m.response.status === 'Submitted to Manager' || String(m.response.status || '').toLowerCase().includes('submitted')) &&
-                                m.response.managerScore == null
-                              ).length;
+                            const desigPendingCount = desigGroup.members.filter(m =>
+                              (m.response.status === 'manager_review' || m.response.status === 'Submitted to Manager' || String(m.response.status || '').toLowerCase().includes('submitted')) &&
+                              m.response.managerScore == null
+                            ).length;
 
-                              return (
-                                <React.Fragment key={teamGroup.teamName}>
-                                  {/* Team Sub-banner with Deliverables Matrix Controls */}
-                                  <tr>
-                                    <td colSpan={6} className="p-0">
-                                      <div className="px-4 py-2 flex items-center justify-between gap-3 font-bold text-xs bg-[#DFF7F7] text-[#134e4a] border-y border-[#b2e5e5]/50">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <UserGroupIcon className="w-4 h-4 shrink-0" />
-                                          <span className="truncate">Team: {teamGroup.teamName}</span>
-                                          <span className="text-[11px] font-normal opacity-80 shrink-0">
-                                            ({teamGroup.members.length} {teamGroup.members.length === 1 ? 'person' : 'people'})
+                            return (
+                              <React.Fragment key={desigGroup.designationName}>
+                                {/* Designation Sub-row Header */}
+                                <tr>
+                                  <td colSpan={6} className="p-0">
+                                    <div
+                                      onClick={() => setExpandedDesignations(prev => ({ ...prev, [desigKey]: !isDesigExpanded }))}
+                                      className="px-4 py-2 pl-7 flex items-center justify-between gap-3 font-semibold text-xs bg-slate-50/80 hover:bg-slate-100/80 text-slate-700 border-b border-slate-200/60 cursor-pointer select-none transition-colors"
+                                      title={isDesigExpanded ? `Click to collapse ${desigGroup.designationName}` : `Click to expand ${desigGroup.designationName} (${desigGroup.members.length} people)`}
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <ChevronDownIcon className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isDesigExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                                        <UserGroupIcon className="w-4 h-4 text-primary-600 shrink-0" />
+                                        <span className="truncate font-bold text-slate-800">Designation: {desigGroup.designationName}</span>
+                                        <span className="text-[11px] font-medium text-slate-500 shrink-0">
+                                          ({desigGroup.members.length} {desigGroup.members.length === 1 ? 'person' : 'people'})
+                                        </span>
+                                        {desigPendingCount > 0 && (
+                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-2xs animate-pulse shrink-0">
+                                            <BellAlertIcon className="w-3 h-3 text-white" />
+                                            <span>{desigPendingCount} Submissions Awaiting Approval</span>
                                           </span>
-                                          {teamPendingCount > 0 && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-2xs animate-pulse shrink-0">
-                                              <BellAlertIcon className="w-3 h-3 text-white" />
-                                              <span>{teamPendingCount} Submissions Awaiting Approval</span>
+                                        )}
+                                      </div>
+                                      <span className="text-[10px] font-medium text-slate-400 hidden sm:inline-block">
+                                        {isDesigExpanded ? 'Hide ▲' : 'Show ▼'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {/* Member Rows under Designation (Rendered when Designation is Expanded) */}
+                                {isDesigExpanded && desigGroup.members.map(member => {
+                                  const isSubmittedPending = Boolean(
+                                    (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || String(member.response.status || '').toLowerCase().includes('submitted')) &&
+                                    member.response.managerScore == null
+                                  );
+
+                                  return (
+                                    <tr
+                                      key={member.response.id || member.employeeCode}
+                                      className={`border-b border-slate-100 hover:bg-slate-50/80 transition ${isSubmittedPending ? 'bg-primary-50/30 border-l-4 border-l-primary-600' : 'bg-white'
+                                        }`}
+                                    >
+                                      {/* 1. Name of the employee with avatar */}
+                                      <td className="py-3.5 px-4 pl-10">
+                                        <div className="flex items-center gap-3">
+                                          {member.profileImage ? (
+                                            <img
+                                              src={member.profileImage}
+                                              alt={member.employeeName}
+                                              className="w-9 h-9 max-w-[36px] max-h-[36px] rounded-full object-cover shrink-0 shadow-2xs border border-slate-200"
+                                              onError={(e) => {
+                                                (e.currentTarget as HTMLElement).style.display = 'none';
+                                                const fallback = (e.currentTarget as HTMLElement).nextElementSibling as HTMLElement;
+                                                if (fallback) fallback.style.display = 'flex';
+                                              }}
+                                            />
+                                          ) : null}
+                                          <div
+                                            className={`w-9 h-9 max-w-[36px] max-h-[36px] rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${member.avatarBg}`}
+                                            style={{ display: member.profileImage ? 'none' : 'flex' }}
+                                          >
+                                            {member.initials}
+                                          </div>
+                                          <div className="flex flex-col min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                              {member.rank && (
+                                                <span className="font-bold text-xs text-amber-600 mr-0.5">
+                                                  {member.rank === 1 ? '🥇 #1' : member.rank === 2 ? '🥈 #2' : member.rank === 3 ? '🥉 #3' : `#${member.rank}`}
+                                                </span>
+                                              )}
+                                              <span className={`font-semibold text-xs ${isSubmittedPending ? 'text-primary-950 font-bold' : 'text-slate-900'}`}>
+                                                {member.employeeName}
+                                              </span>
+                                              <span className="text-xs text-slate-400 font-normal">
+                                                (Emp Code {member.employeeCode})
+                                              </span>
+                                              {isSubmittedPending && (
+                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary-100 text-primary-900 border border-primary-300 shrink-0 inline-flex items-center gap-1 shadow-2xs animate-pulse">
+                                                  <SparklesIcon className="w-3 h-3 text-primary-700" />
+                                                  <span>Ready for Review</span>
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </td>
+
+                                      {/* 2. Evaluation Period / Date Badge */}
+                                      <td className="py-3.5 px-4 text-center">
+                                        <div className="inline-flex flex-col items-center gap-0.5">
+                                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold border shadow-2xs ${member.periodInfo?.freqColor || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                                            <CalendarDaysIcon className="w-3 h-3 shrink-0" />
+                                            <span>{member.periodInfo?.freqLabel || 'Evaluation'}</span>
+                                          </span>
+                                          <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">
+                                            {member.periodInfo?.dateText}
+                                          </span>
+                                          {(member.response.employeeSubmittedAt || (member.response as any).submitted_at || member.response.createdAt) && (
+                                            <span className="text-[10px] text-slate-500 font-medium">
+                                              Submitted {formatEvalDateTime(member.response.employeeSubmittedAt || (member.response as any).submitted_at || member.response.createdAt)}
+                                            </span>
+                                          )}
+                                          {member.isCalibrated && (member.response.serviceManagerApprovedAt || member.response.managerReviewedAt || (member.response as any).manager_reviewed_at || (member.response as any).approved_at || member.response.updatedAt) && (
+                                            <span className="text-[10px] text-emerald-700 font-medium">
+                                              Action Date: {formatEvalDateTime(member.response.serviceManagerApprovedAt || member.response.managerReviewedAt || (member.response as any).manager_reviewed_at || (member.response as any).approved_at || member.response.updatedAt)}
                                             </span>
                                           )}
                                         </div>
+                                      </td>
 
-                                        {(activeRole === 'manager' || activeRole === 'downline_teams' || canCreateMetrics) && (
-                                          <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                                            {teamCycle ? (
+                                      {/* 3. Date Score / Self Score */}
+                                      <td className="py-3.5 px-4 text-center">
+                                        <span className="text-xs font-medium text-slate-700">
+                                          {member.dateScoreDisplay}
+                                        </span>
+                                      </td>
+
+                                      {/* 4. Average Score */}
+                                      <td className="py-3.5 px-4 text-center">
+                                        <span className="text-xs font-semibold text-slate-800">
+                                          {member.averageScoreDisplay}
+                                        </span>
+                                      </td>
+
+                                      {/* 5. Status Badge */}
+                                      <td className="py-3.5 px-4 text-center">
+                                        {renderStatusBadge(member.response.status, member.response)}
+                                      </td>
+
+                                      {/* 6. Action Button */}
+                                      <td className="py-3.5 px-4 text-right">
+                                        <div className="flex items-center justify-end gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleSelectMgrResponse(member.response)}
+                                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs ${isSubmittedPending
+                                              ? 'bg-primary-600 hover:bg-primary-700 text-white ring-2 ring-primary-500/30'
+                                              : member.isCalibrated
+                                                ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
+                                                : 'bg-primary-600 hover:bg-primary-700 text-white'
+                                              }`}
+                                          >
+                                            {isSubmittedPending ? (
                                               <>
-                                                {/* Matrix Status Badge */}
-                                                <span
-                                                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0 shadow-2xs ${cycleLockedInfo.isLocked
-                                                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                                      : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                                                    }`}
-                                                  title={
-                                                    cycleLockedInfo.isLocked
-                                                      ? `Locked (${cycleLockedInfo.activeCount} active evaluations in progress)`
-                                                      : 'Active Deliverables Matrix (Editable)'
-                                                  }
-                                                >
-                                                  <span className={`w-1.5 h-1.5 rounded-full ${cycleLockedInfo.isLocked ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
-                                                  <span>{cycleLockedInfo.isLocked ? 'Locked' : 'Matrix: 100%'}</span>
-                                                </span>
-
-                                                {/* Edit Matrix */}
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleOpenMgrEditMatrixModal(teamCycle)}
-                                                  disabled={cycleLockedInfo.isLocked}
-                                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer ${cycleLockedInfo.isLocked
-                                                      ? 'bg-white/50 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
-                                                      : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 shadow-2xs'
-                                                    }`}
-                                                  title={cycleLockedInfo.isLocked ? 'Matrix locked because evaluations are in progress' : 'Edit Deliverables Matrix'}
-                                                >
-                                                  <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
-                                                  <span>Edit</span>
-                                                </button>
-
-                                                {/* Delete Matrix */}
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleMgrDeleteMatrix(teamCycle)}
-                                                  disabled={cycleLockedInfo.isLocked}
-                                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer ${cycleLockedInfo.isLocked
-                                                      ? 'bg-white/50 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
-                                                      : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 shadow-2xs'
-                                                    }`}
-                                                  title={cycleLockedInfo.isLocked ? 'Matrix locked because evaluations are in progress' : 'Delete Deliverables Matrix'}
-                                                >
-                                                  <TrashIcon className="w-3.5 h-3.5" />
-                                                  <span>Delete</span>
-                                                </button>
+                                                <SparklesIcon className="w-3.5 h-3.5 text-amber-300" />
+                                                <span>Review & Score</span>
                                               </>
                                             ) : (
-                                              <div className="flex items-center gap-2">
-                                                <span className="text-[10px] font-medium opacity-70">No Matrix Configured</span>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleOpenMgrCreateModal(teamGroup.teamName)}
-                                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold text-teal-700 bg-white hover:bg-teal-50 border border-teal-300 shadow-2xs transition cursor-pointer"
-                                                >
-                                                  <span>+ Assign Matrix</span>
-                                                </button>
-                                              </div>
+                                              <>
+                                                <PencilSquareIcon className="w-3.5 h-3.5" />
+                                                <span>{member.isCalibrated ? 'Recalibrate' : 'Review & Score'}</span>
+                                              </>
                                             )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </td>
-                                  </tr>
-
-                                  {/* Member Rows in Team */}
-                                  {teamGroup.members.map(member => {
-                                    const isSubmittedPending = Boolean(
-                                      (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || String(member.response.status || '').toLowerCase().includes('submitted')) &&
-                                      member.response.managerScore == null
-                                    );
-
-                                    return (
-                                      <tr
-                                        key={member.response.id || member.employeeCode}
-                                        className={`border-b border-slate-100 hover:bg-slate-50/80 transition ${isSubmittedPending ? 'bg-teal-50/20 border-l-4 border-l-teal-600' : 'bg-white'
-                                          }`}
-                                      >
-                                        {/* 1. Name of the employee with avatar */}
-                                        <td className="py-3.5 px-4">
-                                          <div className="flex items-center gap-3">
-                                            {member.profileImage ? (
-                                              <img
-                                                src={member.profileImage}
-                                                alt={member.employeeName}
-                                                className="w-8.5 h-8.5 rounded-full object-cover shrink-0 shadow-2xs border border-slate-200"
-                                                onError={(e) => {
-                                                  (e.currentTarget as HTMLElement).style.display = 'none';
-                                                  const fallback = (e.currentTarget as HTMLElement).nextElementSibling as HTMLElement;
-                                                  if (fallback) fallback.style.display = 'flex';
-                                                }}
-                                              />
-                                            ) : null}
-                                            <div
-                                              className={`w-8.5 h-8.5 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${member.avatarBg}`}
-                                              style={{ display: member.profileImage ? 'none' : 'flex' }}
-                                            >
-                                              {member.initials}
-                                            </div>
-                                            <div className="flex flex-col min-w-0">
-                                              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                                {member.rank && (
-                                                  <span className="font-bold text-xs text-amber-600 mr-0.5">
-                                                    {member.rank === 1 ? '🥇 #1' : member.rank === 2 ? '🥈 #2' : member.rank === 3 ? '🥉 #3' : `#${member.rank}`}
-                                                  </span>
-                                                )}
-                                                <span className={`font-semibold text-xs ${isSubmittedPending ? 'text-teal-950 font-bold' : 'text-slate-900'}`}>
-                                                  {member.employeeName}
-                                                </span>
-                                                <span className="text-xs text-slate-400 font-normal">
-                                                  (Emp Code {member.employeeCode})
-                                                </span>
-                                                {isSubmittedPending && (
-                                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-300 shrink-0 inline-flex items-center gap-1 shadow-2xs animate-pulse">
-                                                    <SparklesIcon className="w-3 h-3 text-teal-700" />
-                                                    <span>Ready for Review</span>
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </td>
-
-                                        {/* 2. Evaluation Period / Date Badge */}
-                                        <td className="py-3.5 px-4 text-center">
-                                          <div className="inline-flex flex-col items-center gap-0.5">
-                                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold border shadow-2xs ${member.periodInfo?.freqColor || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                                              <CalendarDaysIcon className="w-3 h-3 shrink-0" />
-                                              <span>{member.periodInfo?.freqLabel || 'Evaluation'}</span>
-                                            </span>
-                                            <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">
-                                              {member.periodInfo?.dateText}
-                                            </span>
-                                            {(member.response.employeeSubmittedAt || (member.response as any).submitted_at || member.response.createdAt) && (
-                                              <span className="text-[10px] text-slate-500 font-medium">
-                                                Submitted {formatEvalDateTime(member.response.employeeSubmittedAt || (member.response as any).submitted_at || member.response.createdAt)}
-                                              </span>
-                                            )}
-                                            {member.isCalibrated && (member.response.serviceManagerApprovedAt || member.response.managerReviewedAt || (member.response as any).manager_reviewed_at || (member.response as any).approved_at || member.response.updatedAt) && (
-                                              <span className="text-[10px] text-emerald-700 font-medium">
-                                                Action Date: {formatEvalDateTime(member.response.serviceManagerApprovedAt || member.response.managerReviewedAt || (member.response as any).manager_reviewed_at || (member.response as any).approved_at || member.response.updatedAt)}
-                                              </span>
-                                            )}
-                                          </div>
-                                        </td>
-
-                                        {/* 3. Date Score / Self Score */}
-                                        <td className="py-3.5 px-4 text-center">
-                                          <span className="text-xs font-medium text-slate-700">
-                                            {member.dateScoreDisplay}
-                                          </span>
-                                        </td>
-
-                                        {/* 4. Average Score */}
-                                        <td className="py-3.5 px-4 text-center">
-                                          <span className="text-xs font-semibold text-slate-800">
-                                            {member.averageScoreDisplay}
-                                          </span>
-                                        </td>
-
-                                        {/* 5. Status Badge */}
-                                        <td className="py-3.5 px-4 text-center">
-                                          {renderStatusBadge(member.response.status, member.response)}
-                                        </td>
-
-                                        {/* 6. Action Button */}
-                                        <td className="py-3.5 px-4 text-right">
-                                          <div className="flex items-center justify-end gap-1.5">
+                                          </button>
+                                          {!member.isCalibrated && member.response.managerScore == null && (
                                             <button
                                               type="button"
-                                              onClick={() => handleSelectMgrResponse(member.response)}
-                                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs ${isSubmittedPending
-                                                  ? 'bg-gradient-to-r from-teal-700 to-emerald-700 hover:from-teal-800 hover:to-emerald-800 text-white ring-2 ring-teal-500/30'
-                                                  : member.isCalibrated
-                                                    ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
-                                                    : 'bg-teal-700 hover:bg-teal-800 text-white'
-                                                }`}
+                                              onClick={() => handleDeleteMgrResponseRow(member.response)}
+                                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                              title="Delete evaluation record"
                                             >
-                                              {isSubmittedPending ? (
-                                                <>
-                                                  <SparklesIcon className="w-3.5 h-3.5 text-amber-300" />
-                                                  <span>Review & Score</span>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <PencilSquareIcon className="w-3.5 h-3.5" />
-                                                  <span>{member.isCalibrated ? 'Recalibrate' : 'Review & Score'}</span>
-                                                </>
-                                              )}
+                                              <TrashIcon className="w-3.5 h-3.5" />
                                             </button>
-                                            {!member.isCalibrated && member.response.managerScore == null && (
-                                              <button
-                                                type="button"
-                                                onClick={() => handleDeleteMgrResponseRow(member.response)}
-                                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                                title="Delete evaluation record"
-                                              >
-                                                <TrashIcon className="w-3.5 h-3.5" />
-                                              </button>
-                                            )}
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </React.Fragment>
-                              );
-                            })}
-                          </React.Fragment>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </React.Fragment>
+                            );
+                          })}
+                        </React.Fragment>
+                      );
+                    })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* ========================================================================= */}
       {/* 4.2. DEPARTMENT OVERSIGHT VIEW (SUBMISSIONS DASHBOARD + TOP PERFORMERS) */}
@@ -9111,11 +8875,10 @@ export const EvaluationTab: React.FC = () => {
                 setOversightSubView('submissions');
                 setSubmissionStatusFilter('all');
               }}
-              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${
-                oversightSubView === 'submissions' && submissionStatusFilter === 'all'
+              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'submissions' && submissionStatusFilter === 'all'
                   ? 'border-slate-800 ring-2 ring-slate-800/20 shadow-xs'
                   : 'border-slate-200/90 hover:border-slate-300'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
@@ -9137,11 +8900,10 @@ export const EvaluationTab: React.FC = () => {
                 setOversightSubView('submissions');
                 setSubmissionStatusFilter('with_manager');
               }}
-              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${
-                oversightSubView === 'submissions' && submissionStatusFilter === 'with_manager'
+              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'submissions' && submissionStatusFilter === 'with_manager'
                   ? 'border-amber-500 ring-2 ring-amber-400/25 bg-amber-50/20 shadow-xs'
                   : 'border-slate-200/90 hover:border-slate-300'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
@@ -9163,11 +8925,10 @@ export const EvaluationTab: React.FC = () => {
                 setOversightSubView('submissions');
                 setSubmissionStatusFilter('completed');
               }}
-              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${
-                oversightSubView === 'submissions' && submissionStatusFilter === 'completed'
+              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'submissions' && submissionStatusFilter === 'completed'
                   ? 'border-emerald-600 ring-2 ring-emerald-500/25 bg-emerald-50/20 shadow-xs'
                   : 'border-slate-200/90 hover:border-slate-300'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
@@ -9191,11 +8952,10 @@ export const EvaluationTab: React.FC = () => {
                   setReportViewTab('top_weekly');
                 }
               }}
-              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${
-                oversightSubView === 'top_performers'
+              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'top_performers'
                   ? 'border-teal-700 ring-2 ring-teal-600/25 bg-teal-50/10 shadow-xs'
                   : 'border-slate-200/90 hover:border-slate-300'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
@@ -9273,8 +9033,8 @@ export const EvaluationTab: React.FC = () => {
                       const theme = submissionStatusFilter === 'completed'
                         ? { bg: 'bg-[#ECFDF5]', border: 'border-[#A7F3D0]', text: 'text-[#065F46]', icon: 'text-[#059669]' }
                         : submissionStatusFilter === 'with_manager'
-                        ? { bg: 'bg-[#FFFBEB]', border: 'border-[#FDE68A]', text: 'text-[#92400E]', icon: 'text-[#D97706]' }
-                        : rowThemes[idx % rowThemes.length];
+                          ? { bg: 'bg-[#FFFBEB]', border: 'border-[#FDE68A]', text: 'text-[#92400E]', icon: 'text-[#D97706]' }
+                          : rowThemes[idx % rowThemes.length];
                       const isExpanded = Boolean(expandedSubmissionGroups[group.groupName]);
 
                       return (
@@ -9295,9 +9055,8 @@ export const EvaluationTab: React.FC = () => {
                             {/* Left: Chevron + Building + Group Name */}
                             <div className="flex items-center gap-3">
                               <ChevronRightIcon
-                                className={`w-4 h-4 transition-transform duration-200 ${theme.text} ${
-                                  isExpanded ? 'rotate-90' : ''
-                                }`}
+                                className={`w-4 h-4 transition-transform duration-200 ${theme.text} ${isExpanded ? 'rotate-90' : ''
+                                  }`}
                               />
                               <BuildingOffice2Icon className={`w-5 h-5 ${theme.icon}`} />
                               <span className={`text-sm font-bold tracking-tight ${theme.text}`}>
@@ -9343,118 +9102,151 @@ export const EvaluationTab: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Expanded Submissions Table */}
+                          {/* Expanded Submissions Group by Designation */}
                           {isExpanded && (
-                            <div className="px-5 pb-4 pt-2 border-t border-slate-200/60 bg-white/70">
-                              {group.items.length === 0 ? (
+                            <div className="px-5 pb-4 pt-3 border-t border-slate-200/60 bg-white/70 space-y-3">
+                              {group.items.length === 0 || !group.designations || group.designations.length === 0 ? (
                                 <div className="py-6 text-center text-xs text-slate-400 font-medium">
                                   No submissions in this category.
                                 </div>
                               ) : (
-                                <div className="overflow-x-auto rounded-xl border border-slate-200/80 bg-white shadow-2xs">
-                                  <table className="w-full text-left text-xs border-collapse">
-                                    <thead>
-                                      <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                                        <th className="px-4 py-3">Employee</th>
-                                        <th className="px-4 py-3">Form / Period</th>
-                                        <th className="px-3 py-3 text-center">Frequency</th>
-                                        <th className="px-3 py-3 text-center">Self Score</th>
-                                        <th className="px-3 py-3 text-center">Manager Score</th>
-                                        <th className="px-4 py-3 text-center">Status</th>
-                                        <th className="px-4 py-3 text-right">Action</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                      {group.items.map(r => {
-                                        const info = getEmployeeDisplayInfo(r);
-                                        const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
+                                group.designations.map((desigGroup) => {
+                                  const desigKey = `${group.groupName}_${desigGroup.designationName}`;
+                                  const isDesigExpanded = Boolean(expandedSubmissionDesigs[desigKey]);
 
-                                        return (
-                                          <tr key={r.id} className="hover:bg-slate-50/70 transition">
-                                            <td className="px-4 py-3.5">
-                                              <div className="flex items-center gap-3">
-                                                {info.profileImage ? (
-                                                  <img
-                                                    src={info.profileImage}
-                                                    alt={info.employeeName}
-                                                    className="w-8 h-8 rounded-lg object-cover shrink-0 border border-slate-200"
-                                                    onError={(e) => {
-                                                      (e.currentTarget as HTMLElement).style.display = 'none';
-                                                      const fallback = (e.currentTarget as HTMLElement).nextElementSibling as HTMLElement;
-                                                      if (fallback) fallback.style.display = 'flex';
-                                                    }}
-                                                  />
-                                                ) : null}
-                                                <div
-                                                  className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0"
-                                                  style={{ display: info.profileImage ? 'none' : 'flex' }}
-                                                >
-                                                  {(info.employeeName || 'EM').split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
-                                                </div>
-                                                <div>
-                                                  <div className="font-bold text-slate-900">{info.employeeName}</div>
-                                                  <div className="text-[10px] font-mono text-slate-400">#{info.employeeCode}</div>
-                                                </div>
-                                              </div>
-                                            </td>
-                                            <td className="px-4 py-3.5">
-                                              <div className="font-semibold text-slate-800">{r.periodName || (r as any).form || 'Performance Evaluation'}</div>
-                                              <div className="text-[10px] text-slate-500 font-medium">{info.teamName}</div>
-                                              
-                                              {/* Applied / Submitted Date */}
-                                              {(r.employeeSubmittedAt || (r as any).submitted_at) && (
-                                                <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-1 font-medium">
-                                                  <ClockIcon className="w-3 h-3 text-slate-400 shrink-0" />
-                                                  <span>Submitted <strong className="font-semibold text-slate-700">{formatEvalDateTime(r.employeeSubmittedAt || (r as any).submitted_at)}</strong></span>
-                                                </div>
-                                              )}
+                                  return (
+                                    <div key={desigGroup.designationName} className="rounded-xl border border-slate-200/80 bg-white shadow-2xs overflow-hidden">
+                                      {/* Designation Header */}
+                                      <div
+                                        onClick={() => setExpandedSubmissionDesigs(prev => ({
+                                          ...prev,
+                                          [desigKey]: !isDesigExpanded
+                                        }))}
+                                        className="px-4 py-2.5 flex items-center justify-between gap-3 bg-slate-50/90 hover:bg-slate-100/90 cursor-pointer select-none transition border-b border-slate-100"
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <ChevronRightIcon className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-200 ${isDesigExpanded ? 'rotate-90' : ''}`} />
+                                          <UserGroupIcon className="w-4 h-4 text-teal-600 shrink-0" />
+                                          <span className="font-bold text-slate-800 text-xs truncate">Designation: {desigGroup.designationName}</span>
+                                          <span className="text-[11px] font-medium text-slate-500 shrink-0">
+                                            ({desigGroup.peopleCount} {desigGroup.peopleCount === 1 ? 'person' : 'people'} • {desigGroup.items.length} {desigGroup.items.length === 1 ? 'submission' : 'submissions'})
+                                          </span>
+                                        </div>
+                                        <span className="text-[10px] font-medium text-slate-400 hidden sm:inline-block">
+                                          {isDesigExpanded ? 'Hide ▲' : 'Show ▼'}
+                                        </span>
+                                      </div>
 
-                                              {/* Action / Approved Date */}
-                                              {isCalibrated && (r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt) && (
-                                                <div className="flex items-center gap-1 text-[10px] text-emerald-700 mt-0.5 font-medium">
-                                                  <CheckCircleIcon className="w-3 h-3 text-emerald-600 shrink-0" />
-                                                  <span>Action Date: <strong className="font-semibold text-emerald-800">{formatEvalDateTime(r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt)}</strong></span>
-                                                </div>
-                                              )}
-                                            </td>
-                                            <td className="px-3 py-3.5 text-center">
-                                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200">
-                                                {r.frequency || 'Quarterly'}
-                                              </span>
-                                            </td>
-                                            <td className="px-3 py-3.5 text-center font-semibold text-slate-700">
-                                              {r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0
-                                                ? `${Number(r.employeeOverallScore).toFixed(1)}%`
-                                                : '—'}
-                                            </td>
-                                            <td className="px-3 py-3.5 text-center">
-                                              {r.managerScore != null ? (
-                                                <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200">
-                                                  {Number(r.managerScore).toFixed(1)}%
-                                                </span>
-                                              ) : (
-                                                <span className="text-[11px] text-slate-400 font-medium">Pending</span>
-                                              )}
-                                            </td>
-                                            <td className="px-4 py-3.5 text-center">
-                                              {renderStatusBadge(r.status, r)}
-                                            </td>
-                                            <td className="px-4 py-3.5 text-right">
-                                              <button
-                                                type="button"
-                                                onClick={() => handleSelectMgrResponse(r)}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
-                                              >
-                                                <EyeIcon className="w-3.5 h-3.5" />
-                                                <span>{isCalibrated ? 'View Report' : 'Review'}</span>
-                                              </button>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
+                                      {/* Designation Members Table */}
+                                      {isDesigExpanded && (
+                                        <div className="overflow-x-auto">
+                                          <table className="w-full text-left text-xs border-collapse">
+                                            <thead>
+                                              <tr className="bg-slate-50/50 border-b border-slate-200/60 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                                <th className="px-4 py-2.5">Employee</th>
+                                                <th className="px-4 py-2.5">Form / Period</th>
+                                                <th className="px-3 py-2.5 text-center">Frequency</th>
+                                                <th className="px-3 py-2.5 text-center">Self Score</th>
+                                                <th className="px-3 py-2.5 text-center">Manager Score</th>
+                                                <th className="px-4 py-2.5 text-center">Status</th>
+                                                <th className="px-4 py-2.5 text-right">Action</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                              {desigGroup.items.map(r => {
+                                                const info = getEmployeeDisplayInfo(r);
+                                                const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
+
+                                                return (
+                                                  <tr key={r.id} className="hover:bg-slate-50/70 transition">
+                                                    <td className="px-4 py-3">
+                                                      <div className="flex items-center gap-3">
+                                                        {info.profileImage ? (
+                                                          <img
+                                                            src={info.profileImage}
+                                                            alt={info.employeeName}
+                                                            className="w-8 h-8 rounded-lg object-cover shrink-0 border border-slate-200"
+                                                            onError={(e) => {
+                                                              (e.currentTarget as HTMLElement).style.display = 'none';
+                                                              const fallback = (e.currentTarget as HTMLElement).nextElementSibling as HTMLElement;
+                                                              if (fallback) fallback.style.display = 'flex';
+                                                            }}
+                                                          />
+                                                        ) : null}
+                                                        <div
+                                                          className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0"
+                                                          style={{ display: info.profileImage ? 'none' : 'flex' }}
+                                                        >
+                                                          {(info.employeeName || 'EM').split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                                                        </div>
+                                                        <div>
+                                                          <div className="font-bold text-slate-900">{info.employeeName}</div>
+                                                          <div className="text-[10px] text-slate-500">{info.designation || desigGroup.designationName} • #{info.employeeCode}</div>
+                                                        </div>
+                                                      </div>
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                      <div className="font-semibold text-slate-800">{r.periodName || (r as any).form || 'Performance Evaluation'}</div>
+                                                      <div className="text-[10px] text-slate-500 font-medium">{info.teamName}</div>
+
+                                                      {/* Applied / Submitted Date */}
+                                                      {(r.employeeSubmittedAt || (r as any).submitted_at) && (
+                                                        <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-1 font-medium">
+                                                          <ClockIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                                                          <span>Submitted <strong className="font-semibold text-slate-700">{formatEvalDateTime(r.employeeSubmittedAt || (r as any).submitted_at)}</strong></span>
+                                                        </div>
+                                                      )}
+
+                                                      {/* Action / Approved Date */}
+                                                      {isCalibrated && (r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt) && (
+                                                        <div className="flex items-center gap-1 text-[10px] text-emerald-700 mt-0.5 font-medium">
+                                                          <CheckCircleIcon className="w-3 h-3 text-emerald-600 shrink-0" />
+                                                          <span>Action Date: <strong className="font-semibold text-emerald-800">{formatEvalDateTime(r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt)}</strong></span>
+                                                        </div>
+                                                      )}
+                                                    </td>
+                                                    <td className="px-3 py-3 text-center">
+                                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200">
+                                                        {r.frequency || 'Quarterly'}
+                                                      </span>
+                                                    </td>
+                                                    <td className="px-3 py-3 text-center font-semibold text-slate-700">
+                                                      {r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0
+                                                        ? `${Number(r.employeeOverallScore).toFixed(1)}%`
+                                                        : '—'}
+                                                    </td>
+                                                    <td className="px-3 py-3 text-center">
+                                                      {r.managerScore != null ? (
+                                                        <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                                                          {Number(r.managerScore).toFixed(1)}%
+                                                        </span>
+                                                      ) : (
+                                                        <span className="text-[11px] text-slate-400 font-medium">Pending</span>
+                                                      )}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-center">
+                                                      {renderStatusBadge(r.status, r)}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleSelectMgrResponse(r)}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                                                      >
+                                                        <EyeIcon className="w-3.5 h-3.5" />
+                                                        <span>{isCalibrated ? 'View Report' : 'Review'}</span>
+                                                      </button>
+                                                    </td>
+                                                  </tr>
+                                                );
+                                              })}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })
                               )}
                             </div>
                           )}
@@ -9511,7 +9303,7 @@ export const EvaluationTab: React.FC = () => {
                                 </td>
                                 <td className="px-4 py-3.5">
                                   <div className="font-semibold text-slate-800">{r.periodName || (r as any).form || 'Performance Evaluation'}</div>
-                                  
+
                                   {/* Applied / Submitted Date */}
                                   {(r.employeeSubmittedAt || (r as any).submitted_at || r.createdAt) && (
                                     <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-1 font-medium">
@@ -9586,11 +9378,10 @@ export const EvaluationTab: React.FC = () => {
                       key={tab.id}
                       type="button"
                       onClick={() => setReportViewTab(tab.id as any)}
-                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                        reportViewTab === tab.id
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${reportViewTab === tab.id
                           ? 'bg-teal-700 text-white shadow-xs'
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-                      }`}
+                        }`}
                     >
                       {tab.label}
                     </button>
@@ -9624,14 +9415,14 @@ export const EvaluationTab: React.FC = () => {
                   <div
                     key={col.key}
                     className={`min-w-[280px] max-w-[340px] flex-1 rounded-2xl overflow-hidden shadow-2xs bg-white flex flex-col shrink-0 ${(col as any).isSummaryYear
-                        ? 'border-2 border-[#91B5B5] shadow-md ring-1 ring-[#91B5B5]/20'
-                        : 'border border-slate-200/80'
+                      ? 'border-2 border-[#029597] shadow-md ring-1 ring-[#029597]/20'
+                      : 'border border-slate-200/80'
                       }`}
                   >
                     {/* Column Header */}
                     <div className={`px-4 py-2.5 font-bold text-xs flex items-center justify-between ${(col as any).isSummaryYear
-                        ? 'bg-[#91B5B5] text-white'
-                        : 'bg-slate-50 text-slate-800 border-b border-slate-200/80'
+                      ? 'bg-[#029597] text-white'
+                      : 'bg-slate-50 text-slate-800 border-b border-slate-200/80'
                       }`}>
                       <span>{col.label}</span>
                       {col.subLabel && (
@@ -10487,11 +10278,11 @@ export const EvaluationTab: React.FC = () => {
                         }}
                         className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs cursor-pointer"
                       >
-                        <option value="quarterly">Quarterly (Stage 1 - 4)</option>
+                        <option value="quarterly">Quarterly</option>
                         <option value="monthly">Monthly</option>
-                        <option value="weekly">Weekly (Date Range)</option>
-                        <option value="daily">Daily (Due Date)</option>
-                        <option value="yearly">Yearly (Annual)</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="daily">Daily</option>
+                        <option value="yearly">Yearly</option>
                       </select>
                     </div>
 
@@ -10726,8 +10517,8 @@ export const EvaluationTab: React.FC = () => {
                               disabled={assignableMembers.length === 0}
                               onClick={() => handleMgrToggleSelectAll(baseTeamMembers)}
                               className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border shadow-2xs transition cursor-pointer ${assignableMembers.length === 0
-                                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                                  : 'text-teal-700 hover:text-teal-800 bg-white border-teal-200 hover:bg-teal-50/50'
+                                ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                : 'text-teal-700 hover:text-teal-800 bg-white border-teal-200 hover:bg-teal-50/50'
                                 }`}
                             >
                               {(() => {
@@ -10759,10 +10550,10 @@ export const EvaluationTab: React.FC = () => {
                                   disabled={isAlreadyAssigned}
                                   onClick={() => handleMgrToggleEmp(empId)}
                                   className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition select-none ${isAlreadyAssigned
-                                      ? 'bg-slate-100/80 border-slate-200 text-slate-400 cursor-not-allowed opacity-75'
-                                      : isSelected
-                                        ? 'bg-teal-50/70 border-teal-500 ring-1 ring-teal-500/30 text-teal-950 shadow-2xs cursor-pointer'
-                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 cursor-pointer'
+                                    ? 'bg-slate-100/80 border-slate-200 text-slate-400 cursor-not-allowed opacity-75'
+                                    : isSelected
+                                      ? 'bg-teal-50/70 border-teal-500 ring-1 ring-teal-500/30 text-teal-950 shadow-2xs cursor-pointer'
+                                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 cursor-pointer'
                                     }`}
                                   title={
                                     isAlreadyAssigned
@@ -10774,10 +10565,10 @@ export const EvaluationTab: React.FC = () => {
                                     <span className={`w-2 h-2 rounded-full shrink-0 ${isAlreadyAssigned ? 'bg-slate-300' : isSelected ? 'bg-teal-600' : 'bg-slate-300'
                                       }`} />
                                     <span className={`text-xs truncate ${isAlreadyAssigned
-                                        ? 'font-normal text-slate-400'
-                                        : isSelected
-                                          ? 'font-medium text-teal-950'
-                                          : 'font-normal text-slate-700'
+                                      ? 'font-normal text-slate-400'
+                                      : isSelected
+                                        ? 'font-medium text-teal-950'
+                                        : 'font-normal text-slate-700'
                                       }`}>
                                       {fullName}
                                     </span>
