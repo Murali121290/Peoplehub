@@ -358,3 +358,7 @@ class Employee(db.Model):
         db.Date,
         nullable=True
     )
+
+    @property
+    def name(self):
+        return f"{self.first_name or ''} {self.last_name or ''}".strip()

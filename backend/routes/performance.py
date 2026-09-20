@@ -5,6 +5,7 @@ from models.database import db
 from models.employee import Employee
 from models.performance import EmployeePerformance
 from models.kpi_evaluation import KpiEvaluation
+from models.manager_kpi_template import ManagerKpiTemplate
 from middleware.auth import auth_required, access_level_required
 
 performance_bp = Blueprint("performance", __name__)
@@ -1061,6 +1062,438 @@ def delete_kpi_evaluation(id):
         return jsonify({"error": str(e)}), 500
 
 
+
+# =========================================================================
+# KPI WORKFLOW TEMPLATES (POSTGRESQL MULTI-FORM PERSISTENCE)
+# =========================================================================
+
+SYSTEM_DEFAULT_KPI_CATEGORIES = [
+    {
+        "id": "cat_productivity",
+        "name": "Productivity (Number of Active Projects)",
+        "description": "Project volume, complexity handling, and throughput page counts",
+        "weightage": 30,
+        "kpis": [
+            {
+                "id": "kpi_proj_simple",
+                "name": "Simple Projects",
+                "description": "Standard quick turnaround projects completed",
+                "targetScore": 3.33,
+                "weightage": 3.33,
+                "targetFromManager": "3",
+                "targetValue": 3,
+                "unit": "projects",
+                "scoringDirection": "higher_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            },
+            {
+                "id": "kpi_proj_moderate",
+                "name": "Moderate Projects",
+                "description": "Multi-step intermediate complexity deliverables",
+                "targetScore": 3.33,
+                "weightage": 3.33,
+                "targetFromManager": "11",
+                "targetValue": 11,
+                "unit": "projects",
+                "scoringDirection": "higher_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            },
+            {
+                "id": "kpi_proj_complex",
+                "name": "Complex Projects",
+                "description": "High difficulty customized client assignments",
+                "targetScore": 3.34,
+                "weightage": 3.34,
+                "targetFromManager": "1",
+                "targetValue": 1,
+                "unit": "projects",
+                "scoringDirection": "higher_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            },
+            {
+                "id": "kpi_pages_first_pass",
+                "name": "Number of Pages (First pass)",
+                "description": "Total volume of pages processed in initial review pass",
+                "targetScore": 10,
+                "weightage": 10,
+                "targetFromManager": "1950",
+                "targetValue": 1950,
+                "unit": "pages",
+                "scoringDirection": "higher_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            },
+            {
+                "id": "kpi_pages_final",
+                "name": "Number of Pages (Final pages)",
+                "description": "Total approved production-ready output pages delivered",
+                "targetScore": 10,
+                "weightage": 10,
+                "targetFromManager": "1950",
+                "targetValue": 1950,
+                "unit": "pages",
+                "scoringDirection": "higher_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            }
+        ]
+    },
+    {
+        "id": "cat_customer_engagement",
+        "name": "Customer Engagement",
+        "description": "Client communication, SLA compliance, issue escalations, and satisfaction",
+        "weightage": 30,
+        "kpis": [
+            {
+                "id": "kpi_appreciations",
+                "name": "Client Appreciations",
+                "description": "Direct praise, positive feedback, or awards from customers",
+                "targetScore": 5,
+                "weightage": 5,
+                "targetFromManager": "1",
+                "targetValue": 1,
+                "unit": "appreciations",
+                "scoringDirection": "higher_is_better",
+                "measurementType": "number",
+                "isRequired": False
+            },
+            {
+                "id": "kpi_effective_comm",
+                "name": "Effective Communication (Mail reply within 24 hrs)",
+                "description": "Timely and polite response to all client and stakeholder emails",
+                "targetScore": 10,
+                "weightage": 10,
+                "targetFromManager": "<2 delays",
+                "targetValue": 2,
+                "unit": "delays",
+                "scoringDirection": "lower_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            },
+            {
+                "id": "kpi_ontime_status",
+                "name": "Ontime Status Reporting / Daily Update",
+                "description": "Daily standup and task tracking sheet consistency",
+                "targetScore": 5,
+                "weightage": 5,
+                "targetFromManager": "0 misses",
+                "targetValue": 0,
+                "unit": "misses",
+                "scoringDirection": "lower_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            },
+            {
+                "id": "kpi_escalations",
+                "name": "Escalations Avoidance",
+                "description": "Zero unresolved operational or delivery escalations",
+                "targetScore": 5,
+                "weightage": 5,
+                "targetFromManager": "0",
+                "targetValue": 0,
+                "unit": "escalations",
+                "scoringDirection": "lower_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            },
+            {
+                "id": "kpi_proactive_problem_solving",
+                "name": "Proactive & Problem Solving",
+                "description": "Anticipates bottlenecks and implements proactive solutions",
+                "targetScore": 5,
+                "weightage": 5,
+                "targetFromManager": "1 initiative",
+                "targetValue": 1,
+                "unit": "initiatives",
+                "scoringDirection": "higher_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            }
+        ]
+    },
+    {
+        "id": "cat_cross_functional",
+        "name": "Cross-functional Coordination",
+        "description": "Process governance, inter-departmental alignment, and independence",
+        "weightage": 20,
+        "kpis": [
+            {
+                "id": "kpi_process_compliance",
+                "name": "Process Compliance",
+                "description": "Strict adherence to ISO, security, and quality checklist protocols",
+                "targetScore": 10,
+                "weightage": 10,
+                "targetFromManager": "100%",
+                "targetValue": 1,
+                "unit": "checklists",
+                "scoringDirection": "higher_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            },
+            {
+                "id": "kpi_supervision_needed",
+                "name": "Internal Communication / Extent of Supervision Needed",
+                "description": "Autonomous execution without requiring constant follow-ups",
+                "targetScore": 10,
+                "weightage": 10,
+                "targetFromManager": "<2 followups",
+                "targetValue": 2,
+                "unit": "followups",
+                "scoringDirection": "lower_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            }
+        ]
+    },
+    {
+        "id": "cat_collaborative",
+        "name": "Collaborative Approach",
+        "description": "Knowledge sharing, mentoring, innovation, and attendance compliance",
+        "weightage": 20,
+        "kpis": [
+            {
+                "id": "kpi_mentoring_innovation",
+                "name": "Mentoring / Continuous Improvement / Innovation",
+                "description": "Sharing best practices, training peers, and improving workflows",
+                "targetScore": 10,
+                "weightage": 10,
+                "targetFromManager": "2 sessions",
+                "targetValue": 2,
+                "unit": "sessions",
+                "scoringDirection": "higher_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            },
+            {
+                "id": "kpi_leave_notification",
+                "name": "Leave / WFH Prior Notification Adherence",
+                "description": "Advance notice for leaves/WFH without unplanned absences",
+                "targetScore": 10,
+                "weightage": 10,
+                "targetFromManager": "0 unplanned",
+                "targetValue": 0,
+                "unit": "unplanned",
+                "scoringDirection": "lower_is_better",
+                "measurementType": "number",
+                "isRequired": True
+            }
+        ]
+    }
+]
+
+@performance_bp.route("/kpi-templates/system-default", methods=["GET"])
+@auth_required
+def get_system_default_kpi_template():
+    """Returns clean system baseline categories from database repository"""
+    return jsonify({"success": True, "categories": SYSTEM_DEFAULT_KPI_CATEGORIES}), 200
+
+@performance_bp.route("/kpi-templates/manager", methods=["GET"])
+@auth_required
+def get_manager_kpi_templates():
+    """Fetches all customized templates (Form 1..4) for a specific manager from PostgreSQL.
+    If none exist yet, automatically seeds Form 1..4 into PostgreSQL."""
+    try:
+        manager_id = request.args.get("manager_id")
+        if not manager_id:
+            return jsonify({"error": "manager_id parameter is required"}), 400
+
+        mgr_emp = Employee.query.filter(
+            or_(
+                Employee.employee_id == str(manager_id),
+                Employee.id == int(manager_id) if str(manager_id).isdigit() else False,
+                Employee.user_id == int(manager_id) if str(manager_id).isdigit() else False
+            )
+        ).first()
+        canonical_mgr_id = str(mgr_emp.employee_id) if mgr_emp and mgr_emp.employee_id else str(manager_id)
+        mgr_name = mgr_emp.name if mgr_emp else ""
+
+        # Query all templates for this manager
+        templates = ManagerKpiTemplate.query.filter(
+            or_(
+                ManagerKpiTemplate.manager_id == canonical_mgr_id,
+                ManagerKpiTemplate.manager_id == str(manager_id)
+            )
+        ).order_by(ManagerKpiTemplate.template_key.asc()).all()
+
+        if not templates:
+            # Check if this manager recently assigned any metrics
+            recent_eval = KpiEvaluation.query.filter(
+                or_(
+                    KpiEvaluation.reporting_manager_id == canonical_mgr_id,
+                    KpiEvaluation.manager_id == canonical_mgr_id,
+                    KpiEvaluation.reporting_manager_id == str(manager_id),
+                    KpiEvaluation.manager_id == str(manager_id)
+                )
+            ).order_by(KpiEvaluation.created_at.desc(), KpiEvaluation.id.desc()).first()
+
+            seed_cats = (recent_eval.metrics_data if recent_eval and recent_eval.metrics_data else None) or SYSTEM_DEFAULT_KPI_CATEGORIES
+
+            # Auto-seed standard 4 forms for this manager: Form 1, Form 2, Form 3, Form 4
+            default_forms = [
+                ("form_1", "Form 1", True),
+                ("form_2", "Form 2", False),
+                ("form_3", "Form 3", False),
+                ("form_4", "Form 4", False),
+            ]
+            templates = []
+            now = datetime.utcnow()
+            for key, name, is_def in default_forms:
+                t = ManagerKpiTemplate(
+                    manager_id=canonical_mgr_id,
+                    manager_name=mgr_name,
+                    template_key=key,
+                    template_name=name,
+                    categories=seed_cats,
+                    is_default=is_def,
+                    created_at=now,
+                    updated_at=now
+                )
+                db.session.add(t)
+                templates.append(t)
+            try:
+                db.session.commit()
+            except Exception as seed_err:
+                db.session.rollback()
+                print(f"Template seeding notice: {seed_err}")
+                # Query again in case another concurrent request created them
+                templates = ManagerKpiTemplate.query.filter(
+                    ManagerKpiTemplate.manager_id == canonical_mgr_id
+                ).order_by(ManagerKpiTemplate.template_key.asc()).all()
+
+        default_tpl = next((t for t in templates if t.is_default), templates[0] if templates else None)
+        active_key = default_tpl.template_key if default_tpl else "form_1"
+
+        return jsonify({
+            "success": True,
+            "manager_id": canonical_mgr_id,
+            "active_key": active_key,
+            "templates": [t.to_dict() for t in templates]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@performance_bp.route("/kpi-templates/manager", methods=["POST"])
+@auth_required
+def save_manager_kpi_template():
+    """Upserts a specific form template for a manager into PostgreSQL database."""
+    try:
+        data = request.get_json() or {}
+        manager_id = str(data.get("manager_id") or "").strip()
+        if not manager_id:
+            return jsonify({"error": "manager_id is required"}), 400
+
+        mgr_emp = Employee.query.filter(
+            or_(
+                Employee.employee_id == str(manager_id),
+                Employee.id == int(manager_id) if str(manager_id).isdigit() else False,
+                Employee.user_id == int(manager_id) if str(manager_id).isdigit() else False
+            )
+        ).first()
+        canonical_mgr_id = str(mgr_emp.employee_id) if mgr_emp and mgr_emp.employee_id else str(manager_id)
+        mgr_name = data.get("manager_name") or (mgr_emp.name if mgr_emp else "")
+
+        template_key = str(data.get("template_key") or "form_1").strip().lower()
+        template_name = str(data.get("template_name") or f"Form {template_key.replace('form_', '')}").strip()
+        team_id = str(data.get("team_id") or "")
+        team_name = str(data.get("team_name") or "")
+        categories = data.get("categories") or []
+        is_default = bool(data.get("is_default", False))
+
+        now = datetime.utcnow()
+        tpl = ManagerKpiTemplate.query.filter(
+            or_(
+                ManagerKpiTemplate.manager_id == canonical_mgr_id,
+                ManagerKpiTemplate.manager_id == str(manager_id)
+            ),
+            ManagerKpiTemplate.template_key == template_key
+        ).first()
+
+        if not tpl:
+            tpl = ManagerKpiTemplate(
+                manager_id=canonical_mgr_id,
+                manager_name=mgr_name,
+                template_key=template_key,
+                template_name=template_name,
+                team_id=team_id if team_id else None,
+                team_name=team_name if team_name else None,
+                categories=categories,
+                is_default=is_default,
+                created_at=now,
+                updated_at=now
+            )
+            db.session.add(tpl)
+        else:
+            tpl.manager_id = canonical_mgr_id
+            tpl.manager_name = mgr_name or tpl.manager_name
+            tpl.template_name = template_name or tpl.template_name
+            if team_id:
+                tpl.team_id = team_id
+            if team_name:
+                tpl.team_name = team_name
+            tpl.categories = categories
+            if "is_default" in data:
+                tpl.is_default = is_default
+            tpl.updated_at = now
+
+        if is_default:
+            other_tpls = ManagerKpiTemplate.query.filter(
+                ManagerKpiTemplate.manager_id == canonical_mgr_id,
+                ManagerKpiTemplate.template_key != template_key
+            ).all()
+            for o in other_tpls:
+                o.is_default = False
+
+        db.session.commit()
+        return jsonify({"success": True, "template": tpl.to_dict()}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+@performance_bp.route("/kpi-templates/manager/rename", methods=["POST"])
+@auth_required
+def rename_manager_kpi_template():
+    """Quickly renames a form template (e.g. Form 2 -> Form 2 - QA Team)."""
+    try:
+        data = request.get_json() or {}
+        manager_id = str(data.get("manager_id") or "").strip()
+        template_key = str(data.get("template_key") or "form_1").strip().lower()
+        new_name = str(data.get("template_name") or "").strip()
+
+        if not manager_id or not new_name:
+            return jsonify({"error": "manager_id and template_name are required"}), 400
+
+        mgr_emp = Employee.query.filter(
+            or_(
+                Employee.employee_id == str(manager_id),
+                Employee.id == int(manager_id) if str(manager_id).isdigit() else False,
+                Employee.user_id == int(manager_id) if str(manager_id).isdigit() else False
+            )
+        ).first()
+        canonical_mgr_id = str(mgr_emp.employee_id) if mgr_emp and mgr_emp.employee_id else str(manager_id)
+
+        tpl = ManagerKpiTemplate.query.filter(
+            or_(
+                ManagerKpiTemplate.manager_id == canonical_mgr_id,
+                ManagerKpiTemplate.manager_id == str(manager_id)
+            ),
+            ManagerKpiTemplate.template_key == template_key
+        ).first()
+
+        if not tpl:
+            return jsonify({"error": "Template not found"}), 404
+
+        tpl.template_name = new_name
+        tpl.updated_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({"success": True, "template": tpl.to_dict()}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 # =========================================================================
 # KPI WORKFLOW SPECIFIC ENDPOINTS (JSON METRICS BASED)
 # =========================================================================
@@ -1163,6 +1596,42 @@ def assign_kpi_metrics():
         now = datetime.utcnow()
         created_records = []
 
+        # Auto-save active template for reporting manager into PostgreSQL
+        try:
+            active_tpl_key = str(data.get("template_key") or "form_1").strip().lower()
+            active_tpl_name = str(data.get("template_name") or "").strip()
+            if reporting_manager_id and categories_data:
+                mgr_saved_tpl = ManagerKpiTemplate.query.filter(
+                    ManagerKpiTemplate.manager_id == str(reporting_manager_id),
+                    ManagerKpiTemplate.template_key == active_tpl_key
+                ).first()
+                if not mgr_saved_tpl:
+                    mgr_saved_tpl = ManagerKpiTemplate(
+                        manager_id=str(reporting_manager_id),
+                        manager_name=reporting_manager,
+                        template_key=active_tpl_key,
+                        template_name=active_tpl_name or f"Form {active_tpl_key.replace('form_', '')}",
+                        team_id=str(team_id) if team_id else None,
+                        team_name=team_name or None,
+                        categories=categories_data,
+                        is_default=True,
+                        created_at=now,
+                        updated_at=now
+                    )
+                    db.session.add(mgr_saved_tpl)
+                else:
+                    mgr_saved_tpl.categories = categories_data
+                    if active_tpl_name:
+                        mgr_saved_tpl.template_name = active_tpl_name
+                    if team_id:
+                        mgr_saved_tpl.team_id = str(team_id)
+                    if team_name:
+                        mgr_saved_tpl.team_name = team_name
+                db.session.commit()
+        except Exception as tpl_auto_err:
+            db.session.rollback()
+            print(f"Non-blocking template auto-save notice: {tpl_auto_err}")
+
         if frequency in ["daily", "weekly"]:
             store = read_eval_store()
             from_str = from_date.isoformat() if from_date else ""
@@ -1259,6 +1728,17 @@ def assign_kpi_metrics():
                     existing_resp["updatedAt"] = now.isoformat()
                     created_records.append(existing_resp)
                 else:
+                    # Do not assign new metrics if this employee currently has a pending evaluation
+                    pending_in_store = next((
+                        r for r in store.get("responses", [])
+                        if str(r.get("employeeCode") or r.get("employeeId")) == emp_id and
+                           not r.get("is_archived") and
+                           r.get("managerScore") is None and
+                           r.get("status") not in ["approved", "completed", "sm_final_approval"]
+                    ), None)
+                    if pending_in_store:
+                        continue
+
                     new_resp = {
                         "id": f"resp_json_{abs(hash(f'{emp_id}_{form_name}_{period_label}_{now.isoformat()}')) % 10000000}",
                         "cycleId": existing_cycle["id"],
@@ -1371,6 +1851,19 @@ def assign_kpi_metrics():
                 record.status = "Assigned to Employee"
                 record.updated_at = now
             else:
+                # Do not assign new metrics if this employee currently has a pending evaluation
+                pending_eval = KpiEvaluation.query.filter(
+                    KpiEvaluation.employee_id == emp_id,
+                    or_(KpiEvaluation.is_archived.is_(False), KpiEvaluation.is_archived.is_(None)),
+                    or_(
+                        KpiEvaluation.manager_approve_score.is_(None),
+                        KpiEvaluation.manager_approve_score == "",
+                        KpiEvaluation.status.in_(["manager_review", "Submitted to Manager", "submitted", "Assigned to Employee", "employee_in_progress", "Draft", "returned_to_employee", "returned_to_manager"])
+                    )
+                ).first()
+                if pending_eval:
+                    continue
+
                 record = KpiEvaluation(
                     form=form_name,
                     team_id=str(team_id),

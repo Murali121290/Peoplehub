@@ -530,7 +530,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   {unreadAnnouncements}
                 </span>
               )}
-              {item.name === "Evaluation & Report" && pendingEvaluationCount > 0 && (
+              {(item.name === "ERR Hub" || item.name === "Evaluation & Report") && pendingEvaluationCount > 0 && (
                 <span className="flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-pulse">
                   {pendingEvaluationCount > 9 ? "9+" : pendingEvaluationCount}
                 </span>
