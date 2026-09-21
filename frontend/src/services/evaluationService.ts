@@ -25,6 +25,20 @@ try {
   // ignore
 }
 
+export interface ManagerKpiTemplateRecord {
+  id?: number;
+  manager_id: string;
+  manager_name?: string;
+  template_key: string;
+  template_name: string;
+  team_id?: string;
+  team_name?: string;
+  categories: KPICategory[];
+  is_default: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export const DEFAULT_KPI_CATEGORIES: KPICategory[] = [
   {
     id: 'cat_productivity',
@@ -876,6 +890,8 @@ export const evaluationService = {
     categories: KPICategory[];
     allEmployees: any[];
     frequency?: string;
+    templateKey?: string;
+    templateName?: string;
   }): Promise<{ cycle: EvaluationCycle; responses: EvaluationResponse[] }> {
     const targetEmployees = data.allEmployees.filter(e => 
       data.employeeIds.includes(String(e.id)) || 
@@ -903,6 +919,8 @@ export const evaluationService = {
           reporting_manager_id: data.managerId,
           service_manager: data.serviceManagerName,
           service_manager_id: data.serviceManagerId,
+          template_key: data.templateKey || 'form_1',
+          template_name: data.templateName || '',
           employees: targetEmployees.map(e => ({
             id: e.employee_id || e.id,
             name: `${e.first_name || ''} ${e.last_name || ''}`.trim() || e.name
@@ -936,6 +954,101 @@ export const evaluationService = {
       }, 
       responses: remoteData.responses 
     };
+  },
+
+  // Fetch Manager Templates (Form 1..4) from PostgreSQL DB
+  async getManagerTemplates(managerId: string): Promise<{
+    templates: ManagerKpiTemplateRecord[];
+    active_key: string;
+  }> {
+    try {
+      const token = localStorage.getItem('token') || '';
+      const res = await fetch(`${API_URL}/api/performance/kpi-templates/manager?manager_id=${encodeURIComponent(managerId)}`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.templates)) {
+        return {
+          templates: data.templates,
+          active_key: data.active_key || 'form_1'
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to fetch manager KPI templates from DB:', e);
+    }
+    return { templates: [], active_key: 'form_1' };
+  },
+
+  // Save/Upsert a specific form template for a manager in PostgreSQL DB
+  async saveManagerTemplate(payload: {
+    manager_id: string;
+    manager_name?: string;
+    template_key: string;
+    template_name?: string;
+    team_id?: string;
+    team_name?: string;
+    categories: KPICategory[];
+    is_default?: boolean;
+  }): Promise<{ success: boolean; template?: ManagerKpiTemplateRecord; error?: string }> {
+    try {
+      const token = localStorage.getItem('token') || '';
+      const res = await fetch(`${API_URL}/api/performance/kpi-templates/manager`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      return data;
+    } catch (e: any) {
+      return { success: false, error: e.message || 'Failed to save template' };
+    }
+  },
+
+  // Rename a template
+  async renameManagerTemplate(managerId: string, templateKey: string, newName: string): Promise<{ success: boolean; template?: ManagerKpiTemplateRecord; error?: string }> {
+    try {
+      const token = localStorage.getItem('token') || '';
+      const res = await fetch(`${API_URL}/api/performance/kpi-templates/manager/rename`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          manager_id: managerId,
+          template_key: templateKey,
+          template_name: newName
+        })
+      });
+      const data = await res.json();
+      return data;
+    } catch (e: any) {
+      return { success: false, error: e.message || 'Failed to rename template' };
+    }
+  },
+
+  // Get system default categories from DB
+  async getSystemDefaultKpiTemplate(): Promise<KPICategory[]> {
+    try {
+      const token = localStorage.getItem('token') || '';
+      const res = await fetch(`${API_URL}/api/performance/kpi-templates/system-default`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.categories)) {
+        return data.categories;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch system default template from DB:', e);
+    }
+    return DEFAULT_KPI_CATEGORIES;
   }
 };
 

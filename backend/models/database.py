@@ -68,7 +68,10 @@ db = DbMock
 
 def init_db(app=None):
     """Initialize database and create tables if they do not exist"""
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Base.metadata.create_all notice: {e}")
 
     # Ensure status, deactivation_reason and last_working_date columns exist in PostgreSQL
     try:
@@ -108,6 +111,26 @@ def init_db(app=None):
             conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS working_days INTEGER DEFAULT 0"))
             conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS leave_days INTEGER DEFAULT 0"))
             conn.execute(text("ALTER TABLE kpi_evaluations ADD COLUMN IF NOT EXISTS holiday_days INTEGER DEFAULT 0"))
+
+            # Ensure manager_kpi_templates table exists
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS manager_kpi_templates (
+                    id SERIAL PRIMARY KEY,
+                    manager_id VARCHAR(100) NOT NULL,
+                    manager_name VARCHAR(255),
+                    template_key VARCHAR(50) NOT NULL DEFAULT 'form_1',
+                    template_name VARCHAR(255) NOT NULL DEFAULT 'Form 1',
+                    team_id VARCHAR(100),
+                    team_name VARCHAR(255),
+                    categories JSON,
+                    is_default BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uq_manager_template UNIQUE (manager_id, template_key)
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mgr_template_mgr_id ON manager_kpi_templates (manager_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mgr_template_key ON manager_kpi_templates (template_key)"))
             conn.commit()
     except Exception as dberr:
         print(f"Error checking/adding employee status columns: {dberr}")

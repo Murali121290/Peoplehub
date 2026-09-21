@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { API_URL, getProfileImageUrl } from '../../../config/api';
 import {
   EvaluationCycle,
@@ -10,7 +11,8 @@ import {
 } from '../../../types/evaluation.types';
 import {
   evaluationService,
-  DEFAULT_KPI_CATEGORIES
+  DEFAULT_KPI_CATEGORIES,
+  ManagerKpiTemplateRecord
 } from '../../../services/evaluationService';
 import {
   calculateKPIScore,
@@ -69,11 +71,125 @@ import {
   Square3Stack3DIcon,
   InboxStackIcon,
   TrophyIcon,
-  InformationCircleIcon
+  InformationCircleIcon,
+  ChatBubbleLeftEllipsisIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolid } from '@heroicons/react/24/solid';
 import * as XLSX from 'xlsx';
 import { ConfirmDialog } from '../../../components/ui/Modal/ConfirmDialog';
+
+/**
+ * Determines if remarks are mandatory for an employee deliverable.
+ * Remarks are mandatory when actual performance is High or Low compared to target:
+ * - Standard KPIs: actual > target (High) or actual < target (Low).
+ * - Low-target KPIs: actual > 0 (delays/misses/escalations occurred).
+ * If target is met exactly / standard, remark is optional.
+ */
+export const isKpiRemarkMandatory = (kpi: Partial<KPIItem> | null | undefined, val: string | number | undefined | null): boolean => {
+  if (!kpi || val === '' || val === undefined || val === null) {
+    return false;
+  }
+  const numericVal = typeof val === 'string' ? parseFloat(val) : Number(val);
+  if (isNaN(numericVal)) return false;
+
+  const isNeg = isNegativeKpi(kpi);
+  const parsedTarget = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
+  const targetThreshold = parsedTarget.threshold;
+
+  if (isNeg) {
+    // For low-target / negative KPIs (e.g. <2 delays, 0 misses, 0 escalations):
+    // If any penalty/delay/miss occurred (> 0), remark is mandatory to explain why.
+    // If 0, target is met cleanly, remark is optional.
+    return numericVal > 0;
+  } else {
+    // For standard KPIs (e.g. 1950 pages, 1 appreciations):
+    // High (numericVal > targetThreshold) or Low (numericVal < targetThreshold) -> Mandatory.
+    return numericVal !== targetThreshold;
+  }
+};
+
+export interface InsufficientStatusResult {
+  status: 'not_filled' | 'insufficient' | 'met' | 'exceeded';
+  label: string;
+  badgeClass: string;
+}
+
+/**
+ * Evaluates employee actual performance against target to determine status:
+ * - Not Filled: when employee has not entered any actual value yet.
+ * - Insufficient: when employee actual is below target (or penalties occurred for low-target KPIs).
+ * - Exceeded: when employee actual exceeds target.
+ * - Target Met: when employee actual matches target.
+ */
+export const getInsufficientStatus = (
+  kpi: Partial<KPIItem> | null | undefined,
+  val: string | number | undefined | null
+): InsufficientStatusResult => {
+  if (val === '' || val === undefined || val === null || String(val).trim() === '') {
+    return {
+      status: 'not_filled',
+      label: 'Not Filled',
+      badgeClass: 'bg-slate-100 text-slate-500 border-slate-200'
+    };
+  }
+
+  const num = typeof val === 'string' ? parseFloat(val) : Number(val);
+  if (isNaN(num)) {
+    return {
+      status: 'not_filled',
+      label: 'Not Filled',
+      badgeClass: 'bg-slate-100 text-slate-500 border-slate-200'
+    };
+  }
+
+  const isNeg = isNegativeKpi(kpi);
+  const parsedTarget = parseTargetExpression(kpi?.targetFromManager, kpi?.targetValue || 1);
+  const target = parsedTarget.threshold;
+  const rawUnit = (kpi?.unit || '').trim();
+  const unitSuffix = rawUnit ? ` ${rawUnit}` : '';
+
+  if (isNeg) {
+    // For low-target / negative KPIs (e.g. Target: 0 misses, < 2 delays):
+    // Higher than allowed means penalties occurred (Insufficient)
+    if (num > target) {
+      const excess = Math.round((num - target) * 100) / 100;
+      return {
+        status: 'insufficient',
+        label: `Insufficient (+${excess}${unitSuffix})`,
+        badgeClass: 'bg-rose-50 text-rose-800 border-rose-300'
+      };
+    } else {
+      return {
+        status: 'met',
+        label: 'Target Met',
+        badgeClass: 'bg-teal-50 text-teal-800 border-teal-200'
+      };
+    }
+  }
+
+  // Standard KPIs:
+  if (num < target) {
+    const deficit = Math.round((target - num) * 100) / 100;
+    return {
+      status: 'insufficient',
+      label: `Insufficient (-${deficit}${unitSuffix})`,
+      badgeClass: 'bg-amber-50 text-amber-900 border-amber-300'
+    };
+  } else if (num > target) {
+    const surplus = Math.round((num - target) * 100) / 100;
+    return {
+      status: 'exceeded',
+      label: `Exceeded (+${surplus}${unitSuffix})`,
+      badgeClass: 'bg-emerald-50 text-emerald-900 border-emerald-300'
+    };
+  } else {
+    return {
+      status: 'met',
+      label: 'Target Met',
+      badgeClass: 'bg-teal-50 text-teal-800 border-teal-200'
+    };
+  }
+};
 
 const ExpandableRemarkInput: React.FC<{
   value: string;
@@ -172,6 +288,174 @@ const ExpandableRemarkView: React.FC<{
           <ChevronDownIcon className="w-2.5 h-2.5 stroke-[2.5]" />
         )}
       </button>
+    </div>
+  );
+};
+
+const DeliverableRemarksHover: React.FC<{
+  selfRemarks?: string;
+  mgrRemarks?: string;
+  children: React.ReactNode;
+  align?: 'left' | 'right' | 'center';
+  className?: string;
+}> = ({ selfRemarks, mgrRemarks, children, align = 'left', className = '' }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [coords, setCoords] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    maxHeight: number;
+    isFlippedUp: boolean;
+  }>({ left: 0, maxHeight: 380, isFlippedUp: false });
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const enterTimeoutRef = useRef<any>(null);
+  const leaveTimeoutRef = useRef<any>(null);
+
+  const hasRemarks = Boolean(selfRemarks?.trim() || mgrRemarks?.trim());
+
+  const updatePosition = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const popoverWidth = 370;
+
+    let left = align === 'center'
+      ? rect.left + rect.width / 2 - popoverWidth / 2
+      : align === 'left'
+        ? rect.left
+        : rect.right - popoverWidth;
+
+    if (left + popoverWidth > window.innerWidth - 16) {
+      left = window.innerWidth - popoverWidth - 16;
+    }
+    left = Math.max(16, left);
+
+    const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - 16);
+    const spaceAbove = Math.max(0, rect.top - 16);
+
+    // Flip upwards if room below is tight (< 380px) and more room above, or if room below is severely restricted (< 280px)
+    const isFlippedUp = (spaceBelow < 380 && spaceAbove > spaceBelow) || (spaceBelow < 280 && spaceAbove >= 200);
+
+    if (isFlippedUp) {
+      const bottom = Math.max(16, window.innerHeight - rect.top + 6);
+      const maxHeight = Math.max(160, Math.min(520, spaceAbove - 12));
+      setCoords({ bottom, left, maxHeight, isFlippedUp: true });
+    } else {
+      const top = Math.max(16, rect.bottom + 6);
+      const maxHeight = Math.max(160, Math.min(520, spaceBelow - 12));
+      setCoords({ top, left, maxHeight, isFlippedUp: false });
+    }
+  };
+
+  const handleMouseEnter = () => {
+    if (!hasRemarks) return;
+    if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
+    if (enterTimeoutRef.current) clearTimeout(enterTimeoutRef.current);
+    enterTimeoutRef.current = setTimeout(() => {
+      updatePosition();
+      setIsOpen(true);
+    }, 60);
+  };
+
+  const handleMouseLeave = () => {
+    if (enterTimeoutRef.current) clearTimeout(enterTimeoutRef.current);
+    leaveTimeoutRef.current = setTimeout(() => {
+      setIsOpen(false);
+    }, 250);
+  };
+
+  const handlePopoverEnter = () => {
+    if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
+  };
+
+  const handlePopoverLeave = () => {
+    if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
+    leaveTimeoutRef.current = setTimeout(() => {
+      setIsOpen(false);
+    }, 150);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (enterTimeoutRef.current) clearTimeout(enterTimeoutRef.current);
+      if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={triggerRef}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={`relative ${className.includes('w-') ? '' : 'w-full'} ${className}`}
+    >
+      {children}
+
+      {isOpen && hasRemarks && typeof document !== 'undefined' && createPortal(
+        <div
+          onMouseEnter={handlePopoverEnter}
+          onMouseLeave={handlePopoverLeave}
+          style={{
+            position: 'fixed',
+            ...(coords.isFlippedUp
+              ? { bottom: `${coords.bottom}px` }
+              : { top: `${coords.top}px` }),
+            left: `${coords.left}px`,
+            width: '380px',
+            maxWidth: 'calc(100vw - 32px)',
+            maxHeight: `${coords.maxHeight}px`,
+            zIndex: 999999,
+          }}
+          className="flex flex-col gap-2.5 p-3.5 bg-white text-slate-800 rounded-2xl shadow-2xl border border-slate-200/95 ring-1 ring-slate-900/10 animate-in fade-in zoom-in-95 pointer-events-auto text-left select-text overflow-y-auto overscroll-contain"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 text-[11px] font-bold text-slate-500 shrink-0">
+            <span className="flex items-center gap-1.5 text-slate-800">
+              <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5 text-teal-600" />
+              <span>Deliverable Remarks</span>
+            </span>
+            <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+              {coords.isFlippedUp ? '▲ Placed Above' : '▼ Placed Below'}
+            </span>
+          </div>
+
+          {/* Employee Remark Card */}
+          {selfRemarks?.trim() && (
+            <div className="space-y-1.5 p-2.5 rounded-xl bg-primary-50/50 border border-primary-200/60 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary-600 text-white shadow-2xs">
+                  <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-100" />
+                  <span>Employee Remark</span>
+                </span>
+              </div>
+              <p className="text-slate-800 text-xs leading-relaxed font-normal whitespace-pre-wrap break-words">
+                {selfRemarks.trim()}
+              </p>
+            </div>
+          )}
+
+          {/* Manager Remark Card */}
+          {mgrRemarks?.trim() && (
+            <div className="space-y-1.5 p-2.5 rounded-xl bg-teal-50/60 border border-teal-200/70 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-700 text-white shadow-2xs">
+                  <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-100" />
+                  <span>Manager Remark</span>
+                </span>
+              </div>
+              <p className="text-slate-800 text-xs leading-relaxed font-medium whitespace-pre-wrap break-words">
+                {mgrRemarks.trim()}
+              </p>
+            </div>
+          )}
+
+          {/* Footer helper */}
+          <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[10px] text-slate-400 shrink-0">
+            <span>💡 Move cursor inside to scroll or copy</span>
+            <span>Scrollable</span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
@@ -308,6 +592,15 @@ export const EvaluationTab: React.FC = () => {
   const [isAssigning, setIsAssigning] = useState<boolean>(false);
   const [mgrModalEmpSearch, setMgrModalEmpSearch] = useState<string>('');
 
+  // Manager Multi-Form Templates State (Form 1, Form 2, Form 3, Form 4)
+  const [mgrTemplates, setMgrTemplates] = useState<ManagerKpiTemplateRecord[]>([]);
+  const [activeTemplateKey, setActiveTemplateKey] = useState<string>('form_1');
+  const [isRenamingTemplate, setIsRenamingTemplate] = useState<boolean>(false);
+  const [renameTemplateInput, setRenameTemplateInput] = useState<string>('');
+  const [isSavingTemplate, setIsSavingTemplate] = useState<boolean>(false);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState<boolean>(false);
+  const [showTargetGuide, setShowTargetGuide] = useState<boolean>(false);
+
   // Dynamic Frequency & Period Configuration State
   const [mgrPeriodType, setMgrPeriodType] = useState<'quarterly' | 'monthly' | 'weekly' | 'daily' | 'yearly'>('quarterly');
   const [mgrPeriodQuarter, setMgrPeriodQuarter] = useState<number>(currentQuarter); // 1, 2, 3, 4 (Stage 1..4)
@@ -339,10 +632,10 @@ export const EvaluationTab: React.FC = () => {
   ];
 
   const QUARTERS_INFO = [
-    { q: 1, stage: 1, label: 'Apr - Jun', name: 'Stage 1 (Q1: Apr - Jun)', months: 'April - June' },
-    { q: 2, stage: 2, label: 'Jul - Sep', name: 'Stage 2 (Q2: Jul - Sep)', months: 'July - September' },
-    { q: 3, stage: 3, label: 'Oct - Dec', name: 'Stage 3 (Q3: Oct - Dec)', months: 'October - December' },
-    { q: 4, stage: 4, label: 'Jan - Mar', name: 'Stage 4 (Q4: Jan - Mar)', months: 'January - March' }
+    { q: 1, stage: 1, label: 'Apr - Jun', name: '(Q1: Apr - Jun)', months: 'April - June' },
+    { q: 2, stage: 2, label: 'Jul - Sep', name: '(Q2: Jul - Sep)', months: 'July - September' },
+    { q: 3, stage: 3, label: 'Oct - Dec', name: '(Q3: Oct - Dec)', months: 'October - December' },
+    { q: 4, stage: 4, label: 'Jan - Mar', name: '(Q4: Jan - Mar)', months: 'January - March' }
   ];
 
   const formatDisplayDate = (dateStr: string) => {
@@ -1579,46 +1872,59 @@ export const EvaluationTab: React.FC = () => {
   // =========================================================================
   // MANAGER METRICS CREATION & TEAM ASSIGNMENT HANDLERS
   // =========================================================================
-  const handleOpenMgrCreateModal = (targetDept?: string) => {
-    if (!canCreateMetrics) {
-      showAlert('Team Leads do not have permission to create and assign performance metrics. Please contact your Reporting Manager or HR.', 'Permission Denied', 'warning');
-      return;
-    }
-    const defaultTeamVal = targetDept || (managerDepartments.length > 1 ? 'all_teams' : (managerDepartments[0] || 'all_teams'));
-    setMgrAssignTeamId(defaultTeamVal);
+  // Helper to check if an employee currently has an active evaluation that is PENDING
+  // (either awaiting employee self-evaluation OR awaiting manager calibration & approval)
+  const getEmpPendingEvaluation = (empId: string): EvaluationResponse | null => {
+    if (!empId) return null;
+    const cleanEmpId = String(empId).trim().toLowerCase();
 
-    // Initial selected employees = only employees NOT already assigned for this stage/period
-    setMgrPeriodType('quarterly');
-    setMgrPeriodQuarter(currentQuarter);
-    setMgrPeriodYear(currentYear);
-    syncPeriodAndFormName('quarterly', currentQuarter, currentYear, currentMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, defaultTeamVal);
-    setMgrAssignCategories(DEFAULT_KPI_CATEGORIES);
+    const pendingResp = responses.find(r => {
+      const cleanEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase();
+      if (cleanEmpCode !== cleanEmpId) return false;
 
-    const baseTeamMembers = (defaultTeamVal === 'all_teams'
-      ? managerAssignableEmployees
-      : managerAssignableEmployees.filter((e: any) => (e.department || e.team || '').toLowerCase() === defaultTeamVal.toLowerCase())
-    ).filter(isEmployeeActive);
-    const unassignedMembers = baseTeamMembers.filter((e: any) => {
-      const empId = String(e.employee_id || e.id);
-      return !isEmpAlreadyAssignedForPeriod(empId, undefined, 'quarterly', currentQuarter, currentYear);
+      // Ignore archived or soft-deleted records
+      if ((r as any).is_archived || (r as any).status === 'Archived') return false;
+
+      const s = String(r.status || '').toLowerCase().trim();
+      const smStatus = String((r as any).service_manager_approve_status || '').toLowerCase().trim();
+
+      // Check if evaluation is fully completed and calibrated
+      const isCompleted =
+        s === 'completed' ||
+        s === 'sm_final_approval' ||
+        (s === 'approved' && r.managerScore != null) ||
+        smStatus === 'approved' ||
+        (r.managerScore != null &&
+          s !== 'manager_review' &&
+          s !== 'submitted to manager' &&
+          s !== 'submitted' &&
+          s !== 'returned_to_manager');
+
+      return !isCompleted;
     });
-    setMgrAssignEmpIds(unassignedMembers.map((e: any) => String(e.employee_id || e.id)).filter(Boolean));
-    setIsMgrCreateModalOpen(true);
+
+    return pendingResp || null;
   };
 
-  const handleMgrTeamChange = (newTeamId: string) => {
-    setMgrAssignTeamId(newTeamId);
-    // Only pre-select unassigned team members
-    const baseTeamMembers = (newTeamId === 'all_teams'
-      ? managerAssignableEmployees
-      : managerAssignableEmployees.filter((e: any) => (e.department || e.team || '').toLowerCase() === newTeamId.toLowerCase())
-    ).filter(isEmployeeActive);
-    const unassignedMembers = baseTeamMembers.filter((e: any) => {
-      const empId = String(e.employee_id || e.id);
-      return !isEmpAlreadyAssignedForPeriod(empId);
-    });
-    setMgrAssignEmpIds(unassignedMembers.map((e: any) => String(e.employee_id || e.id)).filter(Boolean));
-    syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, newTeamId);
+  const getPendingStatusLabel = (pendingResp: EvaluationResponse) => {
+    const s = String(pendingResp.status || '').toLowerCase().trim();
+    const isSubmittedByEmp = Boolean(pendingResp.employeeSubmittedAt) || Boolean((pendingResp as any).submitted_at);
+    const isWithMgr = isSubmittedByEmp || s === 'manager_review' || s === 'submitted to manager' || s === 'submitted' || s === 'with_manager';
+
+    if (isWithMgr) {
+      return {
+        badgeText: 'Pending Calibration',
+        badgeColor: 'text-amber-800 bg-amber-100 border-amber-300',
+        icon: '⏳',
+        tooltip: `Employee has submitted their evaluation (${pendingResp.periodName || (pendingResp as any).form || 'Assessment'}), awaiting manager calibration. Please calibrate and score it before applying new metrics.`
+      };
+    }
+    return {
+      badgeText: 'Pending Self-Eval',
+      badgeColor: 'text-orange-800 bg-orange-100 border-orange-300',
+      icon: '⏳',
+      tooltip: `Employee currently has an ongoing evaluation (${pendingResp.periodName || (pendingResp as any).form || 'Assessment'}) in progress. It must be completed before applying new metrics.`
+    };
   };
 
   // Helper to check if an employee is already assigned metrics for a specific evaluation period
@@ -1751,10 +2057,263 @@ export const EvaluationTab: React.FC = () => {
     return hasInCycles;
   };
 
-  // Auto-deselect any employee that is already assigned whenever period or modal opens
+  const handleOpenMgrCreateModal = (targetDept?: string) => {
+    if (!canCreateMetrics) {
+      showAlert('Team Leads do not have permission to create and assign performance metrics. Please contact your Reporting Manager or HR.', 'Permission Denied', 'warning');
+      return;
+    }
+    const defaultTeamVal = targetDept || (managerDepartments.length > 1 ? 'all_teams' : (managerDepartments[0] || 'all_teams'));
+    setMgrAssignTeamId(defaultTeamVal);
+
+    // Initial selected employees = only employees NOT already assigned for this stage/period AND with NO pending evaluation
+    setMgrPeriodType('quarterly');
+    setMgrPeriodQuarter(currentQuarter);
+    setMgrPeriodYear(currentYear);
+    syncPeriodAndFormName('quarterly', currentQuarter, currentYear, currentMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, defaultTeamVal);
+
+    // Asynchronously load manager's saved templates from PostgreSQL DB
+    const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.id || '');
+    setIsLoadingTemplates(true);
+    evaluationService.getManagerTemplates(currentMgrEmpCode).then(res => {
+      setIsLoadingTemplates(false);
+      if (res && res.templates && res.templates.length > 0) {
+        setMgrTemplates(res.templates);
+        const teamMatchingTpl = defaultTeamVal && defaultTeamVal !== 'all_teams'
+          ? res.templates.find(t => t.team_id && t.team_id.toLowerCase() === defaultTeamVal.toLowerCase())
+          : null;
+        const initialTpl = teamMatchingTpl ||
+                           res.templates.find(t => t.template_key === res.active_key) ||
+                           res.templates.find(t => t.is_default) ||
+                           res.templates[0];
+        if (initialTpl) {
+          setActiveTemplateKey(initialTpl.template_key);
+          if (initialTpl.categories && initialTpl.categories.length > 0) {
+            setMgrAssignCategories(JSON.parse(JSON.stringify(initialTpl.categories)));
+          }
+        }
+      }
+    }).catch(err => {
+      setIsLoadingTemplates(false);
+      console.warn('Failed to load manager templates from DB:', err);
+    });
+
+    const baseTeamMembers = (defaultTeamVal === 'all_teams'
+      ? managerAssignableEmployees
+      : managerAssignableEmployees.filter((e: any) => (e.department || e.team || '').toLowerCase() === defaultTeamVal.toLowerCase())
+    ).filter(isEmployeeActive);
+    const unassignedMembers = baseTeamMembers.filter((e: any) => {
+      const empId = String(e.employee_id || e.id);
+      return !isEmpAlreadyAssignedForPeriod(empId, undefined, 'quarterly', currentQuarter, currentYear) && !getEmpPendingEvaluation(empId);
+    });
+    setMgrAssignEmpIds(unassignedMembers.map((e: any) => String(e.employee_id || e.id)).filter(Boolean));
+    setIsMgrCreateModalOpen(true);
+  };
+
+  const handleMgrTeamChange = (newTeamId: string) => {
+    setMgrAssignTeamId(newTeamId);
+
+    // If a template is specifically linked to this department, auto-switch to it
+    const matchingTpl = mgrTemplates.find(t => t.team_id && t.team_id.toLowerCase() === newTeamId.toLowerCase());
+    if (matchingTpl && matchingTpl.categories && matchingTpl.categories.length > 0) {
+      setActiveTemplateKey(matchingTpl.template_key);
+      setMgrAssignCategories(JSON.parse(JSON.stringify(matchingTpl.categories)));
+    }
+
+    // Only pre-select unassigned team members who don't have pending evaluations
+    const baseTeamMembers = (newTeamId === 'all_teams'
+      ? managerAssignableEmployees
+      : managerAssignableEmployees.filter((e: any) => (e.department || e.team || '').toLowerCase() === newTeamId.toLowerCase())
+    ).filter(isEmployeeActive);
+    const unassignedMembers = baseTeamMembers.filter((e: any) => {
+      const empId = String(e.employee_id || e.id);
+      return !isEmpAlreadyAssignedForPeriod(empId) && !getEmpPendingEvaluation(empId);
+    });
+    setMgrAssignEmpIds(unassignedMembers.map((e: any) => String(e.employee_id || e.id)).filter(Boolean));
+    syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, newTeamId);
+  };
+
+  const handleSelectTemplate = (targetKey: string) => {
+    if (targetKey === activeTemplateKey) return;
+    const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.id || '');
+    const currentMgrName = `${user?.full_name || userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Reporting Manager';
+    const selectedTeamName = mgrAssignTeamId === 'all_teams'
+      ? (managerDepartments.join(', ') || 'All Direct Reports')
+      : mgrAssignTeamId;
+    const currentTpl = mgrTemplates.find(t => t.template_key === activeTemplateKey);
+    const formLabel = currentTpl?.template_name || `Form ${activeTemplateKey.replace('form_', '')}`;
+
+    // Auto-preserve current in-memory categories into mgrTemplates so switching back doesn't lose edits
+    setMgrTemplates(prev => prev.map(t => {
+      if (t.template_key === activeTemplateKey) {
+        return { ...t, categories: JSON.parse(JSON.stringify(mgrAssignCategories)) };
+      }
+      return t;
+    }));
+
+    // Auto-save the outgoing form to PostgreSQL database in background so edits are never lost
+    if (currentMgrEmpCode && mgrAssignCategories && mgrAssignCategories.length > 0) {
+      evaluationService.saveManagerTemplate({
+        manager_id: currentMgrEmpCode,
+        manager_name: currentMgrName,
+        template_key: activeTemplateKey,
+        template_name: formLabel,
+        team_id: mgrAssignTeamId,
+        team_name: selectedTeamName,
+        categories: mgrAssignCategories,
+        is_default: true
+      }).catch(err => console.warn('Background auto-save on tab switch:', err));
+    }
+
+    setActiveTemplateKey(targetKey);
+    const targetTpl = mgrTemplates.find(t => t.template_key === targetKey);
+    if (targetTpl && targetTpl.categories && targetTpl.categories.length > 0) {
+      setMgrAssignCategories(JSON.parse(JSON.stringify(targetTpl.categories)));
+    } else {
+      setMgrAssignCategories(JSON.parse(JSON.stringify(DEFAULT_KPI_CATEGORIES)));
+    }
+  };
+
+  const handleSaveActiveTemplate = async () => {
+    const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.id || '');
+    const currentMgrName = `${user?.full_name || userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Reporting Manager';
+    const selectedTeamName = mgrAssignTeamId === 'all_teams'
+      ? (managerDepartments.join(', ') || 'All Direct Reports')
+      : mgrAssignTeamId;
+    const currentTpl = mgrTemplates.find(t => t.template_key === activeTemplateKey);
+    const formLabel = currentTpl?.template_name || `Form ${activeTemplateKey.replace('form_', '')}`;
+    setIsSavingTemplate(true);
+    try {
+      const res = await evaluationService.saveManagerTemplate({
+        manager_id: currentMgrEmpCode,
+        manager_name: currentMgrName,
+        template_key: activeTemplateKey,
+        template_name: formLabel,
+        team_id: mgrAssignTeamId,
+        team_name: selectedTeamName,
+        categories: mgrAssignCategories,
+        is_default: true
+      });
+      if (res.success) {
+        showToast(`Saved Deliverables & Targets for "${formLabel}" to database!`);
+        setMgrTemplates(prev => {
+          const exists = prev.some(t => t.template_key === activeTemplateKey);
+          if (exists) {
+            return prev.map(t => t.template_key === activeTemplateKey ? {
+              ...t,
+              categories: JSON.parse(JSON.stringify(mgrAssignCategories)),
+              template_name: formLabel,
+              updated_at: new Date().toISOString()
+            } : t);
+          } else {
+            return [...prev, {
+              manager_id: currentMgrEmpCode,
+              template_key: activeTemplateKey,
+              template_name: formLabel,
+              categories: JSON.parse(JSON.stringify(mgrAssignCategories)),
+              is_default: true,
+              updated_at: new Date().toISOString()
+            }];
+          }
+        });
+      } else {
+        showAlert(res.error || 'Failed to save template to database', 'Save Error', 'danger');
+      }
+    } catch (err: any) {
+      showAlert('Failed to save template: ' + (err?.message || 'Network error'), 'Save Error', 'danger');
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  };
+
+  const handleStartRenameTemplate = () => {
+    const currentTpl = mgrTemplates.find(t => t.template_key === activeTemplateKey);
+    setRenameTemplateInput(currentTpl?.template_name || `Form ${activeTemplateKey.replace('form_', '')}`);
+    setIsRenamingTemplate(true);
+  };
+
+  const handleConfirmRenameTemplate = async () => {
+    const trimmed = renameTemplateInput.trim();
+    if (!trimmed) {
+      setIsRenamingTemplate(false);
+      return;
+    }
+    const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.id || '');
+    try {
+      await evaluationService.renameManagerTemplate(currentMgrEmpCode, activeTemplateKey, trimmed);
+      setMgrTemplates(prev => prev.map(t => t.template_key === activeTemplateKey ? { ...t, template_name: trimmed } : t));
+      showToast(`Renamed to "${trimmed}"`);
+    } catch (e) {
+      console.warn('Rename template notice:', e);
+      setMgrTemplates(prev => prev.map(t => t.template_key === activeTemplateKey ? { ...t, template_name: trimmed } : t));
+    } finally {
+      setIsRenamingTemplate(false);
+    }
+  };
+
+  const handleResetActiveTemplate = async () => {
+    if (!confirm('Are you sure you want to reset Deliverables & Targets for this form to system defaults?')) {
+      return;
+    }
+    try {
+      const defaultCats = await evaluationService.getSystemDefaultKpiTemplate();
+      setMgrAssignCategories(JSON.parse(JSON.stringify(defaultCats)));
+      showToast('Reset to system default deliverables.');
+    } catch (e) {
+      setMgrAssignCategories(JSON.parse(JSON.stringify(DEFAULT_KPI_CATEGORIES)));
+    }
+  };
+
+  const handleAddNewTemplate = () => {
+    const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.id || '');
+    const currentMgrName = `${user?.full_name || userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Reporting Manager';
+    const selectedTeamName = mgrAssignTeamId === 'all_teams'
+      ? (managerDepartments.join(', ') || 'All Direct Reports')
+      : mgrAssignTeamId;
+    const currentTpl = mgrTemplates.find(t => t.template_key === activeTemplateKey);
+    const formLabel = currentTpl?.template_name || `Form ${activeTemplateKey.replace('form_', '')}`;
+
+    // Auto-preserve current in-memory categories
+    setMgrTemplates(prev => prev.map(t => {
+      if (t.template_key === activeTemplateKey) {
+        return { ...t, categories: JSON.parse(JSON.stringify(mgrAssignCategories)) };
+      }
+      return t;
+    }));
+
+    // Auto-save current form before switching
+    if (currentMgrEmpCode && mgrAssignCategories && mgrAssignCategories.length > 0) {
+      evaluationService.saveManagerTemplate({
+        manager_id: currentMgrEmpCode,
+        manager_name: currentMgrName,
+        template_key: activeTemplateKey,
+        template_name: formLabel,
+        team_id: mgrAssignTeamId,
+        team_name: selectedTeamName,
+        categories: mgrAssignCategories,
+        is_default: true
+      }).catch(err => console.warn('Background auto-save before new form:', err));
+    }
+
+    const nextNum = mgrTemplates.length + 1;
+    const newKey = `form_${nextNum}`;
+    const newName = `Form ${nextNum}`;
+    const newTpl: ManagerKpiTemplateRecord = {
+      manager_id: currentMgrEmpCode,
+      template_key: newKey,
+      template_name: newName,
+      categories: JSON.parse(JSON.stringify(DEFAULT_KPI_CATEGORIES)),
+      is_default: false
+    };
+    setMgrTemplates(prev => [...prev, newTpl]);
+    setActiveTemplateKey(newKey);
+    setMgrAssignCategories(JSON.parse(JSON.stringify(DEFAULT_KPI_CATEGORIES)));
+    showToast(`Created new form slot: "${newName}".`);
+  };
+
+  // Auto-deselect any employee that is already assigned or has a pending evaluation whenever period or modal opens
   useEffect(() => {
     if (isMgrCreateModalOpen) {
-      setMgrAssignEmpIds(prev => prev.filter(id => !isEmpAlreadyAssignedForPeriod(id)));
+      setMgrAssignEmpIds(prev => prev.filter(id => !isEmpAlreadyAssignedForPeriod(id) && !getEmpPendingEvaluation(id)));
     }
   }, [
     isMgrCreateModalOpen,
@@ -1771,6 +2330,17 @@ export const EvaluationTab: React.FC = () => {
   ]);
 
   const handleMgrToggleEmp = (empId: string) => {
+    const pendingEval = getEmpPendingEvaluation(empId);
+    if (pendingEval) {
+      const emp = dbEmployees.find(e => String(e.employee_id || e.id) === empId);
+      const fullName = emp ? (`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name) : 'This team member';
+      const statusInfo = getPendingStatusLabel(pendingEval);
+      showAlert(
+        `Cannot assign new metrics to ${fullName}:\n\n${statusInfo.tooltip}`,
+        'Pending Evaluation Exists'
+      );
+      return;
+    }
     if (isEmpAlreadyAssignedForPeriod(empId)) {
       showToast('This team member is already assigned for this evaluation period and cannot be booked again.');
       return;
@@ -1782,11 +2352,14 @@ export const EvaluationTab: React.FC = () => {
 
   const handleMgrToggleSelectAll = (teamEmps: any[]) => {
     const activeEmps = (teamEmps || []).filter(isEmployeeActive);
-    const assignableEmps = activeEmps.filter(e => !isEmpAlreadyAssignedForPeriod(String(e.employee_id || e.id)));
+    const assignableEmps = activeEmps.filter(e => {
+      const empId = String(e.employee_id || e.id);
+      return !isEmpAlreadyAssignedForPeriod(empId) && !getEmpPendingEvaluation(empId);
+    });
     const assignableIds = assignableEmps.map(e => String(e.employee_id || e.id)).filter(Boolean);
 
     if (assignableIds.length === 0) {
-      showToast('All team members under this selection are already assigned for this evaluation period.');
+      showToast('No available team members to select. (Members are either already assigned or have pending evaluations)');
       return;
     }
 
@@ -2066,13 +2639,68 @@ export const EvaluationTab: React.FC = () => {
         return emp ? isEmployeeActive(emp) : true;
       });
 
-      // Filter out any employees already assigned for this period
-      const unassignedToBook = activeAssignEmpIds.filter(id => !isEmpAlreadyAssignedForPeriod(id));
-
-      if (unassignedToBook.length === 0) {
-        showAlert('All selected team members are already assigned for this evaluation period. No duplicate assignments can be created.', 'Already Assigned');
+      // Strictly verify no selected employee has a pending evaluation
+      const blockedByPending = activeAssignEmpIds.filter(id => Boolean(getEmpPendingEvaluation(id)));
+      if (blockedByPending.length > 0) {
+        const blockedNames = blockedByPending.map(id => {
+          const emp = dbEmployees.find(e => String(e.employee_id || e.id) === id);
+          return emp ? (`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name) : id;
+        });
+        showAlert(
+          `Cannot apply metrics: The following employee(s) currently have a pending evaluation that must be completed/calibrated first:\n\n• ${blockedNames.join('\n• ')}`,
+          'Pending Evaluation Exists',
+          'warning'
+        );
         setIsAssigning(false);
         return;
+      }
+
+      // Filter out any employees already assigned for this period or having pending evaluations
+      const unassignedToBook = activeAssignEmpIds.filter(id => !isEmpAlreadyAssignedForPeriod(id) && !getEmpPendingEvaluation(id));
+
+      if (unassignedToBook.length === 0) {
+        showAlert('All selected team members are already assigned for this evaluation period or have a pending evaluation.', 'Cannot Assign');
+        setIsAssigning(false);
+        return;
+      }
+
+      const activeTplObj = mgrTemplates.find(t => t.template_key === activeTemplateKey);
+      const activeFormLabel = activeTplObj?.template_name || `Form ${activeTemplateKey.replace('form_', '')}`;
+
+      // Auto-save active template configuration to PostgreSQL database so even if the manager forgot to click "Save Form", it is automatically stored permanently in that form
+      try {
+        await evaluationService.saveManagerTemplate({
+          manager_id: currentMgrEmpCode,
+          manager_name: currentMgrName,
+          template_key: activeTemplateKey,
+          template_name: activeFormLabel,
+          team_id: mgrAssignTeamId,
+          team_name: selectedTeamName,
+          categories: mgrAssignCategories,
+          is_default: true
+        });
+        setMgrTemplates(prev => {
+          const exists = prev.some(t => t.template_key === activeTemplateKey);
+          if (exists) {
+            return prev.map(t => t.template_key === activeTemplateKey ? {
+              ...t,
+              categories: JSON.parse(JSON.stringify(mgrAssignCategories)),
+              template_name: activeFormLabel,
+              updated_at: new Date().toISOString()
+            } : t);
+          } else {
+            return [...prev, {
+              manager_id: currentMgrEmpCode,
+              template_key: activeTemplateKey,
+              template_name: activeFormLabel,
+              categories: JSON.parse(JSON.stringify(mgrAssignCategories)),
+              is_default: true,
+              updated_at: new Date().toISOString()
+            }];
+          }
+        });
+      } catch (autoSaveErr) {
+        console.warn('Auto-save template on assign notice:', autoSaveErr);
       }
 
       await evaluationService.createAndAssignKpiMetrics({
@@ -2089,7 +2717,9 @@ export const EvaluationTab: React.FC = () => {
         endDate: effectiveEndDate,
         categories: mgrAssignCategories,
         allEmployees: dbEmployees.filter(isEmployeeActive),
-        frequency: mgrPeriodType
+        frequency: mgrPeriodType,
+        templateKey: activeTemplateKey,
+        templateName: activeFormLabel
       });
 
       setIsMgrCreateModalOpen(false);
@@ -3025,17 +3655,13 @@ export const EvaluationTab: React.FC = () => {
   // 3. Employee Input Change & Live Recalculation
   const handleKPIChange = (kpi: any, val: string | number) => {
     if (isEmpSubmitted) return;
-    let cleanVal: string | number = val;
+    let cleanVal: string | number = '';
 
     if (val !== '' && val !== undefined && val !== null) {
-      const num = typeof val === 'string' ? parseFloat(val) : Number(val);
+      // Only allow whole integer numbers (disallow decimal values)
+      const num = typeof val === 'number' ? Math.floor(val) : parseInt(String(val), 10);
       if (!isNaN(num)) {
-        if (num < 0) {
-          cleanVal = 0;
-        } else {
-          // Allow full entered value (even exceeding target) for both positive and negative metrics
-          cleanVal = num;
-        }
+        cleanVal = num < 0 ? 0 : num;
       }
     }
 
@@ -4879,6 +5505,7 @@ export const EvaluationTab: React.FC = () => {
     const result: Array<{
       teamName: string;
       totalPeople: number;
+      members: any[];
       designations: Array<{
         designationName: string;
         members: any[];
@@ -4888,10 +5515,12 @@ export const EvaluationTab: React.FC = () => {
     teamMap.forEach((desigMap, tName) => {
       let teamTotal = 0;
       const designations: Array<{ designationName: string; members: any[] }> = [];
+      const allMembers: any[] = [];
 
       desigMap.forEach((members, dName) => {
         if (members.length > 0) {
           teamTotal += members.length;
+          allMembers.push(...members);
           const sortedMembers = [...members].sort((a, b) => {
             const isPendingA = Boolean(
               (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted')) &&
@@ -4912,11 +5541,26 @@ export const EvaluationTab: React.FC = () => {
         }
       });
 
-      if (teamTotal > 0 && designations.length > 0) {
+      if (teamTotal > 0 && allMembers.length > 0) {
+        allMembers.sort((a, b) => {
+          const isPendingA = Boolean(
+            (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted')) &&
+            a.response.managerScore == null
+          );
+          const isPendingB = Boolean(
+            (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted')) &&
+            b.response.managerScore == null
+          );
+          if (isPendingA && !isPendingB) return -1;
+          if (!isPendingA && isPendingB) return 1;
+          return a.employeeName.localeCompare(b.employeeName);
+        });
+
         designations.sort((a, b) => a.designationName.localeCompare(b.designationName));
         result.push({
           teamName: tName,
           totalPeople: teamTotal,
+          members: allMembers,
           designations
         });
       }
@@ -5697,15 +6341,20 @@ export const EvaluationTab: React.FC = () => {
     }
     if (isSubmittingEmp) return;
 
-    // Validate that Self Remarks are filled for all deliverable rows
+    // Validate that Self Remarks are filled for deliverable rows where performance is High or Low
     const missingRemarksKpi: string[] = [];
     const payloadKpiInputs: Record<string, KPIResponseItem> = { ...kpiInputs };
 
     activeCategories.forEach(cat => {
       cat.kpis.forEach(k => {
         const item = getKpiResponseItem(k);
-        const rem = (item?.employeeRemarks || '').trim();
-        if (!rem) {
+        const val = item?.actualValue !== undefined && item?.actualValue !== null && item?.actualValue !== ''
+          ? item.actualValue
+          : (kpiInputs[k.id]?.actualValue ?? (k.name ? kpiInputs[k.name]?.actualValue : '') ?? '');
+        const rem = (item?.employeeRemarks || (kpiInputs[k.id]?.employeeRemarks ?? (k.name ? kpiInputs[k.name]?.employeeRemarks : '')) || '').trim();
+
+        const isMandatory = isKpiRemarkMandatory(k, val);
+        if (isMandatory && !rem) {
           missingRemarksKpi.push(`"${k.name}"`);
         }
         if (item) {
@@ -5717,7 +6366,7 @@ export const EvaluationTab: React.FC = () => {
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
-        'Please enter remarks for all deliverables before submitting.',
+        `Remarks are mandatory for deliverables that are higher or lower than the target goal. Please provide remarks for: ${missingRemarksKpi.join(', ')}`,
         'Remarks Required',
         'warning'
       );
@@ -5918,15 +6567,12 @@ export const EvaluationTab: React.FC = () => {
   };
 
   const handleMgrRowActualChange = (kpi: KPIItem, newActualVal: string | number) => {
-    let sanitizedVal: string | number = newActualVal;
-    if (newActualVal !== '') {
-      const num = parseFloat(String(newActualVal));
+    let sanitizedVal: string | number = '';
+    if (newActualVal !== '' && newActualVal !== undefined && newActualVal !== null) {
+      // Only allow whole integer numbers (disallow decimal values)
+      const num = typeof newActualVal === 'number' ? Math.floor(newActualVal) : parseInt(String(newActualVal), 10);
       if (!isNaN(num)) {
-        if (num < 0) {
-          sanitizedVal = 0;
-        } else {
-          sanitizedVal = num;
-        }
+        sanitizedVal = num < 0 ? 0 : num;
       }
     }
 
@@ -7132,15 +7778,16 @@ export const EvaluationTab: React.FC = () => {
                                   <tr>
                                     <th className="px-4 py-2.5 text-left whitespace-nowrap">Deliverable Metric</th>
                                     <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Target Goal</th>
-                                    <th className="px-2 py-2.5 text-center whitespace-nowrap">Weight</th>
+                                    <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Weight</th>
                                     <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Actual</th>
                                     <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Self Score</th>
-                                    <th className="px-3.5 py-2.5 text-left whitespace-nowrap">Self Remarks</th>
+                                    {!isEmpSubmitted && (
+                                      <th className="px-3.5 py-2.5 text-left whitespace-nowrap">Self Remarks</th>
+                                    )}
                                     {isEmpSubmitted && (
                                       <>
                                         <th className="px-3 py-2.5 text-center bg-teal-50/50 text-teal-950 border-l border-teal-200/60 whitespace-nowrap font-extrabold">Mgr Actual</th>
                                         <th className="px-2.5 py-2.5 text-center bg-teal-50/50 text-teal-950 whitespace-nowrap font-extrabold">Mgr Score</th>
-                                        <th className="px-3.5 py-2.5 text-left bg-teal-50/50 text-teal-950 whitespace-nowrap font-extrabold">Mgr Remarks</th>
                                       </>
                                     )}
                                   </tr>
@@ -7148,9 +7795,12 @@ export const EvaluationTab: React.FC = () => {
                                 <tbody className="divide-y divide-slate-100 bg-white">
                                   {cat.matchingKpis.map((kpi) => {
                                     const respItem = getKpiResponseItem(kpi);
-                                    const val = respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
+                                    const rawVal = respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
                                       ? respItem.actualValue
                                       : (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '');
+                                    const val = rawVal !== '' && rawVal !== undefined && rawVal !== null
+                                      ? (typeof rawVal === 'number' ? Math.floor(rawVal) : (String(rawVal).includes('.') ? parseInt(String(rawVal), 10) : rawVal))
+                                      : '';
                                     const calc = calculateKPIScore(kpi, val);
                                     const remarks = respItem?.employeeRemarks !== undefined && respItem?.employeeRemarks !== null
                                       ? respItem.employeeRemarks
@@ -7171,179 +7821,260 @@ export const EvaluationTab: React.FC = () => {
                                     const isNeg = isNegativeKpi(kpi);
 
                                     return (
-                                      <tr
-                                        key={kpi.id}
-                                        className="hover:bg-slate-50/80 transition-colors border-b border-slate-100 last:border-b-0"
-                                      >
-                                        {/* 1. Deliverable Name & Description */}
-                                        <td className="px-4 py-3 align-middle max-w-[240px]">
-                                          <div className="flex flex-col gap-1">
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                              <span className="font-bold text-xs text-slate-900 leading-snug">
-                                                {kpi.name}
-                                              </span>
-                                            </div>
-                                            {kpi.description && (
-                                              <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
-                                                {kpi.description}
-                                              </p>
-                                            )}
-                                          </div>
-                                        </td>
-
-                                        {/* 2. Target Goal */}
-                                        <td className="px-2.5 py-3 align-middle text-center whitespace-nowrap">
-                                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                                            {(() => {
-                                              const t = String(kpi.targetFromManager || '').trim();
-                                              const u = String(kpi.unit || '').trim();
-                                              if (!t) return targetThreshold;
-                                              if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
-                                              return `${t} ${u}`;
-                                            })()}
-                                          </span>
-                                        </td>
-
-                                        {/* 3. Weight */}
-                                        <td className="px-2 py-3 align-middle text-center whitespace-nowrap">
-                                          <span className="text-xs font-bold text-slate-700">
-                                            {kpi.weightage || kpi.targetScore}%
-                                          </span>
-                                        </td>
-
-                                        {/* 4. Self Actual */}
-                                        <td className="px-3 py-3 align-middle text-center text-xs whitespace-nowrap">
-                                          {(() => {
-                                            const numericVal = val !== '' && val !== undefined && val !== null ? Number(val) : null;
-                                            const isOverTarget = numericVal !== null && !isNaN(numericVal) && (
-                                              isNeg
-                                                ? (parsedTarget.operator === '<' ? numericVal >= targetThreshold : (targetThreshold === 0 ? numericVal > 0 : numericVal > targetThreshold))
-                                                : (targetThreshold > 0 && numericVal > targetThreshold)
-                                            );
-                                            const isMetTarget = numericVal !== null && !isNaN(numericVal) && (
-                                              isNeg
-                                                ? (parsedTarget.operator === '<' ? numericVal < targetThreshold : (targetThreshold === 0 ? numericVal === 0 : numericVal <= targetThreshold))
-                                                : (targetThreshold > 0 && numericVal >= targetThreshold)
-                                            );
-
-                                            if (isEmpSubmitted) {
-                                              if (val === '' || val === undefined || val === null) {
-                                                return <span className="text-slate-400 font-medium">—</span>;
-                                              }
-                                              // All negative deliverables (delays, misses, escalations) use the red rose pill
-                                              if (isNeg) {
-                                                return (
-                                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-900 border border-rose-300 font-bold text-xs shadow-2xs">
-                                                    <span>{val} {kpi.unit || ''}</span>
-                                                    {isOverTarget && (
-                                                      <span className="text-[9px] bg-rose-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
-                                                        Exceeded
-                                                      </span>
-                                                    )}
+                                        <tr
+                                          key={kpi.id}
+                                          className={`group/empRow transition-colors border-b last:border-b-0 ${isNeg
+                                            ? 'bg-rose-50/25 hover:bg-rose-50/45 border-rose-100/80 border-l-4 border-l-rose-400'
+                                            : 'hover:bg-slate-50/80 border-slate-100 border-l-4 border-l-transparent'
+                                            }`}
+                                          title={isEmpSubmitted ? ([remarks?.trim() ? `Employee Remark: ${remarks.trim()}` : '', mgrRemarks?.trim() ? `Manager Remark: ${mgrRemarks.trim()}` : ''].filter(Boolean).join('\n') || undefined) : undefined}
+                                        >
+                                          {/* 1. Deliverable Name & Description */}
+                                          <td className="px-4 py-3 align-middle max-w-[240px]">
+                                            <DeliverableRemarksHover
+                                              selfRemarks={isEmpSubmitted ? remarks : undefined}
+                                              mgrRemarks={isEmpSubmitted ? mgrRemarks : undefined}
+                                            >
+                                              <div className="flex flex-col gap-1 cursor-pointer">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span className={`font-bold text-xs leading-snug ${isNeg ? 'text-rose-950' : 'text-slate-900'}`}>
+                                                    {kpi.name}
                                                   </span>
-                                                );
-                                              }
-                                              if (isOverTarget) {
-                                                return (
-                                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-950 border border-emerald-400 font-bold text-xs shadow-2xs">
-                                                    <span>{val} {kpi.unit || ''}</span>
-                                                    <span className="text-[9px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
-                                                      Exceeded
-                                                    </span>
-                                                  </span>
-                                                );
-                                              }
-                                              if (isMetTarget) {
-                                                return (
-                                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-teal-950 border border-teal-300 font-bold text-xs shadow-2xs">
-                                                    <span>{val} {kpi.unit || ''}</span>
-                                                  </span>
-                                                );
-                                              }
-                                              return (
-                                                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold text-xs shadow-2xs ${calc.earnedScore === 0
-                                                  ? 'bg-rose-50 text-rose-900 border border-rose-300'
-                                                  : 'bg-slate-100 text-slate-800 border border-slate-200'
-                                                  }`}>
-                                                  <span>{val} {kpi.unit || ''}</span>
-                                                  {calc.earnedScore === 0 && (
-                                                    <span className="text-[9px] bg-rose-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
-                                                      Not Met
+                                                  {isNeg && (
+                                                    <span
+                                                      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200/90 shadow-2xs select-none"
+                                                      title="Low Target Metric: Lower values achieve higher score"
+                                                    >
+                                                      Low Target
                                                     </span>
                                                   )}
-                                                </span>
-                                              );
-                                            }
-
-                                            return (
-                                              <div className="flex flex-col items-center justify-center gap-1">
-                                                <input
-                                                  type="number"
-                                                  min="0"
-                                                  value={val}
-                                                  disabled={isSubmittingEmp}
-                                                  onChange={e => handleKPIChange(kpi, e.target.value)}
-                                                  placeholder="0"
-                                                  className={`w-24 h-8 px-2 text-center font-bold text-xs rounded-xl transition shadow-2xs focus:outline-none ${isNeg && isOverTarget
-                                                    ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
-                                                    : !isNeg && calc.earnedScore === 0 && val !== ''
-                                                      ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
-                                                      : isOverTarget
-                                                        ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-500 ring-2 ring-emerald-400/30 font-black'
-                                                        : isMetTarget
-                                                          ? 'bg-teal-50/80 text-teal-950 border-2 border-teal-400 font-bold focus:border-teal-600'
-                                                          : 'bg-white text-slate-900 border border-slate-200 focus:border-teal-600'
-                                                    }`}
-                                                />
-                                                {isNeg && isOverTarget && (
-                                                  <span className="text-[9px] font-black text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
-                                                    Exceeded Limit
-                                                  </span>
-                                                )}
-                                                {!isNeg && isOverTarget && (
-                                                  <span className="text-[9px] font-black text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
-                                                    Exceeded Target
-                                                  </span>
-                                                )}
-                                                {!isNeg && !isMetTarget && calc.earnedScore === 0 && numericVal !== null && val !== '' && (
-                                                  <span className="text-[9px] font-black text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
-                                                    Not Met
-                                                  </span>
+                                                  {isEmpSubmitted && remarks?.trim() && (
+                                                    <span
+                                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0"
+                                                      title={`Employee Remark: ${remarks}`}
+                                                    >
+                                                      <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
+                                                      <span>Emp</span>
+                                                    </span>
+                                                  )}
+                                                  {isEmpSubmitted && mgrRemarks?.trim() && (
+                                                    <span
+                                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0"
+                                                      title={`Manager Remark: ${mgrRemarks}`}
+                                                    >
+                                                      <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
+                                                      <span>Mgr</span>
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                {kpi.description && (
+                                                  <p className={`text-[11px] line-clamp-2 leading-relaxed ${isNeg ? 'text-rose-600/80 font-medium' : 'text-slate-500'}`}>
+                                                    {kpi.description}
+                                                  </p>
                                                 )}
                                               </div>
-                                            );
-                                          })()}
-                                        </td>
+                                            </DeliverableRemarksHover>
+                                          </td>
 
-                                        {/* Self Score */}
-                                        <td className="px-2.5 py-3 text-center align-middle whitespace-nowrap">
-                                          <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${calc.earnedScore > 0
-                                            ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90'
-                                            : 'bg-rose-50 text-rose-900 border border-rose-200/90'
-                                            }`}>
-                                            {calc.earnedScore.toFixed(2)}%
-                                          </span>
-                                        </td>
+                                          {/* 2. Target Goal */}
+                                          <td className="px-2.5 py-3 align-middle text-center whitespace-nowrap">
+                                            <div className="flex flex-col items-center justify-center gap-0.5">
+                                              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border shadow-2xs ${isNeg
+                                                ? 'bg-rose-100/70 text-rose-800 border-rose-200'
+                                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                                }`}>
+                                                {(() => {
+                                                  const t = String(kpi.targetFromManager || '').trim();
+                                                  const u = String(kpi.unit || '').trim();
+                                                  if (!t) return targetThreshold;
+                                                  if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
+                                                  return `${t} ${u}`;
+                                                })()}
+                                              </span>
+                                              {isNeg && (
+                                                <span className="text-[9px] font-bold text-rose-700 tracking-tight">
+                                                  Low Target
+                                                </span>
+                                              )}
+                                            </div>
+                                          </td>
 
-                                        {/* Self Remarks */}
-                                        <td className="px-3.5 py-3 align-middle text-xs min-w-[130px] max-w-[200px]">
-                                          {isEmpSubmitted ? (
-                                            <ExpandableRemarkView text={remarks} fallback="—" />
-                                          ) : (
-                                            <ExpandableRemarkInput
-                                              value={remarks}
-                                              disabled={isSubmittingEmp}
-                                              onChange={val => handleKPIRemarksChange(kpi, val)}
-                                              placeholder="Enter remarks..."
-                                              required={true}
-                                              className={
-                                                !remarks.trim()
-                                                  ? 'bg-amber-50/40 focus:bg-white border border-amber-300 focus:border-teal-600 text-slate-800 focus:outline-none shadow-2xs'
-                                                  : 'bg-slate-50/60 focus:bg-white border border-slate-200 focus:border-teal-600 text-slate-800 focus:outline-none shadow-2xs'
+                                          {/* 3. Weight */}
+                                          <td className="px-2 py-3 align-middle text-center whitespace-nowrap">
+                                            <span className={`text-xs font-bold ${isNeg ? 'text-rose-900' : 'text-slate-700'}`}>
+                                              {kpi.weightage || kpi.targetScore}%
+                                            </span>
+                                          </td>
+
+                                          {/* 4. Self Actual */}
+                                          <td className="px-3 py-3 align-middle text-center text-xs whitespace-nowrap">
+                                            {(() => {
+                                              const numericVal = val !== '' && val !== undefined && val !== null ? Number(val) : null;
+                                              const isOverTarget = numericVal !== null && !isNaN(numericVal) && (
+                                                isNeg
+                                                  ? (parsedTarget.operator === '<' ? numericVal >= targetThreshold : (targetThreshold === 0 ? numericVal > 0 : numericVal > targetThreshold))
+                                                  : (targetThreshold > 0 && numericVal > targetThreshold)
+                                              );
+                                              const isMetTarget = numericVal !== null && !isNaN(numericVal) && (
+                                                isNeg
+                                                  ? (parsedTarget.operator === '<' ? numericVal < targetThreshold : (targetThreshold === 0 ? numericVal === 0 : numericVal <= targetThreshold))
+                                                  : (targetThreshold > 0 && numericVal >= targetThreshold)
+                                              );
+                                              const isLowTarget = !isNeg && numericVal !== null && !isNaN(numericVal) && val !== '' && targetThreshold > 0 && numericVal < targetThreshold;
+
+                                              if (isEmpSubmitted) {
+                                                if (val === '' || val === undefined || val === null) {
+                                                  return <span className="text-slate-400 font-medium">—</span>;
+                                                }
+                                                // All negative deliverables (delays, misses, escalations) use the red rose pill
+                                                if (isNeg) {
+                                                  return (
+                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-900 border border-rose-300 font-bold text-xs shadow-2xs">
+                                                      <span>{val} {kpi.unit || ''}</span>
+                                                      {isOverTarget && (
+                                                        <span className="text-[9px] bg-rose-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                          Exceeded
+                                                        </span>
+                                                      )}
+                                                    </span>
+                                                  );
+                                                }
+                                                if (isOverTarget) {
+                                                  return (
+                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-950 border border-emerald-400 font-bold text-xs shadow-2xs">
+                                                      <span>{val} {kpi.unit || ''}</span>
+                                                      <span className="text-[9px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                        Exceeded
+                                                      </span>
+                                                    </span>
+                                                  );
+                                                }
+                                                if (isMetTarget) {
+                                                  return (
+                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-teal-950 border border-teal-300 font-bold text-xs shadow-2xs">
+                                                      <span>{val} {kpi.unit || ''}</span>
+                                                    </span>
+                                                  );
+                                                }
+                                                return (
+                                                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold text-xs shadow-2xs ${calc.earnedScore === 0
+                                                    ? 'bg-rose-50 text-rose-900 border border-rose-300'
+                                                    : 'bg-amber-50 text-amber-900 border border-amber-300'
+                                                    }`}>
+                                                    <span>{val} {kpi.unit || ''}</span>
+                                                    <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider ${calc.earnedScore === 0 ? 'bg-rose-600 text-white' : 'bg-amber-600 text-white'}`}>
+                                                      {calc.earnedScore === 0 ? 'Not Met' : 'Low Target'}
+                                                    </span>
+                                                  </span>
+                                                );
                                               }
-                                            />
+
+                                              return (
+                                                <div className="flex flex-col items-center justify-center gap-1">
+                                                  <input
+                                                    type="number"
+                                                    step="1"
+                                                    min="0"
+                                                    value={val}
+                                                    disabled={isSubmittingEmp}
+                                                    onKeyDown={e => {
+                                                      if (['.', ',', 'e', 'E', '+', '-'].includes(e.key)) {
+                                                        e.preventDefault();
+                                                      }
+                                                    }}
+                                                    onChange={e => handleKPIChange(kpi, e.target.value)}
+                                                    placeholder="0"
+                                                    className={`w-24 h-8 px-2 text-center font-bold text-xs rounded-xl transition shadow-2xs focus:outline-none ${isNeg && isOverTarget
+                                                      ? 'bg-rose-100 text-rose-950 border-2 border-rose-500 ring-2 ring-rose-400/30 font-black'
+                                                      : !isNeg && calc.earnedScore === 0 && val !== ''
+                                                        ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
+                                                        : isOverTarget
+                                                          ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-500 ring-2 ring-emerald-400/30 font-black'
+                                                          : isLowTarget
+                                                            ? 'bg-amber-50 text-amber-950 border-2 border-amber-400 ring-2 ring-amber-300/30 font-black'
+                                                            : isMetTarget
+                                                              ? 'bg-teal-50/80 text-teal-950 border-2 border-teal-400 font-bold focus:border-teal-600'
+                                                              : isNeg
+                                                                ? 'bg-rose-50/40 text-rose-950 border-2 border-rose-200/90 focus:border-rose-500 focus:bg-white placeholder:text-rose-300'
+                                                                : 'bg-white text-slate-900 border border-slate-200 focus:border-teal-600'
+                                                      }`}
+                                                  />
+                                                  {isNeg && isOverTarget && (
+                                                    <span className="text-[9px] font-black text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
+                                                      Exceeded Limit
+                                                    </span>
+                                                  )}
+                                                  {isNeg && isMetTarget && (
+                                                    <span className="text-[9px] font-black text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
+                                                      Within Limit
+                                                    </span>
+                                                  )}
+                                                  {!isNeg && isOverTarget && (
+                                                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
+                                                      Exceeded Target
+                                                    </span>
+                                                  )}
+                                                  {!isNeg && isLowTarget && (
+                                                    <span className="text-[9px] font-black text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
+                                                      Low Target
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              );
+                                            })()}
+                                          </td>
+
+                                          {/* Self Score */}
+                                          <td
+                                            className="px-2.5 py-3 text-center align-middle whitespace-nowrap"
+                                            title={isEmpSubmitted && remarks ? `Employee Remark: ${remarks}` : undefined}
+                                          >
+                                            <div className="inline-flex items-center justify-center gap-1">
+                                              <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${calc.earnedScore > 0
+                                                ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90'
+                                                : 'bg-rose-50 text-rose-900 border border-rose-200/90'
+                                                }`}>
+                                                {calc.earnedScore.toFixed(2)}%
+                                              </span>
+                                              {isEmpSubmitted && remarks?.trim() && (
+                                                <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-500/70 shrink-0" />
+                                              )}
+                                            </div>
+                                          </td>
+
+                                          {/* Self Remarks: Only rendered when NOT submitted (when employee needs to edit) */}
+                                          {!isEmpSubmitted && (
+                                            <td className="px-3.5 py-3 align-middle text-xs min-w-[140px] max-w-[220px]">
+                                              {(() => {
+                                                const isMandatory = isKpiRemarkMandatory(kpi, val);
+                                                const hasRemark = Boolean(remarks && remarks.trim());
+
+                                                return (
+                                                  <div className="flex flex-col gap-1">
+                                                    <ExpandableRemarkInput
+                                                      value={remarks}
+                                                      disabled={isSubmittingEmp}
+                                                      onChange={val => handleKPIRemarksChange(kpi, val)}
+                                                      placeholder={isMandatory ? 'Remark required (High/Low)...' : 'Remarks (Optional)...'}
+                                                      required={isMandatory}
+                                                      className={
+                                                        isMandatory && !hasRemark
+                                                          ? 'bg-amber-50/70 focus:bg-white border-2 border-amber-400 focus:border-amber-600 text-slate-900 focus:outline-none ring-2 ring-amber-200/50 shadow-2xs'
+                                                          : hasRemark
+                                                            ? 'bg-emerald-50/40 focus:bg-white border border-emerald-300 focus:border-teal-600 text-slate-900 focus:outline-none shadow-2xs'
+                                                            : 'bg-slate-50/60 focus:bg-white border border-slate-200 focus:border-teal-600 text-slate-800 focus:outline-none shadow-2xs'
+                                                      }
+                                                    />
+                                                    {isMandatory && !hasRemark && (
+                                                      <span className="text-[9px] font-black text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded self-start tracking-wider uppercase animate-in fade-in">
+                                                        Mandatory
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })()}
+                                            </td>
                                           )}
-                                        </td>
 
                                         {/* Manager Reviewed Fields Display */}
                                         {isEmpSubmitted && (
@@ -7377,19 +8108,23 @@ export const EvaluationTab: React.FC = () => {
                                               )}
                                             </td>
 
-                                            <td className="px-2.5 py-3 text-center align-middle bg-teal-50/30 whitespace-nowrap">
-                                              <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${mgrEarnedScore !== null && mgrEarnedScore > 0
-                                                ? 'bg-teal-100 text-teal-950 border border-teal-300'
-                                                : mgrEarnedScore !== null
-                                                  ? 'bg-rose-50 text-rose-900 border border-rose-200/90'
-                                                  : 'bg-slate-50 text-slate-500 border border-slate-200/60'
-                                                }`}>
-                                                {mgrEarnedScore !== null ? `${mgrEarnedScore.toFixed(2)}%` : '—'}
-                                              </span>
-                                            </td>
-
-                                            <td className="px-3.5 py-3 align-middle bg-teal-50/30 text-xs min-w-[130px] max-w-[200px]">
-                                              <ExpandableRemarkView text={mgrRemarks} fallback="—" />
+                                            <td
+                                              className="px-2.5 py-3 text-center align-middle bg-teal-50/30 whitespace-nowrap"
+                                              title={mgrRemarks ? `Manager Remark: ${mgrRemarks}` : undefined}
+                                            >
+                                              <div className="inline-flex items-center justify-center gap-1">
+                                                <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${mgrEarnedScore !== null && mgrEarnedScore > 0
+                                                  ? 'bg-teal-100 text-teal-950 border border-teal-300'
+                                                  : mgrEarnedScore !== null
+                                                    ? 'bg-rose-50 text-rose-900 border border-rose-200/90'
+                                                    : 'bg-slate-50 text-slate-500 border border-slate-200/60'
+                                                  }`}>
+                                                  {mgrEarnedScore !== null ? `${mgrEarnedScore.toFixed(2)}%` : '—'}
+                                                </span>
+                                                {mgrRemarks?.trim() && (
+                                                  <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />
+                                                )}
+                                              </div>
                                             </td>
                                           </>
                                         )}
@@ -7863,10 +8598,8 @@ export const EvaluationTab: React.FC = () => {
                                                           <th className="px-2.5 py-2 text-center font-bold">Target</th>
                                                           <th className="px-3 py-2 text-center font-bold">Self Actual</th>
                                                           <th className="px-2.5 py-2 text-center font-bold">Self Score</th>
-                                                          <th className="px-3.5 py-2 text-left font-bold">Self Remarks</th>
                                                           <th className="px-3 py-2 text-center font-bold bg-teal-50/60 text-teal-950 border-l border-teal-100">Mgr Actual</th>
                                                           <th className="px-2.5 py-2 text-center font-bold bg-teal-50/60 text-teal-950">Mgr Score</th>
-                                                          <th className="px-3.5 py-2 text-left font-bold bg-teal-50/60 text-teal-950">Mgr Remarks</th>
                                                         </tr>
                                                       </thead>
                                                       <tbody className="divide-y divide-slate-100 bg-white">
@@ -7898,12 +8631,38 @@ export const EvaluationTab: React.FC = () => {
                                                           })();
 
                                                           return (
-                                                            <tr key={kpi.id || kIdx} className="hover:bg-slate-50/80 transition-colors">
+                                                            <tr
+                                                              key={kpi.id || kIdx}
+                                                              className="group/metricRow hover:bg-slate-50/80 transition-colors"
+                                                              title={[selfRemarks?.trim() ? `Employee Remark: ${selfRemarks.trim()}` : '', mgrRemarks?.trim() ? `Manager Remark: ${mgrRemarks.trim()}` : ''].filter(Boolean).join('\n') || undefined}
+                                                            >
                                                               <td className="px-3.5 py-2 align-middle">
-                                                                <div className="font-semibold text-slate-800 text-xs">{kpi.name}</div>
-                                                                {kpi.description && (
-                                                                  <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{kpi.description}</div>
-                                                                )}
+                                                                <DeliverableRemarksHover selfRemarks={selfRemarks} mgrRemarks={mgrRemarks}>
+                                                                  <div className="flex items-center gap-1.5 flex-wrap cursor-pointer">
+                                                                    <span className="font-semibold text-slate-800 text-xs">{kpi.name}</span>
+                                                                    {selfRemarks?.trim() && (
+                                                                      <span
+                                                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0"
+                                                                        title={`Employee Remark: ${selfRemarks}`}
+                                                                      >
+                                                                        <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
+                                                                        <span>Emp</span>
+                                                                      </span>
+                                                                    )}
+                                                                    {mgrRemarks?.trim() && (
+                                                                      <span
+                                                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0"
+                                                                        title={`Manager Remark: ${mgrRemarks}`}
+                                                                      >
+                                                                        <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
+                                                                        <span>Mgr</span>
+                                                                      </span>
+                                                                    )}
+                                                                  </div>
+                                                                  {kpi.description && (
+                                                                    <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{kpi.description}</div>
+                                                                  )}
+                                                                </DeliverableRemarksHover>
                                                               </td>
                                                               <td className="px-2 py-2 text-center align-middle font-mono font-medium text-slate-600 whitespace-nowrap">
                                                                 {kpi.weightage || Math.round(cat.weightage / Math.max(1, cat.kpis.length))}%
@@ -7914,20 +8673,26 @@ export const EvaluationTab: React.FC = () => {
                                                               <td className="px-3 py-2 text-center align-middle text-slate-800 whitespace-nowrap font-medium">
                                                                 {selfActual} {kpi.unit || ''}
                                                               </td>
-                                                              <td className="px-2.5 py-2 text-center align-middle font-bold text-slate-900 whitespace-nowrap">
-                                                                {selfScore.toFixed(1)}%
-                                                              </td>
-                                                              <td className="px-3.5 py-2 align-middle text-xs min-w-[120px] max-w-[180px]">
-                                                                <ExpandableRemarkView text={selfRemarks} fallback="—" />
+                                                              <td
+                                                                className="px-2.5 py-2 text-center align-middle font-bold text-slate-900 whitespace-nowrap"
+                                                                title={selfRemarks ? `Employee Remark: ${selfRemarks}` : undefined}
+                                                              >
+                                                                <div className="inline-flex items-center gap-1">
+                                                                  <span>{selfScore.toFixed(1)}%</span>
+                                                                  {selfRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-500/70 shrink-0" />}
+                                                                </div>
                                                               </td>
                                                               <td className="px-3 py-2 text-center align-middle bg-teal-50/30 font-medium text-slate-900 border-l border-teal-100 whitespace-nowrap">
                                                                 {mgrActual !== '—' ? `${mgrActual} ${kpi.unit || ''}` : '—'}
                                                               </td>
-                                                              <td className="px-2.5 py-2 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-teal-950">
-                                                                {mgrScore !== null ? `${mgrScore.toFixed(1)}%` : '—'}
-                                                              </td>
-                                                              <td className="px-3.5 py-2 align-middle bg-teal-50/30 text-xs min-w-[120px] max-w-[180px]">
-                                                                <ExpandableRemarkView text={mgrRemarks} fallback="—" />
+                                                              <td
+                                                                className="px-2.5 py-2 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-teal-950"
+                                                                title={mgrRemarks ? `Manager Remark: ${mgrRemarks}` : undefined}
+                                                              >
+                                                                <div className="inline-flex items-center gap-1">
+                                                                  <span>{mgrScore !== null ? `${mgrScore.toFixed(1)}%` : '—'}</span>
+                                                                  {mgrRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />}
+                                                                </div>
                                                               </td>
                                                             </tr>
                                                           );
@@ -8496,31 +9261,23 @@ export const EvaluationTab: React.FC = () => {
                             type="button"
                             onClick={() => {
                               const areAllExpanded = groupedReportHierarchy.length > 0 && groupedReportHierarchy.every(t =>
-                                Boolean(expandedTeams[t.teamName]) &&
-                                t.designations.every(d => Boolean(expandedDesignations[`${t.teamName}_${d.designationName}`]))
+                                Boolean(expandedTeams[t.teamName])
                               );
                               if (areAllExpanded) {
                                 setExpandedTeams({});
-                                setExpandedDesignations({});
                               } else {
                                 const nextTeams: Record<string, boolean> = {};
-                                const nextDesigs: Record<string, boolean> = {};
                                 groupedReportHierarchy.forEach(t => {
                                   nextTeams[t.teamName] = true;
-                                  t.designations.forEach(d => {
-                                    nextDesigs[`${t.teamName}_${d.designationName}`] = true;
-                                  });
                                 });
                                 setExpandedTeams(nextTeams);
-                                setExpandedDesignations(nextDesigs);
                               }
                             }}
                             className="text-[10px] font-bold normal-case tracking-normal text-primary-700 hover:text-primary-800 bg-primary-50 hover:bg-primary-100 px-2.5 py-1 rounded-md border border-primary-200 transition cursor-pointer shadow-2xs"
-                            title="Toggle expand/collapse for all teams and designations"
+                            title="Toggle expand/collapse for all teams"
                           >
                             {groupedReportHierarchy.length > 0 && groupedReportHierarchy.every(t =>
-                              Boolean(expandedTeams[t.teamName]) &&
-                              t.designations.every(d => Boolean(expandedDesignations[`${t.teamName}_${d.designationName}`]))
+                              Boolean(expandedTeams[t.teamName])
                             ) ? 'Collapse All' : 'Expand All'}
                           </button>
                         </div>
@@ -8588,9 +9345,26 @@ export const EvaluationTab: React.FC = () => {
                                   <span className="text-[11px] font-semibold bg-white text-slate-600 px-2.5 py-0.5 rounded-full border border-slate-200/80 shadow-2xs">
                                     {teamGroup.totalPeople} {teamGroup.totalPeople === 1 ? 'person' : 'people'}
                                   </span>
-                                  <span className="text-[10px] font-medium text-slate-400">
-                                    • {teamGroup.designations.length} {teamGroup.designations.length === 1 ? 'designation' : 'designations'}
-                                  </span>
+                                  {(() => {
+                                    const teamPendingCount = teamGroup.members.filter(m =>
+                                      (m.response.status === 'manager_review' || m.response.status === 'Submitted to Manager' || String(m.response.status || '').toLowerCase().includes('submitted')) &&
+                                      m.response.managerScore == null
+                                    ).length;
+                                    if (teamPendingCount === 0) return null;
+                                    return (
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50/90 text-amber-900 border border-amber-200/90 shadow-2xs shrink-0">
+                                        <span className="relative flex h-1.5 w-1.5 shrink-0">
+                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
+                                        </span>
+                                        <ClockIcon className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                        <span>
+                                          <strong className="font-semibold text-amber-950">{teamPendingCount}</strong>{' '}
+                                          {teamPendingCount === 1 ? 'Submission Awaiting Approval' : 'Submissions Awaiting Approval'}
+                                        </span>
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
 
                                 <div className="flex items-center gap-3">
@@ -8658,126 +9432,90 @@ export const EvaluationTab: React.FC = () => {
                             </td>
                           </tr>
 
-                          {/* Designations inside Team (Rendered when Team is Expanded) */}
-                          {isTeamExpanded && teamGroup.designations.map(desigGroup => {
-                            const desigKey = `${teamGroup.teamName}_${desigGroup.designationName}`;
-                            const isDesigExpanded = Boolean(expandedDesignations[desigKey]);
-
-                            const desigPendingCount = desigGroup.members.filter(m =>
-                              (m.response.status === 'manager_review' || m.response.status === 'Submitted to Manager' || String(m.response.status || '').toLowerCase().includes('submitted')) &&
-                              m.response.managerScore == null
-                            ).length;
+                          {/* Members inside Team (Rendered directly when Team is Expanded) */}
+                          {isTeamExpanded && teamGroup.members.map(member => {
+                            const isSubmittedPending = Boolean(
+                              (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || String(member.response.status || '').toLowerCase().includes('submitted')) &&
+                              member.response.managerScore == null
+                            );
 
                             return (
-                              <React.Fragment key={desigGroup.designationName}>
-                                {/* Designation Sub-row Header */}
-                                <tr>
-                                  <td colSpan={6} className="p-0">
-                                    <div
-                                      onClick={() => setExpandedDesignations(prev => ({ ...prev, [desigKey]: !isDesigExpanded }))}
-                                      className="px-4 py-2 pl-7 flex items-center justify-between gap-3 font-semibold text-xs bg-slate-50/80 hover:bg-slate-100/80 text-slate-700 border-b border-slate-200/60 cursor-pointer select-none transition-colors"
-                                      title={isDesigExpanded ? `Click to collapse ${desigGroup.designationName}` : `Click to expand ${desigGroup.designationName} (${desigGroup.members.length} people)`}
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <ChevronDownIcon className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isDesigExpanded ? 'rotate-0' : '-rotate-90'}`} />
-                                        <UserGroupIcon className="w-4 h-4 text-primary-600 shrink-0" />
-                                        <span className="truncate font-bold text-slate-800">Designation: {desigGroup.designationName}</span>
-                                        <span className="text-[11px] font-medium text-slate-500 shrink-0">
-                                          ({desigGroup.members.length} {desigGroup.members.length === 1 ? 'person' : 'people'})
+                              <tr
+                                key={member.response.id || member.employeeCode}
+                                className={`group/row border-b border-slate-100 hover:bg-slate-50/80 transition ${isSubmittedPending ? 'bg-primary-50/30 border-l-4 border-l-primary-600' : 'bg-white'
+                                  }`}
+                              >
+                                {/* 1. Name of the employee */}
+                                <td className="py-3.5 px-4 pl-8">
+                                  <div className="flex flex-col min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                      {member.rank && (
+                                        <span className="font-bold text-xs text-amber-600 mr-0.5">
+                                          {member.rank === 1 ? '🥇 #1' : member.rank === 2 ? '🥈 #2' : member.rank === 3 ? '🥉 #3' : `#${member.rank}`}
                                         </span>
-                                        {desigPendingCount > 0 && (
-                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-2xs animate-pulse shrink-0">
-                                            <BellAlertIcon className="w-3 h-3 text-white" />
-                                            <span>{desigPendingCount} Submissions Awaiting Approval</span>
-                                          </span>
-                                        )}
-                                      </div>
-                                      <span className="text-[10px] font-medium text-slate-400 hidden sm:inline-block">
-                                        {isDesigExpanded ? 'Hide ▲' : 'Show ▼'}
+                                      )}
+                                      <span className={`font-semibold text-xs ${isSubmittedPending ? 'text-primary-950 font-bold' : 'text-slate-900'}`}>
+                                        {member.employeeName}
                                       </span>
+                                      <span className="text-xs text-slate-400 font-normal">
+                                        (Emp Code {member.employeeCode})
+                                      </span>
+                                      {isSubmittedPending && (
+                                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary-100 text-primary-900 border border-primary-300 shrink-0 inline-flex items-center gap-1 shadow-2xs animate-pulse">
+                                          <SparklesIcon className="w-3 h-3 text-primary-700" />
+                                          <span>Ready for Review</span>
+                                        </span>
+                                      )}
                                     </div>
-                                  </td>
-                                </tr>
+                                  </div>
+                                </td>
 
-                                {/* Member Rows under Designation (Rendered when Designation is Expanded) */}
-                                {isDesigExpanded && desigGroup.members.map(member => {
-                                  const isSubmittedPending = Boolean(
-                                    (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || String(member.response.status || '').toLowerCase().includes('submitted')) &&
-                                    member.response.managerScore == null
-                                  );
+                                      {/* 2. Evaluation Period / Date Badge with Hover Tooltip for Submission & Approved Dates */}
+                                      <td className="py-3.5 px-4 text-center">
+                                        {(() => {
+                                          const subDate = formatEvalDateTime(member.response.employeeSubmittedAt || (member.response as any).submitted_at || member.response.createdAt);
+                                          const approvedDate = (member.isCalibrated || member.response.serviceManagerApprovedAt || member.response.managerReviewedAt)
+                                            ? formatEvalDateTime(member.response.serviceManagerApprovedAt || member.response.managerReviewedAt || (member.response as any).manager_reviewed_at || (member.response as any).approved_at || member.response.updatedAt)
+                                            : null;
+                                          const tooltipLines: string[] = [];
+                                          if (subDate) tooltipLines.push(`Submitted: ${subDate}`);
+                                          if (approvedDate) tooltipLines.push(`Approved: ${approvedDate}`);
+                                          const nativeTooltip = tooltipLines.join(' | ');
 
-                                  return (
-                                    <tr
-                                      key={member.response.id || member.employeeCode}
-                                      className={`border-b border-slate-100 hover:bg-slate-50/80 transition ${isSubmittedPending ? 'bg-primary-50/30 border-l-4 border-l-primary-600' : 'bg-white'
-                                        }`}
-                                    >
-                                      {/* 1. Name of the employee with avatar */}
-                                      <td className="py-3.5 px-4 pl-10">
-                                        <div className="flex items-center gap-3">
-                                          {member.profileImage ? (
-                                            <img
-                                              src={member.profileImage}
-                                              alt={member.employeeName}
-                                              className="w-9 h-9 max-w-[36px] max-h-[36px] rounded-full object-cover shrink-0 shadow-2xs border border-slate-200"
-                                              onError={(e) => {
-                                                (e.currentTarget as HTMLElement).style.display = 'none';
-                                                const fallback = (e.currentTarget as HTMLElement).nextElementSibling as HTMLElement;
-                                                if (fallback) fallback.style.display = 'flex';
-                                              }}
-                                            />
-                                          ) : null}
-                                          <div
-                                            className={`w-9 h-9 max-w-[36px] max-h-[36px] rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${member.avatarBg}`}
-                                            style={{ display: member.profileImage ? 'none' : 'flex' }}
-                                          >
-                                            {member.initials}
-                                          </div>
-                                          <div className="flex flex-col min-w-0">
-                                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                              {member.rank && (
-                                                <span className="font-bold text-xs text-amber-600 mr-0.5">
-                                                  {member.rank === 1 ? '🥇 #1' : member.rank === 2 ? '🥈 #2' : member.rank === 3 ? '🥉 #3' : `#${member.rank}`}
-                                                </span>
-                                              )}
-                                              <span className={`font-semibold text-xs ${isSubmittedPending ? 'text-primary-950 font-bold' : 'text-slate-900'}`}>
-                                                {member.employeeName}
+                                          return (
+                                            <div
+                                              className="relative group inline-flex flex-col items-center justify-center gap-0.5 cursor-pointer"
+                                              title={nativeTooltip || undefined}
+                                            >
+                                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold border shadow-2xs transition-transform group-hover:scale-105 ${member.periodInfo?.freqColor || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                                                <CalendarDaysIcon className="w-3 h-3 shrink-0" />
+                                                <span>{member.periodInfo?.freqLabel || 'Evaluation'}</span>
                                               </span>
-                                              <span className="text-xs text-slate-400 font-normal">
-                                                (Emp Code {member.employeeCode})
+                                              <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap group-hover:text-primary-700 transition-colors">
+                                                {member.periodInfo?.dateText}
                                               </span>
-                                              {isSubmittedPending && (
-                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary-100 text-primary-900 border border-primary-300 shrink-0 inline-flex items-center gap-1 shadow-2xs animate-pulse">
-                                                  <SparklesIcon className="w-3 h-3 text-primary-700" />
-                                                  <span>Ready for Review</span>
-                                                </span>
+
+                                              {/* Hover Popover Tooltip */}
+                                              {(subDate || approvedDate) && (
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/row:flex group-hover:flex flex-col gap-1.5 px-3 py-2 bg-slate-900/95 backdrop-blur-sm text-white text-[11px] rounded-xl shadow-xl border border-slate-700/80 z-50 whitespace-nowrap pointer-events-none transition-all duration-150 animate-in fade-in zoom-in-95">
+                                                  {subDate && (
+                                                    <div className="flex items-center gap-1.5 text-slate-200">
+                                                      <ClockIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                                      <span>Submitted: <strong className="text-white font-semibold">{subDate}</strong></span>
+                                                    </div>
+                                                  )}
+                                                  {approvedDate && (
+                                                    <div className="flex items-center gap-1.5 text-slate-200">
+                                                      <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                                      <span>Approved: <strong className="text-white font-semibold">{approvedDate}</strong></span>
+                                                    </div>
+                                                  )}
+                                                  <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-slate-900/95" />
+                                                </div>
                                               )}
                                             </div>
-                                          </div>
-                                        </div>
-                                      </td>
-
-                                      {/* 2. Evaluation Period / Date Badge */}
-                                      <td className="py-3.5 px-4 text-center">
-                                        <div className="inline-flex flex-col items-center gap-0.5">
-                                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold border shadow-2xs ${member.periodInfo?.freqColor || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                                            <CalendarDaysIcon className="w-3 h-3 shrink-0" />
-                                            <span>{member.periodInfo?.freqLabel || 'Evaluation'}</span>
-                                          </span>
-                                          <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">
-                                            {member.periodInfo?.dateText}
-                                          </span>
-                                          {(member.response.employeeSubmittedAt || (member.response as any).submitted_at || member.response.createdAt) && (
-                                            <span className="text-[10px] text-slate-500 font-medium">
-                                              Submitted {formatEvalDateTime(member.response.employeeSubmittedAt || (member.response as any).submitted_at || member.response.createdAt)}
-                                            </span>
-                                          )}
-                                          {member.isCalibrated && (member.response.serviceManagerApprovedAt || member.response.managerReviewedAt || (member.response as any).manager_reviewed_at || (member.response as any).approved_at || member.response.updatedAt) && (
-                                            <span className="text-[10px] text-emerald-700 font-medium">
-                                              Action Date: {formatEvalDateTime(member.response.serviceManagerApprovedAt || member.response.managerReviewedAt || (member.response as any).manager_reviewed_at || (member.response as any).approved_at || member.response.updatedAt)}
-                                            </span>
-                                          )}
-                                        </div>
+                                          );
+                                        })()}
                                       </td>
 
                                       {/* 3. Date Score / Self Score */}
@@ -8839,9 +9577,6 @@ export const EvaluationTab: React.FC = () => {
                                     </tr>
                                   );
                                 })}
-                              </React.Fragment>
-                            );
-                          })}
                         </React.Fragment>
                       );
                     })}
@@ -9102,109 +9837,83 @@ export const EvaluationTab: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Expanded Submissions Group by Designation */}
+                          {/* Expanded Submissions Group (Rendered directly when Group is Expanded) */}
                           {isExpanded && (
                             <div className="px-5 pb-4 pt-3 border-t border-slate-200/60 bg-white/70 space-y-3">
-                              {group.items.length === 0 || !group.designations || group.designations.length === 0 ? (
+                              {group.items.length === 0 ? (
                                 <div className="py-6 text-center text-xs text-slate-400 font-medium">
                                   No submissions in this category.
                                 </div>
                               ) : (
-                                group.designations.map((desigGroup) => {
-                                  const desigKey = `${group.groupName}_${desigGroup.designationName}`;
-                                  const isDesigExpanded = Boolean(expandedSubmissionDesigs[desigKey]);
+                                <div className="rounded-xl border border-slate-200/80 bg-white shadow-2xs overflow-hidden">
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                      <thead>
+                                        <tr className="bg-slate-50/50 border-b border-slate-200/60 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                          <th className="px-4 py-2.5">Employee</th>
+                                          <th className="px-4 py-2.5">Form / Period</th>
+                                          <th className="px-3 py-2.5 text-center">Frequency</th>
+                                          <th className="px-3 py-2.5 text-center">Self Score</th>
+                                          <th className="px-3 py-2.5 text-center">Manager Score</th>
+                                          <th className="px-4 py-2.5 text-center">Status</th>
+                                          <th className="px-4 py-2.5 text-right">Action</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {group.items.map(r => {
+                                          const info = getEmployeeDisplayInfo(r);
+                                          const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
 
-                                  return (
-                                    <div key={desigGroup.designationName} className="rounded-xl border border-slate-200/80 bg-white shadow-2xs overflow-hidden">
-                                      {/* Designation Header */}
-                                      <div
-                                        onClick={() => setExpandedSubmissionDesigs(prev => ({
-                                          ...prev,
-                                          [desigKey]: !isDesigExpanded
-                                        }))}
-                                        className="px-4 py-2.5 flex items-center justify-between gap-3 bg-slate-50/90 hover:bg-slate-100/90 cursor-pointer select-none transition border-b border-slate-100"
-                                      >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <ChevronRightIcon className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-200 ${isDesigExpanded ? 'rotate-90' : ''}`} />
-                                          <UserGroupIcon className="w-4 h-4 text-teal-600 shrink-0" />
-                                          <span className="font-bold text-slate-800 text-xs truncate">Designation: {desigGroup.designationName}</span>
-                                          <span className="text-[11px] font-medium text-slate-500 shrink-0">
-                                            ({desigGroup.peopleCount} {desigGroup.peopleCount === 1 ? 'person' : 'people'} • {desigGroup.items.length} {desigGroup.items.length === 1 ? 'submission' : 'submissions'})
-                                          </span>
-                                        </div>
-                                        <span className="text-[10px] font-medium text-slate-400 hidden sm:inline-block">
-                                          {isDesigExpanded ? 'Hide ▲' : 'Show ▼'}
-                                        </span>
-                                      </div>
-
-                                      {/* Designation Members Table */}
-                                      {isDesigExpanded && (
-                                        <div className="overflow-x-auto">
-                                          <table className="w-full text-left text-xs border-collapse">
-                                            <thead>
-                                              <tr className="bg-slate-50/50 border-b border-slate-200/60 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                                <th className="px-4 py-2.5">Employee</th>
-                                                <th className="px-4 py-2.5">Form / Period</th>
-                                                <th className="px-3 py-2.5 text-center">Frequency</th>
-                                                <th className="px-3 py-2.5 text-center">Self Score</th>
-                                                <th className="px-3 py-2.5 text-center">Manager Score</th>
-                                                <th className="px-4 py-2.5 text-center">Status</th>
-                                                <th className="px-4 py-2.5 text-right">Action</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100">
-                                              {desigGroup.items.map(r => {
-                                                const info = getEmployeeDisplayInfo(r);
-                                                const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
-
-                                                return (
-                                                  <tr key={r.id} className="hover:bg-slate-50/70 transition">
+                                          return (
+                                            <tr key={r.id} className="group/row hover:bg-slate-50/70 transition">
+                                              <td className="px-4 py-3">
+                                                <div>
+                                                  <div className="font-bold text-slate-900">{info.employeeName}</div>
+                                                  <div className="text-[11px] text-slate-500 font-medium">#{info.employeeCode}</div>
+                                                </div>
+                                              </td>
                                                     <td className="px-4 py-3">
-                                                      <div className="flex items-center gap-3">
-                                                        {info.profileImage ? (
-                                                          <img
-                                                            src={info.profileImage}
-                                                            alt={info.employeeName}
-                                                            className="w-8 h-8 rounded-lg object-cover shrink-0 border border-slate-200"
-                                                            onError={(e) => {
-                                                              (e.currentTarget as HTMLElement).style.display = 'none';
-                                                              const fallback = (e.currentTarget as HTMLElement).nextElementSibling as HTMLElement;
-                                                              if (fallback) fallback.style.display = 'flex';
-                                                            }}
-                                                          />
-                                                        ) : null}
-                                                        <div
-                                                          className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0"
-                                                          style={{ display: info.profileImage ? 'none' : 'flex' }}
-                                                        >
-                                                          {(info.employeeName || 'EM').split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
-                                                        </div>
-                                                        <div>
-                                                          <div className="font-bold text-slate-900">{info.employeeName}</div>
-                                                          <div className="text-[10px] text-slate-500">{info.designation || desigGroup.designationName} • #{info.employeeCode}</div>
-                                                        </div>
-                                                      </div>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                      <div className="font-semibold text-slate-800">{r.periodName || (r as any).form || 'Performance Evaluation'}</div>
-                                                      <div className="text-[10px] text-slate-500 font-medium">{info.teamName}</div>
+                                                     {(() => {
+                                                       const subDate = formatEvalDateTime(r.employeeSubmittedAt || (r as any).submitted_at);
+                                                       const approvedDate = (isCalibrated || r.serviceManagerApprovedAt || r.managerReviewedAt)
+                                                         ? formatEvalDateTime(r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt)
+                                                         : null;
+                                                       const tooltipLines: string[] = [];
+                                                       if (subDate) tooltipLines.push(`Submitted: ${subDate}`);
+                                                       if (approvedDate) tooltipLines.push(`Approved: ${approvedDate}`);
+                                                       const nativeTooltip = tooltipLines.join(' | ');
 
-                                                      {/* Applied / Submitted Date */}
-                                                      {(r.employeeSubmittedAt || (r as any).submitted_at) && (
-                                                        <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-1 font-medium">
-                                                          <ClockIcon className="w-3 h-3 text-slate-400 shrink-0" />
-                                                          <span>Submitted <strong className="font-semibold text-slate-700">{formatEvalDateTime(r.employeeSubmittedAt || (r as any).submitted_at)}</strong></span>
-                                                        </div>
-                                                      )}
+                                                       return (
+                                                         <div
+                                                           className="relative group inline-flex flex-col items-start gap-0.5 cursor-pointer"
+                                                           title={nativeTooltip || undefined}
+                                                         >
+                                                           <div className="font-semibold text-slate-800 group-hover:text-primary-700 transition-colors">
+                                                             {r.periodName || (r as any).form || 'Performance Evaluation'}
+                                                           </div>
+                                                           <div className="text-[10px] text-slate-500 font-medium">{info.teamName}</div>
 
-                                                      {/* Action / Approved Date */}
-                                                      {isCalibrated && (r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt) && (
-                                                        <div className="flex items-center gap-1 text-[10px] text-emerald-700 mt-0.5 font-medium">
-                                                          <CheckCircleIcon className="w-3 h-3 text-emerald-600 shrink-0" />
-                                                          <span>Action Date: <strong className="font-semibold text-emerald-800">{formatEvalDateTime(r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt)}</strong></span>
-                                                        </div>
-                                                      )}
-                                                    </td>
+                                                           {(subDate || approvedDate) && (
+                                                             <div className="absolute bottom-full left-0 mb-2 hidden group-hover/row:flex group-hover:flex flex-col gap-1.5 px-3 py-2 bg-slate-900/95 backdrop-blur-sm text-white text-[11px] rounded-xl shadow-xl border border-slate-700/80 z-50 whitespace-nowrap pointer-events-none transition-all duration-150 animate-in fade-in zoom-in-95">
+                                                               {subDate && (
+                                                                 <div className="flex items-center gap-1.5 text-slate-200">
+                                                                   <ClockIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                                                   <span>Submitted: <strong className="text-white font-semibold">{subDate}</strong></span>
+                                                                 </div>
+                                                               )}
+                                                               {approvedDate && (
+                                                                 <div className="flex items-center gap-1.5 text-slate-200">
+                                                                   <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                                                   <span>Approved: <strong className="text-white font-semibold">{approvedDate}</strong></span>
+                                                                 </div>
+                                                               )}
+                                                               <div className="absolute top-full left-4 -mt-px border-4 border-transparent border-t-slate-900/95" />
+                                                             </div>
+                                                           )}
+                                                         </div>
+                                                       );
+                                                     })()}
+                                                   </td>
                                                     <td className="px-3 py-3 text-center">
                                                       <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200">
                                                         {r.frequency || 'Quarterly'}
@@ -9243,13 +9952,10 @@ export const EvaluationTab: React.FC = () => {
                                             </tbody>
                                           </table>
                                         </div>
-                                      )}
-                                    </div>
-                                  );
-                                })
-                              )}
-                            </div>
-                          )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                         </div>
                       );
                     })
@@ -9285,16 +9991,11 @@ export const EvaluationTab: React.FC = () => {
                             const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
 
                             return (
-                              <tr key={r.id} className="hover:bg-slate-50/70 transition">
+                              <tr key={r.id} className="group/row hover:bg-slate-50/70 transition">
                                 <td className="px-4 py-3.5">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                                      {(info.employeeName || 'EM').split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
-                                    </div>
-                                    <div>
-                                      <div className="font-bold text-slate-900">{info.employeeName}</div>
-                                      <div className="text-[10px] font-mono text-slate-400">#{info.employeeCode}</div>
-                                    </div>
+                                  <div>
+                                    <div className="font-bold text-slate-900 text-xs">{info.employeeName}</div>
+                                    <div className="text-[10px] font-mono text-slate-400">#{info.employeeCode}</div>
                                   </div>
                                 </td>
                                 <td className="px-4 py-3.5">
@@ -9302,23 +10003,45 @@ export const EvaluationTab: React.FC = () => {
                                   <div className="text-[10px] text-slate-400">{info.departmentName}</div>
                                 </td>
                                 <td className="px-4 py-3.5">
-                                  <div className="font-semibold text-slate-800">{r.periodName || (r as any).form || 'Performance Evaluation'}</div>
+                                  {(() => {
+                                    const subDate = formatEvalDateTime(r.employeeSubmittedAt || (r as any).submitted_at || r.createdAt);
+                                    const approvedDate = (isCalibrated || r.serviceManagerApprovedAt || r.managerReviewedAt)
+                                      ? formatEvalDateTime(r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt)
+                                      : null;
+                                    const tooltipLines: string[] = [];
+                                    if (subDate) tooltipLines.push(`Submitted: ${subDate}`);
+                                    if (approvedDate) tooltipLines.push(`Approved: ${approvedDate}`);
+                                    const nativeTooltip = tooltipLines.join(' | ');
 
-                                  {/* Applied / Submitted Date */}
-                                  {(r.employeeSubmittedAt || (r as any).submitted_at || r.createdAt) && (
-                                    <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-1 font-medium">
-                                      <ClockIcon className="w-3 h-3 text-slate-400 shrink-0" />
-                                      <span>Submitted <strong className="font-semibold text-slate-700">{formatEvalDateTime(r.employeeSubmittedAt || (r as any).submitted_at || r.createdAt)}</strong></span>
-                                    </div>
-                                  )}
+                                    return (
+                                      <div
+                                        className="relative group inline-flex flex-col items-start gap-0.5 cursor-pointer"
+                                        title={nativeTooltip || undefined}
+                                      >
+                                        <div className="font-semibold text-slate-800 group-hover:text-primary-700 transition-colors">
+                                          {r.periodName || (r as any).form || 'Performance Evaluation'}
+                                        </div>
 
-                                  {/* Action / Approved Date */}
-                                  {isCalibrated && (r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt) && (
-                                    <div className="flex items-center gap-1 text-[10px] text-emerald-700 mt-0.5 font-medium">
-                                      <CheckCircleIcon className="w-3 h-3 text-emerald-600 shrink-0" />
-                                      <span>Action Date: <strong className="font-semibold text-emerald-800">{formatEvalDateTime(r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt)}</strong></span>
-                                    </div>
-                                  )}
+                                        {(subDate || approvedDate) && (
+                                          <div className="absolute bottom-full left-0 mb-2 hidden group-hover/row:flex group-hover:flex flex-col gap-1.5 px-3 py-2 bg-slate-900/95 backdrop-blur-sm text-white text-[11px] rounded-xl shadow-xl border border-slate-700/80 z-50 whitespace-nowrap pointer-events-none transition-all duration-150 animate-in fade-in zoom-in-95">
+                                            {subDate && (
+                                              <div className="flex items-center gap-1.5 text-slate-200">
+                                                <ClockIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                                <span>Submitted: <strong className="text-white font-semibold">{subDate}</strong></span>
+                                              </div>
+                                            )}
+                                            {approvedDate && (
+                                              <div className="flex items-center gap-1.5 text-slate-200">
+                                                <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                                <span>Approved: <strong className="text-white font-semibold">{approvedDate}</strong></span>
+                                              </div>
+                                            )}
+                                            <div className="absolute top-full left-4 -mt-px border-4 border-transparent border-t-slate-900/95" />
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </td>
                                 <td className="px-3 py-3.5 text-center">
                                   <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200">
@@ -9657,31 +10380,20 @@ export const EvaluationTab: React.FC = () => {
                           return (
                             <tr key={r.id} className="hover:bg-slate-50/70 transition-colors group">
                               <td className="px-5 py-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-br from-teal-700 to-slate-800 text-white font-medium text-xs flex items-center justify-center shrink-0 shadow-2xs">
-                                    {initials}
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-medium text-xs text-slate-800 group-hover:text-teal-900 transition">
+                                      {employeeName || r.employeeName}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 font-mono">
+                                      #{employeeCode}
+                                    </span>
                                   </div>
-                                  <div className="min-w-0">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-medium text-xs text-slate-800 group-hover:text-teal-900 transition">
-                                        {employeeName || r.employeeName}
-                                      </span>
-                                      <span className="text-[10px] text-slate-400 font-mono">
-                                        #{employeeCode}
-                                      </span>
-                                    </div>
-                                    <div className="text-[11px] font-normal text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200/70 shadow-2xs">
-                                        <BuildingOfficeIcon className="w-3 h-3 text-teal-600" />
-                                        <span>{teamName}</span>
-                                      </span>
-                                      {r.designation && r.designation.toLowerCase() !== 'team member' && (
-                                        <>
-                                          <span className="text-slate-300">•</span>
-                                          <span className="text-slate-500 font-normal">{r.designation}</span>
-                                        </>
-                                      )}
-                                    </div>
+                                  <div className="text-[11px] font-normal text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200/70 shadow-2xs">
+                                      <BuildingOfficeIcon className="w-3 h-3 text-teal-600" />
+                                      <span>{teamName}</span>
+                                    </span>
                                   </div>
                                 </div>
                               </td>
@@ -9776,9 +10488,6 @@ export const EvaluationTab: React.FC = () => {
               <div className="bg-white px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 shrink-0">
                 {/* Left: Employee Details */}
                 <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-700 to-slate-900 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-xs">
-                    {(employeeName || 'EM').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
-                  </div>
                   <div className="space-y-0.5 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-base font-bold text-slate-900 tracking-tight">
@@ -9891,7 +10600,7 @@ export const EvaluationTab: React.FC = () => {
 
                       {/* Deliverables Table (Clean, neat columns without box clutter) */}
                       <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs min-w-[880px] table-auto">
+                        <table className="w-full text-left text-xs min-w-[780px] table-auto">
                           <thead className="bg-white text-slate-400 font-semibold border-b border-slate-100 text-[11px] uppercase tracking-wider">
                             <tr>
                               <th className="px-5 py-3 min-w-[200px]">Deliverable</th>
@@ -9899,13 +10608,15 @@ export const EvaluationTab: React.FC = () => {
                               <th className="px-3 py-3 text-center whitespace-nowrap min-w-[85px]">Weight</th>
                               <th className="px-3 py-3 text-center whitespace-nowrap min-w-[95px]">Actual PM</th>
                               <th className="px-3 py-3 text-center whitespace-nowrap min-w-[95px]">Earned</th>
-                              <th className="px-4 py-3 min-w-[160px] max-w-[220px]">Employee Remarks</th>
+                              <th className="px-3 py-3 text-center whitespace-nowrap min-w-[130px]">Insufficient</th>
                               <th className="px-3 py-3 text-center min-w-[150px] bg-slate-50/50 text-slate-700">
                                 {isReadOnly ? 'Manager Goal & Score' : 'Manager Calibration'}
                               </th>
-                              <th className="px-5 py-3 min-w-[190px]">
-                                Manager Remarks
-                              </th>
+                              {!isReadOnly && (
+                                <th className="px-5 py-3 min-w-[190px]">
+                                  Manager Remarks
+                                </th>
+                              )}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
@@ -9923,20 +10634,62 @@ export const EvaluationTab: React.FC = () => {
                               const isNeg = isNegativeKpi(kpi);
 
                               return (
-                                <tr key={kpi.id} className={`transition-colors ${isNeg ? 'bg-rose-50/20 hover:bg-rose-50/40' : 'hover:bg-slate-50/50'}`}>
-                                  {/* Deliverable Specification */}
+                                <tr
+                                  key={kpi.id}
+                                  className={`group/delivRow transition-colors border-b border-slate-100 last:border-b-0 ${isNeg ? 'bg-rose-50/25 hover:bg-rose-50/45 border-l-4 border-l-rose-400' : 'hover:bg-slate-50/50 border-l-4 border-l-transparent'}`}
+                                  title={[respItem?.employeeRemarks?.trim() ? `Employee Remark: ${respItem.employeeRemarks.trim()}` : '', currentMgrRemark?.trim() ? `Manager Remark: ${currentMgrRemark.trim()}` : ''].filter(Boolean).join('\n') || undefined}
+                                >
+                                  {/* Deliverable Specification (with sleek hover for Employee & Manager Remarks) */}
                                   <td className="px-5 py-3.5">
-                                    <div className={`text-xs ${isNeg ? 'font-bold text-rose-600' : 'font-semibold text-slate-900'}`}>
-                                      {kpi.name}
-                                    </div>
-                                    {kpi.description && (
-                                      <div className="text-[11px] text-slate-400 mt-0.5 truncate max-w-xs">{kpi.description}</div>
-                                    )}
+                                    <DeliverableRemarksHover selfRemarks={respItem?.employeeRemarks} mgrRemarks={currentMgrRemark}>
+                                      <div className="flex flex-col gap-1 cursor-pointer">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className={`text-xs ${isNeg ? 'font-bold text-rose-950' : 'font-semibold text-slate-900'}`}>
+                                            {kpi.name}
+                                          </span>
+                                          {isNeg && (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200/90 shadow-2xs select-none">
+                                              Low Target
+                                            </span>
+                                          )}
+                                          {respItem?.employeeRemarks?.trim() && (
+                                            <span
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-primary-50 text-primary-700 border border-primary-200 shadow-2xs cursor-help"
+                                              title={`Employee Remarks: ${respItem.employeeRemarks}`}
+                                            >
+                                              <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-600" />
+                                              <span>Emp</span>
+                                            </span>
+                                          )}
+                                          {currentMgrRemark?.trim() && (
+                                            <span
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-teal-50 text-teal-800 border border-teal-200 shadow-2xs cursor-help"
+                                              title={`Manager Remarks: ${currentMgrRemark}`}
+                                            >
+                                              <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600" />
+                                              <span>Mgr</span>
+                                            </span>
+                                          )}
+                                        </div>
+                                        {kpi.description && (
+                                          <div className={`text-[11px] mt-0.5 truncate max-w-xs ${isNeg ? 'text-rose-600/80 font-medium' : 'text-slate-400'}`}>{kpi.description}</div>
+                                        )}
+                                      </div>
+                                    </DeliverableRemarksHover>
                                   </td>
 
-                                  {/* Target Goal (Clean text, no bulky box) */}
-                                  <td className={`px-3 py-3.5 text-center font-bold text-xs whitespace-nowrap ${isNeg ? 'text-rose-600' : 'text-slate-700'}`}>
-                                    {kpi.targetFromManager}
+                                  {/* Target Goal */}
+                                  <td className="px-3 py-3.5 text-center font-bold text-xs whitespace-nowrap">
+                                    <div className="flex flex-col items-center justify-center gap-0.5">
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${isNeg ? 'bg-rose-100/70 text-rose-800 border-rose-200 shadow-2xs' : 'text-slate-700'}`}>
+                                        {kpi.targetFromManager}
+                                      </span>
+                                      {isNeg && (
+                                        <span className="text-[9px] font-bold text-rose-700 tracking-tight">
+                                          Low Target
+                                        </span>
+                                      )}
+                                    </div>
                                   </td>
 
                                   {/* Target Score */}
@@ -9985,9 +10738,27 @@ export const EvaluationTab: React.FC = () => {
                                     {calcEmp.earnedScore.toFixed(2)}%
                                   </td>
 
-                                  {/* Employee Remarks */}
-                                  <td className="px-4 py-3.5 text-slate-600 text-[11px]">
-                                    <ExpandableRemarkView text={respItem?.employeeRemarks || ''} fallback="—" />
+                                  {/* Insufficient / Variance Column with Hover for Employee & Manager Remarks */}
+                                  <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                                    {(() => {
+                                      const status = getInsufficientStatus(kpi, empActual);
+                                      const empRemark = respItem?.employeeRemarks?.trim();
+                                      return (
+                                        <DeliverableRemarksHover
+                                          selfRemarks={empRemark}
+                                          mgrRemarks={currentMgrRemark}
+                                          align="center"
+                                          className="w-auto inline-flex justify-center"
+                                        >
+                                          <span
+                                            className={`inline-flex items-center gap-1 font-bold px-2.5 py-0.5 rounded-full border text-[10px] shadow-2xs ${status.badgeClass} ${empRemark || currentMgrRemark ? 'cursor-help' : ''}`}
+                                          >
+                                            {status.label}
+                                            {(empRemark || currentMgrRemark) && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 ml-0.5 opacity-70 shrink-0" />}
+                                          </span>
+                                        </DeliverableRemarksHover>
+                                      );
+                                    })()}
                                   </td>
 
                                   {/* Manager Goal & Score Column */}
@@ -10017,8 +10788,14 @@ export const EvaluationTab: React.FC = () => {
                                               <div className="flex items-center justify-center gap-1.5">
                                                 <input
                                                   type="number"
+                                                  step="1"
                                                   min="0"
-                                                  value={currentMgrActual}
+                                                  value={currentMgrActual !== '' && currentMgrActual !== null && currentMgrActual !== undefined ? (typeof currentMgrActual === 'number' ? Math.floor(currentMgrActual) : (String(currentMgrActual).includes('.') ? parseInt(String(currentMgrActual), 10) : currentMgrActual)) : ''}
+                                                  onKeyDown={e => {
+                                                    if (['.', ',', 'e', 'E', '+', '-'].includes(e.key)) {
+                                                      e.preventDefault();
+                                                    }
+                                                  }}
                                                   onChange={e => handleMgrRowActualChange(kpi, e.target.value)}
                                                   placeholder="0"
                                                   className={`w-16 h-8 px-2 text-center font-bold text-xs rounded-full transition shadow-2xs focus:outline-none ${isGoalModified
@@ -10059,11 +10836,9 @@ export const EvaluationTab: React.FC = () => {
                                     })()}
                                   </td>
 
-                                  {/* Manager Remarks Column */}
-                                  <td className="px-5 py-3.5 min-w-[200px]">
-                                    {isReadOnly ? (
-                                      <ExpandableRemarkView text={currentMgrRemark} fallback="—" />
-                                    ) : (
+                                  {/* Manager Remarks Column (Only rendered when NOT read-only for editing) */}
+                                  {!isReadOnly && (
+                                    <td className="px-5 py-3.5 min-w-[200px]">
                                       <ExpandableRemarkInput
                                         value={currentMgrRemark}
                                         onChange={val => handleMgrRowRemarkChange(kpi.id, val)}
@@ -10072,8 +10847,8 @@ export const EvaluationTab: React.FC = () => {
                                           ? 'bg-amber-50/90 border-2 border-amber-400 focus:border-amber-600 text-slate-900 placeholder:text-amber-700'
                                           : 'bg-slate-50 focus:bg-white border border-slate-200 focus:border-teal-500 text-slate-800'}
                                       />
-                                    )}
-                                  </td>
+                                    </td>
+                                  )}
                                 </tr>
                               );
                             })}
@@ -10478,7 +11253,8 @@ export const EvaluationTab: React.FC = () => {
                       : baseTeamMembers;
 
                     const alreadyAssignedCount = baseTeamMembers.filter((m: any) => isEmpAlreadyAssignedForPeriod(String(m.employee_id || m.id))).length;
-                    const assignableMembers = baseTeamMembers.filter((m: any) => !isEmpAlreadyAssignedForPeriod(String(m.employee_id || m.id)));
+                    const pendingEvalCount = baseTeamMembers.filter((m: any) => !isEmpAlreadyAssignedForPeriod(String(m.employee_id || m.id)) && Boolean(getEmpPendingEvaluation(String(m.employee_id || m.id)))).length;
+                    const assignableMembers = baseTeamMembers.filter((m: any) => !isEmpAlreadyAssignedForPeriod(String(m.employee_id || m.id)) && !getEmpPendingEvaluation(String(m.employee_id || m.id)));
                     const activeSelectedCount = mgrAssignEmpIds.filter(id => assignableMembers.some((m: any) => String(m.employee_id || m.id) === id)).length;
 
                     return (
@@ -10491,8 +11267,14 @@ export const EvaluationTab: React.FC = () => {
                             <span className="text-[10px] font-medium text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
                               {activeSelectedCount} of {assignableMembers.length} available selected
                             </span>
+                            {pendingEvalCount > 0 && (
+                              <span className="text-[10px] font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 shadow-2xs flex items-center gap-1">
+                                <span>⏳</span>
+                                <span>{pendingEvalCount} pending evaluation</span>
+                              </span>
+                            )}
                             {alreadyAssignedCount > 0 && (
-                              <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 shadow-2xs flex items-center gap-1">
+                              <span className="text-[10px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs flex items-center gap-1">
                                 <span>🔒</span>
                                 <span>{alreadyAssignedCount} already booked ({mgrPeriodType === 'quarterly' ? `Stage ${mgrPeriodQuarter}` : 'this period'})</span>
                               </span>
@@ -10522,7 +11304,7 @@ export const EvaluationTab: React.FC = () => {
                                 }`}
                             >
                               {(() => {
-                                if (assignableMembers.length === 0) return 'All Booked';
+                                if (assignableMembers.length === 0) return 'No Members Available';
                                 const assignableIds = assignableMembers.map((e: any) => String(e.employee_id || e.id)).filter(Boolean);
                                 const allSelected = assignableIds.length > 0 && assignableIds.every((id: string) => mgrAssignEmpIds.includes(id));
                                 return allSelected ? 'Deselect All' : 'Select All';
@@ -10539,32 +11321,37 @@ export const EvaluationTab: React.FC = () => {
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
                             {filteredMembers.map((emp: any) => {
                               const empId = String(emp.employee_id || emp.id);
+                              const pendingEval = getEmpPendingEvaluation(empId);
                               const isAlreadyAssigned = isEmpAlreadyAssignedForPeriod(empId);
-                              const isSelected = !isAlreadyAssigned && mgrAssignEmpIds.includes(empId);
+                              const isBlocked = Boolean(pendingEval) || isAlreadyAssigned;
+                              const isSelected = !isBlocked && mgrAssignEmpIds.includes(empId);
                               const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || 'Employee';
+                              const pendingStatus = pendingEval ? getPendingStatusLabel(pendingEval) : null;
 
                               return (
                                 <button
                                   type="button"
                                   key={empId}
-                                  disabled={isAlreadyAssigned}
+                                  disabled={isBlocked}
                                   onClick={() => handleMgrToggleEmp(empId)}
-                                  className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition select-none ${isAlreadyAssigned
+                                  className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition select-none ${isBlocked
                                     ? 'bg-slate-100/80 border-slate-200 text-slate-400 cursor-not-allowed opacity-75'
                                     : isSelected
                                       ? 'bg-teal-50/70 border-teal-500 ring-1 ring-teal-500/30 text-teal-950 shadow-2xs cursor-pointer'
                                       : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 cursor-pointer'
                                     }`}
                                   title={
-                                    isAlreadyAssigned
-                                      ? `${fullName} is already assigned metrics for ${mgrAssignPeriod || 'this period'} and cannot be booked again.`
-                                      : `Click to toggle assignment for ${fullName}`
+                                    pendingEval && pendingStatus
+                                      ? `${fullName}: ${pendingStatus.tooltip}`
+                                      : isAlreadyAssigned
+                                        ? `${fullName} is already assigned metrics for ${mgrAssignPeriod || 'this period'} and cannot be booked again.`
+                                        : `Click to toggle assignment for ${fullName}`
                                   }
                                 >
                                   <div className="flex items-center gap-1.5 min-w-0">
-                                    <span className={`w-2 h-2 rounded-full shrink-0 ${isAlreadyAssigned ? 'bg-slate-300' : isSelected ? 'bg-teal-600' : 'bg-slate-300'
+                                    <span className={`w-2 h-2 rounded-full shrink-0 ${isBlocked ? 'bg-slate-300' : isSelected ? 'bg-teal-600' : 'bg-slate-300'
                                       }`} />
-                                    <span className={`text-xs truncate ${isAlreadyAssigned
+                                    <span className={`text-xs truncate ${isBlocked
                                       ? 'font-normal text-slate-400'
                                       : isSelected
                                         ? 'font-medium text-teal-950'
@@ -10577,8 +11364,13 @@ export const EvaluationTab: React.FC = () => {
                                     <span className="text-[10px] text-slate-400 font-normal">
                                       #{empId}
                                     </span>
-                                    {isAlreadyAssigned ? (
-                                      <span className="text-[9px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 shadow-2xs flex items-center gap-1">
+                                    {pendingEval && pendingStatus ? (
+                                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border shadow-2xs flex items-center gap-1 ${pendingStatus.badgeColor}`}>
+                                        <span>{pendingStatus.icon}</span>
+                                        <span>{pendingStatus.badgeText}</span>
+                                      </span>
+                                    ) : isAlreadyAssigned ? (
+                                      <span className="text-[9px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shadow-2xs flex items-center gap-1">
                                         <span>🔒</span>
                                         <span>{mgrPeriodType === 'quarterly' ? `Stage ${mgrPeriodQuarter}` : 'Booked'}</span>
                                       </span>
@@ -10601,37 +11393,69 @@ export const EvaluationTab: React.FC = () => {
 
               {/* Step 2: Performance Metrics, Descriptions & Target Scores */}
               <div className="space-y-3.5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/80">
-                        Step 2
+                {/* Step 2 Header with Integrated Weightage & Quick Actions */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-200/80">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/90 shadow-2xs">
+                      Step 2
+                    </span>
+                    <h4 className="text-xs font-bold text-slate-900">
+                      Deliverables & Targets
+                    </h4>
+
+                    {/* Integrated Total Weightage Badge */}
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border shadow-2xs transition-colors ${
+                      mgrTotalWeightage === 100 && areAllMgrCategoriesBalanced
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : 'bg-amber-50 text-amber-900 border-amber-300'
+                    }`}>
+                      {mgrTotalWeightage === 100 && areAllMgrCategoriesBalanced ? (
+                        <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      ) : (
+                        <ExclamationTriangleIcon className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      )}
+                      <span>
+                        Weight: {mgrTotalWeightage}% / 100%
+                        {!areAllMgrCategoriesBalanced && ' (Unbalanced)'}
                       </span>
-                      <h4 className="text-xs font-bold text-slate-900">
-                        Deliverables & Targets
-                      </h4>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Configure category weights and deliverable targets (100% total weightage).
-                    </p>
+                    </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    {/* Collapsible Syntax Guide Toggle */}
                     <button
                       type="button"
-                      onClick={() => setMgrAssignCategories(DEFAULT_KPI_CATEGORIES)}
-                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
+                      onClick={() => setShowTargetGuide(prev => !prev)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition border shadow-2xs cursor-pointer ${
+                        showTargetGuide
+                          ? 'bg-teal-50 text-teal-800 border-teal-300 ring-2 ring-teal-500/20'
+                          : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                      }`}
+                      title="Show / hide Deliverable Metric Types & Supported Target Symbols guide"
                     >
-                      Reset Template
+                      <InformationCircleIcon className={`w-3.5 h-3.5 ${showTargetGuide ? 'text-teal-600' : 'text-slate-500'}`} />
+                      <span>Syntax Guide</span>
+                      <span className="text-[9px] text-slate-400">{showTargetGuide ? '▲' : '▼'}</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={handleResetActiveTemplate}
+                      className="px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer shadow-2xs"
+                      title="Reset current form to system default deliverables"
+                    >
+                      Reset
+                    </button>
+
                     <button
                       type="button"
                       onClick={handleMgrAddCategory}
                       disabled={mgrTotalWeightage >= 100}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs ${mgrTotalWeightage >= 100
-                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                        : 'bg-teal-700 hover:bg-teal-800 text-white cursor-pointer'
-                        }`}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs ${
+                        mgrTotalWeightage >= 100
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                          : 'bg-teal-700 hover:bg-teal-800 text-white cursor-pointer shadow-teal-700/20'
+                      }`}
                     >
                       <PlusIcon className="w-3.5 h-3.5" />
                       <span>Add Category</span>
@@ -10639,78 +11463,169 @@ export const EvaluationTab: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Metric Types Highlights & Supported Target Symbols Legend */}
-                <div className="rounded-2xl bg-gradient-to-r from-slate-50 via-teal-50/30 to-rose-50/30 border border-slate-200/90 shadow-2xs p-3.5 space-y-2.5 text-xs">
-                  {/* Row 1: Types */}
-                  <div className="flex flex-wrap items-center justify-between gap-2.5">
-                    <div className="flex items-center gap-2">
-                      <InformationCircleIcon className="w-4 h-4 text-teal-700 shrink-0" />
-                      <span className="font-bold text-slate-800">Deliverable Metric Types:</span>
-                    </div>
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      {/* Standard Metric Pill */}
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white border border-teal-200/90 shadow-2xs">
-                        <span className="w-4 h-4 rounded-full bg-teal-100 text-teal-800 text-[10px] font-extrabold flex items-center justify-center">
-                          +
+                {/* Team Form Selector Bar */}
+                {(() => {
+                  const fallbackForms = [
+                    { template_key: 'form_1', template_name: 'Form 1', is_default: true, categories: [] },
+                    { template_key: 'form_2', template_name: 'Form 2', is_default: false, categories: [] },
+                    { template_key: 'form_3', template_name: 'Form 3', is_default: false, categories: [] },
+                    { template_key: 'form_4', template_name: 'Form 4', is_default: false, categories: [] },
+                  ];
+                  const displayedTemplates = (mgrTemplates && mgrTemplates.length > 0) ? mgrTemplates : fallbackForms;
+
+                  return (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-1.5 rounded-xl bg-slate-100/90 border border-slate-200/90 shadow-2xs">
+                      {/* Left: Tab items */}
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-[11px] font-bold text-slate-500 px-2 py-1 select-none flex items-center gap-1">
+                          <BriefcaseIcon className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Team Form:</span>
                         </span>
-                        <span className="font-bold text-teal-950 text-[11px]">+ Standard</span>
-                        <span className="text-[10px] text-slate-500 font-medium">(Higher is better • Output & Productivity)</span>
+
+                        {displayedTemplates.map(t => {
+                          const isActive = t.template_key === activeTemplateKey;
+                          return (
+                            <button
+                              key={t.template_key}
+                              type="button"
+                              onClick={() => handleSelectTemplate(t.template_key)}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer select-none ${
+                                isActive
+                                  ? 'bg-white text-teal-900 shadow-2xs border border-slate-200/90 ring-1 ring-teal-500/20'
+                                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                              }`}
+                            >
+                              <span>{t.template_name || `Form ${t.template_key.replace('form_', '')}`}</span>
+                              {isActive && <CheckIcon className="w-3.5 h-3.5 text-teal-600" />}
+                            </button>
+                          );
+                        })}
+
+                        <button
+                          type="button"
+                          onClick={handleAddNewTemplate}
+                          className="px-2.5 py-1 text-xs font-semibold text-teal-700 hover:text-teal-900 hover:bg-white/80 rounded-lg transition cursor-pointer flex items-center gap-1"
+                          title="Add another Form slot for a new team"
+                        >
+                          <PlusIcon className="w-3 h-3" />
+                          <span>New Form</span>
+                        </button>
+
+                        {isLoadingTemplates && (
+                          <div className="flex items-center gap-1 text-[10px] text-teal-700 font-medium px-2 py-0.5">
+                            <ArrowPathIcon className="w-3 h-3 animate-spin" />
+                          </div>
+                        )}
                       </div>
 
-                      {/* Negative / Penalty Metric Pill */}
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white border border-rose-200/90 shadow-2xs">
-                        <span className="w-4 h-4 rounded-full bg-rose-100 text-rose-700 text-[10px] font-extrabold flex items-center justify-center">
-                          −
-                        </span>
-                        <span className="font-bold text-rose-950 text-[11px]">− Negative / Penalty</span>
-                        <span className="text-[10px] text-rose-700 font-medium">(Lower is better • Errors, Escalations & Deductions)</span>
+                      {/* Right: Actions */}
+                      <div className="flex items-center gap-1.5 shrink-0 px-1">
+                        {isRenamingTemplate ? (
+                          <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-teal-400 shadow-2xs">
+                            <input
+                              type="text"
+                              value={renameTemplateInput}
+                              onChange={e => setRenameTemplateInput(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleConfirmRenameTemplate();
+                                if (e.key === 'Escape') setIsRenamingTemplate(false);
+                              }}
+                              className="h-6.5 px-2 text-xs bg-transparent border-none text-slate-900 font-semibold focus:outline-none w-28 sm:w-36"
+                              placeholder="e.g. Media 2"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={handleConfirmRenameTemplate}
+                              className="px-2 py-0.5 text-[10px] font-bold text-white bg-teal-700 hover:bg-teal-800 rounded transition cursor-pointer"
+                            >
+                              OK
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsRenamingTemplate(false)}
+                              className="px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 hover:bg-slate-100 rounded transition cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleStartRenameTemplate}
+                            className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-white rounded-md transition cursor-pointer flex items-center gap-1"
+                            title="Rename this form"
+                          >
+                            <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Rename</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={handleSaveActiveTemplate}
+                          disabled={isSavingTemplate}
+                          className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 text-teal-800 border border-slate-200/90 rounded-md text-xs font-semibold transition shadow-2xs cursor-pointer disabled:opacity-50"
+                          title="Click to manually save changes to this form"
+                        >
+                          {isSavingTemplate ? (
+                            <ArrowPathIcon className="w-3.5 h-3.5 animate-spin text-teal-600" />
+                          ) : (
+                            <CheckIcon className="w-3.5 h-3.5 text-teal-600" />
+                          )}
+                          <span>{isSavingTemplate ? 'Saving...' : 'Save Form'}</span>
+                        </button>
                       </div>
                     </div>
-                  </div>
+                  );
+                })()}
 
-                  {/* Row 2: Target Expression Symbols Guide */}
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/60">
-                    <span className="text-[11px] font-bold text-slate-700 shrink-0">Supported Target Symbols:</span>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 font-mono text-[10px] font-bold" title="Strictly less than: score reduces if equal to or higher than threshold">
-                        <code>&lt; N</code> <span className="font-sans font-normal text-rose-600">(e.g. &lt; 2 errors)</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 font-mono text-[10px] font-bold" title="Less than or equal to: maximum tolerance limit">
-                        <code>&lt;= N</code> <span className="font-sans font-normal text-rose-600">(e.g. &lt;= 3 max limit)</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-50 text-teal-800 border border-teal-200 font-mono text-[10px] font-bold" title="Greater than or equal to: minimum required threshold">
-                        <code>&gt;= N</code> <span className="font-sans font-normal text-teal-600">(e.g. &gt;= 95% SLA)</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-50 text-teal-800 border border-teal-200 font-mono text-[10px] font-bold" title="Strictly greater than">
-                        <code>&gt; N</code> <span className="font-sans font-normal text-teal-600">(e.g. &gt; 10 targets)</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 font-mono text-[10px] font-bold" title="Zero tolerance penalty">
-                        <code>0 misses</code> <span className="font-sans font-normal text-amber-700">(Zero tolerance)</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-800 border border-slate-200 font-mono text-[10px] font-bold" title="Exact target number">
-                        <code>N</code> <span className="font-sans font-normal text-slate-600">(e.g. 1950, 3 exact)</span>
-                      </span>
+                {/* Collapsible Syntax & Metric Types Guide (Shown only when toggled) */}
+                {showTargetGuide && (
+                  <div className="rounded-xl bg-white border border-teal-200/90 shadow-sm p-3 space-y-2.5 text-xs animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <InformationCircleIcon className="w-4 h-4 text-teal-600 shrink-0" />
+                        <span className="font-bold text-slate-800 text-xs">Deliverable Syntax & Metric Types Guide</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowTargetGuide(false)}
+                        className="text-slate-400 hover:text-slate-600 text-xs p-0.5 rounded hover:bg-slate-100 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-teal-50/50 border border-teal-100">
+                        <span className="w-5 h-5 rounded-full bg-teal-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">+</span>
+                        <div>
+                          <div className="font-bold text-teal-950 text-xs">+ Standard Metric</div>
+                          <div className="text-[11px] text-slate-500 font-normal">Higher is better • Output, Productivity & Goals</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-rose-50/50 border border-rose-100">
+                        <span className="w-5 h-5 rounded-full bg-rose-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">−</span>
+                        <div>
+                          <div className="font-bold text-rose-950 text-xs">− Negative / Penalty Metric</div>
+                          <div className="text-[11px] text-rose-600 font-normal">Lower is better • Errors, Escalations & Deductions</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-1.5 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-slate-600 mr-1">Target Symbols:</span>
+                      <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-[11px] font-mono">&lt; N (e.g. &lt; 2 errors)</code>
+                      <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-[11px] font-mono">&lt;= N (e.g. &lt;= 3 max)</code>
+                      <code className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200 text-[11px] font-mono">&gt;= N (e.g. &gt;= 95% SLA)</code>
+                      <code className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200 text-[11px] font-mono">&gt; N (e.g. &gt; 10 targets)</code>
+                      <code className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[11px] font-mono">0 misses (Zero tolerance)</code>
+                      <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-[11px] font-mono">N (Exact number)</code>
                     </div>
                   </div>
-                </div>
-
-                {/* Weightage Status Alert */}
-                <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 ${mgrTotalWeightage === 100 && areAllMgrCategoriesBalanced
-                  ? 'bg-teal-50 border border-teal-200 text-teal-900'
-                  : 'bg-amber-50 border border-amber-200 text-amber-900'
-                  }`}>
-                  <div className="flex items-center gap-2">
-                    {mgrTotalWeightage === 100 && areAllMgrCategoriesBalanced ? (
-                      <CheckCircleIcon className="w-4 h-4 text-teal-600 shrink-0" />
-                    ) : (
-                      <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 shrink-0" />
-                    )}
-                    <span>
-                      Total Category Weight: <strong>{mgrTotalWeightage}% / 100%</strong>
-                      {!areAllMgrCategoriesBalanced && ' — Balance deliverable scores.'}
-                    </span>
-                  </div>
-                </div>
+                )}
 
                 {/* Categories & KPIs List */}
                 <div className="space-y-4">
