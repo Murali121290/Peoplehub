@@ -2094,6 +2094,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">Check-Out</label>
                 <TimePicker
                   value={regCheckOut}
+                  defaultPeriod="PM"
                   onChange={(val) => setRegCheckOut(val)}
                   disabled={!!(regularizingCell.checkOut && regularizingCell.checkOut !== "-" && regularizingCell.checkOut !== "—")}
                   className="w-full"
