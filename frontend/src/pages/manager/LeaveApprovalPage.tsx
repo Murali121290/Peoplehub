@@ -102,6 +102,36 @@ const LeaveApprovalPage: React.FC = () => {
     return "Future";
   };
 
+  const isLeaveCancelable = (leave: any) => {
+    if (leave.status !== "Approved" || leave.request_type !== "Leave") return false;
+
+    const todayStr = getKolkataTodayString();
+    const endDateStr = leave.to_date || leave.from_date;
+    if (!endDateStr) return false;
+
+    let targetEndDateStr = "";
+    if (typeof endDateStr === "string") {
+      targetEndDateStr = endDateStr.split("T")[0].split(" ")[0];
+    } else if (endDateStr instanceof Date) {
+      const options = { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" } as const;
+      targetEndDateStr = new Intl.DateTimeFormat("en-CA", options).format(endDateStr);
+    }
+
+    // If the last date of the leave is before today, the leave is finished
+    if (targetEndDateStr < todayStr) return false;
+
+    // Also check if all cancellable dates are already cancelled or in the past
+    if (Array.isArray(leave.cancellable_dates) && leave.cancellable_dates.length > 0) {
+      const hasActiveFutureOrTodayDate = leave.cancellable_dates.some((dStr: string) => {
+        const isCancelled = Array.isArray(leave.cancelled_dates) && leave.cancelled_dates.includes(dStr);
+        return !isCancelled && dStr >= todayStr;
+      });
+      if (!hasActiveFutureOrTodayDate) return false;
+    }
+
+    return true;
+  };
+
   const submitCancellation = async () => {
     if (!selectedLeaveForCancel || selectedDatesToCancel.length === 0) return;
     try {
@@ -564,7 +594,7 @@ const LeaveApprovalPage: React.FC = () => {
                                   Reject
                                 </Button>
                               </div>
-                            ) : (leave.status === "Approved" && leave.request_type === "Leave") ? (
+                            ) : isLeaveCancelable(leave) ? (
                               <div className="flex items-center justify-center gap-2">
                                 <Button
                                   variant="danger"
