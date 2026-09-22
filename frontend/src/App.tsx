@@ -104,6 +104,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 };
 
 function App() {
+  const { user } = useAuthStore();
   useEffect(() => {
     const handleContextMenu = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -127,6 +128,41 @@ function App() {
       document.removeEventListener('dragstart', handleDragStart, true);
     };
   }, []);
+
+  // Conditionally block Inspect Element for non-admin users
+  useEffect(() => {
+    const userRole = (user?.role || '').toLowerCase();
+    const isAdmin = userRole.includes('admin') || userRole.includes('super');
+    
+    // If the user is an admin, do not block devtools/context menu
+    if (isAdmin) return;
+
+    const blockContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+
+    const blockShortcuts = (e: KeyboardEvent) => {
+      if (
+        e.keyCode === 123 || 
+        (e.ctrlKey && e.shiftKey && e.keyCode === 73) || 
+        (e.ctrlKey && e.shiftKey && e.keyCode === 74) || 
+        (e.ctrlKey && e.keyCode === 85) || 
+        (e.metaKey && e.altKey && e.keyCode === 73) || 
+        (e.metaKey && e.altKey && e.keyCode === 74) || 
+        (e.metaKey && e.altKey && e.keyCode === 85)
+      ) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('contextmenu', blockContextMenu);
+    document.addEventListener('keydown', blockShortcuts);
+
+    return () => {
+      document.removeEventListener('contextmenu', blockContextMenu);
+      document.removeEventListener('keydown', blockShortcuts);
+    };
+  }, [user]);
 
   return (<BrowserRouter>
 
