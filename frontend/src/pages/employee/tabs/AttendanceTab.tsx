@@ -745,9 +745,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       totalHoursFormatted = formatHoursMinutes(totalHours);
       addedMinutes = Number(attRec.addedMinutes || attRec.added_minutes || 0);
 
-      // Overtime calculation sample (>8h)
-      if (workingHours > 8) {
-        const otVal = workingHours - 8;
+      // Overtime calculation based on Total Hours (>9h)
+      if (totalHours > 9) {
+        const otVal = totalHours - 9;
         overtime = formatHoursMinutes(otVal);
       }
     }
