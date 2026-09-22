@@ -2031,6 +2031,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">To Time</label>
                 <TimePicker
                   value={toTime}
+                  defaultPeriod="PM"
                   onChange={(val) => setToTime(val)}
                   className="w-full"
                 />

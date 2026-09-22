@@ -29,6 +29,7 @@ import {
   ArrowPathIcon,
   ArrowDownTrayIcon,
   XMarkIcon,
+  ArrowUpIcon,
 } from "@heroicons/react/24/outline";
 import Sidebar from "../layouts/components/Sidebar";
 import { computeAttendanceBadgeLabel } from "../utils/attendance";
@@ -413,6 +414,31 @@ const ManagerDashboardPage = () => {
       addedMinutes: record.addedMinutes ?? record.added_minutes ?? 0,
       remarks: record.remarks || "",
     });
+  };
+
+  const handleReplaceBiometricToWeb = () => {
+    if (!isHrUser) {
+      toast.error("Only HR and Admin can replace attendance times.");
+      return;
+    }
+    const hasWebCheckIn = !!(editForm.checkIn && editForm.checkIn.trim() !== "" && editForm.checkIn !== "-");
+    const hasWebCheckOut = !!(editForm.checkOut && editForm.checkOut.trim() !== "" && editForm.checkOut !== "-");
+    if (hasWebCheckIn || hasWebCheckOut) {
+      toast.error("Cannot replace: Web Check In and Web Check Out must both be empty.");
+      return;
+    }
+    const hasCardIn = !!(editForm.cardCheckIn && editForm.cardCheckIn.trim() !== "" && editForm.cardCheckIn !== "-");
+    const hasCardOut = !!(editForm.cardCheckOut && editForm.cardCheckOut.trim() !== "" && editForm.cardCheckOut !== "-");
+    if (!hasCardIn && !hasCardOut) {
+      toast.error("No Biometric Card Check In / Out times available to replace.");
+      return;
+    }
+    setEditForm(prev => ({
+      ...prev,
+      checkIn: prev.cardCheckIn || "",
+      checkOut: prev.cardCheckOut || "",
+    }));
+    toast.success("Copied Card Check In & Out to Web Check In & Out.");
   };
 
   const handleSaveEdit = async () => {
@@ -3330,11 +3356,51 @@ const ManagerDashboardPage = () => {
                   <label style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>Web Check Out</label>
                   <TimePicker
                     value={editForm.checkOut}
+                    defaultPeriod="PM"
                     onChange={(val) => setEditForm({ ...editForm, checkOut: val })}
                     disabled={!!(editingRecord?.checkOut && editingRecord.checkOut !== "-")}
                   />
                 </div>
               </div>
+
+              {/* Replace / Copy Biometric to Web (HR / Admin Only) */}
+              {isHrUser && (
+                <div style={{ display: "flex", justifyContent: "center", margin: "-2px 0" }}>
+                  <button
+                    type="button"
+                    onClick={handleReplaceBiometricToWeb}
+                    disabled={!!((editForm.checkIn && editForm.checkIn !== "-") || (editForm.checkOut && editForm.checkOut !== "-"))}
+                    title={
+                      (editForm.checkIn && editForm.checkIn !== "-") || (editForm.checkOut && editForm.checkOut !== "-")
+                        ? "Web Check In and Out must both be empty to replace with Card times"
+                        : "Copy Card Check In & Out to Web Check In & Out"
+                    }
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "5px 14px",
+                      borderRadius: "8px",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      border: "1px solid #c7d2fe",
+                      background: ((editForm.checkIn && editForm.checkIn !== "-") || (editForm.checkOut && editForm.checkOut !== "-"))
+                        ? "#f8fafc"
+                        : "#eef2ff",
+                      color: ((editForm.checkIn && editForm.checkIn !== "-") || (editForm.checkOut && editForm.checkOut !== "-"))
+                        ? "#94a3b8"
+                        : "#4338ca",
+                      cursor: ((editForm.checkIn && editForm.checkIn !== "-") || (editForm.checkOut && editForm.checkOut !== "-"))
+                        ? "not-allowed"
+                        : "pointer",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <ArrowUpIcon style={{ width: "13px", height: "13px", strokeWidth: 2.5 }} />
+                    <span>Copy Card Times to Web Check-In/Out</span>
+                  </button>
+                </div>
+              )}
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 <div>
@@ -3349,6 +3415,7 @@ const ManagerDashboardPage = () => {
                   <label style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>Card Check Out</label>
                   <TimePicker
                     value={editForm.cardCheckOut}
+                    defaultPeriod="PM"
                     onChange={(val) => setEditForm({ ...editForm, cardCheckOut: val })}
                     disabled={true}
                   />
