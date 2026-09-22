@@ -205,13 +205,13 @@ def check_in():
                 "%H:%M"
             ).time()
 
-            if current_time < allowed_time:
+            # if current_time < allowed_time:
 
-                return jsonify({
-                    "success": False,
-                    "message":
-                    "Second Shift check-in allowed only after 12:00 PM"
-                }), 400
+            #     return jsonify({
+            #         "success": False,
+            #         "message":
+            #         "Second Shift check-in allowed only after 12:00 PM"
+            #     }), 400
 
         # Night Shift (10:00 PM - 06:00 AM)
         elif shift_name == "night shift":

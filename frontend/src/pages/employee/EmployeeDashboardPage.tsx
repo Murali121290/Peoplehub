@@ -46,9 +46,6 @@ const checkShiftLock = (shiftName: string) => {
   if (cleanShift === "first shift" && currentHour < 7) {
     return { isLocked: true, timeLabel: "07:00 AM" };
   }
-  if (cleanShift === "second shift" && currentHour < 12) {
-    return { isLocked: true, timeLabel: "12:00 PM" };
-  }
   if (cleanShift === "night shift" && currentHour < 22) {
     return { isLocked: true, timeLabel: "10:00 PM" };
   }
