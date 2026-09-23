@@ -250,15 +250,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         if ((l.status !== "Approved" && l.status !== "Pending") || (l.request_type !== "Leave" && l.request_type !== "Permission")) return false;
         const leaveEmpId = String(l.employee_id || "");
 
-        // Match against database ID, user ID, and company employee_id
-        const empId = currentEmployee ? String(currentEmployee.id) : String(employeeId);
-        const empUserId = currentEmployee ? String(currentEmployee.user_id) : String(userId);
-        const empCompanyId = currentEmployee ? String(currentEmployee.employee_id) : "";
+        // Strictly match against company employee_id
+        const empCompanyId = currentEmployee ? String(currentEmployee.employee_id) : (employeeId ? String(employeeId) : "");
 
-        return (
-          leaveEmpId === empId ||
-          (empCompanyId && leaveEmpId === empCompanyId)
-        );
+        return Boolean(empCompanyId && leaveEmpId === empCompanyId);
       });
       setApprovedLeaves(myApprovedLeaves);
     } catch (err) {

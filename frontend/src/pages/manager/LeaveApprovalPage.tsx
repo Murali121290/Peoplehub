@@ -232,7 +232,6 @@ const LeaveApprovalPage: React.FC = () => {
         if (checkManagerMatch(emp.reporting_manager, currentMgr)) {
           const empFullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.name || "";
 
-          if (emp.id) allowed.add(String(emp.id));
           if (emp.employee_id) allowed.add(String(emp.employee_id).toLowerCase());
           if (empFullName) allowed.add(empFullName.toLowerCase());
 

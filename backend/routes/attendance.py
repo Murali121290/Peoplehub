@@ -2422,9 +2422,14 @@ def export_monthly_attendance():
         start_day_suff = f"{start_date.day}{get_ordinal_suffix(start_date.day)}"
         end_day_suff = f"{effective_end_date.day}{get_ordinal_suffix(effective_end_date.day)}"
 
+        # Check team/department filter
+        team_param = request.args.get("team") or request.args.get("team_id") or request.args.get("department")
+        team_display = team_param.strip() if team_param and team_param.strip().lower() not in ["all", "all teams"] else ""
+
         # Merged A1:S1 for S4C Period Title
         ws.merge_cells("A1:S1")
-        ws["A1"] = f"S4C - Attendance for the period from {start_day_suff} {start_date.strftime('%B')} {start_date.year} to {end_day_suff} {effective_end_date.strftime('%B')} {effective_end_date.year}"
+        period_title_team = f" - {team_display}" if team_display else ""
+        ws["A1"] = f"S4C{period_title_team} - Attendance for the period from {start_day_suff} {start_date.strftime('%B')} {start_date.year} to {end_day_suff} {effective_end_date.strftime('%B')} {effective_end_date.year}"
         ws["A1"].fill = sky_blue_fill
         ws["A1"].font = Font(bold=True, size=14, color="FFFFFF")
         ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
@@ -2432,7 +2437,8 @@ def export_monthly_attendance():
 
         # Merged A2:S2 for Summary Month Subtitle
         ws.merge_cells("A2:S2")
-        ws["A2"] = f"Attendance Summary {effective_end_date.strftime('%B %Y')}"
+        summary_title_team = f" - {team_display}" if team_display else ""
+        ws["A2"] = f"Attendance Summary {effective_end_date.strftime('%B %Y')}{summary_title_team}"
         ws["A2"].fill = sky_blue_fill
         ws["A2"].font = Font(bold=True, size=11, color="FFFFFF")
         ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
@@ -2555,6 +2561,17 @@ def export_monthly_attendance():
                 or str(getattr(e, "team_id", "") or "").strip() == str(team_param).strip()
             ]
 
+        if not team_display and employees:
+            depts = set([get_emp_team_name(e) for e in employees if get_emp_team_name(e) and get_emp_team_name(e) != "General"])
+            if len(depts) == 1:
+                team_display = list(depts)[0]
+
+        # Ensure header titles reflect team name
+        if team_display:
+            period_title_team = f" - {team_display}"
+            ws["A1"] = f"S4C{period_title_team} - Attendance for the period from {start_day_suff} {start_date.strftime('%B')} {start_date.year} to {end_day_suff} {effective_end_date.strftime('%B')} {effective_end_date.year}"
+            ws["A2"] = f"Attendance Summary {effective_end_date.strftime('%B %Y')}{period_title_team}"
+
         # Sort employees strictly by Emp Code in Ascending Order (e.g., 1043, 1288, 1452, 1755, 1829...)
         def get_emp_code_ascending_sort_key(e):
             code = getattr(e, "employee_id", None) or getattr(e, "user_id", "") or ""
@@ -2604,14 +2621,7 @@ def export_monthly_attendance():
             attendance_by_date = {a.attendance_date: a for a in attendance_records}
 
             # Safely build list of string IDs for DB queries (character varying column)
-            valid_emp_ids = []
-            if employee.id is not None:
-                valid_emp_ids.append(str(employee.id))
-            if hasattr(employee, "user_id") and employee.user_id is not None:
-                valid_emp_ids.append(str(employee.user_id))
-            if hasattr(employee, "employee_id") and employee.employee_id:
-                valid_emp_ids.append(str(employee.employee_id))
-            valid_emp_ids = list(set([x.strip() for x in valid_emp_ids if str(x).strip()]))
+            valid_emp_ids = [str(employee.employee_id)] if employee.employee_id else []
 
             # Map approved leaves covering the dates
             emp_leaves = LeaveRequest.query.filter(
@@ -2672,6 +2682,7 @@ def export_monthly_attendance():
             late_count = 0
 
             leave_dates = []
+            lop_dates = []
             absent_dates = []
 
             from models.shift_request import ShiftRequest
@@ -2794,8 +2805,8 @@ def export_monthly_attendance():
                         is_half_leave = (needed_leave <= 0.5)
                         if is_lop_leave:
                             lop_leave_taken += needed_leave
-                            if (d, is_half_leave) not in absent_dates:
-                                absent_dates.append((d, is_half_leave))
+                            if (d, is_half_leave) not in lop_dates:
+                                lop_dates.append((d, is_half_leave))
                         elif is_cl_sl_leave:
                             cl_sl_taken += needed_leave
                             if (d, is_half_leave) not in leave_dates:
@@ -2808,7 +2819,8 @@ def export_monthly_attendance():
                         # Process remaining day portion with attendance
                         remaining_day = 1.0 - needed_leave
                         if remaining_day > 0.0:
-                            if att and effective_status in ["Present", "Half Day"]:
+                            has_punches = bool(att and (att.check_in or att.card_check_in or att.check_out or att.card_check_out))
+                            if att and (effective_status in ["Present", "Half Day", "Half Day Present"] or has_punches):
                                 total_working_days += remaining_day
                             else:
                                 unauthorized_absences += remaining_day
@@ -2818,7 +2830,7 @@ def export_monthly_attendance():
                         # No approved leave
                         if att and effective_status == "Present":
                             total_working_days += 1.0
-                        elif att and effective_status == "Half Day":
+                        elif att and effective_status in ["Half Day", "Half Day Present"]:
                             total_working_days += 0.5
                             unauthorized_absences += 0.5
                             if (d, True) not in absent_dates:
@@ -2865,7 +2877,7 @@ def export_monthly_attendance():
             else:
                 total_days_cycle = (emp_effective_end - effective_start).days + 1
 
-            # Format leave and absent remarks dynamically
+            # Format leave, lop, and absent remarks dynamically
             from collections import defaultdict
             def format_days_for_remarks(day_tuples):
                 if not day_tuples:
@@ -2890,15 +2902,38 @@ def export_monthly_attendance():
                 
                 return " and ".join(month_parts)
 
-            remark_parts = []
+            from openpyxl.cell.text import InlineFont
+            from openpyxl.cell.rich_text import TextBlock, CellRichText
+
+            default_inline_font = InlineFont(color="000000", rFont="Calibri", sz=11)
+            absent_inline_font = InlineFont(color="E11D48", b=True, rFont="Calibri", sz=11)
+
+            remark_items = []
             if leave_dates:
                 sorted_leaves = sorted(leave_dates, key=lambda x: x[0])
-                remark_parts.append(f"Leave on {format_days_for_remarks(sorted_leaves)}")
+                remark_items.append(("leave", f"Leave on {format_days_for_remarks(sorted_leaves)}"))
+            if lop_dates:
+                sorted_lop = sorted(lop_dates, key=lambda x: x[0])
+                remark_items.append(("lop", f"LOP on {format_days_for_remarks(sorted_lop)}"))
             if absent_dates:
                 sorted_absences = sorted(absent_dates, key=lambda x: x[0])
-                remark_parts.append(f"Absent on {format_days_for_remarks(sorted_absences)}")
-            
-            leave_remarks = "; ".join(remark_parts)
+                remark_items.append(("absent", f"Absent on {format_days_for_remarks(sorted_absences)}"))
+
+            if not remark_items:
+                leave_remarks_val = ""
+            elif any(k == "absent" for k, _ in remark_items):
+                rich_blocks = []
+                for idx, (k, text_str) in enumerate(remark_items):
+                    prefix = "; " if idx > 0 else ""
+                    if k == "absent":
+                        if prefix:
+                            rich_blocks.append(TextBlock(default_inline_font, prefix))
+                        rich_blocks.append(TextBlock(absent_inline_font, text_str))
+                    else:
+                        rich_blocks.append(TextBlock(default_inline_font, prefix + text_str))
+                leave_remarks_val = CellRichText(*rich_blocks)
+            else:
+                leave_remarks_val = "; ".join(text_str for _, text_str in remark_items)
 
             # Format ODW dates list
             odw_formatted_list = []
@@ -2932,7 +2967,7 @@ def export_monthly_attendance():
             ws.cell(row=row, column=13).value = after_cl_sl
             ws.cell(row=row, column=14).value = total_paid_leaves
             ws.cell(row=row, column=15).value = total_lop_days
-            ws.cell(row=row, column=16).value = leave_remarks
+            ws.cell(row=row, column=16).value = leave_remarks_val
             ws.cell(row=row, column=17).value = int(total_odw_days) if total_odw_days == int(total_odw_days) else total_odw_days
             ws.cell(row=row, column=18).value = ", ".join(odw_formatted_list) if odw_formatted_list else "-"
             ws.cell(row=row, column=19).value = late_ded_str
@@ -2950,7 +2985,7 @@ def export_monthly_attendance():
                 c = ws.cell(row=row, column=col)
                 c.border = thin_border
                 val = c.value
-                if val is not None and val != "":
+                if val is not None and val != "" and not isinstance(val, CellRichText):
                     if isinstance(val, (int, float, date, datetime)) or (isinstance(val, str) and (val.isdigit() or val.startswith("EMP"))):
                         c.alignment = Alignment(horizontal="center", vertical="center")
                     else:
@@ -2959,7 +2994,10 @@ def export_monthly_attendance():
                         else:
                             c.alignment = Alignment(vertical="center")
                 else:
-                    c.alignment = Alignment(horizontal="center", vertical="center")
+                    if col in [5, 6, 16, 18]:
+                        c.alignment = Alignment(vertical="center", wrap_text=True)
+                    else:
+                        c.alignment = Alignment(horizontal="center", vertical="center")
 
             row += 1
 
@@ -3015,10 +3053,14 @@ def export_monthly_attendance():
         wb.save(output)
         output.seek(0)
 
+        team_file_part = f"_{team_display.replace(' ', '_')}" if team_display else ""
+        month_file_part = effective_end_date.strftime('%B_%Y')
+        report_download_name = f"Attendance_Report{team_file_part}_{month_file_part}.xlsx"
+
         return send_file(
             output,
             as_attachment=True,
-            download_name="Attendance_Report.xlsx",
+            download_name=report_download_name,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 

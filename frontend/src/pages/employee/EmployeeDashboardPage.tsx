@@ -402,10 +402,7 @@ if (leave.request_type !== "Leave") return false;
 if (isHalfDayLeave(leave.total_days)) return false;
       // Match by employee_id (stored as string in DB)
       const leaveEmpId = String(leave.employee_id || "");
-      if (
-        leaveEmpId !== String(currentEmployee.id) &&
-        leaveEmpId !== String(currentEmployee.employee_id)
-      ) return false;
+      if (leaveEmpId !== String(currentEmployee.employee_id)) return false;
       if (!leave.from_date || !leave.to_date) return false;
       const from = new Date(leave.from_date);
       const to = new Date(leave.to_date);
@@ -742,7 +739,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       const userObj = userStr ? JSON.parse(userStr) : {};
       
       const payload = {
-        employee_id: currentEmployee?.id || localStorage.getItem("employee_id"),
+        employee_id: currentEmployee?.employee_id || localStorage.getItem("employee_id"),
         employee_name: currentEmployee ? `${currentEmployee.first_name} ${currentEmployee.last_name}` : userObj.name || "Employee",
         current_shift: currentEmployee?.shift_timing || "General Shift",
         requested_shift: currentEmployee?.shift_timing || "General Shift",
@@ -1158,7 +1155,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       let response;
 
       const payload = {
-        employee_id: currentEmployee?.employee_id || currentEmployee?.id,
+        employee_id: currentEmployee?.employee_id,
         employee_name: `${currentEmployee?.first_name} ${currentEmployee?.last_name}`,
 
         request_type: leaveForm.requestType,
@@ -1288,7 +1285,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          employee_id: currentEmployee?.employee_id || currentEmployee?.id
+          employee_id: currentEmployee?.employee_id
         })
       });
       const data = await res.json();
@@ -1508,10 +1505,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
     const isOnLeaveToday = leaveRequests.some((leave: any) => {
       const leaveEmpId = String(leave.employee_id || "");
-      if (
-        leaveEmpId !== String(currentEmployee.id) &&
-        leaveEmpId !== String(currentEmployee.employee_id)
-      ) return false;
+      if (leaveEmpId !== String(currentEmployee.employee_id)) return false;
       if (leave.status !== "Approved") return false;
 if (leave.request_type !== "Leave") return false;
 
@@ -1786,7 +1780,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
       // If the leave belongs to current user, we should update their leave balance in employees state!
       const isCurrentUser = 
         payload.employee_id && (
-          String(payload.employee_id) === String(currentEmployee?.id) ||
           String(payload.employee_id) === String(currentEmployee?.employee_id)
         );
 
