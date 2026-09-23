@@ -19,6 +19,21 @@ export interface KPIItem {
   scoringDirection: 'higher_is_better' | 'lower_is_better' | 'exact_target';
   measurementType: 'number' | 'percentage' | 'yes_no' | 'rating_1_5';
   isRequired: boolean;
+  actualValue?: string | number;
+  actual_value?: string | number;
+  earnedScore?: number;
+  earned_score?: number;
+  employeeRemarks?: string;
+  employee_remarks?: string;
+  employee_remark?: string;
+  isInsufficient?: boolean;
+  is_insufficient?: boolean;
+  managerActualValue?: string | number;
+  manager_actual_pm?: string | number;
+  managerScore?: number | null;
+  manager_score?: number | null;
+  managerRemarks?: string;
+  manager_remark?: string;
 }
 
 export interface KPICategory {
@@ -43,6 +58,7 @@ export interface KPIResponseItem {
   achievementPercentage: number;
   earnedScore: number;
   employeeRemarks?: string;
+  isInsufficient?: boolean;
   managerActualValue?: string | number;
   managerScore?: number;
   managerRemarks?: string;

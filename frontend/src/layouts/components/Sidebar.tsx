@@ -114,11 +114,18 @@ const Sidebar: React.FC<SidebarProps> = ({
         const userEmpCode = String(user?.employee_id || localStorage.getItem('employee_id') || '').trim().toLowerCase();
         const userFullName = (user?.full_name || user?.name || '').trim().toLowerCase();
         const access = (user?.access_level || user?.role || '').toLowerCase();
-        const isAdmin = access.includes('admin') || access.includes('super');
+        const role = (user?.role || '').toLowerCase();
+        const isHrOrAdmin = access.includes('admin') || access.includes('super') || access.includes('hr') || role.includes('hr') || role.includes('admin');
+
+        if (isHrOrAdmin) {
+          setPendingEvaluationCount(0);
+          return;
+        }
+
         const isManagerOrLead = access.includes('manager') || access.includes('lead') || access.includes('service_manager');
 
         let reportingIdentifiers = new Set<string>();
-        if (empRes && empRes.ok && user?.full_name && !isAdmin) {
+        if (empRes && empRes.ok && user?.full_name) {
           const employees = await empRes.json().catch(() => []);
           if (Array.isArray(employees)) {
             reportingIdentifiers = getRecursiveReportingIdentifiers(user.full_name, employees);
@@ -148,15 +155,14 @@ const Sidebar: React.FC<SidebarProps> = ({
         }
 
         // 2. Manager evaluation pending check (team members waiting for manager calibration)
-        if (isManagerOrLead || isAdmin) {
+        if (isManagerOrLead) {
           const pendingTeamEvals = responses.filter((r: any) => {
             const rEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase();
             const rName = (r.employeeName || '').trim().toLowerCase();
             const isMe = (userEmpCode && (rEmpCode === userEmpCode)) || (userFullName && rName && rName === userFullName);
             if (isMe) return false; // don't double count self
 
-            const isMyTeamMember = isAdmin || 
-                                   checkManagerMatch(r.reportingManager, user?.full_name) ||
+            const isMyTeamMember = checkManagerMatch(r.reportingManager, user?.full_name) ||
                                    (rEmpCode && reportingIdentifiers.has(rEmpCode)) ||
                                    (rName && reportingIdentifiers.has(rName));
 
@@ -177,7 +183,6 @@ const Sidebar: React.FC<SidebarProps> = ({
           // 3. Service Manager pending cycle launch approval check
           const pendingSmCycles = cycles.filter((c: any) => {
             if (c.status !== 'pending_sm_launch_approval') return false;
-            if (isAdmin) return true;
             return checkManagerMatch(c.serviceManagerName, user?.full_name);
           });
 

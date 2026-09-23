@@ -1,9 +1,9 @@
 import { API_URL } from '../config/api';
 import { getEmployees } from './employeesCache';
-import { 
-  EvaluationCycle, 
-  EvaluationResponse, 
-  KPICategory, 
+import {
+  EvaluationCycle,
+  EvaluationResponse,
+  KPICategory,
   KPIItem,
   KPIResponseItem,
   EvaluationStage,
@@ -312,7 +312,7 @@ export const evaluationService = {
           setRatingScale(serverRatingScale);
           localStorage.setItem(RATING_SCALE_STORAGE_KEY, JSON.stringify(serverRatingScale));
         }
-        
+
         // Save server data to localStorage
         this.saveCyclesLocal(serverCycles);
         this.saveResponsesLocal(serverResponses);
@@ -442,6 +442,7 @@ export const evaluationService = {
     startDate: string;
     endDate: string;
     periodName: string;
+    frequency?: 'quarterly' | 'monthly' | 'weekly' | 'daily' | 'yearly' | string;
     categories?: KPICategory[];
   }): Promise<EvaluationCycle> {
     const cycles = this.getCycles();
@@ -459,6 +460,7 @@ export const evaluationService = {
       startDate: cycleData.startDate,
       endDate: cycleData.endDate,
       periodName: cycleData.periodName,
+      frequency: cycleData.frequency || 'quarterly',
       status: 'pending_sm_launch_approval',
       categories: cycleData.categories || DEFAULT_KPI_CATEGORIES,
       createdAt: new Date().toISOString(),
@@ -488,7 +490,7 @@ export const evaluationService = {
       if (!existing) {
         const emp = allEmployees.find(e => String(e.id) === String(empId) || String(e.employee_id) === String(empId));
         const initialKpiResponses: Record<string, KPIResponseItem> = {};
-        
+
         cycle.categories.forEach(cat => {
           cat.kpis.forEach(kpi => {
             initialKpiResponses[kpi.id] = {
@@ -501,7 +503,7 @@ export const evaluationService = {
           });
         });
 
-        const empCode = String(emp?.employee_id || emp?.id || empId);
+        const empCode = String(emp?.employee_id || empId);
         const newResp: EvaluationResponse = {
           id: `resp_${Date.now()}_${empCode}`,
           cycleId: cycle.id,
@@ -565,7 +567,9 @@ export const evaluationService = {
             earnedScore: item.earnedScore ?? 0,
             earned_score: item.earnedScore ?? 0,
             employeeRemarks: item.employeeRemarks ?? '',
-            employee_remark: item.employeeRemarks ?? ''
+            employee_remark: item.employeeRemarks ?? '',
+            isInsufficient: Boolean(item.isInsufficient),
+            is_insufficient: Boolean(item.isInsufficient)
           };
         }
         return kpi;
@@ -574,6 +578,8 @@ export const evaluationService = {
 
     const updated: EvaluationResponse = {
       ...responses[index],
+      categories: updatedCategories,
+      metrics_data: updatedCategories as any,
       kpiResponses,
       employeeOverallScore: overallScore,
       employeeRemarks: employeeRemarks || '',
@@ -670,7 +676,9 @@ export const evaluationService = {
             managerScore: item.managerScore ?? null,
             manager_score: item.managerScore ?? null,
             managerRemarks: item.managerRemarks ?? '',
-            manager_remark: item.managerRemarks ?? ''
+            manager_remark: item.managerRemarks ?? '',
+            isInsufficient: Boolean(item.isInsufficient),
+            is_insufficient: Boolean(item.isInsufficient)
           };
         }
         return kpi;
@@ -740,8 +748,8 @@ export const evaluationService = {
     if (index === -1) throw new Error('Evaluation response not found');
 
     const current = responses[index];
-    const finalScore = smData.serviceManagerScore !== undefined 
-      ? smData.serviceManagerScore 
+    const finalScore = smData.serviceManagerScore !== undefined
+      ? smData.serviceManagerScore
       : (current.managerScore || current.employeeOverallScore);
 
     const updated: EvaluationResponse = {
@@ -893,8 +901,8 @@ export const evaluationService = {
     templateKey?: string;
     templateName?: string;
   }): Promise<{ cycle: EvaluationCycle; responses: EvaluationResponse[] }> {
-    const targetEmployees = data.allEmployees.filter(e => 
-      data.employeeIds.includes(String(e.id)) || 
+    const targetEmployees = data.allEmployees.filter(e =>
+      data.employeeIds.includes(String(e.id)) ||
       data.employeeIds.includes(String(e.employee_id))
     );
 
@@ -922,7 +930,7 @@ export const evaluationService = {
           template_key: data.templateKey || 'form_1',
           template_name: data.templateName || '',
           employees: targetEmployees.map(e => ({
-            id: e.employee_id || e.id,
+            id: String(e.employee_id || ''),
             name: `${e.first_name || ''} ${e.last_name || ''}`.trim() || e.name
           })),
           categories: data.categories
@@ -935,24 +943,24 @@ export const evaluationService = {
     // 2. Fetch fresh, official data directly from DB
     const remoteData = await this.fetchRemoteEvaluationData();
     const cycle = remoteData.cycles.find(c => c.name === data.formName || (c as any).form === data.formName) || remoteData.cycles[0];
-    return { 
-      cycle: cycle || { 
-        id: `cycle_${Date.now()}`, 
-        name: data.formName, 
-        teamId: data.teamId, 
-        teamName: data.teamName, 
-        managerId: data.managerId, 
-        managerName: data.managerName, 
-        employeeIds: data.employeeIds, 
-        startDate: data.startDate, 
-        endDate: data.endDate, 
-        periodName: data.periodName, 
-        status: 'active', 
-        categories: data.categories, 
-        createdAt: new Date().toISOString(), 
-        updatedAt: new Date().toISOString() 
-      }, 
-      responses: remoteData.responses 
+    return {
+      cycle: cycle || {
+        id: `cycle_${Date.now()}`,
+        name: data.formName,
+        teamId: data.teamId,
+        teamName: data.teamName,
+        managerId: data.managerId,
+        managerName: data.managerName,
+        employeeIds: data.employeeIds,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        periodName: data.periodName,
+        status: 'active',
+        categories: data.categories,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      },
+      responses: remoteData.responses
     };
   },
 
@@ -1029,6 +1037,28 @@ export const evaluationService = {
       return data;
     } catch (e: any) {
       return { success: false, error: e.message || 'Failed to rename template' };
+    }
+  },
+
+  // Delete a form template for a manager
+  async deleteManagerTemplate(managerId: string | string[], templateKey: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const token = localStorage.getItem('token') || '';
+      const res = await fetch(`${API_URL}/api/performance/kpi-templates/manager/delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          manager_id: Array.isArray(managerId) ? managerId.join(',') : managerId,
+          template_key: templateKey
+        })
+      });
+      const data = await res.json();
+      return data;
+    } catch (e: any) {
+      return { success: false, error: e.message || 'Failed to delete template' };
     }
   },
 
