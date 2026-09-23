@@ -118,14 +118,19 @@ class ShiftRequest(db.Model):
     )
 
     def to_dict(self):
-        emp_string_id = self.employee_id
+        emp_string_id = str(self.employee_id) if self.employee_id is not None else ""
         try:
             from models.employee import Employee
             if emp_string_id:
-                emp = Employee.query.get(int(emp_string_id))
+                emp = Employee.query.filter(Employee.employee_id == str(emp_string_id)).first()
+                if not emp:
+                    try:
+                        emp = Employee.query.get(int(emp_string_id))
+                    except (ValueError, TypeError):
+                        pass
                 if emp and emp.employee_id:
                     emp_string_id = emp.employee_id
-        except:
+        except Exception:
             pass
 
         return {

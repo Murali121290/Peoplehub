@@ -1351,7 +1351,7 @@ def check_holiday_or_weekoff():
         # Check if already has a pending or approved one day wages request for today
         from models.shift_request import ShiftRequest
         existing_wages = ShiftRequest.query.filter(
-            ShiftRequest.employee_id.in_([employee.id, employee.employee_id]),
+            ShiftRequest.employee_id == employee.employee_id,
             ShiftRequest.request_type == "One Day Wages",
             ShiftRequest.status.in_(["Pending", "Approved"]),
             ShiftRequest.from_date <= today,
