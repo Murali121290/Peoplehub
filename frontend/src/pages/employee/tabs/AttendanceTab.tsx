@@ -250,15 +250,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         if ((l.status !== "Approved" && l.status !== "Pending") || (l.request_type !== "Leave" && l.request_type !== "Permission")) return false;
         const leaveEmpId = String(l.employee_id || "");
 
-        // Match against database ID, user ID, and company employee_id
-        const empId = currentEmployee ? String(currentEmployee.id) : String(employeeId);
-        const empUserId = currentEmployee ? String(currentEmployee.user_id) : String(userId);
-        const empCompanyId = currentEmployee ? String(currentEmployee.employee_id) : "";
+        // Strictly match against company employee_id
+        const empCompanyId = currentEmployee ? String(currentEmployee.employee_id) : (employeeId ? String(employeeId) : "");
 
-        return (
-          leaveEmpId === empId ||
-          (empCompanyId && leaveEmpId === empCompanyId)
-        );
+        return Boolean(empCompanyId && leaveEmpId === empCompanyId);
       });
       setApprovedLeaves(myApprovedLeaves);
     } catch (err) {
@@ -745,9 +740,9 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       totalHoursFormatted = formatHoursMinutes(totalHours);
       addedMinutes = Number(attRec.addedMinutes || attRec.added_minutes || 0);
 
-      // Overtime calculation sample (>8h)
-      if (workingHours > 8) {
-        const otVal = workingHours - 8;
+      // Overtime calculation based on Total Hours (>9h)
+      if (totalHours > 9) {
+        const otVal = totalHours - 9;
         overtime = formatHoursMinutes(otVal);
       }
     }
@@ -2031,6 +2026,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">To Time</label>
                 <TimePicker
                   value={toTime}
+                  defaultPeriod="PM"
                   onChange={(val) => setToTime(val)}
                   className="w-full"
                 />
@@ -2094,6 +2090,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">Check-Out</label>
                 <TimePicker
                   value={regCheckOut}
+                  defaultPeriod="PM"
                   onChange={(val) => setRegCheckOut(val)}
                   disabled={!!(regularizingCell.checkOut && regularizingCell.checkOut !== "-" && regularizingCell.checkOut !== "—")}
                   className="w-full"

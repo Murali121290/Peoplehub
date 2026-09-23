@@ -279,7 +279,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
   // Filter employee's own leave requests
   const myRequests = React.useMemo(() => {
-    const ownerRequests = leaveRequests.filter((req: any) => String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id));
+    const ownerRequests = leaveRequests.filter((req: any) => String(req.employee_id) === String(currentEmployee?.employee_id));
     if (mode === "leave") {
       return ownerRequests.filter((req: any) => req.request_type === "Leave");
     }
@@ -292,7 +292,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   // Collect all dates where the employee already has a pending or approved leave request
   const myAppliedLeaveDates = React.useMemo(() => {
     const dates = new Set<string>();
-    const ownerRequests = leaveRequests.filter((req: any) => String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id));
+    const ownerRequests = leaveRequests.filter((req: any) => String(req.employee_id) === String(currentEmployee?.employee_id));
     ownerRequests.forEach((req: any) => {
       if (req.status === "Approved" || req.status === "Pending") {
         if (req.request_type === "Leave" && req.from_date && req.to_date) {
@@ -663,7 +663,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
   const getPendingDays = (leaveType: string) => {
     return leaveRequests
       .filter((req: any) =>
-        (String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id)) &&
+        String(req.employee_id) === String(currentEmployee?.employee_id) &&
         req.status === "Pending" &&
         (req.leave_type || "").toLowerCase() === leaveType.toLowerCase()
       )
@@ -772,7 +772,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
 
   // Find active requests (Pending) for live status tracking
   const activeRequests = leaveRequests.filter((req: any) => {
-    const isOwner = (String(req.employee_id) === String(currentEmployee?.employee_id) || Number(req.employee_id) === Number(currentEmployee?.id));
+    const isOwner = String(req.employee_id) === String(currentEmployee?.employee_id);
     if (!isOwner) return false;
     if (mode === "leave" && req.request_type !== "Leave") return false;
     if (mode === "permission" && req.request_type !== "Permission") return false;

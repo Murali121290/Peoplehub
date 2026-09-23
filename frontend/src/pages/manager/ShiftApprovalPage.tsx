@@ -223,8 +223,6 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
         if (checkManagerMatch(emp.reporting_manager, currentMgr)) {
           const empFullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.name || "";
 
-          if (emp.id) allowed.add(String(emp.id).toLowerCase());
-          if (emp.user_id) allowed.add(String(emp.user_id).toLowerCase());
           if (emp.employee_id) allowed.add(String(emp.employee_id).toLowerCase());
           if (empFullName) allowed.add(empFullName.toLowerCase());
 
@@ -257,8 +255,6 @@ const ShiftApprovalPage: React.FC<ShiftApprovalPageProps> = ({ isOdwOnly = false
     const isDirectManager = checkManagerMatch(req.reporting_manager, userFullName);
     const isRecursiveReport = (
       (req.employee_id && reportingIdentifiers.has(String(req.employee_id).toLowerCase())) ||
-      (req.user_id && reportingIdentifiers.has(String(req.user_id).toLowerCase())) ||
-      (req.employee_db_id && reportingIdentifiers.has(String(req.employee_db_id).toLowerCase())) ||
       (req.employee_name && reportingIdentifiers.has(String(req.employee_name).trim().toLowerCase())) ||
       (req.reporting_manager && reportingIdentifiers.has(String(req.reporting_manager).trim().toLowerCase()))
     );

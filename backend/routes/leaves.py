@@ -67,13 +67,6 @@ def get_cancellable_dates(from_date, to_date):
 
 def serialize_leave(leave):
     emp_string_id = leave.employee_id
-    try:
-        if emp_string_id and str(emp_string_id).isdigit():
-            emp = Employee.query.get(int(emp_string_id))
-            if emp and emp.employee_id:
-                emp_string_id = emp.employee_id
-    except:
-        pass
 
     leave_duration = "Full Day"
     if leave.total_days and leave.total_days <= 0.5:
@@ -124,12 +117,7 @@ def apply_leave():
             return jsonify({"success": False, "error": "Employee ID is required."}), 400
 
         from models.employee import Employee
-        if str(emp_id).isdigit():
-            employee = Employee.query.filter(
-                (Employee.id == int(emp_id)) | (Employee.employee_id == str(emp_id))
-            ).first()
-        else:
-            employee = Employee.query.filter(Employee.employee_id == str(emp_id)).first()
+        employee = Employee.query.filter(Employee.employee_id == str(emp_id)).first()
 
         request_type = data.get("request_type", "Leave")
 
@@ -320,7 +308,7 @@ def approve_leave(leave_id):
         print("Leave Employee ID:", leave.employee_id)
 
         employee = Employee.query.filter(
-            (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
+            Employee.employee_id == str(leave.employee_id)
         ).first()
 
         print("Employee Found:", employee)
@@ -572,7 +560,7 @@ def reject_leave(leave_id):
         }), 400
 
     employee = Employee.query.filter(
-        (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
+        Employee.employee_id == str(leave.employee_id)
     ).first()
 
     leave.status = "Rejected"
@@ -642,14 +630,9 @@ def cancel_leave(leave_id):
         leave.status = "Cancelled"
         
         if previous_status == "Approved" and leave.request_type == "Leave":
-            if leave.employee_id and str(leave.employee_id).isdigit():
-                employee = Employee.query.filter(
-                    (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
-                ).first()
-            else:
-                employee = Employee.query.filter(
-                    Employee.employee_id == str(leave.employee_id)
-                ).first()
+            employee = Employee.query.filter(
+                Employee.employee_id == str(leave.employee_id)
+            ).first()
 
             if employee:
                 leave_type = (leave.leave_type or "").strip().lower()
@@ -907,7 +890,7 @@ def cancel_leave_date(leave_id):
             }), 404
 
         employee = Employee.query.filter(
-            (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
+            Employee.employee_id == str(leave.employee_id)
         ).first()
 
         if not employee:
@@ -1187,22 +1170,8 @@ def cancel_approved_leave(leave_id):
                 "message": "employee_id is required to validate ownership"
             }), 400
 
-        # Resolve employee details to match either primary key ID or employee_id string
         from models.employee import Employee
-        from sqlalchemy import or_
-
-        # Safe integer conversion to avoid db comparison issues with strings
-        emp_id_int = None
-        if isinstance(employee_id, int):
-            emp_id_int = employee_id
-        elif isinstance(employee_id, str) and employee_id.isdigit():
-            emp_id_int = int(employee_id)
-
-        filters = [Employee.employee_id == str(employee_id)]
-        if emp_id_int is not None:
-            filters.append(Employee.id == emp_id_int)
-
-        employee = Employee.query.filter(or_(*filters)).first()
+        employee = Employee.query.filter(Employee.employee_id == str(employee_id)).first()
 
         # Check if ownership is valid (matches database ID, employee code, or raw passed ID)
         valid_ids = {str(employee_id).strip().lower()}
@@ -1254,14 +1223,9 @@ def cancel_approved_leave(leave_id):
 
         # 5. Restore balance only if it was Approved
         if previous_status == "Approved":
-            if leave.employee_id and str(leave.employee_id).isdigit():
-                employee = Employee.query.filter(
-                    (Employee.id == int(leave.employee_id)) | (Employee.employee_id == str(leave.employee_id))
-                ).first()
-            else:
-                employee = Employee.query.filter(
-                    Employee.employee_id == str(leave.employee_id)
-                ).first()
+            employee = Employee.query.filter(
+                Employee.employee_id == str(leave.employee_id)
+            ).first()
 
             if not employee:
                 return jsonify({
@@ -2089,7 +2053,12 @@ def resolve_absent():
         if duration != "Full Day":
             reason = f"{reason} ({duration})"
         
-        employee = Employee.query.get(employee_id)
+        employee = Employee.query.filter(Employee.employee_id == str(employee_id)).first()
+        if not employee:
+            try:
+                employee = Employee.query.get(int(employee_id))
+            except (ValueError, TypeError):
+                pass
         if not employee:
             return jsonify({"success": False, "error": "Employee not found"}), 404
             

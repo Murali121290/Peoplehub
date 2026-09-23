@@ -325,9 +325,7 @@ export default function HRAdminDashboard() {
 
     const onLeaveEmployees = employees.filter((emp) => {
       return leaves.some((leave) => {
-        const isUserMatch =
-          String(leave.employee_id) === String(emp.id) ||
-          String(leave.employee_id) === String(emp.employee_id);
+        const isUserMatch = String(leave.employee_id) === String(emp.employee_id);
         if (!isUserMatch) return false;
 
         const isApproved = (leave.status || "").toLowerCase() === "approved";
@@ -375,9 +373,7 @@ export default function HRAdminDashboard() {
 
     // ── Today's approved leave ─────────────────────────────────────────────
     const onLeaveToday = leaves.some((l: any) => {
-      const empMatch =
-        String(l.employee_id) === String(emp.id) ||
-        String(l.employee_id) === String(emp.employee_id);
+      const empMatch = String(l.employee_id) === String(emp.employee_id);
       if (!empMatch) return false;
       if ((l.status || "").toLowerCase() !== "approved") return false;
       try {
@@ -400,9 +396,7 @@ export default function HRAdminDashboard() {
 
     // ── Today's effective shift ────────────────────────────────────────────
     const approvedShiftReq = shifts.find((s: any) => {
-      const empMatch =
-        String(s.employee_id) === String(emp.id) ||
-        String(s.employee_id) === String(emp.employee_id);
+      const empMatch = String(s.employee_id) === String(emp.employee_id);
       if (!empMatch) return false;
       if ((s.status || "").toLowerCase() !== "approved") return false;
       try {
