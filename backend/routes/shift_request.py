@@ -75,14 +75,13 @@ def apply_shift():
                 "message": "Cannot apply for a shift change for a past date."
             }), 400
 
-        emp_id = int(data["employee_id"]) if data.get("employee_id") else None
-
-        employee = Employee.query.filter(
-            or_(
-                Employee.id == emp_id,
-                Employee.employee_id == str(data.get("employee_id"))
-            )
-        ).first()
+        emp_code = str(data.get("employee_id") or "").strip()
+        employee = Employee.query.filter(Employee.employee_id == emp_code).first()
+        if not employee:
+            try:
+                employee = Employee.query.get(int(emp_code))
+            except (ValueError, TypeError):
+                pass
 
         if req_from == ist_today and data.get("request_type") != "One Day Wages":
             # Check if employee already checked in today
@@ -99,12 +98,8 @@ def apply_shift():
                 }), 400
 
         if employee:
-            emp_ids = [employee.employee_id]
-            if str(employee.id) not in emp_ids:
-                emp_ids.append(str(employee.id))
-
             overlapping_leave = LeaveRequest.query.filter(
-                LeaveRequest.employee_id.in_(emp_ids),
+                LeaveRequest.employee_id == employee.employee_id,
                 LeaveRequest.status == "Approved",
                 LeaveRequest.request_type == "Leave",
                 LeaveRequest.from_date <= req_to,
@@ -144,13 +139,13 @@ def apply_shift():
                 # Save to the persistent Docker volume via centralized helper
                 target_dir = ensure_upload_dir("shift_requests")
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                target_filename = f"shift_req_{emp_id}_{timestamp}{ext}"
+                target_filename = f"shift_req_{employee.employee_id if employee else emp_code}_{timestamp}{ext}"
                 target_path = os.path.join(target_dir, target_filename)
                 file.save(target_path)
                 supportive_document_path = f"shift_requests/{target_filename}"
 
         shift_request = ShiftRequest(
-            employee_id=emp_id,
+            employee_id=employee.employee_id if employee and employee.employee_id else emp_code,
             employee_name=data["employee_name"],
             current_shift=data.get("current_shift"),
             requested_shift=data.get("requested_shift"),
@@ -255,31 +250,19 @@ def get_employee_requests(
     employee_id
 ):
     from models.employee import Employee
-    from sqlalchemy import or_
-
-    emp = None
-    try:
-        # Try finding by integer id first, or string employee_id
-        emp = Employee.query.filter(
-            or_(
-                Employee.id == int(employee_id),
-                Employee.employee_id == str(employee_id)
-            )
-        ).first()
-    except ValueError:
-        # If employee_id is a non-integer string, search by employee_id only
-        emp = Employee.query.filter_by(employee_id=str(employee_id)).first()
+    emp_code = str(employee_id).strip()
+    emp = Employee.query.filter(Employee.employee_id == emp_code).first()
+    if not emp:
+        try:
+            emp = Employee.query.get(int(emp_code))
+        except (ValueError, TypeError):
+            pass
 
     if not emp:
         return jsonify([])
 
     shift_requests = ShiftRequest.query.filter(
-        or_(
-            ShiftRequest.employee_id == emp.id,
-            ShiftRequest.employee_id == str(emp.id),
-            ShiftRequest.employee_id == emp.employee_id,
-            ShiftRequest.employee_id == str(emp.employee_id)
-        )
+        ShiftRequest.employee_id == emp.employee_id
     ).order_by(
         ShiftRequest.id.desc()
     ).all()
@@ -306,10 +289,8 @@ def get_shift_approvals(manager_name):
 
     reporting_emp_ids = set()
     for e in reporting_employees:
-        if e.id:
-            reporting_emp_ids.add(str(e.id))
         if e.employee_id:
-            reporting_emp_ids.add(str(e.employee_id).strip())
+            reporting_emp_ids.add(str(e.employee_id).strip().lower())
 
     shifts = ShiftRequest.query.order_by(
         ShiftRequest.id.desc()
@@ -344,8 +325,14 @@ def cleanup_attendance_for_rejected_or_cancelled_wages(shift_request):
     if shift_request.request_type != "One Day Wages":
         return
 
-    employee = Employee.query.get(shift_request.employee_id)
-    resolved_user_id = employee.user_id if employee else shift_request.employee_id
+    emp_code = str(shift_request.employee_id).strip()
+    employee = Employee.query.filter(Employee.employee_id == emp_code).first()
+    if not employee:
+        try:
+            employee = Employee.query.get(int(emp_code))
+        except (ValueError, TypeError):
+            pass
+    resolved_user_id = employee.user_id if employee else None
     
     target_date = shift_request.from_date or shift_request.shift_date
     if not target_date:
@@ -408,8 +395,14 @@ def approve_shift(id):
                     }), 400
 
         # Resolve user_id dynamically
-        employee = Employee.query.get(shift.employee_id)
-        resolved_user_id = employee.user_id if employee else shift.employee_id
+        emp_code = str(shift.employee_id).strip()
+        employee = Employee.query.filter(Employee.employee_id == emp_code).first()
+        if not employee:
+            try:
+                employee = Employee.query.get(int(emp_code))
+            except (ValueError, TypeError):
+                pass
+        resolved_user_id = employee.user_id if employee else None
 
         from datetime import timedelta
         from models.attendance import Attendance
@@ -575,7 +568,13 @@ def reject_shift(id):
                         "message": "This One Day Wages request is Out of Date (older than 3 days) and cannot be rejected."
                     }), 400
 
-        employee = Employee.query.get(shift.employee_id)
+        emp_code = str(shift.employee_id).strip()
+        employee = Employee.query.filter(Employee.employee_id == emp_code).first()
+        if not employee:
+            try:
+                employee = Employee.query.get(int(emp_code))
+            except (ValueError, TypeError):
+                pass
 
         shift.status = "Rejected"
         shift.rejected_by = shift.reporting_manager or "Manager"
@@ -783,7 +782,7 @@ def get_shift_options():
 # ==========================================
 # EFFECTIVE SHIFT FOR TODAY (Sidebar use)
 # ==========================================
-@shift_bp.route("/effective-today/<int:employee_id>", methods=["GET"])
+@shift_bp.route("/effective-today/<employee_id>", methods=["GET"])
 def get_effective_shift_today(employee_id):
     """
     Return the employee's effective shift for today.
@@ -795,7 +794,13 @@ def get_effective_shift_today(employee_id):
         from zoneinfo import ZoneInfo
         today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
-        emp = Employee.query.get(employee_id)
+        emp_code = str(employee_id).strip()
+        emp = Employee.query.filter(Employee.employee_id == emp_code).first()
+        if not emp:
+            try:
+                emp = Employee.query.get(int(emp_code))
+            except (ValueError, TypeError):
+                pass
         if not emp:
             return jsonify({"error": "Employee not found"}), 404
 
@@ -805,7 +810,7 @@ def get_effective_shift_today(employee_id):
         # Look for an approved shift request (Shift or WFH) covering today
         # Latest request (by created_at) takes precedence
         approved_request = ShiftRequest.query.filter(
-            ShiftRequest.employee_id == employee_id,
+            ShiftRequest.employee_id == emp.employee_id,
             ShiftRequest.status == "Approved",
             ShiftRequest.from_date <= today,
             ShiftRequest.to_date >= today
@@ -863,15 +868,13 @@ def manager_submit_shift():
         if not employee_id or not from_date_str or not to_date_str:
             return jsonify({"success": False, "message": "employee_id, from_date, and to_date are required."}), 400
 
-        from models.employee import Employee
-        from sqlalchemy import or_
-
-        employee = Employee.query.filter(
-            or_(
-                Employee.id == employee_id,
-                Employee.employee_id == str(employee_id)
-            )
-        ).first()
+        emp_code = str(employee_id).strip()
+        employee = Employee.query.filter(Employee.employee_id == emp_code).first()
+        if not employee:
+            try:
+                employee = Employee.query.get(int(emp_code))
+            except (ValueError, TypeError):
+                pass
 
         if not employee:
             return jsonify({"success": False, "message": "Employee not found."}), 404

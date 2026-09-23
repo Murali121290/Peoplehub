@@ -190,7 +190,8 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   };
 
   const filteredShiftRequests = React.useMemo(() => {
-    const arr = Array.isArray(shiftRequests) ? shiftRequests : [];
+    const rawArr = Array.isArray(shiftRequests) ? shiftRequests : [];
+    const arr = rawArr.filter((req: any) => String(req.employee_id) === String(currentEmployee?.employee_id));
     if (mode === "shift") {
       return arr.filter((req: any) => req.request_type === "Shift");
     }
@@ -201,7 +202,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       return arr.filter((req: any) => req.request_type === "One Day Wages");
     }
     return arr;
-  }, [shiftRequests, mode]);
+  }, [shiftRequests, currentEmployee?.employee_id, mode]);
 
   const activeShiftRequests = filteredShiftRequests.filter((req: any) => {
     if (req.status !== "Pending") return false;

@@ -431,6 +431,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
     if (!currentEmployee || !shiftRequests.length) return false;
     const todayStr = new Date().toLocaleDateString("en-CA");
     return shiftRequests.some((shift: any) => {
+      if (String(shift.employee_id) !== String(currentEmployee.employee_id)) return false;
       if (shift.status !== "Approved") return false;
       return todayStr >= shift.from_date && todayStr <= shift.to_date;
     });
@@ -440,6 +441,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
     if (!currentEmployee) return "General Shift";
     const todayStr = new Date().toLocaleDateString("en-CA");
     const approvedShift = shiftRequests.find((shift: any) => {
+      if (String(shift.employee_id) !== String(currentEmployee.employee_id)) return false;
       if (shift.status !== "Approved") return false;
       return todayStr >= shift.from_date && todayStr <= shift.to_date;
     });
@@ -450,6 +452,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
     if (!currentEmployee) return "Office";
     const todayStr = new Date().toLocaleDateString("en-CA");
     const approvedRequest = shiftRequests.find((shift: any) => {
+      if (String(shift.employee_id) !== String(currentEmployee.employee_id)) return false;
       if (shift.status !== "Approved") return false;
       return todayStr >= shift.from_date && todayStr <= shift.to_date;
     });
@@ -1966,7 +1969,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
       }
 
       // If it belongs to current employee
-      if (Number(payload.employee_id) === Number(currentEmployee?.user_id)) {
+      if (String(payload.employee_id) === String(currentEmployee?.employee_id)) {
         setShiftRequests((prev) => {
           const index = prev.findIndex((s) => s.id === payload.id);
           if (index > -1) {
