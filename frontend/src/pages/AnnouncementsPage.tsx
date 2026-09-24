@@ -884,6 +884,26 @@ const AnnouncementsPage = () => {
     }
   };
 
+  const handleTogglePin = async (postId: number, currentPinStatus: boolean) => {
+    try {
+      const res = await fetch(`${BASE_API_URL}/api/communications/${postId}/pin`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_pinned: !currentPinStatus })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAnnouncements(prev => prev.map(a => a.id === postId ? { ...a, is_pinned: data.is_pinned } : a));
+        toast.success(data.message);
+      } else {
+        toast.error(data.error || "Failed to update pin status");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update pin status");
+    }
+  };
+
   const handleDelete = (postId: number) => {
     setDeleteConfirmId(postId);
   };
@@ -1570,7 +1590,11 @@ const AnnouncementsPage = () => {
                   <p className="text-sm text-neutral-500 mt-1">Check back later for company updates.</p>
                 </div>
               ) : (
-                filteredAnnouncements.map((item: any) => {
+                [...filteredAnnouncements].sort((a: any, b: any) => {
+                  if (a.is_pinned && !b.is_pinned) return -1;
+                  if (!a.is_pinned && b.is_pinned) return 1;
+                  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                }).map((item: any) => {
                   const badge = getRoleBadge(item.target_role);
                   const likesArray: any[] = (item.likes || []).map((l: any) =>
                     typeof l === "object" ? l : { employee_id: l, name: `User #${l}`, reaction: "👍" }
@@ -1599,6 +1623,7 @@ const AnnouncementsPage = () => {
                   return (
                     <div
                       key={item.id}
+                      id={`announcement-${item.id}`}
                       className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
                     >
                       <div className="flex items-start gap-4">
@@ -1608,6 +1633,13 @@ const AnnouncementsPage = () => {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
                             <div>
+                              {item.is_pinned && (
+                                <div className="mb-1">
+                                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                    📌 Pinned
+                                  </span>
+                                </div>
+                              )}
                               <h4 className="font-bold text-neutral-900 leading-none">{item.created_by}</h4>
                               <div className="flex items-center gap-2 mt-1">
                                 <span className="text-[12px] font-medium text-neutral-500">{formatDate(item.created_at)}</span>
@@ -1619,6 +1651,13 @@ const AnnouncementsPage = () => {
                             </div>
                             {canSendAnnouncement && (
                               <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => handleTogglePin(item.id, item.is_pinned)}
+                                  className="p-1.5 rounded-lg text-neutral-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                                  title={item.is_pinned ? "Unpin Announcement" : "Pin Announcement"}
+                                >
+                                  {item.is_pinned ? "📌" : "📍"}
+                                </button>
                                 <button
                                   onClick={() => handleOpenEdit(item)}
                                   className="p-1.5 rounded-lg text-neutral-400 hover:text-primary-600 hover:bg-neutral-100 transition-colors"
@@ -2062,14 +2101,50 @@ const AnnouncementsPage = () => {
             </div>
           </div>
 
-          {/* Right Sidebar - Today's Celebrations */}
-          {(todayBirthdays.length > 0 || todayAnniversaries.length > 0) && (
+          {/* Right Sidebar - Pinned Announcements & Today's Celebrations */}
+          {(todayBirthdays.length > 0 || todayAnniversaries.length > 0 || filteredAnnouncements.some((a: any) => a.is_pinned)) && (
             <div className="w-80 hidden lg:block">
-              <div className="sticky rounded-2xl bg-white p-5 shadow-sm border border-neutral-200" style={{ top: sidebarTopOffset }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-2xl">🎉</span>
-                  <h2 className="text-lg font-bold text-neutral-900">Today's Celebrations</h2>
-                </div>
+              <div className="sticky flex flex-col gap-4" style={{ top: sidebarTopOffset }}>
+                
+                {/* Pinned Announcements Section */}
+                {filteredAnnouncements.some((a: any) => a.is_pinned) && (
+                  <div className="rounded-2xl bg-amber-50/40 p-5 shadow-sm border border-amber-200">
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-xl">📌</span>
+                      <h2 className="text-md font-bold text-amber-900">Important Announcements</h2>
+                    </div>
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
+                      {filteredAnnouncements.filter((a: any) => a.is_pinned).map((item: any) => (
+                        <div 
+                          key={item.id} 
+                          className="rounded-xl bg-white border border-amber-100 p-3 hover:bg-amber-100/50 hover:border-amber-300 transition-all cursor-pointer shadow-sm group"
+                          onClick={() => {
+                            const el = document.getElementById(`announcement-${item.id}`);
+                            if (el) {
+                              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              el.classList.add('ring-2', 'ring-amber-400', 'ring-offset-2');
+                              setTimeout(() => el.classList.remove('ring-2', 'ring-amber-400', 'ring-offset-2'), 2000);
+                            }
+                          }}
+                        >
+                          <h4 className="font-bold text-sm text-neutral-800 leading-snug line-clamp-2 group-hover:text-amber-900">{item.title}</h4>
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-[10px] font-semibold text-neutral-500">{formatDate(item.created_at)}</span>
+                            <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 rounded">Pinned</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Celebrations */}
+                {(todayBirthdays.length > 0 || todayAnniversaries.length > 0) && (
+                  <div className="rounded-2xl bg-white p-5 shadow-sm border border-neutral-200">
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-2xl">🎉</span>
+                      <h2 className="text-lg font-bold text-neutral-900">Today's Celebrations</h2>
+                    </div>
 
                 {/* Birthdays Section */}
                 {todayBirthdays.length > 0 && (
@@ -2140,6 +2215,8 @@ const AnnouncementsPage = () => {
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
                   </div>
                 )}
               </div>
