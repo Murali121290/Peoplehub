@@ -2055,11 +2055,6 @@ def resolve_absent():
         
         employee = Employee.query.filter(Employee.employee_id == str(employee_id)).first()
         if not employee:
-            try:
-                employee = Employee.query.get(int(employee_id))
-            except (ValueError, TypeError):
-                pass
-        if not employee:
             return jsonify({"success": False, "error": "Employee not found"}), 404
             
         target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
