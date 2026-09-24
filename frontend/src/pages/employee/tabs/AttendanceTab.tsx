@@ -325,7 +325,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     setIsResolving(true);
     try {
       const res = await apiService.post("/leaves/resolve-absent", {
-        employee_id: targetEmpId,
+        employee_id: currentEmployee?.employee_id,
         date: resolvingCell.dateStr,
         action,
         reason: resolveReason.trim(),
@@ -371,7 +371,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       const userObj = userStr ? JSON.parse(userStr) : {};
 
       const payload = {
-        employee_id: targetEmpId,
+        employee_id: currentEmployee?.employee_id,
         employee_name: currentEmployee ? `${currentEmployee.first_name} ${currentEmployee.last_name}` : userObj.name || "Employee",
         current_shift: fromTime,
         requested_shift: toTime,
@@ -467,7 +467,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       const userStr = localStorage.getItem("user");
       const userObj = userStr ? JSON.parse(userStr) : {};
 
-      const targetEmpCode = currentEmployee?.employee_id || user.employee_id || targetEmpId;
+      const targetEmpCode = currentEmployee?.employee_id;
 
       const payload = {
         employee_id: targetEmpCode,
