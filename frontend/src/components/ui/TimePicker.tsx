@@ -9,6 +9,7 @@ interface TimePickerProps {
   name?: string;
   error?: boolean;
   disabled?: boolean;
+  defaultPeriod?: "AM" | "PM";
 }
 
 export const TimePicker: React.FC<TimePickerProps> = ({
@@ -20,13 +21,14 @@ export const TimePicker: React.FC<TimePickerProps> = ({
   name,
   error = false,
   disabled = false,
+  defaultPeriod = "AM",
 }) => {
   const hourInputRef = useRef<HTMLInputElement>(null);
   const minuteInputRef = useRef<HTMLInputElement>(null);
 
   const [hourVal, setHourVal] = useState("");
   const [minuteVal, setMinuteVal] = useState("");
-  const [periodVal, setPeriodVal] = useState<"AM" | "PM">("AM");
+  const [periodVal, setPeriodVal] = useState<"AM" | "PM">(defaultPeriod);
 
   // Synchronize internal state with external value
   useEffect(() => {
@@ -42,9 +44,9 @@ export const TimePicker: React.FC<TimePickerProps> = ({
     } else {
       setHourVal("");
       setMinuteVal("");
-      setPeriodVal("AM");
+      setPeriodVal(defaultPeriod);
     }
-  }, [value]);
+  }, [value, defaultPeriod]);
 
   const updateParent = (hStr: string, mStr: string, p: "AM" | "PM") => {
     // Only commit if we have a fully qualified 2-digit minute

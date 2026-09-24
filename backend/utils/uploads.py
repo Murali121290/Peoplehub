@@ -10,7 +10,22 @@ import os
 
 def get_uploads_dir() -> str:
     """Return the base uploads directory, always absolute."""
-    return os.environ.get("UPLOADS_DIR", "/opt/uploads")
+    env_dir = os.environ.get("UPLOADS_DIR")
+    if env_dir:
+        return env_dir
+    # When running on Windows host locally
+    if os.name == "nt":
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "uploads"))
+        if os.path.exists(base_dir):
+            return base_dir
+    # When running inside Docker container (Linux)
+    if os.path.exists("/opt/uploads"):
+        return "/opt/uploads"
+    # Local dev fallback
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "uploads"))
+    if os.path.exists(base_dir):
+        return base_dir
+    return "/opt/uploads"
 
 def get_upload_path(*parts: str) -> str:
     """

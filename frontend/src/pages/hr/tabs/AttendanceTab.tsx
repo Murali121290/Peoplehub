@@ -1343,11 +1343,12 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({
                   const workingHours = Number(row.working_hours || 0);
                   const workingHoursFormatted = formatHoursMinutes(workingHours);
 
+                  const totalHours = Number(row.gross_hours || row.grossHours || row.total_hours || row.totalHours || (workingHours + (Number(row.lunch_minutes || 0) + Number(row.tea_minutes || 0)) / 60) || 0);
+
                   let overtime = "00:00";
-                  if (workingHours > 8) {
-                    const otVal = workingHours - 8;
-                    const otHrs = Math.floor(otVal);
-                    overtime = otHrs > 0 ? `${otHrs}h` : "—";
+                  if (totalHours > 9) {
+                    const otVal = totalHours - 9;
+                    overtime = formatHoursMinutes(otVal);
                   }
 
                   return (

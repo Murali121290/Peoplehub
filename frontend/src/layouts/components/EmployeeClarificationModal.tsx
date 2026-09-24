@@ -371,6 +371,7 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
                     <label className="block text-[10px] font-bold text-neutral-700 mb-1">CHECK-OUT TIME *</label>
                     <TimePicker
                       required
+                      defaultPeriod="PM"
                       value={checkOutTime}
                       onChange={(val) => setCheckOutTime(val)}
                       className="w-full text-xs"
@@ -467,6 +468,7 @@ const EmployeeClarificationModal: React.FC<EmployeeClarificationModalProps> = ({
                           <label className="block text-[10px] font-bold text-neutral-600 mb-1">CHECK-OUT TIME *</label>
                           <TimePicker
                             required
+                            defaultPeriod="PM"
                             value={checkOutTime}
                             onChange={(val) => setCheckOutTime(val)}
                             className="w-full text-xs"

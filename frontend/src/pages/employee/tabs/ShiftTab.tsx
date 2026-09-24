@@ -138,12 +138,9 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       // 1. Only check approved leaves
       if (leave.status !== "Approved" || leave.request_type !== "Leave") return false;
 
-      // 2. Match by employee identifier variations
+      // 2. Match by employee identifier
       const leaveEmpId = String(leave.employee_id || "");
-      if (
-        leaveEmpId !== String(currentEmployee.id) &&
-        leaveEmpId !== String(currentEmployee.employee_id)
-      ) return false;
+      if (leaveEmpId !== String(currentEmployee.employee_id)) return false;
 
       if (!leave.from_date || !leave.to_date) return false;
       const leaveStart = new Date(leave.from_date);
@@ -174,7 +171,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
     }
 
     onSubmitShift({
-      employee_id: currentEmployee.employee_id || currentEmployee.id,
+      employee_id: currentEmployee.employee_id,
       employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
       current_shift: currentEmployee.shift_timing || "General Shift",
       reporting_manager: currentEmployee.reporting_manager || "Admin",
@@ -193,7 +190,8 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
   };
 
   const filteredShiftRequests = React.useMemo(() => {
-    const arr = Array.isArray(shiftRequests) ? shiftRequests : [];
+    const rawArr = Array.isArray(shiftRequests) ? shiftRequests : [];
+    const arr = rawArr.filter((req: any) => String(req.employee_id) === String(currentEmployee?.employee_id));
     if (mode === "shift") {
       return arr.filter((req: any) => req.request_type === "Shift");
     }
@@ -204,7 +202,7 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       return arr.filter((req: any) => req.request_type === "One Day Wages");
     }
     return arr;
-  }, [shiftRequests, mode]);
+  }, [shiftRequests, currentEmployee?.employee_id, mode]);
 
   const activeShiftRequests = filteredShiftRequests.filter((req: any) => {
     if (req.status !== "Pending") return false;
