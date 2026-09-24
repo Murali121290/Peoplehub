@@ -1776,7 +1776,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
                           isActive
                             ? "bg-primary-600 text-white shadow-md shadow-primary-500/20 ring-4 ring-primary-50"
                             : isCompleted
-                            ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/10"
+                            ? "bg-primary-600 text-white shadow-md shadow-primary-500/10"
                             : "bg-neutral-100 text-neutral-400 group-hover:bg-neutral-200 group-hover:text-neutral-600"
                         }`}
                       >
@@ -1787,7 +1787,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
                           isActive
                             ? "text-primary-600"
                             : isCompleted
-                            ? "text-emerald-600"
+                            ? "text-primary-700"
                             : "text-neutral-400 group-hover:text-neutral-600"
                         }`}
                       >

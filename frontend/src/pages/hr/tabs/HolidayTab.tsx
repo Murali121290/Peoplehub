@@ -219,7 +219,7 @@ export const HolidayTab: React.FC = () => {
           <Button
             onClick={handlePublishAll}
             icon={MegaphoneIcon}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-sm"
+            className="bg-primary-600 hover:bg-primary-700 text-white font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-sm"
           >
             Publish Drafts
           </Button>

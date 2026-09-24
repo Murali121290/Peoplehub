@@ -34,238 +34,227 @@ interface FAQItem {
 }
 
 const FAQ_DATA: FAQItem[] = [
-  // --- PeopleHub Core Info ---
-  {
-    id: 999,
-    category: 'attendance',
-    question: 'What is PeopleHub and how does it replace Pathfinder?',
-    answer: 'PeopleHub is the centralized Employee Management and Attendance Tracking system for S4Carlisle. It completely replaces the older Pathfinder system. Crucially, ONLY the attendance logged inside PeopleHub is considered for monthly payroll processing and salary credits. Make sure to check in and check out daily on PeopleHub to ensure your attendance and payroll calculations are accurate.'
-  },
-  {
-    id: 1000,
-    category: 'attendance',
-    question: 'What are the core processes and features available in PeopleHub?',
-    answer: 'PeopleHub manages the entire employee lifecycle and daily operations from top to bottom. The key processes include:\n\n1. Daily Attendance (Check-In/Out): Click "Check In" on your dashboard to select your shift and work mode (Office/WFH). Use break trackers (Lunch/Tea) to pause/resume the timer. Click "Check Out" at the end of the shift.\n\n2. Hybrid / Work From Home (WFH): Toggle work mode directly during check-in to apply for today\'s WFH without visiting the requests page. For past/future dates, submit a WFH request under "Requests".\n\n3. One Day Wages (ODW): Claim extra wages when working on weekends/public holidays either in real-time on check-in or by clicking the blue holiday block on your "Attendance" calendar.\n\n4. Leaves & Regularization: Apply for leaves, regularization (missed punches), and late entry/early exit permissions under the "Attendance" tab.\n\n5. Shift Requests: Request shift timing changes in the "Shift" tab.\n\n6. Appraisal & Payroll: Access monthly salary slips, check tax details, download forms, and complete self-appraisals under the "Appraisal" and "Payroll" tabs.'
-  },
-  // --- Attendance ---
   {
     id: 1,
     category: 'attendance',
-    question: 'How do I check in or check out?',
-    answer: 'Navigate to your Employee Dashboard and click the "Check In" button. A modal will appear where you can select your shift timing and work mode (e.g., Office or WFH). Once confirmed, your daily work timer starts. When your workday is complete, click the "Check Out" button to end your timer and register your hours.'
-  },
-  {
-    id: 101,
-    category: 'attendance',
-    question: 'If I am in Hybrid mode, how do I apply for WFH?',
-    answer: 'For today\'s work, you do not need to go to the WFH request page. Just click "Check In" on your dashboard, toggle the work mode to "WFH", and confirm. You only need to use the WFH request page under the "Requests" tab for future dates or to correct past dates.'
+    question: 'What is PeopleHub?',
+    answer: 'PeopleHub is the centralized Employee Management and Attendance Tracking System for S4Carlisle. Attendance recorded in PeopleHub will be considered for monthly payroll processing and salary credit. Please ensure that you check in and check out on PeopleHub daily so that your attendance and payroll calculations are accurate.'
   },
   {
     id: 2,
     category: 'attendance',
-    question: 'How do break timers (Lunch & Tea) work?',
-    answer: 'While checked in, you will see buttons to start a "Lunch Break" or "Tea Break". Clicking these pauses your active working hours tracker and logs your break duration. When you return, click "Stop Break" to resume tracking your working hours. The system automatically subtracts breaks from your total hours.'
+    question: 'What are the core processes and features available in PeopleHub?',
+    answer: 'PeopleHub manages the entire employee life cycle and daily operations end to end. The key processes include:\n\n1. Daily Attendance (Check-In/Check-Out): From your PeopleHub Dashboard, click "Check In" to record your attendance. Select your shift and work mode (Office/WFH). Use the Lunch and Tea break trackers to pause/resume the timer as needed. At the end of your shift, click "Check Out" to complete your attendance for the day.\n\n2. Hybrid/Work from Home (WFH): You can select your work mode directly during check-in for the current day. Simply choose WFH while checking in, without submitting a separate request through the "My Requests" page. For past/future dates, submit a WFH request through "My Requests."\n\n3. One Day Wages (ODW): If you work on a weekend or public holiday, you can claim extra wages either during check-in or through the blue holiday block on your "Attendance" calendar.\n\n4. Leaves and Regularization: Apply for leaves, regularization (missed punches), and late entry/early exit permissions under the "Attendance" tab.\n\n5. Shift Requests: Request shift timing changes in the "Shift Changes" tab.\n\n6. Appraisal and Payroll: Access monthly salary slips, check tax details, download forms, and complete self-appraisals under the "Appraisal" and "Payroll" tabs.'
   },
   {
     id: 3,
     category: 'attendance',
-    question: 'What is the session inactivity timeout?',
-    answer: 'For security reasons, if there is no movement or interaction (such as mouse movement, clicks, scrolling, or keystrokes) on the site for 15 minutes, your session will automatically expire, and the system will log you out. Any activity resets this timer.'
+    question: 'How do I check in or check out?',
+    answer: 'Navigate to your Employee Dashboard and click the "Check In" option. A modal will appear, allowing you to select your shift timing and work mode (e.g., Office or WFH). Once confirmed, your daily work timer starts. At the end of your workday, click the "Check Out" option to stop the timer and record your working hours for the day.'
   },
   {
     id: 4,
     category: 'attendance',
-    question: 'What are the standard office timings?',
-    answer: 'Standard working hours for the General Shift are from 09:00 AM to 06:00 PM. Employees are expected to log a minimum of 9 working hours per day. If logged working hours are below 9 hours, it will be considered as a half day.'
+    question: 'If I am in Hybrid mode, how do I apply for WFH?',
+    answer: 'For the current day, you do not need to submit a "Work Mode" (WFH) request through the "My Requests" page. Simply click "Check In" on your Employee Dashboard, select "WFH" as your work mode, and confirm your selection to start your work timer. Use the WFH request option under the "My Requests" tab only for future dates or to update WFH details for past dates.'
   },
-  {
-    id: 19,
-    category: 'attendance',
-    question: 'Can I check in when working from home (WFH)?',
-    answer: 'Yes. When you click "Check In", a work mode selection modal will appear. Choose "WFH" (Work From Home) and select your shift timing. Your timer will start normally and the day will be recorded as a WFH day in your attendance history.'
-  },
-  {
-    id: 20,
-    category: 'attendance',
-    question: 'What happens if I forget to check out?',
-    answer: 'If you forget to check out, the system will flag that day and show a "Provide Clarification" prompt the next working day. You will need to enter the actual time you stopped working so your manager can review and approve it. Until approved, those hours will remain unconfirmed in your record.'
-  },
-
-  // --- Leaves & Regularization ---
   {
     id: 5,
-    category: 'leaves',
-    question: 'How do I apply for leave?',
-    answer: 'Navigate to the "My Requests" tab in the sidebar navigation, then click the "Apply Leave" button. Select the start and end dates, leave type (CL/SL, Loss of Pay, etc.), leave duration (Full Day, First/Second Half), confirm your reporting manager, add a reason, and click submit. You will receive a notification once approved or rejected.'
+    category: 'attendance',
+    question: 'How do break timers (Lunch and Tea) work?',
+    answer: 'After checking in, you will see options to start a "Lunch Break" or "Tea Break." Clicking either options pauses your active work timer and logs your break duration. When you return, click the same break option to resume tracking your working hours. PeopleHub automatically deducts your recorded break time from your total working hours.'
   },
   {
     id: 6,
-    category: 'leaves',
-    question: 'What is a clarification/regularization request and when do I submit one?',
-    answer: 'If you forgot to check in or out yesterday, the system will mark that day as needing clarification. Click "Provide Clarification" on that specific day in your dashboard. You will be prompted to enter your actual check-in and check-out times, which are sent to your manager for approval. Once approved, your daily record will update automatically.'
+    category: 'attendance',
+    question: 'What is session inactivity timeout?',
+    answer: 'For security reasons, your session will automatically expire and you will be logged out if there is no activity (such as mouse movement, clicks, scrolling, or keystrokes) on the site for 15 consecutive minutes. Any activity resets this timer.'
   },
   {
     id: 7,
-    category: 'leaves',
-    question: 'What do the colors on the Attendance Calendar represent?',
-    answer: 'The calendar uses color codes to identify your daily status:\n• Green: Present (Full Day worked)\n• Yellow/Light Green: Half Day worked\n• Red: Absent\n• Blue: Weekly Off or Public Holiday\n• Yellow/Orange outline: Clarification/Regularization request is pending manager review.'
+    category: 'attendance',
+    question: 'What are the standard office timings?',
+    answer: 'Standard working hours for the General Shift are from 09:00 AM to 06:00 PM. Employees are expected to complete a minimum of 9 hours per day, including break time. If the total logged hours are less than 9 hours, the day will be considered a half working day.'
   },
   {
     id: 8,
-    category: 'leaves',
-    question: 'How do I apply for One Day Wages (ODW)?',
-    answer: 'There are two ways to apply for One Day Wages (ODW) depending on the date:\n\n• For Today (Current Day): Click "Check In" on your dashboard. When prompted "Consider as One Day Wages?", click "Yes, Request" to submit and check in.\n\n• For Past Dates (Claiming after the fact): Go to the "Attendance" tab, click on the specific Weekend or Public Holiday (Blue block) on your attendance calendar, fill in your "Reason for Claiming One Day Wages" in the details panel, and click "Claim One Day Wages".'
+    category: 'attendance',
+    question: 'Can I check in when working from home?',
+    answer: 'Yes. When you click "Check In," a work mode selection modal will appear. Choose "WFH" and select your shift timing. Your work timer will start normally, and the day will be recorded as a WFH day in your attendance history.'
   },
   {
     id: 9,
+    category: 'attendance',
+    question: 'What happens if I forget to check out?',
+    answer: 'If you forget to check out, the system will flag the day and display a "Provide Clarification" prompt on the next working day. You will need to enter the actual time you stopped working so that your manager can review and approve it. Until approval, those hours will remain unconfirmed in your record.'
+  },
+  {
+    id: 10,
+    category: 'leaves',
+    question: 'How do I apply for leave?',
+    answer: 'Navigate to the "My Requests" tab, then click "Apply Leave." Select the start and end dates, leave type (CL/SL, Loss of Pay, etc.), leave duration (Full Day, First/Second Half). Add a reason and click "Submit." You will receive a notification once the leave request is approved or rejected.'
+  },
+  {
+    id: 11,
+    category: 'attendance',
+    question: 'What is a clarification/regularization request and when to submit one?',
+    answer: 'If you forgot to check in or check out on the previous day, the system will mark that day as needing clarification. Click "Provide Clarification" for the specific day in your Dashboard. You will be prompted to enter your actual check-in and check-out times, which will be sent to your manager for approval. Once approved, your attendance will be updated automatically.'
+  },
+  {
+    id: 12,
+    category: 'attendance',
+    question: 'What do the colors on the Attendance Calendar represent?',
+    answer: 'The calendar uses color codes to identify your daily status:\n\n• Green: Present (Full day worked)\n• Yellow/Light Green: Half day worked\n• Red: Absent\n• Blue: Weekly off or public holiday\n• Yellow/Orange outline: Clarification/Regularization request is pending manager review'
+  },
+  {
+    id: 13,
+    category: 'attendance',
+    question: 'How do I apply for ODW?',
+    answer: 'There are two ways to apply for ODW depending on the date:\n\n• For Current Day: Click "Check In" on your Dashboard. When prompted "Consider as One Day Wages?" click "Yes, Request" to submit and check in.\n• For Past Dates (claiming later): Go to the "Attendance" tab, click on the specific Weekend or Public Holiday (blue block) on your attendance calendar, fill in your "Reason for Claiming One Day Wages" in the details panel, and click "Claim One Day Wages."'
+  },
+  {
+    id: 14,
     category: 'leaves',
     question: 'How long does it take for leave and shift requests to be approved?',
     answer: 'Reporting managers and HR strive to review all leave, shift changes, and regularization requests within 24 to 48 business hours. If your request is urgent, please follow up with your manager directly.'
   },
   {
-    id: 10,
+    id: 15,
     category: 'leaves',
-    question: 'How do I request a Permission (Late Entry / Early Exit)?',
-    answer: 'Navigate to the "My Requests" tab in the sidebar navigation, click the "Permissions" sub-tab, and click the "Apply Permission" button. Select the date, choose the From/To times, select your reporting manager, add a reason, and submit.'
+    question: 'How do I request a Permission (Late Entry/Early Exit)?',
+    answer: 'Navigate to the "My Requests" tab, click the "Permissions" subtab, and click the "Apply Permission" option. Select the date, choose the From/To timing, add a reason, and submit.'
   },
   {
-    id: 11,
+    id: 16,
     category: 'leaves',
     question: 'How do I apply for a Shift Change?',
-    answer: 'Navigate to the "My Requests" tab in the sidebar navigation, click the "Shift" sub-tab, then click the "Request Shift Change" button. Select the date range, choose your requested shift timings, select your reporting manager, add a reason, and submit it for manager review.'
+    answer: 'Navigate to the "My Requests" tab, click the "Shift" subtab, then click the "Request Shift Change" option. Select the date range, choose your requested shift timings, add a reason, and submit.'
   },
   {
-    id: 12,
+    id: 17,
     category: 'leaves',
     question: 'If I was absent on a past date, how do I apply for a leave to cover it?',
-    answer: 'Go to the leave application form, select the past date (the day you were absent) as both the Start Date and End Date, choose the type of leave (Casual, Sick, or LOP), and submit the request. Once approved by your manager, the status for that past day will automatically update from "Absent" to "Leave".'
+    answer: 'Go to the leave application form, select the past date (the day you were absent) as both the Start Date and End Date, choose the type of leave (Casual, Sick, or LOP), and submit the request. Once it is approved by your manager, the status for that past day will automatically update from "Absent" to "Leave."'
   },
   {
-    id: 21,
+    id: 18,
     category: 'leaves',
     question: 'How do I check my remaining leave balance?',
-    answer: 'Navigate to the "Attendance" tab and scroll to the Leave section. Your current leave balance (Casual Leave, Sick Leave, etc.) is displayed at the top of the section showing how many days are used and how many remain for the year.'
+    answer: 'Navigate to the "Attendance" tab and scroll to the Leave section. Your current leave balance (casual leave, sick leave, etc.) will be displayed at the top of the section, showing the number of leaves availed and the balance leaves available for the year.'
   },
   {
-    id: 22,
+    id: 19,
     category: 'leaves',
     question: 'Can I cancel a leave request after submitting it?',
     answer: 'Yes, as long as your request is still in "Pending" status (not yet approved), you can cancel it from the Leave section in the Attendance tab. Once a leave is approved, you will need to contact your manager or HR to cancel it manually.'
   },
   {
-    id: 23,
+    id: 20,
     category: 'leaves',
     question: 'What happens if my manager rejects my leave request?',
-    answer: 'You will receive a notification when your leave request is rejected. Your leave balance will not be deducted, and the rejected days will revert to their original attendance status. You may re-apply with an updated reason or discuss with your manager directly.'
+    answer: 'You will receive a notification when your leave request is rejected. Your leave will not be deducted, and the rejected days will be reverted to their original attendance status. You may reapply with an updated reason or discuss with your manager directly.'
   },
-
-  // --- Office Tools ---
   {
-    id: 13,
+    id: 21,
     category: 'office',
-    question: "How do I find a colleague's contact number or extension?",
+    question: 'How do I find a colleague’s contact number or extension?',
     answer: 'Navigate to the "Intercom Directory" tab from the sidebar. You can search by name, department, or extension to find contact details and intercom extensions of any employee instantly.'
   },
   {
-    id: 14,
+    id: 22,
     category: 'office',
     question: 'How can I book a meeting room?',
     answer: 'Navigate to the "Meeting Rooms" page from the sidebar. Select a room, choose an available time slot, fill in the meeting title/description, and submit the booking. You can view existing bookings to avoid conflicts.'
   },
   {
-    id: 24,
+    id: 23,
     category: 'office',
     question: 'How do I view company announcements?',
     answer: 'Click on "Announcements" in the navigation sidebar. Here you will find all official notices, policy updates, events, and company-wide messages posted by HR and management. Unread announcements are highlighted so you do not miss anything important.'
   },
-
-  // --- Performance & Profile ---
   {
-    id: 15,
+    id: 24,
     category: 'performance',
     question: 'How do I submit my performance appraisal self-evaluation?',
-    answer: 'Navigate to the "Appraisal" page from the sidebar. Select the active appraisal cycle, click on your self-evaluation form, answer the performance questions, and click submit. It will go to your manager for their evaluation.'
-  },
-  {
-    id: 16,
-    category: 'performance',
-    question: 'How do I update my profile details?',
-    answer: 'Navigate to your Profile tab (top right avatar or profile menu) and click "Edit Details". Once you save the updates, some sensitive fields (such as Bank Details or DOB) might require HR approval before they are officially updated.'
-  },
-  {
-    id: 17,
-    category: 'performance',
-    question: 'How do I submit claims for travel, internet, or phone bills?',
-    answer: 'To submit reimbursement claims, please contact the HR or Finance team directly with the supportive invoices. Online reimbursement processing is currently under development and will launch in an upcoming release.'
+    answer: 'Navigate to the "Appraisal" page from the sidebar. Select the active appraisal cycle, click on your self-evaluation form, answer the performance questions, and click "Submit." It will be sent to your manager for their evaluation.'
   },
   {
     id: 25,
-    category: 'performance',
-    question: 'How do I view or download my payslip?',
-    answer: 'Navigate to your Profile tab and select the "Payslip" or "Salary" section. You can view monthly payslips and download them as PDF. If your payslip is missing or shows incorrect details, please contact your HR team.'
+    category: 'office',
+    question: 'How do I update my profile details?',
+    answer: 'Navigate to the Profile menu on the Dashboard and click "Edit Profile." Once you save the updates, the profile gets updated. Some sensitive data (such as Bank Details or Date of Birth) might require HR approval before they are officially updated.'
   },
-
-
-  // --- Support & Troubleshooting ---
+  {
+    id: 26,
+    category: 'support',
+    question: 'How do I submit claims for travel, internet, or phone bills?',
+    answer: 'To submit reimbursement claims, please contact the HR or Finance team directly with supporting invoices. Online reimbursement processing is currently under development and will be launched in an upcoming release.'
+  },
   {
     id: 27,
     category: 'support',
-    question: 'My biometric punch time is different from my actual check-in time. What do I do?',
-    answer: 'Biometric card punch times are automatically synced into the system. If there is a mismatch (e.g., the card reader showed a different time than when you actually arrived), submit a clarification/regularization request for that date with your correct check-in and check-out times. Your manager will review and approve the corrected timings.'
-  },
-  {
-    id: 18,
-    category: 'support',
-    question: 'What should I do if the portal encounters an error or behaves unexpectedly?',
-    answer: 'If you encounter slow page loads, unresponsive buttons, or discrepancies in your active timer or check-in buttons, please follow these troubleshooting steps:\n\n1. **Hard Refresh**: Force your browser to reload with the latest files and clear caches. Press **Ctrl + Shift + R** (Windows/Linux) or **Cmd + Shift + R** (Mac).\n2. **Log Out & Log In**: Click your profile icon, click "Logout", and sign back in. This clears old browser tokens and re-establishes live websocket connections.\n3. **Contact Manager / Support**: If the issue persists, take a screenshot of the error and contact your Reporting Manager or the HR/IT support team directly.'
+    question: 'How do I view or download my payslip?',
+    answer: 'Navigate to your Profile tab and select the "Payslip" or "Salary" section. You can view monthly payslips and download them as a PDF. If your payslip is missing or shows incorrect details, please contact the HR team.'
   },
   {
     id: 28,
+    category: 'attendance',
+    question: 'My biometric punch time is different from my actual check-in time. What should I do?',
+    answer: 'Biometric card punch times are automatically synced into the system. If there is a mismatch (e.g., the card reader showed a different time than when you actually arrived), submit a clarification/regularization request for that date with your correct check-in and check-out times. Your manager will review and approve the corrected timings.'
+  },
+  {
+    id: 29,
+    category: 'support',
+    question: 'What should I do if the portal encounters an error or behaves unexpectedly?',
+    answer: 'If you encounter slow page loads, unresponsiveness, or discrepancies in your active timer or check-in options, please follow these troubleshooting steps:\n\n1. Hard Refresh: Forces your browser to reload with the latest files and clear caches. Press Ctrl + Shift + R (Windows/Linux) or Cmd + Shift + R (Mac).\n2. Log Out and Log In: Click your profile icon, click "Logout," and sign back in. This clears old browser tokens and reestablishes live WebSocket connections.\n3. Contact Manager/Support: If the issue persists, take a screenshot of the error and contact your reporting manager or the HR/IT support team directly.'
+  },
+  {
+    id: 30,
     category: 'attendance',
     question: 'Is there a grace period for daily check-in times?',
     answer: 'Yes, a standard 15-minute grace period is allowed for General Shift check-ins. If your shift starts at 09:00 AM, you can check in up to 09:15 AM without being flagged as late. However, you must still log a total of 8 working hours for the day.'
   },
   {
-    id: 29,
+    id: 31,
     category: 'attendance',
     question: 'Can I check in multiple times on the same day?',
     answer: 'No, you can only check in once per day. Checking in starts a single daily work timer. If you need to exit early and check in again, or if you accidentally checked out, do not worry—simply check out and submit a "Clarification/Regularization" request for the missing hours to your manager.'
   },
   {
-    id: 30,
-    category: 'leaves',
-    question: 'What is the "Sandwich Leave Rule" and how does it affect me?',
-    answer: 'The Sandwich Leave Rule states that if you take LOP (unpaid) or Casual leaves on both the day preceding a weekend/holiday (e.g. Friday) and the day following it (e.g. Monday), the intermediate non-working days (Saturday and Sunday) will also be treated as leave days and deducted from your balance.'
-  },
-  {
-    id: 31,
-    category: 'leaves',
-    question: 'When do my monthly permission hours refresh?',
-    answer: 'Permission hours auto-refresh back to 2.0 hours for all employees on the 25th of every month at 00:01 AM. Unused permission hours from the previous cycle do not carry over to the next month.'
-  },
-  {
     id: 32,
     category: 'leaves',
-    question: 'Can I apply for WFH (Work From Home) mode for past dates?',
-    answer: 'Yes. If you worked from home on a past date but forgot to set your mode, submit a "Requests" -> "Apply Shift/Work Mode" or regularization request specifying the date, select "WFH" mode, and provide a reason for your manager to approve.'
+    question: 'What is the “Sandwich Leave Rule,” and how does it affect me?',
+    answer: 'The Sandwich Leave Rule states that if you take LOP (unpaid) or casual leave on both the day preceding a weekend/holiday (e.g., Friday) and the day following it (e.g., Monday), the intermediate nonworking days (Saturday and Sunday) will also be treated as leave days and deducted from your balance.'
   },
   {
     id: 33,
-    category: 'performance',
-    question: 'Can I edit my performance appraisal form after I have submitted it?',
-    answer: 'No, once you click "Submit", your appraisal self-evaluation is locked and forwarded to your manager. If you made a mistake and need to edit it, please ask your manager to "Send Back" the evaluation form to your queue from their dashboard.'
+    category: 'leaves',
+    question: 'When do my monthly permission hours refresh?',
+    answer: 'Permission hours auto-refresh back to 2.0 hours for all employees on the 25th of every month at 00:01 AM. Any unused permission hours from the previous cycle will not be carried forward to the following month.'
   },
   {
     id: 34,
-    category: 'leaves',
-    question: 'What is the date range for the monthly payroll cycle?',
-    answer: 'Our payroll cycle runs from the 25th of the previous month to the 24th of the current month. For example, October payroll calculates attendance and leaves between September 25th and October 24th. Stored payable days are calculated from confirmations during this period.'
+    category: 'attendance',
+    question: 'Can I apply for WFH mode for past dates?',
+    answer: 'Yes. If you worked from home on a past date but forgot to set your mode, submit via "My Requests" -> "Apply Shift/Work Mode" or a regularization request specifying the date, select "WFH" mode, and provide a reason for your manager to approve.'
   },
   {
     id: 35,
+    category: 'performance',
+    question: 'Can I edit my performance appraisal form after I have submitted it?',
+    answer: 'No, once you click "Submit," your appraisal self-evaluation is locked and forwarded to your manager. If you made a mistake and need to edit it, request your manager to "Send Back" the evaluation form to your queue from their Dashboard.'
+  },
+  {
+    id: 36,
+    category: 'support',
+    question: 'What is the date range for the monthly payroll cycle?',
+    answer: 'Our payroll cycle runs from the 25th of the previous month to the 24th of the current month. For example, October payroll is based on attendance and leave records between September 25th and October 24th. Payable days are calculated from confirmations during this period.'
+  },
+  {
+    id: 37,
     category: 'support',
     question: 'Who should I contact if my monthly leave balance is incorrect?',
-    answer: 'If you notice a discrepancy in your Casual, Sick, or Permission balances that does not align with your approved requests, please email HR directly at hr.chennai@s4carlisle.com with your Employee ID and a description of the issue.'
+    answer: 'If you notice a discrepancy in your casual leave, sick leave, or permission balances that does not align with your approved requests, please email HR at hr.chennai@s4carlisle.com with your Employee ID and a brief description of the issue.'
   }
 ];
 
@@ -998,7 +987,7 @@ export const FAQPage: React.FC = () => {
             {isHR && (
               <button
                 onClick={() => setShowAddModal(true)}
-                className="flex-shrink-0 self-start sm:self-center flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-sm transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
+                className="flex-shrink-0 self-start sm:self-center flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-bold shadow-sm transition-all cursor-pointer hover:scale-[1.01] active:scale-95"
               >
                 <PlusIcon className="h-4.5 w-4.5" />
                 Add FAQ
@@ -1109,7 +1098,7 @@ export const FAQPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={addLoading}
-                    className="px-5 py-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 rounded-xl transition-all cursor-pointer flex items-center gap-2"
+                    className="px-5 py-2.5 text-sm font-bold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-60 rounded-xl transition-all cursor-pointer flex items-center gap-2"
                   >
                     {addLoading ? (
                       <><span className="w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />Saving...</>
