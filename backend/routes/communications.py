@@ -176,6 +176,7 @@ def get_announcements():
                 announcements = Communication.query.filter_by(
                     message_type="announcement"
                 ).order_by(
+                    Communication.is_pinned.desc(),
                     Communication.created_at.desc()
                 ).all()
             # If manager, show both 'all' and 'manager' targeted announcements
@@ -184,6 +185,7 @@ def get_announcements():
                     Communication.message_type == "announcement",
                     Communication.target_role.in_(["all", "manager"])
                 ).order_by(
+                    Communication.is_pinned.desc(),
                     Communication.created_at.desc()
                 ).all()
             # Else (employee/user/standard), show 'all' and 'employee' targeted announcements
@@ -192,6 +194,7 @@ def get_announcements():
                     Communication.message_type == "announcement",
                     Communication.target_role.in_(["all", "employee"])
                 ).order_by(
+                    Communication.is_pinned.desc(),
                     Communication.created_at.desc()
                 ).all()
         else:
@@ -236,6 +239,48 @@ def get_announcements():
 
     except Exception as e:
 
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# ==========================================
+# TOGGLE PIN
+# ==========================================
+
+@communication_bp.route(
+    "/<int:message_id>/pin",
+    methods=["PATCH"]
+)
+def toggle_pin(message_id):
+    try:
+        data = request.json
+        is_pinned = data.get("is_pinned", False)
+
+        message = Communication.query.get(message_id)
+        if not message:
+            return jsonify({
+                "success": False,
+                "error": "Message Not Found"
+            }), 404
+
+        message.is_pinned = is_pinned
+        db.session.commit()
+
+        socketio.emit(
+            "update_announcement",
+            message.to_dict()
+        )
+
+        return jsonify({
+            "success": True,
+            "message": "Pin status updated successfully",
+            "is_pinned": message.is_pinned
+        })
+
+    except Exception as e:
+        db.session.rollback()
         return jsonify({
             "success": False,
             "error": str(e)

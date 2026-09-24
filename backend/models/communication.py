@@ -83,6 +83,11 @@ class Communication(db.Model):
         default=datetime.utcnow
     )
 
+    is_pinned = db.Column(
+        db.Boolean,
+        default=False
+    )
+
     def to_dict(self):
 
         return {
@@ -103,5 +108,6 @@ class Communication(db.Model):
                 self.created_at.isoformat()
                 if self.created_at
                 else None
-            )
+            ),
+            "is_pinned": self.is_pinned
         }
