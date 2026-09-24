@@ -15,6 +15,7 @@ interface DatePickerProps {
   disableWeekends?: boolean;
   minDate?: string; // Standard "YYYY-MM-DD" format
   disabled?: boolean;
+  align?: "left" | "right" | "auto";
 }
 
 const MONTH_NAMES = [
@@ -57,12 +58,31 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   disableWeekends = false,
   minDate,
   disabled = false,
+  align = "auto",
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputVal, setInputVal] = useState(value);
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const [popupAlign, setPopupAlign] = useState<"left" | "right">(align === "right" ? "right" : "left");
+
+  useEffect(() => {
+    if (isOpen && containerRef.current) {
+      if (align === "right") {
+        setPopupAlign("right");
+      } else if (align === "left") {
+        setPopupAlign("left");
+      } else {
+        const rect = containerRef.current.getBoundingClientRect();
+        if (rect.left + 300 > window.innerWidth && rect.right >= 300) {
+          setPopupAlign("right");
+        } else {
+          setPopupAlign("left");
+        }
+      }
+    }
+  }, [isOpen, align]);
 
   // Selection state
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -396,7 +416,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
 
       {/* Inline Dropdown Popover (Under Date Field) */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1.5 z-[9999] bg-white rounded-2xl shadow-xl w-[290px] overflow-hidden border border-neutral-200 flex flex-col">
+        <div className={`absolute top-full ${popupAlign === 'right' ? 'right-0' : 'left-0'} mt-1.5 z-[9999] bg-white rounded-2xl shadow-xl w-[290px] max-w-[calc(100vw-24px)] overflow-hidden border border-neutral-200 flex flex-col`}>
           {/* Header: SELECT DATE */}
           <div className="bg-primary-500 p-4 flex items-center justify-between text-white">
             <div>

@@ -31,10 +31,13 @@ import AttendanceTab from "./tabs/AttendanceTab";
 import ProfileTab from "./tabs/ProfileTab";
 import EmployeePayrollTab from "./tabs/EmployeePayrollTab";
 import JobOpeningsTab from "./tabs/JobOpeningsTab";
+import EvaluationTab from "./tabs/EvaluationTab";
 import DashboardHeaderActions from "./components/DashboardHeaderActions";
 import NotificationsPanel from "./components/NotificationsPanel";
 import { BookLoader } from "../../components/ui/Spinner";
 import { ConfirmDialog } from "../../components/ui/Modal/ConfirmDialog";
+import { evaluationService } from "../../services/evaluationService";
+import { EvaluationCheckOutPromptModal } from "./modals/EvaluationCheckOutPromptModal";
 
 const BASE_URL = `${API_URL}/api`;
 
@@ -153,7 +156,13 @@ const EmployeeDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const queryParams = new URLSearchParams(location.search);
   const initialTab = queryParams.get("tab") || "overview";
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const [activeTab, setActiveTab] = useState(initialTab === "evaluation" ? "overview" : initialTab);
+
+  useEffect(() => {
+    if (queryParams.get("tab") === "evaluation") {
+      navigate("/evaluation", { replace: true });
+    }
+  }, [location.search, navigate]);
 
   // Blinking notification states for new unseen job openings
   const [hasNewJobOpenings, setHasNewJobOpenings] = useState(false);
@@ -298,6 +307,12 @@ const EmployeeDashboardPage: React.FC = () => {
   // Modal state
   const [pendingClarifications, setPendingClarifications] = useState<any[]>([]);
   const [confirmModal, setConfirmModal] = useState(false);
+  const [pendingEvalPrompt, setPendingEvalPrompt] = useState<{
+    isOpen: boolean;
+    periodName: string;
+    dueDateText: string;
+    isPreWeekoff: boolean;
+  } | null>(null);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [birthdayEmployees, setBirthdayEmployees] = useState<any[]>([]);
   const [anniversaryEmployees, setAnniversaryEmployees] = useState<any[]>([]);
@@ -884,6 +899,149 @@ if (isHalfDayLeave(leave.total_days)) return false;
       toast.error("Error setting shift timing.");
     } finally {
       setIsActionLoading(false);
+    }
+  };
+
+  const checkPendingEvaluationBeforeCheckout = async () => {
+    if (!currentEmployee && !user) return null;
+
+    try {
+      const { cycles, responses } = await evaluationService.fetchRemoteEvaluationData();
+
+      const clean = (v: any) => String(v || '').trim().toLowerCase().replace(/^emp-?/i, '');
+      const myCode = clean(currentEmployee?.employee_id || user?.employee_id || currentEmployee?.id || user?.id || '');
+      const myFullName = (
+        (currentEmployee ? `${currentEmployee.first_name || ''} ${currentEmployee.last_name || ''}`.trim() : '') ||
+        user?.full_name ||
+        ''
+      ).trim().toLowerCase();
+
+      const userResponses = (responses || []).filter((r) => {
+        if (!r) return false;
+        const isPending = r.status === 'employee_in_progress' || r.status === 'returned_to_employee' || !r.employeeSubmittedAt;
+        if (!isPending) return false;
+
+        const rEmpCode = clean(r.employeeCode);
+        const rEmpId = clean(r.employeeId);
+        const rName = (r.employeeName || '').trim().toLowerCase();
+
+        const isCodeMatch = Boolean(myCode && (myCode === rEmpCode || myCode === rEmpId));
+        const isNameMatch = Boolean(rName && myFullName && rName.length >= 4 && rName === myFullName);
+
+        return isCodeMatch || isNameMatch;
+      });
+
+      if (!userResponses || userResponses.length === 0) return null;
+
+      const today = new Date();
+      const todayStr = today.toISOString().split("T")[0];
+      const todayDay = today.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+
+      // Helper: check if a date string is an approved leave day for the current employee
+      const isApprovedLeaveDay = (dateStr: string): boolean => {
+        if (!leaveRequests.length) return false;
+        const dateObj = new Date(dateStr);
+        const empIdStr = String(currentEmployee?.id || '');
+        const empCodeStr = String(currentEmployee?.employee_id || '');
+        return leaveRequests.some((leave: any) => {
+          if (leave.status !== 'Approved') return false;
+          if (leave.request_type !== 'Leave') return false;
+          if (isHalfDayLeave(leave.total_days)) return false;
+          const leaveEmpId = String(leave.employee_id || '');
+          if (leaveEmpId !== empIdStr && leaveEmpId !== empCodeStr) return false;
+          if (!leave.from_date || !leave.to_date) return false;
+          const from = new Date(leave.from_date);
+          const to = new Date(leave.to_date);
+          const isCancelled = leave.cancelled_dates?.includes(dateStr);
+          return dateObj >= from && dateObj <= to && !isCancelled;
+        });
+      };
+
+      // Helper: find the last working day before a given date (skips weekends + approved leave days)
+      const getPrevWorkingDay = (dateStr: string): string => {
+        const d = new Date(dateStr);
+        d.setDate(d.getDate() - 1);
+        let safety = 0;
+        while (safety < 7) {
+          const dayOfWeek = d.getDay();
+          const dStr = d.toISOString().split("T")[0];
+          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+          const isLeave = isApprovedLeaveDay(dStr);
+          if (!isWeekend && !isLeave) return dStr;
+          d.setDate(d.getDate() - 1);
+          safety++;
+        }
+        return new Date(new Date(dateStr).getTime() - 86400000).toISOString().split("T")[0];
+      };
+
+      for (const resp of userResponses) {
+        const cycle = (cycles || []).find((c) => c.id === resp.cycleId);
+
+        const periodName = cycle?.periodName || cycle?.name || "Performance Metrics";
+        const endDateStr = cycle?.endDate ? cycle.endDate.split("T")[0] : todayStr;
+
+        const endDateObj = new Date(endDateStr);
+        const endDay = endDateObj.getDay();
+
+        const isDueToday = endDateStr === todayStr;
+        const isWeekendDue = endDay === 6 || endDay === 0;
+        // Check if to_date itself is an approved leave day (e.g. public holiday or employee leave)
+        const isLeaveDue = !isDueToday && isApprovedLeaveDay(endDateStr);
+
+        const diffTime = endDateObj.getTime() - new Date(todayStr).getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        // Check if today is Friday (5) and due date is on Saturday or Sunday of this weekend
+        const isPreWeekoff = todayDay === 5 && isWeekendDue && diffDays >= 0 && diffDays <= 2;
+
+        // If to_date is a leave day or weekend, find the actual last working day before it
+        const prevWorkingDay = (isLeaveDue || isWeekendDue) ? getPrevWorkingDay(endDateStr) : null;
+        // Prompt if today IS that last working day before a leave-covered due date
+        const isPreLeaveDay = Boolean(prevWorkingDay && todayStr === prevWorkingDay);
+
+        // Prompt only when:
+        // - due is today
+        // - tomorrow is due date (diffDays = 1)
+        // - today is Friday before a weekend-due eval
+        // - today is the last working day before a leave-day due date
+        if (isDueToday || isPreWeekoff || isPreLeaveDay || (diffDays >= 0 && diffDays <= 1)) {
+          // Format date as DD/MM/YYYY
+          const formatDDMMYYYY = (isoStr: string) => {
+            try {
+              const d = new Date(isoStr + 'T00:00:00');
+              const dd = String(d.getDate()).padStart(2, '0');
+              const mm = String(d.getMonth() + 1).padStart(2, '0');
+              return `${dd}/${mm}/${d.getFullYear()}`;
+            } catch { return isoStr; }
+          };
+          return {
+            periodName,
+            dueDateText: isDueToday ? "Today" : formatDDMMYYYY(endDateStr),
+            isPreWeekoff: isPreWeekoff || isPreLeaveDay,
+          };
+        }
+      }
+    } catch (err) {
+      console.error("Error checking pending evaluation before checkout:", err);
+    }
+
+    return null;
+  };
+
+  const handleCheckOutAction = async () => {
+    setIsActionLoading(true);
+    const pendingEval = await checkPendingEvaluationBeforeCheckout();
+    setIsActionLoading(false);
+
+    if (pendingEval) {
+      setPendingEvalPrompt({
+        isOpen: true,
+        periodName: pendingEval.periodName,
+        dueDateText: pendingEval.dueDateText,
+        isPreWeekoff: pendingEval.isPreWeekoff,
+      });
+    } else {
+      setConfirmModal(true);
     }
   };
 
@@ -1983,11 +2141,30 @@ if (isHalfDayLeave(leave.total_days)) return false;
       <ConfirmModal
         isOpen={confirmModal}
         onCancel={() => setConfirmModal(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setConfirmModal(false);
-          handleCheckOut();
+          await handleCheckOut();
         }}
       />
+
+      {pendingEvalPrompt && (
+        <EvaluationCheckOutPromptModal
+          isOpen={pendingEvalPrompt.isOpen}
+          periodName={pendingEvalPrompt.periodName}
+          dueDateText={pendingEvalPrompt.dueDateText}
+          isPreWeekoff={pendingEvalPrompt.isPreWeekoff}
+          onCompleteNow={() => {
+            setPendingEvalPrompt(null);
+            setActiveTab("evaluation");
+            navigate("?tab=evaluation");
+          }}
+          onCheckOutAnyway={async () => {
+            setPendingEvalPrompt(null);
+            await handleCheckOut();
+          }}
+          onClose={() => setPendingEvalPrompt(null)}
+        />
+      )}
 
       <PopupModal
         popup={popup}
@@ -2069,7 +2246,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
                     isShiftLocked={shiftLockStatus.isLocked}
                     shiftLockLabel={shiftLockStatus.label}
                     shiftLockTime={shiftLockStatus.timeLabel}
-                    onCheckInOut={() => isCheckedIn ? setConfirmModal(true) : handleCheckInClick()}
+                    onCheckInOut={() => isCheckedIn ? handleCheckOutAction() : handleCheckInClick()}
                     onLunchBreak={handleLunchBreak}
                     onTeaBreak={handleTeaBreak}
                     isHybrid={(currentEmployee?.work_mode || "").toLowerCase() === "hybrid"}

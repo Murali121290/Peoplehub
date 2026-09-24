@@ -84,6 +84,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
   const [pendingShiftCount, setPendingShiftCount] = useState(0);
   const [teamManagementCount, setTeamManagementCount] = useState(0);
+  const [pendingEvaluationCount, setPendingEvaluationCount] = useState(0);
 
   const [effectiveShift, setEffectiveShift] = useState<{
     effective_shift: string;
@@ -93,6 +94,125 @@ const Sidebar: React.FC<SidebarProps> = ({
   } | null>(null);
 
   const navigate = useNavigate();
+
+  // Fetch pending evaluation notifications for all roles (Employee, Manager, Admin)
+  useEffect(() => {
+    const fetchEvaluationCount = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
+        const [evalRes, empRes] = await Promise.all([
+          fetch(`${API_URL}/api/performance/evaluation/data`, { headers }),
+          fetch(`${API_URL}/api/employees/`, { headers }).catch(() => null)
+        ]);
+
+        if (!evalRes.ok) return;
+        const evalData = await evalRes.json();
+        const cycles: any[] = Array.isArray(evalData?.cycles) ? evalData.cycles : [];
+        const responses: any[] = Array.isArray(evalData?.responses) ? evalData.responses : [];
+
+        const userEmpCode = String(user?.employee_id || localStorage.getItem('employee_id') || '').trim().toLowerCase();
+        const userFullName = (user?.full_name || user?.name || '').trim().toLowerCase();
+        const access = (user?.access_level || user?.role || '').toLowerCase();
+        const role = (user?.role || '').toLowerCase();
+        const isHrOrAdmin = access.includes('admin') || access.includes('super') || access.includes('hr') || role.includes('hr') || role.includes('admin');
+
+        if (isHrOrAdmin) {
+          setPendingEvaluationCount(0);
+          return;
+        }
+
+        const isManagerOrLead = access.includes('manager') || access.includes('lead') || access.includes('service_manager');
+
+        let reportingIdentifiers = new Set<string>();
+        if (empRes && empRes.ok && user?.full_name) {
+          const employees = await empRes.json().catch(() => []);
+          if (Array.isArray(employees)) {
+            reportingIdentifiers = getRecursiveReportingIdentifiers(user.full_name, employees);
+          }
+        }
+
+        let count = 0;
+
+        // 1. Employee self-evaluation pending check
+        const hasPendingEmployeeEvaluation = responses.some((r: any) => {
+          const rEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase();
+          const rName = (r.employeeName || '').trim().toLowerCase();
+          const isMe = (userEmpCode && (rEmpCode === userEmpCode)) || (userFullName && rName && rName === userFullName);
+          if (!isMe) return false;
+
+          const isSubmitted = r.status === 'manager_review' || 
+                              r.status === 'approved' || 
+                              r.status === 'sm_final_approval' || 
+                              r.status === 'Calibrated & Approved' || 
+                              r.status === 'Completed' || 
+                              Boolean(r.employeeSubmittedAt);
+          return !isSubmitted;
+        });
+
+        if (hasPendingEmployeeEvaluation) {
+          count += 1;
+        }
+
+        // 2. Manager evaluation pending check (team members waiting for manager calibration)
+        if (isManagerOrLead) {
+          const pendingTeamEvals = responses.filter((r: any) => {
+            const rEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase();
+            const rName = (r.employeeName || '').trim().toLowerCase();
+            const isMe = (userEmpCode && (rEmpCode === userEmpCode)) || (userFullName && rName && rName === userFullName);
+            if (isMe) return false; // don't double count self
+
+            const isMyTeamMember = checkManagerMatch(r.reportingManager, user?.full_name) ||
+                                   (rEmpCode && reportingIdentifiers.has(rEmpCode)) ||
+                                   (rName && reportingIdentifiers.has(rName));
+
+            if (!isMyTeamMember) return false;
+
+            const isWaitingForManager = (r.status === 'manager_review' || r.status === 'Submitted to Manager' || Boolean(r.employeeSubmittedAt)) &&
+                                        r.status !== 'approved' &&
+                                        r.status !== 'sm_final_approval' &&
+                                        r.status !== 'Calibrated & Approved' &&
+                                        r.status !== 'Completed' &&
+                                        r.managerScore == null;
+
+            return isWaitingForManager;
+          });
+
+          count += pendingTeamEvals.length;
+
+          // 3. Service Manager pending cycle launch approval check
+          const pendingSmCycles = cycles.filter((c: any) => {
+            if (c.status !== 'pending_sm_launch_approval') return false;
+            return checkManagerMatch(c.serviceManagerName, user?.full_name);
+          });
+
+          count += pendingSmCycles.length;
+        }
+
+        setPendingEvaluationCount(count);
+      } catch (e) {
+        console.error("Failed to fetch evaluation count", e);
+      }
+    };
+
+    fetchEvaluationCount();
+
+    const handleEvalUpdate = () => {
+      fetchEvaluationCount();
+    };
+
+    window.addEventListener('evaluationUpdated', handleEvalUpdate);
+    socket.on('evaluation_update', handleEvalUpdate);
+
+    // Periodic refresh every 15 seconds
+    const interval = setInterval(fetchEvaluationCount, 15000);
+
+    return () => {
+      window.removeEventListener('evaluationUpdated', handleEvalUpdate);
+      socket.off('evaluation_update', handleEvalUpdate);
+      clearInterval(interval);
+    };
+  }, [user, location.pathname]);
 
   useEffect(() => {
     const access = user?.access_level?.toLowerCase() || '';
@@ -412,6 +532,11 @@ const Sidebar: React.FC<SidebarProps> = ({
               {item.name === "Announcements" && unreadAnnouncements > 0 && (
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-pulse">
                   {unreadAnnouncements}
+                </span>
+              )}
+              {(item.name === "ERR Hub" || item.name === "Evaluation & Report") && pendingEvaluationCount > 0 && (
+                <span className="flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-pulse">
+                  {pendingEvaluationCount > 9 ? "9+" : pendingEvaluationCount}
                 </span>
               )}
             </Link>

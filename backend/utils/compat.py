@@ -100,9 +100,10 @@ def jsonify(content=None, **kwargs):
     return kwargs
 
 def convert_path_flask_to_fastapi(path: str) -> str:
-    # Converts Flask paths like /<int:id> into Starlette /{id:int}
+    # Converts Flask paths like /<int:id>, /<path:subpath> into Starlette /{id:int}, /{subpath:path}
     path = re.sub(r'<int:([^>]+)>', r'{\1:int}', path)
     path = re.sub(r'<string:([^>]+)>', r'{\1}', path)
+    path = re.sub(r'<path:([^>]+)>', r'{\1:path}', path)
     path = re.sub(r'<([^>:]+)>', r'{\1}', path)
     return path
 
