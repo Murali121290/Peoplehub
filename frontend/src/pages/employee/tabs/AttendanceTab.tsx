@@ -214,7 +214,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const userStr = localStorage.getItem("user");
   const user = userStr ? JSON.parse(userStr) : {};
   const userId = localStorage.getItem("user_id") || user.id || user.user_id;
-  const employeeId = user.employee_id || user.id;
+  const loggedInEmployeeDbId = localStorage.getItem("employee_id");
   const isManager = ["manager", "team_lead", "service_manager", "lead"].includes((user?.access_level || "").toLowerCase());
 
   const fetchMonthData = async () => {
@@ -251,7 +251,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         const leaveEmpId = String(l.employee_id || "");
 
         // Strictly match against company employee_id
-        const empCompanyId = currentEmployee ? String(currentEmployee.employee_id) : (employeeId ? String(employeeId) : "");
+        const empCompanyId = currentEmployee ? String(currentEmployee.employee_id) : String(user?.employee_id || "");
 
         return Boolean(empCompanyId && leaveEmpId === empCompanyId);
       });
@@ -276,7 +276,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   }, [selectedMonth, selectedYear, userId]);
 
   useEffect(() => {
-    const targetEmpId = currentEmployee?.id || employeeId;
+    const targetEmpId = currentEmployee?.id || loggedInEmployeeDbId;
     if (!resolvingCell || !targetEmpId) return;
     const fetchBalances = async () => {
       setIsBalancesLoading(true);
@@ -300,11 +300,11 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       }
     };
     fetchBalances();
-  }, [resolvingCell, currentEmployee, employeeId]);
+  }, [resolvingCell, currentEmployee, loggedInEmployeeDbId]);
 
 
   const submitResolveAbsent = async (action: string) => {
-    const targetEmpId = currentEmployee?.id || employeeId;
+    const targetEmpId = currentEmployee?.id || loggedInEmployeeDbId;
     if (!resolvingCell || !targetEmpId) return;
 
     if (!resolveReason.trim()) {
@@ -347,7 +347,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   };
 
   const submitResolveWeekend = async () => {
-    const targetEmpId = currentEmployee?.id || employeeId;
+    const targetEmpId = currentEmployee?.id || loggedInEmployeeDbId;
     if (!resolvingWeekendCell || !targetEmpId) return;
 
     if (!fromTime || !toTime) {
@@ -401,7 +401,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   };
 
   const submitRegularizationRequest = async () => {
-    const targetEmpId = currentEmployee?.id || employeeId;
+    const targetEmpId = currentEmployee?.id || loggedInEmployeeDbId;
     if (!regularizingCell || !targetEmpId) return;
 
     if (!regCheckIn || !regCheckOut) {
@@ -444,7 +444,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
 
   const submitPermissionRequest = async () => {
-    const targetEmpId = currentEmployee?.id || employeeId;
+    const targetEmpId = currentEmployee?.id || loggedInEmployeeDbId;
     if (!resolvingPermissionCell || !targetEmpId) return;
 
     if (!permFromTime || !permToTime) {
