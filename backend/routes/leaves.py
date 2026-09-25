@@ -921,12 +921,11 @@ def cancel_leave_date(leave_id):
         from routes.employees import get_all_reporting_employees_recursive
         all_emps = Employee.query.filter(Employee.is_active != False).all()
         recursive_reports = get_all_reporting_employees_recursive(approver_name, all_emps)
-        reporting_emp_ids = {str(e.id) for e in recursive_reports} | {str(e.employee_id) for e in recursive_reports if e.employee_id}
+        reporting_emp_ids = {str(e.employee_id) for e in recursive_reports if e.employee_id}
         reporting_emp_names = {f"{e.first_name} {e.last_name}".strip().lower() for e in recursive_reports}
 
         is_authorized = (
             approver.access_level.lower() in ["admin", "hr"] or
-            str(employee.id) in reporting_emp_ids or
             (employee.employee_id and str(employee.employee_id) in reporting_emp_ids) or
             f"{employee.first_name} {employee.last_name}".strip().lower() in reporting_emp_names or
             is_manager_match(employee.reporting_manager, approver_name) or
@@ -1176,8 +1175,6 @@ def cancel_approved_leave(leave_id):
         # Check if ownership is valid (matches database ID, employee code, or raw passed ID)
         valid_ids = {str(employee_id).strip().lower()}
         if employee:
-            if employee.id:
-                valid_ids.add(str(employee.id))
             if employee.employee_id:
                 valid_ids.add(str(employee.employee_id).strip().lower())
             if employee.user_id:

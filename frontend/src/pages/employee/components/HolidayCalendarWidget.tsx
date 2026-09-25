@@ -52,11 +52,10 @@ export const HolidayCalendarWidget: React.FC = () => {
       setSchedule(holidaysRes.data.current_month_schedule || []);
       setUpcomingHolidays(holidaysRes.data.upcoming_holidays || []);
 
-      const myEmpId = user.employee_id || user.id;
+      const myEmpId = user.employee_id;
       const allLeaves = Array.isArray(leavesRes.data) ? leavesRes.data : [];
       const myLeaves = allLeaves.filter((l: any) => 
-        String(l.employee_id) === String(myEmpId) || 
-        String(l.employee_id) === String(user.id)
+        myEmpId && String(l.employee_id) === String(myEmpId)
       );
       setEmployeeLeaves(myLeaves);
     } catch (err) {
