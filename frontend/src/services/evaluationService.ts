@@ -7,9 +7,42 @@ import {
   KPIItem,
   KPIResponseItem,
   EvaluationStage,
-  RatingLevel
+  RatingLevel,
+  YearlyMonthRecord,
+  YearlyMonthKPIEntry
 } from '../types/evaluation.types';
-import { calculateOverallScore, setRatingScale, getRatingScale } from './scoreService';
+import { calculateOverallScore, calculateKPIScore, setRatingScale, getRatingScale } from './scoreService';
+
+export const FISCAL_MONTHS = [
+  { monthIndex: 1, monthKey: 'april', monthName: 'April', shortName: 'Apr', calendarMonth: 4, quarter: 1 as const },
+  { monthIndex: 2, monthKey: 'may', monthName: 'May', shortName: 'May', calendarMonth: 5, quarter: 1 as const },
+  { monthIndex: 3, monthKey: 'june', monthName: 'June', shortName: 'Jun', calendarMonth: 6, quarter: 1 as const },
+  { monthIndex: 4, monthKey: 'july', monthName: 'July', shortName: 'Jul', calendarMonth: 7, quarter: 2 as const },
+  { monthIndex: 5, monthKey: 'august', monthName: 'August', shortName: 'Aug', calendarMonth: 8, quarter: 2 as const },
+  { monthIndex: 6, monthKey: 'september', monthName: 'September', shortName: 'Sep', calendarMonth: 9, quarter: 2 as const },
+  { monthIndex: 7, monthKey: 'october', monthName: 'October', shortName: 'Oct', calendarMonth: 10, quarter: 3 as const },
+  { monthIndex: 8, monthKey: 'november', monthName: 'November', shortName: 'Nov', calendarMonth: 11, quarter: 3 as const },
+  { monthIndex: 9, monthKey: 'december', monthName: 'December', shortName: 'Dec', calendarMonth: 12, quarter: 3 as const },
+  { monthIndex: 10, monthKey: 'january', monthName: 'January', shortName: 'Jan', calendarMonth: 1, quarter: 4 as const },
+  { monthIndex: 11, monthKey: 'february', monthName: 'February', shortName: 'Feb', calendarMonth: 2, quarter: 4 as const },
+  { monthIndex: 12, monthKey: 'march', monthName: 'March', shortName: 'Mar', calendarMonth: 3, quarter: 4 as const },
+];
+
+export const initializeYearlyMonthlyRecords = (baseStartYear: number): YearlyMonthRecord[] => {
+  return FISCAL_MONTHS.map(m => {
+    const calendarYear = m.calendarMonth >= 4 ? baseStartYear : baseStartYear + 1;
+    return {
+      monthIndex: m.monthIndex,
+      monthKey: m.monthKey,
+      monthName: m.monthName,
+      calendarMonth: m.calendarMonth,
+      calendarYear,
+      quarter: m.quarter,
+      status: 'pending_employee',
+      kpiEntries: {}
+    };
+  });
+};
 
 const CYCLES_STORAGE_KEY = 'peoplehub_evaluation_cycles_v2';
 const RESPONSES_STORAGE_KEY = 'peoplehub_evaluation_responses_v2';
@@ -488,7 +521,7 @@ export const evaluationService = {
     cycle.employeeIds.forEach(empId => {
       const existing = responses.find(r => r.cycleId === cycle.id && r.employeeId === String(empId));
       if (!existing) {
-        const emp = allEmployees.find(e => String(e.id) === String(empId) || String(e.employee_id) === String(empId));
+        const emp = allEmployees.find(e => String(e.employee_id) === String(empId));
         const initialKpiResponses: Record<string, KPIResponseItem> = {};
 
         cycle.categories.forEach(cat => {
@@ -930,6 +963,7 @@ export const evaluationService = {
           template_key: data.templateKey || 'form_1',
           template_name: data.templateName || '',
           employees: targetEmployees.map(e => ({
+            employee_id: String(e.employee_id || ''),
             id: String(e.employee_id || ''),
             name: `${e.first_name || ''} ${e.last_name || ''}`.trim() || e.name
           })),
@@ -1079,6 +1113,180 @@ export const evaluationService = {
       console.warn('Failed to fetch system default template from DB:', e);
     }
     return DEFAULT_KPI_CATEGORIES;
+  },
+
+  // Yearly Evaluation: Submit Monthly Milestone Actuals by Employee
+  async submitYearlyMonthActuals(
+    responseId: string,
+    monthIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    employeeRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+
+    let baseYear = new Date().getFullYear();
+    if (resp.startDate) {
+      baseYear = new Date(resp.startDate).getFullYear();
+    } else if (resp.periodName) {
+      const match = resp.periodName.match(/\b(20\d\d)\b/);
+      if (match) baseYear = parseInt(match[1], 10);
+    }
+
+    let monthlyRecords: YearlyMonthRecord[] = resp.monthly_records || [];
+    if (!monthlyRecords || monthlyRecords.length === 0) {
+      monthlyRecords = initializeYearlyMonthlyRecords(baseYear);
+    }
+
+    // Calculate month employee score based on categories & kpiEntries
+    let monthScore = 0;
+    categories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+        const actualVal = entry?.actualValue ?? entry?.actual_value ?? '';
+        const calc = calculateKPIScore(kpi, actualVal);
+        monthScore += calc.earnedScore;
+      });
+    });
+    monthScore = Number(monthScore.toFixed(2));
+
+    const updatedMonthlyRecords = monthlyRecords.map(m => {
+      if (m.monthIndex === monthIndex) {
+        return {
+          ...m,
+          status: 'submitted_to_manager' as const,
+          employeeSubmittedAt: new Date().toISOString(),
+          employeeScore: monthScore,
+          employeeRemarks: employeeRemarks || '',
+          kpiEntries: { ...m.kpiEntries, ...kpiEntries }
+        };
+      }
+      return m;
+    });
+
+    const submittedOrApproved = updatedMonthlyRecords.filter(m => m.employeeScore !== undefined && m.status !== 'pending_employee');
+    const overallEmployeeScore = submittedOrApproved.length > 0
+      ? Number((submittedOrApproved.reduce((sum, m) => sum + (m.employeeScore || 0), 0) / submittedOrApproved.length).toFixed(2))
+      : monthScore;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      monthly_records: updatedMonthlyRecords,
+      employeeOverallScore: overallEmployeeScore,
+      status: 'manager_review',
+      employeeSubmittedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
+  },
+
+  // Yearly Evaluation: Approve Monthly Milestone Score by Manager
+  async approveYearlyMonthScore(
+    responseId: string,
+    monthIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    managerRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+
+    let baseYear = new Date().getFullYear();
+    if (resp.startDate) {
+      baseYear = new Date(resp.startDate).getFullYear();
+    } else if (resp.periodName) {
+      const match = resp.periodName.match(/\b(20\d\d)\b/);
+      if (match) baseYear = parseInt(match[1], 10);
+    }
+
+    let monthlyRecords: YearlyMonthRecord[] = resp.monthly_records || [];
+    if (!monthlyRecords || monthlyRecords.length === 0) {
+      monthlyRecords = initializeYearlyMonthlyRecords(baseYear);
+    }
+
+    // Calculate month manager score based on categories & kpiEntries
+    let monthScore = 0;
+    categories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+        const calc = calculateKPIScore(kpi, mgrActual);
+        monthScore += calc.earnedScore;
+      });
+    });
+    monthScore = Number(monthScore.toFixed(2));
+
+    const updatedMonthlyRecords = monthlyRecords.map(m => {
+      if (m.monthIndex === monthIndex) {
+        return {
+          ...m,
+          status: 'manager_approved' as const,
+          managerApprovedAt: new Date().toISOString(),
+          managerScore: monthScore,
+          managerRemarks: managerRemarks || '',
+          kpiEntries: { ...m.kpiEntries, ...kpiEntries }
+        };
+      }
+      return m;
+    });
+
+    const approvedMonths = updatedMonthlyRecords.filter(m => m.status === 'manager_approved' && m.managerScore !== undefined);
+    const overallManagerScore = approvedMonths.length > 0
+      ? Number((approvedMonths.reduce((sum, m) => sum + (m.managerScore || 0), 0) / approvedMonths.length).toFixed(2))
+      : monthScore;
+
+    const isLastFiscalMonthApproved = updatedMonthlyRecords.some(m => m.monthIndex === 12 && m.status === 'manager_approved');
+    const isYearlyComplete = approvedMonths.length === 12 || isLastFiscalMonthApproved;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      monthly_records: updatedMonthlyRecords,
+      managerScore: overallManagerScore,
+      managerReviewedAt: new Date().toISOString(),
+      managerRemarks: managerRemarks || resp.managerRemarks || '',
+      status: isYearlyComplete ? 'approved' : 'employee_in_progress',
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
   }
 };
 

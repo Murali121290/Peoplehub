@@ -55,13 +55,21 @@ export interface KPIResponseItem {
   kpiId: string;
   name?: string;
   actualValue: string | number;
+  actual_value?: string | number;
   achievementPercentage: number;
   earnedScore: number;
+  earned_score?: number;
   employeeRemarks?: string;
+  employee_remarks?: string;
+  employee_remark?: string;
   isInsufficient?: boolean;
+  is_insufficient?: boolean;
   managerActualValue?: string | number;
-  managerScore?: number;
+  manager_actual_pm?: string | number;
+  managerScore?: number | null;
+  manager_score?: number | null;
   managerRemarks?: string;
+  manager_remark?: string;
   serviceManagerRemarks?: string;
 }
 
@@ -86,6 +94,44 @@ export interface EvaluationCycle {
   updatedAt: string;
 }
 
+export interface YearlyMonthKPIEntry {
+  kpiId?: string;
+  name?: string;
+  actualValue?: string | number;
+  actual_value?: string | number;
+  achievementPercentage?: number;
+  earnedScore?: number;
+  earned_score?: number;
+  employeeRemarks?: string;
+  employee_remarks?: string;
+  employee_remark?: string;
+  isInsufficient?: boolean;
+  is_insufficient?: boolean;
+  managerActualValue?: string | number;
+  manager_actual_pm?: string | number;
+  managerScore?: number | null;
+  manager_score?: number | null;
+  managerRemarks?: string;
+  manager_remark?: string;
+}
+
+export interface YearlyMonthRecord {
+  monthIndex: number; // 1 to 12 (1 = April, 12 = March)
+  monthKey: string;   // 'april', 'may', ..., 'march'
+  monthName: string;  // 'April', 'May', ..., 'March'
+  calendarMonth: number; // 1-12 (4 = April, 1 = January, etc.)
+  calendarYear: number;  // e.g. 2026 or 2027
+  quarter: 1 | 2 | 3 | 4;
+  status: 'pending_employee' | 'submitted_to_manager' | 'manager_approved' | 'returned_to_employee';
+  employeeSubmittedAt?: string;
+  managerApprovedAt?: string;
+  employeeScore?: number;
+  managerScore?: number;
+  employeeRemarks?: string;
+  managerRemarks?: string;
+  kpiEntries: Record<string, YearlyMonthKPIEntry>;
+}
+
 export interface EvaluationResponse {
   id: string;
   cycleId: string;
@@ -103,6 +149,8 @@ export interface EvaluationResponse {
   serviceManagerScore?: number; // Final Service Manager score %
   employeeRemarks?: string;
   managerId?: string;
+  managerName?: string;
+  reportingManager?: string;
   reportingManagerId?: string;
   managerRemarks?: string;
   serviceManagerRemarks?: string;
@@ -116,11 +164,15 @@ export interface EvaluationResponse {
   description?: string;
   categories?: KPICategory[];
   metrics_data?: any;
+  monthly_records?: YearlyMonthRecord[];
   frequency?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | string;
+  startDate?: string;
+  endDate?: string;
   fromDate?: string;
   toDate?: string;
   from_date?: string;
   to_date?: string;
+  db_id?: number;
   is_archived?: boolean;
   converted_to_id?: number;
   createdAt: string;

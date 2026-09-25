@@ -13,7 +13,7 @@ export const useNavigation = (user: any) => {
 
     const commonItems = [
       { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
-      { name: "ERR Hub", icon: ChartBarIcon, path: "/evaluation" },
+      { name: "E2R Hub", icon: ChartBarIcon, path: "/evaluation" },
       { name: "Announcements", icon: BellIcon, path: "/announcements" },
       { name: "Organization", icon: BookOpenIcon, path: "/organization" },
       { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
@@ -36,7 +36,7 @@ export const useNavigation = (user: any) => {
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         { name: "HR Management", icon: UserGroupIcon, path: "/hrms" },
         teamManagementNode,
-        { name: "ERR Hub", icon: ChartBarIcon, path: "/evaluation" },
+        { name: "E2R Hub", icon: ChartBarIcon, path: "/evaluation" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
         { name: "Organization", icon: BookOpenIcon, path: "/organization" },
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
@@ -49,7 +49,7 @@ export const useNavigation = (user: any) => {
       return [
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
         teamManagementNode,
-        { name: "ERR Hub", icon: ChartBarIcon, path: "/evaluation" },
+        { name: "E2R Hub", icon: ChartBarIcon, path: "/evaluation" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
         { name: "Organization", icon: BookOpenIcon, path: "/organization" },
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },
@@ -61,10 +61,10 @@ export const useNavigation = (user: any) => {
     if (isHr) {
       return [
         { name: "Dashboard", icon: HomeIcon, path: "/employee-dashboard" },
-        
+
         { name: "HR Management", icon: UserGroupIcon, path: "/hrms" },
         teamManagementNode,
-        { name: "ERR Hub", icon: ChartBarIcon, path: "/evaluation" },
+        { name: "E2R Hub", icon: ChartBarIcon, path: "/evaluation" },
         { name: "Announcements", icon: BellIcon, path: "/announcements" },
         { name: "Organization", icon: BookOpenIcon, path: "/organization" },
         { name: "Intercom Directory", icon: PhoneIcon, path: "/telecom-directory" },

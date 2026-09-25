@@ -432,9 +432,7 @@ def get_evaluation_data():
             responses = []
             for rec in eval_records:
                 emp_id = str(rec.employee_id or "")
-                emp_obj = Employee.query.filter(
-                    or_(Employee.employee_id == emp_id, Employee.id == int(emp_id) if emp_id.isdigit() else False)
-                ).first()
+                emp_obj = Employee.query.filter(Employee.employee_id == emp_id).first()
                 actual_code = emp_obj.employee_id if emp_obj and emp_obj.employee_id else emp_id
                 resolved_team = rec.team_name or rec.team_id or (emp_obj.department if emp_obj else None) or (emp_obj.team if emp_obj else None) or "Media"
                 resolved_name = rec.employee_name or (f"{emp_obj.first_name} {emp_obj.last_name}" if emp_obj else f"Employee #{actual_code}")
@@ -464,6 +462,29 @@ def get_evaluation_data():
                 extracted_period = ""
                 if rec.description and "(" in rec.description and ")" in rec.description:
                     extracted_period = rec.description.split("(", 1)[1].rsplit(")", 1)[0].strip()
+
+                # Extract categories and monthly_records from rec.metrics_data or fallback to store
+                db_cats = []
+                db_monthly_records = []
+                if isinstance(rec.metrics_data, list):
+                    db_cats = rec.metrics_data
+                elif isinstance(rec.metrics_data, dict):
+                    if "categories" in rec.metrics_data and isinstance(rec.metrics_data["categories"], list):
+                        db_cats = rec.metrics_data["categories"]
+                    if "monthly_records" in rec.metrics_data and isinstance(rec.metrics_data["monthly_records"], list):
+                        db_monthly_records = rec.metrics_data["monthly_records"]
+
+                if not db_monthly_records:
+                    matching_json_r = next((
+                        jr for jr in json_all_responses
+                        if str(jr.get("id")) == f"resp_{rec.id}" or
+                           str(jr.get("db_id")) == str(rec.id) or
+                           (str(jr.get("employeeCode") or jr.get("employeeId")) == actual_code and jr.get("frequency") == freq_str and (jr.get("form") == rec.form or jr.get("periodName") == extracted_period))
+                    ), None)
+                    if matching_json_r and matching_json_r.get("monthly_records"):
+                        db_monthly_records = matching_json_r.get("monthly_records")
+                        if not db_cats and matching_json_r.get("categories"):
+                            db_cats = matching_json_r.get("categories")
 
                 responses.append({
                     "id": f"resp_{rec.id}",
@@ -501,8 +522,9 @@ def get_evaluation_data():
                     "workingDays": rec.working_days or 0,
                     "leaveDays": rec.leave_days or 0,
                     "holidayDays": rec.holiday_days or 0,
-                    "categories": rec.metrics_data if isinstance(rec.metrics_data, list) else [],
+                    "categories": db_cats,
                     "metrics_data": rec.metrics_data,
+                    "monthly_records": db_monthly_records,
                     "kpiResponses": db_kpis,
                     "createdAt": rec.created_at.isoformat() if rec.created_at else None,
                     "updatedAt": rec.updated_at.isoformat() if rec.updated_at else None
@@ -635,39 +657,111 @@ def delete_evaluation_cycle(cycle_id):
         cycles = store.get("cycles", [])
         responses = store.get("responses", [])
 
+        # Find target cycle from store or request parameters
         target_cycle = next((c for c in cycles if str(c.get("id")) == str(cycle_id)), None)
-        team_id = str(req_data.get("teamId") or (target_cycle.get("teamId") if target_cycle else "") or "")
-        team_name = req_data.get("teamName") or (target_cycle.get("teamName") if target_cycle else "")
-        form_name = req_data.get("form") or (target_cycle.get("name") if target_cycle else "")
         
+        team_id = str(req_data.get("teamId") or (target_cycle.get("teamId") if target_cycle else "") or "").strip()
+        team_name = str(req_data.get("teamName") or (target_cycle.get("teamName") if target_cycle else "") or "").strip()
+        form_name = str(req_data.get("form") or (target_cycle.get("name") if target_cycle else "") or "").strip()
+        period_name = str(req_data.get("periodName") or (target_cycle.get("periodName") if target_cycle else "") or "").strip()
+        frequency = str(req_data.get("frequency") or (target_cycle.get("frequency") if target_cycle else "") or "").strip()
+        start_date = str(req_data.get("startDate") or (target_cycle.get("startDate") if target_cycle else "") or "").strip()
+        end_date = str(req_data.get("endDate") or (target_cycle.get("endDate") if target_cycle else "") or "").strip()
+        
+        # Collect all employee IDs
         emp_ids = set()
         if target_cycle and target_cycle.get("employeeIds"):
-            emp_ids.update([str(e).strip() for e in target_cycle.get("employeeIds", [])])
+            emp_ids.update([str(e).strip() for e in target_cycle.get("employeeIds", []) if str(e).strip()])
         if req_data.get("employeeIds"):
-            emp_ids.update([str(e).strip() for e in req_data.get("employeeIds", [])])
+            emp_ids.update([str(e).strip() for e in req_data.get("employeeIds", []) if str(e).strip()])
 
-        store["cycles"] = [c for c in cycles if str(c.get("id")) != str(cycle_id)]
+        # Collect response IDs & DB IDs
+        resp_ids = set()
+        db_ids = set()
+        if req_data.get("responseIds"):
+            resp_ids.update([str(r).strip() for r in req_data.get("responseIds", []) if str(r).strip()])
+        if req_data.get("dbIds"):
+            for d in req_data.get("dbIds", []):
+                if d is not None and str(d).strip().isdigit():
+                    db_ids.add(int(str(d).strip()))
+
+        # Match all responses in store that belong to this cycle or team/form/period
+        matching_store_resps = [
+            r for r in responses
+            if str(r.get("cycleId")) == str(cycle_id) or
+               str(r.get("id")) in resp_ids or
+               (r.get("db_id") and int(r.get("db_id")) in db_ids) or
+               (team_name and (str(r.get("teamName") or "").lower() == team_name.lower() or str(r.get("teamId") or "").lower() == team_name.lower() or str(r.get("department") or "").lower() == team_name.lower()) and (
+                   (form_name and (r.get("form") == form_name or r.get("performance_metrics") == form_name or r.get("periodName") == form_name)) or
+                   (frequency and r.get("frequency") == frequency) or
+                   not form_name
+               ))
+        ]
+        
+        for r in matching_store_resps:
+            resp_id_val = str(r.get("id") or "").strip()
+            if resp_id_val:
+                resp_ids.add(resp_id_val)
+                clean_id = resp_id_val.replace("resp_", "").replace("eval_", "")
+                if clean_id.isdigit():
+                    db_ids.add(int(clean_id))
+            if r.get("db_id") and str(r.get("db_id")).isdigit():
+                db_ids.add(int(r.get("db_id")))
+            emp_val = str(r.get("employeeCode") or r.get("employeeId") or "").strip()
+            if emp_val:
+                emp_ids.add(emp_val)
+
+        # 1. Remove from JSON Store
+        store["cycles"] = [
+            c for c in cycles
+            if str(c.get("id")) != str(cycle_id) and
+               not (team_name and str(c.get("teamName") or "").lower() == team_name.lower() and (not form_name or str(c.get("name") or "") == form_name or str(c.get("form") or "") == form_name))
+        ]
         store["responses"] = [
-            r for r in responses 
-            if str(r.get("cycleId")) != str(cycle_id)
+            r for r in responses
+            if str(r.get("cycleId")) != str(cycle_id) and
+               str(r.get("id")) not in resp_ids and
+               (not r.get("db_id") or int(r.get("db_id")) not in db_ids) and
+               not (team_name and str(r.get("teamName") or "").lower() == team_name.lower() and (not form_name or r.get("form") == form_name or r.get("performance_metrics") == form_name))
         ]
         write_eval_store(store)
 
-        # Also delete matching unstarted/unsubmitted records in Postgres kpi_evaluations
-        conditions = []
+        # 2. Remove matching uncalibrated / unstarted records from PostgreSQL kpi_evaluations
+        db_query_conditions = []
+        if db_ids:
+            db_query_conditions.append(KpiEvaluation.id.in_(list(db_ids)))
         if form_name:
-            conditions.append(KpiEvaluation.form == form_name)
-        if team_id:
-            conditions.append(KpiEvaluation.team_id == team_id)
+            db_query_conditions.append(KpiEvaluation.form == form_name)
+            db_query_conditions.append(KpiEvaluation.performance_metrics == form_name)
+            db_query_conditions.append(KpiEvaluation.form.ilike(f"%{form_name}%"))
+        if period_name:
+            db_query_conditions.append(KpiEvaluation.description.ilike(f"%{period_name}%"))
+        if team_name:
+            db_query_conditions.append(KpiEvaluation.team_name.ilike(team_name))
+            db_query_conditions.append(KpiEvaluation.team_id == team_name)
+        if team_id and team_id != team_name:
+            db_query_conditions.append(KpiEvaluation.team_id == team_id)
+            db_query_conditions.append(KpiEvaluation.team_name.ilike(team_id))
 
-        if conditions:
-            records = KpiEvaluation.query.filter(or_(*conditions)).all()
-            for rec in records:
-                if not rec.employee_overall_score or rec.employee_overall_score == 0 or rec.status in ["Assigned to Employee", "employee_in_progress", "Pending", "draft", None]:
-                    db.session.delete(rec)
+        if db_query_conditions:
+            candidate_records = KpiEvaluation.query.filter(or_(*db_query_conditions)).all()
+            for rec in candidate_records:
+                # Protect published/calibrated records with manager score
+                if rec.manager_score is not None or rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
+                    continue
+                # If emp_ids filter exists, ensure this employee belongs to the cycle if form/team was broad
+                if emp_ids and str(rec.employee_id or "").strip() not in emp_ids and rec.id not in db_ids:
+                    # Also check if team matches
+                    if not (team_name and (str(rec.team_name or "").lower() == team_name.lower() or str(rec.team_id or "").lower() == team_name.lower())):
+                        continue
+                db.session.delete(rec)
             db.session.commit()
 
-        return jsonify({"success": True, "message": "Cycle and unstarted evaluations deleted successfully from DB", "cycles": store["cycles"]}), 200
+        return jsonify({
+            "success": True, 
+            "message": "Performance Deliverables Matrix and unstarted evaluations removed from DB successfully", 
+            "cycles": store["cycles"]
+        }), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -677,8 +771,11 @@ def delete_evaluation_response(resp_id_or_emp_id):
     try:
         req_data = request.get_json(silent=True) or {}
         cycle_id = str(request.args.get("cycleId") or req_data.get("cycleId") or "").strip()
-        emp_code = str(request.args.get("employeeCode") or req_data.get("employeeCode") or "").strip()
+        emp_code = str(request.args.get("employeeCode") or req_data.get("employeeCode") or req_data.get("employeeId") or "").strip()
         resp_id_str = str(resp_id_or_emp_id or "").strip()
+        db_id_val = req_data.get("db_id") or req_data.get("dbId")
+        form_name = str(req_data.get("form") or "").strip()
+        team_name = str(req_data.get("teamName") or req_data.get("teamId") or "").strip()
 
         # 1. Clean up from JSON store
         try:
@@ -686,14 +783,20 @@ def delete_evaluation_response(resp_id_or_emp_id):
             responses = store.get("responses", [])
             
             # Find the exact target response by ID first
-            target_resp = next((r for r in responses if str(r.get("id")) == resp_id_str), None)
-            
-            # If not found directly by ID, match by cycleId + employeeCode combination
-            if not target_resp and cycle_id and emp_code:
-                target_resp = next((r for r in responses if str(r.get("cycleId")) == cycle_id and str(r.get("employeeCode") or r.get("employeeId")) == emp_code), None)
-
-            if not target_resp and not resp_id_str.isdigit() and not resp_id_str.startswith("resp_"):
-                target_resp = next((r for r in responses if str(r.get("employeeCode")) == resp_id_str or str(r.get("employeeId")) == resp_id_str), None)
+            target_resp = None
+            for r in responses:
+                if str(r.get("id")) == resp_id_str:
+                    target_resp = r
+                    break
+                if db_id_val and str(r.get("db_id")) == str(db_id_val):
+                    target_resp = r
+                    break
+                if cycle_id and emp_code and str(r.get("cycleId")) == cycle_id and str(r.get("employeeCode") or r.get("employeeId")) == emp_code:
+                    target_resp = r
+                    break
+                if emp_code and (str(r.get("employeeCode")) == emp_code or str(r.get("employeeId")) == emp_code) and (not form_name or r.get("form") == form_name):
+                    target_resp = r
+                    break
 
             # Prevent deleting calibrated/published records
             if target_resp and (target_resp.get("managerScore") is not None or target_resp.get("status") in ["Calibrated & Approved", "Published", "Approved", "Completed"]):
@@ -702,10 +805,16 @@ def delete_evaluation_response(resp_id_or_emp_id):
             target_id = str(target_resp.get("id")) if target_resp else resp_id_str
             target_emp_code = str(target_resp.get("employeeCode") or target_resp.get("employeeId") or emp_code or "")
             target_cycle_id = str(target_resp.get("cycleId") or cycle_id or "")
-            target_form = target_resp.get("form") or ""
-            target_start = target_resp.get("startDate") or ""
+            target_form = target_resp.get("form") if target_resp else form_name
+            target_start = target_resp.get("startDate") if target_resp else ""
+            target_db_id = target_resp.get("db_id") if target_resp else db_id_val
 
-            remaining_resps = [r for r in responses if str(r.get("id")) != target_id]
+            remaining_resps = [
+                r for r in responses 
+                if str(r.get("id")) != target_id and 
+                   str(r.get("id")) != resp_id_str and
+                   (not target_db_id or str(r.get("db_id")) != str(target_db_id))
+            ]
             store["responses"] = remaining_resps
 
             # Also clean up employee from cycle's employeeIds or remove empty cycle
@@ -739,42 +848,61 @@ def delete_evaluation_response(resp_id_or_emp_id):
 
         # 2. Clean up from PostgreSQL database (kpi_evaluations)
         try:
-            clean_resp_id = resp_id_str.replace("resp_", "") if resp_id_str.startswith("resp_") else ""
-            db_rec = None
+            clean_resp_id = resp_id_str.replace("resp_", "").replace("eval_", "") if (resp_id_str.startswith("resp_") or resp_id_str.startswith("eval_")) else (resp_id_str if resp_id_str.isdigit() else "")
+            db_recs_to_delete = []
 
             # Strategy A: Try by primary key if clean_resp_id is numeric
             if clean_resp_id and clean_resp_id.isdigit():
                 try:
-                    db_rec = db.session.get(KpiEvaluation, int(clean_resp_id))
+                    rec_by_pk = db.session.get(KpiEvaluation, int(clean_resp_id))
+                    if rec_by_pk and rec_by_pk not in db_recs_to_delete:
+                        db_recs_to_delete.append(rec_by_pk)
                 except Exception:
                     pass
 
             # Strategy B: Try by target_resp db_id
-            if not db_rec and target_resp and target_resp.get("db_id"):
+            if target_db_id and str(target_db_id).isdigit():
                 try:
-                    db_rec = db.session.get(KpiEvaluation, int(target_resp["db_id"]))
+                    rec_by_db_id = db.session.get(KpiEvaluation, int(target_db_id))
+                    if rec_by_db_id and rec_by_db_id not in db_recs_to_delete:
+                        db_recs_to_delete.append(rec_by_db_id)
                 except Exception:
                     pass
 
-            # Strategy C: Try by employeeCode + form / frequency
-            if not db_rec:
-                target_emp_code_val = emp_code or (target_resp.get("employeeCode") if target_resp else "") or (resp_id_str if resp_id_str.isdigit() else "")
-                if target_emp_code_val:
-                    query = KpiEvaluation.query.filter(
+            # Strategy C: Try by employeeCode + form / team / cycle
+            target_emp_code_val = emp_code or (target_resp.get("employeeCode") if target_resp else "") or (target_resp.get("employeeId") if target_resp else "") or (resp_id_str if resp_id_str.isdigit() else "")
+            if target_emp_code_val:
+                query = KpiEvaluation.query.filter(
+                    or_(
+                        KpiEvaluation.employee_id == str(target_emp_code_val),
+                        KpiEvaluation.employee_name == str(target_emp_code_val)
+                    )
+                )
+                if target_form:
+                    query = query.filter(
                         or_(
-                            KpiEvaluation.employee_id == str(target_emp_code_val),
-                            KpiEvaluation.employee_name == str(target_emp_code_val)
+                            KpiEvaluation.form == target_form,
+                            KpiEvaluation.performance_metrics == target_form,
+                            KpiEvaluation.description.ilike(f"%{target_form}%")
                         )
                     )
-                    if target_form:
-                        query = query.filter(KpiEvaluation.form == target_form)
-                    db_rec = query.first()
+                if team_name:
+                    query = query.filter(
+                        or_(
+                            KpiEvaluation.team_name.ilike(team_name),
+                            KpiEvaluation.team_id == team_name
+                        )
+                    )
+                recs_by_emp = query.all()
+                for r_item in recs_by_emp:
+                    if r_item not in db_recs_to_delete:
+                        db_recs_to_delete.append(r_item)
 
-            if db_rec:
-                if db_rec.manager_score is not None or db_rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
+            for rec in db_recs_to_delete:
+                if rec.manager_score is not None or rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
                     return jsonify({"error": "Published and calibrated evaluation records cannot be deleted."}), 400
-                db.session.delete(db_rec)
-                db.session.commit()
+                db.session.delete(rec)
+            db.session.commit()
         except Exception as db_err:
             db.session.rollback()
             print(f"[delete_evaluation_response] DB delete error: {db_err}")
@@ -846,11 +974,27 @@ def save_evaluation_responses():
                     ).order_by(KpiEvaluation.id.desc()).first()
 
                 if eval_row:
-                    if "kpiResponses" in item and item["kpiResponses"]:
+                    if "monthly_records" in item and item["monthly_records"]:
+                        existing_cats = []
+                        if isinstance(eval_row.metrics_data, dict) and "categories" in eval_row.metrics_data:
+                            existing_cats = eval_row.metrics_data["categories"]
+                        elif isinstance(eval_row.metrics_data, list):
+                            existing_cats = eval_row.metrics_data
+                        elif "categories" in item:
+                            existing_cats = item["categories"]
+
+                        eval_row.metrics_data = {
+                            "categories": existing_cats,
+                            "monthly_records": item["monthly_records"]
+                        }
+                    elif "kpiResponses" in item and item["kpiResponses"]:
                         if isinstance(eval_row.metrics_data, list):
                             eval_row.metrics_data = merge_kpi_responses_into_categories(eval_row.metrics_data, item["kpiResponses"])
+                        elif isinstance(eval_row.metrics_data, dict) and "categories" in eval_row.metrics_data:
+                            eval_row.metrics_data["categories"] = merge_kpi_responses_into_categories(eval_row.metrics_data["categories"], item["kpiResponses"])
                         else:
                             eval_row.metrics_data = item["kpiResponses"]
+
                     if "employeeOverallScore" in item:
                         try:
                             eval_row.employee_overall_score = float(item["employeeOverallScore"])
@@ -860,6 +1004,11 @@ def save_evaluation_responses():
                             pass
                     if "employeeRemarks" in item:
                         eval_row.employee_remark = item["employeeRemarks"]
+                    if item.get("employeeSubmittedAt"):
+                        try:
+                            eval_row.submitted_at = datetime.fromisoformat(item["employeeSubmittedAt"].replace("Z", "+00:00"))
+                        except Exception:
+                            eval_row.submitted_at = now
                     if "managerScore" in item and item["managerScore"] is not None:
                         try:
                             eval_row.manager_score = float(item["managerScore"])
@@ -868,6 +1017,11 @@ def save_evaluation_responses():
                             pass
                     if "managerRemarks" in item:
                         eval_row.manager_remark = item["managerRemarks"]
+                    if item.get("managerReviewedAt"):
+                        try:
+                            eval_row.reviewed_at = datetime.fromisoformat(item["managerReviewedAt"].replace("Z", "+00:00"))
+                        except Exception:
+                            eval_row.reviewed_at = now
                     if "serviceManagerScore" in item and item["serviceManagerScore"] is not None:
                         eval_row.service_manager_score = str(item["serviceManagerScore"])
                     if "status" in item and item["status"]:
@@ -1325,14 +1479,6 @@ def get_manager_kpi_templates():
             return jsonify({"error": "manager_id parameter is required"}), 400
 
         mgr_emp = Employee.query.filter(Employee.employee_id == str(manager_id)).first()
-        if not mgr_emp and str(manager_id).isdigit():
-            mgr_emp = Employee.query.filter(
-                or_(
-                    Employee.id == int(manager_id),
-                    Employee.user_id == int(manager_id)
-                )
-            ).first()
-
         canonical_mgr_id = str(mgr_emp.employee_id) if mgr_emp and mgr_emp.employee_id else str(manager_id)
 
         # Query all templates strictly for this manager's canonical employee_id
@@ -1380,14 +1526,6 @@ def save_manager_kpi_template():
             return jsonify({"error": "manager_id is required"}), 400
 
         mgr_emp = Employee.query.filter(Employee.employee_id == str(manager_id)).first()
-        if not mgr_emp and str(manager_id).isdigit():
-            mgr_emp = Employee.query.filter(
-                or_(
-                    Employee.id == int(manager_id),
-                    Employee.user_id == int(manager_id)
-                )
-            ).first()
-
         canonical_mgr_id = str(mgr_emp.employee_id) if mgr_emp and mgr_emp.employee_id else str(manager_id)
         mgr_name = (mgr_emp.name if (mgr_emp and mgr_emp.name) else None) or data.get("manager_name") or ""
 
@@ -1460,13 +1598,6 @@ def rename_manager_kpi_template():
             return jsonify({"error": "manager_id and template_name are required"}), 400
 
         mgr_emp = Employee.query.filter(Employee.employee_id == str(manager_id)).first()
-        if not mgr_emp and str(manager_id).isdigit():
-            mgr_emp = Employee.query.filter(
-                or_(
-                    Employee.id == int(manager_id),
-                    Employee.user_id == int(manager_id)
-                )
-            ).first()
         canonical_mgr_id = str(mgr_emp.employee_id) if mgr_emp and mgr_emp.employee_id else str(manager_id)
 
         tpl = ManagerKpiTemplate.query.filter(
@@ -1507,13 +1638,6 @@ def delete_manager_kpi_template():
         all_target_ids = set()
         for m_id in mgr_id_list:
             mgr_emp = Employee.query.filter(Employee.employee_id == str(m_id)).first()
-            if not mgr_emp and str(m_id).isdigit():
-                mgr_emp = Employee.query.filter(
-                    or_(
-                        Employee.id == int(m_id),
-                        Employee.user_id == int(m_id)
-                    )
-                ).first()
             if mgr_emp and mgr_emp.employee_id:
                 all_target_ids.add(str(mgr_emp.employee_id))
             else:
@@ -1562,16 +1686,8 @@ def assign_kpi_metrics():
         # Resolve canonical Employee.employee_id for reporting manager
         if reporting_manager_id or reporting_manager:
             mgr_emp = None
-            if reporting_manager_id and reporting_manager_id.isdigit():
-                mgr_emp = Employee.query.filter(
-                    or_(
-                        Employee.employee_id == reporting_manager_id,
-                        Employee.id == int(reporting_manager_id),
-                        Employee.user_id == int(reporting_manager_id)
-                    )
-                ).first()
-            elif reporting_manager_id:
-                mgr_emp = Employee.query.filter(Employee.employee_id == reporting_manager_id).first()
+            if reporting_manager_id:
+                mgr_emp = Employee.query.filter(Employee.employee_id == str(reporting_manager_id)).first()
 
             if not mgr_emp and reporting_manager:
                 mgr_emp = Employee.query.filter(
@@ -1586,16 +1702,8 @@ def assign_kpi_metrics():
         # Resolve canonical Employee.employee_id for service manager
         if service_manager_id or service_manager:
             sm_emp = None
-            if service_manager_id and service_manager_id.isdigit():
-                sm_emp = Employee.query.filter(
-                    or_(
-                        Employee.employee_id == service_manager_id,
-                        Employee.id == int(service_manager_id),
-                        Employee.user_id == int(service_manager_id)
-                    )
-                ).first()
-            elif service_manager_id:
-                sm_emp = Employee.query.filter(Employee.employee_id == service_manager_id).first()
+            if service_manager_id:
+                sm_emp = Employee.query.filter(Employee.employee_id == str(service_manager_id)).first()
 
             if not sm_emp and service_manager:
                 sm_emp = Employee.query.filter(
@@ -1726,12 +1834,7 @@ def assign_kpi_metrics():
                 if not emp_id:
                     continue
 
-                db_emp = Employee.query.filter(
-                    or_(
-                        Employee.employee_id == emp_id,
-                        Employee.id == int(emp_id) if emp_id.isdigit() else False
-                    )
-                ).first()
+                db_emp = Employee.query.filter(Employee.employee_id == str(emp_id)).first()
                 if db_emp and (db_emp.is_active is False or str(db_emp.status or "").strip().lower() in ["inactive", "deactive", "deactivated"]):
                     continue
 
@@ -1835,17 +1938,12 @@ def assign_kpi_metrics():
 
         # For Monthly, Quarterly, and Yearly evaluations: store directly in PostgreSQL database (kpi_evaluations table)
         for emp in employees:
-            emp_id = str(emp.get("id") or emp.get("employee_id") or emp.get("code") or "")
+            emp_id = str(emp.get("employee_id") or emp.get("id") or emp.get("code") or "")
             if not emp_id:
                 continue
 
             # Skip inactive / deactivated employees
-            db_emp = Employee.query.filter(
-                or_(
-                    Employee.employee_id == emp_id,
-                    Employee.id == int(emp_id) if emp_id.isdigit() else False
-                )
-            ).first()
+            db_emp = Employee.query.filter(Employee.employee_id == emp_id).first()
             if db_emp and (db_emp.is_active is False or str(db_emp.status or "").strip().lower() in ["inactive", "deactive", "deactivated"]):
                 continue
 
@@ -1856,9 +1954,20 @@ def assign_kpi_metrics():
 
             stats = calculate_evaluation_working_days(emp_id, from_date, to_date) if (from_date and to_date) else {"working_days": 0, "leave_days": 0, "holiday_days": 0}
 
+            emp_ids_to_match = [str(emp_id)]
+            if db_emp and db_emp.employee_id and str(db_emp.employee_id) not in emp_ids_to_match:
+                emp_ids_to_match.append(str(db_emp.employee_id))
+            if str(emp_id).isdigit():
+                clean_num = str(int(emp_id))
+                if clean_num not in emp_ids_to_match:
+                    emp_ids_to_match.append(clean_num)
+                emp_prefix = f"EMP-{clean_num}"
+                if emp_prefix not in emp_ids_to_match:
+                    emp_ids_to_match.append(emp_prefix)
+
             # Check if evaluation records already exist for this employee for this specific form/period
             filter_conditions = [
-                KpiEvaluation.employee_id == emp_id,
+                KpiEvaluation.employee_id.in_(emp_ids_to_match),
                 KpiEvaluation.form == form_name,
             ]
             if from_date:
@@ -1898,9 +2007,9 @@ def assign_kpi_metrics():
                 record.status = "Assigned to Employee"
                 record.updated_at = now
             else:
-                # Do not assign new metrics if this employee currently has a pending evaluation
+                # Check for existing pending evaluation in a different period
                 pending_eval = KpiEvaluation.query.filter(
-                    KpiEvaluation.employee_id == emp_id,
+                    KpiEvaluation.employee_id.in_(emp_ids_to_match),
                     or_(KpiEvaluation.is_archived.is_(False), KpiEvaluation.is_archived.is_(None)),
                     or_(
                         KpiEvaluation.manager_approve_score.is_(None),
@@ -1908,7 +2017,7 @@ def assign_kpi_metrics():
                         KpiEvaluation.status.in_(["manager_review", "Submitted to Manager", "submitted", "Assigned to Employee", "employee_in_progress", "Draft", "returned_to_employee", "returned_to_manager"])
                     )
                 ).first()
-                if pending_eval:
+                if pending_eval and (pending_eval.from_date != from_date or pending_eval.to_date != to_date or pending_eval.frequency != frequency):
                     continue
 
                 record = KpiEvaluation(

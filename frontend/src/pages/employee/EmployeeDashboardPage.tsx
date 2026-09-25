@@ -309,9 +309,11 @@ const EmployeeDashboardPage: React.FC = () => {
   const [confirmModal, setConfirmModal] = useState(false);
   const [pendingEvalPrompt, setPendingEvalPrompt] = useState<{
     isOpen: boolean;
+    type?: 'employee_eval' | 'manager_metrics_setup';
     periodName: string;
     dueDateText: string;
     isPreWeekoff: boolean;
+    canCheckOutAnyway?: boolean;
   } | null>(null);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [birthdayEmployees, setBirthdayEmployees] = useState<any[]>([]);
@@ -903,39 +905,334 @@ if (isHalfDayLeave(leave.total_days)) return false;
   };
 
   const checkPendingEvaluationBeforeCheckout = async () => {
-    if (!currentEmployee && !user) return null;
-
     try {
-      const { cycles, responses } = await evaluationService.fetchRemoteEvaluationData();
+      let dbEmps: any[] = [];
+      try {
+        dbEmps = await evaluationService.fetchDBEmployees();
+      } catch (e) {
+        dbEmps = [];
+      }
+      if (!Array.isArray(dbEmps) || dbEmps.length === 0) {
+        dbEmps = Array.isArray(employees) && employees.length > 0 ? employees : [];
+      }
+
+      let remoteData: { cycles: any[]; responses: any[] } = { cycles: [], responses: [] };
+      try {
+        remoteData = await evaluationService.fetchRemoteEvaluationData();
+      } catch (e) {
+        try {
+          const c = localStorage.getItem('peoplehub_evaluation_cycles_v2');
+          const r = localStorage.getItem('peoplehub_evaluation_responses_v2');
+          remoteData = { cycles: c ? JSON.parse(c) : [], responses: r ? JSON.parse(r) : [] };
+        } catch {}
+      }
+
+      const cycles = remoteData.cycles || [];
+      const responses = remoteData.responses || [];
 
       const clean = (v: any) => String(v || '').trim().toLowerCase().replace(/^emp-?/i, '');
-      const myCode = clean(currentEmployee?.employee_id || user?.employee_id || currentEmployee?.id || user?.id || '');
-      const myFullName = (
-        (currentEmployee ? `${currentEmployee.first_name || ''} ${currentEmployee.last_name || ''}`.trim() : '') ||
-        user?.full_name ||
-        ''
-      ).trim().toLowerCase();
 
+      // Resolve the logged-in user in DB strictly by employee_id
+      const currentDbUser = dbEmps.find((e: any) => {
+        const eEmpId = clean(e.employee_id);
+        const uEmpId = clean(user?.employee_id || localStorage.getItem("employee_id") || (user as any)?.emp_id);
+        const uEmail = String(user?.email || '').trim().toLowerCase();
+
+        return (
+          (uEmpId && eEmpId === uEmpId) ||
+          (uEmail && e.work_email && String(e.work_email).trim().toLowerCase() === uEmail)
+        );
+      }) || currentEmployee;
+
+      const myIds = [
+        clean(currentDbUser?.employee_id),
+        clean(user?.employee_id),
+        clean((user as any)?.emp_id),
+        clean((user as any)?.employeeId),
+        clean(localStorage.getItem("employee_id")),
+      ].filter(Boolean);
+
+      const myNames = [
+        user?.full_name,
+        (user as any)?.name,
+        (user as any)?.full_name,
+        currentDbUser ? `${currentDbUser.first_name || ''} ${currentDbUser.last_name || ''}`.trim() : '',
+        currentEmployee ? `${currentEmployee.first_name || ''} ${currentEmployee.last_name || ''}`.trim() : '',
+        (user as any)?.username,
+        currentDbUser?.username,
+        currentEmployee?.username,
+      ].filter(Boolean).map(n => String(n).toLowerCase().trim().replace(/\s+/g, ' '));
+
+      const isEmployeeActive = (emp: any) => {
+        if (!emp) return false;
+        if (emp.is_active === false || emp.is_active === 'false' || emp.is_active === 0 || emp.is_active === '0') {
+          return false;
+        }
+        const st = String(emp.status || emp.employee_status || '').trim().toLowerCase();
+        if (st === 'inactive' || st === 'deactive' || st === 'deactivated' || st === 'disabled') {
+          return false;
+        }
+        return true;
+      };
+
+      const isMatchLoggedInManager = (mgrRef: string, mgrId: string) => {
+        if (mgrId) {
+          const cleanId = clean(mgrId);
+          if (myIds.includes(cleanId)) return true;
+        }
+        if (mgrRef) {
+          const cleanRef = mgrRef.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+          const matched = myNames.some(name => {
+            if (!name) return false;
+            const cleanName = name.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+            if (cleanRef === cleanName || cleanRef.includes(cleanName) || cleanName.includes(cleanRef)) return true;
+            const parts = cleanName.split(/\s+/).filter(p => p.length >= 3);
+            if (parts.length >= 2 && parts.every(p => cleanRef.includes(p))) return true;
+            return false;
+          });
+          if (matched) return true;
+        }
+        return false;
+      };
+
+      const isDirectReport = (emp: any): boolean => {
+        if (!emp || !isEmployeeActive(emp)) return false;
+        const eId = clean(emp.employee_id);
+        if (myIds.includes(eId)) return false;
+
+        const leads: { ref: string; id: string }[] = [
+          {
+            ref: (emp.reporting_manager || emp.manager_name || '').trim(),
+            id: String(emp.reporting_manager_id || emp.manager_id || '').trim()
+          },
+          {
+            ref: (emp.team_lead || emp.lead || '').trim(),
+            id: String(emp.team_lead_id || emp.lead_id || '').trim()
+          }
+        ].filter(item => item.ref || item.id);
+
+        for (const lead of leads) {
+          if (isMatchLoggedInManager(lead.ref, lead.id)) return true;
+        }
+        return false;
+      };
+
+      const isTeamLeadEmp = (emp: any): boolean => {
+        if (!emp) return false;
+        const desig = String(emp.designation || '').toLowerCase();
+        const role = String(emp.role || emp.access_level || '').toLowerCase();
+        const isLeadText = desig.includes('team lead') || desig.includes('team leader') || desig.includes('lead') || role.includes('team_lead') || role.includes('lead');
+        const isMgrText = (desig.includes('manager') && !desig.includes('team leader')) || (role.includes('manager') && !role.includes('team_lead')) || role.includes('admin') || role.includes('service_manager') || role.includes('service manager');
+        return isLeadText && !isMgrText;
+      };
+
+      const isManagerEmp = (emp: any): boolean => {
+        if (!emp) return false;
+        const desig = String(emp.designation || '').toLowerCase();
+        const role = String(emp.role || emp.access_level || '').toLowerCase();
+        return (desig.includes('manager') && !desig.includes('team leader')) ||
+          (role.includes('manager') && !role.includes('team_lead')) ||
+          role.includes('admin') || role.includes('service_manager');
+      };
+
+      const isAssignableSubordinate = (emp: any): boolean => {
+        if (!emp || !isEmployeeActive(emp)) return false;
+        if (isDirectReport(emp)) return true;
+
+        const leadsToCheck: { ref: string; id: string }[] = [
+          {
+            ref: (emp.reporting_manager || '').trim().toLowerCase(),
+            id: String(emp.reporting_manager_id || emp.manager_id || '').trim()
+          },
+          {
+            ref: (emp.team_lead || emp.lead || '').trim().toLowerCase(),
+            id: String(emp.team_lead_id || emp.lead_id || '').trim()
+          }
+        ].filter(item => item.ref || item.id);
+
+        const visited = new Set<string>();
+
+        for (const lead of leadsToCheck) {
+          let currentMgrRef = lead.ref;
+          let currentMgrId = lead.id;
+
+          while (currentMgrRef || currentMgrId) {
+            const key = `${currentMgrRef}_${currentMgrId}`;
+            if (visited.has(key)) break;
+            visited.add(key);
+
+            const intermediateMgr = dbEmps.find((e: any) => {
+              if (currentMgrId && clean(e.employee_id) === clean(currentMgrId)) return true;
+              if (currentMgrRef) {
+                const eFullName = `${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase();
+                const cleanE = eFullName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
+                const cleanMgr = currentMgrRef.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
+                return cleanE === cleanMgr || (e.username && clean(e.username) === cleanMgr);
+              }
+              return false;
+            });
+
+            if (!intermediateMgr) break;
+
+            if (isDirectReport(intermediateMgr)) {
+              if (isTeamLeadEmp(intermediateMgr)) {
+                return true;
+              }
+              return false;
+            }
+
+            if (isManagerEmp(intermediateMgr)) {
+              break;
+            }
+
+            currentMgrRef = (intermediateMgr.reporting_manager || intermediateMgr.team_lead || intermediateMgr.lead || '').trim().toLowerCase();
+            currentMgrId = String(intermediateMgr.reporting_manager_id || intermediateMgr.manager_id || intermediateMgr.team_lead_id || intermediateMgr.lead_id || '').trim();
+          }
+        }
+
+        return false;
+      };
+
+      const MONTH_NAMES = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+
+      const today = new Date();
+      const todayStr = today.toISOString().split("T")[0];
+      const todayDate = today.getDate();
+      const todayDay = today.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+      const currentMonth = today.getMonth(); // 0-indexed
+      const currentYear = today.getFullYear();
+      const daysInCurrentMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+      const isLast8DaysOfCurrentMonth = todayDate >= (daysInCurrentMonth - 7); // e.g. 23rd to 30th/31st
+
+      // 1. Manager Phase: Check unassigned subordinates in last 8 days of current month
+      const assignableDirects = dbEmps.filter(e => isAssignableSubordinate(e));
+
+      if (isLast8DaysOfCurrentMonth && assignableDirects.length > 0) {
+        const currentMonthName = MONTH_NAMES[currentMonth];
+
+        const isMatchEmp = (empId: string, r: any) => {
+          if (!empId || !r) return false;
+          const cTarget = clean(empId);
+          const rCodes = [clean(r.employeeCode), clean(r.employeeId), clean(r.employee_id)].filter(Boolean);
+          if (rCodes.includes(cTarget)) return true;
+
+          const dbEmp = dbEmps.find((e: any) => clean(e.employee_id) === cTarget);
+          if (dbEmp) {
+            const dbCodes = [clean(dbEmp.employee_id)].filter(Boolean);
+            if (dbCodes.some(c => rCodes.includes(c))) return true;
+            const dbName = `${dbEmp.first_name || ''} ${dbEmp.last_name || ''}`.trim().toLowerCase();
+            const rName = String(r.employeeName || r.employee_name || '').trim().toLowerCase();
+            if (dbName && rName && (dbName === rName || dbName.replace(/\s*\(\w+\)\s*$/, '').trim() === rName.replace(/\s*\(\w+\)\s*$/, '').trim())) {
+              return true;
+            }
+          }
+          return false;
+        };
+
+        const getEmpPendingEvaluation = (empId: string) => {
+          if (!empId) return null;
+
+          return (responses || []).find((r: any) => {
+            if (!isMatchEmp(empId, r)) return false;
+            if (r.is_archived || r.status === 'Archived') return false;
+
+            const s = String(r.status || '').toLowerCase().trim();
+            const smStatus = String((r as any).service_manager_approve_status || '').toLowerCase().trim();
+
+            const isCompleted =
+              s === 'completed' ||
+              s === 'sm_final_approval' ||
+              (s === 'approved' && r.managerScore != null) ||
+              smStatus === 'approved' ||
+              (r.managerScore != null &&
+                s !== 'manager_review' &&
+                s !== 'submitted to manager' &&
+                s !== 'submitted' &&
+                s !== 'returned_to_manager');
+
+            return !isCompleted;
+          });
+        };
+
+        const isEmpAlreadyAssignedForPeriod = (empId: string) => {
+          if (!empId) return false;
+
+          return (responses || []).some((r: any) => {
+            if (!isMatchEmp(empId, r)) return false;
+            if (r.is_archived || r.status === 'Archived') return false;
+
+            const rFreq = String(r.frequency || '').toLowerCase();
+            if (rFreq === 'yearly') {
+              const s = String(r.status || '').toLowerCase().trim();
+              const isCompleted = s === 'completed' || s === 'sm_final_approval' || (s === 'approved' && r.managerScore != null);
+              if (!isCompleted) return true;
+            }
+
+            const mName = (MONTH_NAMES[currentMonth] || '').toLowerCase();
+            const yStr = `${currentYear}`;
+            const rText = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''}`.toLowerCase();
+            if (mName && rText.includes(mName) && rText.includes(yStr)) return true;
+
+            const rStart = String((r as any).startDate || (r as any).start_date || (r as any).fromDate || '').split('T')[0];
+            const rEnd = String((r as any).endDate || (r as any).end_date || (r as any).toDate || '').split('T')[0];
+            if (rStart && rEnd && rStart <= todayStr && todayStr <= rEnd) return true;
+
+            return false;
+          });
+        };
+
+        const unassignedDirectReports = assignableDirects.filter((m: any) => {
+          const empId = String(m.employee_id || '');
+          return !isEmpAlreadyAssignedForPeriod(empId) && !getEmpPendingEvaluation(empId);
+        });
+
+        if (unassignedDirectReports.length > 0) {
+          const daysRemaining = daysInCurrentMonth - todayDate;
+          const isLastDay = daysRemaining === 0;
+          return {
+            type: 'manager_metrics_setup' as const,
+            periodName: `${currentMonthName} ${currentYear}`,
+            dueDateText: isLastDay
+              ? `Last Day Today (${unassignedDirectReports.length} Unassigned)`
+              : `${daysRemaining} Day${daysRemaining > 1 ? 's' : ''} Left (${unassignedDirectReports.length} Unassigned)`,
+            canCheckOutAnyway: !isLastDay, // Strict Option B: Hide checkout anyway on last day of month
+            isPreWeekoff: false
+          };
+        }
+      }
+
+      // 2. Employee Phase: Pending self-assessment check
       const userResponses = (responses || []).filter((r) => {
         if (!r) return false;
-        const isPending = r.status === 'employee_in_progress' || r.status === 'returned_to_employee' || !r.employeeSubmittedAt;
+        const isYearly = (r as any).monthly_records && (r as any).monthly_records.length > 0;
+        const hasPendingMonth = isYearly && (r as any).monthly_records.some((m: any) => {
+          if (m.status !== 'pending_employee') return false;
+          if (m.monthIndex === 6) return true;
+          if (m.monthIndex > 6) {
+            const prev = (r as any).monthly_records.find((p: any) => p.monthIndex === m.monthIndex - 1);
+            return prev?.status === 'manager_approved';
+          }
+          return false;
+        });
+
+        const isPending = hasPendingMonth || r.status === 'employee_in_progress' || r.status === 'returned_to_employee' || !r.employeeSubmittedAt;
         if (!isPending) return false;
 
         const rEmpCode = clean(r.employeeCode);
         const rEmpId = clean(r.employeeId);
-        const rName = (r.employeeName || '').trim().toLowerCase();
+        const rDbId = clean((r as any).employee_id);
+        const rName = String(r.employeeName || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
-        const isCodeMatch = Boolean(myCode && (myCode === rEmpCode || myCode === rEmpId));
-        const isNameMatch = Boolean(rName && myFullName && rName.length >= 4 && rName === myFullName);
+        const isCodeMatch = myIds.some(id => id && (id === rEmpCode || id === rEmpId || id === rDbId));
+        const isNameMatch = myNames.some(name => name && rName && (name === rName || rName.includes(name) || name.includes(rName)));
 
         return isCodeMatch || isNameMatch;
       });
 
       if (!userResponses || userResponses.length === 0) return null;
-
-      const today = new Date();
-      const todayStr = today.toISOString().split("T")[0];
-      const todayDay = today.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
 
       // Helper: check if a date string is an approved leave day for the current employee
       const isApprovedLeaveDay = (dateStr: string): boolean => {
@@ -978,47 +1275,109 @@ if (isHalfDayLeave(leave.total_days)) return false;
         const cycle = (cycles || []).find((c) => c.id === resp.cycleId);
 
         const periodName = cycle?.periodName || cycle?.name || "Performance Metrics";
-        const endDateStr = cycle?.endDate ? cycle.endDate.split("T")[0] : todayStr;
+        const dueDateRaw = (cycle as any)?.dueDate || (cycle as any)?.due_date || cycle?.endDate;
+        const endDateStr = dueDateRaw ? dueDateRaw.split("T")[0] : todayStr;
 
         const endDateObj = new Date(endDateStr);
         const endDay = endDateObj.getDay();
 
         const isDueToday = endDateStr === todayStr;
         const isWeekendDue = endDay === 6 || endDay === 0;
-        // Check if to_date itself is an approved leave day (e.g. public holiday or employee leave)
         const isLeaveDue = !isDueToday && isApprovedLeaveDay(endDateStr);
 
         const diffTime = endDateObj.getTime() - new Date(todayStr).getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-        // Check if today is Friday (5) and due date is on Saturday or Sunday of this weekend
         const isPreWeekoff = todayDay === 5 && isWeekendDue && diffDays >= 0 && diffDays <= 2;
-
-        // If to_date is a leave day or weekend, find the actual last working day before it
         const prevWorkingDay = (isLeaveDue || isWeekendDue) ? getPrevWorkingDay(endDateStr) : null;
-        // Prompt if today IS that last working day before a leave-covered due date
         const isPreLeaveDay = Boolean(prevWorkingDay && todayStr === prevWorkingDay);
 
-        // Prompt only when:
-        // - due is today
-        // - tomorrow is due date (diffDays = 1)
-        // - today is Friday before a weekend-due eval
-        // - today is the last working day before a leave-day due date
-        if (isDueToday || isPreWeekoff || isPreLeaveDay || (diffDays >= 0 && diffDays <= 1)) {
-          // Format date as DD/MM/YYYY
-          const formatDDMMYYYY = (isoStr: string) => {
-            try {
-              const d = new Date(isoStr + 'T00:00:00');
-              const dd = String(d.getDate()).padStart(2, '0');
-              const mm = String(d.getMonth() + 1).padStart(2, '0');
-              return `${dd}/${mm}/${d.getFullYear()}`;
-            } catch { return isoStr; }
-          };
-          return {
-            periodName,
-            dueDateText: isDueToday ? "Today" : formatDDMMYYYY(endDateStr),
-            isPreWeekoff: isPreWeekoff || isPreLeaveDay,
-          };
+        const isWeekly = cycle?.frequency === 'weekly';
+        const isYearly = cycle?.frequency === 'yearly' || resp.frequency === 'yearly' || (resp.monthly_records && resp.monthly_records.length > 0) || periodName.toLowerCase().includes('annual') || periodName.toLowerCase().includes('yearly') || periodName.toLowerCase().includes('fy 20');
+        const isMonthly = cycle?.frequency === 'monthly' || (!isWeekly && !isYearly && !cycle?.frequency);
+
+        const formatDDMMYYYY = (isoStr: string) => {
+          try {
+            const d = new Date(isoStr + 'T00:00:00');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            return `${dd}/${mm}/${d.getFullYear()}`;
+          } catch { return isoStr; }
+        };
+
+        if (isYearly) {
+          // Yearly Evaluation: Check the active actionable unlocked monthly milestone starting from September (Month 6) onwards
+          const monthlyRecords: any[] = (resp as any).monthly_records || [];
+          const curMonthRec = monthlyRecords.find((m: any) => {
+            if (m.status !== 'pending_employee') return false;
+            if (m.monthIndex === 6) return true;
+            if (m.monthIndex > 6) {
+              const prevRec = monthlyRecords.find((p: any) => p.monthIndex === m.monthIndex - 1);
+              return prevRec?.status === 'manager_approved';
+            }
+            return false;
+          });
+          const monthTitle = curMonthRec ? curMonthRec.monthName : 'September Progress';
+
+          if (curMonthRec && curMonthRec.status === 'pending_employee') {
+            if (todayDate <= 5 || diffDays <= 0 || isDueToday) {
+              const isLastDayOfWindow = todayDate === 5 || isDueToday;
+              const isOverdue = todayDate > 5 && diffDays <= 0;
+              const daysLeft = Math.max(0, 5 - todayDate);
+
+              return {
+                type: 'employee_eval' as const,
+                periodName: `${periodName} (${monthTitle} Progress)`,
+                dueDateText: isLastDayOfWindow
+                  ? 'Final Due Date Today (5th)'
+                  : isOverdue
+                    ? 'Overdue (Due on 5th)'
+                    : `Due on 5th (${daysLeft} Day${daysLeft > 1 ? 's' : ''} Left)`,
+                canCheckOutAnyway: !isLastDayOfWindow && !isOverdue, // Option B: Strict blocking on 5th and overdue
+                isPreWeekoff: isPreWeekoff || isPreLeaveDay,
+              };
+            }
+          }
+        } else if (isMonthly) {
+          // Monthly self-assessment window: 1st to 5th of the month
+          // On the 5th (last day) or overdue: strictly hide "Check Out Anyway" (Option B)
+          if (todayDate <= 5 || diffDays <= 0 || isDueToday) {
+            const isLastDayOfWindow = todayDate === 5 || isDueToday;
+            const isOverdue = todayDate > 5 && diffDays <= 0;
+            const daysLeft = Math.max(0, 5 - todayDate);
+
+            return {
+              type: 'employee_eval' as const,
+              periodName,
+              dueDateText: isLastDayOfWindow
+                ? 'Final Due Date Today (5th)'
+                : isOverdue
+                  ? 'Overdue (Due on 5th)'
+                  : `Due on 5th (${daysLeft} Day${daysLeft > 1 ? 's' : ''} Left)`,
+              canCheckOutAnyway: !isLastDayOfWindow && !isOverdue, // Option B: Strict blocking on 5th and overdue
+              isPreWeekoff: isPreWeekoff || isPreLeaveDay,
+            };
+          }
+        } else {
+          // Weekly / Daily / Other cycles
+          const isWithinPromptWindow = isWeekly
+            ? (diffDays >= 0 && diffDays <= 3) // Last 3 days of week
+            : (diffDays >= 0 && diffDays <= 2);
+
+          if (isDueToday || diffDays <= 0 || isPreWeekoff || isPreLeaveDay || isWithinPromptWindow) {
+            const isStrictBlocked = isDueToday || diffDays <= 0;
+            return {
+              type: 'employee_eval' as const,
+              periodName,
+              dueDateText: isDueToday
+                ? 'Due Today'
+                : diffDays < 0
+                  ? `Overdue (${formatDDMMYYYY(endDateStr)})`
+                  : `Due ${formatDDMMYYYY(endDateStr)} (${diffDays} Day${diffDays > 1 ? 's' : ''} Left)`,
+              canCheckOutAnyway: !isStrictBlocked, // Option B: Strict blocking on due date and overdue
+              isPreWeekoff: isPreWeekoff || isPreLeaveDay,
+            };
+          }
         }
       }
     } catch (err) {
@@ -1036,9 +1395,11 @@ if (isHalfDayLeave(leave.total_days)) return false;
     if (pendingEval) {
       setPendingEvalPrompt({
         isOpen: true,
+        type: pendingEval.type,
         periodName: pendingEval.periodName,
         dueDateText: pendingEval.dueDateText,
         isPreWeekoff: pendingEval.isPreWeekoff,
+        canCheckOutAnyway: pendingEval.canCheckOutAnyway,
       });
     } else {
       setConfirmModal(true);
@@ -2150,13 +2511,14 @@ if (isHalfDayLeave(leave.total_days)) return false;
       {pendingEvalPrompt && (
         <EvaluationCheckOutPromptModal
           isOpen={pendingEvalPrompt.isOpen}
+          type={pendingEvalPrompt.type || 'employee_eval'}
           periodName={pendingEvalPrompt.periodName}
           dueDateText={pendingEvalPrompt.dueDateText}
           isPreWeekoff={pendingEvalPrompt.isPreWeekoff}
+          canCheckOutAnyway={pendingEvalPrompt.canCheckOutAnyway}
           onCompleteNow={() => {
             setPendingEvalPrompt(null);
-            setActiveTab("evaluation");
-            navigate("?tab=evaluation");
+            navigate("/evaluation");
           }}
           onCheckOutAnyway={async () => {
             setPendingEvalPrompt(null);

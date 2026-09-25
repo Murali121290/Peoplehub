@@ -141,12 +141,12 @@ const Sidebar: React.FC<SidebarProps> = ({
           const isMe = (userEmpCode && (rEmpCode === userEmpCode)) || (userFullName && rName && rName === userFullName);
           if (!isMe) return false;
 
-          const isSubmitted = r.status === 'manager_review' || 
-                              r.status === 'approved' || 
-                              r.status === 'sm_final_approval' || 
-                              r.status === 'Calibrated & Approved' || 
-                              r.status === 'Completed' || 
-                              Boolean(r.employeeSubmittedAt);
+          const isSubmitted = r.status === 'manager_review' ||
+            r.status === 'approved' ||
+            r.status === 'sm_final_approval' ||
+            r.status === 'Calibrated & Approved' ||
+            r.status === 'Completed' ||
+            Boolean(r.employeeSubmittedAt);
           return !isSubmitted;
         });
 
@@ -163,17 +163,17 @@ const Sidebar: React.FC<SidebarProps> = ({
             if (isMe) return false; // don't double count self
 
             const isMyTeamMember = checkManagerMatch(r.reportingManager, user?.full_name) ||
-                                   (rEmpCode && reportingIdentifiers.has(rEmpCode)) ||
-                                   (rName && reportingIdentifiers.has(rName));
+              (rEmpCode && reportingIdentifiers.has(rEmpCode)) ||
+              (rName && reportingIdentifiers.has(rName));
 
             if (!isMyTeamMember) return false;
 
             const isWaitingForManager = (r.status === 'manager_review' || r.status === 'Submitted to Manager' || Boolean(r.employeeSubmittedAt)) &&
-                                        r.status !== 'approved' &&
-                                        r.status !== 'sm_final_approval' &&
-                                        r.status !== 'Calibrated & Approved' &&
-                                        r.status !== 'Completed' &&
-                                        r.managerScore == null;
+              r.status !== 'approved' &&
+              r.status !== 'sm_final_approval' &&
+              r.status !== 'Calibrated & Approved' &&
+              r.status !== 'Completed' &&
+              r.managerScore == null;
 
             return isWaitingForManager;
           });
@@ -217,8 +217,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   useEffect(() => {
     const access = user?.access_level?.toLowerCase() || '';
     const role = user?.role?.toLowerCase() || '';
-    const isManagerOrAdmin = 
-      access === 'admin' || access === 'manager' || access === 'team_lead' || access === 'service_manager' || access === 'lead' || 
+    const isManagerOrAdmin =
+      access === 'admin' || access === 'manager' || access === 'team_lead' || access === 'service_manager' || access === 'lead' ||
       role.includes('manager') || role.includes('lead');
 
     if (isManagerOrAdmin) {
@@ -227,9 +227,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           const token = localStorage.getItem('token');
           const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
           const [leaveRes, shiftRes, empRes] = await Promise.all([
-             fetch(`${API_URL}/api/leaves/`, { headers }),
-             fetch(`${API_URL}/api/shifts/`, { headers }),
-             fetch(`${API_URL}/api/employees/`, { headers })
+            fetch(`${API_URL}/api/leaves/`, { headers }),
+            fetch(`${API_URL}/api/shifts/`, { headers }),
+            fetch(`${API_URL}/api/employees/`, { headers })
           ]);
 
           const accessClean = user?.access_level?.toLowerCase() || '';
@@ -344,9 +344,9 @@ const Sidebar: React.FC<SidebarProps> = ({
 
 
   const accessLevel = `${user?.access_level || ''}`.toLowerCase();
-  const isEmployeeOrManager = 
-    accessLevel === 'user' || 
-    accessLevel === 'manager' || 
+  const isEmployeeOrManager =
+    accessLevel === 'user' ||
+    accessLevel === 'manager' ||
     accessLevel === 'standard' ||
     ['copyeditor', 'editorial manager'].includes(user?.role?.toLowerCase() || '');
 
@@ -375,11 +375,11 @@ const Sidebar: React.FC<SidebarProps> = ({
       <nav className="flex-1 overflow-y-auto mt-4 px-3">
         {sidebarItems.map((item) => {
           const isActive = location.pathname === item.path;
-          
+
           if (item.subItems) {
             const isParentActive = location.pathname.startsWith(item.path) || item.subItems.some((sub: any) => location.pathname === sub.path);
             const isOpen = openMenus[item.name] || false;
-            
+
             return (
               <div
                 key={item.path}
@@ -389,9 +389,8 @@ const Sidebar: React.FC<SidebarProps> = ({
               >
                 <button
                   onClick={() => setOpenMenus(prev => ({ ...prev, [item.name]: !prev[item.name] }))}
-                  className={`flex w-full items-center justify-between rounded-xl px-4 py-3 transition-all duration-200 ${
-                    isParentActive || isOpen ? "bg-primary-50 text-primary-700" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
-                  }`}
+                  className={`flex w-full items-center justify-between rounded-xl px-4 py-3 transition-all duration-200 ${isParentActive || isOpen ? "bg-primary-50 text-primary-700" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
+                    }`}
                 >
                   <div className="flex items-center">
                     <item.icon className="mr-3 h-5 w-5" />
@@ -424,9 +423,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                               key={subItem.path}
                               to={subItem.path}
                               state={subItem.state}
-                              className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-all ${
-                                isSubActive ? "bg-primary-50 text-primary-700 font-semibold" : "text-neutral-600 hover:bg-white hover:text-neutral-800"
-                              }`}
+                              className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-all ${isSubActive ? "bg-primary-50 text-primary-700 font-semibold" : "text-neutral-600 hover:bg-white hover:text-neutral-800"
+                                }`}
                             >
                               <subItem.icon className="h-4 w-4" />
                               <div className="relative flex items-center w-full justify-between pr-2">
@@ -470,9 +468,8 @@ const Sidebar: React.FC<SidebarProps> = ({
               >
                 <button
                   onClick={() => setShowReportMenu(!showReportMenu)}
-                  className={`flex w-full items-center justify-between rounded-xl px-4 py-3 transition-all duration-200 ${
-                    isReportsParent || showReportMenu ? "bg-primary-50 text-primary-700" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
-                  }`}
+                  className={`flex w-full items-center justify-between rounded-xl px-4 py-3 transition-all duration-200 ${isReportsParent || showReportMenu ? "bg-primary-50 text-primary-700" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
+                    }`}
                 >
                   <div className="flex items-center">
                     <item.icon className="mr-3 h-5 w-5" />
@@ -500,9 +497,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                               key={report.path}
                               to={report.path}
                               state={report.state}
-                              className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-all ${
-                                isSubActive ? "bg-primary-50 text-primary-700 font-semibold" : "text-neutral-600 hover:bg-white hover:text-neutral-800"
-                              }`}
+                              className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-all ${isSubActive ? "bg-primary-50 text-primary-700 font-semibold" : "text-neutral-600 hover:bg-white hover:text-neutral-800"
+                                }`}
                             >
                               <report.icon className="h-4 w-4" />
                               <span>{report.name}</span>
@@ -521,9 +517,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             <Link
               key={item.path}
               to={item.path}
-              className={`mb-2 flex items-center justify-between rounded-xl px-4 py-3 transition-colors ${
-                isActive ? "bg-primary-50 font-semibold text-primary-700" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
-              }`}
+              className={`mb-2 flex items-center justify-between rounded-xl px-4 py-3 transition-colors ${isActive ? "bg-primary-50 font-semibold text-primary-700" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
+                }`}
             >
               <div className="flex items-center">
                 <item.icon className="mr-3 h-5 w-5" />
@@ -534,7 +529,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   {unreadAnnouncements}
                 </span>
               )}
-              {(item.name === "ERR Hub" || item.name === "Evaluation & Report") && pendingEvaluationCount > 0 && (
+              {(item.name === "E2R Hub" || item.name === "Evaluation & Report") && pendingEvaluationCount > 0 && (
                 <span className="flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-pulse">
                   {pendingEvaluationCount > 9 ? "9+" : pendingEvaluationCount}
                 </span>
@@ -573,13 +568,12 @@ const Sidebar: React.FC<SidebarProps> = ({
             <p className="text-xs text-neutral-400 capitalize">{user?.designation || user?.role_name || user?.role || "Employee"}</p>
             {effectiveShift && (
               <span
-                className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
-                  effectiveShift.is_wfh
+                className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${effectiveShift.is_wfh
                     ? 'bg-blue-50 text-blue-700 border border-blue-200'
                     : effectiveShift.is_shift_changed
-                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                    : 'bg-neutral-50 text-neutral-500 border border-neutral-200'
-                }`}
+                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                      : 'bg-neutral-50 text-neutral-500 border border-neutral-200'
+                  }`}
                 title={effectiveShift.is_shift_changed ? `Today: ${effectiveShift.effective_shift}` : effectiveShift.effective_shift}
               >
                 {effectiveShift.is_wfh && (
@@ -598,16 +592,16 @@ const Sidebar: React.FC<SidebarProps> = ({
           </Link>
         </div>
         <>
-  <Button
-    variant="outline"
-    fullWidth
-    icon={ArrowRightOnRectangleIcon}
-    className="bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-colors shadow-sm font-bold"
-    onClick={onLogout}
-  >
-    Logout
-  </Button>
-</>
+          <Button
+            variant="outline"
+            fullWidth
+            icon={ArrowRightOnRectangleIcon}
+            className="bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-colors shadow-sm font-bold"
+            onClick={onLogout}
+          >
+            Logout
+          </Button>
+        </>
       </div>
     </motion.aside>
   );

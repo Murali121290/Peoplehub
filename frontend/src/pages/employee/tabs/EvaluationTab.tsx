@@ -2,18 +2,23 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
 import { API_URL, getProfileImageUrl } from '../../../config/api';
+import apiService from '../../../services/api';
 import {
   EvaluationCycle,
   EvaluationResponse,
   KPIResponseItem,
   KPICategory,
   KPIItem,
-  RollupTier
+  RollupTier,
+  YearlyMonthRecord,
+  YearlyMonthKPIEntry
 } from '../../../types/evaluation.types';
 import {
   evaluationService,
   DEFAULT_KPI_CATEGORIES,
-  ManagerKpiTemplateRecord
+  ManagerKpiTemplateRecord,
+  FISCAL_MONTHS,
+  initializeYearlyMonthlyRecords
 } from '../../../services/evaluationService';
 import {
   calculateKPIScore,
@@ -51,6 +56,7 @@ import {
   DocumentChartBarIcon,
   ClockIcon,
   CalendarDaysIcon,
+  LockClosedIcon,
   PencilSquareIcon,
   XMarkIcon,
   MagnifyingGlassIcon,
@@ -707,20 +713,51 @@ export const isEmployeeActive = (emp: any): boolean => {
 
 export const EvaluationTab: React.FC = () => {
   const { user } = useAuthStore();
-  // Role determination
-  const normalizedRole = `${user?.access_level || user?.role || ''}`.toLowerCase();
-  const isHrOrAdmin = normalizedRole.includes('hr') || normalizedRole.includes('admin') || normalizedRole.includes('super');
-  const isManager = normalizedRole.includes('manager') || normalizedRole.includes('lead');
-  const isServiceManager = normalizedRole.includes('service_manager') || normalizedRole.includes('service manager');
+  // Role determination strictly separated - strictly based on Access Level, ignoring job designation
+  const rawAccessLevel = `${user?.access_level || localStorage.getItem('access_level') || ''}`.toLowerCase().trim();
+  const rawRole = `${user?.role || localStorage.getItem('role') || ''}`.toLowerCase().trim();
+  const isExplicitUser = rawAccessLevel === 'user' || rawAccessLevel === 'employee' || rawAccessLevel === 'standard';
+
+  const isHrOrAdmin = !isExplicitUser && (
+    rawAccessLevel === 'admin' ||
+    rawAccessLevel === 'super_admin' ||
+    rawAccessLevel === 'super admin' ||
+    rawAccessLevel === 'hr' ||
+    rawAccessLevel === 'hr_admin' ||
+    (!rawAccessLevel && (rawRole === 'admin' || rawRole === 'super_admin' || rawRole === 'super admin' || rawRole === 'hr' || rawRole === 'hr_admin'))
+  );
+
+  const isServiceManager = !isExplicitUser && !isHrOrAdmin && (
+    rawAccessLevel === 'service_manager' ||
+    rawAccessLevel === 'servicemanager' ||
+    rawAccessLevel === 'service manager' ||
+    (!rawAccessLevel && (rawRole === 'service_manager' || rawRole === 'servicemanager' || rawRole === 'service manager'))
+  );
+
+  const isTeamLead = !isExplicitUser && !isHrOrAdmin && !isServiceManager && (
+    rawAccessLevel === 'team_lead' ||
+    rawAccessLevel === 'team lead' ||
+    rawAccessLevel === 'lead' ||
+    (!rawAccessLevel && (rawRole === 'team_lead' || rawRole === 'team lead' || rawRole === 'lead'))
+  );
+
+  const isManager = !isExplicitUser && !isHrOrAdmin && (
+    rawAccessLevel === 'manager' ||
+    (!rawAccessLevel && rawRole === 'manager') ||
+    isServiceManager ||
+    isTeamLead
+  );
 
   const [activeRole, setActiveRole] = useState<'hr' | 'manager' | 'downline_teams' | 'employee'>(
-    isHrOrAdmin ? 'hr' : (isManager || isServiceManager) ? 'manager' : 'employee'
+    isHrOrAdmin ? 'hr' : (isManager || isServiceManager || isTeamLead) ? 'manager' : 'employee'
   );
 
   const [dbEmployees, setDbEmployees] = useState<any[]>([]);
   const [dbTeams, setDbTeams] = useState<any[]>([]);
   const [cycles, setCycles] = useState<EvaluationCycle[]>([]);
   const [responses, setResponses] = useState<EvaluationResponse[]>([]);
+  const [dbApprovedLeaves, setDbApprovedLeaves] = useState<any[]>([]);
+  const [dbHolidays, setDbHolidays] = useState<any[]>([]);
 
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
@@ -798,9 +835,7 @@ export const EvaluationTab: React.FC = () => {
     return sunday.toISOString().split('T')[0];
   });
   const [mgrPeriodDueDate, setMgrPeriodDueDate] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 7);
-    return d.toISOString().split('T')[0];
+    return new Date().toISOString().split('T')[0];
   });
 
   const MONTH_NAMES = [
@@ -832,6 +867,53 @@ export const EvaluationTab: React.FC = () => {
     }
   };
 
+  // Helper to adjust a candidate due date backward if it falls on a weekend (Saturday/Sunday), holiday, or approved leave
+  const getAdjustedWorkingDueDate = (
+    candidateDateStr: string,
+    leaves: any[] = dbApprovedLeaves,
+    holidays: any[] = dbHolidays
+  ): string => {
+    if (!candidateDateStr) return candidateDateStr;
+    try {
+      let cur = new Date(candidateDateStr + 'T00:00:00');
+      if (isNaN(cur.getTime())) return candidateDateStr;
+
+      // Maximum 15 day backtrack safety guard
+      let safetyCounter = 0;
+      while (safetyCounter < 15) {
+        const dayOfWeek = cur.getDay(); // 0 = Sunday, 6 = Saturday
+        const curIso = cur.toISOString().split('T')[0];
+
+        // Check if weekend (Saturday or Sunday)
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+        // Check if public/company holiday
+        const isHoliday = holidays.some((h: any) => {
+          const hDate = (h.date || h.holiday_date || h.start_date || '').split('T')[0];
+          return hDate === curIso;
+        });
+
+        // Check if approved leave
+        const isLeave = leaves.some((l: any) => {
+          if (l.status !== 'Approved') return false;
+          const from = (l.from_date || l.startDate || '').split('T')[0];
+          const to = (l.to_date || l.endDate || l.from_date || '').split('T')[0];
+          return curIso >= from && curIso <= to;
+        });
+
+        if (!isWeekend && !isHoliday && !isLeave) {
+          return curIso;
+        }
+
+        // Shift 1 day backward to previous date
+        cur.setDate(cur.getDate() - 1);
+        safetyCounter++;
+      }
+      return candidateDateStr;
+    } catch {
+      return candidateDateStr;
+    }
+  };
 
   const syncPeriodAndFormName = (
     pType = mgrPeriodType,
@@ -841,34 +923,59 @@ export const EvaluationTab: React.FC = () => {
     pFrom = mgrPeriodFromDate,
     pTo = mgrPeriodToDate,
     pDue = mgrPeriodDueDate,
-    pTeamId = mgrAssignTeamId
+    pTeamId = mgrAssignTeamId,
+    leavesList = dbApprovedLeaves,
+    holidaysList = dbHolidays
   ) => {
     const managerDisplayName = user?.full_name || `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Manager';
     const formTeamLabel = pTeamId === 'all_teams' ? `${managerDisplayName}'s Team` : (pTeamId || 'Team');
 
     let periodStr = '';
     let formTitle = '';
+    let autoDueDate = pDue;
 
     if (pType === 'quarterly') {
       const qInfo = QUARTERS_INFO.find(q => q.q === pQuarter) || QUARTERS_INFO[2];
       periodStr = `Q${pQuarter} ${pYear} (${qInfo.label}) - Stage ${pQuarter}`;
       formTitle = `Q${pQuarter} Performance Metrics - ${formTeamLabel}`;
+      let rawCandidateDue = '';
+      if (pQuarter === 1) rawCandidateDue = `${pYear}-07-05`;
+      else if (pQuarter === 2) rawCandidateDue = `${pYear}-10-05`;
+      else if (pQuarter === 3) rawCandidateDue = `${pYear + 1}-01-05`;
+      else if (pQuarter === 4) rawCandidateDue = `${pYear}-04-05`;
+      autoDueDate = getAdjustedWorkingDueDate(rawCandidateDue, leavesList, holidaysList);
+      setMgrPeriodDueDate(autoDueDate);
     } else if (pType === 'monthly') {
       const mName = MONTH_NAMES[pMonth - 1] || 'September';
       periodStr = `${mName} ${pYear}`;
       formTitle = `${mName} ${pYear} Performance Metrics - ${formTeamLabel}`;
+      const nextMonth = pMonth === 12 ? 1 : pMonth + 1;
+      const nextYear = pMonth === 12 ? pYear + 1 : pYear;
+      const rawCandidateDue = `${nextYear}-${String(nextMonth).padStart(2, '0')}-05`;
+      autoDueDate = getAdjustedWorkingDueDate(rawCandidateDue, leavesList, holidaysList);
+      setMgrPeriodDueDate(autoDueDate);
     } else if (pType === 'weekly') {
       const fromFmt = formatDisplayDate(pFrom);
       const toFmt = formatDisplayDate(pTo);
       periodStr = `Weekly (${fromFmt} - ${toFmt})`;
       formTitle = `Weekly Performance Metrics (${fromFmt} - ${toFmt}) - ${formTeamLabel}`;
+      const rawCandidateDue = pTo || new Date().toISOString().split('T')[0];
+      autoDueDate = getAdjustedWorkingDueDate(rawCandidateDue, leavesList, holidaysList);
+      setMgrPeriodDueDate(autoDueDate);
     } else if (pType === 'daily') {
-      const dueFmt = formatDisplayDate(pDue);
+      const todayIso = new Date().toISOString().split('T')[0];
+      const actualDue = pDue || todayIso;
+      autoDueDate = getAdjustedWorkingDueDate(actualDue, leavesList, holidaysList);
+      const dueFmt = formatDisplayDate(autoDueDate);
       periodStr = `Daily (${dueFmt})`;
       formTitle = `Daily Deliverables (${dueFmt}) - ${formTeamLabel}`;
+      setMgrPeriodDueDate(autoDueDate);
     } else if (pType === 'yearly' || (pType as string) === 'annual') {
-      periodStr = `Annual ${pYear}`;
-      formTitle = `Annual ${pYear} Performance Metrics - ${formTeamLabel}`;
+      periodStr = `FY ${pYear}-${pYear + 1} (April - March)`;
+      formTitle = `FY ${pYear}-${pYear + 1} Performance Metrics - ${formTeamLabel}`;
+      const rawCandidateDue = `${pYear + 1}-04-05`;
+      autoDueDate = getAdjustedWorkingDueDate(rawCandidateDue, leavesList, holidaysList);
+      setMgrPeriodDueDate(autoDueDate);
     }
 
     setMgrAssignPeriod(periodStr);
@@ -901,6 +1008,10 @@ export const EvaluationTab: React.FC = () => {
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [expandedAuditCategories, setExpandedAuditCategories] = useState<Record<string, boolean>>({});
   const [expandedPeriodBreakdowns, setExpandedPeriodBreakdowns] = useState<Record<string, boolean>>({});
+  const [activeYearlyFiscalMonth, setActiveYearlyFiscalMonth] = useState<number>(6);
+  const [activeMgrYearlyFiscalMonth, setActiveMgrYearlyFiscalMonth] = useState<number>(6);
+  const [yearlyMonthKpiInputs, setYearlyMonthKpiInputs] = useState<Record<number, Record<string, YearlyMonthKPIEntry>>>({});
+  const [yearlyMonthRemarks, setYearlyMonthRemarks] = useState<Record<number, string>>({});
 
   // Manager Form State
   const [selectedMgrResponseId, setSelectedMgrResponseId] = useState<string>('');
@@ -993,17 +1104,15 @@ export const EvaluationTab: React.FC = () => {
 
   // Match the user in dbEmployees with strict priority to avoid ID collision
   const currentDbUser = dbEmployees.find(e => {
-    // 1. Exact Email Match
-    if (userEmail && e.email && e.email.trim().toLowerCase() === userEmail) return true;
-    // 2. Explicit employee_id from auth store
+    // 1. Explicit employee_id from auth store
     if (rawUserCode && String(e.employee_id).trim().toLowerCase() === rawUserCode.toLowerCase()) return true;
-    // 3. user_id foreign key link
-    if (user?.id && e.user_id && String(e.user_id) === String(user.id)) return true;
-    // 4. Exact Full Name Match (e.g. "Bharathi Sanjeev")
+    // 2. Exact Email Match
+    if (userEmail && e.email && e.email.trim().toLowerCase() === userEmail) return true;
+    // 3. Exact Full Name Match (e.g. "Bharathi Sanjeev")
     const authFullName = (user?.full_name || userAny?.name || `${userAny?.first_name || ''} ${userAny?.last_name || ''}`).trim().toLowerCase();
     const dbFullName = `${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase();
     if (authFullName && dbFullName && authFullName.length >= 4 && authFullName === dbFullName) return true;
-    // 5. Username match
+    // 4. Username match
     if ((userAny?.username || (user as any)?.username) && e.username && e.username.trim().toLowerCase() === (userAny?.username || (user as any)?.username).trim().toLowerCase()) return true;
     return false;
   });
@@ -1016,20 +1125,7 @@ export const EvaluationTab: React.FC = () => {
   const effectiveTeamName = (currentDbUser?.team || currentDbUser?.department || userAny?.team || userAny?.department || '').trim();
   const effectiveTeamId = String(currentDbUser?.team_id || userAny?.team_id || '');
 
-  // Team Lead restriction: Team Leads can review direct reports, but cannot Create & Assign Metrics
-  const userDesignation = `${userAny?.designation || currentDbUser?.designation || userAny?.job_title || currentDbUser?.job_title || ''}`.toLowerCase();
-  const userAccessRole = `${user?.access_level || user?.role || currentDbUser?.role || ''}`.toLowerCase();
-
-  const isTeamLead = (
-    userAccessRole.includes('team_lead') ||
-    userAccessRole.includes('team lead') ||
-    userAccessRole === 'lead' ||
-    userDesignation.includes('team lead') ||
-    userDesignation.includes('team_lead') ||
-    (userDesignation.includes('lead') && !userDesignation.includes('manager'))
-  ) && !isHrOrAdmin && !userAccessRole.includes('manager') && !isServiceManager;
-
-  const canCreateMetrics = (isHrOrAdmin || isManager || isServiceManager) && !isTeamLead;
+  // Canonical identifiers and team scoping resolved for current user
 
   // Helper to match an employee response strictly for the logged in user
   const isResponseForUser = (r: EvaluationResponse) => {
@@ -1065,14 +1161,21 @@ export const EvaluationTab: React.FC = () => {
   const loadAllData = async (showLoading = false) => {
     if (showLoading) setIsRefreshing(true);
     try {
-      const [remoteData, emps, tms] = await Promise.all([
+      const [remoteData, emps, tms, leavesRes, holidaysRes] = await Promise.all([
         evaluationService.fetchRemoteEvaluationData(),
         evaluationService.fetchDBEmployees(),
-        evaluationService.fetchDBTeams()
+        evaluationService.fetchDBTeams(),
+        apiService.get('/leaves/').catch(() => ({ data: [] })),
+        apiService.get('/employee/holidays', { params: { month: currentMonth, year: currentYear } }).catch(() => ({ data: {} }))
       ]);
 
       setDbEmployees(emps);
       setDbTeams(tms);
+
+      const allLeaves = Array.isArray(leavesRes?.data) ? leavesRes.data : [];
+      const loadedHolidays = Array.isArray(holidaysRes?.data?.current_month_schedule) ? holidaysRes.data.current_month_schedule : [];
+      setDbApprovedLeaves(allLeaves);
+      setDbHolidays(loadedHolidays);
 
       const firstTeam = tms[0];
       const initialTeamId = selectedTeamId || (firstTeam ? (firstTeam.id || firstTeam.name) : '');
@@ -1227,13 +1330,11 @@ export const EvaluationTab: React.FC = () => {
       const fullName = `${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase();
       const name = String(e.name || '').trim().toLowerCase();
       const code = String(e.employee_id || '').trim().toLowerCase();
-      const idStr = String(e.id || '').trim().toLowerCase();
       const email = String(e.email || '').trim().toLowerCase();
       return (
         (fullName && repNames.has(fullName)) ||
         (name && repNames.has(name)) ||
         (code && repNames.has(code)) ||
-        (idStr && repNames.has(idStr)) ||
         (email && repNames.has(email))
       );
     });
@@ -1241,11 +1342,11 @@ export const EvaluationTab: React.FC = () => {
     // 3. Manager/Lead explicitly set on team object
     const teamObjectMgrs: any[] = [];
     if (teamObj) {
-      const tMgrId = String(teamObj.manager_id || teamObj.team_lead_id || teamObj.lead_id || '');
+      const tMgrId = String(teamObj.manager_id || teamObj.team_lead_id || teamObj.lead_id || '').trim().toLowerCase();
       const tMgrName = String(teamObj.manager_name || teamObj.team_lead_name || teamObj.manager || '').trim().toLowerCase();
       const match = empsList.find(e =>
         isStrictManager(e) && (
-          (tMgrId && (String(e.id) === tMgrId || String(e.employee_id) === tMgrId)) ||
+          (tMgrId && String(e.employee_id || '').trim().toLowerCase() === tMgrId) ||
           (tMgrName && (`${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase() === tMgrName || String(e.name || '').trim().toLowerCase() === tMgrName))
         )
       );
@@ -1278,8 +1379,8 @@ export const EvaluationTab: React.FC = () => {
   const resolveManagersForTeam = (teamId: string, teamsList: any[], empsList: any[]) => {
     // 1. Resolve Service Manager strictly by DB access level
     const sm = empsList.find(e => {
-      const access = String(e.access_level || e.role || '').toLowerCase();
-      return access.includes('service_manager') || access.includes('service manager');
+      const access = String(e.access_level || '').toLowerCase().trim();
+      return access === 'service_manager' || access === 'service manager' || access === 'servicemanager';
     });
 
     // 2. Resolve Team Manager strictly for this team
@@ -1426,8 +1527,10 @@ export const EvaluationTab: React.FC = () => {
       setCycleName(`Daily Deliverables - ${teamName}`);
       setPeriodName(`Daily (${formatDisplayDate(startDate)})`);
     } else if (freq === 'yearly') {
-      setCycleName(`Annual ${currentYear} Performance Evaluation - ${teamName}`);
-      setPeriodName(`Annual ${currentYear}`);
+      setCycleName(`FY ${currentYear}-${currentYear + 1} Performance Evaluation - ${teamName}`);
+      setPeriodName(`FY ${currentYear}-${currentYear + 1} (April - March)`);
+      setStartDate(`${currentYear}-04-01`);
+      setEndDate(`${currentYear + 1}-03-31`);
     }
   };
 
@@ -1472,8 +1575,21 @@ export const EvaluationTab: React.FC = () => {
 
   // Filter team managers strictly by access_level (Manager, Team Lead, Service Manager, Admin)
   const isManagerAccessLevel = (emp: any) => {
-    const access = String(emp.access_level || emp.role || '').toLowerCase();
-    return access.includes('manager') || access.includes('lead') || access.includes('admin') || access.includes('service_manager') || access.includes('service manager');
+    if (!emp) return false;
+    const access = String(emp.access_level || '').toLowerCase().trim();
+    if (access === 'user' || access === 'employee' || access === 'standard') return false;
+    return (
+      access === 'manager' ||
+      access === 'team_lead' ||
+      access === 'team lead' ||
+      access === 'lead' ||
+      access === 'admin' ||
+      access === 'super_admin' ||
+      access === 'service_manager' ||
+      access === 'servicemanager' ||
+      access === 'service manager' ||
+      access === 'hr'
+    );
   };
 
   const teamManagers = teamEmployees.filter(isManagerAccessLevel);
@@ -1490,8 +1606,8 @@ export const EvaluationTab: React.FC = () => {
 
   const resolvedServiceManager = dbEmployees.find(e => String(e.employee_id) === selectedSmId)
     || dbEmployees.find(e => {
-      const access = String(e.access_level || e.role || '').toLowerCase();
-      return access.includes('service_manager') || access.includes('service manager');
+      const access = String(e.access_level || '').toLowerCase().trim();
+      return access === 'service_manager' || access === 'service manager' || access === 'servicemanager';
     })
     || dbEmployees[0];
 
@@ -2473,21 +2589,25 @@ export const EvaluationTab: React.FC = () => {
   // Helper to check if an employee in DB is specifically a Team Lead (not a full manager or service manager)
   const isTeamLeadEmp = (emp: any): boolean => {
     if (!emp) return false;
-    const desig = String(emp.designation || '').toLowerCase();
-    const role = String(emp.role || emp.access_level || '').toLowerCase();
-    const isLeadText = desig.includes('team lead') || desig.includes('team leader') || desig.includes('lead') || role.includes('team_lead') || role.includes('lead');
-    const isMgrText = (desig.includes('manager') && !desig.includes('team leader')) || (role.includes('manager') && !role.includes('team_lead')) || role.includes('admin') || role.includes('service_manager') || role.includes('service manager');
-    return isLeadText && !isMgrText;
+    const access = String(emp.access_level || '').toLowerCase().trim();
+    if (access === 'user' || access === 'employee' || access === 'standard') return false;
+    return access === 'team_lead' || access === 'team lead' || access === 'lead';
   };
 
   // Helper to check if an employee is a full Manager
   const isManagerEmp = (emp: any): boolean => {
     if (!emp) return false;
-    const desig = String(emp.designation || '').toLowerCase();
-    const role = String(emp.role || emp.access_level || '').toLowerCase();
-    return (desig.includes('manager') && !desig.includes('team leader')) ||
-      (role.includes('manager') && !role.includes('team_lead')) ||
-      role.includes('admin') || role.includes('service_manager');
+    const access = String(emp.access_level || '').toLowerCase().trim();
+    if (access === 'user' || access === 'employee' || access === 'standard') return false;
+    return (
+      access === 'manager' ||
+      access === 'admin' ||
+      access === 'super_admin' ||
+      access === 'service_manager' ||
+      access === 'servicemanager' ||
+      access === 'service manager' ||
+      access === 'hr'
+    );
   };
 
   const isDownlineReport = (emp: any): boolean => {
@@ -2720,18 +2840,166 @@ export const EvaluationTab: React.FC = () => {
     return Array.from(depts).filter(Boolean);
   }, [managerAssignableEmployees, dbEmployees, activeRole]);
 
+  // Check if current manager is the direct creator / assigned reporting manager of a cycle
+  const isDirectManagerOfCycle = (c: EvaluationCycle) => {
+    if (isHrOrAdmin) return true;
+    if (!c) return false;
+    const cleanStr = (s: any) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const myCleanIdList = [
+      cleanStr(userId),
+      cleanStr(userCode),
+      cleanStr(myCanonicalCode),
+      cleanStr(currentDbUser?.id),
+      cleanStr(currentDbUser?.employee_id),
+      cleanStr(userAny?.id),
+      cleanStr(userAny?.employee_id),
+      cleanStr(user?.id),
+      cleanStr(user?.employee_id)
+    ].filter(Boolean);
+
+    const cycleMgrIds = (c.managerId || '').split(',').map(s => cleanStr(s)).filter(Boolean);
+    if (myCleanIdList.some(id => cycleMgrIds.includes(id))) {
+      return true;
+    }
+
+    const currentMgrName = cleanStr(
+      user?.full_name ||
+      (currentDbUser ? `${currentDbUser.first_name || ''} ${currentDbUser.last_name || ''}` : '') ||
+      `${userAny?.first_name || ''} ${userAny?.last_name || ''}` ||
+      userAny?.name ||
+      ''
+    );
+
+    const cycleMgrNames = (c.managerName || '').split(',').map(s => cleanStr(s)).filter(Boolean);
+    if (currentMgrName && currentMgrName.length >= 3) {
+      if (cycleMgrNames.some(cn => cn === currentMgrName || cn.includes(currentMgrName) || currentMgrName.includes(cn))) {
+        return true;
+      }
+    }
+
+    const currentTeam = cleanStr(effectiveTeamName);
+    const cycleTeam = cleanStr(c.teamName);
+    const cycleTeamId = cleanStr(c.teamId);
+    if (currentTeam && (currentTeam === cycleTeam || currentTeam === cycleTeamId || cycleTeam.includes(currentTeam))) {
+      return true;
+    }
+
+    const myManagedDepts = (managerDepartments || []).map(d => cleanStr(d)).filter(Boolean);
+    if (myManagedDepts.some(d => d === cycleTeam || d === cycleTeamId || cycleTeam.includes(d))) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const managerDirectCycles = useMemo(() => cycles.filter(isDirectManagerOfCycle), [cycles, userId, userCode, myCanonicalCode, currentDbUser, userAny, user, effectiveTeamName, managerDepartments, isHrOrAdmin]);
+
+  // Strictly check if Admin / HR has assigned an evaluation cycle to this manager's team
+  const hasAssignedCycleFromAdmin = useMemo(() => {
+    if (isHrOrAdmin) return true;
+    if (managerDirectCycles.length > 0) return true;
+
+    const cleanStr = (s: any) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const myCleanIdList = [
+      cleanStr(userId),
+      cleanStr(userCode),
+      cleanStr(myCanonicalCode),
+      cleanStr(currentDbUser?.id),
+      cleanStr(currentDbUser?.employee_id),
+      cleanStr(userAny?.id),
+      cleanStr(userAny?.employee_id),
+      cleanStr(user?.id),
+      cleanStr(user?.employee_id)
+    ].filter(Boolean);
+
+    const currentMgrName = cleanStr(
+      user?.full_name ||
+      (currentDbUser ? `${currentDbUser.first_name || ''} ${currentDbUser.last_name || ''}` : '') ||
+      `${userAny?.first_name || ''} ${userAny?.last_name || ''}` ||
+      userAny?.name ||
+      ''
+    );
+
+    const myTeams = [
+      cleanStr(effectiveTeamName),
+      ...managerDepartments.map(d => cleanStr(d)),
+      cleanStr(currentDbUser?.team),
+      cleanStr(currentDbUser?.department),
+      cleanStr(userAny?.team),
+      cleanStr(userAny?.department)
+    ].filter(Boolean);
+
+    return cycles.some(c => {
+      if (!c) return false;
+      const cMgrIds = (c.managerId || '').split(',').map(s => cleanStr(s)).filter(Boolean);
+      if (myCleanIdList.some(id => cMgrIds.includes(id))) return true;
+
+      const cycleMgrNames = (c.managerName || '').split(',').map(s => cleanStr(s)).filter(Boolean);
+      if (currentMgrName && currentMgrName.length >= 3) {
+        if (cycleMgrNames.some(cn => cn === currentMgrName || cn.includes(currentMgrName) || currentMgrName.includes(cn))) {
+          return true;
+        }
+      }
+
+      const cTeam = cleanStr(c.teamName);
+      const cTeamId = cleanStr(c.teamId);
+      if (myTeams.some(t => t && (t === cTeam || t === cTeamId || cTeam.includes(t)))) return true;
+
+      return false;
+    });
+  }, [isHrOrAdmin, managerDirectCycles, userId, userCode, myCanonicalCode, currentDbUser, userAny, user, effectiveTeamName, managerDepartments, cycles]);
+
+  const canCreateMetrics = (isHrOrAdmin || ((isManager || isServiceManager) && hasAssignedCycleFromAdmin)) && !isTeamLead;
+
   // =========================================================================
   // MANAGER METRICS CREATION & TEAM ASSIGNMENT HANDLERS
   // =========================================================================
+  const cleanEmpIdentifier = (v: any) => String(v || '').trim().toLowerCase().replace(/^emp-?/i, '');
+
+  // Helper to reliably match an employee strictly by employee_id (and full name fallback) with an evaluation record
+  const isEmpMatch = (empOrId: any, r: EvaluationResponse | any): boolean => {
+    if (!empOrId || !r) return false;
+
+    let targetEmpId = '';
+    let targetEmpName = '';
+
+    if (typeof empOrId === 'object' && empOrId !== null) {
+      targetEmpId = cleanEmpIdentifier(empOrId.employee_id || empOrId.employeeCode || empOrId.employeeId);
+      targetEmpName = `${empOrId.first_name || ''} ${empOrId.last_name || ''}`.trim().toLowerCase() || String(empOrId.name || empOrId.full_name || '').trim().toLowerCase();
+    } else {
+      const raw = String(empOrId).trim();
+      targetEmpId = cleanEmpIdentifier(raw);
+      const dbEmp = dbEmployees.find((e: any) => cleanEmpIdentifier(e.employee_id) === targetEmpId);
+      if (dbEmp) {
+        targetEmpName = `${dbEmp.first_name || ''} ${dbEmp.last_name || ''}`.trim().toLowerCase();
+      }
+    }
+
+    const rEmpId = cleanEmpIdentifier(r.employee_id || r.employeeCode || r.employeeId);
+    const rName = String(r.employeeName || r.employee_name || '').trim().toLowerCase();
+
+    // 1. Strict employee_id match
+    if (targetEmpId && rEmpId && targetEmpId === rEmpId) return true;
+
+    // 2. Name match fallback
+    if (rName && targetEmpName) {
+      const cleanTarget = targetEmpName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
+      const cleanR = rName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
+      if (cleanTarget === cleanR || cleanTarget.includes(cleanR) || cleanR.includes(cleanTarget)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   // Helper to check if an employee currently has an active evaluation that is PENDING
   // (either awaiting employee self-evaluation OR awaiting manager calibration & approval)
-  const getEmpPendingEvaluation = (empId: string): EvaluationResponse | null => {
+  const getEmpPendingEvaluation = (empId: string | any): EvaluationResponse | null => {
     if (!empId) return null;
-    const cleanEmpId = String(empId).trim().toLowerCase();
 
     const pendingResp = responses.find(r => {
-      const cleanEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase();
-      if (cleanEmpCode !== cleanEmpId) return false;
+      if (!isEmpMatch(empId, r)) return false;
 
       // Ignore archived or soft-deleted records
       if ((r as any).is_archived || (r as any).status === 'Archived') return false;
@@ -2780,7 +3048,7 @@ export const EvaluationTab: React.FC = () => {
 
   // Helper to check if an employee is already assigned metrics for a specific evaluation period
   const isEmpAlreadyAssignedForPeriod = (
-    empId: string,
+    empId: string | any,
     periodStr = mgrAssignPeriod,
     pType = mgrPeriodType,
     pQuarter = mgrPeriodQuarter,
@@ -2791,17 +3059,23 @@ export const EvaluationTab: React.FC = () => {
     pTo = mgrPeriodToDate
   ) => {
     if (!empId) return false;
-    const cleanEmpId = String(empId).trim().toLowerCase();
 
     // Check in responses (definitive source of active assigned evaluations)
     const hasInResponses = responses.some(r => {
-      const cleanEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase();
-      if (cleanEmpCode !== cleanEmpId) return false;
+      if (!isEmpMatch(empId, r)) return false;
 
       // Ignore archived or deleted records
       if ((r as any).is_archived || (r as any).status === 'Archived') return false;
 
       const rType = String(r.frequency || (r as any).periodType || '').toLowerCase();
+
+      // If employee already has an active ongoing yearly evaluation with milestones
+      if (rType === 'yearly' && (pType === 'monthly' || pType === 'quarterly' || pType === 'yearly')) {
+        const s = String(r.status || '').toLowerCase().trim();
+        const isCompleted = s === 'completed' || s === 'sm_final_approval' || (s === 'approved' && r.managerScore != null);
+        if (!isCompleted) return true;
+      }
+
       if (pType && rType && pType !== rType) return false;
 
       const rStart = (r as any).startDate || (r as any).start_date || (r as any).fromDate;
@@ -2851,13 +3125,14 @@ export const EvaluationTab: React.FC = () => {
 
     // Check in cycles ONLY if the cycle has an active, non-archived response in state for this employee
     const hasInCycles = cycles.some(c => {
-      const empList = (c.employeeIds || []).map(id => String(id).trim().toLowerCase());
+      const empList = (c.employeeIds || []).map(id => cleanEmpIdentifier(id));
+      const cleanEmpId = cleanEmpIdentifier(empId);
       if (!empList.includes(cleanEmpId)) return false;
 
       // Verify if this employee actually has an active response belonging to this cycle
       const hasActiveRespForCycle = responses.some(r =>
         (r.cycleId === c.id || (r.frequency === c.frequency && (r as any).form === c.name)) &&
-        String(r.employeeCode || r.employeeId || '').trim().toLowerCase() === cleanEmpId &&
+        isEmpMatch(empId, r) &&
         !(r as any).is_archived &&
         (r as any).status !== 'Archived'
       );
@@ -2866,43 +3141,7 @@ export const EvaluationTab: React.FC = () => {
       const cType = String((c as any).frequency || '').toLowerCase();
       if (pType && cType && pType !== cType) return false;
 
-      if (pType === 'weekly' && pFrom && pTo) {
-        if (c.startDate === pFrom && c.endDate === pTo) return true;
-        const fromFmt = formatDisplayDate(pFrom).toLowerCase();
-        const toFmt = formatDisplayDate(pTo).toLowerCase();
-        const cText = `${c.periodName || ''} ${c.name || ''} ${c.description || ''}`.toLowerCase();
-        if (fromFmt && toFmt && cText.includes(fromFmt) && cText.includes(toFmt)) return true;
-        return false;
-      }
-      if (pType === 'daily' && pDue) {
-        if (c.startDate === pDue) return true;
-        const dueFmt = formatDisplayDate(pDue).toLowerCase();
-        const cText = `${c.periodName || ''} ${c.name || ''} ${c.description || ''}`.toLowerCase();
-        if (dueFmt && cText.includes(dueFmt)) return true;
-        return false;
-      }
-      if (pType === 'monthly') {
-        const mName = (MONTH_NAMES[pMonth - 1] || '').toLowerCase();
-        const yStr = `${pYear}`;
-        const cText = `${c.periodName || ''} ${c.name || ''} ${c.description || ''}`.toLowerCase();
-        if (mName && cText.includes(mName) && cText.includes(yStr)) return true;
-        return false;
-      }
-      if (pType === 'quarterly') {
-        const qStr = `q${pQuarter}`;
-        const stageStr = `stage ${pQuarter}`;
-        const yStr = `${pYear}`;
-        const cText = `${c.periodName || ''} ${c.name || ''} ${c.description || ''}`.toLowerCase();
-        if ((cText.includes(qStr) || cText.includes(stageStr)) && cText.includes(yStr)) return true;
-        return false;
-      }
-      if (pType === 'yearly' || (pType as string) === 'annual') {
-        const yStr = `${pYear}`;
-        const cText = `${c.periodName || ''} ${c.name || ''} ${c.description || ''}`.toLowerCase();
-        if ((cText.includes('annual') || cText.includes('yearly') || cType === 'yearly' || cType === 'annual') && cText.includes(yStr)) return true;
-        return false;
-      }
-      return false;
+      return true;
     });
 
     return hasInCycles;
@@ -2993,7 +3232,11 @@ export const EvaluationTab: React.FC = () => {
 
   const handleOpenMgrCreateModal = (targetDept?: string) => {
     if (!canCreateMetrics) {
-      showAlert('Team Leads do not have permission to create and assign performance metrics. Please contact your Reporting Manager or HR.', 'Permission Denied', 'warning');
+      if (!hasAssignedCycleFromAdmin && !isHrOrAdmin) {
+        showAlert('Admin has not assigned an evaluation cycle or deliverables template to your team yet. Please wait for Admin / HR to initiate the cycle.', 'Cycle Setup Pending', 'info');
+      } else {
+        showAlert('You do not have permission to create and assign performance metrics. Please contact your Reporting Manager or HR.', 'Permission Denied', 'warning');
+      }
       return;
     }
     const defaultTeamVal = targetDept || (managerDepartments.length > 1 ? 'all_teams' : (managerDepartments[0] || 'all_teams'));
@@ -3013,8 +3256,7 @@ export const EvaluationTab: React.FC = () => {
       isEmployeeActive(e) && isEmpInSelectedTeam(e, defaultTeamVal)
     );
     const unassignedMembers = baseTeamMembers.filter((e: any) => {
-      const empId = String(e.employee_id || '');
-      return !isEmpAlreadyAssignedForPeriod(empId, undefined, 'quarterly', currentQuarter, currentYear) && !getEmpPendingEvaluation(empId);
+      return !isEmpAlreadyAssignedForPeriod(e, undefined, 'quarterly', currentQuarter, currentYear) && !getEmpPendingEvaluation(e);
     });
     setMgrAssignEmpIds(unassignedMembers.map((e: any) => String(e.employee_id || '')).filter(Boolean));
     setMgrCustomizeMembers(false);
@@ -3053,8 +3295,7 @@ export const EvaluationTab: React.FC = () => {
       isEmployeeActive(e) && isEmpInSelectedTeam(e, newTeamId)
     );
     const unassignedMembers = baseTeamMembers.filter((e: any) => {
-      const empId = String(e.employee_id || '');
-      return !isEmpAlreadyAssignedForPeriod(empId) && !getEmpPendingEvaluation(empId);
+      return !isEmpAlreadyAssignedForPeriod(e) && !getEmpPendingEvaluation(e);
     });
     setMgrAssignEmpIds(unassignedMembers.map((e: any) => String(e.employee_id || '')).filter(Boolean));
     setMgrCustomizeMembers(false);
@@ -3300,7 +3541,10 @@ export const EvaluationTab: React.FC = () => {
   // Auto-deselect any employee that is already assigned or has a pending evaluation whenever period or modal opens
   useEffect(() => {
     if (isMgrCreateModalOpen) {
-      setMgrAssignEmpIds(prev => prev.filter(id => !isEmpAlreadyAssignedForPeriod(id) && !getEmpPendingEvaluation(id)));
+      setMgrAssignEmpIds(prev => prev.filter(id => {
+        const empObj = dbEmployees.find(e => String(e.employee_id || '') === id) || id;
+        return !isEmpAlreadyAssignedForPeriod(empObj) && !getEmpPendingEvaluation(empObj);
+      }));
     }
   }, [
     isMgrCreateModalOpen,
@@ -3317,9 +3561,10 @@ export const EvaluationTab: React.FC = () => {
   ]);
 
   const handleMgrToggleEmp = (empId: string) => {
-    const pendingEval = getEmpPendingEvaluation(empId);
+    const emp = dbEmployees.find(e => String(e.employee_id || '') === empId);
+    const empTarget = emp || empId;
+    const pendingEval = getEmpPendingEvaluation(empTarget);
     if (pendingEval) {
-      const emp = dbEmployees.find(e => String(e.employee_id || '') === empId);
       const fullName = emp ? (`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name) : 'This team member';
       const statusInfo = getPendingStatusLabel(pendingEval);
       showAlert(
@@ -3328,7 +3573,7 @@ export const EvaluationTab: React.FC = () => {
       );
       return;
     }
-    if (isEmpAlreadyAssignedForPeriod(empId)) {
+    if (isEmpAlreadyAssignedForPeriod(empTarget)) {
       showToast('This team member is already assigned for this evaluation period and cannot be booked again.');
       return;
     }
@@ -3340,8 +3585,7 @@ export const EvaluationTab: React.FC = () => {
   const handleMgrToggleSelectAll = (teamEmps: any[]) => {
     const activeEmps = (teamEmps || []).filter(isEmployeeActive);
     const assignableEmps = activeEmps.filter(e => {
-      const empId = String(e.employee_id || '');
-      return !isEmpAlreadyAssignedForPeriod(empId) && !getEmpPendingEvaluation(empId);
+      return !isEmpAlreadyAssignedForPeriod(e) && !getEmpPendingEvaluation(e);
     });
     const assignableIds = assignableEmps.map(e => String(e.employee_id || '')).filter(Boolean);
 
@@ -3613,11 +3857,11 @@ export const EvaluationTab: React.FC = () => {
           effectiveEndDate = `${mgrPeriodYear}-03-31`;
         }
       } else if (mgrPeriodType === 'yearly' || (mgrPeriodType as string) === 'annual') {
-        effectiveStartDate = `${mgrPeriodYear}-01-01`;
-        effectiveEndDate = `${mgrPeriodYear}-12-31`;
+        effectiveStartDate = `${mgrPeriodYear}-04-01`;
+        effectiveEndDate = `${mgrPeriodYear + 1}-03-31`;
       }
 
-      const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.id || '');
+      const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.employee_id || '');
       const smObj = dbEmployees.find(e => String(e.employee_id) === String(selectedSmId));
       const resolvedSmCode = smObj?.employee_id || selectedSmId;
 
@@ -3627,7 +3871,10 @@ export const EvaluationTab: React.FC = () => {
       });
 
       // Strictly verify no selected employee has a pending evaluation
-      const blockedByPending = activeAssignEmpIds.filter(id => Boolean(getEmpPendingEvaluation(id)));
+      const blockedByPending = activeAssignEmpIds.filter(id => {
+        const emp = dbEmployees.find(e => String(e.employee_id || '') === id);
+        return Boolean(getEmpPendingEvaluation(emp || id));
+      });
       if (blockedByPending.length > 0) {
         const blockedNames = blockedByPending.map(id => {
           const emp = dbEmployees.find(e => String(e.employee_id || '') === id);
@@ -3643,7 +3890,10 @@ export const EvaluationTab: React.FC = () => {
       }
 
       // Filter out any employees already assigned for this period or having pending evaluations
-      const unassignedToBook = activeAssignEmpIds.filter(id => !isEmpAlreadyAssignedForPeriod(id) && !getEmpPendingEvaluation(id));
+      const unassignedToBook = activeAssignEmpIds.filter(id => {
+        const emp = dbEmployees.find(e => String(e.employee_id || '') === id);
+        return !isEmpAlreadyAssignedForPeriod(emp || id) && !getEmpPendingEvaluation(emp || id);
+      });
 
       if (unassignedToBook.length === 0) {
         showAlert('All selected team members are already assigned for this evaluation period or have a pending evaluation.', 'Cannot Assign');
@@ -3742,9 +3992,7 @@ export const EvaluationTab: React.FC = () => {
     );
 
     const isDbUserMatch = currentDbUser && (
-      mgrIds.includes(String(currentDbUser.id)) ||
       mgrIds.includes(String(currentDbUser.employee_id)) ||
-      empIds.includes(String(currentDbUser.id)) ||
       empIds.includes(String(currentDbUser.employee_id))
     );
 
@@ -3764,8 +4012,9 @@ export const EvaluationTab: React.FC = () => {
   // 1. Team-scoped Cycles: An employee/manager only sees cycles created for their team (unless HR/Admin)
   const scopedCycles = cycles.filter(isCycleForUserTeam);
 
-  // 2. Team-scoped Manager Responses: Direct reports + Downline reports from DB
-  const managerTeamResponses = responses.filter(r => {
+  // Helper to determine if an evaluation response is under the logged-in manager's review scope
+  const isResponseUnderMyManagerReview = (r: EvaluationResponse): boolean => {
+    if (!r) return false;
     // A user's own evaluation response must NEVER appear in their managerial queues
     if (isResponseForUser(r)) return false;
 
@@ -3774,34 +4023,68 @@ export const EvaluationTab: React.FC = () => {
     const mgrIds = [
       String(userId || ''),
       String(userCode || ''),
-      String(currentDbUser?.id || ''),
+      String(myCanonicalCode || ''),
       String(currentDbUser?.employee_id || ''),
-      String(userAny?.id || ''),
-      String(userAny?.employee_id || '')
-    ].filter(Boolean);
+      String(userAny?.employee_id || ''),
+      String(user?.employee_id || '')
+    ].filter(Boolean).map(id => cleanEmpIdentifier(id));
+
+    const mgrFullNames = [
+      user?.full_name,
+      userAny?.name,
+      userAny?.full_name,
+      `${currentDbUser?.first_name || ''} ${currentDbUser?.last_name || ''}`.trim(),
+      `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim(),
+      userAny?.username,
+      currentDbUser?.username
+    ].filter(Boolean).map(n => String(n).toLowerCase().trim());
 
     // 1. Look up the actual employee in DB for this response and check hierarchy
     const empInDb = dbEmployees.find((e: any) =>
-      String(e.employee_id || '') === String(r.employeeCode || r.employeeId || '') ||
-      String(e.id || '') === String(r.employeeId || '') ||
-      (e.user_id && String(e.user_id) === String(r.employeeId || '')) ||
-      (`${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase() === (r.employeeName || '').trim().toLowerCase())
+      cleanEmpIdentifier(e.employee_id) === cleanEmpIdentifier(r.employeeCode) ||
+      cleanEmpIdentifier(e.employee_id) === cleanEmpIdentifier(r.employeeId) ||
+      (`${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase() === String(r.employeeName || '').trim().toLowerCase())
     );
 
     if (empInDb) {
-      return isDownlineReport(empInDb);
-    }
-
-    // 2. Direct match by managerId on response (from kpi_evaluations table in DB)
-    if (r.managerId) {
-      const cleanMgrId = String(r.managerId).toLowerCase().replace(/^emp-?/i, '');
-      if (mgrIds.map(id => id.toLowerCase().replace(/^emp-?/i, '')).includes(cleanMgrId)) {
+      if (isDownlineReport(empInDb) || isAssignableSubordinate(empInDb) || isDirectReport(empInDb)) {
         return true;
       }
+      // If employee exists in DB and is NOT under this manager's hierarchy, strictly exclude them
+      return false;
+    }
+
+    // 2. Direct match by managerId / reportingManager on response (from kpi_evaluations table in DB)
+    const respMgrIds = [
+      cleanEmpIdentifier(r.managerId),
+      cleanEmpIdentifier(r.reportingManagerId),
+      cleanEmpIdentifier((r as any).reporting_manager_id),
+      cleanEmpIdentifier((r as any).manager_id)
+    ].filter(Boolean);
+
+    if (respMgrIds.some(id => mgrIds.includes(id))) {
+      return true;
+    }
+
+    const respMgrNames = [
+      String((r as any).reportingManager || (r as any).reporting_manager || '').trim().toLowerCase(),
+      String((r as any).managerName || (r as any).manager_name || '').trim().toLowerCase()
+    ].filter(Boolean);
+
+    if (respMgrNames.some(name => mgrFullNames.some(mName => mName && (name === mName || name.includes(mName) || mName.includes(name))))) {
+      return true;
+    }
+
+    if (r.cycleId) {
+      const cyc = cycles.find(c => c.id === r.cycleId);
+      if (cyc && isDirectManagerOfCycle(cyc)) return true;
     }
 
     return false;
-  });
+  };
+
+  // 2. Team-scoped Manager Responses: Direct reports + Downline reports from DB
+  const managerTeamResponses = responses.filter(isResponseUnderMyManagerReview);
 
   // 3. Service Manager Scoped Cycles & Responses
   const smTeamCycles = cycles.filter(c => {
@@ -3860,10 +4143,17 @@ export const EvaluationTab: React.FC = () => {
     || allUserResponses[0];
 
   const isEmployeeExplicitlyAssigned = Boolean(
-    activeEmpResponse ||
-    responses.some(isResponseForUser) ||
+    (activeEmpResponse && (
+      (Array.isArray((activeEmpResponse as any).categories) && (activeEmpResponse as any).categories.length > 0) ||
+      (activeEmpResponse.kpiResponses && Object.keys(activeEmpResponse.kpiResponses).length > 0) ||
+      activeEmpResponse.status === 'manager_review' ||
+      activeEmpResponse.status === 'approved' ||
+      activeEmpResponse.status === 'sm_final_approval' ||
+      Boolean(activeEmpResponse.employeeSubmittedAt)
+    )) ||
     cycles.some(c => {
       if (!c.employeeIds || c.employeeIds.length === 0) return false;
+      if (!c.categories || c.categories.length === 0) return false;
       const cleanMyCode = String(myCanonicalCode || '').trim().toLowerCase().replace(/^emp-?/i, '');
       return c.employeeIds.some(id => {
         const cleanId = String(id || '').trim().toLowerCase().replace(/^emp-?/i, '');
@@ -3877,38 +4167,6 @@ export const EvaluationTab: React.FC = () => {
     || scopedCycles[0]
     || cycles.find(c => c.status === 'active')
     || cycles[0];
-
-  // Check if current manager is the direct creator / assigned reporting manager of a cycle
-  const isDirectManagerOfCycle = (c: EvaluationCycle) => {
-    if (isHrOrAdmin) return true;
-    const mgrIds = [
-      String(userId || ''),
-      String(userCode || ''),
-      String(currentDbUser?.id || ''),
-      String(currentDbUser?.employee_id || ''),
-      String(userAny?.id || ''),
-      String(userAny?.employee_id || '')
-    ].filter(Boolean);
-
-    const cycleMgrIds = (c.managerId || '').split(',').map(s => s.trim());
-    if (mgrIds.some(id => cycleMgrIds.includes(id))) {
-      return true;
-    }
-
-    const currentMgrName = (user?.full_name || `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || userAny?.name || '').toLowerCase();
-    const cycleMgrName = (c.managerName || '').toLowerCase();
-    if (currentMgrName && cycleMgrName && (
-      currentMgrName === cycleMgrName ||
-      currentMgrName.replace(/\s*\(\w+\)\s*$/, '').trim() === cycleMgrName.replace(/\s*\(\w+\)\s*$/, '').trim()
-    )) {
-      return true;
-    }
-
-    return false;
-  };
-
-  // Direct cycles created by this manager specifically
-  const managerDirectCycles = cycles.filter(isDirectManagerOfCycle);
 
   // Active Manager Cycle for viewing the team's Deliverables Matrix (strictly when created by this manager)
   const activeManagerCycle = (
@@ -4301,9 +4559,10 @@ export const EvaluationTab: React.FC = () => {
               reporting_manager_id: targetCycle.managerId,
               categories: mgrEditCategories,
               employees: (targetCycle.employeeIds || []).map(empId => {
-                const e = dbEmployees.find(emp => String(emp.id) === String(empId) || String(emp.employee_id) === String(empId));
+                const e = dbEmployees.find(emp => String(emp.employee_id) === String(empId));
                 return {
-                  id: empId,
+                  id: String(e?.employee_id || empId),
+                  employee_id: String(e?.employee_id || empId),
                   name: e ? `${e.first_name || ''} ${e.last_name || ''}`.trim() : `Employee ${empId}`
                 };
               })
@@ -4349,51 +4608,68 @@ export const EvaluationTab: React.FC = () => {
           const targetCycleId = cycleToDelete.id;
           const targetTeamId = cycleToDelete.teamId;
           const targetTeamName = cycleToDelete.teamName;
+          const targetForm = cycleToDelete.name || (cycleToDelete as any).form || '';
           const targetEmpIds = cycleToDelete.employeeIds || [];
+
+          // Find all responses belonging to this cycle / team matrix
+          const matchingResponses = responses.filter(r =>
+            (targetCycleId && r.cycleId === targetCycleId) ||
+            (targetTeamId && r.teamId === targetTeamId) ||
+            (targetTeamName && (r.department || '').toLowerCase() === targetTeamName.toLowerCase()) ||
+            (targetTeamName && (r.teamName || '').toLowerCase() === targetTeamName.toLowerCase()) ||
+            (targetForm && (r.form === targetForm || (r as any).performance_metrics === targetForm))
+          );
+
           const empIdsToDelete = Array.from(new Set([
             ...targetEmpIds,
-            ...responses
-              .filter(r =>
-                (targetCycleId && r.cycleId === targetCycleId) ||
-                (targetTeamId && r.teamId === targetTeamId) ||
-                (targetTeamName && (r.department || '').toLowerCase() === targetTeamName.toLowerCase())
-              )
-              .map(r => String(r.employeeCode || r.employeeId || ''))
+            ...matchingResponses.map(r => String(r.employeeCode || r.employeeId || ''))
           ])).filter(Boolean);
 
-          const updatedCycles = cycles.filter(c => c.id !== targetCycleId);
-          const updatedResponses = responses.filter(r =>
-            r.cycleId !== targetCycleId &&
-            !(targetTeamName && (r.department || '').toLowerCase() === targetTeamName.toLowerCase() && ((r.status as string) === 'draft' || (r.status as string) === 'self_eval' || !r.employeeSubmittedAt))
+          const responseIdsToDelete = matchingResponses.map(r => r.id).filter(Boolean);
+          const dbIdsToDelete = matchingResponses.map(r => (r as any).db_id).filter(id => id != null && !isNaN(Number(id))).map(Number);
+
+          // 1. Update local state immediately for instant feedback
+          const updatedCycles = cycles.filter(c =>
+            c.id !== targetCycleId &&
+            !(targetTeamName && (c.teamName || '').toLowerCase() === targetTeamName.toLowerCase() && (c.name === targetForm || !targetForm))
           );
+          const updatedResponses = responses.filter(r => !matchingResponses.some(mr => mr.id === r.id));
 
           setCycles(updatedCycles);
           setResponses(updatedResponses);
+          evaluationService.saveCyclesLocal(updatedCycles);
+          evaluationService.saveResponsesLocal(updatedResponses);
 
-          await evaluationService.saveCycles(updatedCycles);
-          await evaluationService.saveResponses(updatedResponses);
+          // 2. Call backend delete endpoint with comprehensive context
+          const token = localStorage.getItem('token') || '';
+          const res = await fetch(`${API_URL}/api/performance/evaluation/cycles/${encodeURIComponent(targetCycleId)}`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify({
+              cycleId: targetCycleId,
+              employeeIds: empIdsToDelete,
+              responseIds: responseIdsToDelete,
+              dbIds: dbIdsToDelete,
+              teamId: targetTeamId,
+              teamName: targetTeamName,
+              form: targetForm,
+              periodName: cycleToDelete.periodName,
+              startDate: cycleToDelete.startDate,
+              endDate: cycleToDelete.endDate,
+              frequency: cycleToDelete.frequency,
+              managerId: cycleToDelete.managerId || userId
+            })
+          });
 
-          // Call backend delete endpoint with full context
-          try {
-            const token = localStorage.getItem('token') || '';
-            await fetch(`${API_URL}/api/performance/evaluation/cycles/${encodeURIComponent(targetCycleId)}`, {
-              method: 'DELETE',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-              },
-              body: JSON.stringify({
-                employeeIds: empIdsToDelete,
-                teamId: targetTeamId,
-                teamName: cycleToDelete.teamName,
-                form: cycleToDelete.name,
-                managerId: cycleToDelete.managerId || userId
-              })
-            });
-          } catch (delErr) {
-            console.warn('Sync delete to backend:', delErr);
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Server responded with status ${res.status}`);
           }
 
+          // 3. Reload authoritative fresh data from server
           await loadAllData();
           showToast('Performance Deliverables Matrix and unstarted evaluations removed from DB successfully.');
         } catch (err: any) {
@@ -4422,32 +4698,11 @@ export const EvaluationTab: React.FC = () => {
           const respId = resp.id;
           const cleanEmpCode = String(employeeCode || resp.employeeCode || resp.employeeId || '').trim().toLowerCase();
 
-          // 1. Call backend delete with specific response ID & employeeCode
-          try {
-            const token = localStorage.getItem('token') || '';
-            const deleteUrl = `${API_URL}/api/performance/evaluation/responses/${encodeURIComponent(respId)}`;
-            await fetch(deleteUrl, {
-              method: 'DELETE',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-              },
-              body: JSON.stringify({
-                respId,
-                cycleId: resp.cycleId,
-                employeeCode: employeeCode || resp.employeeCode || resp.employeeId
-              })
-            });
-          } catch (delErr) {
-            console.warn('Backend delete error:', delErr);
-          }
-
-          // 2. Remove ONLY this single response by ID from local state & cache
+          // 1. Remove from local state & cache immediately
           const updatedResponses = responses.filter(r => r.id !== respId);
           setResponses(updatedResponses);
           evaluationService.saveResponsesLocal(updatedResponses);
 
-          // 3. Also update cycles in local state & cache: remove the employee from cycle if no other responses remain
           const targetCycleId = resp.cycleId;
           const updatedCycles = cycles.map(c => {
             if (c.id === targetCycleId || (c.name === (resp as any).form && c.frequency === resp.frequency)) {
@@ -4467,9 +4722,39 @@ export const EvaluationTab: React.FC = () => {
           setCycles(updatedCycles);
           evaluationService.saveCyclesLocal(updatedCycles);
 
+          // 2. Call backend delete with specific response ID & full metadata
+          const token = localStorage.getItem('token') || '';
+          const deleteUrl = `${API_URL}/api/performance/evaluation/responses/${encodeURIComponent(respId)}`;
+          const res = await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify({
+              respId,
+              db_id: (resp as any).db_id,
+              cycleId: resp.cycleId,
+              employeeCode: employeeCode || resp.employeeCode || resp.employeeId,
+              employeeId: resp.employeeId,
+              form: (resp as any).form || (resp as any).performance_metrics,
+              teamName: resp.teamName || resp.department,
+              teamId: resp.teamId,
+              startDate: resp.startDate || resp.fromDate || resp.from_date || '',
+              endDate: resp.endDate || resp.toDate || resp.to_date || '',
+              frequency: resp.frequency
+            })
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Server responded with status ${res.status}`);
+          }
+
           await loadAllData();
           showToast(`Evaluation record deleted successfully.`);
         } catch (err: any) {
+          console.error('Error deleting evaluation record:', err);
           showAlert('Failed to delete evaluation record: ' + (err?.message || 'Unknown error'), 'Delete Error', 'danger');
         }
       },
@@ -4621,6 +4906,27 @@ export const EvaluationTab: React.FC = () => {
     if (activeEmpResponse && isResponseForUser(activeEmpResponse)) {
       const isDifferentResp = lastActiveRespIdRef.current !== activeEmpResponse.id;
       lastActiveRespIdRef.current = activeEmpResponse.id;
+
+      if (isYearlyResponse(activeEmpResponse)) {
+        const curRecords = activeEmpResponse.monthly_records || [];
+        const initialYearlyInputs: Record<number, Record<string, YearlyMonthKPIEntry>> = {};
+        const initialYearlyRemarks: Record<number, string> = {};
+        curRecords.forEach(rec => {
+          initialYearlyInputs[rec.monthIndex] = rec.kpiEntries || {};
+          initialYearlyRemarks[rec.monthIndex] = rec.employeeRemarks || '';
+        });
+        setYearlyMonthKpiInputs(initialYearlyInputs);
+        setYearlyMonthRemarks(initialYearlyRemarks);
+
+        if (isDifferentResp) {
+          const activeActionableMonth = FISCAL_MONTHS.slice(5).find(m => {
+            const lockInfo = getYearlyMonthLockInfo(m.monthIndex, curRecords);
+            return lockInfo.isEditable || lockInfo.isSubmitted;
+          }) || FISCAL_MONTHS.find(m => m.monthIndex === 6);
+
+          setActiveYearlyFiscalMonth(activeActionableMonth ? activeActionableMonth.monthIndex : 6);
+        }
+      }
 
       if (isEmpSubmitted) {
         setKpiInputs(activeEmpResponse.kpiResponses || {});
@@ -4890,10 +5196,388 @@ export const EvaluationTab: React.FC = () => {
     return (managerTeamCategories && managerTeamCategories.length > 0) ? managerTeamCategories : DEFAULT_KPI_CATEGORIES;
   }, [selectedMgrResponse, selectedMgrCycle, managerTeamCategories, activeManagerCycle]);
 
-  // Selected SM review response object & cycle
-  const selectedSmResponse = responses.find(r => r.id === selectedSmResponseId);
-  const selectedSmCycle = selectedSmResponse ? cycles.find(c => c.id === selectedSmResponse.cycleId) : undefined;
-  const selectedSmCategories = selectedSmCycle?.categories || activeCategories;
+  // Helper to determine if an evaluation response is a Yearly / Annual evaluation
+  const isYearlyResponse = (r?: EvaluationResponse | null): boolean => {
+    if (!r) return false;
+    if (r.monthly_records && r.monthly_records.length > 0) return true;
+    const respCycle = cycles.find(c => c.id === r.cycleId);
+    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
+    if (f === 'yearly' || f === 'annual') return true;
+    if (f && f !== 'yearly' && f !== 'annual') return false;
+    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
+    return p.includes('annual') || p.includes('yearly') || p.includes('year') || p.includes('fy 20') || p.includes('fy20') || p.includes('financial year');
+  };
+
+  /**
+   * Evaluates sequential month lock status for 12-Month Financial Year cycle:
+   * - Current calendar month (e.g., September) is the ongoing milestone and is OPEN by default for deliverables entry.
+   * - Future months (e.g. October..March) are strictly LOCKED until the preceding month (e.g. September) is completed AND approved by the Manager (status === 'manager_approved').
+   * - Once Manager approves Month N, Month N+1 automatically unlocks for employee deliverables entry.
+   */
+  const getYearlyMonthLockInfo = (
+    monthIndex: number,
+    monthlyRecords: YearlyMonthRecord[] = []
+  ) => {
+    const currentCalMonth = new Date().getMonth() + 1; // 1-12
+    const currentFiscalMonthIndex = currentCalMonth >= 4 ? currentCalMonth - 3 : currentCalMonth + 9;
+
+    const currentMonthObj = FISCAL_MONTHS.find(m => m.monthIndex === monthIndex);
+    const currentMonthName = currentMonthObj ? currentMonthObj.monthName : `Month ${monthIndex}`;
+    const curRec = monthlyRecords.find(m => m.monthIndex === monthIndex);
+
+    const isApproved = curRec?.status === 'manager_approved';
+    const isSubmitted = curRec?.status === 'submitted_to_manager';
+    const score = isApproved && curRec?.managerScore != null ? Number(curRec.managerScore) : null;
+
+    const prevMonthObj = FISCAL_MONTHS.find(m => m.monthIndex === monthIndex - 1);
+    const prevMonthName = prevMonthObj ? prevMonthObj.monthName : `Month ${monthIndex - 1}`;
+    const prevRec = monthlyRecords.find(m => m.monthIndex === monthIndex - 1);
+    const isPrevApproved = prevRec?.status === 'manager_approved';
+
+    // 1. If this month is already approved by manager
+    if (isApproved) {
+      return {
+        isLocked: false,
+        isApproved: true,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'manager_approved' as const,
+        statusLabel: 'Approved',
+        currentMonthName,
+        prevMonthName,
+        score
+      };
+    }
+
+    // 2. If this month is submitted and under manager review
+    if (isSubmitted) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: true,
+        isEditable: false,
+        status: 'submitted_to_manager' as const,
+        statusLabel: 'Submitted for Review',
+        currentMonthName,
+        prevMonthName,
+        score: null
+      };
+    }
+
+    // 3. Past Months prior to September rollout (Months 1-5: April - August):
+    // Prior unapplied period before system rollout — does not block September or future evaluation.
+    if (monthIndex < 6) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: true,
+        status: 'pending_employee' as const,
+        statusLabel: 'Past Period',
+        prevMonthName,
+        currentMonthName,
+        score: null
+      };
+    }
+
+    // 4. Base Rollout Month: September (MonthIndex 6):
+    // Active baseline month — OPEN by default for deliverables entry.
+    if (monthIndex === 6) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: true,
+        status: 'pending_employee' as const,
+        statusLabel: 'Open for Deliverables',
+        prevMonthName,
+        currentMonthName,
+        score: null
+      };
+    }
+
+    // 5. September Onwards (October, November, December, etc. - MonthIndex >= 7):
+    // Strict Sequential Lock: If previous month (e.g. September) is pending / not approved,
+    // subsequent month (e.g. October) will strictly NOT open and stays LOCKED!
+    if (!isPrevApproved) {
+      const isPrevSubmitted = prevRec?.status === 'submitted_to_manager';
+      const lockReason = isPrevSubmitted
+        ? `Waiting for Manager to review and approve your ${prevMonthName} milestone before ${currentMonthName} unlocks.`
+        : `${currentMonthName} is locked. Please complete and submit your ${prevMonthName} milestone first. ${currentMonthName} will unlock once ${prevMonthName} is approved by your Manager.`;
+
+      return {
+        isLocked: true,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'locked' as const,
+        statusLabel: 'Locked',
+        lockReason,
+        prevMonthName,
+        currentMonthName,
+        score: null
+      };
+    }
+
+    // Previous month has been approved by manager -> Next month unlocks and opens!
+    return {
+      isLocked: false,
+      isApproved: false,
+      isSubmitted: false,
+      isEditable: true,
+      status: 'pending_employee' as const,
+      statusLabel: 'Open Milestone',
+      prevMonthName,
+      currentMonthName,
+      score: null
+    };
+  };
+
+  const handleYearlyMonthKpiChange = (kpi: any, val: string | number) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    setYearlyMonthKpiInputs(prev => {
+      const monthInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyFiscalMonth] || {};
+      const current = monthInputs[kpiId] || (kpiName ? monthInputs[kpiName] : null) || {};
+      const calc = calculateKPIScore(kpi, val);
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        actualValue: val,
+        actual_value: val,
+        earnedScore: calc.earnedScore,
+        earned_score: calc.earnedScore
+      };
+      const nextMonthInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...monthInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextMonthInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyFiscalMonth]: nextMonthInputs
+      };
+    });
+  };
+
+  const handleYearlyMonthKpiRemarkChange = (kpi: any, remarks: string) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    setYearlyMonthKpiInputs(prev => {
+      const monthInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyFiscalMonth] || {};
+      const current = monthInputs[kpiId] || (kpiName ? monthInputs[kpiName] : null) || {};
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        employeeRemarks: remarks,
+        employee_remark: remarks
+      };
+      const nextMonthInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...monthInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextMonthInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyFiscalMonth]: nextMonthInputs
+      };
+    });
+  };
+
+  const handleYearlyMonthKpiInsufficient = (kpi: any, isInsufficient: boolean) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    setYearlyMonthKpiInputs(prev => {
+      const monthInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyFiscalMonth] || {};
+      const current = monthInputs[kpiId] || (kpiName ? monthInputs[kpiName] : null) || {};
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        isInsufficient
+      };
+      const nextMonthInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...monthInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextMonthInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyFiscalMonth]: nextMonthInputs
+      };
+    });
+  };
+
+  const handleYearlyMonthSubmit = async (mIndex: number) => {
+    if (!activeEmpResponse) return;
+    const lockInfo = getYearlyMonthLockInfo(mIndex, activeEmpResponse.monthly_records || []);
+    if (lockInfo.isLocked) {
+      showAlert(lockInfo.lockReason || `Month ${mIndex} is locked until the previous month is approved by Manager.`, 'Milestone Locked', 'warning');
+      return;
+    }
+    if (lockInfo.isApproved) {
+      showAlert(`Deliverables for ${lockInfo.currentMonthName} have already been approved by your Manager.`, 'Already Approved');
+      return;
+    }
+    if (lockInfo.isSubmitted) {
+      showAlert(`Deliverables for ${lockInfo.currentMonthName} have already been submitted to your Manager for review.`, 'Already Submitted');
+      return;
+    }
+    if (isSubmittingEmp) return;
+    const targetMonthRecord = (activeEmpResponse.monthly_records || []).find(m => m.monthIndex === mIndex);
+    const currentMonthEntries = yearlyMonthKpiInputs[mIndex] || targetMonthRecord?.kpiEntries || {};
+    const missingRemarksKpi: string[] = [];
+    const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
+
+    activeCategories.forEach(cat => {
+      cat.kpis.forEach(k => {
+        const entry = currentMonthEntries[k.id] || (k.name ? currentMonthEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        const rem = (entry?.employeeRemarks || entry?.employee_remark || '').trim();
+        const isInsufficient = Boolean(entry?.isInsufficient ?? (k as any)?.isInsufficient);
+
+        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient);
+        if (isMandatory && !rem) {
+          missingRemarksKpi.push(`"${k.name}"`);
+        }
+
+        const calc = calculateKPIScore(k, val);
+        payloadEntries[k.id] = {
+          actualValue: val,
+          actual_value: val,
+          earnedScore: calc.earnedScore,
+          earned_score: calc.earnedScore,
+          employeeRemarks: rem,
+          employee_remark: rem,
+          isInsufficient
+        };
+        if (k.name) {
+          payloadEntries[k.name] = payloadEntries[k.id];
+        }
+      });
+    });
+
+    if (missingRemarksKpi.length > 0) {
+      showAlert(
+        `Remarks are mandatory for deliverables that are higher/lower than target or selected. Please provide remarks for: ${missingRemarksKpi.join(', ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      return;
+    }
+
+    const monthObj = FISCAL_MONTHS.find(m => m.monthIndex === mIndex);
+    const monthName = monthObj ? monthObj.monthName : `Month ${mIndex}`;
+    const remarks = yearlyMonthRemarks[mIndex] || `${monthName} Monthly Progress Actuals`;
+
+    showConfirm(
+      `Submit ${monthName} deliverables to your Manager for review and scoring?`,
+      async () => {
+        try {
+          setIsSubmittingEmp(true);
+          const updatedResp = await evaluationService.submitYearlyMonthActuals(
+            activeEmpResponse.id,
+            mIndex,
+            payloadEntries,
+            remarks
+          );
+          setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+          setSelectedResponseId(updatedResp.id);
+          await loadAllData();
+          showToast(`${monthName} deliverables successfully submitted to Manager!`);
+        } catch (err: any) {
+          showAlert(`Failed to submit monthly actuals: ${err?.message || 'Unknown error'}`, 'Submission Error');
+        } finally {
+          setIsSubmittingEmp(false);
+        }
+      },
+      `Submit ${monthName} Milestone`,
+      'info',
+      'Submit to Manager'
+    );
+  };
+
+  const switchMgrYearlyMonth = (mIndex: number) => {
+    setActiveMgrYearlyFiscalMonth(mIndex);
+    if (!selectedMgrResponse) return;
+    const curMonthRec = (selectedMgrResponse.monthly_records || []).find(m => m.monthIndex === mIndex);
+    const nextActuals: Record<string, string | number> = {};
+    const nextRemarks: Record<string, string> = {};
+
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const entry = curMonthRec?.kpiEntries?.[kpi.id] || (kpi.name ? curMonthRec?.kpiEntries?.[kpi.name] : null);
+        const empActual = entry?.actualValue ?? entry?.actual_value ?? '';
+        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
+        nextActuals[kpi.id] = mgrActual;
+        nextRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+      });
+    });
+
+    setMgrKpiActuals(nextActuals);
+    setMgrKpiRemarks(nextRemarks);
+
+    let totalScore = 0;
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const actualVal = nextActuals[kpi.id];
+        const calc = calculateKPIScore(kpi, actualVal);
+        totalScore += calc.earnedScore;
+      });
+    });
+    setMgrScore(Number(totalScore.toFixed(2)));
+    setMgrRemarks(curMonthRec?.managerRemarks || '');
+  };
+
+  const handleManagerYearlyMonthApprove = async (mIndex: number) => {
+    if (!selectedMgrResponseId || !selectedMgrResponse) return;
+    const monthObj = FISCAL_MONTHS.find(m => m.monthIndex === mIndex);
+    const monthName = monthObj ? monthObj.monthName : `Month ${mIndex}`;
+
+    const curMonthRec = (selectedMgrResponse.monthly_records || []).find(m => m.monthIndex === mIndex);
+    const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
+
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const respEntry = curMonthRec?.kpiEntries?.[kpi.id] || (kpi.name ? curMonthRec?.kpiEntries?.[kpi.name] : null);
+        const empActual = respEntry?.actualValue ?? respEntry?.actual_value ?? '';
+        const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
+        const calc = calculateKPIScore(kpi, mgrActual);
+        payloadEntries[kpi.id] = {
+          actualValue: empActual,
+          actual_value: empActual,
+          managerActualValue: mgrActual,
+          manager_actual_pm: mgrActual,
+          managerScore: Number(calc.earnedScore.toFixed(2)),
+          manager_score: Number(calc.earnedScore.toFixed(2)),
+          managerRemarks: mgrKpiRemarks[kpi.id] || '',
+          manager_remark: mgrKpiRemarks[kpi.id] || ''
+        };
+        if (kpi.name) {
+          payloadEntries[kpi.name] = payloadEntries[kpi.id];
+        }
+      });
+    });
+
+    showConfirm(
+      `Approve ${monthName} performance score and update Year-to-Date rolling average?`,
+      async () => {
+        try {
+          const updatedResp = await evaluationService.approveYearlyMonthScore(
+            selectedMgrResponse.id,
+            mIndex,
+            payloadEntries,
+            mgrRemarks
+          );
+          setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+          await loadAllData();
+          showToast(`${monthName} milestone score approved successfully!`);
+          setSelectedMgrResponseId('');
+        } catch (err: any) {
+          showAlert(`Failed to approve month milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
+        }
+      },
+      `Approve ${monthName} Milestone`,
+      'info',
+      'Approve & Save Milestone'
+    );
+  };
 
   // Helper to resolve canonical display info for any evaluation response
   const getEmployeeDisplayInfo = (r: EvaluationResponse) => {
@@ -4903,13 +5587,9 @@ export const EvaluationTab: React.FC = () => {
     const rName = (r.employeeName || '').trim().toLowerCase();
 
     const empInDb = dbEmployees.find((e: any) => {
-      const eId = cleanId(e.id);
       const eCode = cleanId(e.employee_id);
-      const eUserId = cleanId(e.user_id);
 
       if (eCode && (eCode === rCode || eCode === rId)) return true;
-      if (eId && (eId === rId || eId === rCode)) return true;
-      if (eUserId && (eUserId === rId || eUserId === rCode)) return true;
 
       const eFullName = `${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase();
       if (eFullName && rName && (
@@ -4944,7 +5624,7 @@ export const EvaluationTab: React.FC = () => {
     const designation = (empInDb?.designation || (r as any).designation || empInDb?.job_title || (r as any).role || '').trim();
 
     const profileImage = empInDb?.profile_image
-      ? getProfileImageUrl(empInDb.profile_image, empInDb.employee_id || empInDb.id)
+      ? getProfileImageUrl(empInDb.profile_image, empInDb.employee_id)
       : null;
 
     return { employeeCode, employeeName, teamName, departmentName, designation, empInDb, profileImage };
@@ -4953,6 +5633,36 @@ export const EvaluationTab: React.FC = () => {
   // Helper to render distinct status badges across all lifecycle stages
   const renderStatusBadge = (status: string, r?: EvaluationResponse) => {
     const s = String(status || '').toLowerCase().replace(/[_\s]+/g, ' ').trim();
+
+    if (r && isYearlyResponse(r)) {
+      const monthlyRecords = r.monthly_records || [];
+      const approvedCount = monthlyRecords.filter(m => m.status === 'manager_approved').length;
+      const submittedCount = monthlyRecords.filter(m => m.status === 'submitted_to_manager').length;
+      if (submittedCount > 0) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+            <span>Milestone Submitted ({approvedCount}/12 Approved)</span>
+          </span>
+        );
+      }
+      if (approvedCount === 12) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+            <span>FY Completed & Calibrated</span>
+          </span>
+        );
+      }
+      if (approvedCount > 0) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200/80 shadow-2xs shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
+            <span>YTD Active ({approvedCount}/12 Approved)</span>
+          </span>
+        );
+      }
+    }
 
     if (s.includes('approved') || s.includes('calibrated') || s === 'completed' || s === 'sm final approval') {
       return (
@@ -5080,18 +5790,15 @@ export const EvaluationTab: React.FC = () => {
 
   // Direct and Downline response partition counts
   const directResponsesCount = useMemo(() => {
-    return allDeduplicatedManagerResponses.filter(r => {
-      const { empInDb } = getEmployeeDisplayInfo(r);
-      return isDirectReport(empInDb);
-    }).length;
-  }, [allDeduplicatedManagerResponses, dbEmployees, userId, userCode, currentDbUser]);
+    return allDeduplicatedManagerResponses.filter(isResponseUnderMyManagerReview).length;
+  }, [allDeduplicatedManagerResponses, dbEmployees, userId, userCode, myCanonicalCode, currentDbUser]);
 
   const downlineResponsesCount = useMemo(() => {
     return allDeduplicatedManagerResponses.filter(r => {
       const { empInDb } = getEmployeeDisplayInfo(r);
-      return isDownlineReport(empInDb);
+      return isDownlineReport(empInDb) || isResponseUnderMyManagerReview(r);
     }).length;
-  }, [allDeduplicatedManagerResponses, dbEmployees, userId, userCode, currentDbUser]);
+  }, [allDeduplicatedManagerResponses, dbEmployees, userId, userCode, myCanonicalCode, currentDbUser]);
 
   // Helper to categorize submission lifecycle stage for the Submissions Overview Tab
   // Helper to categorize submission lifecycle stage for the Submissions Overview Tab
@@ -5357,16 +6064,13 @@ export const EvaluationTab: React.FC = () => {
     let list = allDeduplicatedManagerResponses;
 
     if (activeRole === 'manager') {
-      // Strictly direct reports for Manager Reviews tab (e.g. employees directly reporting to logged in user)
-      list = list.filter(r => {
-        const { empInDb } = getEmployeeDisplayInfo(r);
-        return isDirectReport(empInDb);
-      });
+      // Direct reports and assignable subordinates for Manager Reviews tab
+      list = list.filter(isResponseUnderMyManagerReview);
     } else if (activeRole === 'downline_teams') {
       // All subordinate reports across the whole department tree (Direct + Indirect Downline)
       list = list.filter(r => {
         const { empInDb } = getEmployeeDisplayInfo(r);
-        return isDownlineReport(empInDb);
+        return isDownlineReport(empInDb) || isResponseUnderMyManagerReview(r);
       });
     }
 
@@ -5374,25 +6078,28 @@ export const EvaluationTab: React.FC = () => {
     if (managerFilterDept && managerFilterDept !== 'all') {
       const target = managerFilterDept.trim().toLowerCase();
       list = list.filter(r => {
-        const { empInDb, teamName } = getEmployeeDisplayInfo(r);
-        const empDept = (empInDb?.department || empInDb?.team || teamName || '').trim().toLowerCase();
-        return empDept === target;
+        const { empInDb, teamName, departmentName } = getEmployeeDisplayInfo(r);
+        const empDept = (empInDb?.department || empInDb?.team || teamName || departmentName || '').trim().toLowerCase();
+        return empDept === target || empDept.includes(target) || target.includes(empDept);
       });
     }
 
     return list;
-  }, [allDeduplicatedManagerResponses, managerFilterDept, activeRole, dbEmployees]);
+  }, [allDeduplicatedManagerResponses, managerFilterDept, activeRole, dbEmployees, userId, userCode, myCanonicalCode, currentDbUser]);
 
   // Scoped responses for team cards according to active tab
   const activeScopedResponsesForCards = useMemo(() => {
     if (activeRole === 'manager') {
-      return allDeduplicatedManagerResponses.filter(r => isDirectReport(getEmployeeDisplayInfo(r).empInDb));
+      return allDeduplicatedManagerResponses.filter(isResponseUnderMyManagerReview);
     }
     if (activeRole === 'downline_teams') {
-      return allDeduplicatedManagerResponses.filter(r => isDownlineReport(getEmployeeDisplayInfo(r).empInDb));
+      return allDeduplicatedManagerResponses.filter(r => {
+        const { empInDb } = getEmployeeDisplayInfo(r);
+        return isDownlineReport(empInDb) || isResponseUnderMyManagerReview(r);
+      });
     }
     return allDeduplicatedManagerResponses;
-  }, [allDeduplicatedManagerResponses, activeRole, dbEmployees, userId, userCode, currentDbUser]);
+  }, [allDeduplicatedManagerResponses, activeRole, dbEmployees, userId, userCode, myCanonicalCode, currentDbUser]);
 
   // Team-wise computed statistics for interactive department cards
   const teamWiseCardsData = useMemo(() => {
@@ -5692,14 +6399,7 @@ export const EvaluationTab: React.FC = () => {
     return p.includes('quarter') || p.includes('stage') || /q[1-4]/i.test(p);
   };
 
-  const isYearlyResponse = (r: EvaluationResponse) => {
-    const respCycle = cycles.find(c => c.id === r.cycleId);
-    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
-    if (f === 'yearly' || f === 'annual') return true;
-    if (f && f !== 'yearly' && f !== 'annual') return false;
-    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
-    return p.includes('annual') || p.includes('yearly') || p.includes('year');
-  };
+
 
   // Dynamic notification counts of evaluations and pending reviews per frequency tab
   const frequencyCounts = useMemo(() => {
@@ -6477,18 +7177,26 @@ export const EvaluationTab: React.FC = () => {
       const avatarBg = avatarColors[Math.abs(hash) % avatarColors.length];
 
       // Self score strictly from DB
-      const selfScoreNum = r.employeeOverallScore != null
+      let selfScoreNum = r.employeeOverallScore != null
         ? Number(r.employeeOverallScore)
         : ((r as any).earned_score != null && !isNaN(Number((r as any).earned_score)) ? Number((r as any).earned_score) : null);
+
+      // Manager score strictly from DB
+      let mgrScoreNum = r.managerScore != null
+        ? Number(r.managerScore)
+        : ((r as any).manager_score != null && !isNaN(Number((r as any).manager_score)) ? Number((r as any).manager_score) : null);
+
+      if (isYearlyResponse(r)) {
+        const approvedMonths = (r.monthly_records || []).filter(m => m.status === 'manager_approved');
+        if (approvedMonths.length > 0) {
+          const ytdScore = approvedMonths.reduce((acc, m) => acc + (Number(m.managerScore) || 0), 0) / approvedMonths.length;
+          mgrScoreNum = Number(ytdScore.toFixed(1));
+        }
+      }
 
       const dateScoreDisplay = selfScoreNum != null && selfScoreNum > 0
         ? `${selfScoreNum.toFixed(1)}%`
         : '—';
-
-      // Manager score strictly from DB
-      const mgrScoreNum = r.managerScore != null
-        ? Number(r.managerScore)
-        : ((r as any).manager_score != null && !isNaN(Number((r as any).manager_score)) ? Number((r as any).manager_score) : null);
 
       const averageScoreDisplay = mgrScoreNum != null
         ? `${mgrScoreNum.toFixed(1)}%`
@@ -6532,10 +7240,12 @@ export const EvaluationTab: React.FC = () => {
           dateText = `Q${qNum} ${range.startDate.getFullYear()}`;
         }
       } else if (isYearlyResponse(r)) {
-        freqLabel = 'Annual';
-        freqColor = 'bg-indigo-50 text-indigo-900 border-indigo-300';
-        if (range.startDate) {
-          dateText = `${range.startDate.getFullYear()}`;
+        freqLabel = 'Annual (12-Mo)';
+        freqColor = 'bg-teal-50 text-teal-900 border-teal-300';
+        if (range.startDate && range.endDate) {
+          dateText = `Apr ${range.startDate.getFullYear()} – Mar ${range.endDate.getFullYear()}`;
+        } else if (range.startDate) {
+          dateText = `FY ${range.startDate.getFullYear()}-${(range.startDate.getFullYear() + 1).toString().slice(-2)}`;
         }
       }
 
@@ -6658,6 +7368,8 @@ export const EvaluationTab: React.FC = () => {
     dbTeams,
     effectiveTeamName
   ]);
+
+  const canShowReviewerTabs = isHrOrAdmin || isManager || isServiceManager || isTeamLead;
 
   // Formatted date column header dynamically derived from DB records & user selection
   const formattedDateColumnHeader = useMemo(() => {
@@ -6806,7 +7518,9 @@ export const EvaluationTab: React.FC = () => {
       };
     }
     if (reportViewTab === 'top_quarterly') {
-      let qTitle = `Q${qNum} ${activeDate.getFullYear()}`;
+      const fyStart = mActive >= 4 ? activeDate.getFullYear() : activeDate.getFullYear() - 1;
+      const qYear = qNum === 4 ? fyStart + 1 : fyStart;
+      let qTitle = `Q${qNum} ${qYear}`;
       if (selectedReportQuarterKey && selectedReportQuarterKey !== 'all') {
         const found = availableQuarters.find(q => q.key === selectedReportQuarterKey);
         if (found) qTitle = found.label;
@@ -6816,8 +7530,9 @@ export const EvaluationTab: React.FC = () => {
         badge: 'ranked by score'
       };
     }
+    const fyAnnualStart = mActive >= 4 ? activeDate.getFullYear() : activeDate.getFullYear() - 1;
     return {
-      title: `Top Performers — Annual (${activeDate.getFullYear()})`,
+      title: `Top Performers — Annual (FY ${fyAnnualStart}-${fyAnnualStart + 1})`,
       badge: 'ranked by score'
     };
   }, [reportViewTab, reportDateInPeriod, selectedWeekPeriod, selectedReportMonthKey, selectedReportQuarterKey, selectedReportYearKey, availableWeeklyPeriods, availableMonths, availableQuarters, availableYears, reportFilteredResponses]);
@@ -6883,13 +7598,14 @@ export const EvaluationTab: React.FC = () => {
   const topPerformersMonth = parseInt(topPerfMonthStr, 10) ? parseInt(topPerfMonthStr, 10) - 1 : new Date().getMonth();
   const topPerformersMonth1Indexed = topPerformersMonth + 1;
   const topPerformersQ = topPerformersMonth1Indexed >= 4 && topPerformersMonth1Indexed <= 6 ? 1 : topPerformersMonth1Indexed >= 7 && topPerformersMonth1Indexed <= 9 ? 2 : topPerformersMonth1Indexed >= 10 && topPerformersMonth1Indexed <= 12 ? 3 : 4;
+  const topPerformersFiscalYear = topPerformersMonth1Indexed >= 4 ? topPerformersYear : topPerformersYear - 1;
 
   const topPerformersQuarterRangeText = useMemo(() => {
-    if (topPerformersQ === 1) return `1 Apr - 30 Jun ${topPerformersYear}`;
-    if (topPerformersQ === 2) return `1 Jul - 30 Sep ${topPerformersYear}`;
-    if (topPerformersQ === 3) return `1 Oct - 31 Dec ${topPerformersYear}`;
-    return `1 Jan - 31 Mar ${topPerformersYear}`;
-  }, [topPerformersQ, topPerformersYear]);
+    if (topPerformersQ === 1) return `1 Apr - 30 Jun ${topPerformersFiscalYear}`;
+    if (topPerformersQ === 2) return `1 Jul - 30 Sep ${topPerformersFiscalYear}`;
+    if (topPerformersQ === 3) return `1 Oct - 31 Dec ${topPerformersFiscalYear}`;
+    return `1 Jan - 31 Mar ${topPerformersFiscalYear + 1}`;
+  }, [topPerformersQ, topPerformersFiscalYear]);
 
   // Helper to deduplicate employees and compute their average score for a given set of evaluation responses (converting weekly cycles to monthly/quarterly averages)
   const computeTopPerformersGroups = (
@@ -6931,7 +7647,9 @@ export const EvaluationTab: React.FC = () => {
       const { employeeName, employeeCode, departmentName, teamName } = getEmployeeDisplayInfo(r);
       const scoreVal = r.managerScore != null
         ? Number(r.managerScore)
-        : (r.employeeOverallScore != null ? Number(r.employeeOverallScore) : null);
+        : ((r as any).manager_score != null
+          ? Number((r as any).manager_score)
+          : (r.employeeOverallScore != null ? Number(r.employeeOverallScore) : null));
 
       if (scoreVal == null || scoreVal <= 0) return;
 
@@ -6983,11 +7701,30 @@ export const EvaluationTab: React.FC = () => {
     const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const pad = (n: number) => String(n).padStart(2, '0');
 
-    // Filter responses for the active month
-    const curMonthResponses = activeScopedResponsesForCards.filter(r => {
+    // Filter responses for the active month (including approved monthly records from 12-Month Financial Year cycles)
+    const curMonthResponses: any[] = [];
+    activeScopedResponsesForCards.forEach(r => {
+      if (isYearlyResponse(r)) {
+        const calMonth = topPerformersMonth + 1;
+        const calYear = topPerformersYear;
+        const rec = (r.monthly_records || []).find(m =>
+          (m.calendarMonth === calMonth && (m.calendarYear === calYear || !m.calendarYear)) ||
+          (m.monthIndex === (calMonth >= 4 ? calMonth - 3 : calMonth + 9))
+        );
+        if (rec && rec.status === 'manager_approved' && rec.managerScore != null && Number(rec.managerScore) > 0) {
+          curMonthResponses.push({
+            ...r,
+            managerScore: Number(rec.managerScore)
+          });
+        }
+        return;
+      }
+
       const range = getEvaluationDateRange(r);
-      if (!range.startDate) return false;
-      return range.startDate.getFullYear() === topPerformersYear && range.startDate.getMonth() === topPerformersMonth;
+      if (!range.startDate) return;
+      if (range.startDate.getFullYear() === topPerformersYear && range.startDate.getMonth() === topPerformersMonth) {
+        curMonthResponses.push(r);
+      }
     });
 
     const firstDate = new Date(topPerformersYear, topPerformersMonth, 1);
@@ -7059,112 +7796,208 @@ export const EvaluationTab: React.FC = () => {
     return [...weekCols, monthSummaryCol];
   }, [activeScopedResponsesForCards, topPerformersYear, topPerformersMonth, reportFilterDept, reportFilterTeam, mgrSearchQuery]);
 
-  // Top Performers — Monthly multi-column data (All 12 Months of the Year)
+  // Top Performers — Monthly multi-column data (All 12 Months of the Financial Year: Apr - Mar)
   const topPerformersMonthlyColumns = useMemo(() => {
-    const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const allMonthsIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-    const yearShort = String(topPerformersYear).slice(-2);
+    const startYear = topPerformersFiscalYear;
+    const endYear = topPerformersFiscalYear + 1;
+    const startYearShort = String(startYear).slice(-2);
+    const endYearShort = String(endYear).slice(-2);
 
-    return allMonthsIndices.map(mIdx => {
-      const monthLabel = `${monthNamesShort[mIdx]}'${yearShort}`;
+    return FISCAL_MONTHS.map(fMonth => {
+      const calYear = fMonth.calendarMonth >= 4 ? startYear : endYear;
+      const yrShort = fMonth.calendarMonth >= 4 ? startYearShort : endYearShort;
+      const monthLabel = `${fMonth.shortName}'${yrShort}`;
+      const mIdx = fMonth.calendarMonth - 1;
 
-      // Find all responses (daily, weekly, monthly) falling in this month
-      const monthResponses = activeScopedResponsesForCards.filter(r => {
+      const monthScopedItems: any[] = [];
+      activeScopedResponsesForCards.forEach(r => {
+        if (isYearlyResponse(r)) {
+          const rec = (r.monthly_records || []).find(m =>
+            m.monthIndex === fMonth.monthIndex ||
+            (m.calendarMonth === fMonth.calendarMonth && (m.calendarYear === calYear || !m.calendarYear))
+          );
+          if (rec && rec.status === 'manager_approved' && rec.managerScore != null && Number(rec.managerScore) > 0) {
+            monthScopedItems.push({
+              ...r,
+              managerScore: Number(rec.managerScore)
+            });
+          }
+          return;
+        }
+
         const range = getEvaluationDateRange(r);
-        if (!range.startDate) return false;
-        return range.startDate.getFullYear() === topPerformersYear && range.startDate.getMonth() === mIdx;
+        if (!range.startDate) return;
+        if (range.startDate.getFullYear() === calYear && range.startDate.getMonth() === mIdx) {
+          if (r.managerScore != null || r.employeeOverallScore != null) {
+            monthScopedItems.push(r);
+          }
+        }
       });
 
-      const groups = computeTopPerformersGroups(monthResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+      const groups = computeTopPerformersGroups(monthScopedItems, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+      const isCurrentActiveMonth = fMonth.calendarMonth === (topPerformersMonth + 1);
 
       return {
-        key: `month_${mIdx}`,
+        key: `month_${fMonth.monthIndex}`,
         label: monthLabel,
         subLabel: undefined as string | undefined,
-        isSummaryYear: mIdx === topPerformersMonth,
-        totalEvaluations: monthResponses.length,
+        isSummaryYear: isCurrentActiveMonth,
+        totalEvaluations: monthScopedItems.length,
         groups
       };
     });
-  }, [activeScopedResponsesForCards, topPerformersMonth, topPerformersYear, reportFilterDept, reportFilterTeam, mgrSearchQuery]);
+  }, [activeScopedResponsesForCards, topPerformersMonth, topPerformersFiscalYear, reportFilterDept, reportFilterTeam, mgrSearchQuery]);
 
-  // Top Performers — Quarterly (Q1, Q2, Q3, Q4 only)
+  // Top Performers — Quarterly (Q1: Apr-Jun, Q2: Jul-Sep, Q3: Oct-Dec, Q4: Jan-Mar of the Financial Year)
   const topPerformersQuarterlyColumns = useMemo(() => {
     const quarters = [
-      { q: 1, label: `Q1 ${topPerformersYear}`, subLabel: 'Apr - Jun', months: [4, 5, 6] },
-      { q: 2, label: `Q2 ${topPerformersYear}`, subLabel: 'Jul - Sep', months: [7, 8, 9] },
-      { q: 3, label: `Q3 ${topPerformersYear}`, subLabel: 'Oct - Dec', months: [10, 11, 12] },
-      { q: 4, label: `Q4 ${topPerformersYear}`, subLabel: 'Jan - Mar', months: [1, 2, 3] },
+      { q: 1, label: `Q1 ${topPerformersFiscalYear}`, subLabel: 'Apr - Jun', fiscalMonthIndices: [1, 2, 3], calMonths: [4, 5, 6], year: topPerformersFiscalYear },
+      { q: 2, label: `Q2 ${topPerformersFiscalYear}`, subLabel: 'Jul - Sep', fiscalMonthIndices: [4, 5, 6], calMonths: [7, 8, 9], year: topPerformersFiscalYear },
+      { q: 3, label: `Q3 ${topPerformersFiscalYear}`, subLabel: 'Oct - Dec', fiscalMonthIndices: [7, 8, 9], calMonths: [10, 11, 12], year: topPerformersFiscalYear },
+      { q: 4, label: `Q4 ${topPerformersFiscalYear + 1}`, subLabel: 'Jan - Mar', fiscalMonthIndices: [10, 11, 12], calMonths: [1, 2, 3], year: topPerformersFiscalYear + 1 },
     ];
 
-    return quarters.map(({ q, label, subLabel, months }) => {
-      const quarterResponses = activeScopedResponsesForCards.filter(r => {
+    return quarters.map(({ q, label, subLabel, fiscalMonthIndices, calMonths, year }) => {
+      const quarterScopedItems: any[] = [];
+
+      activeScopedResponsesForCards.forEach(r => {
+        if (isYearlyResponse(r)) {
+          const qApprovedRecords = (r.monthly_records || []).filter(
+            m => fiscalMonthIndices.includes(m.monthIndex) && m.status === 'manager_approved' && m.managerScore != null && Number(m.managerScore) > 0
+          );
+          if (qApprovedRecords.length > 0) {
+            const avgScore = qApprovedRecords.reduce((sum, m) => sum + Number(m.managerScore), 0) / qApprovedRecords.length;
+            quarterScopedItems.push({
+              ...r,
+              managerScore: Number(avgScore.toFixed(1))
+            });
+          }
+          return;
+        }
+
         const range = getEvaluationDateRange(r);
-        if (!range.startDate) return false;
+        if (!range.startDate) return;
         const mNum = range.startDate.getMonth() + 1;
-        const rQ = mNum >= 4 && mNum <= 6 ? 1 : mNum >= 7 && mNum <= 9 ? 2 : mNum >= 10 && mNum <= 12 ? 3 : 4;
-        return range.startDate.getFullYear() === topPerformersYear && (rQ === q || months.includes(mNum));
+        const rYear = range.startDate.getFullYear();
+        if (rYear === year && calMonths.includes(mNum)) {
+          if (r.managerScore != null || r.employeeOverallScore != null) {
+            quarterScopedItems.push(r);
+          }
+        }
       });
 
-      const quarterGroups = computeTopPerformersGroups(quarterResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+      const quarterGroups = computeTopPerformersGroups(quarterScopedItems, reportFilterDept, reportFilterTeam, mgrSearchQuery);
 
       return {
         key: `quarter_col_Q${q}`,
         label,
         subLabel,
         isSummaryYear: q === topPerformersQ,
-        totalEvaluations: quarterResponses.length,
+        totalEvaluations: quarterScopedItems.length,
         groups: quarterGroups
       };
     });
-  }, [activeScopedResponsesForCards, topPerformersQ, topPerformersYear, reportFilterDept, reportFilterTeam, mgrSearchQuery]);
+  }, [activeScopedResponsesForCards, topPerformersQ, topPerformersFiscalYear, reportFilterDept, reportFilterTeam, mgrSearchQuery]);
 
-  // Top Performers — Annual (12 months + Year Summary Column, matching reference screenshot)
+  // Top Performers — Annual (12 Fiscal Months: Apr'26 - Mar'27 + FY 2026-2027 Summary Column)
   const topPerformersAnnualColumns = useMemo(() => {
-    const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const yearShort = String(topPerformersYear).slice(-2);
+    const startYear = topPerformersFiscalYear;
+    const endYear = topPerformersFiscalYear + 1;
+    const startYearShort = String(startYear).slice(-2);
+    const endYearShort = String(endYear).slice(-2);
 
-    const months = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(mIdx => {
-      const monthLabel = `${monthNamesShort[mIdx]}'${yearShort}`;
+    const months = FISCAL_MONTHS.map(fMonth => {
+      const calYear = fMonth.calendarMonth >= 4 ? startYear : endYear;
+      const yrShort = fMonth.calendarMonth >= 4 ? startYearShort : endYearShort;
+      const monthLabel = `${fMonth.shortName}'${yrShort}`;
+      const mIdx = fMonth.calendarMonth - 1;
 
-      const monthResponses = activeScopedResponsesForCards.filter(r => {
+      const monthScopedItems: any[] = [];
+
+      activeScopedResponsesForCards.forEach(r => {
+        // 1. Check if yearly response with monthly_records
+        if (isYearlyResponse(r)) {
+          const rec = (r.monthly_records || []).find(m =>
+            m.monthIndex === fMonth.monthIndex ||
+            (m.calendarMonth === fMonth.calendarMonth && (m.calendarYear === calYear || !m.calendarYear))
+          );
+          if (rec && rec.status === 'manager_approved' && rec.managerScore != null && Number(rec.managerScore) > 0) {
+            monthScopedItems.push({
+              ...r,
+              managerScore: Number(rec.managerScore)
+            });
+          }
+          return;
+        }
+
+        // 2. Standalone monthly or other evaluations falling in this calendar month and year
         const range = getEvaluationDateRange(r);
-        if (!range.startDate) return false;
-        return range.startDate.getFullYear() === topPerformersYear && range.startDate.getMonth() === mIdx;
+        if (!range.startDate) return;
+        if (range.startDate.getFullYear() === calYear && range.startDate.getMonth() === mIdx) {
+          if (r.managerScore != null || r.employeeOverallScore != null) {
+            monthScopedItems.push(r);
+          }
+        }
       });
 
-      const groups = computeTopPerformersGroups(monthResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+      const groups = computeTopPerformersGroups(monthScopedItems, reportFilterDept, reportFilterTeam, mgrSearchQuery);
 
       return {
-        key: `annual_month_${mIdx}`,
+        key: `annual_fiscal_month_${fMonth.monthIndex}`,
         label: monthLabel,
         subLabel: undefined as string | undefined,
         isSummaryYear: false,
-        totalEvaluations: monthResponses.length,
+        totalEvaluations: monthScopedItems.length,
         groups
       };
     });
 
-    // 13th Column: Overall Year Summary (e.g. 2026 (year))
-    const yearResponses = activeScopedResponsesForCards.filter(r => {
+    // 13th Column: Overall Financial Year Summary (e.g. FY 2026-2027 (Annual))
+    const yearScopedItems: any[] = [];
+
+    activeScopedResponsesForCards.forEach(r => {
+      if (isYearlyResponse(r)) {
+        const approvedRecords = (r.monthly_records || []).filter(
+          m => m.status === 'manager_approved' && m.managerScore != null && Number(m.managerScore) > 0
+        );
+        if (approvedRecords.length > 0) {
+          const avgScore = approvedRecords.reduce((sum, m) => sum + Number(m.managerScore), 0) / approvedRecords.length;
+          yearScopedItems.push({
+            ...r,
+            managerScore: Number(avgScore.toFixed(1))
+          });
+        } else if (r.managerScore != null && Number(r.managerScore) > 0) {
+          yearScopedItems.push(r);
+        }
+        return;
+      }
+
+      // Standalone evaluations falling between 1 Apr startYear and 31 Mar endYear
       const range = getEvaluationDateRange(r);
-      if (!range.startDate) return false;
-      return range.startDate.getFullYear() === topPerformersYear;
+      if (!range.startDate) return;
+      const d = range.startDate;
+      const fyStart = new Date(startYear, 3, 1); // 1 Apr
+      const fyEnd = new Date(endYear, 2, 31, 23, 59, 59); // 31 Mar
+      if (d >= fyStart && d <= fyEnd) {
+        if (r.managerScore != null || r.employeeOverallScore != null) {
+          yearScopedItems.push(r);
+        }
+      }
     });
 
-    const yearGroups = computeTopPerformersGroups(yearResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
+    const yearGroups = computeTopPerformersGroups(yearScopedItems, reportFilterDept, reportFilterTeam, mgrSearchQuery);
 
     const yearColumn = {
-      key: `annual_summary_${topPerformersYear}`,
-      label: `${topPerformersYear} (year)`,
+      key: `annual_summary_${startYear}_${endYear}`,
+      label: `FY ${startYear}-${endYear} (Annual)`,
       subLabel: undefined as string | undefined,
       isSummaryYear: true,
-      totalEvaluations: yearResponses.length,
+      totalEvaluations: yearScopedItems.length,
       groups: yearGroups
     };
 
     return [...months, yearColumn];
-  }, [activeScopedResponsesForCards, topPerformersYear, reportFilterDept, reportFilterTeam, mgrSearchQuery]);
+  }, [activeScopedResponsesForCards, topPerformersFiscalYear, reportFilterDept, reportFilterTeam, mgrSearchQuery]);
 
   const reportTabs = [
     { id: 'all', label: 'All', count: frequencyCounts.all, pending: frequencyCounts.allPending, completed: frequencyCounts.allCompleted },
@@ -7615,6 +8448,42 @@ export const EvaluationTab: React.FC = () => {
       targetCats = DEFAULT_KPI_CATEGORIES;
     }
 
+    if (isYearlyResponse(r)) {
+      const curYearlyRecords = r.monthly_records || [];
+      const submittedMonth = curYearlyRecords.find(m => m.status === 'submitted_to_manager');
+      const firstActionableMonth = FISCAL_MONTHS.slice(5).find(m => {
+        const lockInfo = getYearlyMonthLockInfo(m.monthIndex, curYearlyRecords);
+        return lockInfo.isEditable || lockInfo.isSubmitted;
+      }) || FISCAL_MONTHS.find(m => m.monthIndex === 6);
+
+      const targetFMonth = submittedMonth ? submittedMonth.monthIndex : (firstActionableMonth ? firstActionableMonth.monthIndex : 6);
+      setActiveMgrYearlyFiscalMonth(targetFMonth);
+
+      const curMonthRec = (r.monthly_records || []).find(m => m.monthIndex === targetFMonth);
+      targetCats.forEach((cat: KPICategory) => {
+        cat.kpis.forEach((kpi: KPIItem) => {
+          const entry = curMonthRec?.kpiEntries?.[kpi.id] || (kpi.name ? curMonthRec?.kpiEntries?.[kpi.name] : null);
+          const empActual = entry?.actualValue ?? entry?.actual_value ?? '';
+          const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
+          initialActuals[kpi.id] = mgrActual;
+          initialRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+        });
+      });
+      setMgrKpiActuals(initialActuals);
+      setMgrKpiRemarks(initialRemarks);
+      let totalScore = 0;
+      targetCats.forEach((cat: KPICategory) => {
+        cat.kpis.forEach((kpi: KPIItem) => {
+          const actualVal = initialActuals[kpi.id];
+          const calc = calculateKPIScore(kpi, actualVal);
+          totalScore += calc.earnedScore;
+        });
+      });
+      setMgrScore(Number(totalScore.toFixed(2)));
+      setMgrRemarks(curMonthRec?.managerRemarks || '');
+      return;
+    }
+
     targetCats.forEach((cat: KPICategory) => {
       cat.kpis.forEach((kpi: KPIItem) => {
         const respItem = r.kpiResponses?.[kpi.id] || (kpi.name ? r.kpiResponses?.[kpi.name] : null);
@@ -7658,9 +8527,16 @@ export const EvaluationTab: React.FC = () => {
     setMgrKpiActuals(prev => {
       const updated = { ...prev, [kpi.id]: sanitizedVal };
       let sum = 0;
+      const isYearly = isYearlyResponse(selectedMgrResponse);
+      const curYearlyRec = isYearly ? (selectedMgrResponse?.monthly_records || []).find(m => m.monthIndex === activeMgrYearlyFiscalMonth) : null;
+
       selectedMgrCategories.forEach(cat => {
         cat.kpis.forEach(k => {
-          const val = updated[k.id] !== undefined ? updated[k.id] : (selectedMgrResponse?.kpiResponses?.[k.id]?.actualValue ?? '');
+          const yearlyEntry = curYearlyRec?.kpiEntries?.[k.id] || (k.name ? curYearlyRec?.kpiEntries?.[k.name] : null);
+          const fallbackEmpVal = isYearly
+            ? (yearlyEntry?.actualValue ?? yearlyEntry?.actual_value ?? '')
+            : (selectedMgrResponse?.kpiResponses?.[k.id]?.actualValue ?? '');
+          const val = updated[k.id] !== undefined ? updated[k.id] : fallbackEmpVal;
           const calc = calculateKPIScore(k, val);
           sum += calc.earnedScore;
         });
@@ -7842,7 +8718,7 @@ export const EvaluationTab: React.FC = () => {
       myTeamName = (user as any)?.team_name || (user as any)?.team || '';
     }
     if (!myTeamName) {
-      const dbEmp = dbEmployees.find(e => String(e.id) === String(user?.id) || String(e.employee_id) === String((user as any)?.employee_id));
+      const dbEmp = dbEmployees.find(e => String(e.employee_id) === String((user as any)?.employee_id || user?.employee_id));
       if (dbEmp?.team) myTeamName = dbEmp.team;
     }
     if (!myTeamName) return null;
@@ -7924,7 +8800,11 @@ export const EvaluationTab: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Header & Navigation Bar */}
-      <div className="bg-white rounded-2xl px-4 py-2 border border-slate-200/80 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className={`bg-white rounded-2xl px-4 py-2 border border-slate-200/80 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all duration-200 ${
+        activeRole === 'manager' && !hasAssignedCycleFromAdmin && reportFilteredResponses.length === 0
+          ? 'filter blur-[3.5px] opacity-40 pointer-events-none select-none'
+          : ''
+      }`}>
         {/* Left: Title + Role navigation + Subtabs */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2.5">
@@ -7937,7 +8817,7 @@ export const EvaluationTab: React.FC = () => {
           </div>
 
           {/* Center: Segmented Navigation Tabs for HR / Manager */}
-          {(isHrOrAdmin || isServiceManager || isManager) && (
+          {canShowReviewerTabs && (
             <div className="bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 flex flex-wrap gap-1 items-center">
               {isHrOrAdmin && (
                 <button
@@ -8033,8 +8913,8 @@ export const EvaluationTab: React.FC = () => {
                 <span className="text-[11px] font-bold text-slate-800 tracking-tight">
                   {periodDisplayLabel}
                 </span>
-                <span className={`inline-block px-2 py-0.2 rounded-full font-bold text-[9px] tracking-tight ${teamLeaderboardInfo.color.bg} ${teamLeaderboardInfo.color.text}`}>
-                  Team: {teamLeaderboardInfo.teamName}
+                <span className="inline-block px-2 py-0.2 rounded-full font-bold text-[9px] tracking-tight bg-teal-50 text-teal-800 border border-teal-200/80">
+                  Top 3
                 </span>
               </div>
               <div className="p-2 space-y-1 bg-white/50">
@@ -8655,79 +9535,118 @@ export const EvaluationTab: React.FC = () => {
       {/* ========================================================================= */}
       {activeRole === 'employee' && (
         <div className="space-y-4">
-          {/* Sub Tab Navigation (Worksheet vs Performance History) */}
-          <div className="bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 w-fit">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setEmployeeSubTab('worksheet')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  employeeSubTab === 'worksheet'
-                    ? 'bg-primary-700 text-white shadow-2xs font-bold'
-                    : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
-                }`}
-              >
-                <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
-                <span>Self-Assessment Worksheet</span>
-              </button>
+          {/* Sub Tab Navigation (Worksheet vs Performance History) - only when assigned */}
+          {(isEmployeeExplicitlyAssigned && activeEmpResponse) && (
+            <div className="bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 w-fit">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setEmployeeSubTab('worksheet')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    employeeSubTab === 'worksheet'
+                      ? 'bg-primary-700 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
+                  }`}
+                >
+                  <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
+                  <span>Self-Assessment Worksheet</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setEmployeeSubTab('reports')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  employeeSubTab === 'reports'
-                    ? 'bg-primary-700 text-white shadow-2xs font-bold'
-                    : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
-                }`}
-              >
-                <DocumentChartBarIcon className="w-3.5 h-3.5" />
-                <span>Performance History</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setEmployeeSubTab('reports')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    employeeSubTab === 'reports'
+                      ? 'bg-primary-700 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
+                  }`}
+                >
+                  <DocumentChartBarIcon className="w-3.5 h-3.5" />
+                  <span>Performance History</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
-          {employeeSubTab === 'worksheet' && ((() => {
+          {(employeeSubTab === 'worksheet' || (!isEmployeeExplicitlyAssigned || !activeEmpResponse)) && ((() => {
             if (!isEmployeeExplicitlyAssigned || !activeEmpResponse) {
               return (
-                <div className="bg-white rounded-3xl border border-neutral-200/90 shadow-2xs p-8 sm:p-12 text-center space-y-5 animate-in fade-in duration-200 max-w-2xl mx-auto my-6">
-                  <div className="w-16 h-16 mx-auto rounded-3xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 shadow-2xs">
-                    <ClipboardDocumentListIcon className="w-8 h-8 text-primary-600" />
+                <div className="bg-white rounded-3xl border border-neutral-200/90 shadow-2xs p-8 sm:p-12 text-center space-y-6 animate-in fade-in duration-200 max-w-2xl mx-auto my-6">
+                  {/* Status Icon */}
+                  <div className="w-16 h-16 mx-auto rounded-3xl bg-teal-50 border border-teal-200/80 flex items-center justify-center text-teal-700 shadow-2xs relative">
+                    <ChartBarIcon className="w-8 h-8" />
+                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 border-2 border-white animate-pulse" />
                   </div>
 
                   <div className="space-y-2">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold border border-slate-200">
-                      <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-                      No Active KPI Assignment
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200 shadow-2xs">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                      <span>E2R is In Progress</span>
                     </div>
-                    <h3 className="text-xl font-black text-slate-900">
-                      No Performance Evaluation Assigned
+                    <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                      Performance Evaluation Setup in Progress
                     </h3>
                     <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                      You are not currently enrolled in an active KPI performance evaluation cycle. Your reporting manager or HR has not assigned a deliverables matrix to your profile for this period.
+                      Your Reporting Manager and HR are currently preparing and configuring the deliverables matrix for your team. Once your manager assigns the targets, your self-assessment worksheet will activate here automatically.
                     </p>
                   </div>
 
-                  <div className="bg-slate-50/80 rounded-2xl border border-slate-200/80 p-4 max-w-md mx-auto text-left space-y-2">
-                    <div className="flex items-center justify-between text-xs">
+                  {/* 3-Step Process Stepper */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 max-w-lg mx-auto text-left">
+                    <div className="bg-slate-50 rounded-2xl border border-slate-200/80 p-3 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase text-teal-700 tracking-wider">Step 1</span>
+                        <span className="w-4 h-4 rounded-full bg-teal-100 text-teal-700 text-[10px] font-bold flex items-center justify-center">✓</span>
+                      </div>
+                      <div className="text-xs font-bold text-slate-800">HR Setup</div>
+                      <div className="text-[10px] text-slate-400">Team configured</div>
+                    </div>
+
+                    <div className="bg-amber-50/60 rounded-2xl border border-amber-200 p-3 space-y-1 ring-1 ring-amber-300">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase text-amber-700 tracking-wider">Step 2</span>
+                        <span className="w-4 h-4 rounded-full bg-amber-200 text-amber-800 text-[10px] font-bold flex items-center justify-center animate-spin">⏳</span>
+                      </div>
+                      <div className="text-xs font-bold text-amber-950">Manager Review</div>
+                      <div className="text-[10px] text-amber-700 font-medium">Setting deliverables</div>
+                    </div>
+
+                    <div className="bg-slate-50/60 rounded-2xl border border-slate-200/60 p-3 space-y-1 opacity-70">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Step 3</span>
+                        <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold flex items-center justify-center">3</span>
+                      </div>
+                      <div className="text-xs font-bold text-slate-700">Self Assessment</div>
+                      <div className="text-[10px] text-slate-400">Upcoming</div>
+                    </div>
+                  </div>
+
+                  {/* Employee & Cycle Info Card */}
+                  <div className="bg-slate-50/80 rounded-2xl border border-slate-200/80 p-4 max-w-md mx-auto text-left space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
                       <span className="text-slate-500 font-medium">Employee Name:</span>
                       <strong className="text-slate-800">{user?.full_name || `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Employee'}</strong>
                     </div>
-                    <div className="flex items-center justify-between text-xs border-t border-slate-200/60 pt-2">
+                    <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
                       <span className="text-slate-500 font-medium">Employee Code:</span>
                       <span className="font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 text-[11px]">#{myCanonicalCode || 'N/A'}</span>
                     </div>
-                    <div className="flex items-center justify-between text-xs border-t border-slate-200/60 pt-2">
-                      <span className="text-slate-500 font-medium">Department:</span>
+                    <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
+                      <span className="text-slate-500 font-medium">Team / Department:</span>
                       <span className="font-bold text-slate-700">{effectiveTeamName || 'General'}</span>
                     </div>
-                    <div className="flex items-center justify-between text-xs border-t border-slate-200/60 pt-2">
-                      <span className="text-slate-500 font-medium">Evaluation Status:</span>
-                      <span className="text-amber-700 font-bold text-[11px] bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Not Assigned</span>
+                    <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
+                      <span className="text-slate-500 font-medium">Evaluation Cycle:</span>
+                      <span className="font-bold text-teal-800">{activeCycle?.name || periodName}</span>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
+                      <span className="text-slate-500 font-medium">Current Status:</span>
+                      <span className="text-amber-800 font-bold text-[11px] bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full">⏳ In Processing / Pending Assignment</span>
                     </div>
                   </div>
 
                   <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                    When your reporting manager assigns KPI deliverables to you in the performance cycle, your interactive self-assessment worksheet will activate automatically.
+                    You will receive an in-app alert as soon as your reporting manager finalizes and assigns the team matrix.
                   </p>
                 </div>
               );
@@ -8961,6 +9880,267 @@ export const EvaluationTab: React.FC = () => {
                   })()}
                 </div>
 
+                {/* Proactive Employee Reminder Banner during Submission Window */}
+                {(() => {
+                  if (isEmpSubmitted) return null;
+                  const today = new Date();
+                  const todayStr = today.toISOString().split("T")[0];
+                  const dueDateRaw = (activeCycle as any)?.dueDate || (activeCycle as any)?.due_date || activeCycle?.endDate;
+                  const rawEndDateStr = dueDateRaw ? dueDateRaw.split("T")[0] : todayStr;
+                  const endDateStr = getAdjustedWorkingDueDate(rawEndDateStr);
+                  const diffTime = new Date(endDateStr).getTime() - new Date(todayStr).getTime();
+                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                  if (diffDays >= 0 && diffDays <= 5) {
+                    const formatDDMMYYYY = (isoStr: string) => {
+                      try {
+                        const d = new Date(isoStr + 'T00:00:00');
+                        const dd = String(d.getDate()).padStart(2, '0');
+                        const mm = String(d.getMonth() + 1).padStart(2, '0');
+                        return `${dd}/${mm}/${d.getFullYear()}`;
+                      } catch { return isoStr; }
+                    };
+                    return (
+                      <div className="p-3.5 bg-gradient-to-r from-amber-50 via-amber-100/40 to-emerald-50 border border-amber-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <ClockIcon className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-xs font-bold text-amber-950">
+                                Self-Assessment Submission Window Open
+                              </h4>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-200/80 text-amber-900 uppercase">
+                                {diffDays === 0 ? 'Due Today' : `Due in ${diffDays} Day${diffDays > 1 ? 's' : ''} (${formatDDMMYYYY(endDateStr)})`}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-amber-800 font-medium">
+                              Please enter your actual deliverables and submit your self-assessment before the deadline.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* 12-Month Financial Year Milestone Progress Stepper for Yearly Cadence */}
+                {isYearlyResponse(activeEmpResponse) && (() => {
+                  const curRecords = activeEmpResponse?.monthly_records || [];
+                  const approvedMonths = curRecords.filter(m => m.status === 'manager_approved');
+                  const ytdScore = approvedMonths.length > 0
+                    ? Number((approvedMonths.reduce((acc, m) => acc + (Number(m.managerScore) || 0), 0) / approvedMonths.length).toFixed(1))
+                    : null;
+                  const quarters = [
+                    { name: 'Q1 (Apr - Jun)', months: FISCAL_MONTHS.filter(m => m.quarter === 1) },
+                    { name: 'Q2 (Jul - Sep)', months: FISCAL_MONTHS.filter(m => m.quarter === 2) },
+                    { name: 'Q3 (Oct - Dec)', months: FISCAL_MONTHS.filter(m => m.quarter === 3) },
+                    { name: 'Q4 (Jan - Mar)', months: FISCAL_MONTHS.filter(m => m.quarter === 4) }
+                  ];
+
+                  return (
+                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-4 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center">
+                            <CalendarDaysIcon className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-900">
+                              12-Month Milestone Progress Tracking (April – March Cycle)
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              Select any monthly milestone to view or fill your actuals, review manager scores, and track YTD average.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[11px] font-semibold text-slate-500">Year-To-Date (YTD) Score:</span>
+                          <span className="text-xs font-black px-2.5 py-0.5 rounded-lg bg-teal-50 text-teal-900 border border-teal-300">
+                            {ytdScore !== null ? `${ytdScore}% (${approvedMonths.length}/12 Approved)` : 'In Progress'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 4 Quarters Strip */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                        {quarters.map(q => (
+                          <div key={q.name} className="bg-slate-50/80 rounded-xl p-2.5 border border-slate-200/70 space-y-2">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              {q.name}
+                            </div>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {q.months.map(m => {
+                                const lockInfo = getYearlyMonthLockInfo(m.monthIndex, curRecords);
+                                const isSelected = activeYearlyFiscalMonth === m.monthIndex;
+                                const isApproved = lockInfo.isApproved;
+                                const isSubmitted = lockInfo.isSubmitted;
+                                const isLocked = lockInfo.isLocked;
+                                const isActionable = lockInfo.isEditable && !lockInfo.isLocked;
+                                const score = isApproved && lockInfo.score != null ? Number(lockInfo.score).toFixed(0) : null;
+
+                                return (
+                                  <button
+                                    key={m.monthKey}
+                                    type="button"
+                                    onClick={() => setActiveYearlyFiscalMonth(m.monthIndex)}
+                                    className={`flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border shadow-2xs ${
+                                      isSelected
+                                        ? isLocked
+                                          ? 'bg-slate-700 text-white border-slate-800 ring-2 ring-slate-500/30'
+                                          : isApproved
+                                            ? 'bg-emerald-700 text-white border-emerald-800 ring-2 ring-emerald-500/30'
+                                            : isSubmitted
+                                              ? 'bg-amber-600 text-white border-amber-700 ring-2 ring-amber-500/30'
+                                              : 'bg-teal-700 text-white border-teal-800 ring-2 ring-teal-500/30'
+                                        : isApproved
+                                          ? 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
+                                          : isSubmitted
+                                            ? 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100 ring-1 ring-amber-300/60'
+                                            : isActionable
+                                              ? 'bg-teal-50/90 text-teal-900 border-teal-300 hover:bg-teal-100 ring-1 ring-teal-400/50'
+                                              : isLocked
+                                                ? 'bg-slate-100/90 text-slate-400 border-slate-200 hover:bg-slate-200/70'
+                                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    <span className="text-[11px] flex items-center gap-1">
+                                      {isLocked && <LockClosedIcon className="w-2.5 h-2.5 stroke-[2.5]" />}
+                                      {m.shortName}
+                                    </span>
+                                    <span className={`text-[9px] font-medium leading-none mt-0.5 ${
+                                      isSelected
+                                        ? 'text-white/90 font-bold'
+                                        : isApproved
+                                          ? 'text-emerald-700 font-bold'
+                                          : isSubmitted
+                                            ? 'text-amber-700 font-bold'
+                                            : isActionable
+                                              ? 'text-teal-700 font-bold'
+                                              : isLocked
+                                                ? 'text-slate-400'
+                                                : 'text-slate-500 font-medium'
+                                    }`}>
+                                      {score !== null
+                                        ? `${score}%`
+                                        : isSubmitted
+                                          ? 'Submitted'
+                                          : isLocked
+                                            ? 'Locked'
+                                            : m.monthIndex === 6
+                                              ? 'Pending'
+                                              : m.monthIndex < 6
+                                                ? 'Past'
+                                                : 'Pending'}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Active Month Milestone Status Banner */}
+                      {(() => {
+                        const lockInfo = getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords);
+                        if (lockInfo.isLocked) {
+                          return (
+                            <div className="p-3 bg-slate-100/90 border border-slate-200/90 text-slate-700 rounded-xl flex items-center justify-between gap-3 text-xs">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-lg bg-slate-200/90 text-slate-600 flex items-center justify-center shrink-0">
+                                  <LockClosedIcon className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <span className="font-bold text-slate-900 block">
+                                    {lockInfo.currentMonthName} Milestone is Locked
+                                  </span>
+                                  <span className="text-slate-600 text-[11px]">
+                                    {lockInfo.lockReason}
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="px-2.5 py-1 rounded-md bg-slate-200 text-slate-700 font-bold text-[11px] shrink-0 inline-flex items-center gap-1">
+                                <LockClosedIcon className="w-3 h-3" />
+                                Locked
+                              </span>
+                            </div>
+                          );
+                        }
+                        if (lockInfo.isSubmitted) {
+                          return (
+                            <div className="p-3 bg-amber-50/90 border border-amber-200 text-amber-900 rounded-xl flex items-center justify-between gap-3 text-xs">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                                  <ClockIcon className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <span className="font-bold text-amber-950 block">
+                                    {lockInfo.currentMonthName} Deliverables Submitted & Awaiting Manager Review
+                                  </span>
+                                  <span className="text-amber-800 text-[11px]">
+                                    Your actuals have been submitted. Once your manager reviews and approves the score, the next month will automatically unlock.
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="px-2.5 py-1 rounded-md bg-amber-100 text-amber-900 font-bold text-[11px] shrink-0 inline-flex items-center gap-1">
+                                <ClockIcon className="w-3 h-3" />
+                                Under Review
+                              </span>
+                            </div>
+                          );
+                        }
+                        if (lockInfo.isApproved) {
+                          return (
+                            <div className="p-3 bg-emerald-50/90 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between gap-3 text-xs">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                                  <CheckCircleIcon className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <span className="font-bold text-emerald-950 block">
+                                    {lockInfo.currentMonthName} Milestone Approved
+                                  </span>
+                                  <span className="text-emerald-800 text-[11px]">
+                                    Manager Approved Score: <strong>{lockInfo.score}%</strong>. This monthly milestone is finalized.
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="px-2.5 py-1 rounded-md bg-emerald-100 text-emerald-900 font-bold text-[11px] shrink-0 inline-flex items-center gap-1">
+                                <CheckCircleIcon className="w-3 h-3" />
+                                {lockInfo.score}% Approved
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="p-3 bg-teal-50/80 border border-teal-200 text-teal-950 rounded-xl flex items-center justify-between gap-3 text-xs">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                                <CalendarDaysIcon className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <span className="font-bold text-teal-950 block">
+                                  {lockInfo.currentMonthName} Milestone is Open
+                                </span>
+                                <span className="text-teal-800 text-[11px]">
+                                  Please enter your actual deliverables and self-scores below, then click "Submit {lockInfo.currentMonthName} Deliverables to Manager".
+                                </span>
+                              </div>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-md bg-teal-100 text-teal-900 font-bold text-[11px] shrink-0 inline-flex items-center gap-1">
+                              <SparklesIcon className="w-3 h-3 text-teal-700" />
+                              Open
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })()}
+
                 {/* 2. Deliverable-Level Evaluation Breakdown Table with Integrated Toolbar */}
                 <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
                   {/* Integrated Table Header Bar (Clean & Compact) */}
@@ -8968,7 +10148,10 @@ export const EvaluationTab: React.FC = () => {
                     {/* Left: Deliverable Title & Category Filters */}
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                        Deliverables
+                        Deliverables {isYearlyResponse(activeEmpResponse) && (() => {
+                          const mObj = FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth);
+                          return `— ${mObj ? mObj.monthName : `Month ${activeYearlyFiscalMonth}`}`;
+                        })()}
                       </h4>
 
                       {/* Filter Pills */}
@@ -8997,12 +10180,42 @@ export const EvaluationTab: React.FC = () => {
                         )}
                       </div>
 
-                      {isEmpSubmitted && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
-                          <CheckCircleIcon className="w-3 h-3 text-teal-600" />
-                          Locked
-                        </span>
-                      )}
+                      {(() => {
+                        const isYearly = isYearlyResponse(activeEmpResponse);
+                        const curRecords = activeEmpResponse?.monthly_records || [];
+                        const lockInfo = isYearly ? getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords) : null;
+                        const isLocked = isYearly ? !lockInfo?.isEditable : isEmpSubmitted;
+
+                        if (isLocked) {
+                          return (
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border ${
+                              isYearly && lockInfo?.isLocked
+                                ? 'text-slate-700 bg-slate-100 border-slate-200'
+                                : isYearly && lockInfo?.isSubmitted
+                                  ? 'text-amber-800 bg-amber-50 border-amber-200'
+                                  : 'text-teal-800 bg-teal-50 border-teal-200'
+                            }`}>
+                              {isYearly && lockInfo?.isLocked ? (
+                                <>
+                                  <LockClosedIcon className="w-3 h-3 text-slate-500" />
+                                  Locked
+                                </>
+                              ) : isYearly && lockInfo?.isSubmitted ? (
+                                <>
+                                  <ClockIcon className="w-3 h-3 text-amber-600" />
+                                  Under Review
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircleIcon className="w-3 h-3 text-teal-600" />
+                                  {isYearly ? 'Approved' : 'Locked'}
+                                </>
+                              )}
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
 
                     {/* Right: Search & Badges */}
@@ -9035,25 +10248,35 @@ export const EvaluationTab: React.FC = () => {
 
                   <div className="rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
                     {filteredCategories.map((cat, catIdx) => {
+                      const isYearly = isYearlyResponse(activeEmpResponse);
+                      const curRecords = activeEmpResponse?.monthly_records || [];
+                      const lockInfo = isYearly ? getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords) : null;
+                      const curYearlyRecord = isYearly ? curRecords.find(m => m.monthIndex === activeYearlyFiscalMonth) : null;
+                      const isYearlyMonthSubmitted = Boolean(isYearly && (curYearlyRecord?.status === 'submitted_to_manager' || curYearlyRecord?.status === 'manager_approved'));
+                      const isThisMonthLocked = isYearly ? (!lockInfo?.isEditable) : isEmpSubmitted;
+
                       const catEarned = cat.kpis.reduce((sum, k) => {
-                        const respItem = getKpiResponseItem(k);
-                        const val = respItem?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? '');
+                        const yearlyEntry = curYearlyRecord?.kpiEntries?.[k.id] || (k.name ? curYearlyRecord?.kpiEntries?.[k.name] : null);
+                        const val = isYearly
+                          ? (!isYearlyMonthSubmitted
+                              ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                              : (yearlyEntry?.actualValue ?? ''))
+                          : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''));
                         return sum + calculateKPIScore(k, val).earnedScore;
                       }, 0);
 
-                      const catMgrEarned = cat.kpis.reduce((sum, k) => {
-                        const respItem = getKpiResponseItem(k);
-                        if (respItem?.managerScore !== undefined && respItem?.managerScore !== null) return sum + Number(respItem.managerScore);
-                        if (respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== '') return sum + calculateKPIScore(k, respItem.managerActualValue).earnedScore;
-                        return sum;
-                      }, 0);
-                      const isExpanded = Boolean(expandedCategories[cat.id]);
+                      const isExpanded = Object.keys(expandedCategories).length === 0 ? catIdx === 0 : Boolean(expandedCategories[cat.id]);
 
                       return (
                         <div key={cat.id} className="bg-white">
                           {/* Clean Category Bar */}
                           <div
-                            onClick={() => setExpandedCategories(prev => ({ ...prev, [cat.id]: !prev[cat.id] }))}
+                            onClick={() => {
+                              setExpandedCategories(prev => {
+                                const currentVal = Object.keys(prev).length === 0 ? catIdx === 0 : Boolean(prev[cat.id]);
+                                return { ...prev, [cat.id]: !currentVal };
+                              });
+                            }}
                             className="bg-slate-50 hover:bg-slate-100/80 text-slate-800 px-4 py-2 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
                           >
                             <div className="flex items-center gap-2 min-w-0">
@@ -9091,10 +10314,10 @@ export const EvaluationTab: React.FC = () => {
                                     <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Actual</th>
                                     <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Self Score</th>
                                     <th className="px-3 py-2.5 text-center whitespace-nowrap">Insufficient</th>
-                                    {!isEmpSubmitted && (
+                                    {!isThisMonthLocked && (
                                       <th className="px-3.5 py-2.5 text-left whitespace-nowrap">Self Remarks</th>
                                     )}
-                                    {isEmpSubmitted && (
+                                    {isThisMonthLocked && (
                                       <>
                                         <th className="px-3 py-2.5 text-center bg-teal-50/50 text-teal-950 border-l border-teal-200/60 whitespace-nowrap font-extrabold">Mgr Actual</th>
                                         <th className="px-2.5 py-2.5 text-center bg-teal-50/50 text-teal-950 whitespace-nowrap font-extrabold">Mgr Score</th>
@@ -9105,43 +10328,63 @@ export const EvaluationTab: React.FC = () => {
                                 <tbody className="divide-y divide-slate-100 bg-white">
                                   {cat.matchingKpis.map((kpi) => {
                                     const respItem = getKpiResponseItem(kpi);
-                                    const rawVal = !isEmpSubmitted
-                                      ? (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '')
-                                      : (respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
-                                          ? respItem.actualValue
-                                          : (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? ''));
+                                    const yearlyEntry = curYearlyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRecord?.kpiEntries?.[kpi.name] : null);
+
+                                    const rawVal = isYearly
+                                      ? (!isYearlyMonthSubmitted
+                                          ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                          : (yearlyEntry?.actualValue ?? ''))
+                                      : (!isEmpSubmitted
+                                          ? (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '')
+                                          : (respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
+                                              ? respItem.actualValue
+                                              : (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '')));
                                     const val = rawVal !== '' && rawVal !== undefined && rawVal !== null
                                       ? (typeof rawVal === 'number' ? Math.floor(rawVal) : (String(rawVal).includes('.') ? parseInt(String(rawVal), 10) : rawVal))
                                       : '';
                                     const calc = calculateKPIScore(kpi, val);
-                                    const remarks = !isEmpSubmitted
-                                      ? (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '')
-                                      : (respItem?.employeeRemarks !== undefined && respItem?.employeeRemarks !== null
-                                          ? respItem.employeeRemarks
-                                          : (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? ''));
+                                    const remarks = isYearly
+                                      ? (!isYearlyMonthSubmitted
+                                          ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
+                                          : (yearlyEntry?.employeeRemarks ?? ''))
+                                      : (!isEmpSubmitted
+                                          ? (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '')
+                                          : (respItem?.employeeRemarks !== undefined && respItem?.employeeRemarks !== null
+                                              ? respItem.employeeRemarks
+                                              : (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '')));
                                     const parsedTarget = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
                                     const targetThreshold = parsedTarget.threshold;
 
                                     // Manager reviewed values
-                                    const hasMgrActual = respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== null && respItem?.managerActualValue !== '';
-                                    const mgrActualVal = hasMgrActual ? respItem.managerActualValue : (mgrKpiActuals[kpi.id] ?? '');
+                                    const hasMgrActual = isYearly
+                                      ? (yearlyEntry?.managerActualValue !== undefined && yearlyEntry?.managerActualValue !== null && yearlyEntry?.managerActualValue !== '')
+                                      : (respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== null && respItem?.managerActualValue !== '');
+
+                                    const mgrActualVal = isYearly
+                                      ? (hasMgrActual ? yearlyEntry?.managerActualValue : '')
+                                      : (hasMgrActual ? respItem?.managerActualValue : (mgrKpiActuals[kpi.id] ?? ''));
+
                                     const isActualModifiedByMgr = hasMgrActual && String(mgrActualVal).trim() !== String(val).trim();
                                     const mgrCalc = calculateKPIScore(kpi, hasMgrActual ? mgrActualVal : val);
-                                    const mgrEarnedScore = (respItem?.managerScore !== undefined && respItem?.managerScore !== null)
-                                      ? Number(respItem.managerScore)
-                                      : (hasMgrActual ? mgrCalc.earnedScore : null);
-                                    const mgrRemarks = respItem?.managerRemarks ?? mgrKpiRemarks[kpi.id] ?? '';
+                                    const mgrEarnedScore = isYearly
+                                      ? (yearlyEntry?.managerScore !== undefined && yearlyEntry?.managerScore !== null ? Number(yearlyEntry.managerScore) : (hasMgrActual ? mgrCalc.earnedScore : null))
+                                      : ((respItem?.managerScore !== undefined && respItem?.managerScore !== null)
+                                          ? Number(respItem.managerScore)
+                                          : (hasMgrActual ? mgrCalc.earnedScore : null));
+                                    const mgrRemarks = isYearly
+                                      ? (yearlyEntry?.managerRemarks || '')
+                                      : (respItem?.managerRemarks ?? mgrKpiRemarks[kpi.id] ?? '');
 
                                     const isNeg = isNegativeKpi(kpi);
-                                    const inputItem = kpiInputs[kpi.id] || (kpi.name ? kpiInputs[kpi.name] : null);
-                                    const rawInsufficient = !isEmpSubmitted
-                                      ? (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : false))
-                                      : (respItem?.isInsufficient !== undefined && respItem?.isInsufficient !== null
-                                          ? respItem.isInsufficient
-                                          : (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : ((kpi as any)?.isInsufficient ?? (kpi as any)?.is_insufficient ?? false))));
+                                    const rawInsufficient = isYearly
+                                      ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
+                                      : (!isEmpSubmitted
+                                          ? (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : false))
+                                          : (respItem?.isInsufficient !== undefined && respItem?.isInsufficient !== null
+                                              ? respItem.isInsufficient
+                                              : (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : ((kpi as any)?.isInsufficient ?? (kpi as any)?.is_insufficient ?? false)))));
                                     const isRowInsufficient = Boolean(rawInsufficient);
                                     const statusObj = getInsufficientStatus(kpi, val, isRowInsufficient);
-                                    const deficitText = computeMetricDeficitLabel(kpi, val);
 
                                     return (
                                       <tr
@@ -9158,13 +10401,6 @@ export const EvaluationTab: React.FC = () => {
                                               <span className={`font-bold text-xs leading-snug ${isNeg ? 'text-rose-950' : 'text-slate-900'}`}>
                                                 {kpi.name}
                                               </span>
-                                              {isNeg && (
-                                                <span
-                                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200/90 shadow-2xs select-none"
-                                                >
-                                                  Low Target
-                                                </span>
-                                              )}
                                             </div>
                                             {kpi.description && (
                                               <p className={`text-[11px] line-clamp-2 leading-relaxed ${isNeg ? 'text-rose-600/80 font-medium' : 'text-slate-500'}`}>
@@ -9189,11 +10425,6 @@ export const EvaluationTab: React.FC = () => {
                                                 return `${t} ${u}`;
                                               })()}
                                             </span>
-                                            {isNeg && (
-                                              <span className="text-[9px] font-bold text-rose-700 tracking-tight">
-                                                Low Target
-                                              </span>
-                                            )}
                                           </div>
                                         </td>
 
@@ -9221,11 +10452,10 @@ export const EvaluationTab: React.FC = () => {
                                               );
                                               const isLowTarget = !isNeg && numericVal !== null && !isNaN(numericVal) && val !== '' && targetThreshold > 0 && numericVal < targetThreshold;
 
-                                              if (isEmpSubmitted) {
+                                              if (isThisMonthLocked) {
                                                 if (val === '' || val === undefined || val === null) {
                                                   return <span className="text-slate-400 font-medium">—</span>;
                                                 }
-                                                // All negative deliverables (delays, misses, escalations) use the red rose pill
                                                 if (isNeg) {
                                                   return (
                                                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-900 border border-rose-300 font-bold text-xs shadow-2xs">
@@ -9281,7 +10511,13 @@ export const EvaluationTab: React.FC = () => {
                                                         e.preventDefault();
                                                       }
                                                     }}
-                                                    onChange={e => handleKPIChange(kpi, e.target.value)}
+                                                    onChange={e => {
+                                                      if (isYearly) {
+                                                        handleYearlyMonthKpiChange(kpi, e.target.value);
+                                                      } else {
+                                                        handleKPIChange(kpi, e.target.value);
+                                                      }
+                                                    }}
                                                     placeholder="0"
                                                     className={`w-24 h-8 px-2 text-center font-bold text-xs rounded-xl transition shadow-2xs focus:outline-none ${isNeg && isOverTarget
                                                       ? 'bg-rose-100 text-rose-950 border-2 border-rose-500 ring-2 ring-rose-400/30 font-black'
@@ -9323,7 +10559,7 @@ export const EvaluationTab: React.FC = () => {
                                             })()}
 
                                             {/* Emp and Mgr Remark Badges below Self Actual */}
-                                            {isEmpSubmitted && (remarks?.trim() || mgrRemarks?.trim()) && (
+                                            {isThisMonthLocked && (remarks?.trim() || mgrRemarks?.trim()) && (
                                               <DeliverableRemarksHover
                                                 selfRemarks={remarks}
                                                 mgrRemarks={mgrRemarks}
@@ -9359,7 +10595,7 @@ export const EvaluationTab: React.FC = () => {
                                               }`}>
                                               {calc.earnedScore.toFixed(2)}%
                                             </span>
-                                            {isEmpSubmitted && remarks?.trim() && (
+                                            {isThisMonthLocked && remarks?.trim() && (
                                               <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-500/70 shrink-0" />
                                             )}
                                           </div>
@@ -9367,7 +10603,7 @@ export const EvaluationTab: React.FC = () => {
 
                                         {/* Insufficient Status & Employee Toggle */}
                                         <td className="px-3 py-3 text-center align-middle whitespace-nowrap">
-                                          {!isEmpSubmitted ? (
+                                          {!isThisMonthLocked ? (
                                             (() => {
                                               const isTargetMetOrEmpty = statusObj.status === 'met' || statusObj.status === 'not_filled';
                                               return (
@@ -9381,7 +10617,13 @@ export const EvaluationTab: React.FC = () => {
                                                     type="checkbox"
                                                     disabled={isTargetMetOrEmpty}
                                                     checked={!isTargetMetOrEmpty && Boolean(isRowInsufficient)}
-                                                    onChange={e => handleKPIToggleInsufficient(kpi, e.target.checked)}
+                                                    onChange={e => {
+                                                      if (isYearly) {
+                                                        handleYearlyMonthKpiInsufficient(kpi, e.target.checked);
+                                                      } else {
+                                                        handleKPIToggleInsufficient(kpi, e.target.checked);
+                                                      }
+                                                    }}
                                                     className="w-4 h-4 text-primary-600 accent-primary-600 rounded border-slate-300 focus:ring-primary-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 transition"
                                                   />
                                                   <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shadow-2xs border ${statusObj.badgeClass}`}>
@@ -9402,7 +10644,7 @@ export const EvaluationTab: React.FC = () => {
                                         </td>
 
                                         {/* Self Remarks: Only rendered when NOT submitted (when employee needs to edit) */}
-                                        {!isEmpSubmitted && (
+                                        {!isThisMonthLocked && (
                                           <td className="px-3.5 py-3 align-middle text-xs min-w-[140px] max-w-[220px]">
                                             {(() => {
                                               const isMandatory = isKpiRemarkMandatory(kpi, val, isRowInsufficient);
@@ -9413,7 +10655,13 @@ export const EvaluationTab: React.FC = () => {
                                                   <ExpandableRemarkInput
                                                     value={remarks}
                                                     disabled={isSubmittingEmp}
-                                                    onChange={val => handleKPIRemarksChange(kpi, val)}
+                                                    onChange={val => {
+                                                      if (isYearly) {
+                                                        handleYearlyMonthKpiRemarkChange(kpi, val);
+                                                      } else {
+                                                        handleKPIRemarksChange(kpi, val);
+                                                      }
+                                                    }}
                                                     placeholder={isMandatory ? 'Remark required (High/Low/Selected)...' : 'Remarks (Optional)...'}
                                                     required={isMandatory}
                                                     className={
@@ -9436,7 +10684,7 @@ export const EvaluationTab: React.FC = () => {
                                         )}
 
                                         {/* Manager Reviewed Fields Display */}
-                                        {isEmpSubmitted && (
+                                        {isThisMonthLocked && (
                                           <>
                                             <td className="px-3 py-3 text-center align-middle bg-teal-50/30 border-l border-teal-100 whitespace-nowrap">
                                               {hasMgrActual && mgrActualVal !== '' ? (() => {
@@ -9500,53 +10748,259 @@ export const EvaluationTab: React.FC = () => {
 
                   {/* Scorecard Summary Footer */}
                   <div className="p-5 bg-gradient-to-r from-slate-50 via-teal-50/20 to-slate-50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex flex-wrap items-center gap-3 text-xs">
-                      <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs">
-                        <span className="text-slate-500 font-semibold">Self Overall Score:</span>
-                        <strong className="text-teal-900 text-sm font-black">{selfScoreNum.toFixed(1)}%</strong>
-                      </div>
-                      {activeEmpResponse?.managerScore !== undefined && (
-                        <div className="flex items-center gap-2.5 bg-teal-50 px-4 py-2.5 rounded-xl border border-teal-200 shadow-2xs">
-                          <span className="text-teal-800 font-bold">Manager Official Score:</span>
-                          <strong className="text-teal-950 text-sm font-black">{Number(activeEmpResponse.managerScore).toFixed(1)}%</strong>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs">
-                        <span className="text-slate-500 font-semibold">Grade Tier:</span>
-                        <strong className="text-teal-900 text-sm font-black bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/70">
-                          {(() => {
-                            const r = getRatingForScore(activeEmpResponse?.managerScore ?? selfScoreNum);
-                            return `Grade ${r.letterGrade || r.grade}`;
-                          })()}
-                        </strong>
-                      </div>
-                    </div>
+                    {(() => {
+                      const isYearly = isYearlyResponse(activeEmpResponse);
+                      const mObj = FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth);
+                      const monthName = mObj ? mObj.monthName : `Month ${activeYearlyFiscalMonth}`;
+                      const curYearlyRec = isYearly ? (activeEmpResponse?.monthly_records || []).find(m => m.monthIndex === activeYearlyFiscalMonth) : null;
+                      const isYearlyMonthSubmitted = Boolean(isYearly && (curYearlyRec?.status === 'submitted_to_manager' || curYearlyRec?.status === 'manager_approved'));
+                      const approvedMonthsList = (activeEmpResponse?.monthly_records || []).filter(m => m.status === 'manager_approved');
+                      const ytdAvgScore = approvedMonthsList.length > 0
+                        ? Number((approvedMonthsList.reduce((sum, m) => sum + (Number(m.managerScore) || 0), 0) / approvedMonthsList.length).toFixed(1))
+                        : null;
 
-                    {isEmpSubmitted ? (
-                      <div className="flex items-center gap-2 px-5 py-2.5 bg-teal-50 text-teal-800 rounded-xl text-xs font-bold border border-teal-200 shadow-2xs">
-                        <CheckCircleIcon className="w-4 h-4 text-teal-700" />
-                        <span>Submitted to Manager (Locked)</span>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleEmployeeSubmit}
-                        disabled={isSubmittingEmp}
-                        className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
-                      >
-                        {isSubmittingEmp ? (
-                          <>
-                            <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                            <span>Submitting...</span>
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircleIcon className="w-4 h-4" />
-                            <span>Submit Self-Assessment</span>
-                          </>
-                        )}
-                      </button>
-                    )}
+                      let monthSelfSum = 0;
+                      activeCategories.forEach(cat => {
+                        cat.kpis.forEach(k => {
+                          const yearlyEntry = curYearlyRec?.kpiEntries?.[k.id] || (k.name ? curYearlyRec?.kpiEntries?.[k.name] : null);
+                          const val = isYearly
+                            ? (!isYearlyMonthSubmitted
+                                ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                : (yearlyEntry?.actualValue ?? ''))
+                            : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''));
+                          monthSelfSum += calculateKPIScore(k, val).earnedScore;
+                        });
+                      });
+                      const displayScore = isYearly ? Number(monthSelfSum.toFixed(1)) : selfScoreNum;
+
+                      return (
+                        <>
+                          <div className="flex flex-wrap items-center gap-3 text-xs">
+                            <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                              <span className="text-slate-500 font-semibold">{isYearly ? `${monthName} Self Score:` : 'Self Overall Score:'}</span>
+                              <strong className="text-teal-900 text-sm font-black">{displayScore.toFixed(1)}%</strong>
+                            </div>
+
+                            {isYearly && curYearlyRec?.managerScore != null && (
+                              <div className="flex items-center gap-2.5 bg-teal-50 px-4 py-2.5 rounded-xl border border-teal-200 shadow-2xs">
+                                <span className="text-teal-800 font-bold">{monthName} Manager Score:</span>
+                                <strong className="text-teal-950 text-sm font-black">{Number(curYearlyRec.managerScore).toFixed(1)}%</strong>
+                              </div>
+                            )}
+
+                            {isYearly && (
+                              <div className="flex items-center gap-2.5 bg-indigo-50/80 px-4 py-2.5 rounded-xl border border-indigo-200 shadow-2xs">
+                                <span className="text-indigo-900 font-bold">YTD Rolling Average:</span>
+                                <strong className="text-indigo-950 text-sm font-black">
+                                  {ytdAvgScore !== null ? `${ytdAvgScore}%` : 'In Progress'}
+                                </strong>
+                              </div>
+                            )}
+
+                            {!isYearly && activeEmpResponse?.managerScore !== undefined && (
+                              <div className="flex items-center gap-2.5 bg-teal-50 px-4 py-2.5 rounded-xl border border-teal-200 shadow-2xs">
+                                <span className="text-teal-800 font-bold">Manager Official Score:</span>
+                                <strong className="text-teal-950 text-sm font-black">{Number(activeEmpResponse.managerScore).toFixed(1)}%</strong>
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                              <span className="text-slate-500 font-semibold">Performance Tier:</span>
+                              <strong className="text-teal-900 text-sm font-black bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/70">
+                                {(() => {
+                                  const r = getRatingForScore((isYearly ? curYearlyRec?.managerScore : activeEmpResponse?.managerScore) ?? displayScore);
+                                  return r.name;
+                                })()}
+                              </strong>
+                            </div>
+                          </div>
+
+                          {isYearly ? (() => {
+                            const curRecords = activeEmpResponse?.monthly_records || [];
+                            const lockInfo = getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords);
+                            if (lockInfo.isLocked) {
+                              return (
+                                <div className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 shadow-2xs">
+                                  <LockClosedIcon className="w-4 h-4 text-slate-500" />
+                                  <span>{monthName} is Locked (Pending Manager Approval of {lockInfo.prevMonthName || 'previous month'})</span>
+                                </div>
+                              );
+                            }
+                            if (lockInfo.isSubmitted) {
+                              return (
+                                <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-50 text-amber-900 rounded-xl text-xs font-bold border border-amber-200 shadow-2xs">
+                                  <ClockIcon className="w-4 h-4 text-amber-700" />
+                                  <span>{monthName} Deliverables Submitted to Manager (Under Review)</span>
+                                </div>
+                              );
+                            }
+                            if (lockInfo.isApproved) {
+                              return (
+                                <div className="flex items-center gap-2 px-5 py-2.5 bg-emerald-50 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-200 shadow-2xs">
+                                  <CheckCircleIcon className="w-4 h-4 text-emerald-700" />
+                                  <span>{monthName} Milestone Approved ({curYearlyRec?.managerScore != null ? `${Number(curYearlyRec.managerScore).toFixed(1)}%` : 'Approved'})</span>
+                                </div>
+                              );
+                            }
+
+                            const expandedCatIndices = filteredCategories
+                              .map((cat, idx) => {
+                                const isCatOpen = Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                                return isCatOpen ? idx : -1;
+                              })
+                              .filter(idx => idx !== -1);
+
+                            const currentActiveCatIdx = expandedCatIndices.length > 0
+                              ? Math.max(...expandedCatIndices)
+                              : 0;
+
+                            const allCatsOpen = filteredCategories.length > 0 && filteredCategories.every((cat, idx) => {
+                              return Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                            });
+
+                            const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
+
+                            return (
+                              <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                                {currentActiveCatIdx > 0 && !allCatsOpen && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const prevIdx = Math.max(currentActiveCatIdx - 1, 0);
+                                      const prevCat = filteredCategories[prevIdx];
+                                      if (prevCat) {
+                                        setExpandedCategories({ [prevCat.id]: true });
+                                      }
+                                    }}
+                                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                                  >
+                                    <ArrowLeftIcon className="w-3.5 h-3.5" />
+                                    <span>Previous</span>
+                                  </button>
+                                )}
+
+                                {!isLastCategory ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nextIdx = Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1);
+                                      const nextCat = filteredCategories[nextIdx];
+                                      if (nextCat) {
+                                        setExpandedCategories({ [nextCat.id]: true });
+                                      }
+                                    }}
+                                    className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                  >
+                                    <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
+                                    <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleYearlyMonthSubmit(activeYearlyFiscalMonth)}
+                                    disabled={isSubmittingEmp}
+                                    className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                  >
+                                    {isSubmittingEmp ? (
+                                      <>
+                                        <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                        <span>Submitting {monthName}...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CheckCircleIcon className="w-4 h-4" />
+                                        <span>Submit {monthName} Deliverables to Manager</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })() : (
+                            isEmpSubmitted ? (
+                              <div className="flex items-center gap-2 px-5 py-2.5 bg-teal-50 text-teal-800 rounded-xl text-xs font-bold border border-teal-200 shadow-2xs">
+                                <CheckCircleIcon className="w-4 h-4 text-teal-700" />
+                                <span>Submitted to Manager (Locked)</span>
+                              </div>
+                            ) : (() => {
+                              const expandedCatIndices = filteredCategories
+                                .map((cat, idx) => {
+                                  const isCatOpen = Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                                  return isCatOpen ? idx : -1;
+                                })
+                                .filter(idx => idx !== -1);
+
+                              const currentActiveCatIdx = expandedCatIndices.length > 0
+                                ? Math.max(...expandedCatIndices)
+                                : 0;
+
+                              const allCatsOpen = filteredCategories.length > 0 && filteredCategories.every((cat, idx) => {
+                                return Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                              });
+
+                              const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
+
+                              return (
+                                <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                                  {currentActiveCatIdx > 0 && !allCatsOpen && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const prevIdx = Math.max(currentActiveCatIdx - 1, 0);
+                                        const prevCat = filteredCategories[prevIdx];
+                                        if (prevCat) {
+                                          setExpandedCategories({ [prevCat.id]: true });
+                                        }
+                                      }}
+                                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                                    >
+                                      <ArrowLeftIcon className="w-3.5 h-3.5" />
+                                      <span>Previous</span>
+                                    </button>
+                                  )}
+
+                                  {!isLastCategory ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const nextIdx = Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1);
+                                        const nextCat = filteredCategories[nextIdx];
+                                        if (nextCat) {
+                                          setExpandedCategories({ [nextCat.id]: true });
+                                        }
+                                      }}
+                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                    >
+                                      <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
+                                      <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={handleEmployeeSubmit}
+                                      disabled={isSubmittingEmp}
+                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                    >
+                                      {isSubmittingEmp ? (
+                                        <>
+                                          <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                          <span>Submitting...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <CheckCircleIcon className="w-4 h-4" />
+                                          <span>Submit Self-Assessment</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })()
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -9635,12 +11089,12 @@ export const EvaluationTab: React.FC = () => {
               return matchesSearch;
             });
 
-            const getGradeBadgeColor = (grade: string | number) => {
-              const g = String(grade).toUpperCase();
-              if (g === 'A' || g === '5') return 'bg-emerald-50 text-emerald-800 border border-emerald-200';
-              if (g === 'B' || g === '4') return 'bg-indigo-50 text-indigo-800 border border-indigo-200';
-              if (g === 'C' || g === '3') return 'bg-blue-50 text-blue-800 border border-blue-200';
-              if (g === 'D' || g === '2') return 'bg-amber-50 text-amber-800 border border-amber-200';
+            const getGradeBadgeColor = (gradeOrName: string | number) => {
+              const g = String(gradeOrName).toUpperCase();
+              if (g === 'A' || g === '5' || g.includes('OUTSTANDING')) return 'bg-emerald-50 text-emerald-800 border border-emerald-200';
+              if (g === 'B' || g === '4' || g.includes('EXCEED')) return 'bg-indigo-50 text-indigo-800 border border-indigo-200';
+              if (g === 'C' || g === '3' || (g.includes('MEET') && !g.includes('NOT'))) return 'bg-blue-50 text-blue-800 border border-blue-200';
+              if (g === 'D' || g === '2' || g.includes('IMPROVE')) return 'bg-amber-50 text-amber-800 border border-amber-200';
               return 'bg-rose-50 text-rose-800 border border-rose-200';
             };
 
@@ -9843,8 +11297,8 @@ export const EvaluationTab: React.FC = () => {
 
                                   {/* 5. Final Grade Badge */}
                                   <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
-                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-bold text-xs border ${getGradeBadgeColor(itemRating.letterGrade || itemRating.grade)}`}>
-                                      <span className="font-black">Grade {itemRating.letterGrade || itemRating.grade}</span>
+                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-bold text-xs border ${getGradeBadgeColor(itemRating.name)}`}>
+                                      <span className="font-bold">{itemRating.name}</span>
                                       <span className="opacity-90 font-mono text-[10px]">({itemFinalScore.toFixed(0)}%)</span>
                                     </span>
                                   </td>
@@ -9868,7 +11322,7 @@ export const EvaluationTab: React.FC = () => {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          const summary = `PERFORMANCE REPORT: ${itemTitle}\nPeriod: ${itemPeriodTime}\nSelf Score: ${itemSelfScore.toFixed(1)}%\nManager Score: ${itemMgrScore !== null ? `${itemMgrScore.toFixed(1)}%` : 'Pending'}\nFinal Grade: ${itemRating.letterGrade || itemRating.grade} (${itemRating.name})`;
+                                          const summary = `PERFORMANCE REPORT: ${itemTitle}\nPeriod: ${itemPeriodTime}\nSelf Score: ${itemSelfScore.toFixed(1)}%\nManager Score: ${itemMgrScore !== null ? `${itemMgrScore.toFixed(1)}%` : 'Pending'}\nFinal Grade: ${itemRating.name}`;
                                           navigator.clipboard.writeText(summary);
                                           alert('Performance Summary copied!');
                                         }}
@@ -10116,30 +11570,27 @@ export const EvaluationTab: React.FC = () => {
                         const isCurrentTier = latestScore >= tier.minScore && latestScore <= tier.maxScore;
                         return (
                           <div
-                            key={tier.letterGrade || tier.grade || tierIdx}
+                            key={tier.name || tierIdx}
                             className={`p-3 rounded-xl border transition-all ${isCurrentTier
                                 ? 'bg-teal-50/90 border-teal-500 shadow-xs ring-2 ring-teal-600/20'
                                 : 'bg-white border-slate-200 hover:border-slate-300'
                               }`}
                           >
-                            <div className="flex items-center justify-between gap-1 mb-1">
-                              <span className={`w-6 h-6 rounded-md flex items-center justify-center font-black text-xs ${getGradeBadgeColor(tier.letterGrade || tier.grade)}`}>
-                                {tier.letterGrade || tier.grade}
-                              </span>
-                              <span className="font-mono text-[10px] font-bold text-slate-600">
+                            <div className="flex items-center justify-between gap-1 mb-1.5">
+                              <div className="flex items-center gap-0.5 text-amber-400">
+                                {[1, 2, 3, 4, 5].map(s => (
+                                  s <= tier.stars ? (
+                                    <StarSolid key={s} className="w-2.5 h-2.5 fill-amber-400" />
+                                  ) : (
+                                    <StarIcon key={s} className="w-2.5 h-2.5 text-slate-200" />
+                                  )
+                                ))}
+                              </div>
+                              <span className="font-mono text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
                                 {tier.scoreRangeText}%
                               </span>
                             </div>
-                            <div className="font-bold text-xs text-slate-900 truncate">{tier.name}</div>
-                            <div className="flex items-center gap-0.5 text-amber-400 mt-1">
-                              {[1, 2, 3, 4, 5].map(s => (
-                                s <= tier.stars ? (
-                                  <StarSolid key={s} className="w-2.5 h-2.5 fill-amber-400" />
-                                ) : (
-                                  <StarIcon key={s} className="w-2.5 h-2.5 text-slate-200" />
-                                )
-                              ))}
-                            </div>
+                            <div className="font-bold text-xs text-slate-900 leading-snug">{tier.name}</div>
                             {isCurrentTier && (
                               <div className="mt-2 text-[9px] font-black text-teal-800 bg-teal-100/80 px-1.5 py-0.5 rounded text-center uppercase tracking-wider">
                                 Your Tier
@@ -10157,10 +11608,9 @@ export const EvaluationTab: React.FC = () => {
                       <table className="w-full text-left text-xs border-collapse">
                         <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
                           <tr>
-                            <th className="px-4 py-2.5 w-44">Rating Tier</th>
+                            <th className="px-4 py-2.5 w-48">Rating Tier</th>
                             <th className="px-4 py-2.5">Measure / Evaluation Criteria</th>
-                            <th className="px-4 py-2.5 w-24 text-center">Grade</th>
-                            <th className="px-4 py-2.5 w-28 text-center">Score Range</th>
+                            <th className="px-4 py-2.5 w-32 text-center">Score Range</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
@@ -10168,7 +11618,7 @@ export const EvaluationTab: React.FC = () => {
                             const isCurrentTier = latestScore >= tier.minScore && latestScore <= tier.maxScore;
                             return (
                               <tr
-                                key={tier.letterGrade || tier.grade || tierIdx}
+                                key={tier.name || tierIdx}
                                 className={`transition-colors ${isCurrentTier ? 'bg-teal-50/70 font-semibold' : 'hover:bg-slate-50/60'}`}
                               >
                                 <td className="px-4 py-3 align-top">
@@ -10183,11 +11633,6 @@ export const EvaluationTab: React.FC = () => {
                                 </td>
                                 <td className="px-4 py-3 text-slate-600 leading-relaxed text-[11px] align-top">
                                   {tier.description}
-                                </td>
-                                <td className="px-4 py-3 text-center align-top whitespace-nowrap">
-                                  <span className={`inline-flex px-2 py-0.5 rounded font-black text-xs ${getGradeBadgeColor(tier.letterGrade || tier.grade)}`}>
-                                    {tier.letterGrade || tier.grade}
-                                  </span>
                                 </td>
                                 <td className="px-4 py-3 text-center align-top whitespace-nowrap font-mono font-bold text-xs text-slate-800">
                                   {tier.scoreRangeText}%
@@ -10212,7 +11657,7 @@ export const EvaluationTab: React.FC = () => {
         isMgrCreateModalOpen ? (
           <div className="space-y-4 animate-in fade-in duration-200">
             {/* Unified Manager Assign Performance Metrics Card (Inline View) */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs">
               {/* 1. Clean Modal Header */}
               <div className="px-5 py-3.5 flex items-center justify-between border-b border-slate-200/80 bg-white">
                 <div className="flex items-center gap-3">
@@ -10536,9 +11981,9 @@ export const EvaluationTab: React.FC = () => {
                       isEmployeeActive(e) && isEmpInSelectedTeam(e, mgrAssignTeamId)
                     );
 
-                    const alreadyAssignedCount = baseTeamMembers.filter((m: any) => isEmpAlreadyAssignedForPeriod(String(m.employee_id || ''))).length;
-                    const pendingEvalCount = baseTeamMembers.filter((m: any) => !isEmpAlreadyAssignedForPeriod(String(m.employee_id || '')) && Boolean(getEmpPendingEvaluation(String(m.employee_id || '')))).length;
-                    const assignableMembers = baseTeamMembers.filter((m: any) => !isEmpAlreadyAssignedForPeriod(String(m.employee_id || '')) && !getEmpPendingEvaluation(String(m.employee_id || '')));
+                    const alreadyAssignedCount = baseTeamMembers.filter((m: any) => isEmpAlreadyAssignedForPeriod(m)).length;
+                    const pendingEvalCount = baseTeamMembers.filter((m: any) => !isEmpAlreadyAssignedForPeriod(m) && Boolean(getEmpPendingEvaluation(m))).length;
+                    const assignableMembers = baseTeamMembers.filter((m: any) => !isEmpAlreadyAssignedForPeriod(m) && !getEmpPendingEvaluation(m));
                     const activeSelectedCount = mgrAssignEmpIds.filter(id => assignableMembers.some((m: any) => String(m.employee_id || '') === id)).length;
                     const unselectedCount = assignableMembers.length - activeSelectedCount;
 
@@ -10736,8 +12181,8 @@ export const EvaluationTab: React.FC = () => {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-60 overflow-y-auto pr-1">
                                   {filteredMembers.map((emp: any) => {
                                     const empId = String(emp.employee_id || '');
-                                    const pendingEval = getEmpPendingEvaluation(empId);
-                                    const isAlreadyAssigned = isEmpAlreadyAssignedForPeriod(empId);
+                                    const pendingEval = getEmpPendingEvaluation(emp);
+                                    const isAlreadyAssigned = isEmpAlreadyAssignedForPeriod(emp);
                                     const isBlocked = Boolean(pendingEval) || isAlreadyAssigned;
                                     const isSelected = !isBlocked && mgrAssignEmpIds.includes(empId);
                                     const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || 'Employee';
@@ -11319,8 +12764,16 @@ export const EvaluationTab: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="space-y-4 animate-in fade-in duration-200">
-            {/* Unified Manager Desk Card (Header + Frequency Navigation + Filters) */}
+          <div className="relative">
+            {/* Background Manager Desk (Blurred & Blocked when Admin Setup is pending) */}
+            <div
+              className={`space-y-4 animate-in fade-in duration-200 transition-all ${
+                !hasAssignedCycleFromAdmin && reportFilteredResponses.length === 0
+                  ? 'filter blur-[3.5px] opacity-40 pointer-events-none select-none'
+                  : ''
+              }`}
+            >
+              {/* Unified Manager Desk Card (Header + Frequency Navigation + Filters) */}
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
               {/* 1. Header Bar: Title, Scope, and Desk Actions */}
               <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100">
@@ -11374,6 +12827,58 @@ export const EvaluationTab: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* Proactive Manager Reminder Banner during Last 8 Days of Month */}
+            {(() => {
+              const today = new Date();
+              const todayDate = today.getDate();
+              const currentMonth = today.getMonth();
+              const currentYear = today.getFullYear();
+              const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+              const isLast8Days = todayDate >= (daysInMonth - 7);
+              const currentMonthName = MONTH_NAMES[currentMonth];
+              const currentPeriodKey = `${currentMonthName} ${currentYear}`.toLowerCase();
+
+              const unassignedDirects = managerAssignableEmployees.filter((m: any) => 
+                isEmployeeActive(m) && 
+                !isEmpAlreadyAssignedForPeriod(m) && 
+                !getEmpPendingEvaluation(m)
+              );
+
+              if (isLast8Days && unassignedDirects.length > 0 && canCreateMetrics) {
+                const daysLeft = daysInMonth - todayDate;
+                return (
+                  <div className="mx-4 my-3 p-3.5 bg-gradient-to-r from-teal-50 via-teal-100/40 to-emerald-50 border border-teal-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <SparklesIcon className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs font-bold text-teal-950">
+                            Action Required: {currentMonthName} {currentYear} Team Deliverables
+                          </h4>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-200/80 text-teal-900 uppercase">
+                            {daysLeft === 0 ? 'Month End Today' : `${daysLeft} Day${daysLeft > 1 ? 's' : ''} Left`} ({unassignedDirects.length} unassigned)
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-teal-800 font-medium">
+                          You have {unassignedDirects.length} direct report{unassignedDirects.length > 1 ? 's' : ''} without assigned performance metrics. Please assign deliverables before the month ends.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenMgrCreateModal()}
+                      className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer shrink-0"
+                    >
+                      Assign Metrics Now
+                    </button>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             {/* 2. Frequency Tabs & Date in Period Bar */}
             <div className="px-4 py-3 bg-slate-50/50 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 flex-wrap">
@@ -11637,7 +13142,7 @@ export const EvaluationTab: React.FC = () => {
                   <span className="text-xs text-slate-500 font-medium">
                     {reportViewTab === 'top_weekly'
                       ? topPerformersQuarterRangeText
-                      : `1 Jan - 31 Dec ${topPerformersYear}`}
+                      : `1 Apr ${topPerformersFiscalYear} - 31 Mar ${topPerformersFiscalYear + 1}`}
                   </span>
                 </div>
 
@@ -11757,45 +13262,68 @@ export const EvaluationTab: React.FC = () => {
                       <tr>
                         <td colSpan={6} className="py-16 px-4 text-center">
                           <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
-                            <div className="w-13 h-13 rounded-2xl bg-teal-50 text-teal-600 border border-teal-100 flex items-center justify-center mb-3 shadow-2xs">
-                              <ClipboardDocumentListIcon className="w-6 h-6 stroke-[1.5]" />
-                            </div>
-                            <h4 className="text-sm font-semibold text-slate-800 tracking-tight">
-                              {mgrSearchQuery.trim() || reportFilterDesignation !== 'all' || reportFilterState !== 'all' || reportFilterTeam !== 'all'
-                                ? 'No Matching Records Found'
-                                : 'No Metrics Assigned Yet'}
-                            </h4>
-                            <p className="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed font-normal">
-                              {mgrSearchQuery.trim() || reportFilterDesignation !== 'all' || reportFilterState !== 'all' || reportFilterTeam !== 'all'
-                                ? 'No evaluation records match your search or filter criteria. Try resetting filters to see all records.'
-                                : 'No performance evaluation records found for this period. Assign metrics to direct reports to start the review cycle.'}
-                            </p>
                             {mgrSearchQuery.trim() || reportFilterDesignation !== 'all' || reportFilterState !== 'all' || reportFilterTeam !== 'all' ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setMgrSearchQuery('');
-                                  setReportFilterDesignation('all');
-                                  setReportFilterState('all');
-                                  setReportFilterTeam('all');
-                                  setReportFilterDept('all');
-                                  setReportFilterDate('all');
-                                  setManagerFilterDept('');
-                                }}
-                                className="mt-3.5 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200/80 text-slate-700 rounded-xl text-xs font-medium transition cursor-pointer"
-                              >
-                                <span>Reset Filters</span>
-                              </button>
-                            ) : canCreateMetrics ? (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenMgrCreateModal()}
-                                className="mt-3.5 inline-flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
-                              >
-                                <PlusIcon className="w-4 h-4 stroke-[2]" />
-                                <span>Assign Metrics</span>
-                              </button>
-                            ) : null}
+                              <>
+                                <div className="w-13 h-13 rounded-2xl bg-teal-50 text-teal-600 border border-teal-100 flex items-center justify-center mb-3 shadow-2xs">
+                                  <ClipboardDocumentListIcon className="w-6 h-6 stroke-[1.5]" />
+                                </div>
+                                <h4 className="text-sm font-semibold text-slate-800 tracking-tight">
+                                  No Matching Records Found
+                                </h4>
+                                <p className="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed font-normal">
+                                  No evaluation records match your search or filter criteria. Try resetting filters to see all records.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMgrSearchQuery('');
+                                    setReportFilterDesignation('all');
+                                    setReportFilterState('all');
+                                    setReportFilterTeam('all');
+                                    setReportFilterDept('all');
+                                    setReportFilterDate('all');
+                                    setManagerFilterDept('');
+                                  }}
+                                  className="mt-3.5 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200/80 text-slate-700 rounded-xl text-xs font-medium transition cursor-pointer"
+                                >
+                                  <span>Reset Filters</span>
+                                </button>
+                              </>
+                            ) : !hasAssignedCycleFromAdmin ? (
+                              <>
+                                <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200/70 flex items-center justify-center mb-2.5 shadow-2xs">
+                                  <ClockIcon className="w-6 h-6 stroke-[1.5]" />
+                                </div>
+                                <h4 className="text-sm font-bold text-slate-800 tracking-tight">
+                                  E2R is Under Process
+                                </h4>
+                                <p className="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed font-normal">
+                                  Evaluation cycle setup is currently under process.
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <div className="w-13 h-13 rounded-2xl bg-teal-50 text-teal-600 border border-teal-100 flex items-center justify-center mb-3 shadow-2xs">
+                                  <ClipboardDocumentListIcon className="w-6 h-6 stroke-[1.5]" />
+                                </div>
+                                <h4 className="text-sm font-semibold text-slate-800 tracking-tight">
+                                  Evaluation Cycle Assigned by Admin
+                                </h4>
+                                <p className="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed font-normal">
+                                  Admin has configured and assigned the evaluation matrix for your team. Review and assign deliverables to your direct reports to start the evaluation cycle.
+                                </p>
+                                {canCreateMetrics && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenMgrCreateModal()}
+                                    className="mt-3.5 inline-flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                                  >
+                                    <PlusIcon className="w-4 h-4 stroke-[2]" />
+                                    <span>Assign Metrics to Team</span>
+                                  </button>
+                                )}
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -11915,7 +13443,7 @@ export const EvaluationTab: React.FC = () => {
                                               <button
                                                 type="button"
                                                 onClick={() => handleMgrDeleteMatrix(teamCycle)}
-                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-danger-50 hover:bg-danger-100 text-danger-600 border border-danger-200 shadow-2xs transition cursor-pointer"
+                                                className={isHrOrAdmin ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-danger-50 hover:bg-danger-100 text-danger-600 border border-danger-200 shadow-2xs transition cursor-pointer" : "hidden"}
                                                 title="Delete Deliverables Matrix"
                                               >
                                                 <TrashIcon className="w-3 h-3" />
@@ -12090,6 +13618,33 @@ export const EvaluationTab: React.FC = () => {
             )}
           </div>
         </div>
+
+            {/* Overlaid E2R Under Process Card */}
+            {!hasAssignedCycleFromAdmin && reportFilteredResponses.length === 0 && (
+              <div className="absolute inset-0 z-20 flex items-start justify-center pt-8 pb-12 px-4 bg-slate-900/5 backdrop-blur-[1.5px] rounded-2xl pointer-events-auto">
+                <div className="bg-white/95 backdrop-blur-md rounded-3xl border border-neutral-200/90 shadow-2xl p-8 sm:p-10 text-center space-y-3 animate-in fade-in zoom-in-95 duration-200 max-w-sm w-full mx-auto my-6 sticky top-8">
+                  {/* Status Icon */}
+                  <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-700 shadow-2xs relative">
+                    <ClockIcon className="w-7 h-7 stroke-[1.5]" />
+                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 border-2 border-white animate-pulse" />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/80 shadow-2xs">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                      <span>E2R is Under Process</span>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900 tracking-tight">
+                      Evaluation Under Process
+                    </h3>
+                    <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
+                      Evaluation cycle setup is currently under process. Once released by Admin / HR, the deliverables matrix will appear here.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         )
       )}
 
@@ -12608,7 +14163,7 @@ export const EvaluationTab: React.FC = () => {
                   <span className="text-xs text-slate-500 font-medium">
                     {reportViewTab === 'top_weekly'
                       ? topPerformersQuarterRangeText
-                      : `1 Jan - 31 Dec ${topPerformersYear}`}
+                      : `1 Apr ${topPerformersFiscalYear} - 31 Mar ${topPerformersFiscalYear + 1}`}
                   </span>
                   <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
                     ranked by score
@@ -12948,26 +14503,48 @@ export const EvaluationTab: React.FC = () => {
       {/* 4.5. REVIEW & SCORE / CALIBRATION MODAL POPUP DIALOG (MODERN NEAT UI) */}
       {/* ========================================================================= */}
       {Boolean(selectedMgrResponseId && selectedMgrResponse) && (() => {
+        const isYearly = isYearlyResponse(selectedMgrResponse);
+        const curYearlyRecords = selectedMgrResponse!.monthly_records || [];
+        const curYearlyRec = isYearly ? curYearlyRecords.find(m => m.monthIndex === activeMgrYearlyFiscalMonth) : null;
+        const curFiscalMonthObj = FISCAL_MONTHS.find(m => m.monthIndex === activeMgrYearlyFiscalMonth);
+        const curMonthName = curFiscalMonthObj ? curFiscalMonthObj.monthName : `Month ${activeMgrYearlyFiscalMonth}`;
+
+        const approvedMonths = curYearlyRecords.filter(m => m.status === 'manager_approved');
+        const ytdScore = approvedMonths.length > 0
+          ? Number((approvedMonths.reduce((acc, m) => acc + (Number(m.managerScore) || 0), 0) / approvedMonths.length).toFixed(1))
+          : null;
+
         const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(selectedMgrResponse!);
-        const empScore = selectedMgrResponse!.employeeOverallScore != null ? Number(selectedMgrResponse!.employeeOverallScore) : 0;
+        const empScore = isYearly
+          ? (curYearlyRec?.employeeScore != null ? Number(curYearlyRec.employeeScore) : 0)
+          : (selectedMgrResponse!.employeeOverallScore != null ? Number(selectedMgrResponse!.employeeOverallScore) : 0);
         const rating = getRatingForScore(mgrScore);
         const cycleForResp = cycles.find(c => c.id === selectedMgrResponse!.cycleId);
-        const cyclePeriod = cycleForResp?.periodName || (selectedMgrResponse as any)?.periodName || 'Active Cycle';
+        const cyclePeriod = isYearly
+          ? `${curMonthName} Milestone • ${cycleForResp?.periodName || (selectedMgrResponse as any)?.periodName || 'Annual Evaluation'}`
+          : (cycleForResp?.periodName || (selectedMgrResponse as any)?.periodName || 'Active Cycle');
 
-        const rawStatus = String(selectedMgrResponse!.status || '').toLowerCase().trim();
-        const isPendingManagerReview = Boolean(
-          rawStatus === 'manager_review' ||
-          rawStatus === 'submitted to manager' ||
-          rawStatus.includes('submitted')
-        );
+        const rawStatus = isYearly
+          ? String(curYearlyRec?.status || 'pending_employee').toLowerCase().trim()
+          : String(selectedMgrResponse!.status || '').toLowerCase().trim();
 
-        const isAlreadyCalibrated = Boolean(
-          rawStatus === 'approved' ||
-          rawStatus === 'sm_final_approval' ||
-          rawStatus === 'completed' ||
-          rawStatus.includes('calibrated') ||
-          (selectedMgrResponse!.managerScore != null && !isPendingManagerReview)
-        );
+        const isPendingManagerReview = isYearly
+          ? rawStatus === 'submitted_to_manager'
+          : Boolean(
+              rawStatus === 'manager_review' ||
+              rawStatus === 'submitted to manager' ||
+              rawStatus.includes('submitted')
+            );
+
+        const isAlreadyCalibrated = isYearly
+          ? rawStatus === 'manager_approved'
+          : Boolean(
+              rawStatus === 'approved' ||
+              rawStatus === 'sm_final_approval' ||
+              rawStatus === 'completed' ||
+              rawStatus.includes('calibrated') ||
+              (selectedMgrResponse!.managerScore != null && !isPendingManagerReview)
+            );
 
         const isReadOnly = (activeRole === 'downline_teams' && !isDirectReport(getEmployeeDisplayInfo(selectedMgrResponse!).empInDb) && !isHrOrAdmin) || selectedMgrResponse!.status === 'sm_final_approval';
 
@@ -12990,7 +14567,7 @@ export const EvaluationTab: React.FC = () => {
                       <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
                         {teamName}
                       </span>
-                      {renderStatusBadge(selectedMgrResponse!.status, selectedMgrResponse!)}
+                      {renderStatusBadge(isYearly ? (curYearlyRec?.status || 'pending_employee') : selectedMgrResponse!.status, selectedMgrResponse!)}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-500">
                       <span>Designation: <strong className="text-slate-700 font-medium">{selectedMgrResponse!.designation || 'Team Member'}</strong></span>
@@ -13004,21 +14581,33 @@ export const EvaluationTab: React.FC = () => {
                 <div className="flex items-center gap-3 shrink-0">
                   <div className="hidden sm:flex items-center gap-4 bg-slate-50/90 px-4 py-2 rounded-xl border border-slate-200">
                     <div className="text-left">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">Self Score</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
+                        {isYearly ? `${curFiscalMonthObj?.shortName || 'Month'} Self` : 'Self Score'}
+                      </span>
                       <span className="text-xs font-bold text-slate-700">{empScore.toFixed(1)}%</span>
                     </div>
                     <div className="h-6 w-px bg-slate-200" />
                     <div className="text-left">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-700 block">
-                        {isPendingManagerReview ? 'Calibrated Score' : 'Manager Score'}
+                        {isYearly ? `${curFiscalMonthObj?.shortName || 'Month'} Manager` : (isPendingManagerReview ? 'Calibrated Score' : 'Manager Score')}
                       </span>
                       <span className="text-sm font-black text-teal-900">{mgrScore.toFixed(1)}%</span>
                     </div>
+                    {isYearly && (
+                      <>
+                        <div className="h-6 w-px bg-slate-200" />
+                        <div className="text-left">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 block">YTD Avg Score</span>
+                          <span className="text-sm font-black text-indigo-900">
+                            {ytdScore !== null ? `${ytdScore}%` : '—'}
+                          </span>
+                        </div>
+                      </>
+                    )}
                     <div className="h-6 w-px bg-slate-200" />
                     <div className="text-left">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 block">Grade</span>
-                      <span className="text-sm font-black text-emerald-800 block leading-tight">{rating.letterGrade || rating.grade}</span>
-                      <span className="text-[10px] font-medium text-emerald-700 block leading-tight">{rating.name}</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 block">Performance Tier</span>
+                      <span className="text-xs font-bold text-emerald-900 block leading-tight">{rating.name}</span>
                     </div>
                   </div>
 
@@ -13038,27 +14627,171 @@ export const EvaluationTab: React.FC = () => {
                 {/* Mobile Telemetry */}
                 <div className="flex sm:hidden items-center justify-between gap-3 p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
                   <div>
-                    <span className="text-[9px] uppercase text-slate-400 block font-semibold">Self</span>
+                    <span className="text-[9px] uppercase text-slate-400 block font-semibold">{isYearly ? `${curFiscalMonthObj?.shortName} Self` : 'Self'}</span>
                     <span className="text-xs font-bold text-slate-800">{empScore.toFixed(1)}%</span>
                   </div>
                   <div>
-                    <span className="text-[9px] uppercase text-teal-700 block font-semibold">Manager</span>
+                    <span className="text-[9px] uppercase text-teal-700 block font-semibold">{isYearly ? `${curFiscalMonthObj?.shortName} Mgr` : 'Manager'}</span>
                     <span className="text-xs font-bold text-teal-900">{mgrScore.toFixed(1)}%</span>
                   </div>
+                  {isYearly && (
+                    <div>
+                      <span className="text-[9px] uppercase text-indigo-700 block font-semibold">YTD Avg</span>
+                      <span className="text-xs font-bold text-indigo-900">{ytdScore !== null ? `${ytdScore}%` : '—'}</span>
+                    </div>
+                  )}
                   <div>
-                    <span className="text-[9px] uppercase text-emerald-700 block font-semibold">Grade</span>
-                    <span className="text-xs font-black text-emerald-800 block leading-tight">{rating.letterGrade || rating.grade}</span>
-                    <span className="text-[9px] font-medium text-emerald-700 block leading-tight">{rating.name}</span>
+                    <span className="text-[9px] uppercase text-emerald-700 block font-semibold">Tier</span>
+                    <span className="text-xs font-bold text-emerald-900 block leading-tight">{rating.name}</span>
                   </div>
                 </div>
+
+                {/* 12-Month Stepper for Yearly Cadence */}
+                {isYearly && (() => {
+                  const quarters = [
+                    { name: 'Q1 (Apr - Jun)', months: FISCAL_MONTHS.filter(m => m.quarter === 1) },
+                    { name: 'Q2 (Jul - Sep)', months: FISCAL_MONTHS.filter(m => m.quarter === 2) },
+                    { name: 'Q3 (Oct - Dec)', months: FISCAL_MONTHS.filter(m => m.quarter === 3) },
+                    { name: 'Q4 (Jan - Mar)', months: FISCAL_MONTHS.filter(m => m.quarter === 4) }
+                  ];
+
+                  return (
+                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-4 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center">
+                            <CalendarDaysIcon className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-900">
+                              12-Month Financial Year Milestone Reviews (April – March Cycle)
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              Click any monthly milestone to review employee deliverables, calibrate scores, and maintain rolling YTD average.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[11px] font-semibold text-slate-500">Cumulative YTD Score:</span>
+                          <span className="text-xs font-black px-2.5 py-0.5 rounded-lg bg-teal-50 text-teal-900 border border-teal-300">
+                            {ytdScore !== null ? `${ytdScore}% (${approvedMonths.length}/12 Approved)` : '0/12 Approved'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 4 Quarters Strip */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                        {quarters.map(q => (
+                          <div key={q.name} className="bg-slate-50/80 rounded-xl p-2.5 border border-slate-200/70 space-y-2">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              {q.name}
+                            </div>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {q.months.map(m => {
+                                const rec = curYearlyRecords.find(r => r.monthIndex === m.monthIndex);
+                                const isSelected = activeMgrYearlyFiscalMonth === m.monthIndex;
+                                const isApproved = rec?.status === 'manager_approved';
+                                const isSubmitted = rec?.status === 'submitted_to_manager';
+                                const lockInfo = getYearlyMonthLockInfo(m.monthIndex, curYearlyRecords);
+                                const isLocked = lockInfo.isLocked;
+                                const score = isApproved && rec?.managerScore != null ? Number(rec.managerScore).toFixed(0) : null;
+
+                                return (
+                                  <button
+                                    key={m.monthKey}
+                                    type="button"
+                                    onClick={() => switchMgrYearlyMonth(m.monthIndex)}
+                                    className={`flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border shadow-2xs ${
+                                      isSelected
+                                        ? isLocked
+                                          ? 'bg-slate-700 text-white border-slate-800 ring-2 ring-slate-500/30'
+                                          : isApproved
+                                            ? 'bg-emerald-700 text-white border-emerald-800 ring-2 ring-emerald-500/30'
+                                            : isSubmitted
+                                              ? 'bg-amber-600 text-white border-amber-700 ring-2 ring-amber-500/30'
+                                              : 'bg-teal-700 text-white border-teal-800 ring-2 ring-teal-500/30'
+                                        : isApproved
+                                          ? 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
+                                          : isSubmitted
+                                            ? 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100 ring-1 ring-amber-400'
+                                            : isLocked
+                                              ? 'bg-slate-100/90 text-slate-400 border-slate-200 hover:bg-slate-200/70'
+                                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    <span className="text-[11px] flex items-center gap-1">
+                                      {isLocked && <LockClosedIcon className="w-2.5 h-2.5 stroke-[2.5]" />}
+                                      {m.shortName}
+                                    </span>
+                                    <span className={`text-[9px] font-medium leading-none mt-0.5 ${
+                                      isSelected
+                                        ? 'text-white/90 font-bold'
+                                        : isApproved
+                                          ? 'text-emerald-700 font-bold'
+                                          : isSubmitted
+                                            ? 'text-amber-700 font-bold'
+                                            : isLocked
+                                              ? 'text-slate-400'
+                                              : 'text-slate-500 font-medium'
+                                    }`}>
+                                      {score !== null
+                                        ? `${score}%`
+                                        : isSubmitted
+                                          ? 'Submitted'
+                                          : isLocked
+                                            ? 'Locked'
+                                            : m.monthIndex === 6
+                                              ? 'Pending'
+                                              : m.monthIndex < 6
+                                                ? 'Past'
+                                                : 'Pending'}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Active Month Milestone Status Banner */}
+                      <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                        curYearlyRec?.status === 'manager_approved'
+                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                          : curYearlyRec?.status === 'submitted_to_manager'
+                            ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                            : 'bg-slate-100/80 border-slate-200 text-slate-700'
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          <CalendarDaysIcon className="w-4 h-4 shrink-0" />
+                          <span>
+                            Viewing <strong>{curMonthName}{curYearlyRec?.calendarYear ? ` (${curYearlyRec.calendarYear})` : ''}</strong> milestone —{' '}
+                            {curYearlyRec?.status === 'manager_approved'
+                              ? `Approved with Manager Score of ${Number(curYearlyRec.managerScore || 0).toFixed(1)}%. You may recalibrate deliverable actuals below.`
+                              : curYearlyRec?.status === 'submitted_to_manager'
+                                ? `Submitted by employee with self-score of ${Number(curYearlyRec.employeeScore || 0).toFixed(1)}%. Ready for calibration.`
+                                : 'Pending employee submission for this month.'}
+                          </span>
+                        </div>
+                        {curYearlyRec?.employeeRemarks && (
+                          <span className="text-[11px] italic bg-white/70 px-2.5 py-1 rounded-md border border-slate-200/50 max-w-sm truncate">
+                            Emp Note: {curYearlyRec.employeeRemarks}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Categories Loop */}
                 {selectedMgrCategories.map(cat => {
                   let catTotalMgrEarned = 0;
                   cat.kpis.forEach(kpi => {
-                    const respItem = selectedMgrResponse!.kpiResponses?.[kpi.id];
-                    const empActual = respItem?.actualValue ?? '';
-                    const curMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
+                    const respItem = isYearly
+                      ? (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null))
+                      : selectedMgrResponse!.kpiResponses?.[kpi.id];
+                    const empActual = respItem?.actualValue ?? respItem?.actual_value ?? '';
+                    const curMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual);
                     catTotalMgrEarned += calculateKPIScore(kpi, curMgrActual).earnedScore;
                   });
 
@@ -13112,17 +14845,20 @@ export const EvaluationTab: React.FC = () => {
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {cat.kpis.map(kpi => {
-                              const respItem = selectedMgrResponse!.kpiResponses?.[kpi.id];
-                              const empActual = respItem?.actualValue ?? '';
-                              const currentMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
+                              const respItem = isYearly
+                                ? (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null))
+                                : selectedMgrResponse!.kpiResponses?.[kpi.id];
+                              const empActual = respItem?.actualValue ?? respItem?.actual_value ?? '';
+                              const currentMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual);
                               const calcEmp = calculateKPIScore(kpi, empActual);
                               const calcMgr = calculateKPIScore(kpi, currentMgrActual);
-                              const currentMgrRemark = mgrKpiRemarks[kpi.id] ?? (respItem?.managerRemarks || '');
+                              const currentMgrRemark = mgrKpiRemarks[kpi.id] ?? (respItem?.managerRemarks ?? respItem?.manager_remark ?? '');
                               const isGoalModified = String(currentMgrActual).trim() !== String(empActual).trim();
                               const parsedTarget = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
                               const targetThreshold = parsedTarget.threshold;
 
                               const isNeg = isNegativeKpi(kpi);
+                              const empRemark = respItem?.employeeRemarks ?? respItem?.employee_remark ?? '';
 
                               return (
                                 <tr
@@ -13136,11 +14872,6 @@ export const EvaluationTab: React.FC = () => {
                                         <span className={`text-xs ${isNeg ? 'font-bold text-rose-950' : 'font-semibold text-slate-900'}`}>
                                           {kpi.name}
                                         </span>
-                                        {isNeg && (
-                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200/90 shadow-2xs select-none">
-                                            Low Target
-                                          </span>
-                                        )}
                                       </div>
                                       {kpi.description && (
                                         <div className={`text-[11px] mt-0.5 truncate max-w-xs ${isNeg ? 'text-rose-600/80 font-medium' : 'text-slate-400'}`}>{kpi.description}</div>
@@ -13154,11 +14885,6 @@ export const EvaluationTab: React.FC = () => {
                                       <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${isNeg ? 'bg-rose-100/70 text-rose-800 border-rose-200 shadow-2xs' : 'text-slate-700'}`}>
                                         {kpi.targetFromManager}
                                       </span>
-                                      {isNeg && (
-                                        <span className="text-[9px] font-bold text-rose-700 tracking-tight">
-                                          Low Target
-                                        </span>
-                                      )}
                                     </div>
                                   </td>
 
@@ -13204,14 +14930,14 @@ export const EvaluationTab: React.FC = () => {
                                       )}
 
                                       {/* Emp and Mgr Remark Badges below Actual PM */}
-                                      {(respItem?.employeeRemarks?.trim() || currentMgrRemark?.trim()) && (
+                                      {(empRemark?.trim() || currentMgrRemark?.trim()) && (
                                         <DeliverableRemarksHover
-                                          selfRemarks={respItem?.employeeRemarks}
+                                          selfRemarks={empRemark}
                                           mgrRemarks={currentMgrRemark}
                                           align="center"
                                         >
                                           <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap cursor-pointer">
-                                            {respItem?.employeeRemarks?.trim() && (
+                                            {empRemark?.trim() && (
                                               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0">
                                                 <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
                                                 <span>Emp</span>
@@ -13241,7 +14967,6 @@ export const EvaluationTab: React.FC = () => {
                                         ? respItem.isInsufficient
                                         : (kpi?.isInsufficient ?? (kpi as any)?.is_insufficient ?? false);
                                       const status = getInsufficientStatus(kpi, empActual, isFlagged);
-                                      const empRemark = respItem?.employeeRemarks?.trim();
                                       return (
                                         <DeliverableRemarksHover
                                           selfRemarks={empRemark}
@@ -13362,7 +15087,7 @@ export const EvaluationTab: React.FC = () => {
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
                   <label className="text-xs font-bold text-slate-800 flex items-center gap-2">
                     <ClipboardDocumentListIcon className="w-4 h-4 text-teal-600" />
-                    <span>Overall Manager Evaluation Summary & Feedback</span>
+                    <span>{isYearly ? `${curMonthName} Milestone Manager Remarks & Feedback` : 'Overall Manager Evaluation Summary & Feedback'}</span>
                   </label>
                   {isReadOnly ? (
                     <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 leading-relaxed min-h-[56px] italic">
@@ -13373,7 +15098,7 @@ export const EvaluationTab: React.FC = () => {
                       rows={3}
                       value={mgrRemarks}
                       onChange={e => setMgrRemarks(e.target.value)}
-                      placeholder="Enter comprehensive performance evaluation summary, key strengths, growth areas, and commendations..."
+                      placeholder={isYearly ? `Enter monthly milestone performance feedback for ${curMonthName}...` : "Enter comprehensive performance evaluation summary, key strengths, growth areas, and commendations..."}
                       className="w-full p-3.5 bg-slate-50/50 focus:bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition resize-none placeholder:text-slate-400"
                     />
                   )}
@@ -13383,13 +15108,21 @@ export const EvaluationTab: React.FC = () => {
               {/* Modal Sticky Footer */}
               <div className="px-6 py-4 bg-white border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="text-slate-500">Total Score:</span>
+                  <span className="text-slate-500">{isYearly ? `${curFiscalMonthObj?.shortName || 'Month'} Score:` : 'Total Score:'}</span>
                   <span className="font-bold text-slate-900 text-sm">{mgrScore.toFixed(1)}%</span>
+                  {isYearly && (
+                    <>
+                      <span className="text-slate-300 mx-1">•</span>
+                      <span className="text-slate-500">YTD Score:</span>
+                      <span className="font-black text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200 text-xs">
+                        {ytdScore !== null ? `${ytdScore}%` : '—'}
+                      </span>
+                    </>
+                  )}
                   <span className="text-slate-300 mx-1">•</span>
-                  <span className="text-slate-500">Grade:</span>
+                  <span className="text-slate-500">Tier:</span>
                   <span className="font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200/80 text-xs inline-flex items-center gap-1.5">
-                    <strong className="font-black text-emerald-950">{rating.letterGrade || rating.grade}</strong>
-                    <span className="text-[11px] text-emerald-700 font-medium">({rating.name})</span>
+                    <strong className="font-bold text-emerald-950">{rating.name}</strong>
                   </span>
                 </div>
 
@@ -13412,7 +15145,16 @@ export const EvaluationTab: React.FC = () => {
                         Cancel
                       </button>
 
-                      {(() => {
+                      {isYearly ? (
+                        <button
+                          type="button"
+                          onClick={() => handleManagerYearlyMonthApprove(activeMgrYearlyFiscalMonth)}
+                          className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+                        >
+                          <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
+                          <span>{isAlreadyCalibrated ? `Update & Recalibrate ${curMonthName}` : `Approve & Save ${curMonthName} Milestone`}</span>
+                        </button>
+                      ) : (() => {
                         const otherPendingSubmittedList = (activeScopedResponsesForCards || []).filter(r =>
                           r.id !== selectedMgrResponseId &&
                           ((r.status as string) === 'manager_review' || (r.status as string) === 'Submitted to Manager' || String(r.status || '').toLowerCase().includes('submitted')) &&
