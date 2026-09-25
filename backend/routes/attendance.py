@@ -236,10 +236,7 @@ def check_in():
         from sqlalchemy import or_ as sql_or
 
         approved_leave_today = LeaveRequest.query.filter(
-            sql_or(
-                LeaveRequest.employee_id == employee.employee_id,
-                LeaveRequest.employee_id == str(employee.id)
-            ),
+            LeaveRequest.employee_id == employee.employee_id,
             LeaveRequest.status == "Approved",
             LeaveRequest.request_type == "Leave",
             LeaveRequest.from_date <= today_date,
@@ -1422,10 +1419,7 @@ def attendance_history(user_id):
 
     from models.leave import LeaveRequest as LR
     leaves_batch = LR.query.filter(
-        or_(
-            LR.employee_id == str(employee.id),
-            LR.employee_id == employee.employee_id
-        ),
+        LR.employee_id == employee.employee_id,
         LR.request_type == "Leave",
         LR.status == "Approved",
         LR.from_date <= end_date,
@@ -1538,10 +1532,7 @@ def attendance_history(user_id):
 
                 # Check for approved Permission on this date
                 perm_req = LR.query.filter(
-                    or_(
-                        LR.employee_id == str(employee.id),
-                        LR.employee_id == employee.employee_id
-                    ),
+                    LR.employee_id == employee.employee_id,
                     LR.request_type == "Permission",
                     LR.status == "Approved",
                     LR.permission_date == current_date
@@ -1652,10 +1643,7 @@ def attendance_history(user_id):
                         # override is "Working Day" -> check approved leaves or mark Absent
                         from models.leave import LeaveRequest
                         leave = LeaveRequest.query.filter(
-                            or_(
-                                LeaveRequest.employee_id == str(employee.id),
-                                LeaveRequest.employee_id == employee.employee_id
-                            ),
+                            LeaveRequest.employee_id == employee.employee_id,
                             LeaveRequest.status == "Approved",
                             LeaveRequest.from_date <= current_date,
                             LeaveRequest.to_date >= current_date
@@ -1677,10 +1665,7 @@ def attendance_history(user_id):
                     else:
                         from models.leave import LeaveRequest
                         leave = LeaveRequest.query.filter(
-                            or_(
-                                LeaveRequest.employee_id == str(employee.id),
-                                LeaveRequest.employee_id == employee.employee_id
-                            ),
+                            LeaveRequest.employee_id == employee.employee_id,
                             LeaveRequest.status == "Approved",
                             LeaveRequest.from_date <= current_date,
                             LeaveRequest.to_date >= current_date
@@ -1871,10 +1856,7 @@ def get_attendance():
         if status in ("Absent", "Half Day"):
             from models.leave import LeaveRequest
             leaves = LeaveRequest.query.filter(
-                or_(
-                    LeaveRequest.employee_id == str(employee.id),
-                    LeaveRequest.employee_id == employee.employee_id
-                ),
+                LeaveRequest.employee_id == employee.employee_id,
                 LeaveRequest.status == "Approved",
                 LeaveRequest.from_date <= today,
                 LeaveRequest.to_date >= today
@@ -1895,10 +1877,7 @@ def get_attendance():
         from models.leave import LeaveRequest as LR
         from datetime import time as dtime
         permission_req = LR.query.filter(
-            or_(
-                LR.employee_id == str(employee.id),
-                LR.employee_id == employee.employee_id
-            ),
+            LR.employee_id == employee.employee_id,
             LR.request_type == "Permission",
             LR.status == "Approved",
             LR.permission_date == today
@@ -2168,13 +2147,11 @@ def _get_period_attendance_records(days_count, include_card_fields=False):
 
             if status == "Absent":
                 leave = None
-                for k in [k for k in (str(employee.id), employee.employee_id) if k]:
+                if employee.employee_id:
                     leave = next(
-                        (lr for lr in leaves_by_employee.get(k, []) if lr.from_date <= current_date <= lr.to_date),
+                        (lr for lr in leaves_by_employee.get(employee.employee_id, []) if lr.from_date <= current_date <= lr.to_date),
                         None
                     )
-                    if leave:
-                        break
                 if leave:
                     status = "Half Day" if (leave.total_days is not None and leave.total_days <= 0.5) else "Leave"
 
