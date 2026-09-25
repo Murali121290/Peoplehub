@@ -41,7 +41,7 @@ def payroll_summary():
             ).count()
 
             approved_leaves = LeaveRequest.query.filter(
-                LeaveRequest.employee_id == str(employee.id),
+                LeaveRequest.employee_id == employee.employee_id,
                 LeaveRequest.status == "Approved"
             ).all()
 
@@ -351,7 +351,7 @@ def get_employee_attendance_payroll(employee_pk):
 
         # Calculate leaves overlapping with this period
         leave_requests = LeaveRequest.query.filter(
-            LeaveRequest.employee_id == str(employee.id),
+            LeaveRequest.employee_id == employee.employee_id,
             LeaveRequest.status == "Approved"
         ).all()
 
@@ -726,7 +726,7 @@ def generate_payslip_pdf_helper(employee, month, year):
         # Legacy fallback
         total_days = calendar.monthrange(today.year, today.month)[1]
         approved_leaves = LeaveRequest.query.filter(
-            LeaveRequest.employee_id == str(employee.id),
+            LeaveRequest.employee_id == employee.employee_id,
             LeaveRequest.status == "Approved"
         ).all()
         leave_days = sum(leave.total_days or 0 for leave in approved_leaves)
@@ -775,7 +775,7 @@ def generate_payslip_pdf_helper(employee, month, year):
         end_dt = date(year, month, 24)
 
     all_leaves = LeaveRequest.query.filter(
-        LeaveRequest.employee_id == str(employee.id),
+        LeaveRequest.employee_id == employee.employee_id,
         LeaveRequest.status == "Approved"
     ).all()
 

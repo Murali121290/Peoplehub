@@ -748,7 +748,7 @@ def update_employee_profile(employee_id):
             image_bytes = profile_image.read()
             if len(image_bytes) > 50 * 1024:
                 return jsonify({"success": False, "error": "Profile photo must be less than 50KB"}), 400
-            emp_id = employee.employee_id or str(employee.id)
+            emp_id = employee.employee_id or f"internal_{employee.id}"
             employee.profile_image = save_profile_image_data(emp_id, profile_image.filename, image_bytes)
 
 
@@ -1056,7 +1056,7 @@ def update_employee_profile(employee_id):
         employee.profile_completed = True
 
         # Documents
-        emp_id = employee.employee_id or str(employee.id)
+        emp_id = employee.employee_id or f"internal_{employee.id}"
         if resume:
             resume_bytes = resume.read()
             employee.resume_file = save_employee_document_data(emp_id, "resume_file", resume.filename, resume_bytes)
@@ -1843,10 +1843,7 @@ def get_reporting_employees(user_id):
             from models.leave import LeaveRequest
             from sqlalchemy import or_ as sql_or
             leave = LeaveRequest.query.filter(
-                sql_or(
-                    LeaveRequest.employee_id == str(employee.id),
-                    LeaveRequest.employee_id == employee.employee_id
-                ),
+                LeaveRequest.employee_id == employee.employee_id,
                 LeaveRequest.status == "Approved",
                 LeaveRequest.from_date <= date_to_check,
                 LeaveRequest.to_date >= date_to_check
@@ -1881,10 +1878,7 @@ def get_reporting_employees(user_id):
                 LeaveRequest.request_type == "Permission",
                 LeaveRequest.status == "Approved",
                 LeaveRequest.permission_date == date_to_check,
-                sql_or(
-                    LeaveRequest.employee_id == str(employee.id),
-                    LeaveRequest.employee_id == employee.employee_id
-                )
+                LeaveRequest.employee_id == employee.employee_id
             ).first()
 
             permission_time_val = None
@@ -2834,10 +2828,7 @@ def get_employee_details(employee_id):
         ]
 
         leave_requests = LeaveRequest.query.filter(
-            or_(
-                LeaveRequest.employee_id == str(employee.id),
-                LeaveRequest.employee_id == employee.employee_id
-            ),
+            LeaveRequest.employee_id == employee.employee_id,
             LeaveRequest.status == "Approved",
             LeaveRequest.from_date >= start_date,
             LeaveRequest.to_date <= end_date
