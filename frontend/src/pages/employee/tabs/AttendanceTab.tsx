@@ -251,7 +251,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
         const leaveEmpId = String(l.employee_id || "");
 
         // Strictly match against company employee_id
-        const empCompanyId = currentEmployee ? String(currentEmployee.employee_id) : (employeeId ? String(employeeId) : "");
+        const empCompanyId = currentEmployee ? String(currentEmployee.employee_id) : String(user?.employee_id || "");
 
         return Boolean(empCompanyId && leaveEmpId === empCompanyId);
       });
@@ -300,7 +300,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       }
     };
     fetchBalances();
-  }, [resolvingCell, currentEmployee, employeeId]);
+  }, [resolvingCell, currentEmployee, loggedInEmployeeDbId]);
 
 
   const submitResolveAbsent = async (action: string) => {
