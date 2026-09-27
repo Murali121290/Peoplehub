@@ -61,6 +61,7 @@ try {
 export interface ManagerKpiTemplateRecord {
   id?: number;
   manager_id: string;
+  manager_ids?: string[];
   manager_name?: string;
   template_key: string;
   template_name: string;
@@ -935,7 +936,6 @@ export const evaluationService = {
     templateName?: string;
   }): Promise<{ cycle: EvaluationCycle; responses: EvaluationResponse[] }> {
     const targetEmployees = data.allEmployees.filter(e =>
-      data.employeeIds.includes(String(e.id)) ||
       data.employeeIds.includes(String(e.employee_id))
     );
 
@@ -1272,6 +1272,67 @@ export const evaluationService = {
       managerReviewedAt: new Date().toISOString(),
       managerRemarks: managerRemarks || resp.managerRemarks || '',
       status: isYearlyComplete ? 'approved' : 'employee_in_progress',
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
+  },
+
+  // Yearly Evaluation: Reopen Monthly Milestone by Manager (send back to employee for revision)
+  async reopenYearlyMonth(
+    responseId: string,
+    monthIndex: number,
+    reopenRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    let monthlyRecords: YearlyMonthRecord[] = resp.monthly_records || [];
+    if (!monthlyRecords || monthlyRecords.length === 0) {
+      throw new Error('No monthly records found for this yearly evaluation');
+    }
+
+    const updatedMonthlyRecords = monthlyRecords.map(m => {
+      if (m.monthIndex === monthIndex) {
+        return {
+          ...m,
+          status: 'pending_employee' as const,
+          employeeRemarks: m.employeeRemarks || '',
+          managerRemarks: reopenRemarks || m.managerRemarks || '',
+          managerScore: undefined,
+          managerApprovedAt: undefined
+        };
+      }
+      return m;
+    });
+
+    const approvedMonths = updatedMonthlyRecords.filter(m => m.status === 'manager_approved' && m.managerScore !== undefined);
+    const overallManagerScore = approvedMonths.length > 0
+      ? Number((approvedMonths.reduce((sum, m) => sum + (m.managerScore || 0), 0) / approvedMonths.length).toFixed(2))
+      : undefined;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      monthly_records: updatedMonthlyRecords,
+      managerScore: overallManagerScore,
+      status: 'employee_in_progress',
       updatedAt: new Date().toISOString()
     };
 

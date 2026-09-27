@@ -31,6 +31,7 @@ import {
 } from '../../../services/scoreService';
 import { useAuthStore } from '../../../store/authStore';
 import { DatePicker } from '../../../components/ui/DatePicker';
+import { BookLoader } from '../../../components/ui/Spinner';
 import {
   PlusIcon,
   CheckIcon,
@@ -1096,6 +1097,8 @@ export const EvaluationTab: React.FC = () => {
   const [smCategories, setSmCategories] = useState<KPICategory[]>([]);
 
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [isPageLoading, setIsPageLoading] = useState<boolean>(true);
+  const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
 
   // User & Team Scoping Resolver
   const userAny = user as any;
@@ -1251,6 +1254,7 @@ export const EvaluationTab: React.FC = () => {
       console.error('Error loading evaluation data', err);
     } finally {
       if (showLoading) setIsRefreshing(false);
+      setIsPageLoading(false);
     }
   };
 
@@ -1707,7 +1711,10 @@ export const EvaluationTab: React.FC = () => {
       const res = await evaluationService.getManagerTemplates(mgrId);
       const validTemplates: ManagerKpiTemplateRecord[] = (res?.templates || []).filter((t: any) => 
         (t.team_id || t.team_name) || (t.template_name && !t.template_name.match(/^Form [1-4]$/)) || (t.categories && t.categories.length > 0)
-      );
+      ).map((t: any) => ({
+        ...t,
+        manager_ids: t.manager_ids && t.manager_ids.length > 0 ? t.manager_ids : (t.manager_id ? [String(t.manager_id)] : [mgrId])
+      }));
 
       if (validTemplates.length > 0) {
         // 1. Check if manager already has a template explicitly designated for this team
@@ -1724,6 +1731,9 @@ export const EvaluationTab: React.FC = () => {
           if (teamMatching.categories && teamMatching.categories.length > 0) {
             setHrCategories(JSON.parse(JSON.stringify(teamMatching.categories)));
           }
+          if (teamMatching.manager_ids && teamMatching.manager_ids.length > 0) {
+            setSelectedMgrIds(teamMatching.manager_ids);
+          }
         } else {
           // Manager has forms for other teams. Create a single new clean slot for this team!
           const nextNum = validTemplates.length + 1;
@@ -1731,6 +1741,7 @@ export const EvaluationTab: React.FC = () => {
           const newName = teamName ? `${teamName}` : `Form ${nextNum}`;
           const newTpl: ManagerKpiTemplateRecord = {
             manager_id: mgrId,
+            manager_ids: [mgrId],
             template_key: newKey,
             template_name: newName,
             team_id: teamIdVal,
@@ -1740,15 +1751,17 @@ export const EvaluationTab: React.FC = () => {
           };
           setHrTemplates([...validTemplates, newTpl]);
           setActiveHrTemplateKey(newKey);
+          setSelectedMgrIds([mgrId]);
         }
       } else {
         // Clean single form initialization for this manager & team
         const form1Name = teamName ? `${teamName}` : 'Form 1';
         const defaultForms: ManagerKpiTemplateRecord[] = [
-          { manager_id: mgrId, template_key: 'form_1', template_name: form1Name, is_default: true, categories: initialCatsForTeam, team_id: teamIdVal, team_name: teamName }
+          { manager_id: mgrId, manager_ids: [mgrId], template_key: 'form_1', template_name: form1Name, is_default: true, categories: initialCatsForTeam, team_id: teamIdVal, team_name: teamName }
         ];
         setHrTemplates(defaultForms);
         setActiveHrTemplateKey('form_1');
+        setSelectedMgrIds([mgrId]);
       }
     } catch (err) {
       console.warn('Failed to load HR templates from DB:', err);
@@ -1765,10 +1778,15 @@ export const EvaluationTab: React.FC = () => {
 
   const handleHrSelectTemplate = (targetKey: string) => {
     if (targetKey === activeHrTemplateKey) return;
-    // Auto-preserve in memory
+    // Auto-preserve in memory: categories AND assigned managers for the template being left
     setHrTemplates(prev => prev.map(t => {
       if (t.template_key === activeHrTemplateKey) {
-        return { ...t, categories: JSON.parse(JSON.stringify(hrCategories)) };
+        return {
+          ...t,
+          categories: JSON.parse(JSON.stringify(hrCategories)),
+          manager_ids: [...selectedMgrIds],
+          manager_id: selectedMgrIds[0] || t.manager_id
+        };
       }
       return t;
     }));
@@ -1779,12 +1797,26 @@ export const EvaluationTab: React.FC = () => {
     } else {
       setHrCategories([]);
     }
+
+    // Restore selected managers assigned to this specific template
+    if (targetTpl?.manager_ids && targetTpl.manager_ids.length > 0) {
+      setSelectedMgrIds(targetTpl.manager_ids);
+      setSelectedMgrId(targetTpl.manager_ids[0]);
+    } else if (targetTpl?.manager_id) {
+      setSelectedMgrIds([targetTpl.manager_id]);
+      setSelectedMgrId(targetTpl.manager_id);
+    }
   };
 
   const handleHrAddNewTemplate = () => {
     setHrTemplates(prev => prev.map(t => {
       if (t.template_key === activeHrTemplateKey) {
-        return { ...t, categories: JSON.parse(JSON.stringify(hrCategories)) };
+        return {
+          ...t,
+          categories: JSON.parse(JSON.stringify(hrCategories)),
+          manager_ids: [...selectedMgrIds],
+          manager_id: selectedMgrIds[0] || t.manager_id
+        };
       }
       return t;
     }));
@@ -1797,6 +1829,7 @@ export const EvaluationTab: React.FC = () => {
     const newName = teamName ? `${teamName} (Form ${nextNum})` : `Form ${nextNum}`;
     const newTpl: ManagerKpiTemplateRecord = {
       manager_id: selectedMgrId,
+      manager_ids: selectedMgrIds.length > 0 ? [...selectedMgrIds] : (selectedMgrId ? [selectedMgrId] : []),
       template_key: newKey,
       template_name: newName,
       categories: [],
@@ -1857,9 +1890,18 @@ export const EvaluationTab: React.FC = () => {
       `Are you sure you want to delete "${formLabel}"?`,
       async () => {
         try {
-          const mgrIdsToDelete = selectedMgrIds.length > 0 ? selectedMgrIds : (selectedMgrId ? [selectedMgrId] : []);
-          for (const mId of mgrIdsToDelete) {
-            await evaluationService.deleteManagerTemplate(mId, templateKey);
+          const tplMgrIds = targetTpl?.manager_ids || [];
+          const mgrIdsToDelete = Array.from(new Set([
+            ...tplMgrIds,
+            ...selectedMgrIds,
+            ...(selectedMgrId ? [selectedMgrId] : [])
+          ])).filter(Boolean);
+
+          if (mgrIdsToDelete.length > 0) {
+            await evaluationService.deleteManagerTemplate(mgrIdsToDelete, templateKey);
+          } else {
+            // If no specific managers specified, delete for this templateKey in DB
+            await evaluationService.deleteManagerTemplate([], templateKey);
           }
         } catch (e) {
           console.warn('Failed to delete template from DB:', e);
@@ -1901,20 +1943,39 @@ export const EvaluationTab: React.FC = () => {
         const nextMgr = updated[0] || '';
         setSelectedMgrId(nextMgr);
       }
+
+      // Immediately keep active hrTemplate manager_ids synchronized
+      setHrTemplates(tpls => tpls.map(t => {
+        if (t.template_key === activeHrTemplateKey) {
+          return {
+            ...t,
+            manager_ids: updated,
+            manager_id: updated[0] || t.manager_id
+          };
+        }
+        return t;
+      }));
+
       return updated;
     });
   };
 
   const handleSelectAllHrManagers = (selectAll: boolean) => {
-    if (selectAll) {
-      const allIds = availableTeamManagers.map(m => String(m.employee_id || ''));
-      setSelectedMgrIds(allIds);
-      if (allIds.length > 0 && (!selectedMgrId || !allIds.includes(selectedMgrId))) {
-        setSelectedMgrId(allIds[0]);
-      }
-    } else {
-      setSelectedMgrIds([]);
+    const allIds = selectAll ? availableTeamManagers.map(m => String(m.employee_id || '')) : [];
+    setSelectedMgrIds(allIds);
+    if (allIds.length > 0 && (!selectedMgrId || !allIds.includes(selectedMgrId))) {
+      setSelectedMgrId(allIds[0]);
     }
+    setHrTemplates(tpls => tpls.map(t => {
+      if (t.template_key === activeHrTemplateKey) {
+        return {
+          ...t,
+          manager_ids: allIds,
+          manager_id: allIds[0] || ''
+        };
+      }
+      return t;
+    }));
   };
 
   const handleHrSaveActiveTemplate = async () => {
@@ -1924,11 +1985,15 @@ export const EvaluationTab: React.FC = () => {
 
     setIsHrSavingTemplate(true);
     try {
-      const chosenManagers = availableTeamManagers.filter(m => {
+      const effectiveMgrIds = (currentTpl?.manager_ids && currentTpl.manager_ids.length > 0)
+        ? currentTpl.manager_ids
+        : (selectedMgrIds.length > 0 ? selectedMgrIds : (selectedMgrId ? [selectedMgrId] : []));
+
+      const finalMgrs = availableTeamManagers.filter(m => {
         const idVal = String(m.employee_id || '');
-        return selectedMgrIds.includes(idVal) || idVal === selectedMgrId;
+        return effectiveMgrIds.includes(idVal);
       });
-      const finalMgrs = chosenManagers.length > 0 ? chosenManagers : (availableTeamManagers.length > 0 ? availableTeamManagers : [resolvedManager].filter(Boolean));
+      const chosenManagers = finalMgrs.length > 0 ? finalMgrs : (availableTeamManagers.length > 0 ? availableTeamManagers : [resolvedManager].filter(Boolean));
 
       // Strictly deduplicate managers by unique employee_id
       const uniqueMgrMap = new Map<string, any>();
@@ -2182,13 +2247,16 @@ export const EvaluationTab: React.FC = () => {
       }
     }
 
-    const employeeIds = teamEmployees.length > 0
-      ? teamEmployees.map(e => String(e.employee_id || ''))
-      : dbEmployees.map(e => String(e.employee_id || ''));
+    const currentTpl = hrTemplates.find(t => t.template_key === activeHrTemplateKey);
+    const formTitle = currentTpl?.template_name || `Form ${activeHrTemplateKey.replace('form_', '')}`;
+
+    const effectiveMgrIds = (currentTpl?.manager_ids && currentTpl.manager_ids.length > 0)
+      ? currentTpl.manager_ids
+      : (selectedMgrIds.length > 0 ? selectedMgrIds : (selectedMgrId ? [selectedMgrId] : []));
 
     const chosenManagers = availableTeamManagers.filter(m => {
       const idVal = String(m.employee_id || '');
-      return selectedMgrIds.includes(idVal) || idVal === selectedMgrId;
+      return effectiveMgrIds.includes(idVal);
     });
 
     const finalMgrs = chosenManagers.length > 0 ? chosenManagers : (availableTeamManagers.length > 0 ? availableTeamManagers : [resolvedManager].filter(Boolean));
@@ -2212,53 +2280,79 @@ export const EvaluationTab: React.FC = () => {
       .filter(Boolean)
       .join(',');
 
+    // Filter direct reports: strictly include employees who report to the chosen managers
+    const targetManagerCodes = Array.from(uniqueMgrMap.keys());
+    const targetManagerNames = Array.from(uniqueMgrMap.values()).map(m =>
+      (m.name || `${m.first_name || ''} ${m.last_name || ''}`).trim().toLowerCase().replace(/\s+/g, ' ')
+    );
+
+    const directReportEmployees = teamEmployees.filter(e => {
+      const empMgrCode = String(e.reporting_manager_id || e.manager_id || '').trim();
+      if (empMgrCode && targetManagerCodes.includes(empMgrCode)) return true;
+
+      const empRepMgr = String(e.reporting_manager || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      if (empRepMgr && targetManagerNames.some(mn => mn === empRepMgr || empRepMgr.includes(mn) || mn.includes(empRepMgr))) {
+        return true;
+      }
+      return false;
+    });
+
+    const employeeIds = directReportEmployees.length > 0
+      ? directReportEmployees.map(e => String(e.employee_id || ''))
+      : (teamEmployees.length > 0 ? teamEmployees.map(e => String(e.employee_id || '')) : dbEmployees.map(e => String(e.employee_id || '')));
+
     const smName = resolvedServiceManager
       ? (resolvedServiceManager.name || `${resolvedServiceManager.first_name || ''} ${resolvedServiceManager.last_name || ''}`.trim() || '')
       : '';
     const smId = resolvedServiceManager ? String(resolvedServiceManager.employee_id || '') : '';
 
-    const currentTpl = hrTemplates.find(t => t.template_key === activeHrTemplateKey);
-    const formTitle = currentTpl?.template_name || `Form ${activeHrTemplateKey.replace('form_', '')}`;
-
-    await evaluationService.createCycleFromHR({
-      name: formTitle || cycleName,
-      teamId: String(selectedTeam?.id || selectedTeam?.name || selectedTeamId || ''),
-      teamName: String(selectedTeam?.name || selectedTeamId || ''),
-      managerId: allManagerIds,
-      managerName: allManagerNames,
-      serviceManagerId: smId,
-      serviceManagerName: smName,
-      employeeIds,
-      startDate,
-      endDate,
-      periodName,
-      frequency: 'quarterly',
-      categories: hrCategories
-    });
-
-    // Also auto-transfer & save into each manager's templates so it appears directly on their desk
+    setIsActionLoading(true);
     try {
-      for (const mgr of uniqueMgrMap.values()) {
-        const mId = String(mgr.employee_id || '');
-        const mName = mgr.name || `${mgr.first_name || ''} ${mgr.last_name || ''}`.trim() || 'Manager';
-        const savePayload = {
-          manager_name: mName,
-          template_key: activeHrTemplateKey || 'form_1',
-          template_name: formTitle,
-          team_id: String(selectedTeam?.id || selectedTeam?.name || selectedTeamId || ''),
-          team_name: String(selectedTeam?.name || selectedTeamId || ''),
-          categories: hrCategories,
-          is_default: true,
-          manager_id: mId
-        };
-        await evaluationService.saveManagerTemplate(savePayload);
-      }
-    } catch (tplErr) {
-      console.warn('Sync to manager templates:', tplErr);
-    }
+      await evaluationService.createCycleFromHR({
+        name: formTitle || cycleName,
+        teamId: String(selectedTeam?.id || selectedTeam?.name || selectedTeamId || ''),
+        teamName: String(selectedTeam?.name || selectedTeamId || ''),
+        managerId: allManagerIds,
+        managerName: allManagerNames,
+        serviceManagerId: smId,
+        serviceManagerName: smName,
+        employeeIds,
+        startDate,
+        endDate,
+        periodName,
+        frequency: 'quarterly',
+        categories: hrCategories
+      });
 
-    await loadAllData();
-    showToast('Successfully sent');
+      // Also auto-transfer & save into each manager's templates so it appears directly on their desk
+      try {
+        for (const mgr of uniqueMgrMap.values()) {
+          const mId = String(mgr.employee_id || '');
+          const mName = mgr.name || `${mgr.first_name || ''} ${mgr.last_name || ''}`.trim() || 'Manager';
+          const savePayload = {
+            manager_name: mName,
+            template_key: activeHrTemplateKey || 'form_1',
+            template_name: formTitle,
+            team_id: String(selectedTeam?.id || selectedTeam?.name || selectedTeamId || ''),
+            team_name: String(selectedTeam?.name || selectedTeamId || ''),
+            categories: hrCategories,
+            is_default: true,
+            manager_id: mId
+          };
+          await evaluationService.saveManagerTemplate(savePayload);
+        }
+      } catch (tplErr) {
+        console.warn('Sync to manager templates:', tplErr);
+      }
+
+      await loadAllData();
+      showToast('Submitted successfully');
+    } catch (err: any) {
+      console.error('Failed to submit cycle from HR:', err);
+      showAlert(err?.message || 'Failed to submit metrics to manager.', 'Submission Error');
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
   // 2. Service Manager Launch Approval & Matrix Editor Handlers
@@ -2877,6 +2971,11 @@ export const EvaluationTab: React.FC = () => {
       }
     }
 
+    // If cycle explicitly targets specific manager(s), do NOT leak or match other managers by team name!
+    if (cycleMgrIds.length > 0 || cycleMgrNames.length > 0) {
+      return false;
+    }
+
     const currentTeam = cleanStr(effectiveTeamName);
     const cycleTeam = cleanStr(c.teamName);
     const cycleTeamId = cleanStr(c.teamId);
@@ -2939,6 +3038,11 @@ export const EvaluationTab: React.FC = () => {
         if (cycleMgrNames.some(cn => cn === currentMgrName || cn.includes(currentMgrName) || currentMgrName.includes(cn))) {
           return true;
         }
+      }
+
+      // If cycle explicitly targets specific manager(s), do NOT unlock for unassigned managers by team name alone!
+      if (cMgrIds.length > 0 || cycleMgrNames.length > 0) {
+        return false;
       }
 
       const cTeam = cleanStr(c.teamName);
@@ -3183,8 +3287,10 @@ export const EvaluationTab: React.FC = () => {
             setMgrAssignCategories(JSON.parse(JSON.stringify(initialTpl.categories)));
           } else {
             const teamCycle = cycles.find(c =>
-              (c.teamId && (String(c.teamId).toLowerCase() === tIdStr || String(c.teamId).toLowerCase() === tNameStr)) ||
-              (c.teamName && c.teamName.toLowerCase() === tNameStr)
+              isDirectManagerOfCycle(c) && (
+                (c.teamId && (String(c.teamId).toLowerCase() === tIdStr || String(c.teamId).toLowerCase() === tNameStr)) ||
+                (c.teamName && c.teamName.toLowerCase() === tNameStr)
+              )
             );
             if (teamCycle?.categories && teamCycle.categories.length > 0) {
               setMgrAssignCategories(JSON.parse(JSON.stringify(teamCycle.categories)));
@@ -3195,8 +3301,10 @@ export const EvaluationTab: React.FC = () => {
         }
       } else {
         const teamCycle = cycles.find(c =>
-          (c.teamId && (String(c.teamId).toLowerCase() === tIdStr || String(c.teamId).toLowerCase() === tNameStr)) ||
-          (c.teamName && c.teamName.toLowerCase() === tNameStr)
+          isDirectManagerOfCycle(c) && (
+            (c.teamId && (String(c.teamId).toLowerCase() === tIdStr || String(c.teamId).toLowerCase() === tNameStr)) ||
+            (c.teamName && c.teamName.toLowerCase() === tNameStr)
+          )
         );
 
         const initialCats = (teamCycle?.categories && teamCycle.categories.length > 0)
@@ -3282,8 +3390,10 @@ export const EvaluationTab: React.FC = () => {
       setMgrAssignCategories(JSON.parse(JSON.stringify(matchingTpl.categories)));
     } else {
       const teamCycle = cycles.find(c =>
-        (c.teamId && (String(c.teamId).toLowerCase() === tIdStr || String(c.teamId).toLowerCase() === tNameStr)) ||
-        (c.teamName && c.teamName.toLowerCase() === tNameStr)
+        isDirectManagerOfCycle(c) && (
+          (c.teamId && (String(c.teamId).toLowerCase() === tIdStr || String(c.teamId).toLowerCase() === tNameStr)) ||
+          (c.teamName && c.teamName.toLowerCase() === tNameStr)
+        )
       );
       if (teamCycle?.categories && teamCycle.categories.length > 0) {
         setMgrAssignCategories(JSON.parse(JSON.stringify(teamCycle.categories)));
@@ -3940,7 +4050,7 @@ export const EvaluationTab: React.FC = () => {
         console.warn('Auto-save template on assign notice:', autoSaveErr);
       }
 
-      await evaluationService.createAndAssignKpiMetrics({
+      const assignResult = await evaluationService.createAndAssignKpiMetrics({
         formName: mgrAssignFormName,
         teamId: mgrAssignTeamId,
         teamName: selectedTeamName,
@@ -3958,6 +4068,10 @@ export const EvaluationTab: React.FC = () => {
         templateKey: activeTemplateKey,
         templateName: activeFormLabel
       });
+
+      if (assignResult?.responses && assignResult.responses.length > 0) {
+        setResponses(assignResult.responses);
+      }
 
       setIsMgrCreateModalOpen(false);
       await loadAllData();
@@ -3996,6 +4110,16 @@ export const EvaluationTab: React.FC = () => {
       empIds.includes(String(currentDbUser.employee_id))
     );
 
+    if (isDirectUser || isDbUserMatch) return true;
+
+    // For managers: if cycle explicitly specified target manager(s), do not leak across managers by team name alone!
+    if ((isManager || isTeamLead) && (mgrIds.length > 0 || cycleMgrName)) {
+      return false;
+    }
+
+    // For employees: match if cycle manager is their reporting manager
+    if (isMgrMatch) return true;
+
     const isSameTeamName = (
       (effectiveTeamName && cycleTeamName && (cycleTeamName.includes(effectiveTeamName.toLowerCase()) || effectiveTeamName.toLowerCase().includes(cycleTeamName))) ||
       managerDepartments.some(d => cycleTeamName.includes(d.toLowerCase()) || d.toLowerCase().includes(cycleTeamName))
@@ -4006,7 +4130,7 @@ export const EvaluationTab: React.FC = () => {
       cycleTeamId.toLowerCase() === effectiveTeamId.toLowerCase()
     );
 
-    return isDirectUser || isMgrMatch || isDbUserMatch || isSameTeamName || isSameTeamId;
+    return isSameTeamName || isSameTeamId;
   };
 
   // 1. Team-scoped Cycles: An employee/manager only sees cycles created for their team (unless HR/Admin)
@@ -5559,6 +5683,7 @@ export const EvaluationTab: React.FC = () => {
       `Approve ${monthName} performance score and update Year-to-Date rolling average?`,
       async () => {
         try {
+          setIsActionLoading(true);
           const updatedResp = await evaluationService.approveYearlyMonthScore(
             selectedMgrResponse.id,
             mIndex,
@@ -5571,11 +5696,44 @@ export const EvaluationTab: React.FC = () => {
           setSelectedMgrResponseId('');
         } catch (err: any) {
           showAlert(`Failed to approve month milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
+        } finally {
+          setIsActionLoading(false);
         }
       },
       `Approve ${monthName} Milestone`,
       'info',
       'Approve & Save Milestone'
+    );
+  };
+
+  const handleManagerYearlyMonthReopen = async (mIndex: number) => {
+    if (!selectedMgrResponseId || !selectedMgrResponse) return;
+    const monthObj = FISCAL_MONTHS.find(m => m.monthIndex === mIndex);
+    const monthName = monthObj ? monthObj.monthName : `Month ${mIndex}`;
+
+    showConfirm(
+      `Reopen ${monthName} milestone and send back to employee? The employee will be able to edit and resubmit their deliverable actuals.`,
+      async () => {
+        try {
+          setIsActionLoading(true);
+          const updatedResp = await evaluationService.reopenYearlyMonth(
+            selectedMgrResponse.id,
+            mIndex,
+            mgrRemarks || 'Manager requested revision of deliverable actuals.'
+          );
+          setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+          await loadAllData();
+          showToast(`${monthName} milestone reopened! Sent back to employee for revision.`);
+          setSelectedMgrResponseId('');
+        } catch (err: any) {
+          showAlert(`Failed to reopen month milestone: ${err?.message || 'Unknown error'}`, 'Reopen Error');
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+      `Reopen ${monthName} for Revision`,
+      'warning',
+      'Reopen & Send to Employee'
     );
   };
 
@@ -8797,8 +8955,15 @@ export const EvaluationTab: React.FC = () => {
     return raw || "Sep'26";
   })();
 
+  if (isPageLoading) {
+    return <BookLoader />;
+  }
+
   return (
     <div className="space-y-6">
+      {/* Full-screen Action Loading Overlay for Assigning, Approving, Submitting */}
+      {(isAssigning || isActionLoading || isSubmittingEmp) && <BookLoader />}
+
       {/* Top Header & Navigation Bar */}
       <div className={`bg-white rounded-2xl px-4 py-2 border border-slate-200/80 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all duration-200 ${
         activeRole === 'manager' && !hasAssignedCycleFromAdmin && reportFilteredResponses.length === 0
@@ -9516,14 +9681,14 @@ export const EvaluationTab: React.FC = () => {
 
               <button
                 type="submit"
-                disabled={!isWeightageValid || !areAllCategoriesBalanced || hrCategories.length === 0}
-                className={`flex items-center gap-2.5 px-7 py-3 rounded-xl text-xs font-bold text-white shadow-md transition cursor-pointer ${isWeightageValid && areAllCategoriesBalanced && hrCategories.length > 0
+                disabled={isActionLoading || !isWeightageValid || !areAllCategoriesBalanced || hrCategories.length === 0}
+                className={`flex items-center gap-2.5 px-7 py-3 rounded-xl text-xs font-bold text-white shadow-md transition cursor-pointer ${!isActionLoading && isWeightageValid && areAllCategoriesBalanced && hrCategories.length > 0
                   ? 'bg-teal-700 hover:bg-teal-800 shadow-teal-700/20 active:scale-[0.99]'
                   : 'bg-slate-300 cursor-not-allowed opacity-60'
                   }`}
               >
                 <PaperAirplaneIcon className="w-4 h-4 text-white" />
-                <span>Send Metrics to Manager</span>
+                <span>{isActionLoading ? 'Sending...' : 'Send Metrics to Manager'}</span>
               </button>
             </div>
           </form>
@@ -9570,84 +9735,88 @@ export const EvaluationTab: React.FC = () => {
 
           {(employeeSubTab === 'worksheet' || (!isEmployeeExplicitlyAssigned || !activeEmpResponse)) && ((() => {
             if (!isEmployeeExplicitlyAssigned || !activeEmpResponse) {
+              const empName = user?.full_name || `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Employee';
+              const empInitials = empName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || 'EM';
+              const cycleTitle = activeCycle?.name || periodName || 'Performance Evaluation Cycle';
+              const teamTitle = effectiveTeamName || 'General';
+
               return (
-                <div className="bg-white rounded-3xl border border-neutral-200/90 shadow-2xs p-8 sm:p-12 text-center space-y-6 animate-in fade-in duration-200 max-w-2xl mx-auto my-6">
-                  {/* Status Icon */}
-                  <div className="w-16 h-16 mx-auto rounded-3xl bg-teal-50 border border-teal-200/80 flex items-center justify-center text-teal-700 shadow-2xs relative">
-                    <ChartBarIcon className="w-8 h-8" />
-                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 border-2 border-white animate-pulse" />
-                  </div>
+                <div className="max-w-2xl mx-auto my-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="relative bg-white rounded-3xl border border-slate-200/90 shadow-xl shadow-slate-900/5 overflow-hidden">
+                    {/* Top Ambient Gradient Accent Line */}
+                    <div className="h-2 w-full bg-gradient-to-r from-teal-500 via-cyan-500 to-indigo-500" />
 
-                  <div className="space-y-2">
-                    <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200 shadow-2xs">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
-                      <span>E2R is In Progress</span>
-                    </div>
-                    <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                      Performance Evaluation Setup in Progress
-                    </h3>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                      Your Reporting Manager and HR are currently preparing and configuring the deliverables matrix for your team. Once your manager assigns the targets, your self-assessment worksheet will activate here automatically.
-                    </p>
-                  </div>
-
-                  {/* 3-Step Process Stepper */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 max-w-lg mx-auto text-left">
-                    <div className="bg-slate-50 rounded-2xl border border-slate-200/80 p-3 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase text-teal-700 tracking-wider">Step 1</span>
-                        <span className="w-4 h-4 rounded-full bg-teal-100 text-teal-700 text-[10px] font-bold flex items-center justify-center">✓</span>
+                    <div className="p-8 sm:p-10 text-center space-y-6">
+                      {/* Premium Center Icon with Pulsing Beacon */}
+                      <div className="relative mx-auto w-20 h-20 rounded-2xl bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-200/70 flex items-center justify-center text-teal-700 shadow-sm shadow-teal-500/10">
+                        <ChartBarIcon className="w-10 h-10 stroke-[1.8]" />
+                        <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-4 w-4 bg-teal-600 border-2 border-white"></span>
+                        </span>
                       </div>
-                      <div className="text-xs font-bold text-slate-800">HR Setup</div>
-                      <div className="text-[10px] text-slate-400">Team configured</div>
-                    </div>
 
-                    <div className="bg-amber-50/60 rounded-2xl border border-amber-200 p-3 space-y-1 ring-1 ring-amber-300">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase text-amber-700 tracking-wider">Step 2</span>
-                        <span className="w-4 h-4 rounded-full bg-amber-200 text-amber-800 text-[10px] font-bold flex items-center justify-center animate-spin">⏳</span>
+                      {/* Header Title & Subtitle */}
+                      <div className="space-y-2.5 max-w-lg mx-auto">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-50/80 text-teal-800 text-xs font-semibold border border-teal-200/80">
+                          <ClockIcon className="w-3.5 h-3.5 text-teal-600" />
+                          <span>Evaluation Setup in Progress</span>
+                        </div>
+                        <h3 className="text-2xl font-bold text-slate-900 tracking-tight">
+                          Performance Worksheet Awaiting Setup
+                        </h3>
+                        <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+                          Your reporting manager is currently preparing and finalizing the performance deliverables and targets for your role. Your self-assessment worksheet will activate here automatically once assigned.
+                        </p>
                       </div>
-                      <div className="text-xs font-bold text-amber-950">Manager Review</div>
-                      <div className="text-[10px] text-amber-700 font-medium">Setting deliverables</div>
-                    </div>
 
-                    <div className="bg-slate-50/60 rounded-2xl border border-slate-200/60 p-3 space-y-1 opacity-70">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Step 3</span>
-                        <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold flex items-center justify-center">3</span>
+                      {/* Clean Details Card */}
+                      <div className="bg-slate-50/70 rounded-2xl border border-slate-200/80 p-5 text-left divide-y divide-slate-200/60 max-w-md mx-auto">
+                        {/* Employee Row */}
+                        <div className="pb-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-700 to-teal-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                              {empInitials}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-slate-900 block truncate">
+                                {empName}
+                              </span>
+                              <span className="text-[11px] text-slate-400 font-mono">
+                                #{myCanonicalCode || 'N/A'}
+                              </span>
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 font-semibold text-[11px] shrink-0">
+                            {teamTitle}
+                          </span>
+                        </div>
+
+                        {/* Cycle Row */}
+                        <div className="py-3 flex items-center justify-between gap-3 text-xs">
+                          <span className="text-slate-500 font-medium">Evaluation Cycle:</span>
+                          <span className="font-semibold text-slate-900 text-right truncate max-w-[220px]">
+                            {cycleTitle}
+                          </span>
+                        </div>
+
+                        {/* Status Row */}
+                        <div className="pt-3 flex items-center justify-between gap-3 text-xs">
+                          <span className="text-slate-500 font-medium">Current Status:</span>
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-900 font-bold text-[11px] border border-amber-200/80 shadow-2xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                            Pending Manager Assignment
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-xs font-bold text-slate-700">Self Assessment</div>
-                      <div className="text-[10px] text-slate-400">Upcoming</div>
+
+                      {/* Helpful Hint */}
+                      <div className="flex items-center justify-center gap-2 text-xs text-slate-400 max-w-md mx-auto">
+                        <InformationCircleIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>You will be notified as soon as your manager publishes your deliverables.</span>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Employee & Cycle Info Card */}
-                  <div className="bg-slate-50/80 rounded-2xl border border-slate-200/80 p-4 max-w-md mx-auto text-left space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500 font-medium">Employee Name:</span>
-                      <strong className="text-slate-800">{user?.full_name || `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim() || 'Employee'}</strong>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
-                      <span className="text-slate-500 font-medium">Employee Code:</span>
-                      <span className="font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 text-[11px]">#{myCanonicalCode || 'N/A'}</span>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
-                      <span className="text-slate-500 font-medium">Team / Department:</span>
-                      <span className="font-bold text-slate-700">{effectiveTeamName || 'General'}</span>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
-                      <span className="text-slate-500 font-medium">Evaluation Cycle:</span>
-                      <span className="font-bold text-teal-800">{activeCycle?.name || periodName}</span>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
-                      <span className="text-slate-500 font-medium">Current Status:</span>
-                      <span className="text-amber-800 font-bold text-[11px] bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full">⏳ In Processing / Pending Assignment</span>
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                    You will receive an in-app alert as soon as your reporting manager finalizes and assigns the team matrix.
-                  </p>
                 </div>
               );
             }
@@ -10115,24 +10284,44 @@ export const EvaluationTab: React.FC = () => {
                             </div>
                           );
                         }
+                        const targetMonthRecord = curRecords.find(r => r.monthIndex === activeYearlyFiscalMonth);
+                        const hasManagerReopenedNote = Boolean(targetMonthRecord?.managerRemarks && targetMonthRecord?.status === 'pending_employee');
+
                         return (
-                          <div className="p-3 bg-teal-50/80 border border-teal-200 text-teal-950 rounded-xl flex items-center justify-between gap-3 text-xs">
+                          <div className={`p-3 border rounded-xl flex items-center justify-between gap-3 text-xs ${
+                            hasManagerReopenedNote
+                              ? 'bg-amber-50/90 border-amber-300 text-amber-950'
+                              : 'bg-teal-50/80 border-teal-200 text-teal-950'
+                          }`}>
                             <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                                hasManagerReopenedNote
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-teal-100 text-teal-700'
+                              }`}>
                                 <CalendarDaysIcon className="w-4 h-4" />
                               </div>
                               <div>
-                                <span className="font-bold text-teal-950 block">
-                                  {lockInfo.currentMonthName} Milestone is Open
+                                <span className={`font-bold block ${hasManagerReopenedNote ? 'text-amber-950' : 'text-teal-950'}`}>
+                                  {lockInfo.currentMonthName} Milestone is Open {hasManagerReopenedNote ? '• Reopened for Revision' : ''}
                                 </span>
-                                <span className="text-teal-800 text-[11px]">
+                                <span className={`text-[11px] block ${hasManagerReopenedNote ? 'text-amber-800' : 'text-teal-800'}`}>
                                   Please enter your actual deliverables and self-scores below, then click "Submit {lockInfo.currentMonthName} Deliverables to Manager".
                                 </span>
+                                {hasManagerReopenedNote && (
+                                  <div className="mt-1 text-[11px] font-medium text-amber-900 bg-white/80 border border-amber-200/80 rounded px-2 py-0.5 w-fit">
+                                    <strong>Manager Note:</strong> {targetMonthRecord?.managerRemarks}
+                                  </div>
+                                )}
                               </div>
                             </div>
-                            <span className="px-2.5 py-1 rounded-md bg-teal-100 text-teal-900 font-bold text-[11px] shrink-0 inline-flex items-center gap-1">
-                              <SparklesIcon className="w-3 h-3 text-teal-700" />
-                              Open
+                            <span className={`px-2.5 py-1 rounded-md font-bold text-[11px] shrink-0 inline-flex items-center gap-1 ${
+                              hasManagerReopenedNote
+                                ? 'bg-amber-200 text-amber-950'
+                                : 'bg-teal-100 text-teal-900'
+                            }`}>
+                              <SparklesIcon className="w-3 h-3" />
+                              {hasManagerReopenedNote ? 'Revision' : 'Open'}
                             </span>
                           </div>
                         );
@@ -14773,11 +14962,24 @@ export const EvaluationTab: React.FC = () => {
                                 : 'Pending employee submission for this month.'}
                           </span>
                         </div>
-                        {curYearlyRec?.employeeRemarks && (
-                          <span className="text-[11px] italic bg-white/70 px-2.5 py-1 rounded-md border border-slate-200/50 max-w-sm truncate">
-                            Emp Note: {curYearlyRec.employeeRemarks}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {(curYearlyRec?.status === 'manager_approved' || curYearlyRec?.status === 'submitted_to_manager') && (
+                            <button
+                              type="button"
+                              onClick={() => handleManagerYearlyMonthReopen(activeMgrYearlyFiscalMonth)}
+                              className="px-2.5 py-1 text-[11px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs"
+                              title={`Send ${curMonthName} milestone back to employee for correction`}
+                            >
+                              <ArrowUturnLeftIcon className="w-3.5 h-3.5 text-amber-700 stroke-[2.2]" />
+                              <span>Reopen Month</span>
+                            </button>
+                          )}
+                          {curYearlyRec?.employeeRemarks && (
+                            <span className="text-[11px] italic bg-white/70 px-2.5 py-1 rounded-md border border-slate-200/50 max-w-sm truncate">
+                              Emp Note: {curYearlyRec.employeeRemarks}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -15146,14 +15348,27 @@ export const EvaluationTab: React.FC = () => {
                       </button>
 
                       {isYearly ? (
-                        <button
-                          type="button"
-                          onClick={() => handleManagerYearlyMonthApprove(activeMgrYearlyFiscalMonth)}
-                          className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
-                        >
-                          <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
-                          <span>{isAlreadyCalibrated ? `Update & Recalibrate ${curMonthName}` : `Approve & Save ${curMonthName} Milestone`}</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {(curYearlyRec?.status === 'manager_approved' || curYearlyRec?.status === 'submitted_to_manager') && (
+                            <button
+                              type="button"
+                              onClick={() => handleManagerYearlyMonthReopen(activeMgrYearlyFiscalMonth)}
+                              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                              title={`Reopen ${curMonthName} milestone and send back to employee for correction`}
+                            >
+                              <ArrowUturnLeftIcon className="w-4 h-4 text-amber-700 stroke-[2.2]" />
+                              <span>Reopen {curMonthName} for Employee</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleManagerYearlyMonthApprove(activeMgrYearlyFiscalMonth)}
+                            className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+                          >
+                            <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
+                            <span>{isAlreadyCalibrated ? `Update & Recalibrate ${curMonthName}` : `Approve & Save ${curMonthName} Milestone`}</span>
+                          </button>
+                        </div>
                       ) : (() => {
                         const otherPendingSubmittedList = (activeScopedResponsesForCards || []).filter(r =>
                           r.id !== selectedMgrResponseId &&

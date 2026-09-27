@@ -357,6 +357,12 @@ def get_evaluation_data():
         if db_unavailable:
             eval_records = []
 
+        json_all_cycles = list(store.get("cycles", []))
+        json_all_responses = [
+            r for r in store.get("responses", [])
+            if not r.get("is_archived")
+        ]
+
         # 1. Dynamically build and maintain cycles directly from PostgreSQL KpiEvaluation records
         team_eval_groups = {}
         for rec in eval_records:
@@ -365,7 +371,8 @@ def get_evaluation_data():
             f_date_str = rec.from_date.isoformat() if rec.from_date else ""
             t_date_str = rec.to_date.isoformat() if rec.to_date else ""
             freq_str = rec.frequency or "quarterly"
-            group_key = f"{t_key}_{f_name}_{freq_str}_{f_date_str}_{t_date_str}"
+            mgr_id_val = str(rec.reporting_manager_id or rec.manager_id or rec.reporting_manager or "").strip()
+            group_key = f"{t_key}_{f_name}_{freq_str}_{f_date_str}_{t_date_str}_{mgr_id_val}"
             
             # Extract period if encoded in description e.g. "Performance evaluation for Media (Daily (14 Sep 2026))"
             extracted_period = ""
@@ -1830,7 +1837,12 @@ def assign_kpi_metrics():
                 existing_cycle = new_cycle
 
             for emp in employees:
-                emp_id = str(emp.get("id") or emp.get("employee_id") or emp.get("code") or "")
+                # Strictly use canonical company employee_id (e.g. "936", "2195"), not user_id or employees table integer id
+                emp_id = str(emp.get("employee_id") or emp.get("code") or "").strip()
+                if not emp_id and emp.get("id"):
+                    # Fallback only if employee_id not provided
+                    db_lookup = Employee.query.filter(Employee.id == emp.get("id")).first()
+                    emp_id = str(db_lookup.employee_id) if db_lookup and db_lookup.employee_id else str(emp.get("id"))
                 if not emp_id:
                     continue
 
@@ -1938,7 +1950,11 @@ def assign_kpi_metrics():
 
         # For Monthly, Quarterly, and Yearly evaluations: store directly in PostgreSQL database (kpi_evaluations table)
         for emp in employees:
-            emp_id = str(emp.get("employee_id") or emp.get("id") or emp.get("code") or "")
+            # Strictly use canonical company employee_id (e.g. "936", "2195"), not user_id or employees table integer id
+            emp_id = str(emp.get("employee_id") or emp.get("code") or "").strip()
+            if not emp_id and emp.get("id"):
+                db_lookup = Employee.query.filter(Employee.id == emp.get("id")).first()
+                emp_id = str(db_lookup.employee_id) if db_lookup and db_lookup.employee_id else str(emp.get("id"))
             if not emp_id:
                 continue
 
