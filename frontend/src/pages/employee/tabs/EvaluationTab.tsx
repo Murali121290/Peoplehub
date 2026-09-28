@@ -5596,7 +5596,24 @@ export const EvaluationTab: React.FC = () => {
       };
     }
 
-    // Previous month has been approved by manager -> Next month unlocks and opens!
+    // Calendar Month Restriction (Option B):
+    // Even if previous month is approved, this month will ONLY open when the calendar month has started.
+    if (monthIndex > currentFiscalMonthIndex) {
+      return {
+        isLocked: true,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'locked' as const,
+        statusLabel: 'Locked',
+        lockReason: `${currentMonthName} milestone will unlock when ${currentMonthName} starts.`,
+        prevMonthName,
+        currentMonthName,
+        score: null
+      };
+    }
+
+    // Previous month has been approved by manager AND calendar month has started -> Next month unlocks and opens!
     return {
       isLocked: false,
       isApproved: false,
@@ -6124,6 +6141,21 @@ export const EvaluationTab: React.FC = () => {
     const s = String(r.status || '').toLowerCase().trim();
     const smStatus = String((r as any).service_manager_approve_status || '').toLowerCase().trim();
 
+    if (isYearlyResponse(r)) {
+      const curYearlyRecords = r.monthly_records || [];
+      const hasPendingSubmitted = curYearlyRecords.some((m: any) => m.status === 'submitted_to_manager');
+      if (hasPendingSubmitted) {
+        return 'with_manager';
+      }
+      const allApproved = curYearlyRecords.length === 12 && curYearlyRecords.every((m: any) => m.status === 'manager_approved');
+      if (allApproved || s === 'completed' || s === 'sm_final_approval') {
+        return 'completed';
+      }
+      if (curYearlyRecords.some((m: any) => m.status === 'manager_approved') || r.managerScore != null) {
+        return 'approved';
+      }
+    }
+
     if (s.includes('sent') || s.includes('back') || s.includes('return') || s.includes('reject')) {
       return 'sent_back';
     }
@@ -6164,7 +6196,10 @@ export const EvaluationTab: React.FC = () => {
 
     all.forEach(r => {
       const s = String(r.status || '').toLowerCase().trim();
-      const isCompleted = s === 'completed' || s === 'sm_final_approval' || r.managerScore != null || s === 'approved';
+      const isYearly = isYearlyResponse(r);
+      const curYearlyRecords = r.monthly_records || [];
+      const hasYearlyPending = isYearly && curYearlyRecords.some((m: any) => m.status === 'submitted_to_manager');
+      const isCompleted = !hasYearlyPending && (s === 'completed' || s === 'sm_final_approval' || (isYearly ? (curYearlyRecords.length === 12 && curYearlyRecords.every((m: any) => m.status === 'manager_approved')) : (r.managerScore != null || s === 'approved')));
 
       if (isCompleted) {
         completed++;
@@ -7633,14 +7668,18 @@ export const EvaluationTab: React.FC = () => {
           teamTotal += members.length;
           allMembers.push(...members);
           const sortedMembers = [...members].sort((a, b) => {
-            const isPendingA = Boolean(
-              (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted')) &&
-              a.response.managerScore == null
-            );
-            const isPendingB = Boolean(
-              (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted')) &&
-              b.response.managerScore == null
-            );
+            const isPendingA = isYearlyResponse(a.response)
+              ? (a.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+              : Boolean(
+                  (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted') || Boolean(a.response.employeeSubmittedAt) || Boolean((a.response as any).submitted_at)) &&
+                  a.response.managerScore == null
+                );
+            const isPendingB = isYearlyResponse(b.response)
+              ? (b.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+              : Boolean(
+                  (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted') || Boolean(b.response.employeeSubmittedAt) || Boolean((b.response as any).submitted_at)) &&
+                  b.response.managerScore == null
+                );
             if (isPendingA && !isPendingB) return -1;
             if (!isPendingA && isPendingB) return 1;
             return a.employeeName.localeCompare(b.employeeName);
@@ -7654,14 +7693,18 @@ export const EvaluationTab: React.FC = () => {
 
       if (teamTotal > 0 && allMembers.length > 0) {
         allMembers.sort((a, b) => {
-          const isPendingA = Boolean(
-            (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted')) &&
-            a.response.managerScore == null
-          );
-          const isPendingB = Boolean(
-            (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted')) &&
-            b.response.managerScore == null
-          );
+          const isPendingA = isYearlyResponse(a.response)
+            ? (a.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+            : Boolean(
+                (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted') || Boolean(a.response.employeeSubmittedAt) || Boolean((a.response as any).submitted_at)) &&
+                a.response.managerScore == null
+              );
+          const isPendingB = isYearlyResponse(b.response)
+            ? (b.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+            : Boolean(
+                (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted') || Boolean(b.response.employeeSubmittedAt) || Boolean((b.response as any).submitted_at)) &&
+                b.response.managerScore == null
+              );
           if (isPendingA && !isPendingB) return -1;
           if (!isPendingA && isPendingB) return 1;
           return a.employeeName.localeCompare(b.employeeName);
@@ -13811,10 +13854,19 @@ export const EvaluationTab: React.FC = () => {
 
                           {/* Members inside Team (Rendered directly when Team is Expanded) */}
                           {isTeamExpanded && teamGroup.members.map(member => {
-                            const isSubmittedPending = Boolean(
+                            const isYearly = isYearlyResponse(member.response);
+                            const hasYearlySubmittedMilestone = isYearly && (member.response.monthly_records || []).some(
+                              (m: any) => m.status === 'submitted_to_manager'
+                            );
+                            const hasYearlyApprovedMilestone = isYearly && (member.response.monthly_records || []).some(
+                              (m: any) => m.status === 'manager_approved'
+                            );
+                            const isStandardSubmitted = !isYearly && Boolean(
                               (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || String(member.response.status || '').toLowerCase().includes('submitted') || Boolean(member.response.employeeSubmittedAt) || Boolean((member.response as any).submitted_at) || Boolean((member.response as any).submittedAt) || Boolean((member.response as any).employee_submitted_at)) &&
                               member.response.managerScore == null
                             );
+
+                            const isSubmittedPending = hasYearlySubmittedMilestone || isStandardSubmitted;
 
                             return (
                               <tr
@@ -13839,7 +13891,7 @@ export const EvaluationTab: React.FC = () => {
                                       </span>
                                       {isSubmittedPending && (
                                         <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary-100 text-primary-900 border border-primary-300 shrink-0 inline-flex items-center gap-1 shadow-2xs animate-pulse">
-                                          <SparklesIcon className="w-3 h-3 text-primary-700" />
+                                          <SparklesIcon className="w-3.5 h-3.5 text-primary-700" />
                                           <span>Ready for Review</span>
                                         </span>
                                       )}
@@ -13928,6 +13980,15 @@ export const EvaluationTab: React.FC = () => {
                                         <PencilSquareIcon className="w-3.5 h-3.5" />
                                         <span>Update Score</span>
                                       </button>
+                                    ) : isYearly && hasYearlyApprovedMilestone ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectMgrResponse(member.response)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer shadow-2xs bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300"
+                                      >
+                                        <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
+                                        <span>Open Scorecard</span>
+                                      </button>
                                     ) : (
                                       <span
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs bg-slate-100 text-slate-500 border border-slate-200 select-none cursor-default"
@@ -13937,7 +13998,7 @@ export const EvaluationTab: React.FC = () => {
                                         <span>Pending</span>
                                       </span>
                                     )}
-                                    {!isSubmittedPending && !member.isCalibrated && member.response.managerScore == null && !member.response.employeeSubmittedAt && (
+                                    {!isSubmittedPending && !member.isCalibrated && !hasYearlyApprovedMilestone && member.response.managerScore == null && !member.response.employeeSubmittedAt && (
                                       <button
                                         type="button"
                                         onClick={() => handleDeleteMgrResponseRow(member.response)}
