@@ -1443,6 +1443,37 @@ export const EvaluationTab: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Auto-switch to "My Evaluation" tab when:
+  // - User is a manager/service manager (default tab is 'manager')
+  // - They have NO direct-report assigned cycles (nothing to review)
+  // - BUT they DO have a pending personal evaluation assigned to them (e.g. Vinoth's "Assigned to Employee" record)
+  // This prevents the "E2R Under Process" overlay showing for managers who are also evaluatees.
+  useEffect(() => {
+    if (!isPageLoading && (isManager || isServiceManager) && !isHrOrAdmin && activeRole === 'manager') {
+      const hasPendingPersonalEval = responses.some(r => {
+        if (!isResponseForUser(r)) return false;
+        const st = String((r as any).status || '');
+        return (
+          st === 'Assigned to Employee' ||
+          st === 'employee_in_progress' ||
+          st === 'Draft' ||
+          st === 'manager_review' ||
+          st === 'approved' ||
+          st === 'sm_final_approval'
+        );
+      });
+      const hasDirectCycles = cycles.some(c => {
+        const cleanStr = (s: any) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const myCode = cleanStr(myCanonicalCode);
+        const cMgrIds = (c.managerId || '').split(',').map((s: string) => cleanStr(s)).filter(Boolean);
+        return myCode && cMgrIds.includes(myCode);
+      });
+      if (hasPendingPersonalEval && !hasDirectCycles) {
+        setActiveRole('employee');
+      }
+    }
+  }, [isPageLoading, responses, cycles]);
+
   const isProjectManagementTeam = (tName: string) => {
     const n = (tName || '').toLowerCase().trim();
     return n.includes('project manage') || n.includes('project management') || n === 'pm' || n.includes('pm team') || n.includes('project manager');
@@ -4273,11 +4304,18 @@ export const EvaluationTab: React.FC = () => {
       activeEmpResponse.status === 'manager_review' ||
       activeEmpResponse.status === 'approved' ||
       activeEmpResponse.status === 'sm_final_approval' ||
+      // "Assigned to Employee" and "Draft" are backend-only statuses not in the EvaluationStage union;
+      // cast to string to avoid TS2367 overlap errors while still matching the real API values.
+      (activeEmpResponse.status as string) === 'Assigned to Employee' ||
+      activeEmpResponse.status === 'employee_in_progress' ||
+      (activeEmpResponse.status as string) === 'Draft' ||
       Boolean(activeEmpResponse.employeeSubmittedAt)
     )) ||
     cycles.some(c => {
       if (!c.employeeIds || c.employeeIds.length === 0) return false;
-      if (!c.categories || c.categories.length === 0) return false;
+      // Note: DB-derived cycles stored in JSON may not have categories in the store
+      // (categories live only in Postgres). Don't require categories here — just
+      // check that the employee is in the cycle's employeeIds list.
       const cleanMyCode = String(myCanonicalCode || '').trim().toLowerCase().replace(/^emp-?/i, '');
       return c.employeeIds.some(id => {
         const cleanId = String(id || '').trim().toLowerCase().replace(/^emp-?/i, '');
