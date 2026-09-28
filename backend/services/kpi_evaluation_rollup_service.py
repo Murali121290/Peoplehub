@@ -110,12 +110,7 @@ def calculate_evaluation_working_days(employee_id: str, from_date: date, to_date
     try:
         emp_id_str = str(employee_id).strip()
         # Fetch employee for joining date
-        emp = Employee.query.filter(
-            or_(
-                Employee.employee_id == emp_id_str,
-                Employee.id == (int(emp_id_str) if emp_id_str.isdigit() else -1)
-            )
-        ).first()
+        emp = Employee.query.filter(Employee.employee_id == emp_id_str).first()
         joining_date = getattr(emp, "joining_date", None) if emp else None
 
         # Fetch holidays
@@ -132,8 +127,8 @@ def calculate_evaluation_working_days(employee_id: str, from_date: date, to_date
 
         # Fetch approved leaves covering the period
         valid_emp_ids = [emp_id_str]
-        if emp:
-            valid_emp_ids = list(set([str(emp.id), emp.employee_id]))
+        if emp and emp.employee_id:
+            valid_emp_ids = list(set([str(emp.employee_id), emp_id_str]))
 
         emp_leaves = LeaveRequest.query.filter(
             LeaveRequest.employee_id.in_(valid_emp_ids),

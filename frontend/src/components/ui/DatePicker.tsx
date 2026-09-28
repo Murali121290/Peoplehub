@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "react-hot-toast";
 
 interface DatePickerProps {
@@ -65,22 +66,50 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const [popupAlign, setPopupAlign] = useState<"left" | "right">(align === "right" ? "right" : "left");
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+
+  const updatePosition = () => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const popoverWidth = 290;
+    const popoverHeight = 425; // estimated calendar max height
+
+    let left = rect.left;
+    if (align === "right" || (align === "auto" && left + popoverWidth > window.innerWidth)) {
+      left = Math.max(12, rect.right - popoverWidth);
+    }
+    if (left + popoverWidth > window.innerWidth - 12) {
+      left = Math.max(12, window.innerWidth - popoverWidth - 12);
+    }
+    if (left < 12) {
+      left = 12;
+    }
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    let top = rect.bottom + 6;
+
+    if (spaceBelow < popoverHeight && spaceAbove > spaceBelow) {
+      // Place above input if not enough space below
+      top = Math.max(12, rect.top - popoverHeight - 6);
+    } else if (top + popoverHeight > window.innerHeight - 12) {
+      top = Math.max(12, window.innerHeight - popoverHeight - 12);
+    }
+
+    setPopoverPos({ top, left });
+  };
 
   useEffect(() => {
-    if (isOpen && containerRef.current) {
-      if (align === "right") {
-        setPopupAlign("right");
-      } else if (align === "left") {
-        setPopupAlign("left");
-      } else {
-        const rect = containerRef.current.getBoundingClientRect();
-        if (rect.left + 300 > window.innerWidth && rect.right >= 300) {
-          setPopupAlign("right");
-        } else {
-          setPopupAlign("left");
-        }
-      }
+    if (isOpen) {
+      updatePosition();
+      const handleReposition = () => updatePosition();
+      window.addEventListener("scroll", handleReposition, true);
+      window.addEventListener("resize", handleReposition);
+      return () => {
+        window.removeEventListener("scroll", handleReposition, true);
+        window.removeEventListener("resize", handleReposition);
+      };
     }
   }, [isOpen, align]);
 
@@ -123,7 +152,11 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   // Click outside to close dropdown popover
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        popoverRef.current && !popoverRef.current.contains(target)
+      ) {
         setIsOpen(false);
       }
     };
@@ -414,9 +447,13 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         </div>
       </div>
 
-      {/* Inline Dropdown Popover (Under Date Field) */}
-      {isOpen && (
-        <div className={`absolute top-full ${popupAlign === 'right' ? 'right-0' : 'left-0'} mt-1.5 z-[9999] bg-white rounded-2xl shadow-xl w-[290px] max-w-[calc(100vw-24px)] overflow-hidden border border-neutral-200 flex flex-col`}>
+      {/* Portal Dropdown Popover (Floating above all containers with safe viewport bounds) */}
+      {isOpen && typeof document !== "undefined" && createPortal(
+        <div
+          ref={popoverRef}
+          style={{ top: `${popoverPos.top}px`, left: `${popoverPos.left}px` }}
+          className="fixed z-[999999] bg-white rounded-2xl shadow-2xl w-[290px] max-w-[calc(100vw-24px)] overflow-hidden border border-neutral-200 flex flex-col animate-in fade-in zoom-in-95 duration-100"
+        >
           {/* Header: SELECT DATE */}
           <div className="bg-primary-500 p-4 flex items-center justify-between text-white">
             <div>
@@ -721,7 +758,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
               </button>
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
