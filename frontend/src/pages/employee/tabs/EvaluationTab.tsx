@@ -4953,8 +4953,10 @@ export const EvaluationTab: React.FC = () => {
   const handleDeleteMgrResponseRow = (resp: EvaluationResponse) => {
     const statusStr = String(resp.status || '');
     const isCalibrated = resp.managerScore != null && statusStr !== 'manager_review' && statusStr !== 'Submitted to Manager';
-    if (isCalibrated || resp.managerScore != null || statusStr === 'Calibrated & Approved' || statusStr === 'Published' || statusStr === 'Completed' || statusStr === 'Approved') {
-      showToast('Published and approved evaluation records cannot be deleted.');
+    const isEmpSubmitted = Boolean(resp.employeeSubmittedAt) || Boolean((resp as any).submitted_at) || statusStr === 'manager_review' || statusStr === 'Submitted to Manager' || statusStr.toLowerCase().includes('submitted');
+    
+    if (isEmpSubmitted || isCalibrated || resp.managerScore != null || statusStr === 'Calibrated & Approved' || statusStr === 'Published' || statusStr === 'Completed' || statusStr === 'Approved') {
+      showToast('Submitted, published, and approved evaluation records cannot be deleted.');
       return;
     }
     const { employeeName, employeeCode } = getEmployeeDisplayInfo(resp);
@@ -4964,9 +4966,10 @@ export const EvaluationTab: React.FC = () => {
         try {
           const respId = resp.id;
           const cleanEmpCode = String(employeeCode || resp.employeeCode || resp.employeeId || '').trim().toLowerCase();
+          const resolvedDbId = (resp as any).db_id || (resp as any).dbId || (typeof respId === 'string' && respId.startsWith('resp_') && !isNaN(Number(respId.replace('resp_', ''))) ? Number(respId.replace('resp_', '')) : undefined);
 
           // 1. Remove from local state & cache immediately
-          const updatedResponses = responses.filter(r => r.id !== respId);
+          const updatedResponses = responses.filter(r => r.id !== respId && (!resolvedDbId || (r as any).db_id !== resolvedDbId));
           setResponses(updatedResponses);
           evaluationService.saveResponsesLocal(updatedResponses);
 
@@ -4991,7 +4994,7 @@ export const EvaluationTab: React.FC = () => {
 
           // 2. Call backend delete with specific response ID & full metadata
           const token = localStorage.getItem('token') || '';
-          const deleteUrl = `${API_URL}/api/performance/evaluation/responses/${encodeURIComponent(respId)}`;
+          const deleteUrl = `${API_URL}/api/performance/evaluation/responses/${encodeURIComponent(respId)}?db_id=${resolvedDbId || ''}&employeeCode=${encodeURIComponent(cleanEmpCode)}&frequency=${encodeURIComponent(resp.frequency || '')}`;
           const res = await fetch(deleteUrl, {
             method: 'DELETE',
             headers: {
@@ -5000,11 +5003,12 @@ export const EvaluationTab: React.FC = () => {
             },
             body: JSON.stringify({
               respId,
-              db_id: (resp as any).db_id,
+              db_id: resolvedDbId,
               cycleId: resp.cycleId,
               employeeCode: employeeCode || resp.employeeCode || resp.employeeId,
               employeeId: resp.employeeId,
               form: (resp as any).form || (resp as any).performance_metrics,
+              periodName: resp.periodName,
               teamName: resp.teamName || resp.department,
               teamId: resp.teamId,
               startDate: resp.startDate || resp.fromDate || resp.from_date || '',
@@ -13172,57 +13176,7 @@ export const EvaluationTab: React.FC = () => {
               )}
             </div>
 
-            {/* Proactive Manager Reminder Banner during Last 8 Days of Month */}
-            {(() => {
-              const today = new Date();
-              const todayDate = today.getDate();
-              const currentMonth = today.getMonth();
-              const currentYear = today.getFullYear();
-              const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-              const isLast8Days = todayDate >= (daysInMonth - 7);
-              const currentMonthName = MONTH_NAMES[currentMonth];
-              const currentPeriodKey = `${currentMonthName} ${currentYear}`.toLowerCase();
 
-              const unassignedDirects = managerDirectReports.filter((m: any) => 
-                isEmployeeActive(m) && 
-                !isEmpAlreadyAssignedForPeriod(m) && 
-                !getEmpPendingEvaluation(m)
-              );
-
-              if (isLast8Days && unassignedDirects.length > 0 && canCreateMetrics) {
-                const daysLeft = daysInMonth - todayDate;
-                return (
-                  <div className="mx-4 my-3 p-3.5 bg-gradient-to-r from-teal-50 via-teal-100/40 to-emerald-50 border border-teal-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                        <SparklesIcon className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-xs font-bold text-teal-950">
-                            Action Required: {currentMonthName} {currentYear} Team Deliverables
-                          </h4>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-200/80 text-teal-900 uppercase">
-                            {daysLeft === 0 ? 'Month End Today' : `${daysLeft} Day${daysLeft > 1 ? 's' : ''} Left`} ({unassignedDirects.length} unassigned)
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-teal-800 font-medium">
-                          You have {unassignedDirects.length} direct report{unassignedDirects.length > 1 ? 's' : ''} without assigned performance metrics. Please assign deliverables before the month ends.
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenMgrCreateModal()}
-                      className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer shrink-0"
-                    >
-                      Assign Metrics Now
-                    </button>
-                  </div>
-                );
-              }
-              return null;
-            })()}
 
             {/* 2. Frequency Tabs & Date in Period Bar */}
             <div className="px-4 py-3 bg-slate-50/50 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 flex-wrap">
@@ -13934,22 +13888,20 @@ export const EvaluationTab: React.FC = () => {
                                         <span>Update Score</span>
                                       </button>
                                     ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSelectMgrResponse(member.response)}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer shadow-2xs bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200"
-                                        title="Waiting for employee to submit evaluation. Click to view metrics."
+                                      <span
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs bg-slate-100 text-slate-500 border border-slate-200 select-none cursor-default"
+                                        title="Waiting for employee to submit self-evaluation."
                                       >
                                         <ClockIcon className="w-3.5 h-3.5 text-slate-400" />
                                         <span>Pending</span>
-                                      </button>
+                                      </span>
                                     )}
-                                    {!member.isCalibrated && member.response.managerScore == null && (
+                                    {!isSubmittedPending && !member.isCalibrated && member.response.managerScore == null && !member.response.employeeSubmittedAt && (
                                       <button
                                         type="button"
                                         onClick={() => handleDeleteMgrResponseRow(member.response)}
                                         className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                        title="Delete evaluation record"
+                                        title="Delete unstarted evaluation record"
                                       >
                                         <TrashIcon className="w-3.5 h-3.5" />
                                       </button>

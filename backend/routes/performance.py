@@ -778,13 +778,16 @@ def delete_evaluation_response(resp_id_or_emp_id):
     try:
         req_data = request.get_json(silent=True) or {}
         cycle_id = str(request.args.get("cycleId") or req_data.get("cycleId") or "").strip()
-        emp_code = str(request.args.get("employeeCode") or req_data.get("employeeCode") or req_data.get("employeeId") or "").strip()
+        emp_code = str(request.args.get("employeeCode") or request.args.get("employee_code") or req_data.get("employeeCode") or req_data.get("employeeId") or "").strip()
         resp_id_str = str(resp_id_or_emp_id or "").strip()
-        db_id_val = req_data.get("db_id") or req_data.get("dbId")
-        form_name = str(req_data.get("form") or "").strip()
+        db_id_val = request.args.get("db_id") or request.args.get("dbId") or req_data.get("db_id") or req_data.get("dbId")
+        form_name = str(req_data.get("form") or req_data.get("periodName") or "").strip()
+        frequency = str(request.args.get("frequency") or req_data.get("frequency") or "").strip()
         team_name = str(req_data.get("teamName") or req_data.get("teamId") or "").strip()
 
         # 1. Clean up from JSON store
+        target_db_id = db_id_val
+        target_emp_code = emp_code
         try:
             store = read_eval_store()
             responses = store.get("responses", [])
@@ -795,33 +798,48 @@ def delete_evaluation_response(resp_id_or_emp_id):
                 if str(r.get("id")) == resp_id_str:
                     target_resp = r
                     break
-                if db_id_val and str(r.get("db_id")) == str(db_id_val):
+                if db_id_val and (str(r.get("db_id")) == str(db_id_val) or str(r.get("id")) == f"resp_{db_id_val}"):
                     target_resp = r
                     break
-                if cycle_id and emp_code and str(r.get("cycleId")) == cycle_id and str(r.get("employeeCode") or r.get("employeeId")) == emp_code:
-                    target_resp = r
-                    break
-                if emp_code and (str(r.get("employeeCode")) == emp_code or str(r.get("employeeId")) == emp_code) and (not form_name or r.get("form") == form_name):
-                    target_resp = r
-                    break
+                if emp_code:
+                    r_emp = str(r.get("employeeCode") or r.get("employeeId") or "").strip().lower()
+                    clean_target = emp_code.lower().replace("emp-", "").replace("emp_", "")
+                    if r_emp == clean_target or r_emp == emp_code.lower():
+                        if not frequency or str(r.get("frequency") or "").lower() == frequency.lower():
+                            target_resp = r
+                            break
 
-            # Prevent deleting calibrated/published records
-            if target_resp and (target_resp.get("managerScore") is not None or target_resp.get("status") in ["Calibrated & Approved", "Published", "Approved", "Completed"]):
-                return jsonify({"error": "Published and calibrated evaluation records cannot be deleted."}), 400
+            # Prevent deleting calibrated/published/submitted records
+            if target_resp:
+                s_val = str(target_resp.get("status") or "").lower()
+                is_sub = target_resp.get("employeeSubmittedAt") or "submitted" in s_val or "manager_review" in s_val
+                if target_resp.get("managerScore") is not None or is_sub or s_val in ["calibrated & approved", "published", "approved", "completed"]:
+                    return jsonify({"error": "Submitted, published, and calibrated evaluation records cannot be deleted."}), 400
 
             target_id = str(target_resp.get("id")) if target_resp else resp_id_str
             target_emp_code = str(target_resp.get("employeeCode") or target_resp.get("employeeId") or emp_code or "")
+            clean_target_emp = target_emp_code.lower().replace("emp-", "").replace("emp_", "")
             target_cycle_id = str(target_resp.get("cycleId") or cycle_id or "")
             target_form = target_resp.get("form") if target_resp else form_name
             target_start = target_resp.get("startDate") if target_resp else ""
             target_db_id = target_resp.get("db_id") if target_resp else db_id_val
 
-            remaining_resps = [
-                r for r in responses 
-                if str(r.get("id")) != target_id and 
-                   str(r.get("id")) != resp_id_str and
-                   (not target_db_id or str(r.get("db_id")) != str(target_db_id))
-            ]
+            remaining_resps = []
+            for r in responses:
+                r_id = str(r.get("id") or "")
+                r_db_id = str(r.get("db_id") or "")
+                r_emp = str(r.get("employeeCode") or r.get("employeeId") or "").lower().replace("emp-", "").replace("emp_", "")
+                r_freq = str(r.get("frequency") or "").lower()
+                
+                # Match target for removal
+                if r_id == target_id or r_id == resp_id_str:
+                    continue
+                if target_db_id and (r_db_id == str(target_db_id) or r_id == f"resp_{target_db_id}"):
+                    continue
+                if clean_target_emp and r_emp == clean_target_emp and frequency and r_freq == frequency.lower() and (not target_form or r.get("form") == target_form or r.get("periodName") == target_form):
+                    continue
+                remaining_resps.append(r)
+
             store["responses"] = remaining_resps
 
             # Also clean up employee from cycle's employeeIds or remove empty cycle
@@ -855,60 +873,56 @@ def delete_evaluation_response(resp_id_or_emp_id):
 
         # 2. Clean up from PostgreSQL database (kpi_evaluations)
         try:
-            clean_resp_id = resp_id_str.replace("resp_", "").replace("eval_", "") if (resp_id_str.startswith("resp_") or resp_id_str.startswith("eval_")) else (resp_id_str if resp_id_str.isdigit() else "")
+            import re
             db_recs_to_delete = []
 
-            # Strategy A: Try by primary key if clean_resp_id is numeric
-            if clean_resp_id and clean_resp_id.isdigit():
-                try:
-                    rec_by_pk = db.session.get(KpiEvaluation, int(clean_resp_id))
-                    if rec_by_pk and rec_by_pk not in db_recs_to_delete:
-                        db_recs_to_delete.append(rec_by_pk)
-                except Exception:
-                    pass
-
-            # Strategy B: Try by target_resp db_id
+            # Strategy A: By db_id / primary key
+            candidate_ids = []
+            if db_id_val and str(db_id_val).isdigit():
+                candidate_ids.append(int(db_id_val))
             if target_db_id and str(target_db_id).isdigit():
-                try:
-                    rec_by_db_id = db.session.get(KpiEvaluation, int(target_db_id))
-                    if rec_by_db_id and rec_by_db_id not in db_recs_to_delete:
-                        db_recs_to_delete.append(rec_by_db_id)
-                except Exception:
-                    pass
+                candidate_ids.append(int(target_db_id))
+            
+            clean_digits = re.findall(r'\d+', resp_id_str)
+            for d_str in clean_digits:
+                if d_str.isdigit():
+                    candidate_ids.append(int(d_str))
 
-            # Strategy C: Try by employeeCode + form / team / cycle
-            target_emp_code_val = emp_code or (target_resp.get("employeeCode") if target_resp else "") or (target_resp.get("employeeId") if target_resp else "") or (resp_id_str if resp_id_str.isdigit() else "")
-            if target_emp_code_val:
-                query = KpiEvaluation.query.filter(
+            for pk in set(candidate_ids):
+                rec_by_pk = db.session.get(KpiEvaluation, pk)
+                if rec_by_pk and rec_by_pk not in db_recs_to_delete:
+                    db_recs_to_delete.append(rec_by_pk)
+
+            # Strategy B: If no record found by PK or as fallback, search by employee_id + frequency/period
+            target_emp_val = emp_code or target_emp_code or resp_id_str
+            clean_code = target_emp_val.lower().replace("emp-", "").replace("emp_", "").strip() if target_emp_val else ""
+
+            if not db_recs_to_delete and clean_code:
+                # Query candidate rows for this employee
+                emp_query = KpiEvaluation.query.filter(
                     or_(
-                        KpiEvaluation.employee_id == str(target_emp_code_val),
-                        KpiEvaluation.employee_name == str(target_emp_code_val)
+                        KpiEvaluation.employee_id == clean_code,
+                        KpiEvaluation.employee_id == f"EMP-{clean_code}",
+                        KpiEvaluation.employee_id == f"emp-{clean_code}",
+                        KpiEvaluation.employee_id == target_emp_val,
+                        KpiEvaluation.employee_id.ilike(f"%{clean_code}%")
                     )
                 )
-                if target_form:
-                    query = query.filter(
-                        or_(
-                            KpiEvaluation.form == target_form,
-                            KpiEvaluation.performance_metrics == target_form,
-                            KpiEvaluation.description.ilike(f"%{target_form}%")
-                        )
-                    )
-                if team_name:
-                    query = query.filter(
-                        or_(
-                            KpiEvaluation.team_name.ilike(team_name),
-                            KpiEvaluation.team_id == team_name
-                        )
-                    )
-                recs_by_emp = query.all()
-                for r_item in recs_by_emp:
+                if frequency:
+                    emp_query = emp_query.filter(KpiEvaluation.frequency == frequency.lower())
+
+                emp_recs = emp_query.all()
+                for r_item in emp_recs:
                     if r_item not in db_recs_to_delete:
                         db_recs_to_delete.append(r_item)
 
             for rec in db_recs_to_delete:
-                if rec.manager_score is not None or rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
-                    return jsonify({"error": "Published and calibrated evaluation records cannot be deleted."}), 400
+                s_rec = str(rec.status or "").lower()
+                is_rec_sub = bool(rec.submitted_at) or "submitted" in s_rec or "manager_review" in s_rec
+                if rec.manager_score is not None or is_rec_sub or rec.status in ["Calibrated & Approved", "Published", "Approved", "Completed"]:
+                    return jsonify({"error": "Submitted, published, and calibrated evaluation records cannot be deleted."}), 400
                 db.session.delete(rec)
+
             db.session.commit()
         except Exception as db_err:
             db.session.rollback()

@@ -1110,7 +1110,37 @@ if (isHalfDayLeave(leave.total_days)) return false;
       // 1. Manager Phase: Check unassigned subordinates in last 8 days of current month
       const assignableDirects = dbEmps.filter(e => isAssignableSubordinate(e));
 
-      if (isLast8DaysOfCurrentMonth && assignableDirects.length > 0) {
+      // Strictly verify if Admin has configured and assigned an evaluation cycle / matrix for this manager
+      let hasAssignedCycleFromAdmin = false;
+      const currentMgrEmpCode = myIds[0] || '';
+      
+      if (assignableDirects.length > 0) {
+        try {
+          if (currentMgrEmpCode) {
+            const tplRes = await evaluationService.getManagerTemplates(currentMgrEmpCode);
+            if (tplRes?.templates && tplRes.templates.some((t: any) => t.categories && t.categories.length > 0)) {
+              hasAssignedCycleFromAdmin = true;
+            }
+          }
+        } catch (e) {}
+
+        if (!hasAssignedCycleFromAdmin) {
+          const isDirectManagerOfCycle = (c: any) => {
+            if (!c) return false;
+            const cMgrIds = (c.managerId || '').split(',').map((s: string) => clean(s)).filter(Boolean);
+            if (myIds.some(id => cMgrIds.includes(id))) return true;
+
+            const cMgrNames = (c.managerName || '').split(',').map((s: string) => String(s).toLowerCase().trim()).filter(Boolean);
+            if (myNames.some(name => cMgrNames.some((cn: string) => cn === name || cn.includes(name) || name.includes(cn)))) {
+              return true;
+            }
+            return false;
+          };
+          hasAssignedCycleFromAdmin = (cycles || []).some(isDirectManagerOfCycle);
+        }
+      }
+
+      if (hasAssignedCycleFromAdmin && isLast8DaysOfCurrentMonth && assignableDirects.length > 0) {
         const currentMonthName = MONTH_NAMES[currentMonth];
 
         const isMatchEmp = (empId: string, r: any) => {
