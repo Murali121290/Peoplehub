@@ -219,7 +219,7 @@ export const calculateKPIScore = (
   const maxScore = Number(kpi.targetScore) || 0; // e.g. 20 or 10
   const parsed = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
   const target = parsed.threshold;
-  const isLowerBetter = kpi.scoringDirection === 'lower_is_better' || parsed.isLowerBetter;
+  const isLowerBetter = kpi.scoringDirection === 'lower_is_better' || parsed.isLowerBetter || isNegativeKpi(kpi);
 
   // 1. Strictly Less Than: "< X" (e.g. "<2 delays")
   if (parsed.operator === '<') {
