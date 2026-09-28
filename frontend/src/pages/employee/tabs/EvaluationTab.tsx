@@ -11508,7 +11508,7 @@ export const EvaluationTab: React.FC = () => {
                           <th className="px-3 py-3 text-center">Self Score</th>
                           <th className="px-3 py-3 text-center">Manager Score</th>
                           <th className="px-3 py-3 text-center">Final Grade</th>
-                          <th className="px-3 py-3 text-center">Consensus</th>
+                          <th className="px-3 py-3 text-center">Override</th>
                           <th className="px-4 py-3 text-right">Actions</th>
                         </tr>
                       </thead>
@@ -11627,7 +11627,7 @@ export const EvaluationTab: React.FC = () => {
                                     </span>
                                   </td>
 
-                                  {/* 6. Consensus */}
+                                  {/* 6. Override */}
                                   <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
                                     {itemMgrScore !== null ? (
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200">
