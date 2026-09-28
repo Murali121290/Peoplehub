@@ -11938,20 +11938,12 @@ export const EvaluationTab: React.FC = () => {
                     </div>
                   </button>
 
-                  {/* Step 2 Tab */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (mgrAssignEmpIds.length === 0) {
-                        showAlert('Please select at least one team member in Step 1 before proceeding to Deliverables & Targets.', 'Member Selection Required');
-                        return;
-                      }
-                      setMgrWizardStep(2);
-                    }}
-                    className={`flex items-center gap-2.5 p-2 rounded-xl transition cursor-pointer text-left ${
+                  {/* Step 2 Tab (Non-interactive header card, accessible only via Next button) */}
+                  <div
+                    className={`flex items-center gap-2.5 p-2 rounded-xl transition text-left select-none ${
                       mgrWizardStep === 2
                         ? 'bg-teal-50/80 border border-teal-200/90'
-                        : 'hover:bg-slate-50 border border-transparent'
+                        : 'border border-transparent opacity-80 cursor-default'
                     }`}
                   >
                     <span className={`w-6 h-6 rounded-lg text-xs font-semibold flex items-center justify-center shrink-0 transition ${
@@ -11978,7 +11970,7 @@ export const EvaluationTab: React.FC = () => {
                         KPIs & criteria
                       </div>
                     </div>
-                  </button>
+                  </div>
                 </div>
               </div>
 
