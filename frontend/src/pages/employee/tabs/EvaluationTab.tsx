@@ -9112,11 +9112,7 @@ export const EvaluationTab: React.FC = () => {
       {(isAssigning || isActionLoading || isSubmittingEmp) && <BookLoader />}
 
       {/* Top Header & Navigation Bar */}
-      <div className={`bg-white rounded-2xl px-4 py-2 border border-slate-200/80 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all duration-200 ${
-        activeRole === 'manager' && !hasAssignedCycleFromAdmin && reportFilteredResponses.length === 0
-          ? 'filter blur-[3.5px] opacity-40 pointer-events-none select-none'
-          : ''
-      }`}>
+      <div className="bg-white rounded-2xl px-4 py-2 border border-slate-200/80 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all duration-200">
         {/* Left: Title + Role navigation + Subtabs */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2.5">
