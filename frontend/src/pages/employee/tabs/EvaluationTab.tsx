@@ -816,28 +816,33 @@ export const EvaluationTab: React.FC = () => {
   const [isLoadingTemplates, setIsLoadingTemplates] = useState<boolean>(false);
   const [showTargetGuide, setShowTargetGuide] = useState<boolean>(false);
 
+  const getLocalTodayDateString = (d = new Date()) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const getLocalCurrentWeekRange = () => {
+    const d = new Date();
+    const day = d.getDay(); // 0 = Sunday, 1 = Monday
+    const diffMonday = d.getDate() - (day === 0 ? 6 : day - 1);
+    const monday = new Date(d.getFullYear(), d.getMonth(), diffMonday);
+    const sunday = new Date(d.getFullYear(), d.getMonth(), diffMonday + 6);
+    return {
+      from: getLocalTodayDateString(monday),
+      to: getLocalTodayDateString(sunday)
+    };
+  };
+
   // Dynamic Frequency & Period Configuration State
   const [mgrPeriodType, setMgrPeriodType] = useState<'quarterly' | 'monthly' | 'weekly' | 'daily' | 'yearly'>('quarterly');
   const [mgrPeriodQuarter, setMgrPeriodQuarter] = useState<number>(currentQuarter); // 1, 2, 3, 4 (Stage 1..4)
   const [mgrPeriodYear, setMgrPeriodYear] = useState<number>(currentYear);
   const [mgrPeriodMonth, setMgrPeriodMonth] = useState<number>(currentMonth);
-  const [mgrPeriodFromDate, setMgrPeriodFromDate] = useState<string>(() => {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(d.setDate(diff));
-    return monday.toISOString().split('T')[0];
-  });
-  const [mgrPeriodToDate, setMgrPeriodToDate] = useState<string>(() => {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? 0 : 7);
-    const sunday = new Date(d.setDate(diff));
-    return sunday.toISOString().split('T')[0];
-  });
-  const [mgrPeriodDueDate, setMgrPeriodDueDate] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
-  });
+  const [mgrPeriodFromDate, setMgrPeriodFromDate] = useState<string>(() => getLocalCurrentWeekRange().from);
+  const [mgrPeriodToDate, setMgrPeriodToDate] = useState<string>(() => getLocalCurrentWeekRange().to);
+  const [mgrPeriodDueDate, setMgrPeriodDueDate] = useState<string>(() => getLocalTodayDateString());
 
   const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -960,17 +965,16 @@ export const EvaluationTab: React.FC = () => {
       const toFmt = formatDisplayDate(pTo);
       periodStr = `Weekly (${fromFmt} - ${toFmt})`;
       formTitle = `Weekly Performance Metrics (${fromFmt} - ${toFmt}) - ${formTeamLabel}`;
-      const rawCandidateDue = pTo || new Date().toISOString().split('T')[0];
+      const rawCandidateDue = pTo || getLocalTodayDateString();
       autoDueDate = getAdjustedWorkingDueDate(rawCandidateDue, leavesList, holidaysList);
       setMgrPeriodDueDate(autoDueDate);
     } else if (pType === 'daily') {
-      const todayIso = new Date().toISOString().split('T')[0];
-      const actualDue = pDue || todayIso;
-      autoDueDate = getAdjustedWorkingDueDate(actualDue, leavesList, holidaysList);
-      const dueFmt = formatDisplayDate(autoDueDate);
+      const todayStr = getLocalTodayDateString();
+      const actualDue = pDue || todayStr;
+      const dueFmt = formatDisplayDate(actualDue);
       periodStr = `Daily (${dueFmt})`;
       formTitle = `Daily Deliverables (${dueFmt}) - ${formTeamLabel}`;
-      setMgrPeriodDueDate(autoDueDate);
+      setMgrPeriodDueDate(actualDue);
     } else if (pType === 'yearly' || (pType as string) === 'annual') {
       periodStr = `FY ${pYear}-${pYear + 1} (April - March)`;
       formTitle = `FY ${pYear}-${pYear + 1} Performance Metrics - ${formTeamLabel}`;
@@ -3167,10 +3171,10 @@ export const EvaluationTab: React.FC = () => {
 
     if (isWithMgr) {
       return {
-        badgeText: 'Pending Calibration',
+        badgeText: 'Pending Review',
         badgeColor: 'text-amber-800 bg-amber-100 border-amber-300',
         icon: '⏳',
-        tooltip: `Employee has submitted their evaluation (${pendingResp.periodName || (pendingResp as any).form || 'Assessment'}), awaiting manager calibration. Please calibrate and score it before applying new metrics.`
+        tooltip: `Employee has submitted their evaluation (${pendingResp.periodName || (pendingResp as any).form || 'Assessment'}), awaiting manager review & approval. Please review and score it before applying new metrics.`
       };
     }
     return {
@@ -3181,8 +3185,8 @@ export const EvaluationTab: React.FC = () => {
     };
   };
 
-  // Helper to check if an employee is already assigned metrics for a specific evaluation period
-  const isEmpAlreadyAssignedForPeriod = (
+  // Helper to check if an employee already has an assigned or completed evaluation for a specific period
+  const getEmpPeriodAssignmentInfo = (
     empId: string | any,
     periodStr = mgrAssignPeriod,
     pType = mgrPeriodType,
@@ -3193,10 +3197,10 @@ export const EvaluationTab: React.FC = () => {
     pFrom = mgrPeriodFromDate,
     pTo = mgrPeriodToDate
   ) => {
-    if (!empId) return false;
+    if (!empId) return { isAssigned: false, isCompleted: false, matchingResp: null as EvaluationResponse | null };
 
     // Check in responses (definitive source of active assigned evaluations)
-    const hasInResponses = responses.some(r => {
+    const matchingResp = responses.find(r => {
       if (!isEmpMatch(empId, r)) return false;
 
       // Ignore archived or deleted records
@@ -3207,8 +3211,8 @@ export const EvaluationTab: React.FC = () => {
       // If employee already has an active ongoing yearly evaluation with milestones
       if (rType === 'yearly' && (pType === 'monthly' || pType === 'quarterly' || pType === 'yearly')) {
         const s = String(r.status || '').toLowerCase().trim();
-        const isCompleted = s === 'completed' || s === 'sm_final_approval' || (s === 'approved' && r.managerScore != null);
-        if (!isCompleted) return true;
+        const isComp = s === 'completed' || s === 'sm_final_approval' || (s === 'approved' && r.managerScore != null);
+        if (!isComp) return true;
       }
 
       if (pType && rType && pType !== rType) return false;
@@ -3256,7 +3260,19 @@ export const EvaluationTab: React.FC = () => {
       return false;
     });
 
-    if (hasInResponses) return true;
+    if (matchingResp) {
+      const s = String(matchingResp.status || '').toLowerCase().trim();
+      const smStatus = String((matchingResp as any).service_manager_approve_status || '').toLowerCase().trim();
+      const isCompleted =
+        s === 'completed' ||
+        s === 'sm_final_approval' ||
+        s === 'approved' ||
+        s === 'calibrated & approved' ||
+        smStatus === 'approved' ||
+        (matchingResp.managerScore != null && s !== 'manager_review' && s !== 'submitted to manager' && s !== 'submitted' && s !== 'returned_to_manager');
+
+      return { isAssigned: true, isCompleted, matchingResp };
+    }
 
     // Check in cycles ONLY if the cycle has an active, non-archived response in state for this employee
     const hasInCycles = cycles.some(c => {
@@ -3279,7 +3295,22 @@ export const EvaluationTab: React.FC = () => {
       return true;
     });
 
-    return hasInCycles;
+    return { isAssigned: hasInCycles, isCompleted: false, matchingResp: null };
+  };
+
+  // Helper to check if an employee is already assigned metrics for a specific evaluation period
+  const isEmpAlreadyAssignedForPeriod = (
+    empId: string | any,
+    periodStr = mgrAssignPeriod,
+    pType = mgrPeriodType,
+    pQuarter = mgrPeriodQuarter,
+    pYear = mgrPeriodYear,
+    pMonth = mgrPeriodMonth,
+    pDue = mgrPeriodDueDate,
+    pFrom = mgrPeriodFromDate,
+    pTo = mgrPeriodToDate
+  ) => {
+    return getEmpPeriodAssignmentInfo(empId, periodStr, pType, pQuarter, pYear, pMonth, pDue, pFrom, pTo).isAssigned;
   };
 
   const loadManagerDeskTemplates = async (mgrCode?: string, targetTeam?: string) => {
@@ -3381,11 +3412,18 @@ export const EvaluationTab: React.FC = () => {
     const defaultTeamVal = targetDept || (managerDepartments.length > 1 ? 'all_teams' : (managerDepartments[0] || 'all_teams'));
     setMgrAssignTeamId(defaultTeamVal);
 
+    // Reset date fields cleanly
+    const todayStr = getLocalTodayDateString();
+    const week = getLocalCurrentWeekRange();
+    setMgrPeriodFromDate(week.from);
+    setMgrPeriodToDate(week.to);
+    setMgrPeriodDueDate(todayStr);
+
     // Initial selected employees = only employees NOT already assigned for this stage/period AND with NO pending evaluation
     setMgrPeriodType('quarterly');
     setMgrPeriodQuarter(currentQuarter);
     setMgrPeriodYear(currentYear);
-    syncPeriodAndFormName('quarterly', currentQuarter, currentYear, currentMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, defaultTeamVal);
+    syncPeriodAndFormName('quarterly', currentQuarter, currentYear, currentMonth, week.from, week.to, undefined, defaultTeamVal);
 
     // Asynchronously load manager's saved templates from PostgreSQL DB
     const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.id || '');
@@ -4022,7 +4060,7 @@ export const EvaluationTab: React.FC = () => {
           return emp ? (`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name) : id;
         });
         showAlert(
-          `Cannot apply metrics: The following employee(s) currently have a pending evaluation that must be completed/calibrated first:\n\n• ${blockedNames.join('\n• ')}`,
+          `Cannot apply metrics: The following employee(s) currently have a pending evaluation that must be completed/approved first:\n\n• ${blockedNames.join('\n• ')}`,
           'Pending Evaluation Exists',
           'warning'
         );
@@ -4167,7 +4205,74 @@ export const EvaluationTab: React.FC = () => {
   // 1. Team-scoped Cycles: An employee/manager only sees cycles created for their team (unless HR/Admin)
   const scopedCycles = cycles.filter(isCycleForUserTeam);
 
-  // Helper to determine if an evaluation response is under the logged-in manager's review scope
+  // Helper to determine if an evaluation response is strictly under the logged-in manager's direct review scope (excluding indirect downline teams)
+  const isResponseUnderMyDirectReview = (r: EvaluationResponse): boolean => {
+    if (!r) return false;
+    // A user's own evaluation response must NEVER appear in their managerial queues
+    if (isResponseForUser(r)) return false;
+
+    if (isHrOrAdmin) return true;
+
+    const mgrIds = [
+      String(userId || ''),
+      String(userCode || ''),
+      String(myCanonicalCode || ''),
+      String(currentDbUser?.employee_id || ''),
+      String(userAny?.employee_id || ''),
+      String(user?.employee_id || '')
+    ].filter(Boolean).map(id => cleanEmpIdentifier(id));
+
+    const mgrFullNames = [
+      user?.full_name,
+      userAny?.name,
+      userAny?.full_name,
+      `${currentDbUser?.first_name || ''} ${currentDbUser?.last_name || ''}`.trim(),
+      `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim(),
+      userAny?.username,
+      currentDbUser?.username
+    ].filter(Boolean).map(n => String(n).toLowerCase().trim());
+
+    // 1. Look up the actual employee in DB for this response and strictly check isDirectReport
+    const empInDb = dbEmployees.find((e: any) =>
+      cleanEmpIdentifier(e.employee_id) === cleanEmpIdentifier(r.employeeCode) ||
+      cleanEmpIdentifier(e.employee_id) === cleanEmpIdentifier(r.employeeId) ||
+      (`${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase() === String(r.employeeName || '').trim().toLowerCase())
+    );
+
+    if (empInDb) {
+      return isDirectReport(empInDb);
+    }
+
+    // 2. Direct match by managerId / reportingManager on response (from kpi_evaluations table in DB)
+    const respMgrIds = [
+      cleanEmpIdentifier(r.managerId),
+      cleanEmpIdentifier(r.reportingManagerId),
+      cleanEmpIdentifier((r as any).reporting_manager_id),
+      cleanEmpIdentifier((r as any).manager_id)
+    ].filter(Boolean);
+
+    if (respMgrIds.some(id => mgrIds.includes(id))) {
+      return true;
+    }
+
+    const respMgrNames = [
+      String((r as any).reportingManager || (r as any).reporting_manager || '').trim().toLowerCase(),
+      String((r as any).managerName || (r as any).manager_name || '').trim().toLowerCase()
+    ].filter(Boolean);
+
+    if (respMgrNames.some(name => mgrFullNames.some(mName => mName && (name === mName || name.includes(mName) || mName.includes(name))))) {
+      return true;
+    }
+
+    if (r.cycleId) {
+      const cyc = cycles.find(c => c.id === r.cycleId);
+      if (cyc && isDirectManagerOfCycle(cyc)) return true;
+    }
+
+    return false;
+  };
+
+  // Helper to determine if an evaluation response is under the logged-in manager's review scope (Direct + Downline)
   const isResponseUnderMyManagerReview = (r: EvaluationResponse): boolean => {
     if (!r) return false;
     // A user's own evaluation response must NEVER appear in their managerial queues
@@ -4849,7 +4954,7 @@ export const EvaluationTab: React.FC = () => {
     const statusStr = String(resp.status || '');
     const isCalibrated = resp.managerScore != null && statusStr !== 'manager_review' && statusStr !== 'Submitted to Manager';
     if (isCalibrated || resp.managerScore != null || statusStr === 'Calibrated & Approved' || statusStr === 'Published' || statusStr === 'Completed' || statusStr === 'Approved') {
-      showToast('Published and calibrated evaluation records cannot be deleted.');
+      showToast('Published and approved evaluation records cannot be deleted.');
       return;
     }
     const { employeeName, employeeCode } = getEmployeeDisplayInfo(resp);
@@ -5846,7 +5951,7 @@ export const EvaluationTab: React.FC = () => {
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-            <span>FY Completed & Calibrated</span>
+            <span>FY Completed & Approved</span>
           </span>
         );
       }
@@ -5986,7 +6091,7 @@ export const EvaluationTab: React.FC = () => {
 
   // Direct and Downline response partition counts
   const directResponsesCount = useMemo(() => {
-    return allDeduplicatedManagerResponses.filter(isResponseUnderMyManagerReview).length;
+    return allDeduplicatedManagerResponses.filter(isResponseUnderMyDirectReview).length;
   }, [allDeduplicatedManagerResponses, dbEmployees, userId, userCode, myCanonicalCode, currentDbUser]);
 
   const downlineResponsesCount = useMemo(() => {
@@ -6260,8 +6365,8 @@ export const EvaluationTab: React.FC = () => {
     let list = allDeduplicatedManagerResponses;
 
     if (activeRole === 'manager') {
-      // Direct reports and assignable subordinates for Manager Reviews tab
-      list = list.filter(isResponseUnderMyManagerReview);
+      // Strictly direct reports for Manager Reviews tab (no manager->manager->employee)
+      list = list.filter(isResponseUnderMyDirectReview);
     } else if (activeRole === 'downline_teams') {
       // All subordinate reports across the whole department tree (Direct + Indirect Downline)
       list = list.filter(r => {
@@ -6286,7 +6391,7 @@ export const EvaluationTab: React.FC = () => {
   // Scoped responses for team cards according to active tab
   const activeScopedResponsesForCards = useMemo(() => {
     if (activeRole === 'manager') {
-      return allDeduplicatedManagerResponses.filter(isResponseUnderMyManagerReview);
+      return allDeduplicatedManagerResponses.filter(isResponseUnderMyDirectReview);
     }
     if (activeRole === 'downline_teams') {
       return allDeduplicatedManagerResponses.filter(r => {
@@ -7624,7 +7729,7 @@ export const EvaluationTab: React.FC = () => {
 
     const totalCount = reportFilteredResponses.length;
     const completedCount = reportFilteredResponses.filter(r => r.managerScore != null).length;
-    const countBadge = `${totalCount} ${totalCount === 1 ? 'person' : 'people'} (${completedCount} calibrated)`;
+    const countBadge = `${totalCount} ${totalCount === 1 ? 'person' : 'people'} (${completedCount} approved)`;
 
     if (reportViewTab === 'all') {
       return {
@@ -8230,7 +8335,7 @@ export const EvaluationTab: React.FC = () => {
         'Designation': r.designation || empInDb?.designation || empInDb?.job_title || 'Team Member',
         'Evaluation Period': r.periodName || (r as any).form || r.frequency || 'Performance Evaluation',
         'Employee Self Score': selfScoreNum != null && selfScoreNum > 0 ? `${selfScoreNum.toFixed(1)}%` : '—',
-        'Manager / Calibrated Score': mgrScoreNum != null ? `${mgrScoreNum.toFixed(1)}%` : '—',
+        'Manager Score': mgrScoreNum != null ? `${mgrScoreNum.toFixed(1)}%` : '—',
         'Status': isCalibrated ? 'Approved' : ((r.status === 'manager_review' || (r.status as string) === 'Submitted to Manager') ? 'Submitted to Manager' : 'Pending Review')
       };
     });
@@ -10079,7 +10184,7 @@ export const EvaluationTab: React.FC = () => {
                               }`}>
                               {isS3Done ? '✓' : '3'}
                             </span>
-                            <span>Final Calibration</span>
+                            <span>Final Review</span>
                           </span>
                         </div>
                       </div>
@@ -11528,7 +11633,7 @@ export const EvaluationTab: React.FC = () => {
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200">
                                         {itemMgrScore === itemSelfScore
                                           ? '100% Aligned'
-                                          : `${itemMgrScore > itemSelfScore ? '+' : ''}${(itemMgrScore - itemSelfScore).toFixed(1)}% Calibrated`}
+                                          : `${itemMgrScore > itemSelfScore ? '+' : ''}${(itemMgrScore - itemSelfScore).toFixed(1)}% vs Self`}
                                       </span>
                                     ) : (
                                       <span className="text-slate-400 text-xs">—</span>
@@ -12014,7 +12119,27 @@ export const EvaluationTab: React.FC = () => {
                         onChange={e => {
                           const newType = e.target.value as any;
                           setMgrPeriodType(newType);
-                          syncPeriodAndFormName(newType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, mgrAssignTeamId);
+                          if (newType === 'daily') {
+                            const todayStr = getLocalTodayDateString();
+                            setMgrPeriodDueDate(todayStr);
+                            syncPeriodAndFormName(newType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, todayStr, mgrAssignTeamId);
+                          } else if (newType === 'weekly') {
+                            const week = getLocalCurrentWeekRange();
+                            setMgrPeriodFromDate(week.from);
+                            setMgrPeriodToDate(week.to);
+                            syncPeriodAndFormName(newType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, week.from, week.to, week.to, mgrAssignTeamId);
+                          } else if (newType === 'monthly') {
+                            setMgrPeriodMonth(currentMonth);
+                            setMgrPeriodYear(currentYear);
+                            syncPeriodAndFormName(newType, mgrPeriodQuarter, currentYear, currentMonth, mgrPeriodFromDate, mgrPeriodToDate, undefined, mgrAssignTeamId);
+                          } else if (newType === 'quarterly') {
+                            setMgrPeriodQuarter(currentQuarter);
+                            setMgrPeriodYear(currentYear);
+                            syncPeriodAndFormName(newType, currentQuarter, currentYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, undefined, mgrAssignTeamId);
+                          } else {
+                            setMgrPeriodYear(currentYear);
+                            syncPeriodAndFormName(newType, mgrPeriodQuarter, currentYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, undefined, mgrAssignTeamId);
+                          }
                         }}
                         className="w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20 transition cursor-pointer"
                       >
@@ -12192,7 +12317,12 @@ export const EvaluationTab: React.FC = () => {
                       isEmployeeActive(e) && isEmpInSelectedTeam(e, mgrAssignTeamId)
                     );
 
-                    const alreadyAssignedCount = baseTeamMembers.filter((m: any) => isEmpAlreadyAssignedForPeriod(m)).length;
+                    const completedCount = baseTeamMembers.filter((m: any) => getEmpPeriodAssignmentInfo(m).isCompleted).length;
+                    const bookedInProgressCount = baseTeamMembers.filter((m: any) => {
+                      const info = getEmpPeriodAssignmentInfo(m);
+                      return info.isAssigned && !info.isCompleted;
+                    }).length;
+                    const alreadyAssignedCount = completedCount + bookedInProgressCount;
                     const pendingEvalCount = baseTeamMembers.filter((m: any) => !isEmpAlreadyAssignedForPeriod(m) && Boolean(getEmpPendingEvaluation(m))).length;
                     const assignableMembers = baseTeamMembers.filter((m: any) => !isEmpAlreadyAssignedForPeriod(m) && !getEmpPendingEvaluation(m));
                     const activeSelectedCount = mgrAssignEmpIds.filter(id => assignableMembers.some((m: any) => String(m.employee_id || '') === id)).length;
@@ -12247,14 +12377,19 @@ export const EvaluationTab: React.FC = () => {
                                       : `${activeSelectedCount} of ${assignableMembers.length} Selected`}
                                   </span>
 
+                                  {completedCount > 0 && (
+                                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-300 shadow-2xs">
+                                      ✓ {completedCount} completed
+                                    </span>
+                                  )}
                                   {pendingEvalCount > 0 && (
                                     <span className="text-[10px] font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
                                       ⏳ {pendingEvalCount} pending eval
                                     </span>
                                   )}
-                                  {alreadyAssignedCount > 0 && (
+                                  {bookedInProgressCount > 0 && (
                                     <span className="text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-                                      🔒 {alreadyAssignedCount} booked
+                                      🔒 {bookedInProgressCount} booked
                                     </span>
                                   )}
                                 </div>
@@ -12393,11 +12528,12 @@ export const EvaluationTab: React.FC = () => {
                                   {filteredMembers.map((emp: any) => {
                                     const empId = String(emp.employee_id || '');
                                     const pendingEval = getEmpPendingEvaluation(emp);
-                                    const isAlreadyAssigned = isEmpAlreadyAssignedForPeriod(emp);
-                                    const isBlocked = Boolean(pendingEval) || isAlreadyAssigned;
+                                    const periodInfo = getEmpPeriodAssignmentInfo(emp);
+                                    const isCompletedForPeriod = periodInfo.isCompleted;
+                                    const isAlreadyAssigned = periodInfo.isAssigned && !isCompletedForPeriod;
+                                    const isBlocked = Boolean(pendingEval) || isAlreadyAssigned || isCompletedForPeriod;
                                     const isSelected = !isBlocked && mgrAssignEmpIds.includes(empId);
                                     const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || 'Employee';
-                                    const initial = fullName.charAt(0).toUpperCase() || 'E';
                                     const pendingStatus = pendingEval ? getPendingStatusLabel(pendingEval) : null;
                                     const designation = emp.designation || emp.role || emp.department || '';
 
@@ -12406,50 +12542,47 @@ export const EvaluationTab: React.FC = () => {
                                         key={empId}
                                         onClick={() => !isBlocked && handleMgrToggleEmp(empId)}
                                         className={`group relative flex items-center justify-between gap-2.5 p-2.5 rounded-xl border transition-all duration-150 select-none ${
-                                          isBlocked
-                                            ? 'bg-slate-50/90 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                                            : isSelected
-                                              ? 'bg-teal-50/50 border-teal-400 ring-1 ring-teal-500/20 shadow-xs cursor-pointer hover:bg-teal-50/80 hover:border-teal-500'
-                                              : 'bg-white border-slate-200/90 text-slate-600 hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs cursor-pointer'
+                                          isCompletedForPeriod
+                                            ? 'bg-slate-50/90 border-slate-200 text-slate-500 cursor-not-allowed opacity-75'
+                                            : isBlocked
+                                              ? 'bg-slate-50/90 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                                              : isSelected
+                                                ? 'bg-teal-50/50 border-teal-400 ring-1 ring-teal-500/20 shadow-xs cursor-pointer hover:bg-teal-50/80 hover:border-teal-500'
+                                                : 'bg-white border-slate-200/90 text-slate-600 hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs cursor-pointer'
                                         }`}
                                         title={
-                                          pendingEval && pendingStatus
-                                            ? `${fullName}: ${pendingStatus.tooltip}`
-                                            : isAlreadyAssigned
-                                              ? `${fullName} is already assigned metrics for ${mgrAssignPeriod || 'this period'}.`
-                                              : `Click to ${isSelected ? 'deselect' : 'select'} ${fullName}`
+                                          isCompletedForPeriod
+                                            ? `${fullName} has already completed and had the evaluation approved for ${mgrAssignPeriod || 'this period'}.`
+                                            : pendingEval && pendingStatus
+                                              ? `${fullName}: ${pendingStatus.tooltip}`
+                                              : isAlreadyAssigned
+                                                ? `${fullName} is already assigned metrics for ${mgrAssignPeriod || 'this period'}.`
+                                                : `Click to ${isSelected ? 'deselect' : 'select'} ${fullName}`
                                         }
                                       >
-                                        {/* Left: Avatar + Member Info */}
-                                        <div className="flex items-center gap-2.5 min-w-0">
-                                          <span className={`w-7.5 h-7.5 rounded-full text-xs font-medium flex items-center justify-center shrink-0 transition-colors ${
-                                            isBlocked
-                                              ? 'bg-slate-200 text-slate-500'
-                                              : isSelected
-                                                ? 'bg-teal-600 text-white shadow-xs'
-                                                : 'bg-slate-100 text-slate-600 border border-slate-200/70'
-                                          }`}>
-                                            {initial}
-                                          </span>
-                                          <div className="min-w-0">
-                                            <div className={`text-xs truncate ${isBlocked ? 'text-slate-400 font-normal' : isSelected ? 'text-slate-900 font-medium' : 'text-slate-700 font-medium'}`}>
-                                              {fullName}
-                                            </div>
-                                            <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
-                                              <span className="font-mono text-slate-500 font-medium">#{empId}</span>
-                                              {designation && (
-                                                <>
-                                                  <span className="text-slate-300">•</span>
-                                                  <span className="truncate max-w-24 text-slate-500 font-normal">{designation}</span>
-                                                </>
-                                              )}
-                                            </div>
+                                        {/* Member Info */}
+                                        <div className="min-w-0 flex-1">
+                                          <div className={`text-xs truncate ${isCompletedForPeriod ? 'text-slate-600 font-medium' : isBlocked ? 'text-slate-400 font-normal' : isSelected ? 'text-slate-900 font-medium' : 'text-slate-700 font-medium'}`}>
+                                            {fullName}
+                                          </div>
+                                          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5">
+                                            <span className="font-mono text-slate-500 font-medium">#{empId}</span>
+                                            {designation && (
+                                              <>
+                                                <span className="text-slate-300">•</span>
+                                                <span className="truncate max-w-28 text-slate-500 font-normal">{designation}</span>
+                                              </>
+                                            )}
                                           </div>
                                         </div>
 
                                         {/* Right: Checkmark Indicator or Status Badge */}
                                         <div className="shrink-0 flex items-center">
-                                          {pendingEval && pendingStatus ? (
+                                          {isCompletedForPeriod ? (
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md border text-emerald-800 bg-emerald-50 border-emerald-300 shadow-2xs">
+                                              ✓ Completed
+                                            </span>
+                                          ) : pendingEval && pendingStatus ? (
                                             <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md border ${pendingStatus.badgeColor}`}>
                                               {pendingStatus.badgeText}
                                             </span>
@@ -13050,7 +13183,7 @@ export const EvaluationTab: React.FC = () => {
               const currentMonthName = MONTH_NAMES[currentMonth];
               const currentPeriodKey = `${currentMonthName} ${currentYear}`.toLowerCase();
 
-              const unassignedDirects = managerAssignableEmployees.filter((m: any) => 
+              const unassignedDirects = managerDirectReports.filter((m: any) => 
                 isEmployeeActive(m) && 
                 !isEmpAlreadyAssignedForPeriod(m) && 
                 !getEmpPendingEvaluation(m)
@@ -13684,7 +13817,7 @@ export const EvaluationTab: React.FC = () => {
                           {/* Members inside Team (Rendered directly when Team is Expanded) */}
                           {isTeamExpanded && teamGroup.members.map(member => {
                             const isSubmittedPending = Boolean(
-                              (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || String(member.response.status || '').toLowerCase().includes('submitted')) &&
+                              (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || String(member.response.status || '').toLowerCase().includes('submitted') || Boolean(member.response.employeeSubmittedAt) || Boolean((member.response as any).submitted_at) || Boolean((member.response as any).submittedAt) || Boolean((member.response as any).employee_submitted_at)) &&
                               member.response.managerScore == null
                             );
 
@@ -13782,28 +13915,35 @@ export const EvaluationTab: React.FC = () => {
                                 {/* 6. Action Button */}
                                 <td className="py-3.5 px-4 text-right">
                                   <div className="flex items-center justify-end gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSelectMgrResponse(member.response)}
-                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs ${isSubmittedPending
-                                        ? 'bg-primary-600 hover:bg-primary-700 text-white ring-2 ring-primary-500/30'
-                                        : member.isCalibrated
-                                          ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
-                                          : 'bg-primary-600 hover:bg-primary-700 text-white'
-                                        }`}
-                                    >
-                                      {isSubmittedPending ? (
-                                        <>
-                                          <SparklesIcon className="w-3.5 h-3.5 text-amber-300" />
-                                          <span>Review & Score</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <PencilSquareIcon className="w-3.5 h-3.5" />
-                                          <span>{member.isCalibrated ? 'Recalibrate' : 'Review & Score'}</span>
-                                        </>
-                                      )}
-                                    </button>
+                                    {isSubmittedPending ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectMgrResponse(member.response)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs bg-primary-600 hover:bg-primary-700 text-white ring-2 ring-primary-500/30"
+                                      >
+                                        <SparklesIcon className="w-3.5 h-3.5 text-amber-300" />
+                                        <span>Review & Score</span>
+                                      </button>
+                                    ) : member.isCalibrated ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectMgrResponse(member.response)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs bg-white hover:bg-slate-50 text-slate-700 border border-slate-300"
+                                      >
+                                        <PencilSquareIcon className="w-3.5 h-3.5" />
+                                        <span>Update Score</span>
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectMgrResponse(member.response)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer shadow-2xs bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200"
+                                        title="Waiting for employee to submit evaluation. Click to view metrics."
+                                      >
+                                        <ClockIcon className="w-3.5 h-3.5 text-slate-400" />
+                                        <span>Pending</span>
+                                      </button>
+                                    )}
                                     {!member.isCalibrated && member.response.managerScore == null && (
                                       <button
                                         type="button"
@@ -14202,14 +14342,30 @@ export const EvaluationTab: React.FC = () => {
                                                 {renderStatusBadge(r.status, r)}
                                               </td>
                                               <td className="px-4 py-3 text-right">
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleSelectMgrResponse(r)}
-                                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
-                                                >
-                                                  <EyeIcon className="w-3.5 h-3.5" />
-                                                  <span>{isCalibrated ? 'View Report' : 'Review'}</span>
-                                                </button>
+                                                {(() => {
+                                                  const isEmpSubmitted = Boolean(
+                                                    r.employeeSubmittedAt ||
+                                                    (r as any).submitted_at ||
+                                                    (r as any).submittedAt ||
+                                                    (r as any).employee_submitted_at ||
+                                                    (String(r.status || '') === 'manager_review' || String(r.status || '').toLowerCase().includes('submitted') || r.status === 'approved' || r.status === 'sm_final_approval' || (r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0))
+                                                  );
+                                                  return (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleSelectMgrResponse(r)}
+                                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer ${isCalibrated
+                                                        ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
+                                                        : isEmpSubmitted
+                                                          ? 'bg-teal-700 hover:bg-teal-800 text-white'
+                                                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
+                                                        }`}
+                                                    >
+                                                      {isCalibrated ? <EyeIcon className="w-3.5 h-3.5" /> : isEmpSubmitted ? <SparklesIcon className="w-3.5 h-3.5 text-amber-300" /> : <ClockIcon className="w-3.5 h-3.5 text-slate-400" />}
+                                                      <span>{isCalibrated ? 'View Report' : isEmpSubmitted ? 'Review & Score' : 'Pending'}</span>
+                                                    </button>
+                                                  );
+                                                })()}
                                               </td>
                                             </tr>
                                           );
@@ -14328,10 +14484,15 @@ export const EvaluationTab: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => handleSelectMgrResponse(r)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer ${isCalibrated
+                                      ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
+                                      : isEmpSubmitted
+                                        ? 'bg-teal-700 hover:bg-teal-800 text-white'
+                                        : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
+                                      }`}
                                   >
-                                    <EyeIcon className="w-3.5 h-3.5" />
-                                    <span>{isCalibrated ? 'View Report' : 'Review'}</span>
+                                    {isCalibrated ? <EyeIcon className="w-3.5 h-3.5" /> : isEmpSubmitted ? <SparklesIcon className="w-3.5 h-3.5 text-amber-300" /> : <ClockIcon className="w-3.5 h-3.5 text-slate-400" />}
+                                    <span>{isCalibrated ? 'View Report' : isEmpSubmitted ? 'Review & Score' : 'Pending'}</span>
                                   </button>
                                 </td>
                               </tr>
@@ -14552,7 +14713,7 @@ export const EvaluationTab: React.FC = () => {
                     <span className="text-sm font-semibold text-amber-700">{pendingCount}</span>
                   </div>
                   <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
-                    <span className="text-[10px] uppercase font-medium tracking-wide text-emerald-600 block">Calibrated / Final</span>
+                    <span className="text-[10px] uppercase font-medium tracking-wide text-emerald-600 block">Approved / Final</span>
                     <span className="text-sm font-semibold text-emerald-700">{approvedCount}</span>
                   </div>
                 </div>
@@ -14585,7 +14746,7 @@ export const EvaluationTab: React.FC = () => {
                     { id: 'all', label: 'All', count: allCount },
                     { id: 'pending', label: 'Pending', count: pendingCount },
                     { id: 'submitted', label: 'Submitted', count: submittedCount },
-                    { id: 'approved', label: 'Calibrated', count: approvedCount },
+                    { id: 'approved', label: 'Approved', count: approvedCount },
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -14757,7 +14918,7 @@ export const EvaluationTab: React.FC = () => {
               (selectedMgrResponse!.managerScore != null && !isPendingManagerReview)
             );
 
-        const isReadOnly = (activeRole === 'downline_teams' && !isDirectReport(getEmployeeDisplayInfo(selectedMgrResponse!).empInDb) && !isHrOrAdmin) || selectedMgrResponse!.status === 'sm_final_approval';
+        const isReadOnly = activeRole === 'downline_teams' || selectedMgrResponse!.status === 'sm_final_approval' || (activeRole !== 'manager' && !isDirectReport(getEmployeeDisplayInfo(selectedMgrResponse!).empInDb) && !isHrOrAdmin);
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-950/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
@@ -14800,7 +14961,7 @@ export const EvaluationTab: React.FC = () => {
                     <div className="h-6 w-px bg-slate-200" />
                     <div className="text-left">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-700 block">
-                        {isYearly ? `${curFiscalMonthObj?.shortName || 'Month'} Manager` : (isPendingManagerReview ? 'Calibrated Score' : 'Manager Score')}
+                        {isYearly ? `${curFiscalMonthObj?.shortName || 'Month'} Manager` : 'Manager Score'}
                       </span>
                       <span className="text-sm font-black text-teal-900">{mgrScore.toFixed(1)}%</span>
                     </div>
@@ -14878,7 +15039,7 @@ export const EvaluationTab: React.FC = () => {
                               12-Month Financial Year Milestone Reviews (April – March Cycle)
                             </h4>
                             <p className="text-[11px] text-slate-500">
-                              Click any monthly milestone to review employee deliverables, calibrate scores, and maintain rolling YTD average.
+                              Click any monthly milestone to review employee deliverables, score performance, and maintain rolling YTD average.
                             </p>
                           </div>
                         </div>
@@ -14978,9 +15139,9 @@ export const EvaluationTab: React.FC = () => {
                           <span>
                             Viewing <strong>{curMonthName}{curYearlyRec?.calendarYear ? ` (${curYearlyRec.calendarYear})` : ''}</strong> milestone —{' '}
                             {curYearlyRec?.status === 'manager_approved'
-                              ? `Approved with Manager Score of ${Number(curYearlyRec.managerScore || 0).toFixed(1)}%. You may recalibrate deliverable actuals below.`
+                              ? `Approved with Manager Score of ${Number(curYearlyRec.managerScore || 0).toFixed(1)}%. You may update deliverable actuals below.`
                               : curYearlyRec?.status === 'submitted_to_manager'
-                                ? `Submitted by employee with self-score of ${Number(curYearlyRec.employeeScore || 0).toFixed(1)}%. Ready for calibration.`
+                                ? `Submitted by employee with self-score of ${Number(curYearlyRec.employeeScore || 0).toFixed(1)}%. Ready for review & scoring.`
                                 : 'Pending employee submission for this month.'}
                           </span>
                         </div>
@@ -15058,7 +15219,7 @@ export const EvaluationTab: React.FC = () => {
                               <th className="px-3 py-3 text-center whitespace-nowrap min-w-[95px]">Earned</th>
                               <th className="px-3 py-3 text-center whitespace-nowrap min-w-[130px]">Insufficient</th>
                               <th className="px-3 py-3 text-center min-w-[150px] bg-slate-50/50 text-slate-700">
-                                {isReadOnly ? 'Manager Goal & Score' : 'Manager Calibration'}
+                                {isReadOnly ? 'Manager Goal & Score' : 'Manager Score'}
                               </th>
                               {!isReadOnly && (
                                 <th className="px-5 py-3 min-w-[190px]">
@@ -15388,7 +15549,7 @@ export const EvaluationTab: React.FC = () => {
                             className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
                           >
                             <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
-                            <span>{isAlreadyCalibrated ? `Update & Recalibrate ${curMonthName}` : `Approve & Save ${curMonthName} Milestone`}</span>
+                            <span>{isAlreadyCalibrated ? `Update & Save ${curMonthName}` : `Approve & Save ${curMonthName} Milestone`}</span>
                           </button>
                         </div>
                       ) : (() => {
@@ -15417,7 +15578,7 @@ export const EvaluationTab: React.FC = () => {
                               className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
                             >
                               <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
-                              <span>{isAlreadyCalibrated ? 'Update & Recalibrate' : 'Submit Calibration & Approve'}</span>
+                              <span>{isAlreadyCalibrated ? 'Update Score' : 'Submit & Approve'}</span>
                             </button>
                           </>
                         );
