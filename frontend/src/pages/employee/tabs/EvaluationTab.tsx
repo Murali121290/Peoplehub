@@ -5864,7 +5864,7 @@ export const EvaluationTab: React.FC = () => {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-          <span>Calibrated & Approved</span>
+          <span>Approved</span>
         </span>
       );
     }
@@ -8231,7 +8231,7 @@ export const EvaluationTab: React.FC = () => {
         'Evaluation Period': r.periodName || (r as any).form || r.frequency || 'Performance Evaluation',
         'Employee Self Score': selfScoreNum != null && selfScoreNum > 0 ? `${selfScoreNum.toFixed(1)}%` : '—',
         'Manager / Calibrated Score': mgrScoreNum != null ? `${mgrScoreNum.toFixed(1)}%` : '—',
-        'Status': isCalibrated ? 'Calibrated & Approved' : ((r.status === 'manager_review' || (r.status as string) === 'Submitted to Manager') ? 'Submitted to Manager' : 'Pending Review')
+        'Status': isCalibrated ? 'Approved' : ((r.status === 'manager_review' || (r.status as string) === 'Submitted to Manager') ? 'Submitted to Manager' : 'Pending Review')
       };
     });
 
@@ -11351,14 +11351,6 @@ export const EvaluationTab: React.FC = () => {
                     >
                       <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
                       <span>Back to Worksheet</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => window.print()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shadow-xs transition cursor-pointer"
-                    >
-                      <PrinterIcon className="w-3.5 h-3.5" />
-                      <span>Print PDF</span>
                     </button>
                   </div>
                 </div>
