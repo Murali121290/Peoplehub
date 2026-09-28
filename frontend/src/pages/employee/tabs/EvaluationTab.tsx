@@ -844,6 +844,12 @@ export const EvaluationTab: React.FC = () => {
   const [mgrPeriodToDate, setMgrPeriodToDate] = useState<string>(() => getLocalCurrentWeekRange().to);
   const [mgrPeriodDueDate, setMgrPeriodDueDate] = useState<string>(() => getLocalTodayDateString());
 
+  // Manager Reopen Feedback Modal State (Mandatory Feedback Prompt)
+  const [isReopenModalOpen, setIsReopenModalOpen] = useState<boolean>(false);
+  const [reopenTargetMonthIndex, setReopenTargetMonthIndex] = useState<number | null>(null);
+  const [reopenFeedbackInput, setReopenFeedbackInput] = useState<string>('');
+  const [isReopeningAction, setIsReopeningAction] = useState<boolean>(false);
+
   const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
@@ -5590,7 +5596,24 @@ export const EvaluationTab: React.FC = () => {
       };
     }
 
-    // Previous month has been approved by manager -> Next month unlocks and opens!
+    // Calendar Month Restriction (Option B):
+    // Even if previous month is approved, this month will ONLY open when the calendar month has started.
+    if (monthIndex > currentFiscalMonthIndex) {
+      return {
+        isLocked: true,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'locked' as const,
+        statusLabel: 'Locked',
+        lockReason: `${currentMonthName} milestone will unlock when ${currentMonthName} starts.`,
+        prevMonthName,
+        currentMonthName,
+        score: null
+      };
+    }
+
+    // Previous month has been approved by manager AND calendar month has started -> Next month unlocks and opens!
     return {
       isLocked: false,
       isApproved: false,
@@ -5853,35 +5876,42 @@ export const EvaluationTab: React.FC = () => {
     );
   };
 
-  const handleManagerYearlyMonthReopen = async (mIndex: number) => {
-    if (!selectedMgrResponseId || !selectedMgrResponse) return;
-    const monthObj = FISCAL_MONTHS.find(m => m.monthIndex === mIndex);
-    const monthName = monthObj ? monthObj.monthName : `Month ${mIndex}`;
+  const handleOpenReopenModal = (mIndex: number) => {
+    setReopenTargetMonthIndex(mIndex);
+    setReopenFeedbackInput('');
+    setIsReopenModalOpen(true);
+  };
 
-    showConfirm(
-      `Reopen ${monthName} milestone and send back to employee? The employee will be able to edit and resubmit their deliverable actuals.`,
-      async () => {
-        try {
-          setIsActionLoading(true);
-          const updatedResp = await evaluationService.reopenYearlyMonth(
-            selectedMgrResponse.id,
-            mIndex,
-            mgrRemarks || 'Manager requested revision of deliverable actuals.'
-          );
-          setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
-          await loadAllData();
-          showToast(`${monthName} milestone reopened! Sent back to employee for revision.`);
-          setSelectedMgrResponseId('');
-        } catch (err: any) {
-          showAlert(`Failed to reopen month milestone: ${err?.message || 'Unknown error'}`, 'Reopen Error');
-        } finally {
-          setIsActionLoading(false);
-        }
-      },
-      `Reopen ${monthName} for Revision`,
-      'warning',
-      'Reopen & Send to Employee'
-    );
+  const handleConfirmReopenWithFeedback = async () => {
+    if (!selectedMgrResponseId || !selectedMgrResponse || reopenTargetMonthIndex === null) return;
+    const trimmedFeedback = reopenFeedbackInput.trim();
+    if (!trimmedFeedback) {
+      toast.error('Please enter manager feedback before reopening.');
+      return;
+    }
+
+    const monthObj = FISCAL_MONTHS.find(m => m.monthIndex === reopenTargetMonthIndex);
+    const monthName = monthObj ? monthObj.monthName : `Month ${reopenTargetMonthIndex}`;
+
+    try {
+      setIsReopeningAction(true);
+      const updatedResp = await evaluationService.reopenYearlyMonth(
+        selectedMgrResponse.id,
+        reopenTargetMonthIndex,
+        trimmedFeedback
+      );
+      setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+      await loadAllData();
+      showToast(`${monthName} milestone reopened! Feedback sent to employee.`);
+      setIsReopenModalOpen(false);
+      setReopenTargetMonthIndex(null);
+      setReopenFeedbackInput('');
+      setSelectedMgrResponseId('');
+    } catch (err: any) {
+      showAlert(`Failed to reopen month milestone: ${err?.message || 'Unknown error'}`, 'Reopen Error');
+    } finally {
+      setIsReopeningAction(false);
+    }
   };
 
   // Helper to resolve canonical display info for any evaluation response
@@ -6111,6 +6141,21 @@ export const EvaluationTab: React.FC = () => {
     const s = String(r.status || '').toLowerCase().trim();
     const smStatus = String((r as any).service_manager_approve_status || '').toLowerCase().trim();
 
+    if (isYearlyResponse(r)) {
+      const curYearlyRecords = r.monthly_records || [];
+      const hasPendingSubmitted = curYearlyRecords.some((m: any) => m.status === 'submitted_to_manager');
+      if (hasPendingSubmitted) {
+        return 'with_manager';
+      }
+      const allApproved = curYearlyRecords.length === 12 && curYearlyRecords.every((m: any) => m.status === 'manager_approved');
+      if (allApproved || s === 'completed' || s === 'sm_final_approval') {
+        return 'completed';
+      }
+      if (curYearlyRecords.some((m: any) => m.status === 'manager_approved') || r.managerScore != null) {
+        return 'approved';
+      }
+    }
+
     if (s.includes('sent') || s.includes('back') || s.includes('return') || s.includes('reject')) {
       return 'sent_back';
     }
@@ -6151,7 +6196,10 @@ export const EvaluationTab: React.FC = () => {
 
     all.forEach(r => {
       const s = String(r.status || '').toLowerCase().trim();
-      const isCompleted = s === 'completed' || s === 'sm_final_approval' || r.managerScore != null || s === 'approved';
+      const isYearly = isYearlyResponse(r);
+      const curYearlyRecords = r.monthly_records || [];
+      const hasYearlyPending = isYearly && curYearlyRecords.some((m: any) => m.status === 'submitted_to_manager');
+      const isCompleted = !hasYearlyPending && (s === 'completed' || s === 'sm_final_approval' || (isYearly ? (curYearlyRecords.length === 12 && curYearlyRecords.every((m: any) => m.status === 'manager_approved')) : (r.managerScore != null || s === 'approved')));
 
       if (isCompleted) {
         completed++;
@@ -7620,14 +7668,18 @@ export const EvaluationTab: React.FC = () => {
           teamTotal += members.length;
           allMembers.push(...members);
           const sortedMembers = [...members].sort((a, b) => {
-            const isPendingA = Boolean(
-              (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted')) &&
-              a.response.managerScore == null
-            );
-            const isPendingB = Boolean(
-              (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted')) &&
-              b.response.managerScore == null
-            );
+            const isPendingA = isYearlyResponse(a.response)
+              ? (a.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+              : Boolean(
+                  (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted') || Boolean(a.response.employeeSubmittedAt) || Boolean((a.response as any).submitted_at)) &&
+                  a.response.managerScore == null
+                );
+            const isPendingB = isYearlyResponse(b.response)
+              ? (b.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+              : Boolean(
+                  (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted') || Boolean(b.response.employeeSubmittedAt) || Boolean((b.response as any).submitted_at)) &&
+                  b.response.managerScore == null
+                );
             if (isPendingA && !isPendingB) return -1;
             if (!isPendingA && isPendingB) return 1;
             return a.employeeName.localeCompare(b.employeeName);
@@ -7641,14 +7693,18 @@ export const EvaluationTab: React.FC = () => {
 
       if (teamTotal > 0 && allMembers.length > 0) {
         allMembers.sort((a, b) => {
-          const isPendingA = Boolean(
-            (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted')) &&
-            a.response.managerScore == null
-          );
-          const isPendingB = Boolean(
-            (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted')) &&
-            b.response.managerScore == null
-          );
+          const isPendingA = isYearlyResponse(a.response)
+            ? (a.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+            : Boolean(
+                (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted') || Boolean(a.response.employeeSubmittedAt) || Boolean((a.response as any).submitted_at)) &&
+                a.response.managerScore == null
+              );
+          const isPendingB = isYearlyResponse(b.response)
+            ? (b.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+            : Boolean(
+                (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted') || Boolean(b.response.employeeSubmittedAt) || Boolean((b.response as any).submitted_at)) &&
+                b.response.managerScore == null
+              );
           if (isPendingA && !isPendingB) return -1;
           if (!isPendingA && isPendingB) return 1;
           return a.employeeName.localeCompare(b.employeeName);
@@ -10431,41 +10487,73 @@ export const EvaluationTab: React.FC = () => {
                         const hasManagerReopenedNote = Boolean(targetMonthRecord?.managerRemarks && targetMonthRecord?.status === 'pending_employee');
 
                         return (
-                          <div className={`p-3 border rounded-xl flex items-center justify-between gap-3 text-xs ${
+                          <div className={`p-4 border rounded-2xl flex flex-col gap-3 text-xs transition-all ${
                             hasManagerReopenedNote
-                              ? 'bg-amber-50/90 border-amber-300 text-amber-950'
-                              : 'bg-teal-50/80 border-teal-200 text-teal-950'
+                              ? 'bg-amber-50/95 border-2 border-amber-300 shadow-sm text-amber-950'
+                              : 'bg-teal-50/80 border border-teal-200 text-teal-950'
                           }`}>
-                            <div className="flex items-center gap-2.5">
-                              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                                hasManagerReopenedNote
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-teal-100 text-teal-700'
-                              }`}>
-                                <CalendarDaysIcon className="w-4 h-4" />
-                              </div>
-                              <div>
-                                <span className={`font-bold block ${hasManagerReopenedNote ? 'text-amber-950' : 'text-teal-950'}`}>
-                                  {lockInfo.currentMonthName} Milestone is Open {hasManagerReopenedNote ? '• Reopened for Revision' : ''}
-                                </span>
-                                <span className={`text-[11px] block ${hasManagerReopenedNote ? 'text-amber-800' : 'text-teal-800'}`}>
-                                  Please enter your actual deliverables and self-scores below, then click "Submit {lockInfo.currentMonthName} Deliverables to Manager".
-                                </span>
-                                {hasManagerReopenedNote && (
-                                  <div className="mt-1 text-[11px] font-medium text-amber-900 bg-white/80 border border-amber-200/80 rounded px-2 py-0.5 w-fit">
-                                    <strong>Manager Note:</strong> {targetMonthRecord?.managerRemarks}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3">
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
+                                  hasManagerReopenedNote
+                                    ? 'bg-amber-200/90 text-amber-900 border border-amber-300'
+                                    : 'bg-teal-100 text-teal-700'
+                                }`}>
+                                  {hasManagerReopenedNote ? (
+                                    <ArrowUturnLeftIcon className="w-4 h-4 stroke-[2.2]" />
+                                  ) : (
+                                    <CalendarDaysIcon className="w-4 h-4" />
+                                  )}
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`font-bold text-sm block ${hasManagerReopenedNote ? 'text-amber-950' : 'text-teal-950'}`}>
+                                      {lockInfo.currentMonthName} Milestone {hasManagerReopenedNote ? '— Revision Requested by Manager' : 'is Open'}
+                                    </span>
+                                    {hasManagerReopenedNote && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-950 border border-amber-300 shadow-2xs">
+                                        Action Required
+                                      </span>
+                                    )}
                                   </div>
-                                )}
+                                  <p className={`text-xs leading-relaxed ${hasManagerReopenedNote ? 'text-amber-900' : 'text-teal-800'}`}>
+                                    {hasManagerReopenedNote
+                                      ? 'Your manager has returned this milestone with specific feedback. Please review the instructions below, revise your deliverable actuals, and resubmit.'
+                                      : `Please enter your actual deliverables and self-scores below, then click "Submit ${lockInfo.currentMonthName} Deliverables to Manager".`}
+                                  </p>
+                                </div>
                               </div>
+                              <span className={`px-2.5 py-1 rounded-lg font-bold text-[11px] shrink-0 inline-flex items-center gap-1 shadow-2xs ${
+                                hasManagerReopenedNote
+                                  ? 'bg-amber-200/90 text-amber-950 border border-amber-300'
+                                  : 'bg-teal-100 text-teal-900'
+                              }`}>
+                                {hasManagerReopenedNote ? (
+                                  <>
+                                    <ArrowUturnLeftIcon className="w-3.5 h-3.5 stroke-[2.2]" />
+                                    <span>Revision Needed</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <SparklesIcon className="w-3.5 h-3.5" />
+                                    <span>Open</span>
+                                  </>
+                                )}
+                              </span>
                             </div>
-                            <span className={`px-2.5 py-1 rounded-md font-bold text-[11px] shrink-0 inline-flex items-center gap-1 ${
-                              hasManagerReopenedNote
-                                ? 'bg-amber-200 text-amber-950'
-                                : 'bg-teal-100 text-teal-900'
-                            }`}>
-                              <SparklesIcon className="w-3 h-3" />
-                              {hasManagerReopenedNote ? 'Revision' : 'Open'}
-                            </span>
+
+                            {/* Prominent Manager Feedback Callout Card */}
+                            {hasManagerReopenedNote && (
+                              <div className="p-3.5 bg-white rounded-xl border border-amber-300/80 shadow-2xs space-y-1.5 animate-in fade-in duration-200">
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                                  <ChatBubbleLeftEllipsisIcon className="w-4 h-4 text-amber-700 shrink-0" />
+                                  <span>Manager Instructions & Feedback:</span>
+                                </div>
+                                <div className="p-2.5 bg-amber-50/60 rounded-lg border border-amber-200/60 text-xs text-slate-800 font-medium leading-relaxed italic">
+                                  "{targetMonthRecord?.managerRemarks}"
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
@@ -13766,10 +13854,19 @@ export const EvaluationTab: React.FC = () => {
 
                           {/* Members inside Team (Rendered directly when Team is Expanded) */}
                           {isTeamExpanded && teamGroup.members.map(member => {
-                            const isSubmittedPending = Boolean(
+                            const isYearly = isYearlyResponse(member.response);
+                            const hasYearlySubmittedMilestone = isYearly && (member.response.monthly_records || []).some(
+                              (m: any) => m.status === 'submitted_to_manager'
+                            );
+                            const hasYearlyApprovedMilestone = isYearly && (member.response.monthly_records || []).some(
+                              (m: any) => m.status === 'manager_approved'
+                            );
+                            const isStandardSubmitted = !isYearly && Boolean(
                               (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || String(member.response.status || '').toLowerCase().includes('submitted') || Boolean(member.response.employeeSubmittedAt) || Boolean((member.response as any).submitted_at) || Boolean((member.response as any).submittedAt) || Boolean((member.response as any).employee_submitted_at)) &&
                               member.response.managerScore == null
                             );
+
+                            const isSubmittedPending = hasYearlySubmittedMilestone || isStandardSubmitted;
 
                             return (
                               <tr
@@ -13794,7 +13891,7 @@ export const EvaluationTab: React.FC = () => {
                                       </span>
                                       {isSubmittedPending && (
                                         <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary-100 text-primary-900 border border-primary-300 shrink-0 inline-flex items-center gap-1 shadow-2xs animate-pulse">
-                                          <SparklesIcon className="w-3 h-3 text-primary-700" />
+                                          <SparklesIcon className="w-3.5 h-3.5 text-primary-700" />
                                           <span>Ready for Review</span>
                                         </span>
                                       )}
@@ -13883,6 +13980,15 @@ export const EvaluationTab: React.FC = () => {
                                         <PencilSquareIcon className="w-3.5 h-3.5" />
                                         <span>Update Score</span>
                                       </button>
+                                    ) : isYearly && hasYearlyApprovedMilestone ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectMgrResponse(member.response)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer shadow-2xs bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300"
+                                      >
+                                        <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
+                                        <span>Open Scorecard</span>
+                                      </button>
                                     ) : (
                                       <span
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs bg-slate-100 text-slate-500 border border-slate-200 select-none cursor-default"
@@ -13892,7 +13998,7 @@ export const EvaluationTab: React.FC = () => {
                                         <span>Pending</span>
                                       </span>
                                     )}
-                                    {!isSubmittedPending && !member.isCalibrated && member.response.managerScore == null && !member.response.employeeSubmittedAt && (
+                                    {!isSubmittedPending && !member.isCalibrated && !hasYearlyApprovedMilestone && member.response.managerScore == null && !member.response.employeeSubmittedAt && (
                                       <button
                                         type="button"
                                         onClick={() => handleDeleteMgrResponseRow(member.response)}
@@ -15097,7 +15203,7 @@ export const EvaluationTab: React.FC = () => {
                           {(curYearlyRec?.status === 'manager_approved' || curYearlyRec?.status === 'submitted_to_manager') && (
                             <button
                               type="button"
-                              onClick={() => handleManagerYearlyMonthReopen(activeMgrYearlyFiscalMonth)}
+                              onClick={() => handleOpenReopenModal(activeMgrYearlyFiscalMonth)}
                               className="px-2.5 py-1 text-[11px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs"
                               title={`Send ${curMonthName} milestone back to employee for correction`}
                             >
@@ -15483,7 +15589,7 @@ export const EvaluationTab: React.FC = () => {
                           {(curYearlyRec?.status === 'manager_approved' || curYearlyRec?.status === 'submitted_to_manager') && (
                             <button
                               type="button"
-                              onClick={() => handleManagerYearlyMonthReopen(activeMgrYearlyFiscalMonth)}
+                              onClick={() => handleOpenReopenModal(activeMgrYearlyFiscalMonth)}
                               className="flex items-center justify-center gap-1.5 px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
                               title={`Reopen ${curMonthName} milestone and send back to employee for correction`}
                             >
@@ -15540,6 +15646,104 @@ export const EvaluationTab: React.FC = () => {
         );
       })()}
 
+      {/* ========================================================================= */}
+      {/* MANAGER REOPEN MILESTONE / EVALUATION FEEDBACK MODAL (MANDATORY COMMENT) */}
+      {/* ========================================================================= */}
+      {isReopenModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center shrink-0 shadow-2xs">
+                  <ArrowUturnLeftIcon className="w-5 h-5 stroke-[2.2]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 tracking-tight">
+                    Reopen {reopenTargetMonthIndex ? FISCAL_MONTHS.find(m => m.monthIndex === reopenTargetMonthIndex)?.monthName : 'Milestone'} for Revision
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Send back to employee to update and re-submit deliverable actuals.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsReopenModalOpen(false);
+                  setReopenTargetMonthIndex(null);
+                  setReopenFeedbackInput('');
+                }}
+                className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+              >
+                <XMarkIcon className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="py-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <ChatBubbleLeftEllipsisIcon className="w-4 h-4 text-amber-600" />
+                  <span>Manager Revision Instructions / Feedback</span>
+                </label>
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                  Mandatory
+                </span>
+              </div>
+
+              <textarea
+                rows={4}
+                value={reopenFeedbackInput}
+                onChange={e => setReopenFeedbackInput(e.target.value)}
+                placeholder="Explain clearly why this milestone is being reopened and what deliverable actuals the employee needs to revise or correct..."
+                className="w-full p-3.5 bg-slate-50 focus:bg-white border-2 border-amber-200 focus:border-amber-500 rounded-2xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-200/50 transition resize-none placeholder:text-slate-400 leading-relaxed font-medium"
+                autoFocus
+              />
+
+              <div className="flex items-center gap-2 p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-xl text-[11px] text-amber-900">
+                <InformationCircleIcon className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>This feedback will be prominently displayed at the top of the employee's worksheet so they know what to correct.</span>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsReopenModalOpen(false);
+                  setReopenTargetMonthIndex(null);
+                  setReopenFeedbackInput('');
+                }}
+                disabled={isReopeningAction}
+                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer border border-slate-200"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmReopenWithFeedback}
+                disabled={isReopeningAction || !reopenFeedbackInput.trim()}
+                className="flex items-center justify-center gap-2 px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
+              >
+                {isReopeningAction ? (
+                  <>
+                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                    <span>Reopening & Sending...</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowUturnLeftIcon className="w-4 h-4 stroke-[2.2]" />
+                    <span>Reopen & Send to Employee</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* MANAGER EDIT DELIVERABLES MATRIX MODAL */}
