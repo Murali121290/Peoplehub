@@ -11,14 +11,19 @@ import {
   KPIItem,
   RollupTier,
   YearlyMonthRecord,
-  YearlyMonthKPIEntry
+  YearlyMonthKPIEntry,
+  YearlyWeekRecord,
+  YearlyQuarterRecord
 } from '../../../types/evaluation.types';
 import {
   evaluationService,
   DEFAULT_KPI_CATEGORIES,
   ManagerKpiTemplateRecord,
   FISCAL_MONTHS,
-  initializeYearlyMonthlyRecords
+  FISCAL_QUARTERS,
+  initializeYearlyMonthlyRecords,
+  initializeYearlyWeeklyRecords,
+  initializeYearlyQuarterlyRecords
 } from '../../../services/evaluationService';
 import {
   calculateKPIScore,
@@ -54,6 +59,8 @@ import {
   ChevronLeftIcon,
   ClipboardDocumentListIcon,
   ClipboardDocumentCheckIcon,
+  ClipboardDocumentIcon,
+  DocumentDuplicateIcon,
   DocumentChartBarIcon,
   ClockIcon,
   CalendarDaysIcon,
@@ -122,6 +129,16 @@ export const isKpiRemarkMandatory = (
     // If any penalty occurred (> 0), remark is mandatory
     return numericVal > 0;
   } else {
+    // For range targets (e.g. 650 to 750):
+    if (parsedTarget.operator === 'range') {
+      const minVal = parsedTarget.threshold;
+      const maxVal = parsedTarget.maxThreshold ?? minVal;
+      // If within target range [minVal, maxVal], remark is NOT mandatory
+      if (numericVal >= minVal && numericVal <= maxVal) {
+        return false;
+      }
+      return true;
+    }
     // For standard KPIs:
     // High (numericVal > targetThreshold) or Low (numericVal < targetThreshold) -> Mandatory
     return numericVal !== targetThreshold;
@@ -164,6 +181,21 @@ export const computeMetricDeficitLabel = (
     return 'Target Met';
   }
 
+  // Range target handling (e.g. 650 to 750)
+  if (parsedTarget.operator === 'range') {
+    const minVal = parsedTarget.threshold;
+    const maxVal = parsedTarget.maxThreshold ?? minVal;
+    if (num >= minVal && num <= maxVal) {
+      return 'Target Met';
+    } else if (num > maxVal) {
+      const surplus = Math.round((num - maxVal) * 100) / 100;
+      return `Exceeded (+${surplus}${unitSuffix})`;
+    } else {
+      const deficit = Math.round((minVal - num) * 100) / 100;
+      return `Insufficient (-${deficit}${unitSuffix})`;
+    }
+  }
+
   if (num < target) {
     const deficit = Math.round((target - num) * 100) / 100;
     return `Insufficient (-${deficit}${unitSuffix})`;
@@ -176,8 +208,8 @@ export const computeMetricDeficitLabel = (
 
 /**
  * Evaluates employee actual performance against target:
- * - When target is exceeded: displays Exceeded (+X).
- * - When target is deficient/penalized: displays Insufficient (-X) or Insufficient (+X).
+ * - When target is exceeded: displays Exceeded (+X) / High Target.
+ * - When target is deficient/penalized: displays Insufficient (-X) / Low Target.
  * - When target is met: displays Target Met.
  */
 export const getInsufficientStatus = (
@@ -208,20 +240,67 @@ export const getInsufficientStatus = (
   const rawUnit = (kpi?.unit || '').trim();
   const unitSuffix = rawUnit ? ` ${rawUnit}` : '';
 
+  // Range target handling (e.g. 650 to 750)
+  if (!isNeg && parsedTarget.operator === 'range') {
+    const minVal = parsedTarget.threshold;
+    const maxVal = parsedTarget.maxThreshold ?? minVal;
+
+    // Inside target range -> Target Met (Neither High nor Low)
+    if (num >= minVal && num <= maxVal) {
+      return {
+        status: 'met',
+        label: 'Target Met',
+        badgeClass: 'bg-teal-50 text-teal-800 border-teal-200'
+      };
+    }
+
+    // Above upper range (e.g. > 750) -> Exceeded / High Target
+    if (num > maxVal) {
+      const surplus = Math.round((num - maxVal) * 100) / 100;
+      return isFlaggedByEmployee
+        ? {
+          status: 'exceeded',
+          label: `Exceeded (+${surplus}${unitSuffix})`,
+          badgeClass: 'bg-emerald-50 text-emerald-900 border-emerald-300'
+        }
+        : {
+          status: 'exceeded',
+          label: 'High Target',
+          badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200'
+        };
+    }
+
+    // Below lower range (e.g. < 650) -> Insufficient / Low Target
+    if (num < minVal) {
+      const deficit = Math.round((minVal - num) * 100) / 100;
+      return isFlaggedByEmployee
+        ? {
+          status: 'insufficient',
+          label: `Insufficient (-${deficit}${unitSuffix})`,
+          badgeClass: 'bg-amber-50 text-amber-900 border-amber-300'
+        }
+        : {
+          status: 'insufficient',
+          label: 'Low Target',
+          badgeClass: 'bg-amber-50 text-amber-800 border-amber-200'
+        };
+    }
+  }
+
   // 1. Standard KPI Exceeded Target (e.g. 11 vs 1 projects)
   if (!isNeg && num > target) {
     const surplus = Math.round((num - target) * 100) / 100;
     return isFlaggedByEmployee
       ? {
-          status: 'exceeded',
-          label: `Exceeded (+${surplus}${unitSuffix})`,
-          badgeClass: 'bg-emerald-50 text-emerald-900 border-emerald-300'
-        }
+        status: 'exceeded',
+        label: `Exceeded (+${surplus}${unitSuffix})`,
+        badgeClass: 'bg-emerald-50 text-emerald-900 border-emerald-300'
+      }
       : {
-          status: 'exceeded',
-          label: 'High Target',
-          badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200'
-        };
+        status: 'exceeded',
+        label: 'High Target',
+        badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200'
+      };
   }
 
   // 2. Standard KPI Below Target (Deficit / Low Target, e.g. 2 vs 3 projects)
@@ -229,15 +308,15 @@ export const getInsufficientStatus = (
     const deficit = Math.round((target - num) * 100) / 100;
     return isFlaggedByEmployee
       ? {
-          status: 'insufficient',
-          label: `Insufficient (-${deficit}${unitSuffix})`,
-          badgeClass: 'bg-amber-50 text-amber-900 border-amber-300'
-        }
+        status: 'insufficient',
+        label: `Insufficient (-${deficit}${unitSuffix})`,
+        badgeClass: 'bg-amber-50 text-amber-900 border-amber-300'
+      }
       : {
-          status: 'insufficient',
-          label: 'Low Target',
-          badgeClass: 'bg-amber-50 text-amber-800 border-amber-200'
-        };
+        status: 'insufficient',
+        label: 'Low Target',
+        badgeClass: 'bg-amber-50 text-amber-800 border-amber-200'
+      };
   }
 
   // 3. Negative / Low-Target KPI Limit Exceeded (e.g. 4 vs <2 delays)
@@ -245,15 +324,15 @@ export const getInsufficientStatus = (
     const excess = Math.round((num - target) * 100) / 100;
     return isFlaggedByEmployee
       ? {
-          status: 'insufficient',
-          label: `Insufficient (+${excess}${unitSuffix})`,
-          badgeClass: 'bg-rose-50 text-rose-800 border-rose-300'
-        }
+        status: 'insufficient',
+        label: `Insufficient (+${excess}${unitSuffix})`,
+        badgeClass: 'bg-rose-50 text-rose-800 border-rose-300'
+      }
       : {
-          status: 'insufficient',
-          label: 'High Target',
-          badgeClass: 'bg-rose-50 text-rose-800 border-rose-200'
-        };
+        status: 'insufficient',
+        label: 'High Target',
+        badgeClass: 'bg-rose-50 text-rose-800 border-rose-200'
+      };
   }
 
   // 4. Exactly met or within allowable limit
@@ -795,6 +874,7 @@ export const EvaluationTab: React.FC = () => {
   const [isHrSavingTemplate, setIsHrSavingTemplate] = useState<boolean>(false);
   const [isHrLoadingTemplates, setIsHrLoadingTemplates] = useState<boolean>(false);
   const [showHrTargetGuide, setShowHrTargetGuide] = useState<boolean>(false);
+  const [copiedHrCategories, setCopiedHrCategories] = useState<{ name: string; key: string; categories: KPICategory[] } | null>(null);
 
   // Manager Create & Assign Metrics Modal State
   const [isMgrCreateModalOpen, setIsMgrCreateModalOpen] = useState<boolean>(false);
@@ -815,6 +895,7 @@ export const EvaluationTab: React.FC = () => {
   const [isSavingTemplate, setIsSavingTemplate] = useState<boolean>(false);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState<boolean>(false);
   const [showTargetGuide, setShowTargetGuide] = useState<boolean>(false);
+  const [copiedMgrCategories, setCopiedMgrCategories] = useState<{ name: string; key: string; categories: KPICategory[] } | null>(null);
 
   const getLocalTodayDateString = (d = new Date()) => {
     const yyyy = d.getFullYear();
@@ -837,6 +918,7 @@ export const EvaluationTab: React.FC = () => {
 
   // Dynamic Frequency & Period Configuration State
   const [mgrPeriodType, setMgrPeriodType] = useState<'quarterly' | 'monthly' | 'weekly' | 'daily' | 'yearly'>('quarterly');
+  const [mgrSubFrequency, setMgrSubFrequency] = useState<'monthly' | 'weekly' | 'quarterly' | 'annual' | ''>('');
   const [mgrPeriodQuarter, setMgrPeriodQuarter] = useState<number>(currentQuarter); // 1, 2, 3, 4 (Stage 1..4)
   const [mgrPeriodYear, setMgrPeriodYear] = useState<number>(currentYear);
   const [mgrPeriodMonth, setMgrPeriodMonth] = useState<number>(currentMonth);
@@ -1007,6 +1089,9 @@ export const EvaluationTab: React.FC = () => {
   const [selectedReportResponseId, setSelectedReportResponseId] = useState<string>('');
   const [showReportAuditBreakdown, setShowReportAuditBreakdown] = useState<boolean>(false);
   const [historyAuditBreakdownOpen, setHistoryAuditBreakdownOpen] = useState<Record<string, boolean>>({});
+  const [historyQuarterSelection, setHistoryQuarterSelection] = useState<Record<string, number>>({});
+  const [historyMonthSelection, setHistoryMonthSelection] = useState<Record<string, number>>({});
+  const [historyWeekSelection, setHistoryWeekSelection] = useState<Record<string, number>>({});
   const [historySearchQuery, setHistorySearchQuery] = useState<string>('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'published' | 'in_review'>('all');
   const [showRubricMatrix, setShowRubricMatrix] = useState<boolean>(false);
@@ -1023,6 +1108,16 @@ export const EvaluationTab: React.FC = () => {
   const [activeMgrYearlyFiscalMonth, setActiveMgrYearlyFiscalMonth] = useState<number>(6);
   const [yearlyMonthKpiInputs, setYearlyMonthKpiInputs] = useState<Record<number, Record<string, YearlyMonthKPIEntry>>>({});
   const [yearlyMonthRemarks, setYearlyMonthRemarks] = useState<Record<number, string>>({});
+  const [activeYearlyWeekIndex, setActiveYearlyWeekIndex] = useState<number>(26);
+  const [weeklyQuarterFilter, setWeeklyQuarterFilter] = useState<number | 'all'>(2);
+  const [activeMgrYearlyWeekIndex, setActiveMgrYearlyWeekIndex] = useState<number>(26);
+  const [mgrWeeklyQuarterFilter, setMgrWeeklyQuarterFilter] = useState<number | 'all'>('all');
+  const [yearlyWeekKpiInputs, setYearlyWeekKpiInputs] = useState<Record<number, Record<string, YearlyMonthKPIEntry>>>({});
+  const [yearlyWeekRemarks, setYearlyWeekRemarks] = useState<Record<number, string>>({});
+  const [activeYearlyQuarterIndex, setActiveYearlyQuarterIndex] = useState<number>(2);
+  const [activeMgrYearlyQuarterIndex, setActiveMgrYearlyQuarterIndex] = useState<number>(2);
+  const [yearlyQuarterKpiInputs, setYearlyQuarterKpiInputs] = useState<Record<number, Record<string, YearlyMonthKPIEntry>>>({});
+  const [yearlyQuarterRemarks, setYearlyQuarterRemarks] = useState<Record<number, string>>({});
 
   // Manager Form State
   const [selectedMgrResponseId, setSelectedMgrResponseId] = useState<string>('');
@@ -1259,6 +1354,12 @@ export const EvaluationTab: React.FC = () => {
         setSelectedResponseId('');
         setKpiInputs({});
         setEmpRemarks('');
+      }
+
+      // Also fetch manager templates from PostgreSQL for the active manager
+      const currentMgrCode = String(currentDbUser?.employee_id || rawUserCode || user?.employee_id || myCanonicalCode || '').trim();
+      if (currentMgrCode) {
+        loadManagerDeskTemplates(currentMgrCode, effectiveTeamName);
       }
     } catch (err) {
       console.error('Error loading evaluation data', err);
@@ -1516,42 +1617,25 @@ export const EvaluationTab: React.FC = () => {
     setSelectedTeamId(teamId);
 
     const teamMgrs = getManagersForTeam(teamId, dbTeams, dbEmployees);
+    let targetMgrId = '';
     if (teamMgrs.length > 0) {
-      const allIds = teamMgrs.map(m => String(m.employee_id || ''));
+      const allIds = teamMgrs.map(m => String(m.employee_id || '')).filter(Boolean);
       setSelectedMgrIds(allIds);
       const firstMgr = teamMgrs[0];
-      const newMgrId = String(firstMgr.employee_id || '');
-      setSelectedMgrId(newMgrId);
-      loadHrTemplates(newMgrId, teamId);
+      targetMgrId = String(firstMgr.employee_id || '');
+      setSelectedMgrId(targetMgrId);
     } else {
       setSelectedMgrIds([]);
       setSelectedMgrId('');
-      setHrTemplates([]);
-      setHrCategories([]);
     }
 
     const teamObj = dbTeams.find(t => String(t.id) === String(teamId) || String(t.name).toLowerCase() === String(teamId).toLowerCase() || t.id === teamId || t.name === teamId);
     const teamName = teamObj?.name || teamId || '';
 
-    const existingTeamCycle = cycles.find(c =>
-      String(c.teamId) === String(teamId) ||
-      (teamObj && (c.teamName || '').toLowerCase() === (teamObj.name || '').toLowerCase())
-    );
+    setCycleName(`Q${currentQuarter} Performance Evaluation - ${teamName}`);
+    setPeriodName(`Q${currentQuarter} ${currentYear} (${quarterLabel})`);
 
-    if (existingTeamCycle && existingTeamCycle.categories && existingTeamCycle.categories.length > 0) {
-      setHrCategories(JSON.parse(JSON.stringify(existingTeamCycle.categories)));
-      setCycleName(existingTeamCycle.name || `Q${currentQuarter} Performance Evaluation - ${teamName}`);
-      setPeriodName(existingTeamCycle.periodName || `Q${currentQuarter} ${currentYear} (${quarterLabel})`);
-    } else if (isProjectManagementTeam(teamName)) {
-      setHrCategories(JSON.parse(JSON.stringify(DEFAULT_KPI_CATEGORIES)));
-      setCycleName(`Q${currentQuarter} Performance Evaluation - ${teamName}`);
-      setPeriodName(`Q${currentQuarter} ${currentYear} (${quarterLabel})`);
-    } else {
-      // Empty slate for other teams
-      setHrCategories([]);
-      setCycleName(`Q${currentQuarter} Performance Evaluation - ${teamName}`);
-      setPeriodName(`Q${currentQuarter} ${currentYear} (${quarterLabel})`);
-    }
+    loadHrTemplates(targetMgrId, teamId);
   };
 
   const handleHrFrequencyChange = (freq: 'quarterly' | 'monthly' | 'weekly' | 'daily' | 'yearly') => {
@@ -1741,7 +1825,6 @@ export const EvaluationTab: React.FC = () => {
   });
 
   const loadHrTemplates = async (mgrId: string, teamIdVal: string) => {
-    if (!mgrId) return;
     setIsHrLoadingTemplates(true);
     try {
       const teamObj = dbTeams.find(t => String(t.id) === String(teamIdVal) || String(t.name).toLowerCase() === String(teamIdVal).toLowerCase() || t.id === teamIdVal || t.name === teamIdVal);
@@ -1749,28 +1832,30 @@ export const EvaluationTab: React.FC = () => {
       const isPM = isProjectManagementTeam(teamName);
       const initialCatsForTeam = isPM ? JSON.parse(JSON.stringify(DEFAULT_KPI_CATEGORIES)) : [];
 
-      const res = await evaluationService.getManagerTemplates(mgrId);
-      const validTemplates: ManagerKpiTemplateRecord[] = (res?.templates || []).filter((t: any) => 
+      const res = await evaluationService.getManagerTemplates(mgrId, String(teamObj?.id || teamIdVal || ''), teamName);
+      const validTemplates: ManagerKpiTemplateRecord[] = (res?.templates || []).filter((t: any) =>
         (t.team_id || t.team_name) || (t.template_name && !t.template_name.match(/^Form [1-4]$/)) || (t.categories && t.categories.length > 0)
       ).map((t: any) => ({
         ...t,
-        manager_ids: t.manager_ids && t.manager_ids.length > 0 ? t.manager_ids : (t.manager_id ? [String(t.manager_id)] : [mgrId])
+        manager_ids: t.manager_ids && t.manager_ids.length > 0 ? t.manager_ids : (t.manager_id ? [String(t.manager_id)] : (mgrId ? [mgrId] : []))
       }));
 
       if (validTemplates.length > 0) {
-        // 1. Check if manager already has a template explicitly designated for this team
-        const teamMatching = validTemplates.find((t: any) => 
+        // 1. Check if manager/team already has a template explicitly designated for this team
+        const teamMatching = validTemplates.find((t: any) =>
           (t.team_id && (String(t.team_id).toLowerCase() === String(teamIdVal).toLowerCase() || String(t.team_id) === String(teamObj?.id))) ||
           (t.team_name && t.team_name.toLowerCase() === teamName.toLowerCase()) ||
           (t.template_name && t.template_name.toLowerCase().includes(teamName.toLowerCase()))
-        );
+        ) || validTemplates[0];
 
         if (teamMatching) {
           // Found existing form for this specific team!
           setHrTemplates(validTemplates);
           setActiveHrTemplateKey(teamMatching.template_key);
-          if (teamMatching.categories && teamMatching.categories.length > 0) {
+          if (teamMatching.categories && Array.isArray(teamMatching.categories) && teamMatching.categories.length > 0) {
             setHrCategories(JSON.parse(JSON.stringify(teamMatching.categories)));
+          } else {
+            setHrCategories(initialCatsForTeam);
           }
           if (teamMatching.manager_ids && teamMatching.manager_ids.length > 0) {
             setSelectedMgrIds(teamMatching.manager_ids);
@@ -1782,7 +1867,7 @@ export const EvaluationTab: React.FC = () => {
           const newName = teamName ? `${teamName}` : `Form ${nextNum}`;
           const newTpl: ManagerKpiTemplateRecord = {
             manager_id: mgrId,
-            manager_ids: [mgrId],
+            manager_ids: mgrId ? [mgrId] : [],
             template_key: newKey,
             template_name: newName,
             team_id: teamIdVal,
@@ -1792,17 +1877,19 @@ export const EvaluationTab: React.FC = () => {
           };
           setHrTemplates([...validTemplates, newTpl]);
           setActiveHrTemplateKey(newKey);
-          setSelectedMgrIds([mgrId]);
+          setHrCategories(initialCatsForTeam);
+          if (mgrId) setSelectedMgrIds([mgrId]);
         }
       } else {
         // Clean single form initialization for this manager & team
         const form1Name = teamName ? `${teamName}` : 'Form 1';
         const defaultForms: ManagerKpiTemplateRecord[] = [
-          { manager_id: mgrId, manager_ids: [mgrId], template_key: 'form_1', template_name: form1Name, is_default: true, categories: initialCatsForTeam, team_id: teamIdVal, team_name: teamName }
+          { manager_id: mgrId, manager_ids: mgrId ? [mgrId] : [], template_key: 'form_1', template_name: form1Name, is_default: true, categories: initialCatsForTeam, team_id: teamIdVal, team_name: teamName }
         ];
         setHrTemplates(defaultForms);
         setActiveHrTemplateKey('form_1');
-        setSelectedMgrIds([mgrId]);
+        setHrCategories(initialCatsForTeam);
+        if (mgrId) setSelectedMgrIds([mgrId]);
       }
     } catch (err) {
       console.warn('Failed to load HR templates from DB:', err);
@@ -1812,10 +1899,10 @@ export const EvaluationTab: React.FC = () => {
   };
 
   useEffect(() => {
-    if (selectedMgrId && activeRole === 'hr') {
+    if (activeRole === 'hr' && (selectedTeamId || selectedMgrId)) {
       loadHrTemplates(selectedMgrId, selectedTeamId);
     }
-  }, [selectedTeamId, activeRole]);
+  }, [selectedTeamId, selectedMgrId, activeRole]);
 
   const handleHrSelectTemplate = (targetKey: string) => {
     if (targetKey === activeHrTemplateKey) return;
@@ -1969,6 +2056,66 @@ export const EvaluationTab: React.FC = () => {
     );
   };
 
+  const cloneCategoriesForPaste = (categories: KPICategory[]): KPICategory[] => {
+    return categories.map((cat, cIdx) => {
+      const newCatId = `cat_${Date.now()}_${cIdx}_${Math.random().toString(36).substring(2, 6)}`;
+      return {
+        ...cat,
+        id: newCatId,
+        kpis: (cat.kpis || []).map((kpi, kIdx) => ({
+          ...kpi,
+          id: `kpi_${Date.now()}_${cIdx}_${kIdx}_${Math.random().toString(36).substring(2, 6)}`,
+          categoryId: newCatId,
+          actualValue: '',
+          actual_value: '',
+          earnedScore: 0,
+          earned_score: 0,
+          achievementPercentage: 0,
+          achievement_percentage: 0,
+          employeeRemarks: '',
+          employee_remark: '',
+          managerActualValue: '',
+          manager_actual_pm: '',
+          managerScore: undefined,
+          manager_score: undefined,
+          managerRemarks: '',
+          manager_remark: ''
+        }))
+      };
+    });
+  };
+
+  const handleHrCopyTemplate = () => {
+    const currentTpl = hrTemplates.find(t => t.template_key === activeHrTemplateKey);
+    const formLabel = currentTpl?.template_name || `Form ${activeHrTemplateKey.replace('form_', '')}`;
+    if (!hrCategories || hrCategories.length === 0) {
+      showToast('Current form has no deliverables to copy. Add categories first.');
+      return;
+    }
+    setCopiedHrCategories({
+      name: formLabel,
+      key: activeHrTemplateKey,
+      categories: JSON.parse(JSON.stringify(hrCategories))
+    });
+    showToast(`Copied "${formLabel}"! Click "+ New Form" or switch forms to paste.`);
+  };
+
+  const handleHrPasteTemplate = () => {
+    if (!copiedHrCategories || !copiedHrCategories.categories || copiedHrCategories.categories.length === 0) {
+      showToast('No form copied yet. Click "Copy Form" on a form first.');
+      return;
+    }
+    const cloned = cloneCategoriesForPaste(copiedHrCategories.categories);
+    setHrCategories(cloned);
+    setHrTemplates(prev => prev.map(t => {
+      if (t.template_key === activeHrTemplateKey) {
+        return { ...t, categories: cloned };
+      }
+      return t;
+    }));
+    showToast(`Pasted deliverables from "${copiedHrCategories.name}" into current form!`);
+  };
+
   const handleToggleHrManager = (mgrId: string) => {
     setSelectedMgrIds(prev => {
       const exists = prev.includes(mgrId);
@@ -2030,39 +2177,48 @@ export const EvaluationTab: React.FC = () => {
         ? currentTpl.manager_ids
         : (selectedMgrIds.length > 0 ? selectedMgrIds : (selectedMgrId ? [selectedMgrId] : []));
 
-      const finalMgrs = availableTeamManagers.filter(m => {
-        const idVal = String(m.employee_id || '');
-        return effectiveMgrIds.includes(idVal);
-      });
-      const chosenManagers = finalMgrs.length > 0 ? finalMgrs : (availableTeamManagers.length > 0 ? availableTeamManagers : [resolvedManager].filter(Boolean));
+      const targetMgrIds = effectiveMgrIds.length > 0
+        ? effectiveMgrIds
+        : (availableTeamManagers.length > 0
+            ? availableTeamManagers.map(m => String(m.employee_id || '')).filter(Boolean)
+            : (resolvedManager ? [String(resolvedManager.employee_id || '')].filter(Boolean) : (selectedMgrId ? [selectedMgrId] : ['general'])));
 
-      // Strictly deduplicate managers by unique employee_id
-      const uniqueMgrMap = new Map<string, any>();
-      for (const m of finalMgrs) {
-        const key = String(m.employee_id || '');
-        if (key && !uniqueMgrMap.has(key)) {
-          uniqueMgrMap.set(key, m);
-        }
+      const mgrListToSave: { id: string; name: string }[] = [];
+      const seenIds = new Set<string>();
+
+      for (const id of targetMgrIds) {
+        if (!id || seenIds.has(id)) continue;
+        seenIds.add(id);
+        const matchedMgr = availableTeamManagers.find(m => String(m.employee_id || '') === id)
+          || dbEmployees.find(e => String(e.employee_id || '') === id);
+        const mgrDisplayName = matchedMgr
+          ? (matchedMgr.name || `${matchedMgr.first_name || ''} ${matchedMgr.last_name || ''}`.trim() || 'Manager')
+          : 'Manager';
+        mgrListToSave.push({ id, name: mgrDisplayName });
       }
 
-      for (const targetMgr of uniqueMgrMap.values()) {
-        const mgrCode = String(targetMgr.employee_id || '');
-        const mgrDisplayName = targetMgr.name || `${targetMgr.first_name || ''} ${targetMgr.last_name || ''}`.trim() || 'Manager';
+      if (mgrListToSave.length === 0) {
+        const fallbackId = selectedMgrId || (resolvedManager ? String(resolvedManager.employee_id || '') : 'general');
+        mgrListToSave.push({ id: fallbackId, name: 'Manager' });
+      }
+
+      for (const targetMgr of mgrListToSave) {
         const savePayload = {
-          manager_id: mgrCode,
-          manager_name: mgrDisplayName,
+          manager_id: targetMgr.id,
+          manager_name: targetMgr.name,
           template_key: activeHrTemplateKey,
           template_name: formLabel,
           team_id: String(selectedTeam?.id || selectedTeamId || ''),
           team_name: teamName,
           categories: hrCategories,
-          is_default: true
+          is_default: true,
+          status: 'draft'
         };
 
         await evaluationService.saveManagerTemplate(savePayload);
       }
 
-      showToast(`Saved Deliverables & Targets for "${formLabel}" for selected manager(s)!`);
+      showToast(`Saved Deliverables & Targets for "${formLabel}" to database!`);
       setHrTemplates(prev => {
         const exists = prev.some(t => t.template_key === activeHrTemplateKey);
         if (exists) {
@@ -2070,14 +2226,19 @@ export const EvaluationTab: React.FC = () => {
             ...t,
             categories: JSON.parse(JSON.stringify(hrCategories)),
             template_name: formLabel,
+            team_id: String(selectedTeam?.id || selectedTeamId || ''),
+            team_name: teamName,
             updated_at: new Date().toISOString()
           } : t);
         } else {
           return [...prev, {
-            manager_id: selectedMgrId,
+            manager_id: selectedMgrId || mgrListToSave[0]?.id || '',
+            manager_ids: mgrListToSave.map(m => m.id),
             template_key: activeHrTemplateKey,
             template_name: formLabel,
             categories: JSON.parse(JSON.stringify(hrCategories)),
+            team_id: String(selectedTeam?.id || selectedTeamId || ''),
+            team_name: teamName,
             is_default: true,
             updated_at: new Date().toISOString()
           }];
@@ -2295,19 +2456,21 @@ export const EvaluationTab: React.FC = () => {
       ? currentTpl.manager_ids
       : (selectedMgrIds.length > 0 ? selectedMgrIds : (selectedMgrId ? [selectedMgrId] : []));
 
-    const chosenManagers = availableTeamManagers.filter(m => {
-      const idVal = String(m.employee_id || '');
-      return effectiveMgrIds.includes(idVal);
-    });
+    const targetMgrIds = effectiveMgrIds.length > 0
+      ? effectiveMgrIds
+      : (availableTeamManagers.length > 0
+          ? availableTeamManagers.map(m => String(m.employee_id || '')).filter(Boolean)
+          : (resolvedManager ? [String(resolvedManager.employee_id || '')].filter(Boolean) : (selectedMgrId ? [selectedMgrId] : ['general'])));
 
-    const finalMgrs = chosenManagers.length > 0 ? chosenManagers : (availableTeamManagers.length > 0 ? availableTeamManagers : [resolvedManager].filter(Boolean));
-
-    // Deduplicate managers strictly by unique employee_id
     const uniqueMgrMap = new Map<string, any>();
-    for (const m of finalMgrs) {
-      const key = String(m.employee_id || '');
-      if (key && !uniqueMgrMap.has(key)) {
-        uniqueMgrMap.set(key, m);
+    for (const id of targetMgrIds) {
+      if (!id || uniqueMgrMap.has(id)) continue;
+      const matchedMgr = availableTeamManagers.find(m => String(m.employee_id || '') === id)
+        || dbEmployees.find(e => String(e.employee_id || '') === id);
+      if (matchedMgr) {
+        uniqueMgrMap.set(id, matchedMgr);
+      } else {
+        uniqueMgrMap.set(id, { employee_id: id, name: 'Manager' });
       }
     }
 
@@ -2378,7 +2541,8 @@ export const EvaluationTab: React.FC = () => {
             team_name: String(selectedTeam?.name || selectedTeamId || ''),
             categories: hrCategories,
             is_default: true,
-            manager_id: mId
+            manager_id: mId,
+            status: 'active'
           };
           await evaluationService.saveManagerTemplate(savePayload);
         }
@@ -3039,6 +3203,11 @@ export const EvaluationTab: React.FC = () => {
     if (isHrOrAdmin) return true;
     if (managerDirectCycles.length > 0) return true;
 
+    // Check if manager has an active (dispatched) template in PostgreSQL manager_kpi_templates
+    if (mgrTemplates && mgrTemplates.some(t => t.status === 'active' && t.categories && Array.isArray(t.categories) && t.categories.length > 0)) {
+      return true;
+    }
+
     const cleanStr = (s: any) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
     const myCleanIdList = [
       cleanStr(userId),
@@ -3092,7 +3261,7 @@ export const EvaluationTab: React.FC = () => {
 
       return false;
     });
-  }, [isHrOrAdmin, managerDirectCycles, userId, userCode, myCanonicalCode, currentDbUser, userAny, user, effectiveTeamName, managerDepartments, cycles]);
+  }, [isHrOrAdmin, managerDirectCycles, mgrTemplates, userId, userCode, myCanonicalCode, currentDbUser, userAny, user, effectiveTeamName, managerDepartments, cycles]);
 
   const canCreateMetrics = (isHrOrAdmin || ((isManager || isServiceManager) && hasAssignedCycleFromAdmin)) && !isTeamLead;
 
@@ -3326,23 +3495,22 @@ export const EvaluationTab: React.FC = () => {
     const defaultTeamVal = targetTeam || mgrAssignTeamId || (managerDepartments.length > 1 ? 'all_teams' : (managerDepartments[0] || 'all_teams'));
     setIsLoadingTemplates(true);
     try {
-      const res = await evaluationService.getManagerTemplates(code);
-      const validTemplates = (res?.templates || []).filter((t: any) => 
+      const teamObj = dbTeams.find(t => String(t.id) === String(defaultTeamVal) || String(t.name).toLowerCase() === String(defaultTeamVal).toLowerCase() || t.id === defaultTeamVal || t.name === defaultTeamVal);
+      const tIdStr = teamObj?.id ? String(teamObj.id) : (defaultTeamVal !== 'all_teams' ? String(defaultTeamVal) : '');
+      const tNameStr = teamObj?.name || (defaultTeamVal !== 'all_teams' ? defaultTeamVal : '');
+
+      const res = await evaluationService.getManagerTemplates(code, tIdStr, tNameStr);
+      const validTemplates = (res?.templates || []).filter((t: any) =>
         (t.team_id || t.team_name) || (t.template_name && !t.template_name.match(/^Form [1-4]$/)) || (t.categories && t.categories.length > 0)
       );
-
-      const teamObj = dbTeams.find(t => String(t.id) === String(defaultTeamVal) || String(t.name).toLowerCase() === String(defaultTeamVal).toLowerCase() || t.id === defaultTeamVal || t.name === defaultTeamVal);
-      const tIdStr = teamObj?.id ? String(teamObj.id).toLowerCase() : '';
-      const tNameStr = (teamObj?.name || defaultTeamVal || '').toLowerCase();
-
       if (validTemplates.length > 0) {
         setMgrTemplates(validTemplates);
         const teamMatchingTpl = defaultTeamVal && defaultTeamVal !== 'all_teams'
-          ? validTemplates.find((t: any) => 
-              (t.team_id && (String(t.team_id).toLowerCase() === tIdStr || String(t.team_id).toLowerCase() === tNameStr)) ||
-              (t.team_name && (t.team_name.toLowerCase() === tNameStr || t.team_name.toLowerCase() === tIdStr)) ||
-              (t.template_name && t.template_name.toLowerCase().includes(tNameStr))
-            )
+          ? validTemplates.find((t: any) =>
+            (t.team_id && (String(t.team_id).toLowerCase() === tIdStr.toLowerCase() || String(t.team_id).toLowerCase() === tNameStr.toLowerCase())) ||
+            (t.team_name && (t.team_name.toLowerCase() === tNameStr.toLowerCase() || t.team_name.toLowerCase() === tIdStr.toLowerCase())) ||
+            (t.template_name && t.template_name.toLowerCase().includes(tNameStr.toLowerCase()))
+          )
           : null;
         const initialTpl = teamMatchingTpl ||
           validTemplates.find((t: any) => t.template_key === res?.active_key) ||
@@ -3401,10 +3569,10 @@ export const EvaluationTab: React.FC = () => {
   };
 
   useEffect(() => {
-    if (activeRole === 'manager' && (myCanonicalCode || currentDbUser?.employee_id || user?.id)) {
-      loadManagerDeskTemplates(myCanonicalCode || currentDbUser?.employee_id || String(user?.id), mgrAssignTeamId);
+    if (activeRole === 'manager' && (myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.employee_id || user?.id)) {
+      loadManagerDeskTemplates(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.employee_id || String(user?.id), mgrAssignTeamId);
     }
-  }, [activeRole, myCanonicalCode, currentDbUser, mgrAssignTeamId, cycles.length]);
+  }, [activeRole, myCanonicalCode, currentDbUser, userAny, user, mgrAssignTeamId, cycles.length]);
 
   const handleOpenMgrCreateModal = (targetDept?: string) => {
     if (!canCreateMetrics) {
@@ -3455,7 +3623,7 @@ export const EvaluationTab: React.FC = () => {
     const tNameStr = (teamObj?.name || newTeamId || '').toLowerCase();
 
     // If a template is specifically linked to this department / team, auto-switch to it
-    const matchingTpl = mgrTemplates.find(t => 
+    const matchingTpl = mgrTemplates.find(t =>
       (t.team_id && (String(t.team_id).toLowerCase() === tIdStr || String(t.team_id).toLowerCase() === tNameStr)) ||
       (t.team_name && (t.team_name.toLowerCase() === tNameStr || t.team_name.toLowerCase() === tIdStr)) ||
       (t.template_name && t.template_name.toLowerCase().includes(tNameStr))
@@ -3721,6 +3889,37 @@ export const EvaluationTab: React.FC = () => {
       'danger',
       'Delete Form'
     );
+  };
+
+  const handleMgrCopyTemplate = () => {
+    const currentTpl = mgrTemplates.find(t => t.template_key === activeTemplateKey);
+    const formLabel = currentTpl?.template_name || `Form ${activeTemplateKey.replace('form_', '')}`;
+    if (!mgrAssignCategories || mgrAssignCategories.length === 0) {
+      showToast('Current form has no deliverables to copy. Add categories first.');
+      return;
+    }
+    setCopiedMgrCategories({
+      name: formLabel,
+      key: activeTemplateKey,
+      categories: JSON.parse(JSON.stringify(mgrAssignCategories))
+    });
+    showToast(`Copied "${formLabel}"! Click "+ New Form" or switch forms to paste.`);
+  };
+
+  const handleMgrPasteTemplate = () => {
+    if (!copiedMgrCategories || !copiedMgrCategories.categories || copiedMgrCategories.categories.length === 0) {
+      showToast('No form copied yet. Click "Copy Form" on a form first.');
+      return;
+    }
+    const cloned = cloneCategoriesForPaste(copiedMgrCategories.categories);
+    setMgrAssignCategories(cloned);
+    setMgrTemplates(prev => prev.map(t => {
+      if (t.template_key === activeTemplateKey) {
+        return { ...t, categories: cloned };
+      }
+      return t;
+    }));
+    showToast(`Pasted deliverables from "${copiedMgrCategories.name}" into current form!`);
   };
 
   // Auto-deselect any employee that is already assigned or has a pending evaluation whenever period or modal opens
@@ -4042,6 +4241,11 @@ export const EvaluationTab: React.FC = () => {
           effectiveEndDate = `${mgrPeriodYear}-03-31`;
         }
       } else if (mgrPeriodType === 'yearly' || (mgrPeriodType as string) === 'annual') {
+        if (!mgrSubFrequency) {
+          showAlert('Please select a Milestone Tracking Cadence (Monthly, Weekly, Quarterly, or Annual) for the automated rollout.', 'Milestone Cadence Required');
+          setIsAssigning(false);
+          return;
+        }
         effectiveStartDate = `${mgrPeriodYear}-04-01`;
         effectiveEndDate = `${mgrPeriodYear + 1}-03-31`;
       }
@@ -4140,6 +4344,7 @@ export const EvaluationTab: React.FC = () => {
         categories: mgrAssignCategories,
         allEmployees: dbEmployees.filter(isEmployeeActive),
         frequency: mgrPeriodType,
+        milestone_frequency: (mgrPeriodType === 'yearly' && mgrSubFrequency) ? mgrSubFrequency : undefined,
         templateKey: activeTemplateKey,
         templateName: activeFormLabel
       });
@@ -4960,7 +5165,7 @@ export const EvaluationTab: React.FC = () => {
     const statusStr = String(resp.status || '');
     const isCalibrated = resp.managerScore != null && statusStr !== 'manager_review' && statusStr !== 'Submitted to Manager';
     const isEmpSubmitted = Boolean(resp.employeeSubmittedAt) || Boolean((resp as any).submitted_at) || statusStr === 'manager_review' || statusStr === 'Submitted to Manager' || statusStr.toLowerCase().includes('submitted');
-    
+
     if (isEmpSubmitted || isCalibrated || resp.managerScore != null || statusStr === 'Calibrated & Approved' || statusStr === 'Published' || statusStr === 'Completed' || statusStr === 'Approved') {
       showToast('Submitted, published, and approved evaluation records cannot be deleted.');
       return;
@@ -5185,6 +5390,9 @@ export const EvaluationTab: React.FC = () => {
       lastActiveRespIdRef.current = activeEmpResponse.id;
 
       if (isYearlyResponse(activeEmpResponse)) {
+        const isWeekly = activeEmpResponse.milestone_frequency === 'weekly' || ((activeEmpResponse.weekly_records || []).length > 0 && !(activeEmpResponse.monthly_records || []).length && !(activeEmpResponse.quarterly_records || []).length);
+        const isQuarterly = activeEmpResponse.milestone_frequency === 'quarterly' || ((activeEmpResponse.quarterly_records || []).length > 0 && !(activeEmpResponse.monthly_records || []).length && !(activeEmpResponse.weekly_records || []).length);
+
         const curRecords = activeEmpResponse.monthly_records || [];
         const initialYearlyInputs: Record<number, Record<string, YearlyMonthKPIEntry>> = {};
         const initialYearlyRemarks: Record<number, string> = {};
@@ -5195,13 +5403,120 @@ export const EvaluationTab: React.FC = () => {
         setYearlyMonthKpiInputs(initialYearlyInputs);
         setYearlyMonthRemarks(initialYearlyRemarks);
 
-        if (isDifferentResp) {
-          const activeActionableMonth = FISCAL_MONTHS.slice(5).find(m => {
+        let curWeeklyRecords = activeEmpResponse.weekly_records || [];
+        if (isWeekly || curWeeklyRecords.length > 0) {
+          if (!curWeeklyRecords || curWeeklyRecords.length === 0) {
+            let baseYear = new Date().getFullYear();
+            if (activeEmpResponse.startDate) baseYear = new Date(activeEmpResponse.startDate).getFullYear();
+            curWeeklyRecords = initializeYearlyWeeklyRecords(baseYear);
+          }
+          const initialWeeklyInputs: Record<number, Record<string, YearlyMonthKPIEntry>> = {};
+          const initialWeeklyRemarks: Record<number, string> = {};
+          curWeeklyRecords.forEach(rec => {
+            initialWeeklyInputs[rec.weekIndex] = rec.kpiEntries || {};
+            initialWeeklyRemarks[rec.weekIndex] = rec.employeeRemarks || '';
+          });
+          setYearlyWeekKpiInputs(initialWeeklyInputs);
+          setYearlyWeekRemarks(initialWeeklyRemarks);
+
+          if (isDifferentResp || !activeYearlyWeekIndex) {
+            const todayStr = getLocalTodayDateString();
+            let currentActiveWeekRec = curWeeklyRecords.find(w => Boolean(w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate));
+            if (!currentActiveWeekRec) {
+              const eligiblePastWeeks = curWeeklyRecords.filter(w => Boolean(w.startDate && w.startDate <= todayStr));
+              if (eligiblePastWeeks.length > 0) {
+                currentActiveWeekRec = eligiblePastWeeks[eligiblePastWeeks.length - 1];
+              }
+            }
+            if (!currentActiveWeekRec) {
+              currentActiveWeekRec = curWeeklyRecords[0];
+            }
+
+            if (currentActiveWeekRec) {
+              setActiveYearlyWeekIndex(currentActiveWeekRec.weekIndex);
+              if (currentActiveWeekRec.quarter) {
+                setWeeklyQuarterFilter(currentActiveWeekRec.quarter);
+              }
+            }
+          }
+        }
+
+        let curQuarterlyRecords = activeEmpResponse.quarterly_records || [];
+        if (isQuarterly || curQuarterlyRecords.length > 0) {
+          if (!curQuarterlyRecords || curQuarterlyRecords.length === 0) {
+            let baseYear = new Date().getFullYear();
+            if (activeEmpResponse.startDate) baseYear = new Date(activeEmpResponse.startDate).getFullYear();
+            curQuarterlyRecords = initializeYearlyQuarterlyRecords(baseYear);
+          }
+          const initialQuarterlyInputs: Record<number, Record<string, YearlyMonthKPIEntry>> = {};
+          const initialQuarterlyRemarks: Record<number, string> = {};
+          curQuarterlyRecords.forEach(rec => {
+            initialQuarterlyInputs[rec.quarterIndex] = rec.kpiEntries || {};
+            initialQuarterlyRemarks[rec.quarterIndex] = rec.employeeRemarks || '';
+          });
+          setYearlyQuarterKpiInputs(initialQuarterlyInputs);
+          setYearlyQuarterRemarks(initialQuarterlyRemarks);
+
+          if (isDifferentResp) {
+            // Determine current active fiscal quarter based on current date
+            const curCalMonth = new Date().getMonth() + 1; // 1 to 12
+            const currentQuarterIndex = curCalMonth >= 4 && curCalMonth <= 6 ? 1
+              : curCalMonth >= 7 && curCalMonth <= 9 ? 2
+                : curCalMonth >= 10 && curCalMonth <= 12 ? 3
+                  : 4;
+
+            // Prioritize:
+            // 1. A quarter with manager revision requested (action required)
+            // 2. The active open/pending quarter for current calendar period (e.g. Q2)
+            // 3. Any unlocked/actionable quarter >= 2 (or Q2 fallback)
+            const revisionReqQuarter = curQuarterlyRecords.find(q => {
+              const lockInfo = getYearlyQuarterLockInfo(q.quarterIndex, curQuarterlyRecords);
+              return lockInfo.isEditable && Boolean(q.managerRemarks && q.status === 'pending_employee');
+            });
+
+            const currentQRec = curQuarterlyRecords.find(q => q.quarterIndex === currentQuarterIndex);
+            const currentQLock = currentQRec ? getYearlyQuarterLockInfo(currentQRec.quarterIndex, curQuarterlyRecords) : null;
+            const isCurrentQActionable = currentQLock && (currentQLock.isEditable || currentQLock.isSubmitted);
+
+            const nextOpenQuarter = curQuarterlyRecords.filter(q => q.quarterIndex >= 2).find(q => {
+              const lockInfo = getYearlyQuarterLockInfo(q.quarterIndex, curQuarterlyRecords);
+              return lockInfo.isEditable || lockInfo.isSubmitted;
+            });
+
+            const selectedQuarter = revisionReqQuarter
+              || (isCurrentQActionable ? currentQRec : null)
+              || nextOpenQuarter
+              || curQuarterlyRecords.find(q => q.quarterIndex === 2)
+              || curQuarterlyRecords[0];
+
+            setActiveYearlyQuarterIndex(selectedQuarter ? selectedQuarter.quarterIndex : 2);
+          }
+        }
+
+        if (isDifferentResp && !isWeekly && !isQuarterly) {
+          const curCalMonth = new Date().getMonth() + 1;
+          const curFiscalMonthIndex = curCalMonth >= 4 ? curCalMonth - 3 : curCalMonth + 9;
+
+          const revisionReqMonth = curRecords.find(m => {
+            const lockInfo = getYearlyMonthLockInfo(m.monthIndex, curRecords);
+            return lockInfo.isEditable && Boolean(m.managerRemarks && m.status === 'pending_employee');
+          });
+
+          const currentMRec = curRecords.find(m => m.monthIndex === curFiscalMonthIndex);
+          const currentMLock = currentMRec ? getYearlyMonthLockInfo(currentMRec.monthIndex, curRecords) : null;
+          const isCurrentMActionable = currentMLock && (currentMLock.isEditable || currentMLock.isSubmitted);
+
+          const nextOpenMonth = FISCAL_MONTHS.slice(5).find(m => {
             const lockInfo = getYearlyMonthLockInfo(m.monthIndex, curRecords);
             return lockInfo.isEditable || lockInfo.isSubmitted;
-          }) || FISCAL_MONTHS.find(m => m.monthIndex === 6);
+          });
 
-          setActiveYearlyFiscalMonth(activeActionableMonth ? activeActionableMonth.monthIndex : 6);
+          const selectedMonth = revisionReqMonth
+            || (isCurrentMActionable ? currentMRec : null)
+            || nextOpenMonth
+            || FISCAL_MONTHS.find(m => m.monthIndex === 6);
+
+          setActiveYearlyFiscalMonth(selectedMonth ? (selectedMonth as any).monthIndex : 6);
         }
       }
 
@@ -5477,6 +5792,8 @@ export const EvaluationTab: React.FC = () => {
   const isYearlyResponse = (r?: EvaluationResponse | null): boolean => {
     if (!r) return false;
     if (r.monthly_records && r.monthly_records.length > 0) return true;
+    if (r.weekly_records && r.weekly_records.length > 0) return true;
+    if (r.quarterly_records && r.quarterly_records.length > 0) return true;
     const respCycle = cycles.find(c => c.id === r.cycleId);
     const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
     if (f === 'yearly' || f === 'annual') return true;
@@ -5486,15 +5803,149 @@ export const EvaluationTab: React.FC = () => {
   };
 
   /**
+   * Evaluates sequential quarter lock status for Quarterly (4 Stages: Q1, Q2, Q3, Q4) cycle:
+   * - Q1 (Apr - Jun): Past period prior to rollout.
+   * - Q2 (Jul - Sep): Current active quarter (contains September) -> OPEN by default.
+   * - Q3 (Oct - Dec) & Q4 (Jan - Mar): Strictly locked until preceding quarter is approved by Manager (status === 'manager_approved').
+   */
+  const getYearlyQuarterLockInfo = (
+    quarterIndex: number,
+    quarterlyRecords: YearlyQuarterRecord[] = []
+  ) => {
+    const curRec = quarterlyRecords.find(q => q.quarterIndex === quarterIndex);
+    const isApproved = curRec?.status === 'manager_approved';
+    const isSubmitted = curRec?.status === 'submitted_to_manager';
+    const score = isApproved && curRec?.managerScore != null ? Number(curRec.managerScore) : null;
+
+    const prevRec = quarterlyRecords.find(q => q.quarterIndex === quarterIndex - 1);
+    const isPrevApproved = prevRec?.status === 'manager_approved';
+
+    const currentQuarterObj = FISCAL_QUARTERS.find(q => q.quarterIndex === quarterIndex);
+    const currentQuarterLabel = curRec?.quarterLabel || currentQuarterObj?.quarterLabel || `Q${quarterIndex}`;
+    const prevQuarterObj = FISCAL_QUARTERS.find(q => q.quarterIndex === quarterIndex - 1);
+    const prevQuarterLabel = prevRec?.quarterLabel || prevQuarterObj?.quarterLabel || `Q${quarterIndex - 1}`;
+
+    const todayStr = getLocalTodayDateString();
+    const curCalMonth = new Date().getMonth() + 1; // 1-12
+    const curFiscalQuarter = curCalMonth >= 4 && curCalMonth <= 6 ? 1 : curCalMonth >= 7 && curCalMonth <= 9 ? 2 : curCalMonth >= 10 && curCalMonth <= 12 ? 3 : 4;
+    const isFutureQuarter = quarterIndex > curFiscalQuarter || Boolean(curRec?.startDate && todayStr < curRec.startDate);
+
+    if (isApproved) {
+      return {
+        isLocked: false,
+        isApproved: true,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'manager_approved' as const,
+        statusLabel: 'Approved',
+        currentQuarterLabel,
+        prevQuarterLabel,
+        score
+      };
+    }
+
+    if (isSubmitted) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: true,
+        isEditable: false,
+        status: 'submitted_to_manager' as const,
+        statusLabel: 'Submitted for Review',
+        currentQuarterLabel,
+        prevQuarterLabel,
+        score: null
+      };
+    }
+
+    // Future Quarters whose release date has not arrived yet
+    if (isFutureQuarter) {
+      return {
+        isLocked: true,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'locked' as const,
+        statusLabel: 'Upcoming',
+        lockReason: `${currentQuarterLabel} milestone is scheduled for the future and will release when ${currentQuarterObj?.startMonthName || currentQuarterLabel} arrives.`,
+        currentQuarterLabel,
+        prevQuarterLabel,
+        score: null
+      };
+    }
+
+    if (quarterIndex === 1) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: true,
+        status: 'pending_employee' as const,
+        statusLabel: 'Past Period',
+        currentQuarterLabel,
+        prevQuarterLabel,
+        score: null
+      };
+    }
+
+    if (quarterIndex === 2) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: true,
+        status: 'pending_employee' as const,
+        statusLabel: 'Open for Deliverables',
+        currentQuarterLabel,
+        prevQuarterLabel,
+        score: null
+      };
+    }
+
+    if (!isPrevApproved) {
+      const isPrevSubmitted = prevRec?.status === 'submitted_to_manager';
+      const lockReason = isPrevSubmitted
+        ? `Waiting for Manager to review and approve ${prevQuarterLabel} before ${currentQuarterLabel} unlocks.`
+        : `${currentQuarterLabel} is locked. Please complete and submit your ${prevQuarterLabel} milestone first.`;
+
+      return {
+        isLocked: true,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'locked' as const,
+        statusLabel: 'Locked',
+        lockReason,
+        currentQuarterLabel,
+        prevQuarterLabel,
+        score: null
+      };
+    }
+
+    return {
+      isLocked: false,
+      isApproved: false,
+      isSubmitted: false,
+      isEditable: true,
+      status: 'pending_employee' as const,
+      statusLabel: 'Open Milestone',
+      currentQuarterLabel,
+      prevQuarterLabel,
+      score: null
+    };
+  };
+
+  /**
    * Evaluates sequential month lock status for 12-Month Financial Year cycle:
    * - Current calendar month (e.g., September) is the ongoing milestone and is OPEN by default for deliverables entry.
-   * - Future months (e.g. October..March) are strictly LOCKED until the preceding month (e.g. September) is completed AND approved by the Manager (status === 'manager_approved').
-   * - Once Manager approves Month N, Month N+1 automatically unlocks for employee deliverables entry.
+   * - Future months (e.g. October..March) are strictly LOCKED until their start date arrives AND the preceding month is approved by Manager.
+   * - Once Manager approves Month N and Month N+1 start date has arrived, Month N+1 automatically releases.
    */
   const getYearlyMonthLockInfo = (
     monthIndex: number,
     monthlyRecords: YearlyMonthRecord[] = []
   ) => {
+    const todayStr = getLocalTodayDateString();
     const currentCalMonth = new Date().getMonth() + 1; // 1-12
     const currentFiscalMonthIndex = currentCalMonth >= 4 ? currentCalMonth - 3 : currentCalMonth + 9;
 
@@ -5510,6 +5961,8 @@ export const EvaluationTab: React.FC = () => {
     const prevMonthName = prevMonthObj ? prevMonthObj.monthName : `Month ${monthIndex - 1}`;
     const prevRec = monthlyRecords.find(m => m.monthIndex === monthIndex - 1);
     const isPrevApproved = prevRec?.status === 'manager_approved';
+
+    const isFutureMonth = monthIndex > currentFiscalMonthIndex || Boolean(curRec?.startDate && todayStr < curRec.startDate);
 
     // 1. If this month is already approved by manager
     if (isApproved) {
@@ -5541,8 +5994,23 @@ export const EvaluationTab: React.FC = () => {
       };
     }
 
-    // 3. Past Months prior to September rollout (Months 1-5: April - August):
-    // Prior unapplied period before system rollout — does not block September or future evaluation.
+    // 3. Future months that haven't arrived on the calendar yet: strictly locked until release date
+    if (isFutureMonth) {
+      return {
+        isLocked: true,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'locked' as const,
+        statusLabel: 'Upcoming',
+        lockReason: `${currentMonthName} milestone is scheduled for the future and will release when ${currentMonthName} starts.`,
+        prevMonthName,
+        currentMonthName,
+        score: null
+      };
+    }
+
+    // 4. Past Months prior to September rollout (Months 1-5: April - August)
     if (monthIndex < 6) {
       return {
         isLocked: false,
@@ -5557,8 +6025,7 @@ export const EvaluationTab: React.FC = () => {
       };
     }
 
-    // 4. Base Rollout Month: September (MonthIndex 6):
-    // Active baseline month — OPEN by default for deliverables entry.
+    // 5. Base Rollout Month: September (MonthIndex 6)
     if (monthIndex === 6) {
       return {
         isLocked: false,
@@ -5573,9 +6040,7 @@ export const EvaluationTab: React.FC = () => {
       };
     }
 
-    // 5. September Onwards (October, November, December, etc. - MonthIndex >= 7):
-    // Strict Sequential Lock: If previous month (e.g. September) is pending / not approved,
-    // subsequent month (e.g. October) will strictly NOT open and stays LOCKED!
+    // 6. Sequential Preceding Milestone Lock
     if (!isPrevApproved) {
       const isPrevSubmitted = prevRec?.status === 'submitted_to_manager';
       const lockReason = isPrevSubmitted
@@ -5596,24 +6061,6 @@ export const EvaluationTab: React.FC = () => {
       };
     }
 
-    // Calendar Month Restriction (Option B):
-    // Even if previous month is approved, this month will ONLY open when the calendar month has started.
-    if (monthIndex > currentFiscalMonthIndex) {
-      return {
-        isLocked: true,
-        isApproved: false,
-        isSubmitted: false,
-        isEditable: false,
-        status: 'locked' as const,
-        statusLabel: 'Locked',
-        lockReason: `${currentMonthName} milestone will unlock when ${currentMonthName} starts.`,
-        prevMonthName,
-        currentMonthName,
-        score: null
-      };
-    }
-
-    // Previous month has been approved by manager AND calendar month has started -> Next month unlocks and opens!
     return {
       isLocked: false,
       isApproved: false,
@@ -5625,6 +6072,582 @@ export const EvaluationTab: React.FC = () => {
       currentMonthName,
       score: null
     };
+  };
+
+  /**
+   * Evaluates sequential week lock status for 52-Week Financial Year cycle:
+   * - Rollout baseline week (Week 26 / late Sep) is OPEN by default.
+   * - Weeks 1-25 (past periods prior to rollout): editable/past.
+   * - Future weeks (start date > today): strictly locked until that week's date arrives.
+   * - Weeks >= 27: strictly locked until preceding week is approved by Manager.
+   */
+  const getYearlyWeekLockInfo = (
+    weekIndex: number,
+    weeklyRecords: YearlyWeekRecord[] = []
+  ) => {
+    const todayStr = getLocalTodayDateString();
+    const curRec = weeklyRecords.find(w => w.weekIndex === weekIndex);
+    const isApproved = curRec?.status === 'manager_approved';
+    const isSubmitted = curRec?.status === 'submitted_to_manager';
+    const score = isApproved && curRec?.managerScore != null ? Number(curRec.managerScore) : null;
+
+    const prevRec = weeklyRecords.find(w => w.weekIndex === weekIndex - 1);
+    const isPrevApproved = prevRec?.status === 'manager_approved';
+
+    const currentWeekLabel = curRec?.weekLabel || `Week ${weekIndex}`;
+    const prevWeekLabel = prevRec?.weekLabel || `Week ${weekIndex - 1}`;
+
+    const isFutureWeek = Boolean(curRec?.startDate && todayStr < curRec.startDate);
+
+    if (isApproved) {
+      return {
+        isLocked: false,
+        isApproved: true,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'manager_approved' as const,
+        statusLabel: 'Approved',
+        currentWeekLabel,
+        prevWeekLabel,
+        score
+      };
+    }
+
+    if (isSubmitted) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: true,
+        isEditable: false,
+        status: 'submitted_to_manager' as const,
+        statusLabel: 'Submitted for Review',
+        currentWeekLabel,
+        prevWeekLabel,
+        score: null
+      };
+    }
+
+    // Future weeks whose start date has not arrived yet: strictly locked until release date
+    if (isFutureWeek) {
+      return {
+        isLocked: true,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'locked' as const,
+        statusLabel: 'Upcoming (Locked)',
+        lockReason: `${currentWeekLabel} milestone is scheduled for the future and will unlock on ${curRec?.startDate ? formatDisplayDate(curRec.startDate) : 'its start date'}.`,
+        currentWeekLabel,
+        prevWeekLabel,
+        score: null
+      };
+    }
+
+    const isCurrentActiveWeek = Boolean(curRec?.startDate && curRec?.endDate && todayStr >= curRec.startDate && todayStr <= curRec.endDate);
+
+    return {
+      isLocked: false,
+      isApproved: false,
+      isSubmitted: false,
+      isEditable: true,
+      status: 'pending_employee' as const,
+      statusLabel: isCurrentActiveWeek ? 'Current Active Week' : 'Past Period (Open)',
+      currentWeekLabel,
+      prevWeekLabel,
+      score: null
+    };
+  };
+
+  const handleYearlyWeekKpiChange = (kpi: any, val: string | number) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    setYearlyWeekKpiInputs(prev => {
+      const weekInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyWeekIndex] || {};
+      const current = weekInputs[kpiId] || (kpiName ? weekInputs[kpiName] : null) || {};
+      const calc = calculateKPIScore(kpi, val);
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        actualValue: val,
+        actual_value: val,
+        earnedScore: calc.earnedScore,
+        earned_score: calc.earnedScore
+      };
+      const nextWeekInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...weekInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextWeekInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyWeekIndex]: nextWeekInputs
+      };
+    });
+  };
+
+  const handleYearlyWeekKpiRemarkChange = (kpi: any, remarks: string) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    setYearlyWeekKpiInputs(prev => {
+      const weekInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyWeekIndex] || {};
+      const current = weekInputs[kpiId] || (kpiName ? weekInputs[kpiName] : null) || {};
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        employeeRemarks: remarks,
+        employee_remark: remarks
+      };
+      const nextWeekInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...weekInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextWeekInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyWeekIndex]: nextWeekInputs
+      };
+    });
+  };
+
+  const handleYearlyWeekKpiInsufficient = (kpi: any, isInsufficient: boolean) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    setYearlyWeekKpiInputs(prev => {
+      const weekInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyWeekIndex] || {};
+      const current = weekInputs[kpiId] || (kpiName ? weekInputs[kpiName] : null) || {};
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        isInsufficient
+      };
+      const nextWeekInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...weekInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextWeekInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyWeekIndex]: nextWeekInputs
+      };
+    });
+  };
+
+  const handleYearlyWeekSubmit = async (wIndex: number) => {
+    if (!activeEmpResponse) return;
+    const lockInfo = getYearlyWeekLockInfo(wIndex, activeEmpResponse.weekly_records || []);
+    if (lockInfo.isLocked) {
+      showAlert(lockInfo.lockReason || `Week ${wIndex} is locked until the previous week is approved by Manager.`, 'Milestone Locked', 'warning');
+      return;
+    }
+    if (lockInfo.isApproved) {
+      showAlert(`Deliverables for ${lockInfo.currentWeekLabel} have already been approved by your Manager.`, 'Already Approved');
+      return;
+    }
+    if (lockInfo.isSubmitted) {
+      showAlert(`Deliverables for ${lockInfo.currentWeekLabel} have already been submitted to your Manager for review.`, 'Already Submitted');
+      return;
+    }
+    if (isSubmittingEmp) return;
+    const targetWeekRecord = (activeEmpResponse.weekly_records || []).find(w => w.weekIndex === wIndex);
+    const currentWeekEntries = yearlyWeekKpiInputs[wIndex] || targetWeekRecord?.kpiEntries || {};
+    const missingRemarksKpi: string[] = [];
+    const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
+
+    activeCategories.forEach(cat => {
+      cat.kpis.forEach(k => {
+        const entry = currentWeekEntries[k.id] || (k.name ? currentWeekEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        const rem = (entry?.employeeRemarks || entry?.employee_remark || '').trim();
+        const isInsufficient = Boolean(entry?.isInsufficient ?? (k as any)?.isInsufficient);
+
+        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient);
+        if (isMandatory && !rem) {
+          missingRemarksKpi.push(`"${k.name}"`);
+        }
+
+        const calc = calculateKPIScore(k, val);
+        payloadEntries[k.id] = {
+          actualValue: val,
+          actual_value: val,
+          earnedScore: calc.earnedScore,
+          earned_score: calc.earnedScore,
+          employeeRemarks: rem,
+          employee_remark: rem,
+          isInsufficient
+        };
+        if (k.name) {
+          payloadEntries[k.name] = payloadEntries[k.id];
+        }
+      });
+    });
+
+    if (missingRemarksKpi.length > 0) {
+      showAlert(
+        `Remarks are mandatory for deliverables that are higher/lower than target or selected. Please provide remarks for: ${missingRemarksKpi.join(', ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      return;
+    }
+
+    const weekLabel = targetWeekRecord?.weekLabel || `Week ${wIndex}`;
+    const remarks = yearlyWeekRemarks[wIndex] || `${weekLabel} Weekly Progress Actuals`;
+
+    showConfirm(
+      `Submit ${weekLabel} deliverables to your Manager for review and scoring?`,
+      async () => {
+        try {
+          setIsSubmittingEmp(true);
+          const updatedResp = await evaluationService.submitYearlyWeekActuals(
+            activeEmpResponse.id,
+            wIndex,
+            payloadEntries,
+            remarks
+          );
+          setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+          setSelectedResponseId(updatedResp.id);
+          await loadAllData();
+          showToast(`${weekLabel} deliverables successfully submitted to Manager!`);
+        } catch (err: any) {
+          showAlert(`Failed to submit weekly actuals: ${err?.message || 'Unknown error'}`, 'Submission Error');
+        } finally {
+          setIsSubmittingEmp(false);
+        }
+      },
+      `Submit ${weekLabel} Milestone`,
+      'info',
+      'Submit to Manager'
+    );
+  };
+
+  const switchMgrYearlyWeek = (wIndex: number) => {
+    setActiveMgrYearlyWeekIndex(wIndex);
+    if (!selectedMgrResponse) return;
+    const curWeekRec = (selectedMgrResponse.weekly_records || []).find(w => w.weekIndex === wIndex);
+    const nextActuals: Record<string, string | number> = {};
+    const nextRemarks: Record<string, string> = {};
+
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const entry = curWeekRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeekRec?.kpiEntries?.[kpi.name] : null);
+        const empActual = entry?.actualValue ?? entry?.actual_value ?? '';
+        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
+        nextActuals[kpi.id] = mgrActual;
+        nextRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+      });
+    });
+
+    setMgrKpiActuals(nextActuals);
+    setMgrKpiRemarks(nextRemarks);
+
+    let totalScore = 0;
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const actualVal = nextActuals[kpi.id];
+        const calc = calculateKPIScore(kpi, actualVal);
+        totalScore += calc.earnedScore;
+      });
+    });
+    setMgrScore(Number(totalScore.toFixed(2)));
+    setMgrRemarks(curWeekRec?.managerRemarks || '');
+  };
+
+  const handleManagerYearlyWeekApprove = async (wIndex: number) => {
+    if (!selectedMgrResponseId || !selectedMgrResponse) return;
+    const curWeekRec = (selectedMgrResponse.weekly_records || []).find(w => w.weekIndex === wIndex);
+    const weekLabel = curWeekRec?.weekLabel || `Week ${wIndex}`;
+    const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
+
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const respEntry = curWeekRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeekRec?.kpiEntries?.[kpi.name] : null);
+        const empActual = respEntry?.actualValue ?? respEntry?.actual_value ?? '';
+        const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
+        const calc = calculateKPIScore(kpi, mgrActual);
+        payloadEntries[kpi.id] = {
+          actualValue: empActual,
+          actual_value: empActual,
+          managerActualValue: mgrActual,
+          manager_actual_pm: mgrActual,
+          managerScore: Number(calc.earnedScore.toFixed(2)),
+          manager_score: Number(calc.earnedScore.toFixed(2)),
+          managerRemarks: mgrKpiRemarks[kpi.id] || '',
+          manager_remark: mgrKpiRemarks[kpi.id] || ''
+        };
+        if (kpi.name) {
+          payloadEntries[kpi.name] = payloadEntries[kpi.id];
+        }
+      });
+    });
+
+    showConfirm(
+      `Approve ${weekLabel} performance score and update Year-to-Date rolling average?`,
+      async () => {
+        try {
+          setIsActionLoading(true);
+          const updatedResp = await evaluationService.approveYearlyWeekScore(
+            selectedMgrResponse.id,
+            wIndex,
+            payloadEntries,
+            mgrRemarks
+          );
+          setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+          await loadAllData();
+          showToast(`${weekLabel} milestone score approved successfully!`);
+          setSelectedMgrResponseId('');
+        } catch (err: any) {
+          showAlert(`Failed to approve week milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+      `Approve ${weekLabel} Milestone`,
+      'info',
+      'Approve & Save Milestone'
+    );
+  };
+
+  const handleYearlyQuarterKpiChange = (kpi: any, val: string | number) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    setYearlyQuarterKpiInputs(prev => {
+      const quarterInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyQuarterIndex] || {};
+      const current = quarterInputs[kpiId] || (kpiName ? quarterInputs[kpiName] : null) || {};
+      const calc = calculateKPIScore(kpi, val);
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        actualValue: val,
+        actual_value: val,
+        earnedScore: calc.earnedScore,
+        earned_score: calc.earnedScore
+      };
+      const nextQuarterInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...quarterInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextQuarterInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyQuarterIndex]: nextQuarterInputs
+      };
+    });
+  };
+
+  const handleYearlyQuarterKpiRemarkChange = (kpi: any, remarks: string) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    setYearlyQuarterKpiInputs(prev => {
+      const quarterInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyQuarterIndex] || {};
+      const current = quarterInputs[kpiId] || (kpiName ? quarterInputs[kpiName] : null) || {};
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        employeeRemarks: remarks,
+        employee_remark: remarks
+      };
+      const nextQuarterInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...quarterInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextQuarterInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyQuarterIndex]: nextQuarterInputs
+      };
+    });
+  };
+
+  const handleYearlyQuarterKpiInsufficient = (kpi: any, isInsufficient: boolean) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    setYearlyQuarterKpiInputs(prev => {
+      const quarterInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyQuarterIndex] || {};
+      const current = quarterInputs[kpiId] || (kpiName ? quarterInputs[kpiName] : null) || {};
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        isInsufficient
+      };
+      const nextQuarterInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...quarterInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextQuarterInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyQuarterIndex]: nextQuarterInputs
+      };
+    });
+  };
+
+  const handleYearlyQuarterSubmit = async (qIndex: number) => {
+    if (!activeEmpResponse) return;
+    const lockInfo = getYearlyQuarterLockInfo(qIndex, activeEmpResponse.quarterly_records || []);
+    if (lockInfo.isLocked) {
+      showAlert(lockInfo.lockReason || `Quarter Q${qIndex} is locked until the previous quarter is approved by Manager.`, 'Milestone Locked', 'warning');
+      return;
+    }
+    if (lockInfo.isApproved) {
+      showAlert(`Deliverables for ${lockInfo.currentQuarterLabel} have already been approved by your Manager.`, 'Already Approved');
+      return;
+    }
+    if (lockInfo.isSubmitted) {
+      showAlert(`Deliverables for ${lockInfo.currentQuarterLabel} have already been submitted to your Manager for review.`, 'Already Submitted');
+      return;
+    }
+    if (isSubmittingEmp) return;
+    const targetQuarterRecord = (activeEmpResponse.quarterly_records || []).find(q => q.quarterIndex === qIndex);
+    const currentQuarterEntries = yearlyQuarterKpiInputs[qIndex] || targetQuarterRecord?.kpiEntries || {};
+    const missingRemarksKpi: string[] = [];
+    const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
+
+    activeCategories.forEach(cat => {
+      cat.kpis.forEach(k => {
+        const entry = currentQuarterEntries[k.id] || (k.name ? currentQuarterEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        const rem = (entry?.employeeRemarks || entry?.employee_remark || '').trim();
+        const isInsufficient = Boolean(entry?.isInsufficient ?? (k as any)?.isInsufficient);
+
+        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient);
+        if (isMandatory && !rem) {
+          missingRemarksKpi.push(`"${k.name}"`);
+        }
+
+        const calc = calculateKPIScore(k, val);
+        payloadEntries[k.id] = {
+          actualValue: val,
+          actual_value: val,
+          earnedScore: calc.earnedScore,
+          earned_score: calc.earnedScore,
+          employeeRemarks: rem,
+          employee_remark: rem,
+          isInsufficient
+        };
+        if (k.name) {
+          payloadEntries[k.name] = payloadEntries[k.id];
+        }
+      });
+    });
+
+    if (missingRemarksKpi.length > 0) {
+      showAlert(
+        `Remarks are mandatory for deliverables that are higher/lower than target or selected. Please provide remarks for: ${missingRemarksKpi.join(', ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      return;
+    }
+
+    const quarterLabel = targetQuarterRecord?.quarterLabel || (FISCAL_QUARTERS.find(q => q.quarterIndex === qIndex)?.quarterLabel || `Q${qIndex}`);
+    const remarks = yearlyQuarterRemarks[qIndex] || `${quarterLabel} Quarterly Progress Actuals`;
+
+    showConfirm(
+      `Submit ${quarterLabel} deliverables to your Manager for review and scoring?`,
+      async () => {
+        try {
+          setIsSubmittingEmp(true);
+          const updatedResp = await evaluationService.submitYearlyQuarterActuals(
+            activeEmpResponse.id,
+            qIndex,
+            payloadEntries,
+            remarks
+          );
+          setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+          setSelectedResponseId(updatedResp.id);
+          await loadAllData();
+          showToast(`${quarterLabel} deliverables successfully submitted to Manager!`);
+        } catch (err: any) {
+          showAlert(`Failed to submit quarterly actuals: ${err?.message || 'Unknown error'}`, 'Submission Error');
+        } finally {
+          setIsSubmittingEmp(false);
+        }
+      },
+      `Submit ${quarterLabel} Milestone`,
+      'info',
+      'Submit to Manager'
+    );
+  };
+
+  const switchMgrYearlyQuarter = (qIndex: number) => {
+    setActiveMgrYearlyQuarterIndex(qIndex);
+    if (!selectedMgrResponse) return;
+    const curQuarterRec = (selectedMgrResponse.quarterly_records || []).find(q => q.quarterIndex === qIndex);
+    const nextActuals: Record<string, string | number> = {};
+    const nextRemarks: Record<string, string> = {};
+
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const entry = curQuarterRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterRec?.kpiEntries?.[kpi.name] : null);
+        const empActual = entry?.actualValue ?? entry?.actual_value ?? '';
+        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
+        nextActuals[kpi.id] = mgrActual;
+        nextRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+      });
+    });
+
+    setMgrKpiActuals(nextActuals);
+    setMgrKpiRemarks(nextRemarks);
+
+    let totalScore = 0;
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const actualVal = nextActuals[kpi.id];
+        const calc = calculateKPIScore(kpi, actualVal);
+        totalScore += calc.earnedScore;
+      });
+    });
+    setMgrScore(Number(totalScore.toFixed(2)));
+    setMgrRemarks(curQuarterRec?.managerRemarks || '');
+  };
+
+  const handleManagerYearlyQuarterApprove = async (qIndex: number) => {
+    if (!selectedMgrResponseId || !selectedMgrResponse) return;
+    const curQuarterRec = (selectedMgrResponse.quarterly_records || []).find(q => q.quarterIndex === qIndex);
+    const quarterLabel = curQuarterRec?.quarterLabel || (FISCAL_QUARTERS.find(q => q.quarterIndex === qIndex)?.quarterLabel || `Q${qIndex}`);
+    const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
+
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const respEntry = curQuarterRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterRec?.kpiEntries?.[kpi.name] : null);
+        const empActual = respEntry?.actualValue ?? respEntry?.actual_value ?? '';
+        const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
+        const calc = calculateKPIScore(kpi, mgrActual);
+        payloadEntries[kpi.id] = {
+          actualValue: empActual,
+          actual_value: empActual,
+          managerActualValue: mgrActual,
+          manager_actual_pm: mgrActual,
+          managerScore: Number(calc.earnedScore.toFixed(2)),
+          manager_score: Number(calc.earnedScore.toFixed(2)),
+          managerRemarks: mgrKpiRemarks[kpi.id] || '',
+          manager_remark: mgrKpiRemarks[kpi.id] || ''
+        };
+        if (kpi.name) {
+          payloadEntries[kpi.name] = payloadEntries[kpi.id];
+        }
+      });
+    });
+
+    showConfirm(
+      `Approve ${quarterLabel} performance score and update Year-to-Date rolling average?`,
+      async () => {
+        try {
+          setIsActionLoading(true);
+          const updatedResp = await evaluationService.approveYearlyQuarterScore(
+            selectedMgrResponse.id,
+            qIndex,
+            payloadEntries,
+            mgrRemarks
+          );
+          setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+          await loadAllData();
+          showToast(`${quarterLabel} milestone score approved successfully!`);
+          setSelectedMgrResponseId('');
+        } catch (err: any) {
+          showAlert(`Failed to approve quarterly milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+      `Approve ${quarterLabel} Milestone`,
+      'info',
+      'Approve & Save Milestone'
+    );
   };
 
   const handleYearlyMonthKpiChange = (kpi: any, val: string | number) => {
@@ -5890,25 +6913,42 @@ export const EvaluationTab: React.FC = () => {
       return;
     }
 
-    const monthObj = FISCAL_MONTHS.find(m => m.monthIndex === reopenTargetMonthIndex);
-    const monthName = monthObj ? monthObj.monthName : `Month ${reopenTargetMonthIndex}`;
+    const isWeekly = isYearlyResponse(selectedMgrResponse) && (selectedMgrResponse.milestone_frequency === 'weekly' || ((selectedMgrResponse.weekly_records || []).length > 0 && !(selectedMgrResponse.monthly_records || []).length && !(selectedMgrResponse.quarterly_records || []).length));
+    const isQuarterly = isYearlyResponse(selectedMgrResponse) && (selectedMgrResponse.milestone_frequency === 'quarterly' || ((selectedMgrResponse.quarterly_records || []).length > 0 && !(selectedMgrResponse.monthly_records || []).length && !(selectedMgrResponse.weekly_records || []).length));
+    const targetLabel = isWeekly
+      ? `Week ${reopenTargetMonthIndex}`
+      : (isQuarterly
+        ? `Q${reopenTargetMonthIndex} (${FISCAL_QUARTERS.find(q => q.quarterIndex === reopenTargetMonthIndex)?.quarterLabel || `Quarter ${reopenTargetMonthIndex}`})`
+        : (FISCAL_MONTHS.find(m => m.monthIndex === reopenTargetMonthIndex)?.monthName || `Month ${reopenTargetMonthIndex}`));
 
     try {
       setIsReopeningAction(true);
-      const updatedResp = await evaluationService.reopenYearlyMonth(
-        selectedMgrResponse.id,
-        reopenTargetMonthIndex,
-        trimmedFeedback
-      );
+      const updatedResp = isWeekly
+        ? await evaluationService.reopenYearlyWeek(
+          selectedMgrResponse.id,
+          reopenTargetMonthIndex,
+          trimmedFeedback
+        )
+        : (isQuarterly
+          ? await evaluationService.reopenYearlyQuarter(
+            selectedMgrResponse.id,
+            reopenTargetMonthIndex,
+            trimmedFeedback
+          )
+          : await evaluationService.reopenYearlyMonth(
+            selectedMgrResponse.id,
+            reopenTargetMonthIndex,
+            trimmedFeedback
+          ));
       setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
       await loadAllData();
-      showToast(`${monthName} milestone reopened! Feedback sent to employee.`);
+      showToast(`${targetLabel} milestone reopened! Feedback sent to employee.`);
       setIsReopenModalOpen(false);
       setReopenTargetMonthIndex(null);
       setReopenFeedbackInput('');
       setSelectedMgrResponseId('');
     } catch (err: any) {
-      showAlert(`Failed to reopen month milestone: ${err?.message || 'Unknown error'}`, 'Reopen Error');
+      showAlert(`Failed to reopen milestone: ${err?.message || 'Unknown error'}`, 'Reopen Error');
     } finally {
       setIsReopeningAction(false);
     }
@@ -5970,32 +7010,93 @@ export const EvaluationTab: React.FC = () => {
     const s = String(status || '').toLowerCase().replace(/[_\s]+/g, ' ').trim();
 
     if (r && isYearlyResponse(r)) {
-      const monthlyRecords = r.monthly_records || [];
-      const approvedCount = monthlyRecords.filter(m => m.status === 'manager_approved').length;
-      const submittedCount = monthlyRecords.filter(m => m.status === 'submitted_to_manager').length;
-      if (submittedCount > 0) {
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse" />
-            <span>Milestone Submitted ({approvedCount}/12 Approved)</span>
-          </span>
-        );
-      }
-      if (approvedCount === 12) {
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-            <span>FY Completed & Approved</span>
-          </span>
-        );
-      }
-      if (approvedCount > 0) {
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200/80 shadow-2xs shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
-            <span>YTD Active ({approvedCount}/12 Approved)</span>
-          </span>
-        );
+      const isWeekly = r.milestone_frequency === 'weekly' || ((r.weekly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.quarterly_records || []).length);
+      const isQuarterly = r.milestone_frequency === 'quarterly' || ((r.quarterly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.weekly_records || []).length);
+
+      if (isQuarterly) {
+        const quarterlyRecords = r.quarterly_records || [];
+        const approvedCount = quarterlyRecords.filter(q => q.status === 'manager_approved').length;
+        const submittedCount = quarterlyRecords.filter(q => q.status === 'submitted_to_manager').length;
+        if (submittedCount > 0) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+              <span>Milestone Submitted ({approvedCount}/4 Approved)</span>
+            </span>
+          );
+        }
+        if (approvedCount === 4) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span>FY Completed & Approved</span>
+            </span>
+          );
+        }
+        if (approvedCount > 0) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
+              <span>YTD Active ({approvedCount}/4 Approved)</span>
+            </span>
+          );
+        }
+      } else if (isWeekly) {
+        const weeklyRecords = r.weekly_records || [];
+        const approvedCount = weeklyRecords.filter(w => w.status === 'manager_approved').length;
+        const submittedCount = weeklyRecords.filter(w => w.status === 'submitted_to_manager').length;
+        if (submittedCount > 0) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+              <span>Milestone Submitted ({approvedCount}/52 Approved)</span>
+            </span>
+          );
+        }
+        if (approvedCount === 52) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span>FY Completed & Approved</span>
+            </span>
+          );
+        }
+        if (approvedCount > 0) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
+              <span>YTD Active ({approvedCount}/52 Approved)</span>
+            </span>
+          );
+        }
+      } else {
+        const monthlyRecords = r.monthly_records || [];
+        const approvedCount = monthlyRecords.filter(m => m.status === 'manager_approved').length;
+        const submittedCount = monthlyRecords.filter(m => m.status === 'submitted_to_manager').length;
+        if (submittedCount > 0) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+              <span>Milestone Submitted ({approvedCount}/12 Approved)</span>
+            </span>
+          );
+        }
+        if (approvedCount === 12) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span>FY Completed & Approved</span>
+            </span>
+          );
+        }
+        if (approvedCount > 0) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
+              <span>YTD Active ({approvedCount}/12 Approved)</span>
+            </span>
+          );
+        }
       }
     }
 
@@ -6082,8 +7183,16 @@ export const EvaluationTab: React.FC = () => {
           // Keep existing DB record
         } else {
           // Prioritize pending reviews requiring manager attention
-          const rPending = (r.status as string) === 'manager_review' || (r.status as string) === 'Submitted to Manager' || r.managerScore == null;
-          const exPending = (existing.status as string) === 'manager_review' || (existing.status as string) === 'Submitted to Manager' || existing.managerScore == null;
+          const rPending = (r.status as string) === 'manager_review' || (r.status as string) === 'Submitted to Manager' ||
+            (r.quarterly_records || []).some(q => q.status === 'submitted_to_manager') ||
+            (r.weekly_records || []).some(w => w.status === 'submitted_to_manager') ||
+            (r.monthly_records || []).some(m => m.status === 'submitted_to_manager') ||
+            r.managerScore == null;
+          const exPending = (existing.status as string) === 'manager_review' || (existing.status as string) === 'Submitted to Manager' ||
+            (existing.quarterly_records || []).some(q => q.status === 'submitted_to_manager') ||
+            (existing.weekly_records || []).some(w => w.status === 'submitted_to_manager') ||
+            (existing.monthly_records || []).some(m => m.status === 'submitted_to_manager') ||
+            existing.managerScore == null;
           if (rPending && !exPending) {
             map.set(key, normalizedResponse);
           } else if (
@@ -6105,8 +7214,16 @@ export const EvaluationTab: React.FC = () => {
 
     return Array.from(map.values()).sort((a, b) => {
       // 1. Pending reviews (needing manager attention) ALWAYS sort to the top!
-      const aPending = (a.status as string) === 'manager_review' || (a.status as string) === 'Submitted to Manager' || a.managerScore == null;
-      const bPending = (b.status as string) === 'manager_review' || (b.status as string) === 'Submitted to Manager' || b.managerScore == null;
+      const aPending = (a.status as string) === 'manager_review' || (a.status as string) === 'Submitted to Manager' ||
+        (a.quarterly_records || []).some(q => q.status === 'submitted_to_manager') ||
+        (a.weekly_records || []).some(w => w.status === 'submitted_to_manager') ||
+        (a.monthly_records || []).some(m => m.status === 'submitted_to_manager') ||
+        a.managerScore == null;
+      const bPending = (b.status as string) === 'manager_review' || (b.status as string) === 'Submitted to Manager' ||
+        (b.quarterly_records || []).some(q => q.status === 'submitted_to_manager') ||
+        (b.weekly_records || []).some(w => w.status === 'submitted_to_manager') ||
+        (b.monthly_records || []).some(m => m.status === 'submitted_to_manager') ||
+        b.managerScore == null;
       if (aPending && !bPending) return -1;
       if (!aPending && bPending) return 1;
 
@@ -6136,22 +7253,30 @@ export const EvaluationTab: React.FC = () => {
   }, [allDeduplicatedManagerResponses, dbEmployees, userId, userCode, myCanonicalCode, currentDbUser]);
 
   // Helper to categorize submission lifecycle stage for the Submissions Overview Tab
-  // Helper to categorize submission lifecycle stage for the Submissions Overview Tab
   const getSubmissionCategory = (r: EvaluationResponse): 'with_manager' | 'approved' | 'completed' | 'with_gm' | 'with_admin' | 'sent_back' | 'assigned_to_employee' => {
     const s = String(r.status || '').toLowerCase().trim();
     const smStatus = String((r as any).service_manager_approve_status || '').toLowerCase().trim();
 
     if (isYearlyResponse(r)) {
       const curYearlyRecords = r.monthly_records || [];
-      const hasPendingSubmitted = curYearlyRecords.some((m: any) => m.status === 'submitted_to_manager');
+      const curWeeklyRecords = r.weekly_records || [];
+      const curQuarterlyRecords = r.quarterly_records || [];
+      const hasPendingSubmitted = curYearlyRecords.some((m: any) => m.status === 'submitted_to_manager') ||
+        curWeeklyRecords.some((w: any) => w.status === 'submitted_to_manager') ||
+        curQuarterlyRecords.some((q: any) => q.status === 'submitted_to_manager');
       if (hasPendingSubmitted) {
         return 'with_manager';
       }
-      const allApproved = curYearlyRecords.length === 12 && curYearlyRecords.every((m: any) => m.status === 'manager_approved');
+      const allApproved = (curQuarterlyRecords.length === 4 && curQuarterlyRecords.every((q: any) => q.status === 'manager_approved')) ||
+        (curWeeklyRecords.length === 52 && curWeeklyRecords.every((w: any) => w.status === 'manager_approved')) ||
+        (curYearlyRecords.length === 12 && curYearlyRecords.every((m: any) => m.status === 'manager_approved'));
       if (allApproved || s === 'completed' || s === 'sm_final_approval') {
         return 'completed';
       }
-      if (curYearlyRecords.some((m: any) => m.status === 'manager_approved') || r.managerScore != null) {
+      if (curQuarterlyRecords.some((q: any) => q.status === 'manager_approved') ||
+        curWeeklyRecords.some((w: any) => w.status === 'manager_approved') ||
+        curYearlyRecords.some((m: any) => m.status === 'manager_approved') ||
+        r.managerScore != null) {
         return 'approved';
       }
     }
@@ -6198,8 +7323,17 @@ export const EvaluationTab: React.FC = () => {
       const s = String(r.status || '').toLowerCase().trim();
       const isYearly = isYearlyResponse(r);
       const curYearlyRecords = r.monthly_records || [];
-      const hasYearlyPending = isYearly && curYearlyRecords.some((m: any) => m.status === 'submitted_to_manager');
-      const isCompleted = !hasYearlyPending && (s === 'completed' || s === 'sm_final_approval' || (isYearly ? (curYearlyRecords.length === 12 && curYearlyRecords.every((m: any) => m.status === 'manager_approved')) : (r.managerScore != null || s === 'approved')));
+      const curWeeklyRecords = r.weekly_records || [];
+      const curQuarterlyRecords = r.quarterly_records || [];
+      const hasYearlyPending = isYearly && (
+        curYearlyRecords.some((m: any) => m.status === 'submitted_to_manager') ||
+        curWeeklyRecords.some((w: any) => w.status === 'submitted_to_manager') ||
+        curQuarterlyRecords.some((q: any) => q.status === 'submitted_to_manager')
+      );
+      const isAllApproved = (curQuarterlyRecords.length === 4 && curQuarterlyRecords.every((q: any) => q.status === 'manager_approved')) ||
+        (curWeeklyRecords.length === 52 && curWeeklyRecords.every((w: any) => w.status === 'manager_approved')) ||
+        (curYearlyRecords.length === 12 && curYearlyRecords.every((m: any) => m.status === 'manager_approved'));
+      const isCompleted = !hasYearlyPending && (s === 'completed' || s === 'sm_final_approval' || (isYearly ? isAllApproved : (r.managerScore != null || s === 'approved')));
 
       if (isCompleted) {
         completed++;
@@ -6638,18 +7772,39 @@ export const EvaluationTab: React.FC = () => {
   const managerStats = useMemo(() => {
     const baseList = activeScopedResponsesForCards;
     const total = baseList.length;
-    const submitted = baseList.filter(r =>
-      (r.status as string) === 'manager_review' ||
-      (r.status as string) === 'Submitted to Manager' ||
-      r.status === 'sm_final_approval' ||
-      r.status === 'approved' ||
-      (r.employeeOverallScore != null && r.employeeOverallScore > 0)
-    ).length;
-    const approved = baseList.filter(r =>
-      (r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
-      (r.status as string) !== 'manager_review' &&
-      (r.status as string) !== 'Submitted to Manager'
-    ).length;
+    const submitted = baseList.filter(r => {
+      const isYearly = isYearlyResponse(r);
+      if (isYearly) {
+        return (
+          (r.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager' || q.status === 'manager_approved') ||
+          (r.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager' || w.status === 'manager_approved') ||
+          (r.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager' || m.status === 'manager_approved')
+        );
+      }
+      return (
+        (r.status as string) === 'manager_review' ||
+        (r.status as string) === 'Submitted to Manager' ||
+        r.status === 'sm_final_approval' ||
+        r.status === 'approved' ||
+        Boolean(r.employeeSubmittedAt) ||
+        (r.employeeOverallScore != null && r.employeeOverallScore > 0)
+      );
+    }).length;
+    const approved = baseList.filter(r => {
+      const isYearly = isYearlyResponse(r);
+      if (isYearly) {
+        return (
+          (r.quarterly_records || []).some((q: any) => q.status === 'manager_approved') ||
+          (r.weekly_records || []).some((w: any) => w.status === 'manager_approved') ||
+          (r.monthly_records || []).some((m: any) => m.status === 'manager_approved')
+        );
+      }
+      return (
+        (r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
+        (r.status as string) !== 'manager_review' &&
+        (r.status as string) !== 'Submitted to Manager'
+      );
+    }).length;
     const pending = Math.max(0, total - approved);
     const validScores = baseList
       .map(r => r.managerScore != null ? Number(r.managerScore) : (r.employeeOverallScore != null && r.employeeOverallScore > 0 ? Number(r.employeeOverallScore) : null))
@@ -6662,18 +7817,39 @@ export const EvaluationTab: React.FC = () => {
   // Queue status pill counts specifically for the active filtered table view
   const queueStats = useMemo(() => {
     const total = deduplicatedManagerResponses.length;
-    const submitted = deduplicatedManagerResponses.filter(r =>
-      (r.status as string) === 'manager_review' ||
-      (r.status as string) === 'Submitted to Manager' ||
-      r.status === 'sm_final_approval' ||
-      r.status === 'approved' ||
-      (r.employeeOverallScore != null && r.employeeOverallScore > 0)
-    ).length;
-    const approved = deduplicatedManagerResponses.filter(r =>
-      (r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
-      (r.status as string) !== 'manager_review' &&
-      (r.status as string) !== 'Submitted to Manager'
-    ).length;
+    const submitted = deduplicatedManagerResponses.filter(r => {
+      const isYearly = isYearlyResponse(r);
+      if (isYearly) {
+        return (
+          (r.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager' || q.status === 'manager_approved') ||
+          (r.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager' || w.status === 'manager_approved') ||
+          (r.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager' || m.status === 'manager_approved')
+        );
+      }
+      return (
+        (r.status as string) === 'manager_review' ||
+        (r.status as string) === 'Submitted to Manager' ||
+        r.status === 'sm_final_approval' ||
+        r.status === 'approved' ||
+        Boolean(r.employeeSubmittedAt) ||
+        (r.employeeOverallScore != null && r.employeeOverallScore > 0)
+      );
+    }).length;
+    const approved = deduplicatedManagerResponses.filter(r => {
+      const isYearly = isYearlyResponse(r);
+      if (isYearly) {
+        return (
+          (r.quarterly_records || []).some((q: any) => q.status === 'manager_approved') ||
+          (r.weekly_records || []).some((w: any) => w.status === 'manager_approved') ||
+          (r.monthly_records || []).some((m: any) => m.status === 'manager_approved')
+        );
+      }
+      return (
+        (r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
+        (r.status as string) !== 'manager_review' &&
+        (r.status as string) !== 'Submitted to Manager'
+      );
+    }).length;
     const pending = Math.max(0, total - approved);
     return { total, submitted, approved, pending };
   }, [deduplicatedManagerResponses]);
@@ -6682,22 +7858,41 @@ export const EvaluationTab: React.FC = () => {
   const filteredManagerResponses = useMemo(() => {
     return deduplicatedManagerResponses.filter(r => {
       const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(r);
+      const isYearly = isYearlyResponse(r);
+      const hasSubmittedMilestone = isYearly && (
+        (r.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
+        (r.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
+        (r.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+      );
+      const hasApprovedMilestone = isYearly && (
+        (r.quarterly_records || []).some((q: any) => q.status === 'manager_approved') ||
+        (r.weekly_records || []).some((w: any) => w.status === 'manager_approved') ||
+        (r.monthly_records || []).some((m: any) => m.status === 'manager_approved')
+      );
+
       // Status filter
       if (mgrStatusFilter === 'pending') {
-        const isPending = r.status === 'employee_in_progress' ||
-          (r.status as string) === 'manager_review' ||
-          (r.status as string) === 'Submitted to Manager' ||
-          (r.managerScore == null && r.status !== 'approved' && r.status !== 'sm_final_approval');
+        const isPending = isYearly
+          ? !hasApprovedMilestone && !hasSubmittedMilestone
+          : (r.status === 'employee_in_progress' ||
+            (r.status as string) === 'manager_review' ||
+            (r.status as string) === 'Submitted to Manager' ||
+            (r.managerScore == null && r.status !== 'approved' && r.status !== 'sm_final_approval'));
         if (!isPending) return false;
       } else if (mgrStatusFilter === 'submitted') {
-        const isSubmitted = (r.status as string) === 'manager_review' ||
-          (r.status as string) === 'Submitted to Manager' ||
-          (r.employeeOverallScore != null && r.employeeOverallScore > 0 && r.managerScore == null);
+        const isSubmitted = isYearly
+          ? hasSubmittedMilestone
+          : ((r.status as string) === 'manager_review' ||
+            (r.status as string) === 'Submitted to Manager' ||
+            Boolean(r.employeeSubmittedAt) ||
+            (r.employeeOverallScore != null && r.employeeOverallScore > 0 && r.managerScore == null));
         if (!isSubmitted) return false;
       } else if (mgrStatusFilter === 'approved') {
-        const isApproved = (r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
-          (r.status as string) !== 'manager_review' &&
-          (r.status as string) !== 'Submitted to Manager';
+        const isApproved = isYearly
+          ? hasApprovedMilestone
+          : ((r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null) &&
+            (r.status as string) !== 'manager_review' &&
+            (r.status as string) !== 'Submitted to Manager');
         if (!isApproved) return false;
       }
 
@@ -6726,6 +7921,8 @@ export const EvaluationTab: React.FC = () => {
 
   const isWeeklyResponse = (r: EvaluationResponse) => {
     const respCycle = cycles.find(c => c.id === r.cycleId);
+    const subFreq = (r as any).milestone_frequency || ((r as any).weekly_records?.length ? 'weekly' : '');
+    if (subFreq === 'weekly') return true;
     const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
     if (f === 'weekly') return true;
     if (f && f !== 'weekly') return false;
@@ -6735,6 +7932,8 @@ export const EvaluationTab: React.FC = () => {
 
   const isMonthlyResponse = (r: EvaluationResponse) => {
     const respCycle = cycles.find(c => c.id === r.cycleId);
+    const subFreq = (r as any).milestone_frequency || ((r as any).monthly_records?.length ? 'monthly' : '');
+    if (subFreq === 'monthly') return true;
     const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
     if (f === 'monthly') return true;
     if (f && f !== 'monthly') return false;
@@ -6744,6 +7943,8 @@ export const EvaluationTab: React.FC = () => {
 
   const isQuarterlyResponse = (r: EvaluationResponse) => {
     const respCycle = cycles.find(c => c.id === r.cycleId);
+    const subFreq = (r as any).milestone_frequency || ((r as any).quarterly_records?.length ? 'quarterly' : '');
+    if (subFreq === 'quarterly') return true;
     const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
     if (f === 'quarterly') return true;
     if (f && f !== 'quarterly') return false;
@@ -7540,8 +8741,16 @@ export const EvaluationTab: React.FC = () => {
         : ((r as any).manager_score != null && !isNaN(Number((r as any).manager_score)) ? Number((r as any).manager_score) : null);
 
       if (isYearlyResponse(r)) {
+        const approvedQuarters = (r.quarterly_records || []).filter(q => q.status === 'manager_approved');
+        const approvedWeeks = (r.weekly_records || []).filter(w => w.status === 'manager_approved');
         const approvedMonths = (r.monthly_records || []).filter(m => m.status === 'manager_approved');
-        if (approvedMonths.length > 0) {
+        if (approvedQuarters.length > 0) {
+          const ytdScore = approvedQuarters.reduce((acc, q) => acc + (Number(q.managerScore) || 0), 0) / approvedQuarters.length;
+          mgrScoreNum = Number(ytdScore.toFixed(1));
+        } else if (approvedWeeks.length > 0) {
+          const ytdScore = approvedWeeks.reduce((acc, w) => acc + (Number(w.managerScore) || 0), 0) / approvedWeeks.length;
+          mgrScoreNum = Number(ytdScore.toFixed(1));
+        } else if (approvedMonths.length > 0) {
           const ytdScore = approvedMonths.reduce((acc, m) => acc + (Number(m.managerScore) || 0), 0) / approvedMonths.length;
           mgrScoreNum = Number(ytdScore.toFixed(1));
         }
@@ -7593,12 +8802,37 @@ export const EvaluationTab: React.FC = () => {
           dateText = `Q${qNum} ${range.startDate.getFullYear()}`;
         }
       } else if (isYearlyResponse(r)) {
-        freqLabel = 'Annual (12-Mo)';
-        freqColor = 'bg-teal-50 text-teal-900 border-teal-300';
-        if (range.startDate && range.endDate) {
-          dateText = `Apr ${range.startDate.getFullYear()} – Mar ${range.endDate.getFullYear()}`;
-        } else if (range.startDate) {
-          dateText = `FY ${range.startDate.getFullYear()}-${(range.startDate.getFullYear() + 1).toString().slice(-2)}`;
+        const subFreq = (r as any).milestone_frequency || ((r as any).quarterly_records?.length ? 'quarterly' : (r as any).weekly_records?.length ? 'weekly' : (r as any).monthly_records?.length ? 'monthly' : '');
+        if (subFreq === 'quarterly') {
+          freqLabel = 'Quarterly';
+          freqColor = 'bg-emerald-50 text-emerald-900 border-emerald-300';
+          if (range.startDate) {
+            const mNum = range.startDate.getMonth() + 1;
+            const qNum = mNum >= 4 && mNum <= 6 ? 1 : mNum >= 7 && mNum <= 9 ? 2 : mNum >= 10 && mNum <= 12 ? 3 : 4;
+            dateText = `Q${qNum} ${range.startDate.getFullYear()}`;
+          }
+        } else if (subFreq === 'weekly') {
+          freqLabel = 'Weekly';
+          freqColor = 'bg-blue-50 text-blue-900 border-blue-300';
+          if (range.startDate) {
+            const startD = range.startDate;
+            const endD = range.endDate || range.startDate;
+            dateText = `${pad2(startD.getDate())} ${monthsShortList[startD.getMonth()]} - ${pad2(endD.getDate())} ${monthsShortList[endD.getMonth()]} ${endD.getFullYear()}`;
+          }
+        } else if (subFreq === 'monthly') {
+          freqLabel = 'Monthly';
+          freqColor = 'bg-purple-50 text-purple-900 border-purple-300';
+          if (range.startDate) {
+            dateText = `${monthsShortList[range.startDate.getMonth()]} ${range.startDate.getFullYear()}`;
+          }
+        } else {
+          freqLabel = 'Annual (12-Mo)';
+          freqColor = 'bg-teal-50 text-teal-900 border-teal-300';
+          if (range.startDate && range.endDate) {
+            dateText = `Apr ${range.startDate.getFullYear()} – Mar ${range.endDate.getFullYear()}`;
+          } else if (range.startDate) {
+            dateText = `FY ${range.startDate.getFullYear()}-${(range.startDate.getFullYear() + 1).toString().slice(-2)}`;
+          }
         }
       }
 
@@ -7669,17 +8903,21 @@ export const EvaluationTab: React.FC = () => {
           allMembers.push(...members);
           const sortedMembers = [...members].sort((a, b) => {
             const isPendingA = isYearlyResponse(a.response)
-              ? (a.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+              ? ((a.response.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
+                (a.response.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
+                (a.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager'))
               : Boolean(
-                  (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted') || Boolean(a.response.employeeSubmittedAt) || Boolean((a.response as any).submitted_at)) &&
-                  a.response.managerScore == null
-                );
+                (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted') || Boolean(a.response.employeeSubmittedAt) || Boolean((a.response as any).submitted_at)) &&
+                a.response.managerScore == null
+              );
             const isPendingB = isYearlyResponse(b.response)
-              ? (b.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+              ? ((b.response.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
+                (b.response.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
+                (b.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager'))
               : Boolean(
-                  (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted') || Boolean(b.response.employeeSubmittedAt) || Boolean((b.response as any).submitted_at)) &&
-                  b.response.managerScore == null
-                );
+                (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted') || Boolean(b.response.employeeSubmittedAt) || Boolean((b.response as any).submitted_at)) &&
+                b.response.managerScore == null
+              );
             if (isPendingA && !isPendingB) return -1;
             if (!isPendingA && isPendingB) return 1;
             return a.employeeName.localeCompare(b.employeeName);
@@ -7694,17 +8932,21 @@ export const EvaluationTab: React.FC = () => {
       if (teamTotal > 0 && allMembers.length > 0) {
         allMembers.sort((a, b) => {
           const isPendingA = isYearlyResponse(a.response)
-            ? (a.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+            ? ((a.response.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
+              (a.response.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
+              (a.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager'))
             : Boolean(
-                (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted') || Boolean(a.response.employeeSubmittedAt) || Boolean((a.response as any).submitted_at)) &&
-                a.response.managerScore == null
-              );
+              (a.response.status === 'manager_review' || a.response.status === 'Submitted to Manager' || String(a.response.status || '').toLowerCase().includes('submitted') || Boolean(a.response.employeeSubmittedAt) || Boolean((a.response as any).submitted_at)) &&
+              a.response.managerScore == null
+            );
           const isPendingB = isYearlyResponse(b.response)
-            ? (b.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+            ? ((b.response.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
+              (b.response.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
+              (b.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager'))
             : Boolean(
-                (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted') || Boolean(b.response.employeeSubmittedAt) || Boolean((b.response as any).submitted_at)) &&
-                b.response.managerScore == null
-              );
+              (b.response.status === 'manager_review' || b.response.status === 'Submitted to Manager' || String(b.response.status || '').toLowerCase().includes('submitted') || Boolean(b.response.employeeSubmittedAt) || Boolean((b.response as any).submitted_at)) &&
+              b.response.managerScore == null
+            );
           if (isPendingA && !isPendingB) return -1;
           if (!isPendingA && isPendingB) return 1;
           return a.employeeName.localeCompare(b.employeeName);
@@ -8810,6 +10052,91 @@ export const EvaluationTab: React.FC = () => {
     }
 
     if (isYearlyResponse(r)) {
+      const isWeekly = r.milestone_frequency === 'weekly' || ((r.weekly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.quarterly_records || []).length);
+      const isQuarterly = r.milestone_frequency === 'quarterly' || ((r.quarterly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.weekly_records || []).length);
+
+      if (isWeekly) {
+        let curWeeklyRecords = r.weekly_records || [];
+        if (!curWeeklyRecords || curWeeklyRecords.length === 0) {
+          let baseYear = new Date().getFullYear();
+          if (r.startDate) baseYear = new Date(r.startDate).getFullYear();
+          curWeeklyRecords = initializeYearlyWeeklyRecords(baseYear);
+        }
+        const submittedWeek = curWeeklyRecords.find(w => w.status === 'submitted_to_manager');
+        const firstActionableWeek = curWeeklyRecords.slice(25).find(w => {
+          const lockInfo = getYearlyWeekLockInfo(w.weekIndex, curWeeklyRecords);
+          return lockInfo.isEditable || lockInfo.isSubmitted;
+        }) || curWeeklyRecords.find(w => w.weekIndex === 26) || curWeeklyRecords[0];
+
+        const targetWIndex = submittedWeek ? submittedWeek.weekIndex : (firstActionableWeek ? firstActionableWeek.weekIndex : 26);
+        setActiveMgrYearlyWeekIndex(targetWIndex);
+
+        const curWeekRec = curWeeklyRecords.find(w => w.weekIndex === targetWIndex);
+        targetCats.forEach((cat: KPICategory) => {
+          cat.kpis.forEach((kpi: KPIItem) => {
+            const entry = curWeekRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeekRec?.kpiEntries?.[kpi.name] : null);
+            const empActual = entry?.actualValue ?? entry?.actual_value ?? '';
+            const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
+            initialActuals[kpi.id] = mgrActual;
+            initialRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+          });
+        });
+        setMgrKpiActuals(initialActuals);
+        setMgrKpiRemarks(initialRemarks);
+        let totalScore = 0;
+        targetCats.forEach((cat: KPICategory) => {
+          cat.kpis.forEach((kpi: KPIItem) => {
+            const actualVal = initialActuals[kpi.id];
+            const calc = calculateKPIScore(kpi, actualVal);
+            totalScore += calc.earnedScore;
+          });
+        });
+        setMgrScore(Number(totalScore.toFixed(2)));
+        setMgrRemarks(curWeekRec?.managerRemarks || '');
+        return;
+      }
+
+      if (isQuarterly) {
+        let curQuarterlyRecords = r.quarterly_records || [];
+        if (!curQuarterlyRecords || curQuarterlyRecords.length === 0) {
+          let baseYear = new Date().getFullYear();
+          if (r.startDate) baseYear = new Date(r.startDate).getFullYear();
+          curQuarterlyRecords = initializeYearlyQuarterlyRecords(baseYear);
+        }
+        const submittedQuarter = curQuarterlyRecords.find(q => q.status === 'submitted_to_manager');
+        const firstActionableQuarter = curQuarterlyRecords.find(q => {
+          const lockInfo = getYearlyQuarterLockInfo(q.quarterIndex, curQuarterlyRecords);
+          return lockInfo.isEditable || lockInfo.isSubmitted;
+        }) || curQuarterlyRecords.find(q => q.quarterIndex === 2) || curQuarterlyRecords[0];
+
+        const targetQIndex = submittedQuarter ? submittedQuarter.quarterIndex : (firstActionableQuarter ? firstActionableQuarter.quarterIndex : 2);
+        setActiveMgrYearlyQuarterIndex(targetQIndex);
+
+        const curQuarterRec = curQuarterlyRecords.find(q => q.quarterIndex === targetQIndex);
+        targetCats.forEach((cat: KPICategory) => {
+          cat.kpis.forEach((kpi: KPIItem) => {
+            const entry = curQuarterRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterRec?.kpiEntries?.[kpi.name] : null);
+            const empActual = entry?.actualValue ?? entry?.actual_value ?? '';
+            const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
+            initialActuals[kpi.id] = mgrActual;
+            initialRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+          });
+        });
+        setMgrKpiActuals(initialActuals);
+        setMgrKpiRemarks(initialRemarks);
+        let totalScore = 0;
+        targetCats.forEach((cat: KPICategory) => {
+          cat.kpis.forEach((kpi: KPIItem) => {
+            const actualVal = initialActuals[kpi.id];
+            const calc = calculateKPIScore(kpi, actualVal);
+            totalScore += calc.earnedScore;
+          });
+        });
+        setMgrScore(Number(totalScore.toFixed(2)));
+        setMgrRemarks(curQuarterRec?.managerRemarks || '');
+        return;
+      }
+
       const curYearlyRecords = r.monthly_records || [];
       const submittedMonth = curYearlyRecords.find(m => m.status === 'submitted_to_manager');
       const firstActionableMonth = FISCAL_MONTHS.slice(5).find(m => {
@@ -8889,11 +10216,16 @@ export const EvaluationTab: React.FC = () => {
       const updated = { ...prev, [kpi.id]: sanitizedVal };
       let sum = 0;
       const isYearly = isYearlyResponse(selectedMgrResponse);
-      const curYearlyRec = isYearly ? (selectedMgrResponse?.monthly_records || []).find(m => m.monthIndex === activeMgrYearlyFiscalMonth) : null;
+      const isWeekly = isYearly && (selectedMgrResponse?.milestone_frequency === 'weekly' || ((selectedMgrResponse?.weekly_records || []).length > 0 && !(selectedMgrResponse?.monthly_records || []).length && !(selectedMgrResponse?.quarterly_records || []).length));
+      const isQuarterly = isYearly && (selectedMgrResponse?.milestone_frequency === 'quarterly' || ((selectedMgrResponse?.quarterly_records || []).length > 0 && !(selectedMgrResponse?.monthly_records || []).length && !(selectedMgrResponse?.weekly_records || []).length));
+      const curYearlyRec = (isYearly && !isWeekly && !isQuarterly) ? (selectedMgrResponse?.monthly_records || []).find(m => m.monthIndex === activeMgrYearlyFiscalMonth) : null;
+      const curQuarterlyRec = isQuarterly ? (selectedMgrResponse?.quarterly_records || []).find(q => q.quarterIndex === activeMgrYearlyQuarterIndex) : null;
 
       selectedMgrCategories.forEach(cat => {
         cat.kpis.forEach(k => {
-          const yearlyEntry = curYearlyRec?.kpiEntries?.[k.id] || (k.name ? curYearlyRec?.kpiEntries?.[k.name] : null);
+          const yearlyEntry = isQuarterly
+            ? (curQuarterlyRec?.kpiEntries?.[k.id] || (k.name ? curQuarterlyRec?.kpiEntries?.[k.name] : null))
+            : (curYearlyRec?.kpiEntries?.[k.id] || (k.name ? curYearlyRec?.kpiEntries?.[k.name] : null));
           const fallbackEmpVal = isYearly
             ? (yearlyEntry?.actualValue ?? yearlyEntry?.actual_value ?? '')
             : (selectedMgrResponse?.kpiResponses?.[k.id]?.actualValue ?? '');
@@ -9346,8 +10678,8 @@ export const EvaluationTab: React.FC = () => {
                     {availableTeamManagers.length === 0
                       ? 'None'
                       : selectedMgrIds.length === availableTeamManagers.length && availableTeamManagers.length > 1
-                      ? `All Managers (${availableTeamManagers.length})`
-                      : `${selectedMgrIds.length || 1} Selected`}
+                        ? `All Managers (${availableTeamManagers.length})`
+                        : `${selectedMgrIds.length || 1} Selected`}
                   </span>
                 </div>
 
@@ -9413,15 +10745,14 @@ export const EvaluationTab: React.FC = () => {
                               <div
                                 key={idVal}
                                 onClick={() => handleToggleHrManager(idVal)}
-                                className={`flex items-center justify-between p-2 rounded-lg text-xs cursor-pointer transition ${
-                                  isChecked ? 'bg-teal-50/80 text-teal-950 font-bold' : 'hover:bg-slate-50 text-slate-700'
-                                }`}
+                                className={`flex items-center justify-between p-2 rounded-lg text-xs cursor-pointer transition ${isChecked ? 'bg-teal-50/80 text-teal-950 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                                  }`}
                               >
                                 <div className="flex items-center gap-2 truncate">
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
-                                    onChange={() => {}}
+                                    onChange={() => { }}
                                     className="rounded text-teal-600 focus:ring-teal-500 w-3.5 h-3.5"
                                   />
                                   <span className="truncate">
@@ -9594,6 +10925,29 @@ export const EvaluationTab: React.FC = () => {
                       >
                         <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
                         <span>Rename</span>
+                      </button>
+                    )}
+
+                    {/* Copy / Paste Form Button */}
+                    {copiedHrCategories && copiedHrCategories.key !== activeHrTemplateKey ? (
+                      <button
+                        type="button"
+                        onClick={handleHrPasteTemplate}
+                        className="px-2 py-0.5 text-xs font-semibold text-teal-800 hover:text-white bg-teal-50 hover:bg-teal-700 border border-teal-300 rounded-md transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                        title={`Paste deliverables copied from "${copiedHrCategories.name}"`}
+                      >
+                        <ClipboardDocumentIcon className="w-3.5 h-3.5 text-teal-600" />
+                        <span>Paste Form</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleHrCopyTemplate}
+                        className="px-2 py-0.5 text-xs font-medium text-slate-600 hover:text-teal-900 hover:bg-white rounded-md transition cursor-pointer flex items-center gap-1"
+                        title="Copy all deliverables from this form"
+                      >
+                        <DocumentDuplicateIcon className="w-3.5 h-3.5 text-slate-500" />
+                        <span>{copiedHrCategories?.key === activeHrTemplateKey ? 'Copied ✓' : 'Copy Form'}</span>
                       </button>
                     )}
 
@@ -9906,11 +11260,10 @@ export const EvaluationTab: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setEmployeeSubTab('worksheet')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    employeeSubTab === 'worksheet'
-                      ? 'bg-primary-700 text-white shadow-2xs font-bold'
-                      : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
-                  }`}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${employeeSubTab === 'worksheet'
+                    ? 'bg-primary-700 text-white shadow-2xs font-bold'
+                    : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
+                    }`}
                 >
                   <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
                   <span>Self-Assessment Worksheet</span>
@@ -9919,11 +11272,10 @@ export const EvaluationTab: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setEmployeeSubTab('reports')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    employeeSubTab === 'reports'
-                      ? 'bg-primary-700 text-white shadow-2xs font-bold'
-                      : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
-                  }`}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${employeeSubTab === 'reports'
+                    ? 'bg-primary-700 text-white shadow-2xs font-bold'
+                    : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
+                    }`}
                 >
                   <DocumentChartBarIcon className="w-3.5 h-3.5" />
                   <span>Performance History</span>
@@ -10086,10 +11438,10 @@ export const EvaluationTab: React.FC = () => {
 
             return (
               <div className="space-y-4 animate-in fade-in duration-200">
-                {/* 1. Ultra-Clean Executive Header & Workflow Ribbon */}
+                {/* 1. Unified Ultra-Clean Executive Header & Milestone Navigation Card */}
                 <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
-                  {/* Top Bar: Title, Period Selector & Score Badges */}
-                  <div className="px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100">
+                  {/* Top Bar: Title, Period Selector, Score Badges & Action Buttons */}
+                  <div className="px-5 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-8 h-8 rounded-lg bg-primary-50 text-primary-700 border border-primary-200/60 flex items-center justify-center shrink-0">
                         <SparklesIcon className="w-4 h-4" />
@@ -10148,6 +11500,27 @@ export const EvaluationTab: React.FC = () => {
                               : 'Pending'}
                           </strong>
                         </div>
+                        {isYearlyResponse(activeEmpResponse) && (
+                          <div className="px-2.5 py-1 flex items-center gap-1 bg-teal-50/70">
+                            <span className="text-[10px] text-teal-700 font-bold">YTD</span>
+                            <strong className="text-teal-950 font-extrabold">
+                              {(() => {
+                                const isW = activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length);
+                                const isQ = activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length);
+                                if (isW) {
+                                  const appW = (activeEmpResponse?.weekly_records || []).filter(w => w.status === 'manager_approved');
+                                  return appW.length > 0 ? `${(appW.reduce((a, b) => a + (Number(b.managerScore) || 0), 0) / appW.length).toFixed(0)}%` : '—';
+                                }
+                                if (isQ) {
+                                  const appQ = (activeEmpResponse?.quarterly_records || []).filter(q => q.status === 'manager_approved');
+                                  return appQ.length > 0 ? `${(appQ.reduce((a, b) => a + (Number(b.managerScore) || 0), 0) / appQ.length).toFixed(0)}%` : '—';
+                                }
+                                const appM = (activeEmpResponse?.monthly_records || []).filter(m => m.status === 'manager_approved');
+                                return appM.length > 0 ? `${(appM.reduce((a, b) => a + (Number(b.managerScore) || 0), 0) / appM.length).toFixed(0)}%` : '—';
+                              })()}
+                            </strong>
+                          </div>
+                        )}
                         <div className="px-2.5 py-1 flex items-center gap-1">
                           <span className="text-[10px] text-slate-400 font-medium">KPIs</span>
                           <strong className="text-slate-800 font-bold">{completedKpiCount}/{totalKpiCount}</strong>
@@ -10190,23 +11563,7 @@ export const EvaluationTab: React.FC = () => {
                     const isS3Active = !isS3Done && (activeEmpResponse?.status === 'sm_final_approval' || (Boolean(activeEmpResponse?.managerReviewedAt) && activeEmpResponse?.status !== 'manager_review'));
 
                     return (
-                      <div className="px-4 py-2.5 bg-slate-50/70 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                        {/* Status Badge */}
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-0.5 rounded-full border ${isS3Done
-                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                              : isS2Active
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : isS3Active
-                                  ? 'bg-primary-50 text-primary-800 border-primary-200'
-                                  : 'bg-slate-100 text-slate-700 border-slate-200'
-                            }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${isS3Done ? 'bg-emerald-500' : isS2Active ? 'bg-amber-500' : isS3Active ? 'bg-primary-500' : 'bg-slate-400'
-                              }`} />
-                            {isS3Done ? 'Approved' : isS2Active ? 'Under Review' : isS3Active ? 'Executive Sign-off' : 'In Progress'}
-                          </span>
-                        </div>
-
+                      <div className="px-4 py-2 bg-slate-50/70 border-t border-slate-100 flex flex-wrap items-center justify-end gap-3">
                         {/* Minimalist 3-Step Progress Trail */}
                         <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
                           <span className={`inline-flex items-center gap-1 font-semibold ${isS1Done ? 'text-emerald-700' : 'text-slate-700'}`}>
@@ -10222,10 +11579,10 @@ export const EvaluationTab: React.FC = () => {
                           <span className={`inline-flex items-center gap-1 font-semibold ${isS2Done ? 'text-emerald-700' : isS2Active ? 'text-amber-700' : 'text-slate-400'
                             }`}>
                             <span className={`w-4 h-4 rounded-full inline-flex items-center justify-center text-[10px] font-bold ${isS2Done
-                                ? 'bg-emerald-600 text-white'
-                                : isS2Active
-                                  ? 'bg-amber-500 text-white'
-                                  : 'bg-slate-200 text-slate-500'
+                              ? 'bg-emerald-600 text-white'
+                              : isS2Active
+                                ? 'bg-amber-500 text-white'
+                                : 'bg-slate-200 text-slate-500'
                               }`}>
                               {isS2Done ? '✓' : '2'}
                             </span>
@@ -10246,6 +11603,396 @@ export const EvaluationTab: React.FC = () => {
                       </div>
                     );
                   })()}
+
+                  {/* Milestone Progress Stepper for Yearly Cadence (52-Week, Quarterly, or 12-Month) Embedded Inside Unified Card */}
+                  {isYearlyResponse(activeEmpResponse) && (() => {
+                    const isWeekly = activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length);
+                    const isQuarterly = activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length);
+
+                    if (isQuarterly) {
+                      const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
+                      const lockInfo = getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords);
+                      const targetQuarterRecord = curQuarterlyRecords.find(q => q.quarterIndex === activeYearlyQuarterIndex);
+                      const hasManagerReopenedNote = Boolean(targetQuarterRecord?.managerRemarks && targetQuarterRecord?.status === 'pending_employee');
+
+                      return (
+                        <div className="border-t border-slate-200/80 bg-slate-50/50 p-3 sm:p-4 space-y-3">
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200/90 shadow-2xs">
+                            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                              <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1.5">
+                                <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                                Select Stage / Quarter:
+                              </span>
+                              <div className="relative flex-1 max-w-xl">
+                                <select
+                                  value={activeYearlyQuarterIndex}
+                                  onChange={e => setActiveYearlyQuarterIndex(Number(e.target.value))}
+                                  className="w-full bg-slate-50/70 hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
+                                >
+                                  {FISCAL_QUARTERS.map(q => {
+                                    const qLockInfo = getYearlyQuarterLockInfo(q.quarterIndex, curQuarterlyRecords);
+                                    const isCurActive = q.quarterIndex === currentQuarter;
+                                    let badgeStr = '';
+                                    if (qLockInfo.isApproved) badgeStr = `✅ Approved (${qLockInfo.score != null ? `${qLockInfo.score}%` : ''})`;
+                                    else if (qLockInfo.isSubmitted) badgeStr = '⏳ Under Review';
+                                    else if (qLockInfo.isLocked) badgeStr = '🔒 Locked (Upcoming)';
+                                    else if (isCurActive) badgeStr = '🟢 Current Active Stage';
+                                    else badgeStr = '📄 Open';
+
+                                    return (
+                                      <option key={q.quarterKey} value={q.quarterIndex}>
+                                        {q.quarterKey.toUpperCase()} ({q.monthsIncluded}) — {badgeStr}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                              <button
+                                type="button"
+                                disabled={activeYearlyQuarterIndex <= 1}
+                                onClick={() => setActiveYearlyQuarterIndex(prev => prev - 1)}
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                                title="Previous Quarter"
+                              >
+                                ◀ Prev
+                              </button>
+                              <button
+                                type="button"
+                                disabled={activeYearlyQuarterIndex >= 4}
+                                onClick={() => setActiveYearlyQuarterIndex(prev => prev + 1)}
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                                title="Next Quarter"
+                              >
+                                Next ▶
+                              </button>
+
+                              {activeYearlyQuarterIndex !== currentQuarter && (
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveYearlyQuarterIndex(currentQuarter)}
+                                  className="text-[11px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/90 px-3 py-1.5 rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
+                                >
+                                  <SparklesIcon className="w-3.5 h-3.5 text-teal-600" />
+                                  Active (Q{currentQuarter})
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {hasManagerReopenedNote && (
+                            <div className="p-3 bg-amber-50/95 border border-amber-300 rounded-xl text-xs space-y-1">
+                              <div className="flex items-center gap-1.5 font-bold text-amber-900 text-[11px]">
+                                <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                                <span>Manager Feedback for {lockInfo.currentQuarterLabel}:</span>
+                              </div>
+                              <div className="text-slate-800 text-[11px] italic font-medium">
+                                "{targetQuarterRecord?.managerRemarks}"
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    if (isWeekly) {
+                      const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
+                      const approvedWeeks = curWeeklyRecords.filter(w => w.status === 'manager_approved');
+
+                      const quarters = [
+                        { qNum: 1, name: 'Q1 (Apr – Jun)', weeksRange: 'W1 – W13', weeks: curWeeklyRecords.filter(w => w.quarter === 1) },
+                        { qNum: 2, name: 'Q2 (Jul – Sep)', weeksRange: 'W14 – W26', weeks: curWeeklyRecords.filter(w => w.quarter === 2) },
+                        { qNum: 3, name: 'Q3 (Oct – Dec)', weeksRange: 'W27 – W39', weeks: curWeeklyRecords.filter(w => w.quarter === 3) },
+                        { qNum: 4, name: 'Q4 (Jan – Mar)', weeksRange: 'W40 – W52', weeks: curWeeklyRecords.filter(w => w.quarter === 4) }
+                      ];
+
+                      // Find currently open/active week index by current date
+                      const todayStr = getLocalTodayDateString();
+                      let currentActiveWeekRec = curWeeklyRecords.find(w => Boolean(w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate));
+                      if (!currentActiveWeekRec) {
+                        const eligiblePastWeeks = curWeeklyRecords.filter(w => Boolean(w.startDate && w.startDate <= todayStr));
+                        if (eligiblePastWeeks.length > 0) {
+                          currentActiveWeekRec = eligiblePastWeeks[eligiblePastWeeks.length - 1];
+                        }
+                      }
+                      if (!currentActiveWeekRec) {
+                        currentActiveWeekRec = curWeeklyRecords[0];
+                      }
+                      const activeQuarterNum = currentActiveWeekRec?.quarter || 2;
+
+                      const effectiveQuarterFilter = weeklyQuarterFilter === 'all'
+                        ? 'all'
+                        : (typeof weeklyQuarterFilter === 'number' ? weeklyQuarterFilter : activeQuarterNum);
+
+                      const displayedWeeks = effectiveQuarterFilter === 'all'
+                        ? curWeeklyRecords
+                        : curWeeklyRecords.filter(w => w.quarter === effectiveQuarterFilter);
+
+                      const lockInfo = getYearlyWeekLockInfo(activeYearlyWeekIndex, curWeeklyRecords);
+                      const targetWeekRecord = curWeeklyRecords.find(w => w.weekIndex === activeYearlyWeekIndex);
+                      const hasManagerReopenedNote = Boolean(targetWeekRecord?.managerRemarks && targetWeekRecord?.status === 'pending_employee');
+                      const percentComplete = Math.round((approvedWeeks.length / 52) * 100);
+
+                      return (
+                        <div className="border-t border-slate-200/80 bg-slate-50/50 p-3 sm:p-4 space-y-3">
+                          {/* Quarter Filter Segmented Tabs & Approval Progress */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 flex-wrap">
+                              {quarters.map(q => {
+                                const isQActive = effectiveQuarterFilter === q.qNum;
+                                const isCurrentFiscalQ = q.qNum === activeQuarterNum;
+                                const qApprovedCount = q.weeks.filter(w => w.status === 'manager_approved').length;
+
+                                return (
+                                  <button
+                                    key={q.qNum}
+                                    type="button"
+                                    onClick={() => {
+                                      setWeeklyQuarterFilter(q.qNum);
+                                      const qWeeks = q.weeks;
+                                      if (qWeeks.length > 0 && !qWeeks.some(w => w.weekIndex === activeYearlyWeekIndex)) {
+                                        const targetW = qWeeks.find(w => w.weekIndex === currentActiveWeekRec?.weekIndex) || qWeeks[0];
+                                        if (targetW) {
+                                          setActiveYearlyWeekIndex(targetW.weekIndex);
+                                        }
+                                      }
+                                    }}
+                                    className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${isQActive
+                                      ? 'bg-white text-teal-950 shadow-2xs border border-slate-200/90'
+                                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                                      }`}
+                                  >
+                                    {isCurrentFiscalQ && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
+                                    )}
+                                    <span>{q.name}</span>
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${isQActive ? 'bg-teal-50 text-teal-700 font-extrabold' : 'bg-slate-200/70 text-slate-500'}`}>
+                                      {qApprovedCount}/{q.weeks.length}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+
+                              <button
+                                type="button"
+                                onClick={() => setWeeklyQuarterFilter('all')}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${effectiveQuarterFilter === 'all'
+                                  ? 'bg-white text-teal-950 shadow-2xs border border-slate-200/90'
+                                  : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
+                                  }`}
+                              >
+                                All 52 Weeks
+                              </button>
+                            </div>
+
+                            {/* Right side compact progress indicator */}
+                            <div className="flex items-center gap-2.5 self-start sm:self-auto bg-white border border-slate-200/80 px-2.5 py-1 rounded-lg shadow-2xs">
+                              <span className="text-[11px] text-slate-600 font-bold">
+                                {approvedWeeks.length} of 52 Approved
+                              </span>
+                              <div className="w-16 sm:w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all"
+                                  style={{ width: `${percentComplete}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Modern Week Dropdown Selector & Navigation Bar */}
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200/90 shadow-2xs">
+                            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                              <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1.5">
+                                <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                                Select Week:
+                              </span>
+                              <div className="relative flex-1 max-w-xl">
+                                <select
+                                  value={activeYearlyWeekIndex}
+                                  onChange={e => {
+                                    const val = Number(e.target.value);
+                                    setActiveYearlyWeekIndex(val);
+                                    const rec = curWeeklyRecords.find(w => w.weekIndex === val);
+                                    if (rec && rec.quarter) setWeeklyQuarterFilter(rec.quarter);
+                                  }}
+                                  className="w-full bg-slate-50/70 hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
+                                >
+                                  {displayedWeeks.map(w => {
+                                    const wLock = getYearlyWeekLockInfo(w.weekIndex, curWeeklyRecords);
+                                    const isCurActive = w.weekIndex === currentActiveWeekRec?.weekIndex;
+                                    let badgeStr = '';
+                                    if (wLock.isApproved) badgeStr = `✅ Approved (${wLock.score != null ? `${wLock.score}%` : ''})`;
+                                    else if (wLock.isSubmitted) badgeStr = '⏳ Under Review';
+                                    else if (wLock.isLocked) badgeStr = '🔒 Locked (Future)';
+                                    else if (isCurActive) badgeStr = '🟢 Current Active Week';
+                                    else badgeStr = '📄 Open';
+
+                                    const cleanDateLabel = w.weekLabel ? w.weekLabel.replace(/^W\d+\s*\(/i, '').replace(/\)$/, '') : '';
+
+                                    return (
+                                      <option key={w.weekIndex} value={w.weekIndex}>
+                                        W{w.weekIndex} {cleanDateLabel ? `(${cleanDateLabel})` : ''} — {badgeStr}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                              <button
+                                type="button"
+                                disabled={activeYearlyWeekIndex <= 1}
+                                onClick={() => {
+                                  const prevIndex = activeYearlyWeekIndex - 1;
+                                  setActiveYearlyWeekIndex(prevIndex);
+                                  const rec = curWeeklyRecords.find(w => w.weekIndex === prevIndex);
+                                  if (rec && rec.quarter) setWeeklyQuarterFilter(rec.quarter);
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                                title="Previous Week"
+                              >
+                                ◀ Prev
+                              </button>
+                              <button
+                                type="button"
+                                disabled={activeYearlyWeekIndex >= 52}
+                                onClick={() => {
+                                  const nextIndex = activeYearlyWeekIndex + 1;
+                                  setActiveYearlyWeekIndex(nextIndex);
+                                  const rec = curWeeklyRecords.find(w => w.weekIndex === nextIndex);
+                                  if (rec && rec.quarter) setWeeklyQuarterFilter(rec.quarter);
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                                title="Next Week"
+                              >
+                                Next ▶
+                              </button>
+
+                              {activeYearlyWeekIndex !== currentActiveWeekRec?.weekIndex && currentActiveWeekRec && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveYearlyWeekIndex(currentActiveWeekRec.weekIndex);
+                                    setWeeklyQuarterFilter(currentActiveWeekRec.quarter || 2);
+                                  }}
+                                  className="text-[11px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/90 px-3 py-1.5 rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
+                                >
+                                  <SparklesIcon className="w-3.5 h-3.5 text-teal-600" />
+                                  Active (W{currentActiveWeekRec.weekIndex})
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Active Week Manager Revision Feedback Note (if reopened) */}
+                          {hasManagerReopenedNote && (
+                            <div className="p-3 bg-amber-50/95 border border-amber-300 rounded-xl text-xs space-y-1">
+                              <div className="flex items-center gap-1.5 font-bold text-amber-900 text-[11px]">
+                                <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                                <span>Manager Feedback for {lockInfo.currentWeekLabel}:</span>
+                              </div>
+                              <div className="text-slate-800 text-[11px] italic font-medium">
+                                "{targetWeekRecord?.managerRemarks}"
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    // 12-Month Stepper for Monthly Cadence
+                    const curRecords = activeEmpResponse?.monthly_records || [];
+                    const calMonth = new Date().getMonth() + 1;
+                    const currentFiscalMonthNum = calMonth >= 4 ? calMonth - 3 : calMonth + 9;
+
+                    const lockInfo = getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords);
+                    const targetMonthRecord = curRecords.find(r => r.monthIndex === activeYearlyFiscalMonth);
+                    const hasManagerReopenedNote = Boolean(targetMonthRecord?.managerRemarks && targetMonthRecord?.status === 'pending_employee');
+
+                    return (
+                      <div className="border-t border-slate-200/80 bg-slate-50/50 p-3 sm:p-4 space-y-3">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200/90 shadow-2xs">
+                          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                            <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1.5">
+                              <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                              Select Month:
+                            </span>
+                            <div className="relative flex-1 max-w-xl">
+                              <select
+                                value={activeYearlyFiscalMonth}
+                                onChange={e => setActiveYearlyFiscalMonth(Number(e.target.value))}
+                                className="w-full bg-slate-50/70 hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
+                              >
+                                {FISCAL_MONTHS.map(m => {
+                                  const mLock = getYearlyMonthLockInfo(m.monthIndex, curRecords);
+                                  const isCurActive = m.monthIndex === currentFiscalMonthNum;
+                                  let badgeStr = '';
+                                  if (mLock.isApproved) badgeStr = `✅ Approved (${mLock.score != null ? `${mLock.score}%` : ''})`;
+                                  else if (mLock.isSubmitted) badgeStr = '⏳ Under Review';
+                                  else if (mLock.isLocked) badgeStr = '🔒 Locked (Future)';
+                                  else if (isCurActive) badgeStr = '🟢 Current Active Month';
+                                  else badgeStr = '📄 Open';
+
+                                  return (
+                                    <option key={m.monthKey} value={m.monthIndex}>
+                                      {m.monthName} (Q{m.quarter}) — {badgeStr}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                            <button
+                              type="button"
+                              disabled={activeYearlyFiscalMonth <= 1}
+                              onClick={() => setActiveYearlyFiscalMonth(prev => prev - 1)}
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                              title="Previous Month"
+                            >
+                              ◀ Prev
+                            </button>
+                            <button
+                              type="button"
+                              disabled={activeYearlyFiscalMonth >= 12}
+                              onClick={() => setActiveYearlyFiscalMonth(prev => prev + 1)}
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                              title="Next Month"
+                            >
+                              Next ▶
+                            </button>
+
+                            {activeYearlyFiscalMonth !== currentFiscalMonthNum && (
+                              <button
+                                type="button"
+                                onClick={() => setActiveYearlyFiscalMonth(currentFiscalMonthNum)}
+                                className="text-[11px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/90 px-3 py-1.5 rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
+                              >
+                                <SparklesIcon className="w-3.5 h-3.5 text-teal-600" />
+                                Active ({FISCAL_MONTHS.find(m => m.monthIndex === currentFiscalMonthNum)?.shortName || 'Month'})
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {hasManagerReopenedNote && (
+                          <div className="p-3 bg-amber-50/95 border border-amber-300 rounded-xl text-xs space-y-1">
+                            <div className="flex items-center gap-1.5 font-bold text-amber-900 text-[11px]">
+                              <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                              <span>Manager Feedback for {lockInfo.currentMonthName}:</span>
+                            </div>
+                            <div className="text-slate-800 text-[11px] italic font-medium">
+                              "{targetMonthRecord?.managerRemarks}"
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Proactive Employee Reminder Banner during Submission Window */}
@@ -10253,38 +12000,64 @@ export const EvaluationTab: React.FC = () => {
                   if (isEmpSubmitted) return null;
                   const today = new Date();
                   const todayStr = today.toISOString().split("T")[0];
-                  const dueDateRaw = (activeCycle as any)?.dueDate || (activeCycle as any)?.due_date || activeCycle?.endDate;
-                  const rawEndDateStr = dueDateRaw ? dueDateRaw.split("T")[0] : todayStr;
-                  const endDateStr = getAdjustedWorkingDueDate(rawEndDateStr);
-                  const diffTime = new Date(endDateStr).getTime() - new Date(todayStr).getTime();
+                  const cycleName = (activeCycle as any)?.name || (activeCycle as any)?.period || '';
+                  const isMonthly = activeCycle?.frequency === 'monthly' || (!activeCycle?.frequency && cycleName.toLowerCase().includes('2026') && !cycleName.toLowerCase().includes('q'));
+                  const cycleEndDateRaw = activeCycle?.endDate ? activeCycle.endDate.split("T")[0] : todayStr;
+
+                  let calculatedDueDateStr = (activeCycle as any)?.dueDate || (activeCycle as any)?.due_date;
+                  if (!calculatedDueDateStr) {
+                    if (isMonthly) {
+                      // Monthly cycle due date is 5th working day of the following month
+                      const endD = new Date(cycleEndDateRaw + 'T00:00:00');
+                      const nextMonth = endD.getMonth() === 11 ? 1 : endD.getMonth() + 2;
+                      const nextYear = endD.getMonth() === 11 ? endD.getFullYear() + 1 : endD.getFullYear();
+                      const rawCandidate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-05`;
+                      calculatedDueDateStr = getAdjustedWorkingDueDate(rawCandidate);
+                    } else {
+                      calculatedDueDateStr = getAdjustedWorkingDueDate(cycleEndDateRaw);
+                    }
+                  } else {
+                    calculatedDueDateStr = getAdjustedWorkingDueDate(calculatedDueDateStr.split("T")[0]);
+                  }
+
+                  const isMonthStillInProgress = isMonthly && todayStr < cycleEndDateRaw;
+                  const diffTime = new Date(calculatedDueDateStr).getTime() - new Date(todayStr).getTime();
                   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-                  if (diffDays >= 0 && diffDays <= 5) {
-                    const formatDDMMYYYY = (isoStr: string) => {
-                      try {
-                        const d = new Date(isoStr + 'T00:00:00');
-                        const dd = String(d.getDate()).padStart(2, '0');
-                        const mm = String(d.getMonth() + 1).padStart(2, '0');
-                        return `${dd}/${mm}/${d.getFullYear()}`;
-                      } catch { return isoStr; }
-                    };
+                  const formatDDMMYYYY = (isoStr: string) => {
+                    try {
+                      const d = new Date(isoStr + 'T00:00:00');
+                      const dd = String(d.getDate()).padStart(2, '0');
+                      const mm = String(d.getMonth() + 1).padStart(2, '0');
+                      return `${dd}/${mm}/${d.getFullYear()}`;
+                    } catch { return isoStr; }
+                  };
+
+                  // Show banner if within 5 days of due date or if near month end
+                  if (diffDays >= 0 && (diffDays <= 7 || isMonthStillInProgress)) {
                     return (
                       <div className="p-3.5 bg-gradient-to-r from-amber-50 via-amber-100/40 to-emerald-50 border border-amber-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
-                            <ClockIcon className="w-5 h-5" />
+                          <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <ClockIcon className="w-4 h-4" />
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
                               <h4 className="text-xs font-bold text-amber-950">
-                                Self-Assessment Submission Window Open
+                                {isMonthStillInProgress ? 'Self-Assessment Window (Upcoming)' : 'Self-Assessment Submission Window Open'}
                               </h4>
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-200/80 text-amber-900 uppercase">
-                                {diffDays === 0 ? 'Due Today' : `Due in ${diffDays} Day${diffDays > 1 ? 's' : ''} (${formatDDMMYYYY(endDateStr)})`}
+                                {diffDays === 0
+                                  ? 'Due Today'
+                                  : isMonthStillInProgress
+                                    ? `Due on 5th Working Day (${formatDDMMYYYY(calculatedDueDateStr)})`
+                                    : `Due in ${diffDays} Day${diffDays > 1 ? 's' : ''} (${formatDDMMYYYY(calculatedDueDateStr)})`}
                               </span>
                             </div>
                             <p className="text-[11px] text-amber-800 font-medium">
-                              Please enter your actual deliverables and submit your self-assessment before the deadline.
+                              {isMonthStillInProgress
+                                ? 'September evaluation period is in progress. Submission window is from 1st to 5th working day of October.'
+                                : 'Please enter your actual deliverables and submit your self-assessment before the deadline.'}
                             </p>
                           </div>
                         </div>
@@ -10294,1897 +12067,2263 @@ export const EvaluationTab: React.FC = () => {
                   return null;
                 })()}
 
-                {/* 12-Month Financial Year Milestone Progress Stepper for Yearly Cadence */}
-                {isYearlyResponse(activeEmpResponse) && (() => {
-                  const curRecords = activeEmpResponse?.monthly_records || [];
-                  const approvedMonths = curRecords.filter(m => m.status === 'manager_approved');
-                  const ytdScore = approvedMonths.length > 0
-                    ? Number((approvedMonths.reduce((acc, m) => acc + (Number(m.managerScore) || 0), 0) / approvedMonths.length).toFixed(1))
-                    : null;
-                  const quarters = [
-                    { name: 'Q1 (Apr - Jun)', months: FISCAL_MONTHS.filter(m => m.quarter === 1) },
-                    { name: 'Q2 (Jul - Sep)', months: FISCAL_MONTHS.filter(m => m.quarter === 2) },
-                    { name: 'Q3 (Oct - Dec)', months: FISCAL_MONTHS.filter(m => m.quarter === 3) },
-                    { name: 'Q4 (Jan - Mar)', months: FISCAL_MONTHS.filter(m => m.quarter === 4) }
-                  ];
-
-                  return (
-                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-4 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center">
-                            <CalendarDaysIcon className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-900">
-                              12-Month Milestone Progress Tracking (April – March Cycle)
-                            </h4>
-                            <p className="text-[11px] text-slate-500">
-                              Select any monthly milestone to view or fill your actuals, review manager scores, and track YTD average.
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-[11px] font-semibold text-slate-500">Year-To-Date (YTD) Score:</span>
-                          <span className="text-xs font-black px-2.5 py-0.5 rounded-lg bg-teal-50 text-teal-900 border border-teal-300">
-                            {ytdScore !== null ? `${ytdScore}% (${approvedMonths.length}/12 Approved)` : 'In Progress'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* 4 Quarters Strip */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                        {quarters.map(q => (
-                          <div key={q.name} className="bg-slate-50/80 rounded-xl p-2.5 border border-slate-200/70 space-y-2">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                              {q.name}
-                            </div>
-                            <div className="grid grid-cols-3 gap-1.5">
-                              {q.months.map(m => {
-                                const lockInfo = getYearlyMonthLockInfo(m.monthIndex, curRecords);
-                                const isSelected = activeYearlyFiscalMonth === m.monthIndex;
-                                const isApproved = lockInfo.isApproved;
-                                const isSubmitted = lockInfo.isSubmitted;
-                                const isLocked = lockInfo.isLocked;
-                                const isActionable = lockInfo.isEditable && !lockInfo.isLocked;
-                                const score = isApproved && lockInfo.score != null ? Number(lockInfo.score).toFixed(0) : null;
-
-                                return (
-                                  <button
-                                    key={m.monthKey}
-                                    type="button"
-                                    onClick={() => setActiveYearlyFiscalMonth(m.monthIndex)}
-                                    className={`flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border shadow-2xs ${
-                                      isSelected
-                                        ? isLocked
-                                          ? 'bg-slate-700 text-white border-slate-800 ring-2 ring-slate-500/30'
-                                          : isApproved
-                                            ? 'bg-emerald-700 text-white border-emerald-800 ring-2 ring-emerald-500/30'
-                                            : isSubmitted
-                                              ? 'bg-amber-600 text-white border-amber-700 ring-2 ring-amber-500/30'
-                                              : 'bg-teal-700 text-white border-teal-800 ring-2 ring-teal-500/30'
-                                        : isApproved
-                                          ? 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
-                                          : isSubmitted
-                                            ? 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100 ring-1 ring-amber-300/60'
-                                            : isActionable
-                                              ? 'bg-teal-50/90 text-teal-900 border-teal-300 hover:bg-teal-100 ring-1 ring-teal-400/50'
-                                              : isLocked
-                                                ? 'bg-slate-100/90 text-slate-400 border-slate-200 hover:bg-slate-200/70'
-                                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                                    }`}
-                                  >
-                                    <span className="text-[11px] flex items-center gap-1">
-                                      {isLocked && <LockClosedIcon className="w-2.5 h-2.5 stroke-[2.5]" />}
-                                      {m.shortName}
-                                    </span>
-                                    <span className={`text-[9px] font-medium leading-none mt-0.5 ${
-                                      isSelected
-                                        ? 'text-white/90 font-bold'
-                                        : isApproved
-                                          ? 'text-emerald-700 font-bold'
-                                          : isSubmitted
-                                            ? 'text-amber-700 font-bold'
-                                            : isActionable
-                                              ? 'text-teal-700 font-bold'
-                                              : isLocked
-                                                ? 'text-slate-400'
-                                                : 'text-slate-500 font-medium'
-                                    }`}>
-                                      {score !== null
-                                        ? `${score}%`
-                                        : isSubmitted
-                                          ? 'Submitted'
-                                          : isLocked
-                                            ? 'Locked'
-                                            : m.monthIndex === 6
-                                              ? 'Pending'
-                                              : m.monthIndex < 6
-                                                ? 'Past'
-                                                : 'Pending'}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Active Month Milestone Status Banner */}
-                      {(() => {
-                        const lockInfo = getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords);
-                        if (lockInfo.isLocked) {
-                          return (
-                            <div className="p-3 bg-slate-100/90 border border-slate-200/90 text-slate-700 rounded-xl flex items-center justify-between gap-3 text-xs">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-7 h-7 rounded-lg bg-slate-200/90 text-slate-600 flex items-center justify-center shrink-0">
-                                  <LockClosedIcon className="w-4 h-4" />
-                                </div>
-                                <div>
-                                  <span className="font-bold text-slate-900 block">
-                                    {lockInfo.currentMonthName} Milestone is Locked
-                                  </span>
-                                  <span className="text-slate-600 text-[11px]">
-                                    {lockInfo.lockReason}
-                                  </span>
-                                </div>
-                              </div>
-                              <span className="px-2.5 py-1 rounded-md bg-slate-200 text-slate-700 font-bold text-[11px] shrink-0 inline-flex items-center gap-1">
-                                <LockClosedIcon className="w-3 h-3" />
-                                Locked
-                              </span>
-                            </div>
-                          );
-                        }
-                        if (lockInfo.isSubmitted) {
-                          return (
-                            <div className="p-3 bg-amber-50/90 border border-amber-200 text-amber-900 rounded-xl flex items-center justify-between gap-3 text-xs">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                                  <ClockIcon className="w-4 h-4" />
-                                </div>
-                                <div>
-                                  <span className="font-bold text-amber-950 block">
-                                    {lockInfo.currentMonthName} Deliverables Submitted & Awaiting Manager Review
-                                  </span>
-                                  <span className="text-amber-800 text-[11px]">
-                                    Your actuals have been submitted. Once your manager reviews and approves the score, the next month will automatically unlock.
-                                  </span>
-                                </div>
-                              </div>
-                              <span className="px-2.5 py-1 rounded-md bg-amber-100 text-amber-900 font-bold text-[11px] shrink-0 inline-flex items-center gap-1">
-                                <ClockIcon className="w-3 h-3" />
-                                Under Review
-                              </span>
-                            </div>
-                          );
-                        }
-                        if (lockInfo.isApproved) {
-                          return (
-                            <div className="p-3 bg-emerald-50/90 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between gap-3 text-xs">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                                  <CheckCircleIcon className="w-4 h-4" />
-                                </div>
-                                <div>
-                                  <span className="font-bold text-emerald-950 block">
-                                    {lockInfo.currentMonthName} Milestone Approved
-                                  </span>
-                                  <span className="text-emerald-800 text-[11px]">
-                                    Manager Approved Score: <strong>{lockInfo.score}%</strong>. This monthly milestone is finalized.
-                                  </span>
-                                </div>
-                              </div>
-                              <span className="px-2.5 py-1 rounded-md bg-emerald-100 text-emerald-900 font-bold text-[11px] shrink-0 inline-flex items-center gap-1">
-                                <CheckCircleIcon className="w-3 h-3" />
-                                {lockInfo.score}% Approved
-                              </span>
-                            </div>
-                          );
-                        }
-                        const targetMonthRecord = curRecords.find(r => r.monthIndex === activeYearlyFiscalMonth);
-                        const hasManagerReopenedNote = Boolean(targetMonthRecord?.managerRemarks && targetMonthRecord?.status === 'pending_employee');
-
-                        return (
-                          <div className={`p-4 border rounded-2xl flex flex-col gap-3 text-xs transition-all ${
-                            hasManagerReopenedNote
-                              ? 'bg-amber-50/95 border-2 border-amber-300 shadow-sm text-amber-950'
-                              : 'bg-teal-50/80 border border-teal-200 text-teal-950'
-                          }`}>
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex items-start gap-3">
-                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
-                                  hasManagerReopenedNote
-                                    ? 'bg-amber-200/90 text-amber-900 border border-amber-300'
-                                    : 'bg-teal-100 text-teal-700'
-                                }`}>
-                                  {hasManagerReopenedNote ? (
-                                    <ArrowUturnLeftIcon className="w-4 h-4 stroke-[2.2]" />
-                                  ) : (
-                                    <CalendarDaysIcon className="w-4 h-4" />
-                                  )}
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className={`font-bold text-sm block ${hasManagerReopenedNote ? 'text-amber-950' : 'text-teal-950'}`}>
-                                      {lockInfo.currentMonthName} Milestone {hasManagerReopenedNote ? '— Revision Requested by Manager' : 'is Open'}
-                                    </span>
-                                    {hasManagerReopenedNote && (
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-950 border border-amber-300 shadow-2xs">
-                                        Action Required
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className={`text-xs leading-relaxed ${hasManagerReopenedNote ? 'text-amber-900' : 'text-teal-800'}`}>
-                                    {hasManagerReopenedNote
-                                      ? 'Your manager has returned this milestone with specific feedback. Please review the instructions below, revise your deliverable actuals, and resubmit.'
-                                      : `Please enter your actual deliverables and self-scores below, then click "Submit ${lockInfo.currentMonthName} Deliverables to Manager".`}
-                                  </p>
-                                </div>
-                              </div>
-                              <span className={`px-2.5 py-1 rounded-lg font-bold text-[11px] shrink-0 inline-flex items-center gap-1 shadow-2xs ${
-                                hasManagerReopenedNote
-                                  ? 'bg-amber-200/90 text-amber-950 border border-amber-300'
-                                  : 'bg-teal-100 text-teal-900'
-                              }`}>
-                                {hasManagerReopenedNote ? (
-                                  <>
-                                    <ArrowUturnLeftIcon className="w-3.5 h-3.5 stroke-[2.2]" />
-                                    <span>Revision Needed</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <SparklesIcon className="w-3.5 h-3.5" />
-                                    <span>Open</span>
-                                  </>
-                                )}
-                              </span>
-                            </div>
-
-                            {/* Prominent Manager Feedback Callout Card */}
-                            {hasManagerReopenedNote && (
-                              <div className="p-3.5 bg-white rounded-xl border border-amber-300/80 shadow-2xs space-y-1.5 animate-in fade-in duration-200">
-                                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                                  <ChatBubbleLeftEllipsisIcon className="w-4 h-4 text-amber-700 shrink-0" />
-                                  <span>Manager Instructions & Feedback:</span>
-                                </div>
-                                <div className="p-2.5 bg-amber-50/60 rounded-lg border border-amber-200/60 text-xs text-slate-800 font-medium leading-relaxed italic">
-                                  "{targetMonthRecord?.managerRemarks}"
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  );
-                })()}
-
-                {/* 2. Deliverable-Level Evaluation Breakdown Table with Integrated Toolbar */}
-                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
-                  {/* Integrated Table Header Bar (Clean & Compact) */}
-                  <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                    {/* Left: Deliverable Title & Category Filters */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                        Deliverables {isYearlyResponse(activeEmpResponse) && (() => {
-                          const mObj = FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth);
-                          return `— ${mObj ? mObj.monthName : `Month ${activeYearlyFiscalMonth}`}`;
-                        })()}
-                      </h4>
-
-                      {/* Filter Pills */}
-                      <div className="inline-flex items-center gap-1 bg-white border border-slate-200 p-0.5 rounded-lg text-xs">
-                        <button
-                          type="button"
-                          onClick={() => setEmpFilterTab('all')}
-                          className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer ${empFilterTab === 'all'
-                            ? 'bg-teal-700 text-white'
-                            : 'text-slate-600 hover:text-slate-900'
-                            }`}
-                        >
-                          All ({totalKpiCount})
-                        </button>
-                        {adjustedKpiCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setEmpFilterTab('adjusted')}
-                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 ${empFilterTab === 'adjusted'
-                              ? 'bg-amber-100 text-amber-950 font-bold'
-                              : 'text-amber-800 hover:text-amber-950'
-                              }`}
-                          >
-                            <span>Adjusted ({adjustedKpiCount})</span>
-                          </button>
-                        )}
-                      </div>
-
-                      {(() => {
-                        const isYearly = isYearlyResponse(activeEmpResponse);
-                        const curRecords = activeEmpResponse?.monthly_records || [];
-                        const lockInfo = isYearly ? getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords) : null;
-                        const isLocked = isYearly ? !lockInfo?.isEditable : isEmpSubmitted;
-
-                        if (isLocked) {
-                          return (
-                            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border ${
-                              isYearly && lockInfo?.isLocked
-                                ? 'text-slate-700 bg-slate-100 border-slate-200'
-                                : isYearly && lockInfo?.isSubmitted
-                                  ? 'text-amber-800 bg-amber-50 border-amber-200'
-                                  : 'text-teal-800 bg-teal-50 border-teal-200'
-                            }`}>
-                              {isYearly && lockInfo?.isLocked ? (
-                                <>
-                                  <LockClosedIcon className="w-3 h-3 text-slate-500" />
-                                  Locked
-                                </>
-                              ) : isYearly && lockInfo?.isSubmitted ? (
-                                <>
-                                  <ClockIcon className="w-3 h-3 text-amber-600" />
-                                  Under Review
-                                </>
-                              ) : (
-                                <>
-                                  <CheckCircleIcon className="w-3 h-3 text-teal-600" />
-                                  {isYearly ? 'Approved' : 'Locked'}
-                                </>
-                              )}
-                            </span>
-                          );
-                        }
-                        return null;
-                      })()}
-                    </div>
-
-                    {/* Right: Search & Badges */}
-                    <div className="flex items-center gap-2">
-                      <div className="relative w-44 sm:w-52">
-                        <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          value={empSearchQuery}
-                          onChange={e => setEmpSearchQuery(e.target.value)}
-                          placeholder="Search..."
-                          className="w-full h-7 pl-8 pr-6 text-xs bg-white border border-slate-200 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 rounded-lg focus:outline-none transition"
-                        />
-                        {empSearchQuery && (
-                          <button
-                            type="button"
-                            onClick={() => setEmpSearchQuery('')}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                          >
-                            <XMarkIcon className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-
-                      <span className="text-[11px] font-bold text-teal-800 bg-teal-50 px-2 py-1 rounded-md border border-teal-200/80 shrink-0">
-                        100% Weight
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
-                    {filteredCategories.map((cat, catIdx) => {
-                      const isYearly = isYearlyResponse(activeEmpResponse);
-                      const curRecords = activeEmpResponse?.monthly_records || [];
-                      const lockInfo = isYearly ? getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords) : null;
-                      const curYearlyRecord = isYearly ? curRecords.find(m => m.monthIndex === activeYearlyFiscalMonth) : null;
-                      const isYearlyMonthSubmitted = Boolean(isYearly && (curYearlyRecord?.status === 'submitted_to_manager' || curYearlyRecord?.status === 'manager_approved'));
-                      const isThisMonthLocked = isYearly ? (!lockInfo?.isEditable) : isEmpSubmitted;
-
-                      const catEarned = cat.kpis.reduce((sum, k) => {
-                        const yearlyEntry = curYearlyRecord?.kpiEntries?.[k.id] || (k.name ? curYearlyRecord?.kpiEntries?.[k.name] : null);
-                        const val = isYearly
-                          ? (!isYearlyMonthSubmitted
-                              ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
-                              : (yearlyEntry?.actualValue ?? ''))
-                          : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''));
-                        return sum + calculateKPIScore(k, val).earnedScore;
-                      }, 0);
-
-                      const isExpanded = Object.keys(expandedCategories).length === 0 ? catIdx === 0 : Boolean(expandedCategories[cat.id]);
-
-                      return (
-                        <div key={cat.id} className="bg-white">
-                          {/* Clean Category Bar */}
-                          <div
-                            onClick={() => {
-                              setExpandedCategories(prev => {
-                                const currentVal = Object.keys(prev).length === 0 ? catIdx === 0 : Boolean(prev[cat.id]);
-                                return { ...prev, [cat.id]: !currentVal };
-                              });
-                            }}
-                            className="bg-slate-50 hover:bg-slate-100/80 text-slate-800 px-4 py-2 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span
-                                className="p-0.5 rounded text-slate-400 group-hover:text-slate-700 transition-colors shrink-0"
-                              >
-                                <ChevronDownIcon className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'}`} />
-                              </span>
-                              <span className="font-semibold text-xs text-slate-900 group-hover:text-teal-900 transition-colors truncate">
-                                {catIdx + 1}. {cat.name}
-                              </span>
-                              <span className="text-[10px] text-slate-400">
-                                ({cat.matchingKpis.length})
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2.5 shrink-0 text-xs">
-                              <span className="text-[11px] text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
-                                <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
-                              </span>
-                              <span className="text-[11px] font-medium text-teal-700 group-hover:text-teal-900 flex items-center gap-0.5">
-                                {isExpanded ? 'Collapse' : 'Expand'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Deliverables Table for Expanded Category */}
-                          {isExpanded && (
-                            <div className="overflow-x-auto border-t border-slate-200/80">
-                              <table className="w-full text-left text-xs border-collapse">
-                                <thead className="bg-slate-50/95 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider select-none">
-                                  <tr>
-                                    <th className="px-4 py-2.5 text-left whitespace-nowrap">Deliverable Metric</th>
-                                    <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Target Goal</th>
-                                    <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Weight</th>
-                                    <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Actual</th>
-                                    <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Self Score</th>
-                                    <th className="px-3 py-2.5 text-center whitespace-nowrap">Insufficient</th>
-                                    {!isThisMonthLocked && (
-                                      <th className="px-3.5 py-2.5 text-left whitespace-nowrap">Self Remarks</th>
-                                    )}
-                                    {isThisMonthLocked && (
-                                      <>
-                                        <th className="px-3 py-2.5 text-center bg-teal-50/50 text-teal-950 border-l border-teal-200/60 whitespace-nowrap font-extrabold">Mgr Actual</th>
-                                        <th className="px-2.5 py-2.5 text-center bg-teal-50/50 text-teal-950 whitespace-nowrap font-extrabold">Mgr Score</th>
-                                      </>
-                                    )}
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 bg-white">
-                                  {cat.matchingKpis.map((kpi) => {
-                                    const respItem = getKpiResponseItem(kpi);
-                                    const yearlyEntry = curYearlyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRecord?.kpiEntries?.[kpi.name] : null);
-
-                                    const rawVal = isYearly
-                                      ? (!isYearlyMonthSubmitted
-                                          ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
-                                          : (yearlyEntry?.actualValue ?? ''))
-                                      : (!isEmpSubmitted
-                                          ? (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '')
-                                          : (respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
-                                              ? respItem.actualValue
-                                              : (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '')));
-                                    const val = rawVal !== '' && rawVal !== undefined && rawVal !== null
-                                      ? (typeof rawVal === 'number' ? Math.floor(rawVal) : (String(rawVal).includes('.') ? parseInt(String(rawVal), 10) : rawVal))
-                                      : '';
-                                    const calc = calculateKPIScore(kpi, val);
-                                    const remarks = isYearly
-                                      ? (!isYearlyMonthSubmitted
-                                          ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
-                                          : (yearlyEntry?.employeeRemarks ?? ''))
-                                      : (!isEmpSubmitted
-                                          ? (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '')
-                                          : (respItem?.employeeRemarks !== undefined && respItem?.employeeRemarks !== null
-                                              ? respItem.employeeRemarks
-                                              : (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '')));
-                                    const parsedTarget = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
-                                    const targetThreshold = parsedTarget.threshold;
-
-                                    // Manager reviewed values
-                                    const hasMgrActual = isYearly
-                                      ? (yearlyEntry?.managerActualValue !== undefined && yearlyEntry?.managerActualValue !== null && yearlyEntry?.managerActualValue !== '')
-                                      : (respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== null && respItem?.managerActualValue !== '');
-
-                                    const mgrActualVal = isYearly
-                                      ? (hasMgrActual ? yearlyEntry?.managerActualValue : '')
-                                      : (hasMgrActual ? respItem?.managerActualValue : (mgrKpiActuals[kpi.id] ?? ''));
-
-                                    const isActualModifiedByMgr = hasMgrActual && String(mgrActualVal).trim() !== String(val).trim();
-                                    const mgrCalc = calculateKPIScore(kpi, hasMgrActual ? mgrActualVal : val);
-                                    const mgrEarnedScore = isYearly
-                                      ? (yearlyEntry?.managerScore !== undefined && yearlyEntry?.managerScore !== null ? Number(yearlyEntry.managerScore) : (hasMgrActual ? mgrCalc.earnedScore : null))
-                                      : ((respItem?.managerScore !== undefined && respItem?.managerScore !== null)
-                                          ? Number(respItem.managerScore)
-                                          : (hasMgrActual ? mgrCalc.earnedScore : null));
-                                    const mgrRemarks = isYearly
-                                      ? (yearlyEntry?.managerRemarks || '')
-                                      : (respItem?.managerRemarks ?? mgrKpiRemarks[kpi.id] ?? '');
-
-                                    const isNeg = isNegativeKpi(kpi);
-                                    const rawInsufficient = isYearly
-                                      ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
-                                      : (!isEmpSubmitted
-                                          ? (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : false))
-                                          : (respItem?.isInsufficient !== undefined && respItem?.isInsufficient !== null
-                                              ? respItem.isInsufficient
-                                              : (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : ((kpi as any)?.isInsufficient ?? (kpi as any)?.is_insufficient ?? false)))));
-                                    const isRowInsufficient = Boolean(rawInsufficient);
-                                    const statusObj = getInsufficientStatus(kpi, val, isRowInsufficient);
-
-                                    return (
-                                      <tr
-                                        key={kpi.id}
-                                        className={`group/empRow transition-colors border-b last:border-b-0 ${isNeg
-                                          ? 'bg-rose-50/25 hover:bg-rose-50/45 border-rose-100/80 border-l-4 border-l-rose-400'
-                                          : 'hover:bg-slate-50/80 border-slate-100 border-l-4 border-l-transparent'
-                                          }`}
-                                      >
-                                        {/* 1. Deliverable Name & Description */}
-                                        <td className="px-4 py-3 align-middle max-w-[240px]">
-                                          <div className="flex flex-col gap-1">
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                              <span className={`font-bold text-xs leading-snug ${isNeg ? 'text-rose-950' : 'text-slate-900'}`}>
-                                                {kpi.name}
-                                              </span>
-                                            </div>
-                                            {kpi.description && (
-                                              <p className={`text-[11px] line-clamp-2 leading-relaxed ${isNeg ? 'text-rose-600/80 font-medium' : 'text-slate-500'}`}>
-                                                {kpi.description}
-                                              </p>
-                                            )}
-                                          </div>
-                                        </td>
-
-                                        {/* 2. Target Goal */}
-                                        <td className="px-2.5 py-3 align-middle text-center whitespace-nowrap">
-                                          <div className="flex flex-col items-center justify-center gap-0.5">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border shadow-2xs ${isNeg
-                                              ? 'bg-rose-100/70 text-rose-800 border-rose-200'
-                                              : 'bg-slate-100 text-slate-700 border border-slate-200'
-                                              }`}>
-                                              {(() => {
-                                                const t = String(kpi.targetFromManager || '').trim();
-                                                const u = String(kpi.unit || '').trim();
-                                                if (!t) return targetThreshold;
-                                                if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
-                                                return `${t} ${u}`;
-                                              })()}
-                                            </span>
-                                          </div>
-                                        </td>
-
-                                        {/* 3. Weight */}
-                                        <td className="px-2 py-3 align-middle text-center whitespace-nowrap">
-                                          <span className={`text-xs font-bold ${isNeg ? 'text-rose-900' : 'text-slate-700'}`}>
-                                            {kpi.weightage || kpi.targetScore}%
-                                          </span>
-                                        </td>
-
-                                        {/* 4. Self Actual */}
-                                        <td className="px-3 py-3 align-middle text-center text-xs whitespace-nowrap">
-                                          <div className="flex flex-col items-center justify-center gap-1">
-                                            {(() => {
-                                              const numericVal = val !== '' && val !== undefined && val !== null ? Number(val) : null;
-                                              const isOverTarget = numericVal !== null && !isNaN(numericVal) && (
-                                                isNeg
-                                                  ? (parsedTarget.operator === '<' ? numericVal >= targetThreshold : (targetThreshold === 0 ? numericVal > 0 : numericVal > targetThreshold))
-                                                  : (targetThreshold > 0 && numericVal > targetThreshold)
-                                              );
-                                              const isMetTarget = numericVal !== null && !isNaN(numericVal) && (
-                                                isNeg
-                                                  ? (parsedTarget.operator === '<' ? numericVal < targetThreshold : (targetThreshold === 0 ? numericVal === 0 : numericVal <= targetThreshold))
-                                                  : (targetThreshold > 0 && numericVal >= targetThreshold)
-                                              );
-                                              const isLowTarget = !isNeg && numericVal !== null && !isNaN(numericVal) && val !== '' && targetThreshold > 0 && numericVal < targetThreshold;
-
-                                              if (isThisMonthLocked) {
-                                                if (val === '' || val === undefined || val === null) {
-                                                  return <span className="text-slate-400 font-medium">—</span>;
-                                                }
-                                                if (isNeg) {
-                                                  return (
-                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-900 border border-rose-300 font-bold text-xs shadow-2xs">
-                                                      <span>{val} {kpi.unit || ''}</span>
-                                                      {isOverTarget && (
-                                                        <span className="text-[9px] bg-rose-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
-                                                          Exceeded
-                                                        </span>
-                                                      )}
-                                                    </span>
-                                                  );
-                                                }
-                                                if (isOverTarget) {
-                                                  return (
-                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-950 border border-emerald-400 font-bold text-xs shadow-2xs">
-                                                      <span>{val} {kpi.unit || ''}</span>
-                                                      <span className="text-[9px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
-                                                        Exceeded
-                                                      </span>
-                                                    </span>
-                                                  );
-                                                }
-                                                if (isMetTarget) {
-                                                  return (
-                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-teal-950 border border-teal-300 font-bold text-xs shadow-2xs">
-                                                      <span>{val} {kpi.unit || ''}</span>
-                                                    </span>
-                                                  );
-                                                }
-                                                return (
-                                                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold text-xs shadow-2xs ${calc.earnedScore === 0
-                                                    ? 'bg-rose-50 text-rose-900 border border-rose-300'
-                                                    : 'bg-amber-50 text-amber-900 border border-amber-300'
-                                                    }`}>
-                                                    <span>{val} {kpi.unit || ''}</span>
-                                                    <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider ${calc.earnedScore === 0 ? 'bg-rose-600 text-white' : 'bg-amber-600 text-white'}`}>
-                                                      {calc.earnedScore === 0 ? 'Not Met' : 'Low Target'}
-                                                    </span>
-                                                  </span>
-                                                );
-                                              }
-
-                                              return (
-                                                <div className="flex flex-col items-center justify-center gap-1">
-                                                  <input
-                                                    type="number"
-                                                    step="1"
-                                                    min="0"
-                                                    value={val}
-                                                    disabled={isSubmittingEmp}
-                                                    onKeyDown={e => {
-                                                      if (['.', ',', 'e', 'E', '+', '-'].includes(e.key)) {
-                                                        e.preventDefault();
-                                                      }
-                                                    }}
-                                                    onChange={e => {
-                                                      if (isYearly) {
-                                                        handleYearlyMonthKpiChange(kpi, e.target.value);
-                                                      } else {
-                                                        handleKPIChange(kpi, e.target.value);
-                                                      }
-                                                    }}
-                                                    placeholder="0"
-                                                    className={`w-24 h-8 px-2 text-center font-bold text-xs rounded-xl transition shadow-2xs focus:outline-none ${isNeg && isOverTarget
-                                                      ? 'bg-rose-100 text-rose-950 border-2 border-rose-500 ring-2 ring-rose-400/30 font-black'
-                                                      : !isNeg && calc.earnedScore === 0 && val !== ''
-                                                        ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
-                                                        : isOverTarget
-                                                          ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-500 ring-2 ring-emerald-400/30 font-black'
-                                                          : isLowTarget
-                                                            ? 'bg-amber-50 text-amber-950 border-2 border-amber-400 ring-2 ring-amber-300/30 font-black'
-                                                            : isMetTarget
-                                                              ? 'bg-teal-50/80 text-teal-950 border-2 border-teal-400 font-bold focus:border-teal-600'
-                                                              : isNeg
-                                                                ? 'bg-rose-50/40 text-rose-950 border-2 border-rose-200/90 focus:border-rose-500 focus:bg-white placeholder:text-rose-300'
-                                                                : 'bg-white text-slate-900 border border-slate-200 focus:border-teal-600'
-                                                      }`}
-                                                  />
-                                                  {isNeg && isOverTarget && (
-                                                    <span className="text-[9px] font-black text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
-                                                      Exceeded Limit
-                                                    </span>
-                                                  )}
-                                                  {isNeg && isMetTarget && (
-                                                    <span className="text-[9px] font-black text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
-                                                      Within Limit
-                                                    </span>
-                                                  )}
-                                                  {!isNeg && isOverTarget && (
-                                                    <span className="text-[9px] font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
-                                                      High Target
-                                                    </span>
-                                                  )}
-                                                  {!isNeg && isLowTarget && (
-                                                    <span className="text-[9px] font-black text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded uppercase tracking-wider animate-in fade-in">
-                                                      Low Target
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              );
-                                            })()}
-
-                                            {/* Emp and Mgr Remark Badges below Self Actual */}
-                                            {isThisMonthLocked && (remarks?.trim() || mgrRemarks?.trim()) && (
-                                              <DeliverableRemarksHover
-                                                selfRemarks={remarks}
-                                                mgrRemarks={mgrRemarks}
-                                                align="center"
-                                              >
-                                                <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap cursor-pointer">
-                                                  {remarks?.trim() && (
-                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0">
-                                                      <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
-                                                      <span>Emp</span>
-                                                    </span>
-                                                  )}
-                                                  {mgrRemarks?.trim() && (
-                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0">
-                                                      <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
-                                                      <span>Mgr</span>
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              </DeliverableRemarksHover>
-                                            )}
-                                          </div>
-                                        </td>
-
-                                        {/* Self Score */}
-                                        <td
-                                          className="px-2.5 py-3 text-center align-middle whitespace-nowrap"
-                                        >
-                                          <div className="inline-flex items-center justify-center gap-1">
-                                            <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${calc.earnedScore > 0
-                                              ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90'
-                                              : 'bg-rose-50 text-rose-900 border border-rose-200/90'
-                                              }`}>
-                                              {calc.earnedScore.toFixed(2)}%
-                                            </span>
-                                            {isThisMonthLocked && remarks?.trim() && (
-                                              <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-500/70 shrink-0" />
-                                            )}
-                                          </div>
-                                        </td>
-
-                                        {/* Insufficient Status & Employee Toggle */}
-                                        <td className="px-3 py-3 text-center align-middle whitespace-nowrap">
-                                          {!isThisMonthLocked ? (
-                                            (() => {
-                                              const isTargetMetOrEmpty = statusObj.status === 'met' || statusObj.status === 'not_filled';
-                                              return (
-                                                <label
-                                                  className={`inline-flex items-center justify-center gap-1.5 select-none ${
-                                                    isTargetMetOrEmpty ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
-                                                  }`}
-                                                  title={isTargetMetOrEmpty ? 'Target met or not filled' : 'Click to flag variance details'}
-                                                >
-                                                  <input
-                                                    type="checkbox"
-                                                    disabled={isTargetMetOrEmpty}
-                                                    checked={!isTargetMetOrEmpty && Boolean(isRowInsufficient)}
-                                                    onChange={e => {
-                                                      if (isYearly) {
-                                                        handleYearlyMonthKpiInsufficient(kpi, e.target.checked);
-                                                      } else {
-                                                        handleKPIToggleInsufficient(kpi, e.target.checked);
-                                                      }
-                                                    }}
-                                                    className="w-4 h-4 text-primary-600 accent-primary-600 rounded border-slate-300 focus:ring-primary-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 transition"
-                                                  />
-                                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shadow-2xs border ${statusObj.badgeClass}`}>
-                                                    {statusObj.label}
-                                                  </span>
-                                                </label>
-                                              );
-                                            })()
-                                          ) : (
-                                            <div className="inline-flex items-center justify-center">
-                                              <span
-                                                className={`inline-flex items-center gap-1 font-bold px-2.5 py-0.5 rounded-full border text-[10px] shadow-2xs ${statusObj.badgeClass}`}
-                                              >
-                                                {statusObj.label}
-                                              </span>
-                                            </div>
-                                          )}
-                                        </td>
-
-                                        {/* Self Remarks: Only rendered when NOT submitted (when employee needs to edit) */}
-                                        {!isThisMonthLocked && (
-                                          <td className="px-3.5 py-3 align-middle text-xs min-w-[140px] max-w-[220px]">
-                                            {(() => {
-                                              const isMandatory = isKpiRemarkMandatory(kpi, val, isRowInsufficient);
-                                              const hasRemark = Boolean(remarks && remarks.trim());
-
-                                              return (
-                                                <div className="flex flex-col gap-1">
-                                                  <ExpandableRemarkInput
-                                                    value={remarks}
-                                                    disabled={isSubmittingEmp}
-                                                    onChange={val => {
-                                                      if (isYearly) {
-                                                        handleYearlyMonthKpiRemarkChange(kpi, val);
-                                                      } else {
-                                                        handleKPIRemarksChange(kpi, val);
-                                                      }
-                                                    }}
-                                                    placeholder={isMandatory ? 'Remark required (High/Low/Selected)...' : 'Remarks (Optional)...'}
-                                                    required={isMandatory}
-                                                    className={
-                                                      isMandatory && !hasRemark
-                                                        ? 'bg-amber-50/70 focus:bg-white border-2 border-amber-400 focus:border-amber-600 text-slate-900 focus:outline-none ring-2 ring-amber-200/50 shadow-2xs'
-                                                        : hasRemark
-                                                          ? 'bg-emerald-50/40 focus:bg-white border border-emerald-300 focus:border-teal-600 text-slate-900 focus:outline-none shadow-2xs'
-                                                          : 'bg-slate-50/60 focus:bg-white border border-slate-200 focus:border-teal-600 text-slate-800 focus:outline-none shadow-2xs'
-                                                    }
-                                                  />
-                                                  {isMandatory && !hasRemark && (
-                                                    <span className="text-[9px] font-black text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded self-start tracking-wider uppercase animate-in fade-in">
-                                                      Mandatory
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              );
-                                            })()}
-                                          </td>
-                                        )}
-
-                                        {/* Manager Reviewed Fields Display */}
-                                        {isThisMonthLocked && (
-                                          <>
-                                            <td className="px-3 py-3 text-center align-middle bg-teal-50/30 border-l border-teal-100 whitespace-nowrap">
-                                              {hasMgrActual && mgrActualVal !== '' ? (() => {
-                                                const numMgrVal = Number(mgrActualVal);
-                                                const isMgrOver = isNeg && !isNaN(numMgrVal) && (parsedTarget.operator === '<' ? numMgrVal >= targetThreshold : (targetThreshold === 0 ? numMgrVal > 0 : numMgrVal > targetThreshold));
-                                                if (isNeg) {
-                                                  return (
-                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-900 border border-rose-300 font-bold text-xs shadow-2xs">
-                                                      <span>{mgrActualVal} {kpi.unit || ''}</span>
-                                                      {isMgrOver && (
-                                                        <span className="text-[9px] bg-rose-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
-                                                          Exceeded
-                                                        </span>
-                                                      )}
-                                                    </span>
-                                                  );
-                                                }
-                                                return (
-                                                  <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold transition shadow-2xs ${isActualModifiedByMgr
-                                                    ? 'bg-amber-100 text-amber-950 border border-amber-300'
-                                                    : 'bg-teal-100 text-teal-950 border border-teal-300'
-                                                    }`}>
-                                                    {mgrActualVal} {kpi.unit || ''}
-                                                  </span>
-                                                );
-                                              })() : (
-                                                <span className="text-slate-400 font-medium">—</span>
-                                              )}
-                                            </td>
-
-                                            <td
-                                              className="px-2.5 py-3 text-center align-middle bg-teal-50/30 whitespace-nowrap"
-                                            >
-                                              <div className="inline-flex items-center justify-center gap-1">
-                                                <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${mgrEarnedScore !== null && mgrEarnedScore > 0
-                                                  ? 'bg-teal-100 text-teal-950 border border-teal-300'
-                                                  : mgrEarnedScore !== null
-                                                    ? 'bg-rose-50 text-rose-900 border border-rose-200/90'
-                                                    : 'bg-slate-50 text-slate-500 border border-slate-200/60'
-                                                  }`}>
-                                                  {mgrEarnedScore !== null ? `${mgrEarnedScore.toFixed(2)}%` : '—'}
-                                                </span>
-                                                {mgrRemarks?.trim() && (
-                                                  <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />
-                                                )}
-                                              </div>
-                                            </td>
-                                          </>
-                                        )}
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Scorecard Summary Footer */}
-                  <div className="p-5 bg-gradient-to-r from-slate-50 via-teal-50/20 to-slate-50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    {(() => {
-                      const isYearly = isYearlyResponse(activeEmpResponse);
-                      const mObj = FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth);
-                      const monthName = mObj ? mObj.monthName : `Month ${activeYearlyFiscalMonth}`;
-                      const curYearlyRec = isYearly ? (activeEmpResponse?.monthly_records || []).find(m => m.monthIndex === activeYearlyFiscalMonth) : null;
-                      const isYearlyMonthSubmitted = Boolean(isYearly && (curYearlyRec?.status === 'submitted_to_manager' || curYearlyRec?.status === 'manager_approved'));
-                      const approvedMonthsList = (activeEmpResponse?.monthly_records || []).filter(m => m.status === 'manager_approved');
-                      const ytdAvgScore = approvedMonthsList.length > 0
-                        ? Number((approvedMonthsList.reduce((sum, m) => sum + (Number(m.managerScore) || 0), 0) / approvedMonthsList.length).toFixed(1))
-                        : null;
-
-                      let monthSelfSum = 0;
-                      activeCategories.forEach(cat => {
-                        cat.kpis.forEach(k => {
-                          const yearlyEntry = curYearlyRec?.kpiEntries?.[k.id] || (k.name ? curYearlyRec?.kpiEntries?.[k.name] : null);
-                          const val = isYearly
-                            ? (!isYearlyMonthSubmitted
-                                ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
-                                : (yearlyEntry?.actualValue ?? ''))
-                            : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''));
-                          monthSelfSum += calculateKPIScore(k, val).earnedScore;
-                        });
-                      });
-                      const displayScore = isYearly ? Number(monthSelfSum.toFixed(1)) : selfScoreNum;
-
-                      return (
-                        <>
-                          <div className="flex flex-wrap items-center gap-3 text-xs">
-                            <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs">
-                              <span className="text-slate-500 font-semibold">{isYearly ? `${monthName} Self Score:` : 'Self Overall Score:'}</span>
-                              <strong className="text-teal-900 text-sm font-black">{displayScore.toFixed(1)}%</strong>
-                            </div>
-
-                            {isYearly && curYearlyRec?.managerScore != null && (
-                              <div className="flex items-center gap-2.5 bg-teal-50 px-4 py-2.5 rounded-xl border border-teal-200 shadow-2xs">
-                                <span className="text-teal-800 font-bold">{monthName} Manager Score:</span>
-                                <strong className="text-teal-950 text-sm font-black">{Number(curYearlyRec.managerScore).toFixed(1)}%</strong>
-                              </div>
-                            )}
-
-                            {isYearly && (
-                              <div className="flex items-center gap-2.5 bg-indigo-50/80 px-4 py-2.5 rounded-xl border border-indigo-200 shadow-2xs">
-                                <span className="text-indigo-900 font-bold">YTD Rolling Average:</span>
-                                <strong className="text-indigo-950 text-sm font-black">
-                                  {ytdAvgScore !== null ? `${ytdAvgScore}%` : 'In Progress'}
-                                </strong>
-                              </div>
-                            )}
-
-                            {!isYearly && activeEmpResponse?.managerScore !== undefined && (
-                              <div className="flex items-center gap-2.5 bg-teal-50 px-4 py-2.5 rounded-xl border border-teal-200 shadow-2xs">
-                                <span className="text-teal-800 font-bold">Manager Official Score:</span>
-                                <strong className="text-teal-950 text-sm font-black">{Number(activeEmpResponse.managerScore).toFixed(1)}%</strong>
-                              </div>
-                            )}
-
-                            <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs">
-                              <span className="text-slate-500 font-semibold">Performance Tier:</span>
-                              <strong className="text-teal-900 text-sm font-black bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/70">
-                                {(() => {
-                                  const r = getRatingForScore((isYearly ? curYearlyRec?.managerScore : activeEmpResponse?.managerScore) ?? displayScore);
-                                  return r.name;
-                                })()}
-                              </strong>
-                            </div>
-                          </div>
-
-                          {isYearly ? (() => {
-                            const curRecords = activeEmpResponse?.monthly_records || [];
-                            const lockInfo = getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords);
-                            if (lockInfo.isLocked) {
-                              return (
-                                <div className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 shadow-2xs">
-                                  <LockClosedIcon className="w-4 h-4 text-slate-500" />
-                                  <span>{monthName} is Locked (Pending Manager Approval of {lockInfo.prevMonthName || 'previous month'})</span>
-                                </div>
-                              );
-                            }
-                            if (lockInfo.isSubmitted) {
-                              return (
-                                <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-50 text-amber-900 rounded-xl text-xs font-bold border border-amber-200 shadow-2xs">
-                                  <ClockIcon className="w-4 h-4 text-amber-700" />
-                                  <span>{monthName} Deliverables Submitted to Manager (Under Review)</span>
-                                </div>
-                              );
-                            }
-                            if (lockInfo.isApproved) {
-                              return (
-                                <div className="flex items-center gap-2 px-5 py-2.5 bg-emerald-50 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-200 shadow-2xs">
-                                  <CheckCircleIcon className="w-4 h-4 text-emerald-700" />
-                                  <span>{monthName} Milestone Approved ({curYearlyRec?.managerScore != null ? `${Number(curYearlyRec.managerScore).toFixed(1)}%` : 'Approved'})</span>
-                                </div>
-                              );
-                            }
-
-                            const expandedCatIndices = filteredCategories
-                              .map((cat, idx) => {
-                                const isCatOpen = Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
-                                return isCatOpen ? idx : -1;
-                              })
-                              .filter(idx => idx !== -1);
-
-                            const currentActiveCatIdx = expandedCatIndices.length > 0
-                              ? Math.max(...expandedCatIndices)
-                              : 0;
-
-                            const allCatsOpen = filteredCategories.length > 0 && filteredCategories.every((cat, idx) => {
-                              return Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
-                            });
-
-                            const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
-
-                            return (
-                              <div className="flex items-center gap-2.5 self-end sm:self-auto">
-                                {currentActiveCatIdx > 0 && !allCatsOpen && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const prevIdx = Math.max(currentActiveCatIdx - 1, 0);
-                                      const prevCat = filteredCategories[prevIdx];
-                                      if (prevCat) {
-                                        setExpandedCategories({ [prevCat.id]: true });
-                                      }
-                                    }}
-                                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
-                                  >
-                                    <ArrowLeftIcon className="w-3.5 h-3.5" />
-                                    <span>Previous</span>
-                                  </button>
-                                )}
-
-                                {!isLastCategory ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const nextIdx = Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1);
-                                      const nextCat = filteredCategories[nextIdx];
-                                      if (nextCat) {
-                                        setExpandedCategories({ [nextCat.id]: true });
-                                      }
-                                    }}
-                                    className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
-                                  >
-                                    <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
-                                    <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleYearlyMonthSubmit(activeYearlyFiscalMonth)}
-                                    disabled={isSubmittingEmp}
-                                    className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
-                                  >
-                                    {isSubmittingEmp ? (
-                                      <>
-                                        <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                                        <span>Submitting {monthName}...</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <CheckCircleIcon className="w-4 h-4" />
-                                        <span>Submit {monthName} Deliverables to Manager</span>
-                                      </>
-                                    )}
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })() : (
-                            isEmpSubmitted ? (
-                              <div className="flex items-center gap-2 px-5 py-2.5 bg-teal-50 text-teal-800 rounded-xl text-xs font-bold border border-teal-200 shadow-2xs">
-                                <CheckCircleIcon className="w-4 h-4 text-teal-700" />
-                                <span>Submitted to Manager (Locked)</span>
-                              </div>
-                            ) : (() => {
-                              const expandedCatIndices = filteredCategories
-                                .map((cat, idx) => {
-                                  const isCatOpen = Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
-                                  return isCatOpen ? idx : -1;
-                                })
-                                .filter(idx => idx !== -1);
-
-                              const currentActiveCatIdx = expandedCatIndices.length > 0
-                                ? Math.max(...expandedCatIndices)
-                                : 0;
-
-                              const allCatsOpen = filteredCategories.length > 0 && filteredCategories.every((cat, idx) => {
-                                return Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
-                              });
-
-                              const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
-
-                              return (
-                                <div className="flex items-center gap-2.5 self-end sm:self-auto">
-                                  {currentActiveCatIdx > 0 && !allCatsOpen && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const prevIdx = Math.max(currentActiveCatIdx - 1, 0);
-                                        const prevCat = filteredCategories[prevIdx];
-                                        if (prevCat) {
-                                          setExpandedCategories({ [prevCat.id]: true });
-                                        }
-                                      }}
-                                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
-                                    >
-                                      <ArrowLeftIcon className="w-3.5 h-3.5" />
-                                      <span>Previous</span>
-                                    </button>
-                                  )}
-
-                                  {!isLastCategory ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const nextIdx = Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1);
-                                        const nextCat = filteredCategories[nextIdx];
-                                        if (nextCat) {
-                                          setExpandedCategories({ [nextCat.id]: true });
-                                        }
-                                      }}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
-                                    >
-                                      <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
-                                      <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={handleEmployeeSubmit}
-                                      disabled={isSubmittingEmp}
-                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
-                                    >
-                                      {isSubmittingEmp ? (
-                                        <>
-                                          <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                                          <span>Submitting...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <CheckCircleIcon className="w-4 h-4" />
-                                          <span>Submit Self-Assessment</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })()
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </div>
-            );
-          })())}
-
-          {/* Official Performance Report View */}
-          {employeeSubTab === 'reports' && (!activeEmpResponse ? (
-            <div className="bg-white rounded-3xl border border-neutral-200/90 shadow-2xs p-8 sm:p-12 text-center space-y-5 animate-in fade-in duration-200 max-w-2xl mx-auto my-6">
-              <div className="w-16 h-16 mx-auto rounded-3xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 shadow-2xs">
-                <DocumentChartBarIcon className="w-8 h-8 text-slate-400" />
-              </div>
-
-              <div className="space-y-2">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold border border-slate-200">
-                  <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-                  No Official Report
-                </div>
-                <h3 className="text-xl font-black text-slate-900">
-                  No Performance Report Available
-                </h3>
-                <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Official performance scorecards are generated and published only after a performance evaluation is assigned, submitted, and approved by your leadership team.
-                </p>
-              </div>
-            </div>
-          ) : ((() => {
-            // Filter, deduplicate, and sort employee responses with latest report/cycle on top
-            const rawUserResponses = responses.filter(isResponseForUser);
-            const uniqueEmpResponses: EvaluationResponse[] = [];
-            const seenKeys = new Set<string>();
-            rawUserResponses.forEach(r => {
-              const key = r.id || `${r.cycleId}_${(r as any).periodName || ''}`;
-              if (!seenKeys.has(key)) {
-                seenKeys.add(key);
-                uniqueEmpResponses.push(r);
-              }
-            });
-
-            const allEmpResponses = uniqueEmpResponses.sort((a, b) => {
-              const timeA = new Date(a.serviceManagerApprovedAt || a.managerReviewedAt || a.employeeSubmittedAt || a.createdAt || 0).getTime();
-              const timeB = new Date(b.serviceManagerApprovedAt || b.managerReviewedAt || b.employeeSubmittedAt || b.createdAt || 0).getTime();
-              if (timeB !== timeA) return timeB - timeA;
-              return (b.id || '').localeCompare(a.id || '');
-            });
-
-            // Calculate aggregate statistics for executive summary cards
-            const totalRecords = allEmpResponses.length;
-            const publishedCount = allEmpResponses.filter(r => r.status === 'approved' || r.status === 'sm_final_approval').length;
-            const inReviewCount = totalRecords - publishedCount;
-
-            let sumScores = 0;
-            let validScoresCount = 0;
-            allEmpResponses.forEach(r => {
-              const rawSelf = r.employeeOverallScore != null ? Number(r.employeeOverallScore) : 0;
-              const mgrSc = r.managerScore != null ? Number(r.managerScore) : (r.serviceManagerScore != null ? Number(r.serviceManagerScore) : null);
-              const finalSc = mgrSc ?? rawSelf;
-              if (finalSc > 0) {
-                sumScores += finalSc;
-                validScoresCount++;
-              }
-            });
-            const avgHistoricalScore = validScoresCount > 0 ? sumScores / validScoresCount : 0;
-            const latestResponse = allEmpResponses[0];
-            const latestScore = latestResponse
-              ? (latestResponse.managerScore != null
-                ? Number(latestResponse.managerScore)
-                : (latestResponse.serviceManagerScore != null
-                  ? Number(latestResponse.serviceManagerScore)
-                  : Number(latestResponse.employeeOverallScore ?? 0)))
-              : 0;
-            const latestRating = getRatingForScore(latestScore);
-
-            const filteredHistoryResponses = allEmpResponses.filter(r => {
-              const itemCycle = cycles.find(cy => cy.id === r.cycleId);
-              const itemTitle = itemCycle?.name || itemCycle?.periodName || (r as any).periodName || '';
-              const desc = itemCycle?.description || (r as any).description || '';
-              const matchesSearch = !historySearchQuery.trim() ||
-                itemTitle.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
-                desc.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
-                (r.periodName || '').toLowerCase().includes(historySearchQuery.toLowerCase());
-
-              const isPublished = r.status === 'approved' || r.status === 'sm_final_approval';
-              if (historyStatusFilter === 'published') return matchesSearch && isPublished;
-              if (historyStatusFilter === 'in_review') return matchesSearch && !isPublished;
-              return matchesSearch;
-            });
-
-            const getGradeBadgeColor = (gradeOrName: string | number) => {
-              const g = String(gradeOrName).toUpperCase();
-              if (g === 'A' || g === '5' || g.includes('OUTSTANDING')) return 'bg-emerald-50 text-emerald-800 border border-emerald-200';
-              if (g === 'B' || g === '4' || g.includes('EXCEED')) return 'bg-indigo-50 text-indigo-800 border border-indigo-200';
-              if (g === 'C' || g === '3' || (g.includes('MEET') && !g.includes('NOT'))) return 'bg-blue-50 text-blue-800 border border-blue-200';
-              if (g === 'D' || g === '2' || g.includes('IMPROVE')) return 'bg-amber-50 text-amber-800 border border-amber-200';
-              return 'bg-rose-50 text-rose-800 border border-rose-200';
-            };
-
-            return (
-              <div className="space-y-4 animate-in fade-in duration-200">
-                {/* 1. Sleek Compact Header Bar */}
-                <div className="bg-white rounded-2xl px-4 py-3 border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
-                      <AcademicCapIcon className="w-4 h-4" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-sm font-bold text-slate-900 tracking-tight">
-                        Evaluation History & Scorecards
-                      </h2>
-                      <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-teal-50 text-teal-800 border border-teal-200">
-                        {totalRecords} {totalRecords === 1 ? 'Record' : 'Records'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
+          {/* 2. Deliverable-Level Evaluation Breakdown Table with Integrated Toolbar */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+            {/* Integrated Table Header Bar (Clean & Compact) */}
+            <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              {/* Left: Deliverable Title & Category Filters */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  Deliverables {isYearlyResponse(activeEmpResponse) && (() => {
+                    const isWeekly = activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length);
+                    const isQuarterly = activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length);
+                    if (isWeekly) {
+                      const curW = (activeEmpResponse?.weekly_records || []).find(w => w.weekIndex === activeYearlyWeekIndex);
+                      return `— ${curW?.weekLabel || `Week ${activeYearlyWeekIndex}`}`;
+                    }
+                    if (isQuarterly) {
+                      const curQ = (activeEmpResponse?.quarterly_records || []).find(q => q.quarterIndex === activeYearlyQuarterIndex);
+                      const qObj = FISCAL_QUARTERS.find(q => q.quarterIndex === activeYearlyQuarterIndex);
+                      return `— ${curQ?.quarterLabel || qObj?.quarterLabel || `Q${activeYearlyQuarterIndex}`}`;
+                    }
+                    const mObj = FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth);
+                    return `— ${mObj ? mObj.monthName : `Month ${activeYearlyFiscalMonth}`}`;
+                  })()}
+                </h4>
+
+                {/* Filter Pills */}
+                <div className="inline-flex items-center gap-1 bg-white border border-slate-200 p-0.5 rounded-lg text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setEmpFilterTab('all')}
+                    className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer ${empFilterTab === 'all'
+                      ? 'bg-teal-700 text-white'
+                      : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                  >
+                    All ({totalKpiCount})
+                  </button>
+                  {adjustedKpiCount > 0 && (
                     <button
                       type="button"
-                      onClick={() => setEmployeeSubTab('worksheet')}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer"
+                      onClick={() => setEmpFilterTab('adjusted')}
+                      className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 ${empFilterTab === 'adjusted'
+                        ? 'bg-amber-100 text-amber-950 font-bold'
+                        : 'text-amber-800 hover:text-amber-950'
+                        }`}
                     >
-                      <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Back to Worksheet</span>
+                      <span>Adjusted ({adjustedKpiCount})</span>
                     </button>
-                  </div>
+                  )}
                 </div>
 
-                {/* 2. Performance Scorecards Table */}
-                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
-                  {/* Table Toolbar: Search + Filter Tabs */}
-                  <div className="px-4 py-2.5 bg-slate-50/60 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                    <div className="relative flex-1 max-w-sm">
-                      <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        placeholder="Search period or form..."
-                        value={historySearchQuery}
-                        onChange={e => setHistorySearchQuery(e.target.value)}
-                        className="w-full pl-8 pr-3 py-1 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-teal-700 text-slate-800 placeholder-slate-400 shadow-2xs"
-                      />
-                    </div>
+                {(() => {
+                  const isYearly = isYearlyResponse(activeEmpResponse);
+                  const isWeekly = isYearly && (activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length));
+                  const isQuarterly = isYearly && (activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length));
+                  const curRecords = activeEmpResponse?.monthly_records || [];
+                  const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
+                  const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
+                  const lockInfo = isWeekly
+                    ? getYearlyWeekLockInfo(activeYearlyWeekIndex, curWeeklyRecords)
+                    : (isQuarterly
+                      ? getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords)
+                      : (isYearly ? getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords) : null));
+                  const isLocked = isYearly ? !lockInfo?.isEditable : isEmpSubmitted;
 
-                    <div className="flex items-center gap-1.5 self-end sm:self-auto">
-                      {(['all', 'published', 'in_review'] as const).map(tabKey => {
-                        const count = tabKey === 'all' ? totalRecords : tabKey === 'published' ? publishedCount : inReviewCount;
-                        if (count === 0 && tabKey !== 'all') return null;
-                        const label = tabKey === 'all' ? 'All' : tabKey === 'published' ? 'Published' : 'In Review';
-                        const isActive = historyStatusFilter === tabKey;
-                        return (
-                          <button
-                            key={tabKey}
-                            type="button"
-                            onClick={() => setHistoryStatusFilter(tabKey)}
-                            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${isActive
-                                ? 'bg-teal-700 text-white shadow-2xs'
-                                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                              }`}
-                          >
-                            {label} ({count})
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Table */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-bold text-slate-500 tracking-wider select-none">
-                        <tr>
-                          <th className="px-5 py-3 text-left">Evaluation Period & Form</th>
-                          <th className="px-3 py-3 text-center">Status</th>
-                          <th className="px-3 py-3 text-center">Self Score</th>
-                          <th className="px-3 py-3 text-center">Manager Score</th>
-                          <th className="px-3 py-3 text-center">Final Grade</th>
-                          <th className="px-3 py-3 text-center">Override</th>
-                          <th className="px-4 py-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {filteredHistoryResponses.length === 0 ? (
-                          <tr>
-                            <td colSpan={7} className="text-center py-10 text-slate-400 text-xs font-medium">
-                              No evaluation records match your filter criteria.
-                            </td>
-                          </tr>
+                  if (isLocked) {
+                    return (
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border ${isYearly && lockInfo?.isLocked
+                        ? 'text-slate-700 bg-slate-100 border-slate-200'
+                        : isYearly && lockInfo?.isSubmitted
+                          ? 'text-amber-800 bg-amber-50 border-amber-200'
+                          : 'text-teal-800 bg-teal-50 border-teal-200'
+                        }`}>
+                        {isYearly && lockInfo?.isLocked ? (
+                          <>
+                            <LockClosedIcon className="w-3 h-3 text-slate-500" />
+                            Locked
+                          </>
+                        ) : isYearly && lockInfo?.isSubmitted ? (
+                          <>
+                            <ClockIcon className="w-3 h-3 text-amber-600" />
+                            Under Review
+                          </>
                         ) : (
-                          filteredHistoryResponses.map((r, idx) => {
-                            const itemCycle = cycles.find(cy => cy.id === r.cycleId);
-                            const itemTitle = itemCycle?.name || itemCycle?.periodName || (r as any).periodName || `Performance Evaluation Stage ${filteredHistoryResponses.length - idx}`;
-                            const itemCategories = (itemCycle?.categories && itemCycle.categories.length > 0) ? itemCycle.categories : activeCategories;
+                          <>
+                            <CheckCircleIcon className="w-3 h-3 text-teal-600" />
+                            {isYearly ? 'Approved' : 'Locked'}
+                          </>
+                        )}
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
 
-                            const resolvePeriodTime = () => {
-                              const desc = String(itemCycle?.description || (r as any).description || '').trim();
-                              const rawPeriod = String(itemCycle?.periodName || (r as any).periodName || (r as any).reviewPeriod || '').trim();
+              {/* Right: Search & Badges */}
+              <div className="flex items-center gap-2">
+                <div className="relative w-44 sm:w-52">
+                  <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={empSearchQuery}
+                    onChange={e => setEmpSearchQuery(e.target.value)}
+                    placeholder="Search..."
+                    className="w-full h-7 pl-8 pr-6 text-xs bg-white border border-slate-200 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 rounded-lg focus:outline-none transition"
+                  />
+                  {empSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setEmpSearchQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <XMarkIcon className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
 
-                              if (itemCycle?.startDate && itemCycle?.endDate && itemCycle.startDate === itemCycle.endDate) {
-                                return `Daily (${formatDisplayDate(itemCycle.startDate)})`;
-                              }
-                              if (itemCycle?.startDate && itemCycle?.endDate) {
-                                return `${formatDisplayDate(itemCycle.startDate)} – ${formatDisplayDate(itemCycle.endDate)}`;
-                              }
-                              if (desc && desc.toLowerCase() !== (itemCycle?.name || '').toLowerCase()) {
-                                return desc.replace(/^\(/, '').replace(/\)$/, '').trim();
-                              }
-                              if (rawPeriod && rawPeriod.toLowerCase() !== (itemCycle?.name || '').toLowerCase()) {
-                                return rawPeriod.replace(/^\(/, '').replace(/\)$/, '').trim();
-                              }
-                              if (r.createdAt) {
-                                return formatDisplayDate(r.createdAt);
-                              }
-                              return `Q${currentQuarter} ${currentYear}`;
-                            };
+                <span className="text-[11px] font-bold text-teal-800 bg-teal-50 px-2 py-1 rounded-md border border-teal-200/80 shrink-0">
+                  100% Weight
+                </span>
+              </div>
+            </div>
 
-                            const itemPeriodTime = resolvePeriodTime();
+            <div className="rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
+              {filteredCategories.map((cat, catIdx) => {
+                const isYearly = isYearlyResponse(activeEmpResponse);
+                const isWeekly = isYearly && (activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length));
+                const isQuarterly = isYearly && (activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length));
+                const curRecords = activeEmpResponse?.monthly_records || [];
+                const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
+                const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
+                const lockInfo = isWeekly
+                  ? getYearlyWeekLockInfo(activeYearlyWeekIndex, curWeeklyRecords)
+                  : (isQuarterly
+                    ? getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords)
+                    : (isYearly ? getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords) : null));
+                const curYearlyRecord = isYearly ? curRecords.find(m => m.monthIndex === activeYearlyFiscalMonth) : null;
+                const curWeeklyRecord = isWeekly ? curWeeklyRecords.find(w => w.weekIndex === activeYearlyWeekIndex) : null;
+                const curQuarterlyRecord = isQuarterly ? curQuarterlyRecords.find(q => q.quarterIndex === activeYearlyQuarterIndex) : null;
+                const isYearlySubmitted = isWeekly
+                  ? Boolean(curWeeklyRecord?.status === 'submitted_to_manager' || curWeeklyRecord?.status === 'manager_approved')
+                  : (isQuarterly
+                    ? Boolean(curQuarterlyRecord?.status === 'submitted_to_manager' || curQuarterlyRecord?.status === 'manager_approved')
+                    : Boolean(isYearly && (curYearlyRecord?.status === 'submitted_to_manager' || curYearlyRecord?.status === 'manager_approved')));
+                const isThisMonthLocked = isYearly ? (!lockInfo?.isEditable) : isEmpSubmitted;
 
-                            const rawSelf = r.employeeOverallScore != null ? Number(r.employeeOverallScore) : 0;
-                            let itemSelfScore = rawSelf;
-                            if (itemSelfScore === 0) {
-                              if (r.managerScore != null && Number(r.managerScore) > 0) {
-                                itemSelfScore = Number(r.managerScore);
-                              } else if (r.kpiResponses && Object.keys(r.kpiResponses).length > 0) {
-                                const kpis = Object.values(r.kpiResponses);
-                                let tot = 0, cnt = 0;
-                                kpis.forEach((item: any) => {
-                                  if (typeof item === 'object' && item !== null) {
-                                    const sc = item.earnedScore ?? item.earned_score ?? item.score;
-                                    if (sc !== undefined && sc !== null && Number(sc) > 0) {
-                                      tot += Number(sc);
-                                      cnt++;
-                                    }
-                                  }
-                                });
-                                if (cnt > 0) itemSelfScore = tot / cnt;
-                              }
-                            }
+                const catEarned = cat.kpis.reduce((sum, k) => {
+                  const yearlyEntry = isWeekly
+                    ? (curWeeklyRecord?.kpiEntries?.[k.id] || (k.name ? curWeeklyRecord?.kpiEntries?.[k.name] : null))
+                    : (isQuarterly
+                      ? (curQuarterlyRecord?.kpiEntries?.[k.id] || (k.name ? curQuarterlyRecord?.kpiEntries?.[k.name] : null))
+                      : (curYearlyRecord?.kpiEntries?.[k.id] || (k.name ? curYearlyRecord?.kpiEntries?.[k.name] : null)));
+                  const val = isWeekly
+                    ? (!isYearlySubmitted
+                      ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                      : (yearlyEntry?.actualValue ?? ''))
+                    : (isQuarterly
+                      ? (!isYearlySubmitted
+                        ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                        : (yearlyEntry?.actualValue ?? ''))
+                      : (isYearly
+                        ? (!isYearlySubmitted
+                          ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                          : (yearlyEntry?.actualValue ?? ''))
+                        : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''))));
+                  return sum + calculateKPIScore(k, val).earnedScore;
+                }, 0);
 
-                            const itemMgrScore = r.managerScore != null ? Number(r.managerScore) : (r.serviceManagerScore != null ? Number(r.serviceManagerScore) : null);
-                            const itemFinalScore = itemMgrScore ?? itemSelfScore;
-                            const itemRating = getRatingForScore(itemFinalScore);
-                            const itemIsApproved = r.status === 'approved' || r.status === 'sm_final_approval';
-                            const isAuditOpen = historyAuditBreakdownOpen[r.id] === true;
+                const isExpanded = Object.keys(expandedCategories).length === 0 ? catIdx === 0 : Boolean(expandedCategories[cat.id]);
 
-                            return (
-                              <React.Fragment key={r.id || idx}>
-                                <tr className={`hover:bg-slate-50/80 transition-colors ${isAuditOpen ? 'bg-teal-50/20' : ''}`}>
-                                  {/* 1. Period & Title */}
-                                  <td className="px-5 py-3 align-middle">
-                                    <div className="flex flex-col gap-0.5">
-                                      <span className="font-bold text-xs text-slate-900">{itemTitle}</span>
-                                      <span className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
-                                        <CalendarDaysIcon className="w-3.5 h-3.5 text-teal-700 shrink-0" />
-                                        {itemPeriodTime}
+                return (
+                  <div key={cat.id} className="bg-white">
+                    {/* Clean Category Bar */}
+                    <div
+                      onClick={() => {
+                        setExpandedCategories(prev => {
+                          const currentVal = Object.keys(prev).length === 0 ? catIdx === 0 : Boolean(prev[cat.id]);
+                          return { ...prev, [cat.id]: !currentVal };
+                        });
+                      }}
+                      className="bg-slate-50 hover:bg-slate-100/80 text-slate-800 px-4 py-2 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="p-0.5 rounded text-slate-400 group-hover:text-slate-700 transition-colors shrink-0"
+                        >
+                          <ChevronDownIcon className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                        </span>
+                        <span className="font-semibold text-xs text-slate-900 group-hover:text-teal-900 transition-colors truncate">
+                          {catIdx + 1}. {cat.name}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          ({cat.matchingKpis.length})
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2.5 shrink-0 text-xs">
+                        <span className="text-[11px] text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
+                          <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
+                        </span>
+                        <span className="text-[11px] font-medium text-teal-700 group-hover:text-teal-900 flex items-center gap-0.5">
+                          {isExpanded ? 'Collapse' : 'Expand'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Deliverables Table for Expanded Category */}
+                    {isExpanded && (
+                      <div className="overflow-x-auto border-t border-slate-200/80">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead className="bg-slate-50/95 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider select-none">
+                            <tr>
+                              <th className="px-4 py-2.5 text-left whitespace-nowrap">Deliverable Metric</th>
+                              <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Target Goal</th>
+                              <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Weight</th>
+                              <th className="px-3 py-2.5 text-center whitespace-nowrap">Self Actual</th>
+                              <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Self Score</th>
+                              <th className="px-3 py-2.5 text-center whitespace-nowrap">Insufficient</th>
+                              {!isThisMonthLocked && (
+                                <th className="px-3.5 py-2.5 text-left whitespace-nowrap">Self Remarks</th>
+                              )}
+                              {isThisMonthLocked && (
+                                <>
+                                  <th className="px-3 py-2.5 text-center bg-teal-50/50 text-teal-950 border-l border-teal-200/60 whitespace-nowrap font-extrabold">Mgr Actual</th>
+                                  <th className="px-2.5 py-2.5 text-center bg-teal-50/50 text-teal-950 whitespace-nowrap font-extrabold">Mgr Score</th>
+                                </>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {cat.matchingKpis.map((kpi) => {
+                              const respItem = getKpiResponseItem(kpi);
+                              const yearlyEntry = isWeekly
+                                ? (curWeeklyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curWeeklyRecord?.kpiEntries?.[kpi.name] : null))
+                                : (isQuarterly
+                                  ? (curQuarterlyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterlyRecord?.kpiEntries?.[kpi.name] : null))
+                                  : (curYearlyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRecord?.kpiEntries?.[kpi.name] : null)));
+
+                              const rawVal = isWeekly
+                                ? (!isYearlySubmitted
+                                  ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                  : (yearlyEntry?.actualValue ?? ''))
+                                : (isQuarterly
+                                  ? (!isYearlySubmitted
+                                    ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                    : (yearlyEntry?.actualValue ?? ''))
+                                  : (isYearly
+                                    ? (!isYearlySubmitted
+                                      ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                      : (yearlyEntry?.actualValue ?? ''))
+                                    : (!isEmpSubmitted
+                                      ? (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '')
+                                      : (respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
+                                        ? respItem.actualValue
+                                        : (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '')))));
+                              const val = rawVal !== '' && rawVal !== undefined && rawVal !== null
+                                ? (typeof rawVal === 'number' ? Math.floor(rawVal) : (String(rawVal).includes('.') ? parseInt(String(rawVal), 10) : rawVal))
+                                : '';
+                              const calc = calculateKPIScore(kpi, val);
+                              const remarks = isWeekly
+                                ? (!isYearlySubmitted
+                                  ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
+                                  : (yearlyEntry?.employeeRemarks ?? ''))
+                                : (isQuarterly
+                                  ? (!isYearlySubmitted
+                                    ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
+                                    : (yearlyEntry?.employeeRemarks ?? ''))
+                                  : (isYearly
+                                    ? (!isYearlySubmitted
+                                      ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
+                                      : (yearlyEntry?.employeeRemarks ?? ''))
+                                    : (!isEmpSubmitted
+                                      ? (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '')
+                                      : (respItem?.employeeRemarks !== undefined && respItem?.employeeRemarks !== null
+                                        ? respItem.employeeRemarks
+                                        : (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '')))));
+                              const parsedTarget = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
+                              const targetThreshold = parsedTarget.threshold;
+
+                              // Manager reviewed values
+                              const hasMgrActual = isYearly
+                                ? (yearlyEntry?.managerActualValue !== undefined && yearlyEntry?.managerActualValue !== null && yearlyEntry?.managerActualValue !== '')
+                                : (respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== null && respItem?.managerActualValue !== '');
+
+                              const mgrActualVal = isYearly
+                                ? (hasMgrActual ? yearlyEntry?.managerActualValue : '')
+                                : (hasMgrActual ? respItem?.managerActualValue : (mgrKpiActuals[kpi.id] ?? ''));
+
+                              const isActualModifiedByMgr = hasMgrActual && String(mgrActualVal).trim() !== String(val).trim();
+                              const mgrCalc = calculateKPIScore(kpi, hasMgrActual ? mgrActualVal : val);
+                              const mgrEarnedScore = isYearly
+                                ? (yearlyEntry?.managerScore !== undefined && yearlyEntry?.managerScore !== null ? Number(yearlyEntry.managerScore) : (hasMgrActual ? mgrCalc.earnedScore : null))
+                                : ((respItem?.managerScore !== undefined && respItem?.managerScore !== null)
+                                  ? Number(respItem.managerScore)
+                                  : (hasMgrActual ? mgrCalc.earnedScore : null));
+                              const mgrRemarks = isYearly
+                                ? (yearlyEntry?.managerRemarks || '')
+                                : (respItem?.managerRemarks ?? mgrKpiRemarks[kpi.id] ?? '');
+
+                              const isNeg = isNegativeKpi(kpi);
+                              const rawInsufficient = isWeekly
+                                ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
+                                : (isQuarterly
+                                  ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
+                                  : (isYearly
+                                    ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
+                                    : (!isEmpSubmitted
+                                      ? (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : false))
+                                      : (respItem?.isInsufficient !== undefined && respItem?.isInsufficient !== null
+                                        ? respItem.isInsufficient
+                                        : (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : ((kpi as any)?.isInsufficient ?? (kpi as any)?.is_insufficient ?? false)))))));
+                              const isRowInsufficient = Boolean(rawInsufficient);
+                              const statusObj = getInsufficientStatus(kpi, val, isRowInsufficient);
+
+                              return (
+                                <tr
+                                  key={kpi.id}
+                                  className={`group/empRow transition-colors border-b last:border-b-0 ${isNeg
+                                    ? 'bg-rose-50/25 hover:bg-rose-50/45 border-rose-100/80 border-l-4 border-l-rose-400'
+                                    : 'hover:bg-slate-50/80 border-slate-100 border-l-4 border-l-transparent'
+                                    }`}
+                                >
+                                  {/* 1. Deliverable Name & Description */}
+                                  <td className="px-4 py-3 align-middle max-w-[240px]">
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className={`font-bold text-xs leading-snug ${isNeg ? 'text-rose-950' : 'text-slate-900'}`}>
+                                          {kpi.name}
+                                        </span>
+                                      </div>
+                                      {kpi.description && (
+                                        <p className={`text-[11px] line-clamp-2 leading-relaxed ${isNeg ? 'text-rose-600/80 font-medium' : 'text-slate-500'}`}>
+                                          {kpi.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* 2. Target Goal */}
+                                  <td className="px-2.5 py-3 align-middle text-center whitespace-nowrap">
+                                    <div className="flex flex-col items-center justify-center gap-0.5">
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border shadow-2xs ${isNeg
+                                        ? 'bg-rose-100/70 text-rose-800 border-rose-200'
+                                        : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                        }`}>
+                                        {(() => {
+                                          const t = String(kpi.targetFromManager || '').trim();
+                                          const u = String(kpi.unit || '').trim();
+                                          if (!t) return targetThreshold;
+                                          if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
+                                          return `${t} ${u}`;
+                                        })()}
                                       </span>
                                     </div>
                                   </td>
 
-                                  {/* 2. Status */}
-                                  <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
-                                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${itemIsApproved
-                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                        : 'bg-amber-50 text-amber-800 border-amber-200'
-                                      }`}>
-                                      <span className={`w-1.5 h-1.5 rounded-full ${itemIsApproved ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                                      {itemIsApproved ? 'Published' : 'In Review'}
+                                  {/* 3. Weight */}
+                                  <td className="px-2 py-3 align-middle text-center whitespace-nowrap">
+                                    <span className={`text-xs font-bold ${isNeg ? 'text-rose-900' : 'text-slate-700'}`}>
+                                      {kpi.weightage || kpi.targetScore}%
                                     </span>
                                   </td>
 
-                                  {/* 3. Self Score */}
-                                  <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
-                                    <span className="font-mono font-bold text-xs text-slate-800">
-                                      {itemSelfScore.toFixed(1)}%
-                                    </span>
+                                  {/* 4. Self Actual */}
+                                  <td className="px-3 py-3 align-middle text-center text-xs whitespace-nowrap">
+                                    <div className="flex flex-col items-center justify-center gap-1">
+                                      {(() => {
+                                        const numericVal = val !== '' && val !== undefined && val !== null ? Number(val) : null;
+                                        const minTarget = parsedTarget.threshold;
+                                        const maxTarget = parsedTarget.maxThreshold ?? minTarget;
+                                        const isRange = !isNeg && parsedTarget.operator === 'range';
+
+                                        const isOverTarget = numericVal !== null && !isNaN(numericVal) && (
+                                          isNeg
+                                            ? (parsedTarget.operator === '<' ? numericVal >= targetThreshold : (targetThreshold === 0 ? numericVal > 0 : numericVal > targetThreshold))
+                                            : (isRange ? numericVal > maxTarget : (targetThreshold > 0 && numericVal > targetThreshold))
+                                        );
+                                        const isMetTarget = numericVal !== null && !isNaN(numericVal) && (
+                                          isNeg
+                                            ? (parsedTarget.operator === '<' ? numericVal < targetThreshold : (targetThreshold === 0 ? numericVal === 0 : numericVal <= targetThreshold))
+                                            : (isRange ? (numericVal >= minTarget && numericVal <= maxTarget) : (targetThreshold > 0 && numericVal >= targetThreshold))
+                                        );
+                                        const isLowTarget = !isNeg && numericVal !== null && !isNaN(numericVal) && val !== '' && (
+                                          isRange ? numericVal < minTarget : (targetThreshold > 0 && numericVal < targetThreshold)
+                                        );
+
+                                        if (isThisMonthLocked) {
+                                          if (val === '' || val === undefined || val === null) {
+                                            return <span className="text-slate-400 font-medium">—</span>;
+                                          }
+                                          if (isNeg) {
+                                            return (
+                                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-900 border border-rose-300 font-bold text-xs shadow-2xs">
+                                                <span>{val} {kpi.unit || ''}</span>
+                                                {isOverTarget && (
+                                                  <span className="text-[9px] bg-rose-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                    Exceeded
+                                                  </span>
+                                                )}
+                                              </span>
+                                            );
+                                          }
+                                          if (isOverTarget) {
+                                            return (
+                                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-950 border border-emerald-400 font-bold text-xs shadow-2xs">
+                                                <span>{val} {kpi.unit || ''}</span>
+                                                <span className="text-[9px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                  Exceeded
+                                                </span>
+                                              </span>
+                                            );
+                                          }
+                                          if (isMetTarget) {
+                                            return (
+                                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-teal-950 border border-teal-300 font-bold text-xs shadow-2xs">
+                                                <span>{val} {kpi.unit || ''}</span>
+                                              </span>
+                                            );
+                                          }
+                                          return (
+                                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold text-xs shadow-2xs ${calc.earnedScore === 0
+                                              ? 'bg-rose-50 text-rose-900 border border-rose-300'
+                                              : 'bg-amber-50 text-amber-900 border border-amber-300'
+                                              }`}>
+                                              <span>{val} {kpi.unit || ''}</span>
+                                              <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider ${calc.earnedScore === 0 ? 'bg-rose-600 text-white' : 'bg-amber-600 text-white'}`}>
+                                                {calc.earnedScore === 0 ? 'Not Met' : 'Low Target'}
+                                              </span>
+                                            </span>
+                                          );
+                                        }
+
+                                        return (
+                                          <div className="flex flex-col items-center justify-center gap-1">
+                                            <input
+                                              type="number"
+                                              step="1"
+                                              min="0"
+                                              value={val}
+                                              disabled={isSubmittingEmp}
+                                              onKeyDown={e => {
+                                                if (['.', ',', 'e', 'E', '+', '-'].includes(e.key)) {
+                                                  e.preventDefault();
+                                                }
+                                              }}
+                                              onChange={e => {
+                                                if (isWeekly) {
+                                                  handleYearlyWeekKpiChange(kpi, e.target.value);
+                                                } else if (isQuarterly) {
+                                                  handleYearlyQuarterKpiChange(kpi, e.target.value);
+                                                } else if (isYearly) {
+                                                  handleYearlyMonthKpiChange(kpi, e.target.value);
+                                                } else {
+                                                  handleKPIChange(kpi, e.target.value);
+                                                }
+                                              }}
+                                              placeholder="0"
+                                              className={`w-24 h-8 px-2 text-center font-bold text-xs rounded-xl transition shadow-2xs focus:outline-none ${isNeg && isOverTarget
+                                                ? 'bg-rose-100 text-rose-950 border-2 border-rose-500 ring-2 ring-rose-400/30 font-black'
+                                                : !isNeg && calc.earnedScore === 0 && val !== ''
+                                                  ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
+                                                  : isOverTarget
+                                                    ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-500 ring-2 ring-emerald-400/30 font-black'
+                                                    : isLowTarget
+                                                      ? 'bg-amber-50 text-amber-950 border-2 border-amber-400 ring-2 ring-amber-300/30 font-black'
+                                                      : isMetTarget
+                                                        ? 'bg-teal-50/80 text-teal-950 border-2 border-teal-400 font-bold focus:border-teal-600'
+                                                        : isNeg
+                                                          ? 'bg-rose-50/40 text-rose-950 border-2 border-rose-200/90 focus:border-rose-500 focus:bg-white placeholder:text-rose-300'
+                                                          : 'bg-white text-slate-900 border border-slate-200 focus:border-teal-600'
+                                                }`}
+                                            />
+                                          </div>
+                                        );
+                                      })()}
+
+                                      {/* Emp and Mgr Remark Badges below Self Actual */}
+                                      {isThisMonthLocked && (remarks?.trim() || mgrRemarks?.trim()) && (
+                                        <DeliverableRemarksHover
+                                          selfRemarks={remarks}
+                                          mgrRemarks={mgrRemarks}
+                                          align="center"
+                                        >
+                                          <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap cursor-pointer">
+                                            {remarks?.trim() && (
+                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0">
+                                                <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
+                                                <span>Emp</span>
+                                              </span>
+                                            )}
+                                            {mgrRemarks?.trim() && (
+                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0">
+                                                <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
+                                                <span>Mgr</span>
+                                              </span>
+                                            )}
+                                          </div>
+                                        </DeliverableRemarksHover>
+                                      )}
+                                    </div>
                                   </td>
 
-                                  {/* 4. Manager Score */}
-                                  <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
-                                    {itemMgrScore !== null ? (
-                                      <span className="font-mono font-bold text-xs text-slate-800">
-                                        {itemMgrScore.toFixed(1)}%
+                                  {/* Self Score */}
+                                  <td
+                                    className="px-2.5 py-3 text-center align-middle whitespace-nowrap"
+                                  >
+                                    <div className="inline-flex items-center justify-center gap-1">
+                                      <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${calc.earnedScore > 0
+                                        ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90'
+                                        : 'bg-rose-50 text-rose-900 border border-rose-200/90'
+                                        }`}>
+                                        {calc.earnedScore.toFixed(2)}%
                                       </span>
+                                      {isThisMonthLocked && remarks?.trim() && (
+                                        <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-500/70 shrink-0" />
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Insufficient Status & Employee Toggle */}
+                                  <td className="px-3 py-3 text-center align-middle whitespace-nowrap">
+                                    {!isThisMonthLocked ? (
+                                      (() => {
+                                        const isTargetMetOrEmpty = statusObj.status === 'met' || statusObj.status === 'not_filled';
+                                        return (
+                                          <label
+                                            className={`inline-flex items-center justify-center gap-1.5 select-none ${isTargetMetOrEmpty ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
+                                              }`}
+                                            title={isTargetMetOrEmpty ? 'Target met or not filled' : 'Click to flag variance details'}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              disabled={isTargetMetOrEmpty}
+                                              checked={!isTargetMetOrEmpty && Boolean(isRowInsufficient)}
+                                              onChange={e => {
+                                                if (isWeekly) {
+                                                  handleYearlyWeekKpiInsufficient(kpi, e.target.checked);
+                                                } else if (isQuarterly) {
+                                                  handleYearlyQuarterKpiInsufficient(kpi, e.target.checked);
+                                                } else if (isYearly) {
+                                                  handleYearlyMonthKpiInsufficient(kpi, e.target.checked);
+                                                } else {
+                                                  handleKPIToggleInsufficient(kpi, e.target.checked);
+                                                }
+                                              }}
+                                              className="w-4 h-4 text-primary-600 accent-primary-600 rounded border-slate-300 focus:ring-primary-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 transition"
+                                            />
+                                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shadow-2xs border ${statusObj.badgeClass}`}>
+                                              {statusObj.label}
+                                            </span>
+                                          </label>
+                                        );
+                                      })()
                                     ) : (
-                                      <span className="text-slate-400 font-medium text-xs">Pending</span>
+                                      <div className="inline-flex items-center justify-center">
+                                        <span
+                                          className={`inline-flex items-center gap-1 font-bold px-2.5 py-0.5 rounded-full border text-[10px] shadow-2xs ${statusObj.badgeClass}`}
+                                        >
+                                          {statusObj.label}
+                                        </span>
+                                      </div>
                                     )}
                                   </td>
 
-                                  {/* 5. Final Grade Badge */}
-                                  <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
-                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-bold text-xs border ${getGradeBadgeColor(itemRating.name)}`}>
-                                      <span className="font-bold">{itemRating.name}</span>
-                                      <span className="opacity-90 font-mono text-[10px]">({itemFinalScore.toFixed(0)}%)</span>
-                                    </span>
-                                  </td>
+                                  {/* Self Remarks: Only rendered when NOT submitted (when employee needs to edit) */}
+                                  {!isThisMonthLocked && (
+                                    <td className="px-3.5 py-3 align-middle text-xs min-w-[140px] max-w-[220px]">
+                                      {(() => {
+                                        const isMandatory = isKpiRemarkMandatory(kpi, val, isRowInsufficient);
+                                        const hasRemark = Boolean(remarks && remarks.trim());
 
-                                  {/* 6. Override */}
-                                  <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
-                                    {itemMgrScore !== null ? (
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200">
-                                        {itemMgrScore === itemSelfScore
-                                          ? '100% Aligned'
-                                          : `${itemMgrScore > itemSelfScore ? '+' : ''}${(itemMgrScore - itemSelfScore).toFixed(1)}% vs Self`}
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-400 text-xs">—</span>
-                                    )}
-                                  </td>
+                                        return (
+                                          <div className="flex flex-col gap-1">
+                                            <ExpandableRemarkInput
+                                              value={remarks}
+                                              disabled={isSubmittingEmp}
+                                              onChange={val => {
+                                                if (isWeekly) {
+                                                  handleYearlyWeekKpiRemarkChange(kpi, val);
+                                                } else if (isQuarterly) {
+                                                  handleYearlyQuarterKpiRemarkChange(kpi, val);
+                                                } else if (isYearly) {
+                                                  handleYearlyMonthKpiRemarkChange(kpi, val);
+                                                } else {
+                                                  handleKPIRemarksChange(kpi, val);
+                                                }
+                                              }}
+                                              placeholder={isMandatory ? 'Remark required (High/Low/Selected)...' : 'Remarks (Optional)...'}
+                                              required={isMandatory}
+                                              className={
+                                                isMandatory && !hasRemark
+                                                  ? 'bg-amber-50/70 focus:bg-white border-2 border-amber-400 focus:border-amber-600 text-slate-900 focus:outline-none ring-2 ring-amber-200/50 shadow-2xs'
+                                                  : hasRemark
+                                                    ? 'bg-emerald-50/40 focus:bg-white border border-emerald-300 focus:border-teal-600 text-slate-900 focus:outline-none shadow-2xs'
+                                                    : 'bg-slate-50/60 focus:bg-white border border-slate-200 focus:border-teal-600 text-slate-800 focus:outline-none shadow-2xs'
+                                              }
+                                            />
+                                            {isMandatory && !hasRemark && (
+                                              <span className="text-[9px] font-black text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded self-start tracking-wider uppercase animate-in fade-in">
+                                                Mandatory
+                                              </span>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                    </td>
+                                  )}
 
-                                  {/* 7. Actions */}
-                                  <td className="px-4 py-3 align-middle text-right whitespace-nowrap">
-                                    <div className="inline-flex items-center gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const summary = `PERFORMANCE REPORT: ${itemTitle}\nPeriod: ${itemPeriodTime}\nSelf Score: ${itemSelfScore.toFixed(1)}%\nManager Score: ${itemMgrScore !== null ? `${itemMgrScore.toFixed(1)}%` : 'Pending'}\nFinal Grade: ${itemRating.name}`;
-                                          navigator.clipboard.writeText(summary);
-                                          alert('Performance Summary copied!');
-                                        }}
-                                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-                                        title="Copy Summary"
+                                  {/* Manager Reviewed Fields Display */}
+                                  {isThisMonthLocked && (
+                                    <>
+                                      <td className="px-3 py-3 text-center align-middle bg-teal-50/30 border-l border-teal-100 whitespace-nowrap">
+                                        {hasMgrActual && mgrActualVal !== '' ? (() => {
+                                          const numMgrVal = Number(mgrActualVal);
+                                          const isMgrOver = isNeg && !isNaN(numMgrVal) && (parsedTarget.operator === '<' ? numMgrVal >= targetThreshold : (targetThreshold === 0 ? numMgrVal > 0 : numMgrVal > targetThreshold));
+                                          if (isNeg) {
+                                            return (
+                                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-900 border border-rose-300 font-bold text-xs shadow-2xs">
+                                                <span>{mgrActualVal} {kpi.unit || ''}</span>
+                                                {isMgrOver && (
+                                                  <span className="text-[9px] bg-rose-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                    Exceeded
+                                                  </span>
+                                                )}
+                                              </span>
+                                            );
+                                          }
+                                          return (
+                                            <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold transition shadow-2xs ${isActualModifiedByMgr
+                                              ? 'bg-amber-100 text-amber-950 border border-amber-300'
+                                              : 'bg-teal-100 text-teal-950 border border-teal-300'
+                                              }`}>
+                                              {mgrActualVal} {kpi.unit || ''}
+                                            </span>
+                                          );
+                                        })() : (
+                                          <span className="text-slate-400 font-medium">—</span>
+                                        )}
+                                      </td>
+
+                                      <td
+                                        className="px-2.5 py-3 text-center align-middle bg-teal-50/30 whitespace-nowrap"
                                       >
-                                        <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setHistoryAuditBreakdownOpen(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
-                                        className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${isAuditOpen
-                                            ? 'bg-teal-700 text-white shadow-2xs'
-                                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                                          }`}
-                                      >
-                                        <span>{isAuditOpen ? 'Hide' : 'Details'}</span>
-                                        <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-200 ${isAuditOpen ? 'rotate-180' : ''}`} />
-                                      </button>
+                                        <div className="inline-flex items-center justify-center gap-1">
+                                          <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${mgrEarnedScore !== null && mgrEarnedScore > 0
+                                            ? 'bg-teal-100 text-teal-950 border border-teal-300'
+                                            : mgrEarnedScore !== null
+                                              ? 'bg-rose-50 text-rose-900 border border-rose-200/90'
+                                              : 'bg-slate-50 text-slate-500 border border-slate-200/60'
+                                            }`}>
+                                            {mgrEarnedScore !== null ? `${mgrEarnedScore.toFixed(2)}%` : '—'}
+                                          </span>
+                                          {mgrRemarks?.trim() && (
+                                            <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />
+                                          )}
+                                        </div>
+                                      </td>
+                                    </>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Scorecard Summary Footer */}
+            <div className="p-5 bg-gradient-to-r from-slate-50 via-teal-50/20 to-slate-50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              {(() => {
+                const isYearly = isYearlyResponse(activeEmpResponse);
+                const isWeekly = isYearly && (activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length));
+                const isQuarterly = isYearly && (activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length));
+                const curRecords = activeEmpResponse?.monthly_records || [];
+                const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
+                const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
+
+                const mObj = FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth);
+                const monthName = mObj ? mObj.monthName : `Month ${activeYearlyFiscalMonth}`;
+                const qObj = FISCAL_QUARTERS.find(q => q.quarterIndex === activeYearlyQuarterIndex);
+                const quarterName = qObj ? (qObj.quarterLabel || `Q${activeYearlyQuarterIndex}`) : `Q${activeYearlyQuarterIndex}`;
+
+                const curYearlyRec = isYearly ? curRecords.find(m => m.monthIndex === activeYearlyFiscalMonth) : null;
+                const curWeeklyRec = isWeekly ? curWeeklyRecords.find(w => w.weekIndex === activeYearlyWeekIndex) : null;
+                const curQuarterlyRec = isQuarterly ? curQuarterlyRecords.find(q => q.quarterIndex === activeYearlyQuarterIndex) : null;
+
+                const isYearlyPeriodSubmitted = isWeekly
+                  ? Boolean(curWeeklyRec?.status === 'submitted_to_manager' || curWeeklyRec?.status === 'manager_approved')
+                  : (isQuarterly
+                    ? Boolean(curQuarterlyRec?.status === 'submitted_to_manager' || curQuarterlyRec?.status === 'manager_approved')
+                    : Boolean(isYearly && (curYearlyRec?.status === 'submitted_to_manager' || curYearlyRec?.status === 'manager_approved')));
+
+                const approvedPeriodsList = isWeekly
+                  ? curWeeklyRecords.filter(w => w.status === 'manager_approved')
+                  : (isQuarterly
+                    ? curQuarterlyRecords.filter(q => q.status === 'manager_approved')
+                    : curRecords.filter(m => m.status === 'manager_approved'));
+
+                const ytdAvgScore = approvedPeriodsList.length > 0
+                  ? Number((approvedPeriodsList.reduce((sum, r: any) => sum + (Number(r.managerScore) || 0), 0) / approvedPeriodsList.length).toFixed(1))
+                  : null;
+
+                let periodSelfSum = 0;
+                activeCategories.forEach(cat => {
+                  cat.kpis.forEach(k => {
+                    const yearlyEntry = isWeekly
+                      ? (curWeeklyRec?.kpiEntries?.[k.id] || (k.name ? curWeeklyRec?.kpiEntries?.[k.name] : null))
+                      : (isQuarterly
+                        ? (curQuarterlyRec?.kpiEntries?.[k.id] || (k.name ? curQuarterlyRec?.kpiEntries?.[k.name] : null))
+                        : (curYearlyRec?.kpiEntries?.[k.id] || (k.name ? curYearlyRec?.kpiEntries?.[k.name] : null)));
+                    const val = isWeekly
+                      ? (!isYearlyPeriodSubmitted
+                        ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                        : (yearlyEntry?.actualValue ?? ''))
+                      : (isQuarterly
+                        ? (!isYearlyPeriodSubmitted
+                          ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                          : (yearlyEntry?.actualValue ?? ''))
+                        : (isYearly
+                          ? (!isYearlyPeriodSubmitted
+                            ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                            : (yearlyEntry?.actualValue ?? ''))
+                          : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''))));
+                    periodSelfSum += calculateKPIScore(k, val).earnedScore;
+                  });
+                });
+                const displayScore = isYearly ? Number(periodSelfSum.toFixed(1)) : selfScoreNum;
+                const activeMilestoneLabel = isWeekly ? (curWeeklyRec?.weekLabel || `Week ${activeYearlyWeekIndex}`) : (isQuarterly ? quarterName : monthName);
+                const activeMilestoneMgrScore = isWeekly ? curWeeklyRec?.managerScore : (isQuarterly ? curQuarterlyRec?.managerScore : curYearlyRec?.managerScore);
+
+                return (
+                  <>
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-slate-500 font-semibold">{isYearly ? `${activeMilestoneLabel} Self Score:` : 'Self Overall Score:'}</span>
+                        <strong className="text-teal-900 text-sm font-black">{displayScore.toFixed(1)}%</strong>
+                      </div>
+
+                      {isYearly && activeMilestoneMgrScore != null && (
+                        <div className="flex items-center gap-2.5 bg-teal-50 px-4 py-2.5 rounded-xl border border-teal-200 shadow-2xs">
+                          <span className="text-teal-800 font-bold">{activeMilestoneLabel} Manager Score:</span>
+                          <strong className="text-teal-950 text-sm font-black">{Number(activeMilestoneMgrScore).toFixed(1)}%</strong>
+                        </div>
+                      )}
+
+                      {isYearly && (
+                        <div className="flex items-center gap-2.5 bg-indigo-50/80 px-4 py-2.5 rounded-xl border border-indigo-200 shadow-2xs">
+                          <span className="text-indigo-900 font-bold">YTD Rolling Average:</span>
+                          <strong className="text-indigo-950 text-sm font-black">
+                            {ytdAvgScore !== null ? `${ytdAvgScore}%` : 'In Progress'}
+                          </strong>
+                        </div>
+                      )}
+
+                      {!isYearly && activeEmpResponse?.managerScore !== undefined && (
+                        <div className="flex items-center gap-2.5 bg-teal-50 px-4 py-2.5 rounded-xl border border-teal-200 shadow-2xs">
+                          <span className="text-teal-800 font-bold">Manager Official Score:</span>
+                          <strong className="text-teal-950 text-sm font-black">{Number(activeEmpResponse.managerScore).toFixed(1)}%</strong>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-slate-500 font-semibold">Performance Tier:</span>
+                        <strong className="text-teal-900 text-sm font-black bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/70">
+                          {(() => {
+                            const r = getRatingForScore((isYearly ? activeMilestoneMgrScore : activeEmpResponse?.managerScore) ?? displayScore);
+                            return r.name;
+                          })()}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {isYearly ? (() => {
+                      if (isQuarterly) {
+                        const quarterLockInfo = getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords);
+                        if (quarterLockInfo.isLocked) {
+                          return (
+                            <div className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 shadow-2xs">
+                              <LockClosedIcon className="w-4 h-4 text-slate-500" />
+                              <span>{quarterLockInfo.lockReason || `${quarterName} is Locked`}</span>
+                            </div>
+                          );
+                        }
+                        if (quarterLockInfo.isSubmitted) {
+                          return (
+                            <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-50 text-amber-900 rounded-xl text-xs font-bold border border-amber-200 shadow-2xs">
+                              <ClockIcon className="w-4 h-4 text-amber-700" />
+                              <span>{quarterName} Deliverables Submitted to Manager (Under Review)</span>
+                            </div>
+                          );
+                        }
+                        if (quarterLockInfo.isApproved) {
+                          return (
+                            <div className="flex items-center gap-2 px-5 py-2.5 bg-emerald-50 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-200 shadow-2xs">
+                              <CheckCircleIcon className="w-4 h-4 text-emerald-700" />
+                              <span>{quarterName} Milestone Approved ({curQuarterlyRec?.managerScore != null ? `${Number(curQuarterlyRec.managerScore).toFixed(1)}%` : 'Approved'})</span>
+                            </div>
+                          );
+                        }
+
+                        const expandedCatIndices = filteredCategories
+                          .map((cat, idx) => {
+                            const isCatOpen = Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                            return isCatOpen ? idx : -1;
+                          })
+                          .filter(idx => idx !== -1);
+
+                        const currentActiveCatIdx = expandedCatIndices.length > 0
+                          ? Math.max(...expandedCatIndices)
+                          : 0;
+
+                        const allCatsOpen = filteredCategories.length > 0 && filteredCategories.every((cat, idx) => {
+                          return Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                        });
+
+                        const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
+
+                        return (
+                          <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                            {currentActiveCatIdx > 0 && !allCatsOpen && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const prevIdx = Math.max(currentActiveCatIdx - 1, 0);
+                                  const prevCat = filteredCategories[prevIdx];
+                                  if (prevCat) {
+                                    setExpandedCategories({ [prevCat.id]: true });
+                                  }
+                                }}
+                                className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                              >
+                                <ArrowLeftIcon className="w-3.5 h-3.5" />
+                                <span>Previous</span>
+                              </button>
+                            )}
+
+                            {!isLastCategory ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextIdx = Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1);
+                                  const nextCat = filteredCategories[nextIdx];
+                                  if (nextCat) {
+                                    setExpandedCategories({ [nextCat.id]: true });
+                                  }
+                                }}
+                                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                              >
+                                <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
+                                <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleYearlyQuarterSubmit(activeYearlyQuarterIndex)}
+                                disabled={isSubmittingEmp}
+                                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                              >
+                                {isSubmittingEmp ? (
+                                  <>
+                                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                    <span>Submitting {quarterName}...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircleIcon className="w-4 h-4" />
+                                    <span>Submit {quarterName} Deliverables to Manager</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      const isWeekly = activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length);
+                      const weekLockInfo = isWeekly ? getYearlyWeekLockInfo(activeYearlyWeekIndex, curWeeklyRecords) : null;
+                      const weekLabel = curWeeklyRec?.weekLabel || `Week ${activeYearlyWeekIndex}`;
+
+                      if (isWeekly && weekLockInfo) {
+                        if (weekLockInfo.isLocked) {
+                          return (
+                            <div className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 shadow-2xs">
+                              <LockClosedIcon className="w-4 h-4 text-slate-500" />
+                              <span>{weekLockInfo.lockReason || `${weekLabel} is Locked`}</span>
+                            </div>
+                          );
+                        }
+                        if (weekLockInfo.isSubmitted) {
+                          return (
+                            <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-50 text-amber-900 rounded-xl text-xs font-bold border border-amber-200 shadow-2xs">
+                              <ClockIcon className="w-4 h-4 text-amber-700" />
+                              <span>{weekLabel} Deliverables Submitted to Manager (Under Review)</span>
+                            </div>
+                          );
+                        }
+                        if (weekLockInfo.isApproved) {
+                          return (
+                            <div className="flex items-center gap-2 px-5 py-2.5 bg-emerald-50 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-200 shadow-2xs">
+                              <CheckCircleIcon className="w-4 h-4 text-emerald-700" />
+                              <span>{weekLabel} Milestone Approved ({curWeeklyRec?.managerScore != null ? `${Number(curWeeklyRec.managerScore).toFixed(1)}%` : 'Approved'})</span>
+                            </div>
+                          );
+                        }
+
+                        const expandedCatIndices = filteredCategories
+                          .map((cat, idx) => {
+                            const isCatOpen = Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                            return isCatOpen ? idx : -1;
+                          })
+                          .filter(idx => idx !== -1);
+
+                        const currentActiveCatIdx = expandedCatIndices.length > 0
+                          ? Math.max(...expandedCatIndices)
+                          : 0;
+
+                        const allCatsOpen = filteredCategories.length > 0 && filteredCategories.every((cat, idx) => {
+                          return Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                        });
+
+                        const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
+
+                        return (
+                          <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                            {currentActiveCatIdx > 0 && !allCatsOpen && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const prevIdx = Math.max(currentActiveCatIdx - 1, 0);
+                                  const prevCat = filteredCategories[prevIdx];
+                                  if (prevCat) {
+                                    setExpandedCategories({ [prevCat.id]: true });
+                                  }
+                                }}
+                                className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                              >
+                                <ArrowLeftIcon className="w-3.5 h-3.5" />
+                                <span>Previous</span>
+                              </button>
+                            )}
+
+                            {!isLastCategory ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextIdx = Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1);
+                                  const nextCat = filteredCategories[nextIdx];
+                                  if (nextCat) {
+                                    setExpandedCategories({ [nextCat.id]: true });
+                                  }
+                                }}
+                                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                              >
+                                <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
+                                <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleYearlyWeekSubmit(activeYearlyWeekIndex)}
+                                disabled={isSubmittingEmp}
+                                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                              >
+                                {isSubmittingEmp ? (
+                                  <>
+                                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                    <span>Submitting {weekLabel}...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircleIcon className="w-4 h-4" />
+                                    <span>Submit {weekLabel} Deliverables to Manager</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      const lockInfo = getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords);
+                      if (lockInfo.isLocked) {
+                        return (
+                          <div className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 shadow-2xs">
+                            <LockClosedIcon className="w-4 h-4 text-slate-500" />
+                            <span>{lockInfo.lockReason || `${monthName} is Locked`}</span>
+                          </div>
+                        );
+                      }
+                      if (lockInfo.isSubmitted) {
+                        return (
+                          <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-50 text-amber-900 rounded-xl text-xs font-bold border border-amber-200 shadow-2xs">
+                            <ClockIcon className="w-4 h-4 text-amber-700" />
+                            <span>{monthName} Deliverables Submitted to Manager (Under Review)</span>
+                          </div>
+                        );
+                      }
+                      if (lockInfo.isApproved) {
+                        return (
+                          <div className="flex items-center gap-2 px-5 py-2.5 bg-emerald-50 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-200 shadow-2xs">
+                            <CheckCircleIcon className="w-4 h-4 text-emerald-700" />
+                            <span>{monthName} Milestone Approved ({curYearlyRec?.managerScore != null ? `${Number(curYearlyRec.managerScore).toFixed(1)}%` : 'Approved'})</span>
+                          </div>
+                        );
+                      }
+
+                      const expandedCatIndices = filteredCategories
+                        .map((cat, idx) => {
+                          const isCatOpen = Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                          return isCatOpen ? idx : -1;
+                        })
+                        .filter(idx => idx !== -1);
+
+                      const currentActiveCatIdx = expandedCatIndices.length > 0
+                        ? Math.max(...expandedCatIndices)
+                        : 0;
+
+                      const allCatsOpen = filteredCategories.length > 0 && filteredCategories.every((cat, idx) => {
+                        return Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                      });
+
+                      const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
+
+                      return (
+                        <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                          <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                            {currentActiveCatIdx > 0 && !allCatsOpen && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const prevIdx = Math.max(currentActiveCatIdx - 1, 0);
+                                  const prevCat = filteredCategories[prevIdx];
+                                  if (prevCat) {
+                                    setExpandedCategories({ [prevCat.id]: true });
+                                  }
+                                }}
+                                className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                              >
+                                <ArrowLeftIcon className="w-3.5 h-3.5" />
+                                <span>Previous</span>
+                              </button>
+                            )}
+
+                            {!isLastCategory ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextIdx = Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1);
+                                  const nextCat = filteredCategories[nextIdx];
+                                  if (nextCat) {
+                                    setExpandedCategories({ [nextCat.id]: true });
+                                  }
+                                }}
+                                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                              >
+                                <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
+                                <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleYearlyMonthSubmit(activeYearlyFiscalMonth)}
+                                disabled={isSubmittingEmp}
+                                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                              >
+                                {isSubmittingEmp ? (
+                                  <>
+                                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                    <span>Submitting {monthName}...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircleIcon className="w-4 h-4" />
+                                    <span>Submit {monthName} Deliverables to Manager</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })() : (
+                      isEmpSubmitted ? (
+                        <div className="flex items-center gap-2 px-5 py-2.5 bg-teal-50 text-teal-800 rounded-xl text-xs font-bold border border-teal-200 shadow-2xs">
+                          <CheckCircleIcon className="w-4 h-4 text-teal-700" />
+                          <span>Submitted to Manager (Locked)</span>
+                        </div>
+                      ) : (() => {
+                        const expandedCatIndices = filteredCategories
+                          .map((cat, idx) => {
+                            const isCatOpen = Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                            return isCatOpen ? idx : -1;
+                          })
+                          .filter(idx => idx !== -1);
+
+                        const currentActiveCatIdx = expandedCatIndices.length > 0
+                          ? Math.max(...expandedCatIndices)
+                          : 0;
+
+                        const allCatsOpen = filteredCategories.length > 0 && filteredCategories.every((cat, idx) => {
+                          return Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                        });
+
+                        const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
+
+                        return (
+                          <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                            {currentActiveCatIdx > 0 && !allCatsOpen && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const prevIdx = Math.max(currentActiveCatIdx - 1, 0);
+                                  const prevCat = filteredCategories[prevIdx];
+                                  if (prevCat) {
+                                    setExpandedCategories({ [prevCat.id]: true });
+                                  }
+                                }}
+                                className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                              >
+                                <ArrowLeftIcon className="w-3.5 h-3.5" />
+                                <span>Previous</span>
+                              </button>
+                            )}
+
+                            {!isLastCategory ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextIdx = Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1);
+                                  const nextCat = filteredCategories[nextIdx];
+                                  if (nextCat) {
+                                    setExpandedCategories({ [nextCat.id]: true });
+                                  }
+                                }}
+                                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                              >
+                                <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
+                                <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={handleEmployeeSubmit}
+                                disabled={isSubmittingEmp}
+                                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                              >
+                                {isSubmittingEmp ? (
+                                  <>
+                                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                    <span>Submitting...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircleIcon className="w-4 h-4" />
+                                    <span>Submit Self-Assessment</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      );
+          })())}
+
+      {/* Official Performance Report View */}
+      {employeeSubTab === 'reports' && (!activeEmpResponse ? (
+        <div className="bg-white rounded-3xl border border-neutral-200/90 shadow-2xs p-8 sm:p-12 text-center space-y-5 animate-in fade-in duration-200 max-w-2xl mx-auto my-6">
+          <div className="w-16 h-16 mx-auto rounded-3xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 shadow-2xs">
+            <DocumentChartBarIcon className="w-8 h-8 text-slate-400" />
+          </div>
+
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold border border-slate-200">
+              <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+              No Official Report
+            </div>
+            <h3 className="text-xl font-black text-slate-900">
+              No Performance Report Available
+            </h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+              Official performance scorecards are generated and published only after a performance evaluation is assigned, submitted, and approved by your leadership team.
+            </p>
+          </div>
+        </div>
+      ) : ((() => {
+        // Filter, deduplicate, and sort employee responses with latest report/cycle on top
+        const rawUserResponses = responses.filter(isResponseForUser);
+        const uniqueEmpResponses: EvaluationResponse[] = [];
+        const seenKeys = new Set<string>();
+        rawUserResponses.forEach(r => {
+          const key = r.id || `${r.cycleId}_${(r as any).periodName || ''}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            uniqueEmpResponses.push(r);
+          }
+        });
+
+        const allEmpResponses = uniqueEmpResponses.sort((a, b) => {
+          const timeA = new Date(a.serviceManagerApprovedAt || a.managerReviewedAt || a.employeeSubmittedAt || a.createdAt || 0).getTime();
+          const timeB = new Date(b.serviceManagerApprovedAt || b.managerReviewedAt || b.employeeSubmittedAt || b.createdAt || 0).getTime();
+          if (timeB !== timeA) return timeB - timeA;
+          return (b.id || '').localeCompare(a.id || '');
+        });
+
+        // Calculate aggregate statistics for executive summary cards
+        const totalRecords = allEmpResponses.length;
+        const publishedCount = allEmpResponses.filter(r => r.status === 'approved' || r.status === 'sm_final_approval').length;
+        const inReviewCount = totalRecords - publishedCount;
+
+        let sumScores = 0;
+        let validScoresCount = 0;
+        allEmpResponses.forEach(r => {
+          const rawSelf = r.employeeOverallScore != null ? Number(r.employeeOverallScore) : 0;
+          const mgrSc = r.managerScore != null ? Number(r.managerScore) : (r.serviceManagerScore != null ? Number(r.serviceManagerScore) : null);
+          const finalSc = mgrSc ?? rawSelf;
+          if (finalSc > 0) {
+            sumScores += finalSc;
+            validScoresCount++;
+          }
+        });
+        const avgHistoricalScore = validScoresCount > 0 ? sumScores / validScoresCount : 0;
+        const latestResponse = allEmpResponses[0];
+        const latestScore = latestResponse
+          ? (latestResponse.managerScore != null
+            ? Number(latestResponse.managerScore)
+            : (latestResponse.serviceManagerScore != null
+              ? Number(latestResponse.serviceManagerScore)
+              : Number(latestResponse.employeeOverallScore ?? 0)))
+          : 0;
+        const latestRating = getRatingForScore(latestScore);
+
+        const filteredHistoryResponses = allEmpResponses.filter(r => {
+          const itemCycle = cycles.find(cy => cy.id === r.cycleId);
+          const itemTitle = itemCycle?.name || itemCycle?.periodName || (r as any).periodName || '';
+          const desc = itemCycle?.description || (r as any).description || '';
+          const matchesSearch = !historySearchQuery.trim() ||
+            itemTitle.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
+            desc.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
+            (r.periodName || '').toLowerCase().includes(historySearchQuery.toLowerCase());
+
+          const isPublished = r.status === 'approved' || r.status === 'sm_final_approval';
+          if (historyStatusFilter === 'published') return matchesSearch && isPublished;
+          if (historyStatusFilter === 'in_review') return matchesSearch && !isPublished;
+          return matchesSearch;
+        });
+
+        const getGradeBadgeColor = (gradeOrName: string | number) => {
+          const g = String(gradeOrName).toUpperCase();
+          if (g === 'A' || g === '5' || g.includes('OUTSTANDING')) return 'bg-emerald-50 text-emerald-800 border border-emerald-200';
+          if (g === 'B' || g === '4' || g.includes('EXCEED')) return 'bg-indigo-50 text-indigo-800 border border-indigo-200';
+          if (g === 'C' || g === '3' || (g.includes('MEET') && !g.includes('NOT'))) return 'bg-blue-50 text-blue-800 border border-blue-200';
+          if (g === 'D' || g === '2' || g.includes('IMPROVE')) return 'bg-amber-50 text-amber-800 border border-amber-200';
+          return 'bg-rose-50 text-rose-800 border border-rose-200';
+        };
+
+        return (
+          <div className="space-y-4 animate-in fade-in duration-200">
+            {/* 1. Sleek Compact Header Bar */}
+            <div className="bg-white rounded-2xl px-4 py-3 border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <AcademicCapIcon className="w-4 h-4" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+                    Evaluation History & Scorecards
+                  </h2>
+                  <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-teal-50 text-teal-800 border border-teal-200">
+                    {totalRecords} {totalRecords === 1 ? 'Record' : 'Records'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setEmployeeSubTab('worksheet')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer"
+                >
+                  <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Back to Worksheet</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 2. Performance Scorecards Table */}
+            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+              {/* Table Toolbar: Search + Filter Tabs */}
+              <div className="px-4 py-2.5 bg-slate-50/60 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="relative flex-1 max-w-sm">
+                  <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search period or form..."
+                    value={historySearchQuery}
+                    onChange={e => setHistorySearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-teal-700 text-slate-800 placeholder-slate-400 shadow-2xs"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                  {(['all', 'published', 'in_review'] as const).map(tabKey => {
+                    const count = tabKey === 'all' ? totalRecords : tabKey === 'published' ? publishedCount : inReviewCount;
+                    if (count === 0 && tabKey !== 'all') return null;
+                    const label = tabKey === 'all' ? 'All' : tabKey === 'published' ? 'Published' : 'In Review';
+                    const isActive = historyStatusFilter === tabKey;
+                    return (
+                      <button
+                        key={tabKey}
+                        type="button"
+                        onClick={() => setHistoryStatusFilter(tabKey)}
+                        className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${isActive
+                          ? 'bg-teal-700 text-white shadow-2xs'
+                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                          }`}
+                      >
+                        {label} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-bold text-slate-500 tracking-wider select-none">
+                    <tr>
+                      <th className="px-5 py-3 text-left">Evaluation Period & Form</th>
+                      <th className="px-3 py-3 text-center">Status</th>
+                      <th className="px-3 py-3 text-center">Self Score</th>
+                      <th className="px-3 py-3 text-center">Manager Score</th>
+                      <th className="px-3 py-3 text-center">Final Grade</th>
+                      <th className="px-3 py-3 text-center">Override</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {filteredHistoryResponses.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center py-10 text-slate-400 text-xs font-medium">
+                          No evaluation records match your filter criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredHistoryResponses.map((r, idx) => {
+                        const itemCycle = cycles.find(cy => cy.id === r.cycleId);
+                        const itemTitle = itemCycle?.name || itemCycle?.periodName || (r as any).periodName || `Performance Evaluation Stage ${filteredHistoryResponses.length - idx}`;
+                        const itemCategories = (itemCycle?.categories && itemCycle.categories.length > 0) ? itemCycle.categories : activeCategories;
+
+                        const resolvePeriodTime = () => {
+                          const desc = String(itemCycle?.description || (r as any).description || '').trim();
+                          const rawPeriod = String(itemCycle?.periodName || (r as any).periodName || (r as any).reviewPeriod || '').trim();
+
+                          if (itemCycle?.startDate && itemCycle?.endDate && itemCycle.startDate === itemCycle.endDate) {
+                            return `Daily (${formatDisplayDate(itemCycle.startDate)})`;
+                          }
+                          if (itemCycle?.startDate && itemCycle?.endDate) {
+                            return `${formatDisplayDate(itemCycle.startDate)} – ${formatDisplayDate(itemCycle.endDate)}`;
+                          }
+                          if (desc && desc.toLowerCase() !== (itemCycle?.name || '').toLowerCase()) {
+                            return desc.replace(/^\(/, '').replace(/\)$/, '').trim();
+                          }
+                          if (rawPeriod && rawPeriod.toLowerCase() !== (itemCycle?.name || '').toLowerCase()) {
+                            return rawPeriod.replace(/^\(/, '').replace(/\)$/, '').trim();
+                          }
+                          if (r.createdAt) {
+                            return formatDisplayDate(r.createdAt);
+                          }
+                          return `Q${currentQuarter} ${currentYear}`;
+                        };
+
+                        const itemPeriodTime = resolvePeriodTime();
+
+                        const isYearly = isYearlyResponse(r);
+                        let itemSelfScore: number | null = null;
+                        let itemMgrScore: number | null = null;
+
+                        if (isYearly) {
+                          const isWeekly = r.milestone_frequency === 'weekly' || ((r.weekly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.quarterly_records || []).length);
+                          const isQuarterly = r.milestone_frequency === 'quarterly' || ((r.quarterly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.weekly_records || []).length);
+
+                          if (isQuarterly) {
+                            const qRecs = r.quarterly_records || [];
+                            const appQ = qRecs.filter(q => q.status === 'manager_approved' && q.managerScore != null);
+                            if (appQ.length > 0) {
+                              itemMgrScore = Number((appQ.reduce((s, q) => s + (Number(q.managerScore) || 0), 0) / appQ.length).toFixed(1));
+                            }
+                            const subQ = qRecs.filter(q => q.status === 'submitted_to_manager' || q.status === 'manager_approved');
+                            if (subQ.length > 0) {
+                              let totSelf = 0, cnt = 0;
+                              subQ.forEach(q => {
+                                const kpis = Object.values(q.kpiEntries || {});
+                                let qTot = 0, qCnt = 0;
+                                kpis.forEach((k: any) => {
+                                  if (k?.earnedScore != null && Number(k.earnedScore) > 0) { qTot += Number(k.earnedScore); qCnt++; }
+                                });
+                                if (qCnt > 0) { totSelf += (qTot / qCnt); cnt++; }
+                              });
+                              if (cnt > 0) itemSelfScore = Number((totSelf / cnt).toFixed(1));
+                            }
+                          } else if (isWeekly) {
+                            const wRecs = r.weekly_records || [];
+                            const appW = wRecs.filter(w => w.status === 'manager_approved' && w.managerScore != null);
+                            if (appW.length > 0) {
+                              itemMgrScore = Number((appW.reduce((s, w) => s + (Number(w.managerScore) || 0), 0) / appW.length).toFixed(1));
+                            }
+                            const subW = wRecs.filter(w => w.status === 'submitted_to_manager' || w.status === 'manager_approved');
+                            if (subW.length > 0) {
+                              let totSelf = 0, cnt = 0;
+                              subW.forEach(w => {
+                                const kpis = Object.values(w.kpiEntries || {});
+                                let wTot = 0, wCnt = 0;
+                                kpis.forEach((k: any) => {
+                                  if (k?.earnedScore != null && Number(k.earnedScore) > 0) { wTot += Number(k.earnedScore); wCnt++; }
+                                });
+                                if (wCnt > 0) { totSelf += (wTot / wCnt); cnt++; }
+                              });
+                              if (cnt > 0) itemSelfScore = Number((totSelf / cnt).toFixed(1));
+                            }
+                          } else {
+                            // Monthly
+                            const mRecs = r.monthly_records || [];
+                            const appM = mRecs.filter(m => m.status === 'manager_approved' && m.managerScore != null);
+                            if (appM.length > 0) {
+                              itemMgrScore = Number((appM.reduce((s, m) => s + (Number(m.managerScore) || 0), 0) / appM.length).toFixed(1));
+                            }
+                            const subM = mRecs.filter(m => m.status === 'submitted_to_manager' || m.status === 'manager_approved');
+                            if (subM.length > 0) {
+                              let totSelf = 0, cnt = 0;
+                              subM.forEach(m => {
+                                const kpis = Object.values(m.kpiEntries || {});
+                                let mTot = 0, mCnt = 0;
+                                kpis.forEach((k: any) => {
+                                  if (k?.earnedScore != null && Number(k.earnedScore) > 0) { mTot += Number(k.earnedScore); mCnt++; }
+                                });
+                                if (mCnt > 0) { totSelf += (mTot / mCnt); cnt++; }
+                              });
+                              if (cnt > 0) itemSelfScore = Number((totSelf / cnt).toFixed(1));
+                            }
+                          }
+                        } else {
+                          // Standard single-period response
+                          if (r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0) {
+                            itemSelfScore = Number(r.employeeOverallScore);
+                          } else if (r.kpiResponses && Object.keys(r.kpiResponses).length > 0) {
+                            const kpis = Object.values(r.kpiResponses);
+                            let tot = 0, cnt = 0;
+                            kpis.forEach((item: any) => {
+                              const sc = item?.earnedScore ?? item?.earned_score ?? item?.score;
+                              if (sc !== undefined && sc !== null && Number(sc) > 0) {
+                                tot += Number(sc);
+                                cnt++;
+                              }
+                            });
+                            if (cnt > 0) itemSelfScore = Number((tot / cnt).toFixed(1));
+                          }
+                          if (r.managerScore != null) {
+                            itemMgrScore = Number(r.managerScore);
+                          } else if (r.serviceManagerScore != null) {
+                            itemMgrScore = Number(r.serviceManagerScore);
+                          }
+                        }
+
+                        const itemFinalScore = itemMgrScore ?? itemSelfScore;
+                        const itemRating = itemFinalScore !== null ? getRatingForScore(itemFinalScore) : null;
+                        const itemIsApproved = r.status === 'approved' || r.status === 'sm_final_approval';
+                        const isAuditOpen = historyAuditBreakdownOpen[r.id] === true;
+
+                        return (
+                          <React.Fragment key={r.id || idx}>
+                            <tr className={`hover:bg-slate-50/80 transition-colors ${isAuditOpen ? 'bg-teal-50/20' : ''}`}>
+                              {/* 1. Period & Title */}
+                              <td className="px-5 py-3 align-middle">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="font-bold text-xs text-slate-900">{itemTitle}</span>
+                                  <span className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
+                                    <CalendarDaysIcon className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                                    {itemPeriodTime}
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* 2. Status */}
+                              <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
+                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${itemIsApproved
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                                  }`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${itemIsApproved ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                  {itemIsApproved ? 'Published' : 'In Review'}
+                                </span>
+                              </td>
+
+                              {/* 3. Self Score */}
+                              <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
+                                {itemSelfScore !== null ? (
+                                  <span className="font-mono font-bold text-xs text-slate-800">
+                                    {itemSelfScore.toFixed(1)}%
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 font-medium text-xs">—</span>
+                                )}
+                              </td>
+
+                              {/* 4. Manager Score */}
+                              <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
+                                {itemMgrScore !== null ? (
+                                  <span className="font-mono font-bold text-xs text-slate-800">
+                                    {itemMgrScore.toFixed(1)}%
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 font-medium text-xs">Pending</span>
+                                )}
+                              </td>
+
+                              {/* 5. Final Grade Badge */}
+                              <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
+                                {itemRating && itemFinalScore !== null ? (
+                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-bold text-xs border ${getGradeBadgeColor(itemRating.name)}`}>
+                                    <span className="font-bold">{itemRating.name}</span>
+                                    <span className="opacity-90 font-mono text-[10px]">({itemFinalScore.toFixed(0)}%)</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold text-slate-500 bg-slate-100 border border-slate-200">
+                                    In Progress
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* 6. Override */}
+                              <td className="px-3 py-3 align-middle text-center whitespace-nowrap">
+                                {itemMgrScore !== null && itemSelfScore !== null ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200">
+                                    {itemMgrScore === itemSelfScore
+                                      ? '100% Aligned'
+                                      : `${itemMgrScore > itemSelfScore ? '+' : ''}${(itemMgrScore - itemSelfScore).toFixed(1)}% vs Self`}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-xs">—</span>
+                                )}
+                              </td>
+
+                              {/* 7. Actions */}
+                              <td className="px-4 py-3 align-middle text-right whitespace-nowrap">
+                                <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const summary = `PERFORMANCE REPORT: ${itemTitle}\nPeriod: ${itemPeriodTime}\nSelf Score: ${itemSelfScore !== null ? `${itemSelfScore.toFixed(1)}%` : '—'}\nManager Score: ${itemMgrScore !== null ? `${itemMgrScore.toFixed(1)}%` : 'Pending'}\nFinal Grade: ${itemRating?.name || 'In Progress'}`;
+                                      navigator.clipboard.writeText(summary);
+                                      alert('Performance Summary copied!');
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                                    title="Copy Summary"
+                                  >
+                                    <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setHistoryAuditBreakdownOpen(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${isAuditOpen
+                                      ? 'bg-teal-700 text-white shadow-2xs'
+                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                      }`}
+                                  >
+                                    <span>{isAuditOpen ? 'Hide' : 'Details'}</span>
+                                    <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-200 ${isAuditOpen ? 'rotate-180' : ''}`} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+
+                            {/* Collapsible Deliverable Audit Drawer */}
+                            {isAuditOpen && (() => {
+                              const isYearly = isYearlyResponse(r);
+                              const isWeekly = isYearly && (r.milestone_frequency === 'weekly' || ((r.weekly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.quarterly_records || []).length));
+                              const isQuarterly = isYearly && (r.milestone_frequency === 'quarterly' || ((r.quarterly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.weekly_records || []).length));
+                              const isMonthly = isYearly && !isWeekly && !isQuarterly;
+
+                              const curQuarterlyRecs = r.quarterly_records || [];
+                              const curMonthlyRecs = r.monthly_records || [];
+                              const curWeeklyRecs = r.weekly_records || [];
+                              const todayStr = getLocalTodayDateString();
+                              const currentActiveWeekRec = curWeeklyRecs.find(w => Boolean(w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate)) || curWeeklyRecs[0];
+
+                              // 1. Quarter Selection
+                              const selectedQ = historyQuarterSelection[r.id] || (isWeekly ? (currentActiveWeekRec?.quarter || 2) : currentQuarter);
+                              const activeQRec = curQuarterlyRecs.find(q => q.quarterIndex === selectedQ) || curQuarterlyRecs[0];
+
+                              // 2. Month Selection (Filtered to selected Quarter)
+                              const monthsInQuarter = FISCAL_MONTHS.filter(m => m.quarter === selectedQ);
+                              const defaultMonthForQ = monthsInQuarter[monthsInQuarter.length - 1]?.monthIndex || 6;
+                              const selectedM = historyMonthSelection[r.id] && monthsInQuarter.some(m => m.monthIndex === historyMonthSelection[r.id])
+                                ? historyMonthSelection[r.id]
+                                : defaultMonthForQ;
+                              const activeMRec = curMonthlyRecs.find(m => m.monthIndex === selectedM) || curMonthlyRecs[0];
+
+                              // 3. Week Selection (Filtered to selected Month)
+                              const weeksInMonth = curWeeklyRecs.filter(w => {
+                                if (w.quarter && w.quarter !== selectedQ) return false;
+                                if (!w.startDate) return true;
+                                const startD = new Date(w.startDate);
+                                const calM = startD.getMonth() + 1;
+                                const fiscalM = calM >= 4 ? calM - 3 : calM + 9;
+                                return fiscalM === selectedM;
+                              });
+                              const activeWeeksList = weeksInMonth.length > 0 ? weeksInMonth : curWeeklyRecs.filter(w => (w.quarter || 1) === selectedQ);
+                              const selectedW = historyWeekSelection[r.id] && activeWeeksList.some(w => w.weekIndex === historyWeekSelection[r.id])
+                                ? historyWeekSelection[r.id]
+                                : (activeWeeksList[0]?.weekIndex || 1);
+                              const activeWRec = curWeeklyRecs.find(w => w.weekIndex === selectedW) || curWeeklyRecs[0];
+
+                              const currentPeriodEntries: Record<string, any> = isYearly
+                                ? (isQuarterly ? (activeQRec?.kpiEntries || {}) : isMonthly ? (activeMRec?.kpiEntries || {}) : (activeWRec?.kpiEntries || {}))
+                                : (r.kpiResponses || {});
+
+                              const currentPeriodRemarks = isYearly
+                                ? (isQuarterly ? activeQRec?.managerRemarks : isMonthly ? activeMRec?.managerRemarks : activeWRec?.managerRemarks)
+                                : r.managerRemarks;
+
+                              return (
+                                <tr>
+                                  <td colSpan={7} className="p-4 bg-slate-50/70 border-y border-slate-200">
+                                    <div className="space-y-3.5">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                                          <TableCellsIcon className="w-4 h-4 text-teal-700" />
+                                          Deliverable Audit Breakdown ({itemTitle})
+                                        </h4>
+                                        <button
+                                          type="button"
+                                          onClick={() => setHistoryAuditBreakdownOpen(prev => ({ ...prev, [r.id]: false }))}
+                                          className="text-[10px] font-bold text-slate-500 hover:text-slate-700 bg-white px-2.5 py-0.5 rounded-full border border-slate-200 transition cursor-pointer shadow-2xs"
+                                        >
+                                          Close ▲
+                                        </button>
+                                      </div>
+
+                                      {/* Interactive Cadence Stage / Period Dropdown Selector */}
+                                      {isQuarterly && (
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs">
+                                          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                            <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1.5">
+                                              <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                                              Select Quarter / Stage:
+                                            </span>
+                                            <select
+                                              value={selectedQ}
+                                              onChange={e => setHistoryQuarterSelection(prev => ({ ...prev, [r.id]: Number(e.target.value) }))}
+                                              className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer max-w-sm shadow-2xs"
+                                            >
+                                              {FISCAL_QUARTERS.map(q => {
+                                                const rec = curQuarterlyRecs.find(qr => qr.quarterIndex === q.quarterIndex);
+                                                const score = rec?.managerScore != null ? `${Number(rec.managerScore).toFixed(0)}%` : (rec?.status === 'manager_approved' ? 'Approved' : rec?.status === 'submitted_to_manager' ? 'Under Review' : 'Pending');
+                                                return (
+                                                  <option key={q.quarterKey} value={q.quarterIndex}>
+                                                    {q.quarterKey.toUpperCase()} ({q.monthsIncluded}) — {score}
+                                                  </option>
+                                                );
+                                              })}
+                                            </select>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-[11px] font-semibold text-slate-500">Stage Status:</span>
+                                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${activeQRec?.status === 'manager_approved'
+                                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                              : activeQRec?.status === 'submitted_to_manager'
+                                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                                              }`}>
+                                              {activeQRec?.status === 'manager_approved' ? `Approved (${Number(activeQRec?.managerScore || 0).toFixed(0)}%)` : activeQRec?.status === 'submitted_to_manager' ? 'Under Review' : 'Pending'}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {isMonthly && (
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs">
+                                          <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+                                            {/* Level 1: Quarter */}
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-[11px] font-bold text-slate-500 uppercase">Quarter:</span>
+                                              <select
+                                                value={selectedQ}
+                                                onChange={e => {
+                                                  const newQ = Number(e.target.value);
+                                                  setHistoryQuarterSelection(prev => ({ ...prev, [r.id]: newQ }));
+                                                  const mInQ = FISCAL_MONTHS.filter(m => m.quarter === newQ);
+                                                  if (mInQ.length > 0) {
+                                                    setHistoryMonthSelection(prev => ({ ...prev, [r.id]: mInQ[0].monthIndex }));
+                                                  }
+                                                }}
+                                                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-2xs"
+                                              >
+                                                {FISCAL_QUARTERS.map(q => (
+                                                  <option key={q.quarterKey} value={q.quarterIndex}>
+                                                    {q.quarterKey.toUpperCase()} ({q.monthsIncluded})
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </div>
+
+                                            {/* Level 2: Month in that Quarter */}
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-[11px] font-bold text-slate-500 uppercase">Month:</span>
+                                              <select
+                                                value={selectedM}
+                                                onChange={e => setHistoryMonthSelection(prev => ({ ...prev, [r.id]: Number(e.target.value) }))}
+                                                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-2xs"
+                                              >
+                                                {monthsInQuarter.map(m => {
+                                                  const rec = curMonthlyRecs.find(mr => mr.monthIndex === m.monthIndex);
+                                                  const score = rec?.managerScore != null ? `${Number(rec.managerScore).toFixed(0)}%` : (rec?.status === 'manager_approved' ? 'Approved' : rec?.status === 'submitted_to_manager' ? 'Under Review' : 'Pending');
+                                                  return (
+                                                    <option key={m.monthKey} value={m.monthIndex}>
+                                                      {m.monthName} — {score}
+                                                    </option>
+                                                  );
+                                                })}
+                                              </select>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <span className="text-[11px] font-semibold text-slate-500">Status:</span>
+                                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${activeMRec?.status === 'manager_approved'
+                                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                              : activeMRec?.status === 'submitted_to_manager'
+                                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                                              }`}>
+                                              {activeMRec?.status === 'manager_approved' ? `Approved (${Number(activeMRec?.managerScore || 0).toFixed(0)}%)` : activeMRec?.status === 'submitted_to_manager' ? 'Under Review' : 'Pending'}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {isWeekly && (
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs">
+                                          <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+                                            {/* Level 1: Quarter */}
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-[11px] font-bold text-slate-500 uppercase">Quarter:</span>
+                                              <select
+                                                value={selectedQ}
+                                                onChange={e => {
+                                                  const newQ = Number(e.target.value);
+                                                  setHistoryQuarterSelection(prev => ({ ...prev, [r.id]: newQ }));
+                                                  const mInQ = FISCAL_MONTHS.filter(m => m.quarter === newQ);
+                                                  if (mInQ.length > 0) {
+                                                    const newM = mInQ[0].monthIndex;
+                                                    setHistoryMonthSelection(prev => ({ ...prev, [r.id]: newM }));
+                                                    const wInM = curWeeklyRecs.filter(w => {
+                                                      if (w.quarter && w.quarter !== newQ) return false;
+                                                      if (!w.startDate) return true;
+                                                      const sD = new Date(w.startDate);
+                                                      const cM = sD.getMonth() + 1;
+                                                      const fM = cM >= 4 ? cM - 3 : cM + 9;
+                                                      return fM === newM;
+                                                    });
+                                                    if (wInM.length > 0) {
+                                                      setHistoryWeekSelection(prev => ({ ...prev, [r.id]: wInM[0].weekIndex }));
+                                                    }
+                                                  }
+                                                }}
+                                                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-2xs"
+                                              >
+                                                {FISCAL_QUARTERS.map(q => (
+                                                  <option key={q.quarterKey} value={q.quarterIndex}>
+                                                    {q.quarterKey.toUpperCase()} ({q.monthsIncluded})
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </div>
+
+                                            {/* Level 2: Month in Quarter */}
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-[11px] font-bold text-slate-500 uppercase">Month:</span>
+                                              <select
+                                                value={selectedM}
+                                                onChange={e => {
+                                                  const newM = Number(e.target.value);
+                                                  setHistoryMonthSelection(prev => ({ ...prev, [r.id]: newM }));
+                                                  const wInM = curWeeklyRecs.filter(w => {
+                                                    if (w.quarter && w.quarter !== selectedQ) return false;
+                                                    if (!w.startDate) return true;
+                                                    const sD = new Date(w.startDate);
+                                                    const cM = sD.getMonth() + 1;
+                                                    const fM = cM >= 4 ? cM - 3 : cM + 9;
+                                                    return fM === newM;
+                                                  });
+                                                  if (wInM.length > 0) {
+                                                    setHistoryWeekSelection(prev => ({ ...prev, [r.id]: wInM[0].weekIndex }));
+                                                  }
+                                                }}
+                                                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-2xs"
+                                              >
+                                                {monthsInQuarter.map(m => (
+                                                  <option key={m.monthKey} value={m.monthIndex}>
+                                                    {m.monthName}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </div>
+
+                                            {/* Level 3: Week in Month */}
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-[11px] font-bold text-slate-500 uppercase">Week:</span>
+                                              <select
+                                                value={selectedW}
+                                                onChange={e => setHistoryWeekSelection(prev => ({ ...prev, [r.id]: Number(e.target.value) }))}
+                                                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-2xs"
+                                              >
+                                                {activeWeeksList.map(w => {
+                                                  const score = w.managerScore != null ? `${Number(w.managerScore).toFixed(0)}%` : (w.status === 'manager_approved' ? 'Approved' : w.status === 'submitted_to_manager' ? 'Under Review' : 'Pending');
+                                                  return (
+                                                    <option key={w.weekIndex} value={w.weekIndex}>
+                                                      {w.weekLabel || `Week ${w.weekIndex}`} — {score}
+                                                    </option>
+                                                  );
+                                                })}
+                                              </select>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <span className="text-[11px] font-semibold text-slate-500">Status:</span>
+                                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${activeWRec?.status === 'manager_approved'
+                                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                              : activeWRec?.status === 'submitted_to_manager'
+                                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                                              }`}>
+                                              {activeWRec?.status === 'manager_approved' ? `Approved (${Number(activeWRec?.managerScore || 0).toFixed(0)}%)` : activeWRec?.status === 'submitted_to_manager' ? 'Under Review' : 'Pending'}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      <div className="rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
+                                        {itemCategories.map((cat, catIdx) => {
+                                          const catEarned = cat.kpis.reduce((sum, k) => {
+                                            const ent = currentPeriodEntries[k.id];
+                                            return sum + (ent?.earnedScore !== undefined && ent?.earnedScore !== null ? Number(ent.earnedScore) : 0);
+                                          }, 0);
+                                          const isCatExpanded = Boolean(expandedAuditCategories[`${r.id}_${cat.id || catIdx}`]);
+
+                                          return (
+                                            <div key={cat.id} className="bg-white">
+                                              <div
+                                                onClick={() => setExpandedAuditCategories(prev => ({ ...prev, [`${r.id}_${cat.id || catIdx}`]: !prev[`${r.id}_${cat.id || catIdx}`] }))}
+                                                className="bg-slate-50 hover:bg-slate-100/80 text-slate-800 px-4 py-2 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
+                                              >
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                  <span className="p-0.5 rounded text-slate-400 group-hover:text-slate-700 transition-colors shrink-0">
+                                                    <ChevronDownIcon className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isCatExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                                                  </span>
+                                                  <span className="font-semibold text-xs text-slate-900 truncate">
+                                                    {catIdx + 1}. {cat.name}
+                                                  </span>
+                                                  <span className="text-[10px] text-slate-400">
+                                                    ({cat.kpis.length})
+                                                  </span>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                  <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
+                                                    Earned: <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
+                                                  </span>
+                                                </div>
+                                              </div>
+
+                                              {isCatExpanded && (
+                                                <div className="overflow-x-auto border-t border-slate-200/80">
+                                                  <table className="w-full text-left text-xs border-collapse">
+                                                    <thead className="bg-slate-100/80 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider select-none">
+                                                      <tr>
+                                                        <th className="px-3.5 py-2 text-left font-bold">KPI Metric</th>
+                                                        <th className="px-2 py-2 text-center font-bold">Weight</th>
+                                                        <th className="px-2.5 py-2 text-center font-bold">Target</th>
+                                                        <th className="px-3 py-2 text-center font-bold">Self Actual</th>
+                                                        <th className="px-2.5 py-2 text-center font-bold">Self Score</th>
+                                                        <th className="px-3 py-2 text-center font-bold bg-teal-50/60 text-teal-950 border-l border-teal-100">Mgr Actual</th>
+                                                        <th className="px-2.5 py-2 text-center font-bold bg-teal-50/60 text-teal-950">Mgr Score</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                                      {cat.kpis.map((kpi, kIdx) => {
+                                                        const selfRes = currentPeriodEntries[kpi.id];
+                                                        const selfActual = selfRes?.actualValue !== undefined && selfRes?.actualValue !== null && selfRes?.actualValue !== ''
+                                                          ? selfRes.actualValue
+                                                          : '—';
+                                                        const selfScore = selfRes?.earnedScore !== undefined && selfRes?.earnedScore !== null ? Number(selfRes.earnedScore) : 0;
+                                                        const selfRemarks = selfRes?.employeeRemarks || (selfRes as any)?.remarks || '';
+
+                                                        const rAny = r as any;
+                                                        const mgrActual = (rAny.managerKpiActuals && rAny.managerKpiActuals[kpi.id] !== undefined)
+                                                          ? rAny.managerKpiActuals[kpi.id]
+                                                          : (selfRes?.managerActualValue !== undefined && selfRes?.managerActualValue !== null && selfRes?.managerActualValue !== ''
+                                                            ? selfRes.managerActualValue
+                                                            : '—');
+                                                        const mgrRemarks = (rAny.managerKpiRemarks && rAny.managerKpiRemarks[kpi.id] !== undefined)
+                                                          ? rAny.managerKpiRemarks[kpi.id]
+                                                          : (selfRes?.managerRemarks || '');
+                                                        const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null ? Number(selfRes.managerScore) : null;
+
+                                                        const targetDisplay = (() => {
+                                                          const t = String(kpi.targetFromManager !== undefined && kpi.targetFromManager !== '' ? kpi.targetFromManager : (kpi.targetValue ?? '')).trim();
+                                                          const u = String(kpi.unit || '').trim();
+                                                          if (!t) return '—';
+                                                          if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
+                                                          return `${t} ${u}`;
+                                                        })();
+
+                                                        return (
+                                                          <tr
+                                                            key={kpi.id || kIdx}
+                                                            className="group/metricRow hover:bg-slate-50/80 transition-colors"
+                                                          >
+                                                            <td className="px-3.5 py-2 align-middle">
+                                                              <div className="flex flex-col gap-0.5">
+                                                                <span className="font-semibold text-slate-800 text-xs">{kpi.name}</span>
+                                                                {kpi.description && (
+                                                                  <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{kpi.description}</div>
+                                                                )}
+                                                              </div>
+                                                            </td>
+                                                            <td className="px-2 py-2 text-center align-middle font-mono font-medium text-slate-600 whitespace-nowrap">
+                                                              {kpi.weightage || Math.round(cat.weightage / Math.max(1, cat.kpis.length))}%
+                                                            </td>
+                                                            <td className="px-2.5 py-2 text-center align-middle font-mono text-slate-600 whitespace-nowrap">
+                                                              {targetDisplay}
+                                                            </td>
+                                                            <td className="px-3 py-2 text-center align-middle text-slate-800 whitespace-nowrap font-medium">
+                                                              <div className="flex flex-col items-center justify-center gap-1">
+                                                                <span>{selfActual} {kpi.unit || ''}</span>
+                                                                {(selfRemarks?.trim() || mgrRemarks?.trim()) && (
+                                                                  <DeliverableRemarksHover
+                                                                    selfRemarks={selfRemarks}
+                                                                    mgrRemarks={mgrRemarks}
+                                                                    align="center"
+                                                                  >
+                                                                    <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap cursor-pointer">
+                                                                      {selfRemarks?.trim() && (
+                                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0">
+                                                                          <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
+                                                                          <span>Emp</span>
+                                                                        </span>
+                                                                      )}
+                                                                      {mgrRemarks?.trim() && (
+                                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0">
+                                                                          <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
+                                                                          <span>Mgr</span>
+                                                                        </span>
+                                                                      )}
+                                                                    </div>
+                                                                  </DeliverableRemarksHover>
+                                                                )}
+                                                              </div>
+                                                            </td>
+                                                            <td
+                                                              className="px-2.5 py-2 text-center align-middle font-bold text-slate-900 whitespace-nowrap"
+                                                            >
+                                                              <div className="inline-flex items-center gap-1">
+                                                                <span>{selfScore.toFixed(1)}%</span>
+                                                                {selfRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-500/70 shrink-0" />}
+                                                              </div>
+                                                            </td>
+                                                            <td className="px-3 py-2 text-center align-middle bg-teal-50/30 font-medium text-slate-900 border-l border-teal-100 whitespace-nowrap">
+                                                              {mgrActual !== '—' ? `${mgrActual} ${kpi.unit || ''}` : '—'}
+                                                            </td>
+                                                            <td
+                                                              className="px-2.5 py-2 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-teal-950"
+                                                            >
+                                                              <div className="inline-flex items-center gap-1">
+                                                                <span>{mgrScore !== null ? `${mgrScore.toFixed(1)}%` : '—'}</span>
+                                                                {mgrRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />}
+                                                              </div>
+                                                            </td>
+                                                          </tr>
+                                                        );
+                                                      })}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {/* Leadership Feedback Box inside drawer */}
+                                      {currentPeriodRemarks && (
+                                        <div className="p-3 bg-teal-50 rounded-xl border border-teal-200/80 space-y-1">
+                                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-teal-900 uppercase">
+                                            <SparklesIcon className="w-3.5 h-3.5 text-teal-700" />
+                                            Leadership Feedback
+                                          </div>
+                                          <p className="text-xs text-teal-950 leading-relaxed italic">
+                                            "{currentPeriodRemarks}"
+                                          </p>
+                                        </div>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
+                              );
+                            })()}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
-                                {/* Collapsible Deliverable Audit Drawer */}
-                                {isAuditOpen && (
-                                  <tr>
-                                    <td colSpan={7} className="p-4 bg-slate-50/70 border-y border-slate-200">
-                                      <div className="space-y-3">
-                                        <div className="flex items-center justify-between">
-                                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                                            <TableCellsIcon className="w-4 h-4 text-teal-700" />
-                                            Deliverable Audit Breakdown ({itemTitle})
-                                          </h4>
-                                          <button
-                                            type="button"
-                                            onClick={() => setHistoryAuditBreakdownOpen(prev => ({ ...prev, [r.id]: false }))}
-                                            className="text-[10px] font-bold text-slate-500 hover:text-slate-700 bg-white px-2.5 py-0.5 rounded-full border border-slate-200 transition cursor-pointer"
-                                          >
-                                            Close ▲
-                                          </button>
-                                        </div>
-
-                                        <div className="rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
-                                          {itemCategories.map((cat, catIdx) => {
-                                            const catEarned = cat.kpis.reduce((sum, k) => {
-                                              const selfRes = r.kpiResponses?.[k.id];
-                                              return sum + (selfRes?.earnedScore !== undefined ? Number(selfRes.earnedScore) : 0);
-                                            }, 0);
-                                            const isCatExpanded = Boolean(expandedAuditCategories[`${r.id}_${cat.id || catIdx}`]);
-
-                                            return (
-                                              <div key={cat.id} className="bg-white">
-                                                <div
-                                                  onClick={() => setExpandedAuditCategories(prev => ({ ...prev, [`${r.id}_${cat.id || catIdx}`]: !prev[`${r.id}_${cat.id || catIdx}`] }))}
-                                                  className="bg-slate-50 hover:bg-slate-100/80 text-slate-800 px-4 py-2 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
-                                                >
-                                                  <div className="flex items-center gap-2 min-w-0">
-                                                    <span className="p-0.5 rounded text-slate-400 group-hover:text-slate-700 transition-colors shrink-0">
-                                                      <ChevronDownIcon className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isCatExpanded ? 'rotate-0' : '-rotate-90'}`} />
-                                                    </span>
-                                                    <span className="font-semibold text-xs text-slate-900 truncate">
-                                                      {catIdx + 1}. {cat.name}
-                                                    </span>
-                                                    <span className="text-[10px] text-slate-400">
-                                                      ({cat.kpis.length})
-                                                    </span>
-                                                  </div>
-                                                  <div className="flex items-center gap-2 shrink-0">
-                                                    <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
-                                                      Earned: <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
-                                                    </span>
-                                                  </div>
-                                                </div>
-
-                                                {isCatExpanded && (
-                                                  <div className="overflow-x-auto border-t border-slate-200/80">
-                                                    <table className="w-full text-left text-xs border-collapse">
-                                                      <thead className="bg-slate-100/80 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider select-none">
-                                                        <tr>
-                                                          <th className="px-3.5 py-2 text-left font-bold">KPI Metric</th>
-                                                          <th className="px-2 py-2 text-center font-bold">Weight</th>
-                                                          <th className="px-2.5 py-2 text-center font-bold">Target</th>
-                                                          <th className="px-3 py-2 text-center font-bold">Self Actual</th>
-                                                          <th className="px-2.5 py-2 text-center font-bold">Self Score</th>
-                                                          <th className="px-3 py-2 text-center font-bold bg-teal-50/60 text-teal-950 border-l border-teal-100">Mgr Actual</th>
-                                                          <th className="px-2.5 py-2 text-center font-bold bg-teal-50/60 text-teal-950">Mgr Score</th>
-                                                        </tr>
-                                                      </thead>
-                                                      <tbody className="divide-y divide-slate-100 bg-white">
-                                                        {cat.kpis.map((kpi, kIdx) => {
-                                                          const selfRes = r.kpiResponses?.[kpi.id];
-                                                          const selfActual = selfRes?.actualValue !== undefined && selfRes?.actualValue !== null && selfRes?.actualValue !== ''
-                                                            ? selfRes.actualValue
-                                                            : '—';
-                                                          const selfScore = selfRes?.earnedScore !== undefined ? Number(selfRes.earnedScore) : 0;
-                                                          const selfRemarks = selfRes?.employeeRemarks || (selfRes as any)?.remarks || '';
-
-                                                          const rAny = r as any;
-                                                          const mgrActual = (rAny.managerKpiActuals && rAny.managerKpiActuals[kpi.id] !== undefined)
-                                                            ? rAny.managerKpiActuals[kpi.id]
-                                                            : (selfRes?.managerActualValue !== undefined && selfRes?.managerActualValue !== null && selfRes?.managerActualValue !== ''
-                                                              ? selfRes.managerActualValue
-                                                              : '—');
-                                                          const mgrRemarks = (rAny.managerKpiRemarks && rAny.managerKpiRemarks[kpi.id] !== undefined)
-                                                            ? rAny.managerKpiRemarks[kpi.id]
-                                                            : (selfRes?.managerRemarks || '');
-                                                          const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null ? Number(selfRes.managerScore) : null;
-
-                                                          const targetDisplay = (() => {
-                                                            const t = String(kpi.targetFromManager !== undefined && kpi.targetFromManager !== '' ? kpi.targetFromManager : (kpi.targetValue ?? '')).trim();
-                                                            const u = String(kpi.unit || '').trim();
-                                                            if (!t) return '—';
-                                                            if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
-                                                            return `${t} ${u}`;
-                                                          })();
-
-                                                          return (
-                                                            <tr
-                                                              key={kpi.id || kIdx}
-                                                              className="group/metricRow hover:bg-slate-50/80 transition-colors"
-                                                            >
-                                                              <td className="px-3.5 py-2 align-middle">
-                                                                <div className="flex flex-col gap-0.5">
-                                                                  <span className="font-semibold text-slate-800 text-xs">{kpi.name}</span>
-                                                                  {kpi.description && (
-                                                                    <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{kpi.description}</div>
-                                                                  )}
-                                                                </div>
-                                                              </td>
-                                                              <td className="px-2 py-2 text-center align-middle font-mono font-medium text-slate-600 whitespace-nowrap">
-                                                                {kpi.weightage || Math.round(cat.weightage / Math.max(1, cat.kpis.length))}%
-                                                              </td>
-                                                              <td className="px-2.5 py-2 text-center align-middle font-mono text-slate-600 whitespace-nowrap">
-                                                                {targetDisplay}
-                                                              </td>
-                                                              <td className="px-3 py-2 text-center align-middle text-slate-800 whitespace-nowrap font-medium">
-                                                                <div className="flex flex-col items-center justify-center gap-1">
-                                                                  <span>{selfActual} {kpi.unit || ''}</span>
-                                                                  {(selfRemarks?.trim() || mgrRemarks?.trim()) && (
-                                                                    <DeliverableRemarksHover
-                                                                      selfRemarks={selfRemarks}
-                                                                      mgrRemarks={mgrRemarks}
-                                                                      align="center"
-                                                                    >
-                                                                      <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap cursor-pointer">
-                                                                        {selfRemarks?.trim() && (
-                                                                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0">
-                                                                            <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
-                                                                            <span>Emp</span>
-                                                                          </span>
-                                                                        )}
-                                                                        {mgrRemarks?.trim() && (
-                                                                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0">
-                                                                            <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
-                                                                            <span>Mgr</span>
-                                                                          </span>
-                                                                        )}
-                                                                      </div>
-                                                                    </DeliverableRemarksHover>
-                                                                  )}
-                                                                </div>
-                                                              </td>
-                                                              <td
-                                                                className="px-2.5 py-2 text-center align-middle font-bold text-slate-900 whitespace-nowrap"
-                                                              >
-                                                                <div className="inline-flex items-center gap-1">
-                                                                  <span>{selfScore.toFixed(1)}%</span>
-                                                                  {selfRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-500/70 shrink-0" />}
-                                                                </div>
-                                                              </td>
-                                                              <td className="px-3 py-2 text-center align-middle bg-teal-50/30 font-medium text-slate-900 border-l border-teal-100 whitespace-nowrap">
-                                                                {mgrActual !== '—' ? `${mgrActual} ${kpi.unit || ''}` : '—'}
-                                                              </td>
-                                                              <td
-                                                                className="px-2.5 py-2 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-teal-950"
-                                                              >
-                                                                <div className="inline-flex items-center gap-1">
-                                                                  <span>{mgrScore !== null ? `${mgrScore.toFixed(1)}%` : '—'}</span>
-                                                                  {mgrRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />}
-                                                                </div>
-                                                              </td>
-                                                            </tr>
-                                                          );
-                                                        })}
-                                                      </tbody>
-                                                    </table>
-                                                  </div>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-
-                                        {/* Leadership Feedback Box inside drawer */}
-                                        {r.managerRemarks && (
-                                          <div className="p-3 bg-teal-50 rounded-xl border border-teal-200/80 space-y-1">
-                                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-teal-900 uppercase">
-                                              <SparklesIcon className="w-3.5 h-3.5 text-teal-700" />
-                                              Leadership Feedback
-                                            </div>
-                                            <p className="text-xs text-teal-950 leading-relaxed italic">
-                                              "{r.managerRemarks}"
-                                            </p>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                              </React.Fragment>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
+            {/* 4. Performance Rating & Grading Scale Rubric Card (Interactive & Sleek) */}
+            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+              <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-800 shrink-0">
+                    <AcademicCapIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 tracking-tight">Performance Rating & Grading Scale</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">Official benchmark rubric for score ranges, criteria, and 5-tier grading</p>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRubricMatrix(!showRubricMatrix)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer self-start sm:self-auto"
+                >
+                  <span>{showRubricMatrix ? 'Hide Full Matrix' : 'View Full Rubric Table'}</span>
+                  <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-200 ${showRubricMatrix ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
 
-                {/* 4. Performance Rating & Grading Scale Rubric Card (Interactive & Sleek) */}
-                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
-                  <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-800 shrink-0">
-                        <AcademicCapIcon className="w-4 h-4" />
+              {/* 5-Card Grade Tier Ribbon */}
+              <div className="p-4 bg-slate-50/50">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+                  {getRatingScale().map((tier, tierIdx) => {
+                    const isCurrentTier = latestScore >= tier.minScore && latestScore <= tier.maxScore;
+                    return (
+                      <div
+                        key={tier.name || tierIdx}
+                        className={`p-3 rounded-xl border transition-all ${isCurrentTier
+                          ? 'bg-teal-50/90 border-teal-500 shadow-xs ring-2 ring-teal-600/20'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                          }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                          <div className="flex items-center gap-0.5 text-amber-400">
+                            {[1, 2, 3, 4, 5].map(s => (
+                              s <= tier.stars ? (
+                                <StarSolid key={s} className="w-2.5 h-2.5 fill-amber-400" />
+                              ) : (
+                                <StarIcon key={s} className="w-2.5 h-2.5 text-slate-200" />
+                              )
+                            ))}
+                          </div>
+                          <span className="font-mono text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+                            {tier.scoreRangeText}%
+                          </span>
+                        </div>
+                        <div className="font-bold text-xs text-slate-900 leading-snug">{tier.name}</div>
+                        {isCurrentTier && (
+                          <div className="mt-2 text-[9px] font-black text-teal-800 bg-teal-100/80 px-1.5 py-0.5 rounded text-center uppercase tracking-wider">
+                            Your Tier
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <h3 className="text-sm font-black text-slate-900 tracking-tight">Performance Rating & Grading Scale</h3>
-                        <p className="text-[11px] text-slate-500 font-medium">Official benchmark rubric for score ranges, criteria, and 5-tier grading</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowRubricMatrix(!showRubricMatrix)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer self-start sm:self-auto"
-                    >
-                      <span>{showRubricMatrix ? 'Hide Full Matrix' : 'View Full Rubric Table'}</span>
-                      <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-200 ${showRubricMatrix ? 'rotate-180' : ''}`} />
-                    </button>
-                  </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-                  {/* 5-Card Grade Tier Ribbon */}
-                  <div className="p-4 bg-slate-50/50">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+              {/* Expanded Full Details Rubric Table */}
+              {showRubricMatrix && (
+                <div className="border-t border-slate-200 overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
+                      <tr>
+                        <th className="px-4 py-2.5 w-48">Rating Tier</th>
+                        <th className="px-4 py-2.5">Measure / Evaluation Criteria</th>
+                        <th className="px-4 py-2.5 w-32 text-center">Score Range</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
                       {getRatingScale().map((tier, tierIdx) => {
                         const isCurrentTier = latestScore >= tier.minScore && latestScore <= tier.maxScore;
                         return (
-                          <div
+                          <tr
                             key={tier.name || tierIdx}
-                            className={`p-3 rounded-xl border transition-all ${isCurrentTier
-                                ? 'bg-teal-50/90 border-teal-500 shadow-xs ring-2 ring-teal-600/20'
-                                : 'bg-white border-slate-200 hover:border-slate-300'
-                              }`}
+                            className={`transition-colors ${isCurrentTier ? 'bg-teal-50/70 font-semibold' : 'hover:bg-slate-50/60'}`}
                           >
-                            <div className="flex items-center justify-between gap-1 mb-1.5">
-                              <div className="flex items-center gap-0.5 text-amber-400">
-                                {[1, 2, 3, 4, 5].map(s => (
-                                  s <= tier.stars ? (
-                                    <StarSolid key={s} className="w-2.5 h-2.5 fill-amber-400" />
-                                  ) : (
-                                    <StarIcon key={s} className="w-2.5 h-2.5 text-slate-200" />
-                                  )
-                                ))}
+                            <td className="px-4 py-3 align-top">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-xs text-slate-900">{tier.name}</span>
+                                {isCurrentTier && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-teal-700 text-white uppercase">
+                                    Active
+                                  </span>
+                                )}
                               </div>
-                              <span className="font-mono text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
-                                {tier.scoreRangeText}%
-                              </span>
-                            </div>
-                            <div className="font-bold text-xs text-slate-900 leading-snug">{tier.name}</div>
-                            {isCurrentTier && (
-                              <div className="mt-2 text-[9px] font-black text-teal-800 bg-teal-100/80 px-1.5 py-0.5 rounded text-center uppercase tracking-wider">
-                                Your Tier
-                              </div>
-                            )}
-                          </div>
+                            </td>
+                            <td className="px-4 py-3 text-slate-600 leading-relaxed text-[11px] align-top">
+                              {tier.description}
+                            </td>
+                            <td className="px-4 py-3 text-center align-top whitespace-nowrap font-mono font-bold text-xs text-slate-800">
+                              {tier.scoreRangeText}%
+                            </td>
+                          </tr>
                         );
                       })}
-                    </div>
-                  </div>
-
-                  {/* Expanded Full Details Rubric Table */}
-                  {showRubricMatrix && (
-                    <div className="border-t border-slate-200 overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
-                          <tr>
-                            <th className="px-4 py-2.5 w-48">Rating Tier</th>
-                            <th className="px-4 py-2.5">Measure / Evaluation Criteria</th>
-                            <th className="px-4 py-2.5 w-32 text-center">Score Range</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 bg-white">
-                          {getRatingScale().map((tier, tierIdx) => {
-                            const isCurrentTier = latestScore >= tier.minScore && latestScore <= tier.maxScore;
-                            return (
-                              <tr
-                                key={tier.name || tierIdx}
-                                className={`transition-colors ${isCurrentTier ? 'bg-teal-50/70 font-semibold' : 'hover:bg-slate-50/60'}`}
-                              >
-                                <td className="px-4 py-3 align-top">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-bold text-xs text-slate-900">{tier.name}</span>
-                                    {isCurrentTier && (
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-teal-700 text-white uppercase">
-                                        Active
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-slate-600 leading-relaxed text-[11px] align-top">
-                                  {tier.description}
-                                </td>
-                                <td className="px-4 py-3 text-center align-top whitespace-nowrap font-mono font-bold text-xs text-slate-800">
-                                  {tier.scoreRangeText}%
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            );
-          })()))}
-        </div>
-      )}
-      {/* ========================================================================= */}
-      {/* 4. MANAGER REVIEW VIEW (DIRECT REVIEWS) */}
-      {/* ========================================================================= */}
-      {activeRole === 'manager' && (
-        isMgrCreateModalOpen ? (
-          <div className="space-y-4 animate-in fade-in duration-200">
-            {/* Unified Manager Assign Performance Metrics Card (Inline View) */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs">
-              {/* 1. Clean Modal Header */}
-              <div className="px-5 py-3.5 flex items-center justify-between border-b border-slate-200/80 bg-white">
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMgrCreateModalOpen(false);
-                      setMgrModalEmpSearch('');
-                    }}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200/70 text-slate-700 text-xs font-medium transition cursor-pointer"
-                    title="Return to Direct Reviews"
-                  >
-                    <ArrowLeftIcon className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Back to Reviews</span>
-                  </button>
-                  <div className="h-4 w-px bg-slate-200" />
-                  <h3 className="text-sm font-semibold text-slate-800 tracking-tight">
-                    Assign Performance Metrics
-                  </h3>
-                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()))}
+    </div>
+  )
+}
+{/* ========================================================================= */ }
+{/* 4. MANAGER REVIEW VIEW (DIRECT REVIEWS) */ }
+{/* ========================================================================= */ }
+{
+  activeRole === 'manager' && (
+    isMgrCreateModalOpen ? (
+      <div className="space-y-4 animate-in fade-in duration-200">
+        {/* Unified Manager Assign Performance Metrics Card (Inline View) */}
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs">
+          {/* 1. Clean Modal Header */}
+          <div className="px-5 py-3.5 flex items-center justify-between border-b border-slate-200/80 bg-white">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMgrCreateModalOpen(false);
+                  setMgrModalEmpSearch('');
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200/70 text-slate-700 text-xs font-medium transition cursor-pointer"
+                title="Return to Direct Reviews"
+              >
+                <ArrowLeftIcon className="w-3.5 h-3.5 text-slate-500" />
+                <span>Back to Reviews</span>
+              </button>
+              <div className="h-4 w-px bg-slate-200" />
+              <h3 className="text-sm font-semibold text-slate-800 tracking-tight">
+                Assign Performance Metrics
+              </h3>
+            </div>
 
-                {mgrAssignPeriod && (
-                  <div className="flex items-center gap-1.5 bg-teal-50/70 border border-teal-200/80 px-2.5 py-1 rounded-lg">
-                    <span className="text-[10px] text-teal-700 font-medium uppercase tracking-wider">Period:</span>
-                    <span className="text-xs font-semibold text-teal-900">
-                      {mgrAssignPeriod}
+            {mgrAssignPeriod && (
+              <div className="flex items-center gap-1.5 bg-teal-50/70 border border-teal-200/80 px-2.5 py-1 rounded-lg">
+                <span className="text-[10px] text-teal-700 font-medium uppercase tracking-wider">Period:</span>
+                <span className="text-xs font-semibold text-teal-900">
+                  {mgrAssignPeriod}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Sleek 2-Step Navigation Tab Bar */}
+          <div className="px-5 pt-3 bg-white">
+            <div className="grid grid-cols-2 gap-2 border-b border-slate-200/80 pb-3">
+              {/* Step 1 Tab */}
+              <button
+                type="button"
+                onClick={() => setMgrWizardStep(1)}
+                className={`flex items-center gap-2.5 p-2 rounded-xl transition cursor-pointer text-left ${mgrWizardStep === 1
+                  ? 'bg-teal-50/80 border border-teal-200/90'
+                  : 'hover:bg-slate-50 border border-transparent'
+                  }`}
+              >
+                <span className={`w-6 h-6 rounded-lg text-xs font-semibold flex items-center justify-center shrink-0 transition ${mgrWizardStep === 1
+                  ? 'bg-teal-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600'
+                  }`}>
+                  1
+                </span>
+                <div className="min-w-0">
+                  <div className={`text-xs font-medium truncate ${mgrWizardStep === 1 ? 'text-teal-900 font-semibold' : 'text-slate-600'}`}>
+                    Team & Period
+                  </div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    Timeline & assignees
+                  </div>
+                </div>
+              </button>
+
+              {/* Step 2 Tab (Non-interactive header card, accessible only via Next button) */}
+              <div
+                className={`flex items-center gap-2.5 p-2 rounded-xl transition text-left select-none ${mgrWizardStep === 2
+                  ? 'bg-teal-50/80 border border-teal-200/90'
+                  : 'border border-transparent opacity-80 cursor-default'
+                  }`}
+              >
+                <span className={`w-6 h-6 rounded-lg text-xs font-semibold flex items-center justify-center shrink-0 transition ${mgrWizardStep === 2
+                  ? 'bg-teal-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600'
+                  }`}>
+                  2
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className={`text-xs font-medium truncate ${mgrWizardStep === 2 ? 'text-teal-900 font-semibold' : 'text-slate-600'}`}>
+                      Deliverables & Targets
+                    </span>
+                    <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded border ${mgrTotalWeightage === 100 && areAllMgrCategoriesBalanced
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                      }`}>
+                      {mgrTotalWeightage}%
                     </span>
                   </div>
-                )}
-              </div>
-
-              {/* 2. Sleek 2-Step Navigation Tab Bar */}
-              <div className="px-5 pt-3 bg-white">
-                <div className="grid grid-cols-2 gap-2 border-b border-slate-200/80 pb-3">
-                  {/* Step 1 Tab */}
-                  <button
-                    type="button"
-                    onClick={() => setMgrWizardStep(1)}
-                    className={`flex items-center gap-2.5 p-2 rounded-xl transition cursor-pointer text-left ${
-                      mgrWizardStep === 1
-                        ? 'bg-teal-50/80 border border-teal-200/90'
-                        : 'hover:bg-slate-50 border border-transparent'
-                    }`}
-                  >
-                    <span className={`w-6 h-6 rounded-lg text-xs font-semibold flex items-center justify-center shrink-0 transition ${
-                      mgrWizardStep === 1
-                        ? 'bg-teal-600 text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      1
-                    </span>
-                    <div className="min-w-0">
-                      <div className={`text-xs font-medium truncate ${mgrWizardStep === 1 ? 'text-teal-900 font-semibold' : 'text-slate-600'}`}>
-                        Team & Period
-                      </div>
-                      <div className="text-[11px] text-slate-500 truncate">
-                        Timeline & assignees
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* Step 2 Tab (Non-interactive header card, accessible only via Next button) */}
-                  <div
-                    className={`flex items-center gap-2.5 p-2 rounded-xl transition text-left select-none ${
-                      mgrWizardStep === 2
-                        ? 'bg-teal-50/80 border border-teal-200/90'
-                        : 'border border-transparent opacity-80 cursor-default'
-                    }`}
-                  >
-                    <span className={`w-6 h-6 rounded-lg text-xs font-semibold flex items-center justify-center shrink-0 transition ${
-                      mgrWizardStep === 2
-                        ? 'bg-teal-600 text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      2
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className={`text-xs font-medium truncate ${mgrWizardStep === 2 ? 'text-teal-900 font-semibold' : 'text-slate-600'}`}>
-                          Deliverables & Targets
-                        </span>
-                        <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded border ${
-                          mgrTotalWeightage === 100 && areAllMgrCategoriesBalanced
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}>
-                          {mgrTotalWeightage}%
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-500 truncate">
-                        KPIs & criteria
-                      </div>
-                    </div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    KPIs & criteria
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
 
-              {/* Form Body - Clean & Modern */}
-              <form onSubmit={handleMgrSubmitAssignment} className="p-4 sm:p-5 space-y-4">
-                {/* Step 1: Target Team, Frequency & Period Configuration */}
-                {mgrWizardStep === 1 && (
-                  <div className="space-y-3.5 animate-in fade-in duration-150">
-                    <div className="bg-slate-50/60 border border-slate-200/90 rounded-2xl p-4 sm:p-5 space-y-4 shadow-2xs">
-                      {/* Period Configuration Inputs */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                        {/* 1. Target Department / Team */}
-                        <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-                          <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                            Department / Team <span className="text-rose-500">*</span>
-                          </label>
-                          <select
-                            value={mgrAssignTeamId}
-                            onChange={e => handleMgrTeamChange(e.target.value)}
-                            className="w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20 transition cursor-pointer"
-                          >
+          {/* Form Body - Clean & Modern */}
+          <form onSubmit={handleMgrSubmitAssignment} className="p-4 sm:p-5 space-y-4">
+            {/* Step 1: Target Team, Frequency & Period Configuration */}
+            {mgrWizardStep === 1 && (
+              <div className="space-y-3.5 animate-in fade-in duration-150">
+                <div className="bg-slate-50/60 border border-slate-200/90 rounded-2xl p-4 sm:p-5 space-y-4 shadow-2xs">
+                  {/* Period Configuration Inputs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* 1. Target Department / Team */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                      <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                        Department / Team <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        value={mgrAssignTeamId}
+                        onChange={e => handleMgrTeamChange(e.target.value)}
+                        className="w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20 transition cursor-pointer"
+                      >
                         {managerDepartments.length > 1 && (
                           <option value="all_teams">All Subordinates</option>
                         )}
@@ -12208,23 +14347,29 @@ export const EvaluationTab: React.FC = () => {
                           const newType = e.target.value as any;
                           setMgrPeriodType(newType);
                           if (newType === 'daily') {
+                            setMgrSubFrequency('');
                             const todayStr = getLocalTodayDateString();
                             setMgrPeriodDueDate(todayStr);
                             syncPeriodAndFormName(newType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, todayStr, mgrAssignTeamId);
                           } else if (newType === 'weekly') {
+                            setMgrSubFrequency('');
                             const week = getLocalCurrentWeekRange();
                             setMgrPeriodFromDate(week.from);
                             setMgrPeriodToDate(week.to);
                             syncPeriodAndFormName(newType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, week.from, week.to, week.to, mgrAssignTeamId);
                           } else if (newType === 'monthly') {
+                            setMgrSubFrequency('');
                             setMgrPeriodMonth(currentMonth);
                             setMgrPeriodYear(currentYear);
                             syncPeriodAndFormName(newType, mgrPeriodQuarter, currentYear, currentMonth, mgrPeriodFromDate, mgrPeriodToDate, undefined, mgrAssignTeamId);
                           } else if (newType === 'quarterly') {
+                            setMgrSubFrequency('');
                             setMgrPeriodQuarter(currentQuarter);
                             setMgrPeriodYear(currentYear);
                             syncPeriodAndFormName(newType, currentQuarter, currentYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, undefined, mgrAssignTeamId);
                           } else {
+                            // Automatically Assign Milestones (Yearly Rollout)
+                            setMgrSubFrequency('');
                             setMgrPeriodYear(currentYear);
                             syncPeriodAndFormName(newType, mgrPeriodQuarter, currentYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, undefined, mgrAssignTeamId);
                           }
@@ -12235,7 +14380,7 @@ export const EvaluationTab: React.FC = () => {
                         <option value="monthly">Monthly</option>
                         <option value="weekly">Weekly</option>
                         <option value="daily">Daily</option>
-                        <option value="yearly">Yearly</option>
+                        <option value="yearly">⚡ Automatically Assign Milestones (Yearly Rollout)</option>
                       </select>
                     </div>
 
@@ -12366,23 +14511,49 @@ export const EvaluationTab: React.FC = () => {
                     )}
 
                     {(mgrPeriodType === 'yearly' || (mgrPeriodType as string) === 'annual') && (
-                      <div className="sm:col-span-2 bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-                        <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                          Evaluation Year <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="number"
-                          value={mgrPeriodYear}
-                          onChange={e => {
-                            const newYr = Number(e.target.value);
-                            setMgrPeriodYear(newYr);
-                            syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, newYr, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, mgrAssignTeamId);
-                          }}
-                          className="w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20 transition"
-                        />
-                      </div>
+                      <>
+                        <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                          <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                            Evaluation Year <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            value={mgrPeriodYear}
+                            onChange={e => {
+                              const newYr = Number(e.target.value);
+                              setMgrPeriodYear(newYr);
+                              syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, newYr, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, mgrPeriodDueDate, mgrAssignTeamId);
+                            }}
+                            className="w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20 transition"
+                          />
+                        </div>
+
+                        <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                          <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center justify-between">
+                            <span>Milestone Tracking Cadence <span className="text-rose-500">*</span></span>
+                            <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">Automated Multi-Stage</span>
+                          </label>
+                          <select
+                            value={mgrSubFrequency}
+                            onChange={e => {
+                              const newSub = e.target.value as 'monthly' | 'weekly' | 'quarterly' | 'annual' | '';
+                              setMgrSubFrequency(newSub);
+                            }}
+                            className={`w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border rounded-lg text-xs sm:text-sm font-medium transition cursor-pointer ${!mgrSubFrequency ? 'border-amber-400 text-slate-500' : 'border-slate-200 text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20'
+                              }`}
+                          >
+                            <option value="" disabled>-- Select Milestone Tracking Cadence --</option>
+                            <option value="monthly"> Monthly </option>
+                            <option value="weekly"> Weekly </option>
+                            <option value="quarterly"> Quarterly </option>
+                            <option value="annual"> Annual </option>
+                          </select>
+                        </div>
+                      </>
                     )}
                   </div>
+
+
 
                   {/* Inline Form Title Bar */}
                   <div className="flex items-center gap-3 px-3.5 py-2.5 bg-white border border-slate-200/90 rounded-xl shadow-2xs">
@@ -12438,16 +14609,14 @@ export const EvaluationTab: React.FC = () => {
                       <div className="pt-2 border-t border-slate-200/80">
                         <div className="bg-white border border-slate-200/90 rounded-xl shadow-2xs overflow-hidden transition-all duration-200">
                           {/* Top Header Row */}
-                          <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 ${
-                            !mgrCustomizeMembers ? 'bg-white' : 'bg-slate-50/70 border-b border-slate-200/70'
-                          }`}>
+                          <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 ${!mgrCustomizeMembers ? 'bg-white' : 'bg-slate-50/70 border-b border-slate-200/70'
+                            }`}>
                             {/* Left: Summary info */}
                             <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                                !mgrCustomizeMembers
-                                  ? 'bg-teal-50 text-teal-600 border border-teal-200'
-                                  : 'bg-slate-100 text-slate-600 border border-slate-200'
-                              }`}>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${!mgrCustomizeMembers
+                                ? 'bg-teal-50 text-teal-600 border border-teal-200'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                }`}>
                                 <UserGroupIcon className="w-4 h-4" />
                               </div>
                               <div>
@@ -12455,11 +14624,10 @@ export const EvaluationTab: React.FC = () => {
                                   <span className="text-xs font-semibold text-slate-800">
                                     Assign Team Members
                                   </span>
-                                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${
-                                    !mgrCustomizeMembers
-                                      ? 'bg-teal-50 text-teal-800 border-teal-200'
-                                      : 'bg-white text-slate-700 border-slate-200 shadow-2xs'
-                                  }`}>
+                                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${!mgrCustomizeMembers
+                                    ? 'bg-teal-50 text-teal-800 border-teal-200'
+                                    : 'bg-white text-slate-700 border-slate-200 shadow-2xs'
+                                    }`}>
                                     {!mgrCustomizeMembers
                                       ? `All (${assignableMembers.length}) Selected`
                                       : `${activeSelectedCount} of ${assignableMembers.length} Selected`}
@@ -12507,15 +14675,13 @@ export const EvaluationTab: React.FC = () => {
                                     setMgrAssignEmpIds(allIds);
                                   }
                                 }}
-                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                  mgrCustomizeMembers ? 'bg-teal-600' : 'bg-slate-300 hover:bg-slate-400'
-                                }`}
+                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${mgrCustomizeMembers ? 'bg-teal-600' : 'bg-slate-300 hover:bg-slate-400'
+                                  }`}
                                 title={mgrCustomizeMembers ? 'Click to Auto-Select All & Collapse' : 'Click to Expand & Deselect Members'}
                               >
                                 <span
-                                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
-                                    mgrCustomizeMembers ? 'translate-x-4' : 'translate-x-0'
-                                  }`}
+                                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${mgrCustomizeMembers ? 'translate-x-4' : 'translate-x-0'
+                                    }`}
                                 />
                               </button>
                             </div>
@@ -12531,33 +14697,30 @@ export const EvaluationTab: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => setMgrMemberFilterTab('all')}
-                                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${
-                                      mgrMemberFilterTab === 'all'
-                                        ? 'bg-white text-slate-800 shadow-2xs font-semibold'
-                                        : 'text-slate-600 hover:text-slate-900'
-                                    }`}
+                                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${mgrMemberFilterTab === 'all'
+                                      ? 'bg-white text-slate-800 shadow-2xs font-semibold'
+                                      : 'text-slate-600 hover:text-slate-900'
+                                      }`}
                                   >
                                     All ({baseTeamMembers.length})
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => setMgrMemberFilterTab('selected')}
-                                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${
-                                      mgrMemberFilterTab === 'selected'
-                                        ? 'bg-teal-600 text-white shadow-2xs font-semibold'
-                                        : 'text-slate-600 hover:text-slate-900'
-                                    }`}
+                                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${mgrMemberFilterTab === 'selected'
+                                      ? 'bg-teal-600 text-white shadow-2xs font-semibold'
+                                      : 'text-slate-600 hover:text-slate-900'
+                                      }`}
                                   >
                                     Selected ({activeSelectedCount})
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => setMgrMemberFilterTab('unselected')}
-                                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${
-                                      mgrMemberFilterTab === 'unselected'
-                                        ? 'bg-white text-slate-800 shadow-2xs font-semibold'
-                                        : 'text-slate-600 hover:text-slate-900'
-                                    }`}
+                                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${mgrMemberFilterTab === 'unselected'
+                                      ? 'bg-white text-slate-800 shadow-2xs font-semibold'
+                                      : 'text-slate-600 hover:text-slate-900'
+                                      }`}
                                   >
                                     Excluded ({unselectedCount})
                                   </button>
@@ -12588,11 +14751,10 @@ export const EvaluationTab: React.FC = () => {
                                     type="button"
                                     disabled={assignableMembers.length === 0}
                                     onClick={() => handleMgrToggleSelectAll(baseTeamMembers)}
-                                    className={`h-9 text-xs font-medium px-3.5 rounded-lg border shadow-2xs transition cursor-pointer flex items-center justify-center ${
-                                      assignableMembers.length === 0
-                                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                                        : 'text-teal-700 hover:text-teal-800 bg-white border-teal-200 hover:bg-teal-50/50'
-                                    }`}
+                                    className={`h-9 text-xs font-medium px-3.5 rounded-lg border shadow-2xs transition cursor-pointer flex items-center justify-center ${assignableMembers.length === 0
+                                      ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                      : 'text-teal-700 hover:text-teal-800 bg-white border-teal-200 hover:bg-teal-50/50'
+                                      }`}
                                   >
                                     {(() => {
                                       if (assignableMembers.length === 0) return 'No Members';
@@ -12629,15 +14791,14 @@ export const EvaluationTab: React.FC = () => {
                                       <div
                                         key={empId}
                                         onClick={() => !isBlocked && handleMgrToggleEmp(empId)}
-                                        className={`group relative flex items-center justify-between gap-2.5 p-2.5 rounded-xl border transition-all duration-150 select-none ${
-                                          isCompletedForPeriod
-                                            ? 'bg-slate-50/90 border-slate-200 text-slate-500 cursor-not-allowed opacity-75'
-                                            : isBlocked
-                                              ? 'bg-slate-50/90 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                                              : isSelected
-                                                ? 'bg-teal-50/50 border-teal-400 ring-1 ring-teal-500/20 shadow-xs cursor-pointer hover:bg-teal-50/80 hover:border-teal-500'
-                                                : 'bg-white border-slate-200/90 text-slate-600 hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs cursor-pointer'
-                                        }`}
+                                        className={`group relative flex items-center justify-between gap-2.5 p-2.5 rounded-xl border transition-all duration-150 select-none ${isCompletedForPeriod
+                                          ? 'bg-slate-50/90 border-slate-200 text-slate-500 cursor-not-allowed opacity-75'
+                                          : isBlocked
+                                            ? 'bg-slate-50/90 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                                            : isSelected
+                                              ? 'bg-teal-50/50 border-teal-400 ring-1 ring-teal-500/20 shadow-xs cursor-pointer hover:bg-teal-50/80 hover:border-teal-500'
+                                              : 'bg-white border-slate-200/90 text-slate-600 hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs cursor-pointer'
+                                          }`}
                                         title={
                                           isCompletedForPeriod
                                             ? `${fullName} has already completed and had the evaluation approved for ${mgrAssignPeriod || 'this period'}.`
@@ -12720,13 +14881,16 @@ export const EvaluationTab: React.FC = () => {
                         showAlert('Please select at least one team member to assign metrics to.', 'Member Required');
                         return;
                       }
+                      if ((mgrPeriodType === 'yearly' || (mgrPeriodType as string) === 'annual') && !mgrSubFrequency) {
+                        showAlert('Please select a Milestone Tracking Cadence (Monthly, Weekly, Quarterly, or Annual) for the automated rollout.', 'Milestone Cadence Required');
+                        return;
+                      }
                       setMgrWizardStep(2);
                     }}
-                    className={`flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-medium text-white rounded-xl shadow-2xs transition-all cursor-pointer ${
-                      mgrAssignEmpIds.length > 0
-                        ? 'bg-teal-600 hover:bg-teal-700'
-                        : 'bg-slate-300 cursor-not-allowed opacity-60'
-                    }`}
+                    className={`flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-medium text-white rounded-xl shadow-2xs transition-all cursor-pointer ${mgrAssignEmpIds.length > 0
+                      ? 'bg-teal-600 hover:bg-teal-700'
+                      : 'bg-slate-300 cursor-not-allowed opacity-60'
+                      }`}
                   >
                     <span>Next: Deliverables & Targets</span>
                     <ArrowRightIcon className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -12775,8 +14939,8 @@ export const EvaluationTab: React.FC = () => {
 
                       {/* Integrated Total Weightage Badge */}
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs transition-colors ${mgrTotalWeightage === 100 && areAllMgrCategoriesBalanced
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                          : 'bg-amber-50 text-amber-900 border-amber-300'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : 'bg-amber-50 text-amber-900 border-amber-300'
                         }`}>
                         {mgrTotalWeightage === 100 && areAllMgrCategoriesBalanced ? (
                           <CheckCircleIcon className="w-3 h-3 text-emerald-600 shrink-0" />
@@ -12796,8 +14960,8 @@ export const EvaluationTab: React.FC = () => {
                         type="button"
                         onClick={() => setShowTargetGuide(prev => !prev)}
                         className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition border shadow-2xs cursor-pointer ${showTargetGuide
-                            ? 'bg-teal-50 text-teal-800 border-teal-300 ring-1 ring-teal-500/20'
-                            : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                          ? 'bg-teal-50 text-teal-800 border-teal-300 ring-1 ring-teal-500/20'
+                          : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
                           }`}
                         title="Show / hide Deliverable Metric Types & Supported Target Symbols guide"
                       >
@@ -12811,8 +14975,8 @@ export const EvaluationTab: React.FC = () => {
                         onClick={handleMgrAddCategory}
                         disabled={mgrTotalWeightage >= 100}
                         className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition shadow-2xs ${mgrTotalWeightage >= 100
-                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                            : 'bg-teal-700 hover:bg-teal-800 text-white cursor-pointer shadow-teal-700/20'
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                          : 'bg-teal-700 hover:bg-teal-800 text-white cursor-pointer shadow-teal-700/20'
                           }`}
                       >
                         <PlusIcon className="w-3.5 h-3.5" />
@@ -12850,8 +15014,8 @@ export const EvaluationTab: React.FC = () => {
                                 type="button"
                                 onClick={() => handleSelectTemplate(t.template_key)}
                                 className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer select-none ${isActive
-                                    ? 'bg-white text-teal-900 shadow-2xs border border-slate-200/90 ring-1 ring-teal-500/20'
-                                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                                  ? 'bg-white text-teal-900 shadow-2xs border border-slate-200/90 ring-1 ring-teal-500/20'
+                                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                                   }`}
                               >
                                 <span>{t.template_name || `Form ${t.template_key.replace('form_', '')}`}</span>
@@ -12917,6 +15081,29 @@ export const EvaluationTab: React.FC = () => {
                             >
                               <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
                               <span>Rename</span>
+                            </button>
+                          )}
+
+                          {/* Copy / Paste Form Button */}
+                          {copiedMgrCategories && copiedMgrCategories.key !== activeTemplateKey ? (
+                            <button
+                              type="button"
+                              onClick={handleMgrPasteTemplate}
+                              className="px-2 py-0.5 text-xs font-semibold text-teal-800 hover:text-white bg-teal-50 hover:bg-teal-700 border border-teal-300 rounded-md transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                              title={`Paste deliverables copied from "${copiedMgrCategories.name}"`}
+                            >
+                              <ClipboardDocumentIcon className="w-3.5 h-3.5 text-teal-600" />
+                              <span>Paste Form</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleMgrCopyTemplate}
+                              className="px-2 py-0.5 text-xs font-medium text-slate-600 hover:text-teal-900 hover:bg-white rounded-md transition cursor-pointer flex items-center gap-1"
+                              title="Copy all deliverables from this form"
+                            >
+                              <DocumentDuplicateIcon className="w-3.5 h-3.5 text-slate-500" />
+                              <span>{copiedMgrCategories?.key === activeTemplateKey ? 'Copied ✓' : 'Copy Form'}</span>
                             </button>
                           )}
 
@@ -13163,71 +15350,70 @@ export const EvaluationTab: React.FC = () => {
                       );
                     })}
                   </div>
-                    </div>
+                </div>
 
-                    {/* Step 2 Footer Navigation & Submission */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-200/80">
-                      <button
-                        type="button"
-                        onClick={() => setMgrWizardStep(1)}
-                        className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
-                      >
-                        <ArrowLeftIcon className="w-3.5 h-3.5" />
-                        <span>Back to Step 1</span>
-                      </button>
+                {/* Step 2 Footer Navigation & Submission */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-200/80">
+                  <button
+                    type="button"
+                    onClick={() => setMgrWizardStep(1)}
+                    className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+                  >
+                    <ArrowLeftIcon className="w-3.5 h-3.5" />
+                    <span>Back to Step 1</span>
+                  </button>
 
-                      <button
-                        type="submit"
-                        disabled={!isMgrWeightageValid || !areAllMgrCategoriesBalanced || mgrAssignEmpIds.length === 0 || isAssigning}
-                        className={`flex items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all cursor-pointer ${isMgrWeightageValid && areAllMgrCategoriesBalanced && mgrAssignEmpIds.length > 0 && !isAssigning
-                            ? 'bg-teal-700 hover:bg-teal-800 shadow-teal-900/15'
-                            : 'bg-slate-300 cursor-not-allowed opacity-60'
-                          }`}
-                      >
-                        <CheckCircleIcon className="w-4 h-4 stroke-[2]" />
-                        <span>
-                          {isAssigning ? 'Assigning...' : `Assign & Release to ${mgrAssignEmpIds.length} Direct Reports`}
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </form>
-            </div>
-          </div>
-        ) : (
-          <div className="relative">
-            {/* Background Manager Desk (Blurred & Blocked when Admin Setup is pending) */}
-            <div
-              className={`space-y-4 animate-in fade-in duration-200 transition-all ${
-                !hasAssignedCycleFromAdmin && reportFilteredResponses.length === 0
-                  ? 'filter blur-[3.5px] opacity-40 pointer-events-none select-none'
-                  : ''
-              }`}
-            >
-              {/* Unified Manager Desk Card (Header + Frequency Navigation + Filters) */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
-              {/* 1. Header Bar: Title, Scope, and Desk Actions */}
-              <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-700 border border-primary-100/80 flex items-center justify-center shrink-0 shadow-2xs">
-                    <BriefcaseIcon className="w-5 h-5" />
-                  </div>
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-base font-bold text-slate-900 tracking-tight">
-                        {isTeamLead ? 'Squad Evaluation' : 'Direct Reviews'}
-                      </h3>
-                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-primary-50 text-primary-800 border border-primary-200/80 uppercase">
-                        {isTeamLead ? 'Squad Desk' : 'Reviewer Desk'}
-                      </span>
-                      <span className="text-xs text-slate-300 font-medium hidden md:inline">•</span>
-                      <span className="text-xs font-semibold text-slate-600 truncate">
-                        {effectiveTeamName || (managerDepartments.length > 0 ? managerDepartments.join(', ') : 'Team Scope')}
-                      </span>
-                    </div>
+                  <button
+                    type="submit"
+                    disabled={!isMgrWeightageValid || !areAllMgrCategoriesBalanced || mgrAssignEmpIds.length === 0 || isAssigning}
+                    className={`flex items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all cursor-pointer ${isMgrWeightageValid && areAllMgrCategoriesBalanced && mgrAssignEmpIds.length > 0 && !isAssigning
+                      ? 'bg-teal-700 hover:bg-teal-800 shadow-teal-900/15'
+                      : 'bg-slate-300 cursor-not-allowed opacity-60'
+                      }`}
+                  >
+                    <CheckCircleIcon className="w-4 h-4 stroke-[2]" />
+                    <span>
+                      {isAssigning ? 'Assigning...' : `Assign & Release to ${mgrAssignEmpIds.length} Direct Reports`}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </form>
+        </div>
+      </div>
+    ) : (
+      <div className="relative">
+        {/* Background Manager Desk (Blurred & Blocked when Admin Setup is pending) */}
+        <div
+          className={`space-y-4 animate-in fade-in duration-200 transition-all ${!hasAssignedCycleFromAdmin && reportFilteredResponses.length === 0
+            ? 'filter blur-[3.5px] opacity-40 pointer-events-none select-none'
+            : ''
+            }`}
+        >
+          {/* Unified Manager Desk Card (Header + Frequency Navigation + Filters) */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+            {/* 1. Header Bar: Title, Scope, and Desk Actions */}
+            <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-700 border border-primary-100/80 flex items-center justify-center shrink-0 shadow-2xs">
+                  <BriefcaseIcon className="w-5 h-5" />
+                </div>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-bold text-slate-900 tracking-tight">
+                      {isTeamLead ? 'Squad Evaluation' : 'Direct Reviews'}
+                    </h3>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-primary-50 text-primary-800 border border-primary-200/80 uppercase">
+                      {isTeamLead ? 'Squad Desk' : 'Reviewer Desk'}
+                    </span>
+                    <span className="text-xs text-slate-300 font-medium hidden md:inline">•</span>
+                    <span className="text-xs font-semibold text-slate-600 truncate">
+                      {effectiveTeamName || (managerDepartments.length > 0 ? managerDepartments.join(', ') : 'Team Scope')}
+                    </span>
                   </div>
                 </div>
+              </div>
 
               {activeRole === 'manager' && (
                 <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
@@ -13711,312 +15897,328 @@ export const EvaluationTab: React.FC = () => {
                       </tr>
                     ) : (
                       groupedReportHierarchy.map(teamGroup => {
-                      const isTeamExpanded = Boolean(expandedTeams[teamGroup.teamName]);
+                        const isTeamExpanded = Boolean(expandedTeams[teamGroup.teamName]);
 
-                      const matchingDbTeam = dbTeams.find(t =>
-                        t.name?.toLowerCase() === teamGroup.teamName.toLowerCase() ||
-                        String(t.id) === teamGroup.teamName.toLowerCase()
-                      );
+                        const matchingDbTeam = dbTeams.find(t =>
+                          t.name?.toLowerCase() === teamGroup.teamName.toLowerCase() ||
+                          String(t.id) === teamGroup.teamName.toLowerCase()
+                        );
 
-                      const teamCycle = managerDirectCycles.find(c => {
-                        const cName = (c.teamName || '').toLowerCase();
-                        const cId = String(c.teamId || '').toLowerCase();
-                        const tName = teamGroup.teamName.toLowerCase();
-                        const dbTeamId = matchingDbTeam ? String(matchingDbTeam.id).toLowerCase() : '';
-                        const dbTeamName = matchingDbTeam?.name?.toLowerCase() || '';
+                        const teamCycle = managerDirectCycles.find(c => {
+                          const cName = (c.teamName || '').toLowerCase();
+                          const cId = String(c.teamId || '').toLowerCase();
+                          const tName = teamGroup.teamName.toLowerCase();
+                          const dbTeamId = matchingDbTeam ? String(matchingDbTeam.id).toLowerCase() : '';
+                          const dbTeamName = matchingDbTeam?.name?.toLowerCase() || '';
+
+                          return (
+                            cName === tName ||
+                            cId === tName ||
+                            (dbTeamId && (cId === dbTeamId || cName === dbTeamId)) ||
+                            (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
+                          );
+                        }) || cycles.find(c => {
+                          const cName = (c.teamName || '').toLowerCase();
+                          const cId = String(c.teamId || '').toLowerCase();
+                          const tName = teamGroup.teamName.toLowerCase();
+                          const dbTeamId = matchingDbTeam ? String(matchingDbTeam.id).toLowerCase() : '';
+                          const dbTeamName = matchingDbTeam?.name?.toLowerCase() || '';
+
+                          return (
+                            cName === tName ||
+                            cId === tName ||
+                            (dbTeamId && (cId === dbTeamId || cName === dbTeamId)) ||
+                            (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
+                          );
+                        });
+
+                        const cycleLockedInfo = getCycleLockedInfo(teamCycle);
 
                         return (
-                          cName === tName ||
-                          cId === tName ||
-                          (dbTeamId && (cId === dbTeamId || cName === dbTeamId)) ||
-                          (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
-                        );
-                      }) || cycles.find(c => {
-                        const cName = (c.teamName || '').toLowerCase();
-                        const cId = String(c.teamId || '').toLowerCase();
-                        const tName = teamGroup.teamName.toLowerCase();
-                        const dbTeamId = matchingDbTeam ? String(matchingDbTeam.id).toLowerCase() : '';
-                        const dbTeamName = matchingDbTeam?.name?.toLowerCase() || '';
-
-                        return (
-                          cName === tName ||
-                          cId === tName ||
-                          (dbTeamId && (cId === dbTeamId || cName === dbTeamId)) ||
-                          (dbTeamName && (cName === dbTeamName || cId === dbTeamName))
-                        );
-                      });
-
-                      const cycleLockedInfo = getCycleLockedInfo(teamCycle);
-
-                      return (
-                        <React.Fragment key={teamGroup.teamName}>
-                          {/* Clean Team Section Row */}
-                          <tr className="border-t border-slate-200">
-                            <td colSpan={6} className="p-0">
-                              <div
-                                onClick={() => setExpandedTeams(prev => ({ ...prev, [teamGroup.teamName]: !isTeamExpanded }))}
-                                className="bg-slate-100/90 hover:bg-slate-200/70 text-slate-800 px-4 py-2.5 flex items-center justify-between font-bold text-xs cursor-pointer select-none transition-colors border-y border-slate-200/70"
-                                title={isTeamExpanded ? `Click to collapse ${teamGroup.teamName}` : `Click to expand ${teamGroup.teamName} (${teamGroup.totalPeople} people)`}
-                              >
-                                <div className="flex items-center gap-2.5">
-                                  <ChevronDownIcon className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isTeamExpanded ? 'rotate-0' : '-rotate-90'}`} />
-                                  <FolderIcon className="w-4 h-4 text-primary-600 shrink-0" />
-                                  <span className="text-sm font-bold tracking-tight text-slate-900">{teamGroup.teamName}</span>
-                                  <span className="text-[11px] font-semibold bg-white text-slate-600 px-2.5 py-0.5 rounded-full border border-slate-200/80 shadow-2xs">
-                                    {teamGroup.totalPeople} {teamGroup.totalPeople === 1 ? 'person' : 'people'}
-                                  </span>
-                                  {(() => {
-                                    const teamPendingCount = teamGroup.members.filter(m =>
-                                      (m.response.status === 'manager_review' || m.response.status === 'Submitted to Manager' || String(m.response.status || '').toLowerCase().includes('submitted')) &&
-                                      m.response.managerScore == null
-                                    ).length;
-                                    if (teamPendingCount === 0) return null;
-                                    return (
-                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50/90 text-amber-900 border border-amber-200/90 shadow-2xs shrink-0">
-                                        <span className="relative flex h-1.5 w-1.5 shrink-0">
-                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
+                          <React.Fragment key={teamGroup.teamName}>
+                            {/* Clean Team Section Row */}
+                            <tr className="border-t border-slate-200">
+                              <td colSpan={6} className="p-0">
+                                <div
+                                  onClick={() => setExpandedTeams(prev => ({ ...prev, [teamGroup.teamName]: !isTeamExpanded }))}
+                                  className="bg-slate-100/90 hover:bg-slate-200/70 text-slate-800 px-4 py-2.5 flex items-center justify-between font-bold text-xs cursor-pointer select-none transition-colors border-y border-slate-200/70"
+                                  title={isTeamExpanded ? `Click to collapse ${teamGroup.teamName}` : `Click to expand ${teamGroup.teamName} (${teamGroup.totalPeople} people)`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <ChevronDownIcon className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isTeamExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                                    <FolderIcon className="w-4 h-4 text-primary-600 shrink-0" />
+                                    <span className="text-sm font-bold tracking-tight text-slate-900">{teamGroup.teamName}</span>
+                                    <span className="text-[11px] font-semibold bg-white text-slate-600 px-2.5 py-0.5 rounded-full border border-slate-200/80 shadow-2xs">
+                                      {teamGroup.totalPeople} {teamGroup.totalPeople === 1 ? 'person' : 'people'}
+                                    </span>
+                                    {(() => {
+                                      const teamPendingCount = teamGroup.members.filter(m => {
+                                        const isYearly = isYearlyResponse(m.response);
+                                        if (isYearly) {
+                                          return (
+                                            (m.response.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
+                                            (m.response.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
+                                            (m.response.monthly_records || []).some((mRec: any) => mRec.status === 'submitted_to_manager')
+                                          );
+                                        }
+                                        return Boolean(
+                                          (m.response.status === 'manager_review' || m.response.status === 'Submitted to Manager' || String(m.response.status || '').toLowerCase().includes('submitted') || Boolean(m.response.employeeSubmittedAt) || Boolean((m.response as any).submitted_at) || Boolean((m.response as any).submittedAt) || Boolean((m.response as any).employee_submitted_at) || (m.response.employeeOverallScore != null && Number(m.response.employeeOverallScore) > 0)) &&
+                                          m.response.managerScore == null &&
+                                          m.response.status !== 'approved' &&
+                                          m.response.status !== 'sm_final_approval'
+                                        );
+                                      }).length;
+                                      if (teamPendingCount === 0) return null;
+                                      return (
+                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50/90 text-amber-900 border border-amber-200/90 shadow-2xs shrink-0">
+                                          <span className="relative flex h-1.5 w-1.5 shrink-0">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
+                                          </span>
+                                          <ClockIcon className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                          <span>
+                                            <strong className="font-semibold text-amber-950">{teamPendingCount}</strong>{' '}
+                                            {teamPendingCount === 1 ? 'Submission Awaiting Approval' : 'Submissions Awaiting Approval'}
+                                          </span>
                                         </span>
-                                        <ClockIcon className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                        <span>
-                                          <strong className="font-semibold text-amber-950">{teamPendingCount}</strong>{' '}
-                                          {teamPendingCount === 1 ? 'Submission Awaiting Approval' : 'Submissions Awaiting Approval'}
-                                        </span>
-                                      </span>
-                                    );
-                                  })()}
-                                </div>
+                                      );
+                                    })()}
+                                  </div>
 
-                                <div className="flex items-center gap-3">
-                                  {(activeRole === 'manager' || activeRole === 'downline_teams' || canCreateMetrics) && (
-                                    <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                                      {teamCycle ? (
-                                        <>
-                                          {cycleLockedInfo.isLocked ? (
-                                            /* Sleek Locked Badge */
-                                            <span
-                                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs"
-                                              title={`Deliverables matrix is locked because ${cycleLockedInfo.activeCount} evaluation(s) are in progress`}
-                                            >
-                                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                              <span>Locked</span>
-                                            </span>
-                                          ) : (
-                                            /* Editable Matrix Controls */
-                                            <>
+                                  <div className="flex items-center gap-3">
+                                    {(activeRole === 'manager' || activeRole === 'downline_teams' || canCreateMetrics) && (
+                                      <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                                        {teamCycle ? (
+                                          <>
+                                            {cycleLockedInfo.isLocked ? (
+                                              /* Sleek Locked Badge */
                                               <span
-                                                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs"
-                                                title="Active Deliverables Matrix (Editable)"
+                                                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs"
+                                                title={`Deliverables matrix is locked because ${cycleLockedInfo.activeCount} evaluation(s) are in progress`}
                                               >
-                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                                <span>Matrix: 100%</span>
+                                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                                <span>Locked</span>
                                               </span>
+                                            ) : (
+                                              /* Editable Matrix Controls */
+                                              <>
+                                                <span
+                                                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs"
+                                                  title="Active Deliverables Matrix (Editable)"
+                                                >
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                  <span>Matrix: 100%</span>
+                                                </span>
 
-                                              <button
-                                                type="button"
-                                                onClick={() => handleOpenMgrEditMatrixModal(teamCycle)}
-                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer"
-                                                title="Edit Deliverables Matrix"
-                                              >
-                                                <PencilSquareIcon className="w-3 h-3 text-slate-500" />
-                                                <span>Edit</span>
-                                              </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleOpenMgrEditMatrixModal(teamCycle)}
+                                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer"
+                                                  title="Edit Deliverables Matrix"
+                                                >
+                                                  <PencilSquareIcon className="w-3 h-3 text-slate-500" />
+                                                  <span>Edit</span>
+                                                </button>
 
-                                              <button
-                                                type="button"
-                                                onClick={() => handleMgrDeleteMatrix(teamCycle)}
-                                                className={isHrOrAdmin ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-danger-50 hover:bg-danger-100 text-danger-600 border border-danger-200 shadow-2xs transition cursor-pointer" : "hidden"}
-                                                title="Delete Deliverables Matrix"
-                                              >
-                                                <TrashIcon className="w-3 h-3" />
-                                                <span>Delete</span>
-                                              </button>
-                                            </>
-                                          )}
-                                        </>
-                                      ) : (
-                                        <div className="flex items-center gap-2">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenMgrCreateModal(teamGroup.teamName)}
-                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold text-primary-700 bg-white hover:bg-primary-50 border border-primary-200 shadow-2xs transition cursor-pointer"
-                                          >
-                                            <span>+ Assign Matrix</span>
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleMgrDeleteMatrix(teamCycle)}
+                                                  className={isHrOrAdmin ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-danger-50 hover:bg-danger-100 text-danger-600 border border-danger-200 shadow-2xs transition cursor-pointer" : "hidden"}
+                                                  title="Delete Deliverables Matrix"
+                                                >
+                                                  <TrashIcon className="w-3 h-3" />
+                                                  <span>Delete</span>
+                                                </button>
+                                              </>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenMgrCreateModal(teamGroup.teamName)}
+                                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold text-primary-700 bg-white hover:bg-primary-50 border border-primary-200 shadow-2xs transition cursor-pointer"
+                                            >
+                                              <span>+ Assign Matrix</span>
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            </td>
-                          </tr>
+                              </td>
+                            </tr>
 
-                          {/* Members inside Team (Rendered directly when Team is Expanded) */}
-                          {isTeamExpanded && teamGroup.members.map(member => {
-                            const isYearly = isYearlyResponse(member.response);
-                            const hasYearlySubmittedMilestone = isYearly && (member.response.monthly_records || []).some(
-                              (m: any) => m.status === 'submitted_to_manager'
-                            );
-                            const hasYearlyApprovedMilestone = isYearly && (member.response.monthly_records || []).some(
-                              (m: any) => m.status === 'manager_approved'
-                            );
-                            const isStandardSubmitted = !isYearly && Boolean(
-                              (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || String(member.response.status || '').toLowerCase().includes('submitted') || Boolean(member.response.employeeSubmittedAt) || Boolean((member.response as any).submitted_at) || Boolean((member.response as any).submittedAt) || Boolean((member.response as any).employee_submitted_at)) &&
-                              member.response.managerScore == null
-                            );
+                            {/* Members inside Team (Rendered directly when Team is Expanded) */}
+                            {isTeamExpanded && teamGroup.members.map(member => {
+                              const isYearly = isYearlyResponse(member.response);
+                              const hasYearlySubmittedMilestone = isYearly && (
+                                (member.response.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
+                                (member.response.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
+                                (member.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+                              );
+                              const hasYearlyApprovedMilestone = isYearly && (
+                                (member.response.quarterly_records || []).some((q: any) => q.status === 'manager_approved') ||
+                                (member.response.weekly_records || []).some((w: any) => w.status === 'manager_approved') ||
+                                (member.response.monthly_records || []).some((m: any) => m.status === 'manager_approved')
+                              );
+                              const isStandardSubmitted = !isYearly && Boolean(
+                                (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || String(member.response.status || '').toLowerCase().includes('submitted') || Boolean(member.response.employeeSubmittedAt) || Boolean((member.response as any).submitted_at) || Boolean((member.response as any).submittedAt) || Boolean((member.response as any).employee_submitted_at)) &&
+                                member.response.managerScore == null
+                              );
 
-                            const isSubmittedPending = hasYearlySubmittedMilestone || isStandardSubmitted;
+                              const isSubmittedPending = hasYearlySubmittedMilestone || isStandardSubmitted;
 
-                            return (
-                              <tr
-                                key={member.response.id || member.employeeCode}
-                                className={`group/row border-b border-slate-100 hover:bg-slate-50/80 transition ${isSubmittedPending ? 'bg-primary-50/30 border-l-4 border-l-primary-600' : 'bg-white'
-                                  }`}
-                              >
-                                {/* 1. Name of the employee */}
-                                <td className="py-3.5 px-4 pl-8">
-                                  <div className="flex flex-col min-w-0">
-                                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                      {member.rank && (
-                                        <span className="font-bold text-xs text-amber-600 mr-0.5">
-                                          {member.rank === 1 ? '🥇 #1' : member.rank === 2 ? '🥈 #2' : member.rank === 3 ? '🥉 #3' : `#${member.rank}`}
+                              return (
+                                <tr
+                                  key={member.response.id || member.employeeCode}
+                                  className={`group/row border-b border-slate-100 hover:bg-slate-50/80 transition ${isSubmittedPending ? 'bg-primary-50/30 border-l-4 border-l-primary-600' : 'bg-white'
+                                    }`}
+                                >
+                                  {/* 1. Name of the employee */}
+                                  <td className="py-3.5 px-4 pl-8">
+                                    <div className="flex flex-col min-w-0">
+                                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                        {member.rank && (
+                                          <span className="font-bold text-xs text-amber-600 mr-0.5">
+                                            {member.rank === 1 ? '🥇 #1' : member.rank === 2 ? '🥈 #2' : member.rank === 3 ? '🥉 #3' : `#${member.rank}`}
+                                          </span>
+                                        )}
+                                        <span className={`font-semibold text-xs ${isSubmittedPending ? 'text-primary-950 font-bold' : 'text-slate-900'}`}>
+                                          {member.employeeName}
+                                        </span>
+                                        <span className="text-xs text-slate-400 font-normal">
+                                          (Emp Code {member.employeeCode})
+                                        </span>
+                                        {isSubmittedPending && (
+                                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary-100 text-primary-900 border border-primary-300 shrink-0 inline-flex items-center gap-1 shadow-2xs animate-pulse">
+                                            <SparklesIcon className="w-3.5 h-3.5 text-primary-700" />
+                                            <span>Ready for Review</span>
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  {/* 2. Evaluation Period / Date Badge with Hover Tooltip for Submission & Approved Dates */}
+                                  <td className="py-3.5 px-4 text-center">
+                                    {(() => {
+                                      const isEmpSubmitted = Boolean(
+                                        member.response.employeeSubmittedAt ||
+                                        (member.response as any).submitted_at ||
+                                        (member.response as any).submittedAt ||
+                                        (member.response as any).employee_submitted_at ||
+                                        (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || member.response.status === 'approved' || member.response.status === 'sm_final_approval' || (member.response.employeeOverallScore != null && Number(member.response.employeeOverallScore) > 0))
+                                      );
+                                      const subDate = isEmpSubmitted
+                                        ? formatEvalDateTime(member.response.employeeSubmittedAt || (member.response as any).submitted_at || (member.response as any).submittedAt || (member.response as any).employee_submitted_at || member.response.updatedAt || member.response.createdAt)
+                                        : null;
+                                      const approvedDate = (member.isCalibrated || member.response.serviceManagerApprovedAt || member.response.managerReviewedAt)
+                                        ? formatEvalDateTime(member.response.serviceManagerApprovedAt || member.response.managerReviewedAt || (member.response as any).manager_reviewed_at || (member.response as any).approved_at || member.response.updatedAt)
+                                        : null;
+                                      const tooltipLines: string[] = [];
+                                      if (subDate) tooltipLines.push(`Submitted: ${subDate}`);
+                                      if (approvedDate) tooltipLines.push(`Approved: ${approvedDate}`);
+                                      const nativeTooltip = tooltipLines.join(' | ');
+
+                                      return (
+                                        <SubmissionDatesHover
+                                          subDate={subDate}
+                                          approvedDate={approvedDate}
+                                          isSubmitted={isEmpSubmitted}
+                                          align="center"
+                                          nativeTitle={nativeTooltip}
+                                        >
+                                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold border shadow-2xs transition-transform hover:scale-105 ${member.periodInfo?.freqColor || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                                            <CalendarDaysIcon className="w-3 h-3 shrink-0" />
+                                            <span>{member.periodInfo?.freqLabel || 'Evaluation'}</span>
+                                          </span>
+                                          <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap hover:text-primary-700 transition-colors">
+                                            {member.periodInfo?.dateText}
+                                          </span>
+                                        </SubmissionDatesHover>
+                                      );
+                                    })()}
+                                  </td>
+
+                                  {/* 3. Date Score / Self Score */}
+                                  <td className="py-3.5 px-4 text-center">
+                                    <span className="text-xs font-medium text-slate-700">
+                                      {member.dateScoreDisplay}
+                                    </span>
+                                  </td>
+
+                                  {/* 4. Average Score */}
+                                  <td className="py-3.5 px-4 text-center">
+                                    <span className="text-xs font-semibold text-slate-800">
+                                      {member.averageScoreDisplay}
+                                    </span>
+                                  </td>
+
+                                  {/* 5. Status Badge */}
+                                  <td className="py-3.5 px-4 text-center">
+                                    {renderStatusBadge(member.response.status, member.response)}
+                                  </td>
+
+                                  {/* 6. Action Button */}
+                                  <td className="py-3.5 px-4 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {isSubmittedPending ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSelectMgrResponse(member.response)}
+                                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs bg-primary-600 hover:bg-primary-700 text-white ring-2 ring-primary-500/30"
+                                        >
+                                          <SparklesIcon className="w-3.5 h-3.5 text-amber-300" />
+                                          <span>Review & Score</span>
+                                        </button>
+                                      ) : member.isCalibrated ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSelectMgrResponse(member.response)}
+                                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs bg-white hover:bg-slate-50 text-slate-700 border border-slate-300"
+                                        >
+                                          <PencilSquareIcon className="w-3.5 h-3.5" />
+                                          <span>Update Score</span>
+                                        </button>
+                                      ) : isYearly && hasYearlyApprovedMilestone ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSelectMgrResponse(member.response)}
+                                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer shadow-2xs bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300"
+                                        >
+                                          <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
+                                          <span>Open Scorecard</span>
+                                        </button>
+                                      ) : (
+                                        <span
+                                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs bg-slate-100 text-slate-500 border border-slate-200 select-none cursor-default"
+                                          title="Waiting for employee to submit self-evaluation."
+                                        >
+                                          <ClockIcon className="w-3.5 h-3.5 text-slate-400" />
+                                          <span>Pending</span>
                                         </span>
                                       )}
-                                      <span className={`font-semibold text-xs ${isSubmittedPending ? 'text-primary-950 font-bold' : 'text-slate-900'}`}>
-                                        {member.employeeName}
-                                      </span>
-                                      <span className="text-xs text-slate-400 font-normal">
-                                        (Emp Code {member.employeeCode})
-                                      </span>
-                                      {isSubmittedPending && (
-                                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary-100 text-primary-900 border border-primary-300 shrink-0 inline-flex items-center gap-1 shadow-2xs animate-pulse">
-                                          <SparklesIcon className="w-3.5 h-3.5 text-primary-700" />
-                                          <span>Ready for Review</span>
-                                        </span>
+                                      {!isSubmittedPending && !member.isCalibrated && !hasYearlyApprovedMilestone && member.response.managerScore == null && !member.response.employeeSubmittedAt && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteMgrResponseRow(member.response)}
+                                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                          title="Delete unstarted evaluation record"
+                                        >
+                                          <TrashIcon className="w-3.5 h-3.5" />
+                                        </button>
                                       )}
                                     </div>
-                                  </div>
-                                </td>
-
-                                {/* 2. Evaluation Period / Date Badge with Hover Tooltip for Submission & Approved Dates */}
-                                <td className="py-3.5 px-4 text-center">
-                                  {(() => {
-                                    const isEmpSubmitted = Boolean(
-                                      member.response.employeeSubmittedAt ||
-                                      (member.response as any).submitted_at ||
-                                      (member.response as any).submittedAt ||
-                                      (member.response as any).employee_submitted_at ||
-                                      (member.response.status === 'manager_review' || member.response.status === 'Submitted to Manager' || member.response.status === 'approved' || member.response.status === 'sm_final_approval' || (member.response.employeeOverallScore != null && Number(member.response.employeeOverallScore) > 0))
-                                    );
-                                    const subDate = isEmpSubmitted
-                                      ? formatEvalDateTime(member.response.employeeSubmittedAt || (member.response as any).submitted_at || (member.response as any).submittedAt || (member.response as any).employee_submitted_at || member.response.updatedAt || member.response.createdAt)
-                                      : null;
-                                    const approvedDate = (member.isCalibrated || member.response.serviceManagerApprovedAt || member.response.managerReviewedAt)
-                                      ? formatEvalDateTime(member.response.serviceManagerApprovedAt || member.response.managerReviewedAt || (member.response as any).manager_reviewed_at || (member.response as any).approved_at || member.response.updatedAt)
-                                      : null;
-                                    const tooltipLines: string[] = [];
-                                    if (subDate) tooltipLines.push(`Submitted: ${subDate}`);
-                                    if (approvedDate) tooltipLines.push(`Approved: ${approvedDate}`);
-                                    const nativeTooltip = tooltipLines.join(' | ');
-
-                                    return (
-                                      <SubmissionDatesHover
-                                        subDate={subDate}
-                                        approvedDate={approvedDate}
-                                        isSubmitted={isEmpSubmitted}
-                                        align="center"
-                                        nativeTitle={nativeTooltip}
-                                      >
-                                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold border shadow-2xs transition-transform hover:scale-105 ${member.periodInfo?.freqColor || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                                          <CalendarDaysIcon className="w-3 h-3 shrink-0" />
-                                          <span>{member.periodInfo?.freqLabel || 'Evaluation'}</span>
-                                        </span>
-                                        <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap hover:text-primary-700 transition-colors">
-                                          {member.periodInfo?.dateText}
-                                        </span>
-                                      </SubmissionDatesHover>
-                                    );
-                                  })()}
-                                </td>
-
-                                {/* 3. Date Score / Self Score */}
-                                <td className="py-3.5 px-4 text-center">
-                                  <span className="text-xs font-medium text-slate-700">
-                                    {member.dateScoreDisplay}
-                                  </span>
-                                </td>
-
-                                {/* 4. Average Score */}
-                                <td className="py-3.5 px-4 text-center">
-                                  <span className="text-xs font-semibold text-slate-800">
-                                    {member.averageScoreDisplay}
-                                  </span>
-                                </td>
-
-                                {/* 5. Status Badge */}
-                                <td className="py-3.5 px-4 text-center">
-                                  {renderStatusBadge(member.response.status, member.response)}
-                                </td>
-
-                                {/* 6. Action Button */}
-                                <td className="py-3.5 px-4 text-right">
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    {isSubmittedPending ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSelectMgrResponse(member.response)}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs bg-primary-600 hover:bg-primary-700 text-white ring-2 ring-primary-500/30"
-                                      >
-                                        <SparklesIcon className="w-3.5 h-3.5 text-amber-300" />
-                                        <span>Review & Score</span>
-                                      </button>
-                                    ) : member.isCalibrated ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSelectMgrResponse(member.response)}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs bg-white hover:bg-slate-50 text-slate-700 border border-slate-300"
-                                      >
-                                        <PencilSquareIcon className="w-3.5 h-3.5" />
-                                        <span>Update Score</span>
-                                      </button>
-                                    ) : isYearly && hasYearlyApprovedMilestone ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSelectMgrResponse(member.response)}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer shadow-2xs bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300"
-                                      >
-                                        <PencilSquareIcon className="w-3.5 h-3.5 text-slate-500" />
-                                        <span>Open Scorecard</span>
-                                      </button>
-                                    ) : (
-                                      <span
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs bg-slate-100 text-slate-500 border border-slate-200 select-none cursor-default"
-                                        title="Waiting for employee to submit self-evaluation."
-                                      >
-                                        <ClockIcon className="w-3.5 h-3.5 text-slate-400" />
-                                        <span>Pending</span>
-                                      </span>
-                                    )}
-                                    {!isSubmittedPending && !member.isCalibrated && !hasYearlyApprovedMilestone && member.response.managerScore == null && !member.response.employeeSubmittedAt && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteMgrResponseRow(member.response)}
-                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                        title="Delete unstarted evaluation record"
-                                      >
-                                        <TrashIcon className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </React.Fragment>
-                      );
-                    })
-                  )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -14024,529 +16226,2316 @@ export const EvaluationTab: React.FC = () => {
           </div>
         </div>
 
-            {/* Overlaid E2R Under Process Card */}
-            {!hasAssignedCycleFromAdmin && reportFilteredResponses.length === 0 && (
-              <div className="absolute inset-0 z-20 flex items-start justify-center pt-8 pb-12 px-4 bg-slate-900/5 backdrop-blur-[1.5px] rounded-2xl pointer-events-auto">
-                <div className="bg-white/95 backdrop-blur-md rounded-3xl border border-neutral-200/90 shadow-2xl p-8 sm:p-10 text-center space-y-3 animate-in fade-in zoom-in-95 duration-200 max-w-sm w-full mx-auto my-6 sticky top-8">
-                  {/* Status Icon */}
-                  <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-700 shadow-2xs relative">
-                    <ClockIcon className="w-7 h-7 stroke-[1.5]" />
-                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 border-2 border-white animate-pulse" />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/80 shadow-2xs">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
-                      <span>E2R is Under Process</span>
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-900 tracking-tight">
-                      Evaluation Under Process
-                    </h3>
-                    <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
-                      Evaluation cycle setup is currently under process. Once released by Admin / HR, the deliverables matrix will appear here.
-                    </p>
-                  </div>
-                </div>
+        {/* Overlaid E2R Under Process Card */}
+        {!hasAssignedCycleFromAdmin && reportFilteredResponses.length === 0 && (
+          <div className="absolute inset-0 z-20 flex items-start justify-center pt-8 pb-12 px-4 bg-slate-900/5 backdrop-blur-[1.5px] rounded-2xl pointer-events-auto">
+            <div className="bg-white/95 backdrop-blur-md rounded-3xl border border-neutral-200/90 shadow-2xl p-8 sm:p-10 text-center space-y-3 animate-in fade-in zoom-in-95 duration-200 max-w-sm w-full mx-auto my-6 sticky top-8">
+              {/* Status Icon */}
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-700 shadow-2xs relative">
+                <ClockIcon className="w-7 h-7 stroke-[1.5]" />
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 border-2 border-white animate-pulse" />
               </div>
-            )}
+
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/80 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                  <span>E2R is Under Process</span>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 tracking-tight">
+                  Evaluation Under Process
+                </h3>
+                <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
+                  Evaluation cycle setup is currently under process. Once released by Admin / HR, the deliverables matrix will appear here.
+                </p>
+              </div>
+            </div>
           </div>
-        )
-      )}
+        )}
+      </div>
+    )
+  )
+}
 
-      {/* ========================================================================= */}
-      {/* 4.2. DEPARTMENT OVERSIGHT VIEW (SUBMISSIONS DASHBOARD + TOP PERFORMERS) */}
-      {/* ========================================================================= */}
-      {activeRole === 'downline_teams' && (
-        <div className="space-y-6 animate-in fade-in duration-200">
-          {/* Header Title & Subtitle */}
-          <div className="border-l-4 border-blue-600 pl-3.5 py-0.5">
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight">Department Oversight</h2>
-            <p className="text-xs text-slate-500 mt-0.5 font-medium">
-              Submitted evaluations with their current status — Pending, Approved, Returned, etc.
-            </p>
+{/* ========================================================================= */ }
+{/* 4.2. DEPARTMENT OVERSIGHT VIEW (SUBMISSIONS DASHBOARD + TOP PERFORMERS) */ }
+{/* ========================================================================= */ }
+{
+  activeRole === 'downline_teams' && (
+    <div className="space-y-6 animate-in fade-in duration-200">
+      {/* Header Title & Subtitle */}
+      <div className="border-l-4 border-blue-600 pl-3.5 py-0.5">
+        <h2 className="text-xl font-bold text-slate-900 tracking-tight">Department Oversight</h2>
+        <p className="text-xs text-slate-500 mt-0.5 font-medium">
+          Submitted evaluations with their current status — Pending, Approved, Returned, etc.
+        </p>
+      </div>
+
+      {/* Overview Cards (4 Cards: All, With manager, Completed, Top Performers) */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+        {/* 1. All */}
+        <button
+          type="button"
+          onClick={() => {
+            setOversightSubView('submissions');
+            setSubmissionStatusFilter('all');
+          }}
+          className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'submissions' && submissionStatusFilter === 'all'
+            ? 'border-slate-800 ring-2 ring-slate-800/20 shadow-xs'
+            : 'border-slate-200/90 hover:border-slate-300'
+            }`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+              <Square3Stack3DIcon className="w-5 h-5 stroke-[2]" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xl font-bold text-slate-900 leading-none truncate">
+                {submissionSummaryCounts.all}
+              </div>
+              <div className="text-xs font-semibold text-slate-500 mt-1 truncate">All</div>
+            </div>
+          </div>
+        </button>
+
+        {/* 2. Assigned to Manager */}
+        <button
+          type="button"
+          onClick={() => {
+            setOversightSubView('submissions');
+            setSubmissionStatusFilter('with_manager');
+          }}
+          className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'submissions' && submissionStatusFilter === 'with_manager'
+            ? 'border-amber-500 ring-2 ring-amber-400/25 bg-amber-50/20 shadow-xs'
+            : 'border-slate-200/90 hover:border-slate-300'
+            }`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+              <PaperAirplaneIcon className="w-5 h-5 -rotate-45 stroke-[2]" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xl font-bold text-slate-900 leading-none truncate">
+                {submissionSummaryCounts.withManager}
+              </div>
+              <div className="text-xs font-semibold text-amber-800 mt-1 truncate">Assigned to Manager</div>
+            </div>
+          </div>
+        </button>
+
+        {/* 3. Completed */}
+        <button
+          type="button"
+          onClick={() => {
+            setOversightSubView('submissions');
+            setSubmissionStatusFilter('completed');
+          }}
+          className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'submissions' && submissionStatusFilter === 'completed'
+            ? 'border-emerald-600 ring-2 ring-emerald-500/25 bg-emerald-50/20 shadow-xs'
+            : 'border-slate-200/90 hover:border-slate-300'
+            }`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <ClipboardDocumentCheckIcon className="w-5 h-5 stroke-[2]" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xl font-bold text-slate-900 leading-none truncate">
+                {submissionSummaryCounts.completed}
+              </div>
+              <div className="text-xs font-semibold text-emerald-800 mt-1 truncate">Completed</div>
+            </div>
+          </div>
+        </button>
+
+        {/* 4. Top Performers */}
+        <button
+          type="button"
+          onClick={() => {
+            setOversightSubView('top_performers');
+            if (!['top_weekly', 'top_monthly', 'top_quarterly', 'top_annual'].includes(reportViewTab)) {
+              setReportViewTab('top_weekly');
+            }
+          }}
+          className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'top_performers'
+            ? 'border-teal-700 ring-2 ring-teal-600/25 bg-teal-50/10 shadow-xs'
+            : 'border-slate-200/90 hover:border-slate-300'
+            }`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+              <TrophyIcon className="w-5 h-5 stroke-[2]" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xl font-bold text-slate-900 leading-none truncate">
+                Rankings
+              </div>
+              <div className="text-xs font-semibold text-amber-800 mt-1 truncate">Top Performers</div>
+            </div>
+          </div>
+        </button>
+      </div>
+
+      {/* Sub-View Content */}
+      {oversightSubView === 'submissions' ? (
+        /* Submissions Grouping View */
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-1">
+            {/* Left: Section Title / Badge */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-800 tracking-tight">Team Submissions Overview</span>
+              <span className="text-[11px] text-slate-400 font-medium">• Grouped by Teams</span>
+            </div>
+
+            {/* Right: Search & Submissions count badge */}
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={submissionSearchQuery}
+                  onChange={(e) => setSubmissionSearchQuery(e.target.value)}
+                  placeholder="Search submissions..."
+                  className="pl-9 pr-7 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white focus:bg-white focus:border-teal-600 outline-none w-48 sm:w-60 transition"
+                />
+                {submissionSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSubmissionSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <XMarkIcon className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <div className="text-xs font-semibold text-slate-500">
+                <span className="font-bold text-slate-700">{filteredSubmissionsList.length}</span> of{' '}
+                <span className="font-bold text-slate-700">{allDeduplicatedManagerResponses.length}</span> submissions
+              </div>
+            </div>
           </div>
 
-          {/* Overview Cards (4 Cards: All, With manager, Completed, Top Performers) */}
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
-            {/* 1. All */}
-            <button
-              type="button"
-              onClick={() => {
-                setOversightSubView('submissions');
-                setSubmissionStatusFilter('all');
-              }}
-              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'submissions' && submissionStatusFilter === 'all'
-                ? 'border-slate-800 ring-2 ring-slate-800/20 shadow-xs'
-                : 'border-slate-200/90 hover:border-slate-300'
-                }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
-                  <Square3Stack3DIcon className="w-5 h-5 stroke-[2]" />
+          {/* List / Accordion Rows */}
+          {submissionGroupBy !== 'none' ? (
+            <div className="space-y-3 pt-2">
+              {submissionGroupedData.length === 0 ? (
+                <div className="py-12 text-center text-slate-400">
+                  <BuildingOffice2Icon className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5] mb-2" />
+                  <p className="text-sm font-semibold text-slate-600">No submissions found</p>
+                  <p className="text-xs text-slate-400 mt-1">Try changing the status filter or search keyword.</p>
                 </div>
-                <div className="min-w-0">
-                  <div className="text-xl font-bold text-slate-900 leading-none truncate">
-                    {submissionSummaryCounts.all}
-                  </div>
-                  <div className="text-xs font-semibold text-slate-500 mt-1 truncate">All</div>
-                </div>
-              </div>
-            </button>
+              ) : (
+                submissionGroupedData.map((group, idx) => {
+                  const rowThemes = [
+                    { bg: 'bg-[#FEF9ED]', border: 'border-[#F4E7C7]', text: 'text-[#8C6D1F]', icon: 'text-[#B89028]' },
+                    { bg: 'bg-[#FAF0F8]', border: 'border-[#EED7E9]', text: 'text-[#863870]', icon: 'text-[#B04C95]' },
+                    { bg: 'bg-[#FDF0F5]', border: 'border-[#F4D6E4]', text: 'text-[#8C3660]', icon: 'text-[#B54A80]' },
+                    { bg: 'bg-[#FDF8EE]', border: 'border-[#F0E4C3]', text: 'text-[#806B1F]', icon: 'text-[#A88C28]' },
+                    { bg: 'bg-[#F5F1FA]', border: 'border-[#E2D8F2]', text: 'text-[#6E429B]', icon: 'text-[#9359CF]' },
+                    { bg: 'bg-[#FAF8ED]', border: 'border-[#EFE5C5]', text: 'text-[#7D681C]', icon: 'text-[#A48824]' },
+                    { bg: 'bg-[#F2F1FA]', border: 'border-[#DCD6F3]', text: 'text-[#55409E]', icon: 'text-[#7458D4]' },
+                  ];
+                  const theme = submissionStatusFilter === 'completed'
+                    ? { bg: 'bg-[#ECFDF5]', border: 'border-[#A7F3D0]', text: 'text-[#065F46]', icon: 'text-[#059669]' }
+                    : submissionStatusFilter === 'with_manager'
+                      ? { bg: 'bg-[#FFFBEB]', border: 'border-[#FDE68A]', text: 'text-[#92400E]', icon: 'text-[#D97706]' }
+                      : rowThemes[idx % rowThemes.length];
+                  const isExpanded = Boolean(expandedSubmissionGroups[group.groupName]);
 
-            {/* 2. Assigned to Manager */}
-            <button
-              type="button"
-              onClick={() => {
-                setOversightSubView('submissions');
-                setSubmissionStatusFilter('with_manager');
-              }}
-              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'submissions' && submissionStatusFilter === 'with_manager'
-                ? 'border-amber-500 ring-2 ring-amber-400/25 bg-amber-50/20 shadow-xs'
-                : 'border-slate-200/90 hover:border-slate-300'
-                }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                  <PaperAirplaneIcon className="w-5 h-5 -rotate-45 stroke-[2]" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xl font-bold text-slate-900 leading-none truncate">
-                    {submissionSummaryCounts.withManager}
-                  </div>
-                  <div className="text-xs font-semibold text-amber-800 mt-1 truncate">Assigned to Manager</div>
-                </div>
-              </div>
-            </button>
-
-            {/* 3. Completed */}
-            <button
-              type="button"
-              onClick={() => {
-                setOversightSubView('submissions');
-                setSubmissionStatusFilter('completed');
-              }}
-              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'submissions' && submissionStatusFilter === 'completed'
-                ? 'border-emerald-600 ring-2 ring-emerald-500/25 bg-emerald-50/20 shadow-xs'
-                : 'border-slate-200/90 hover:border-slate-300'
-                }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                  <ClipboardDocumentCheckIcon className="w-5 h-5 stroke-[2]" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xl font-bold text-slate-900 leading-none truncate">
-                    {submissionSummaryCounts.completed}
-                  </div>
-                  <div className="text-xs font-semibold text-emerald-800 mt-1 truncate">Completed</div>
-                </div>
-              </div>
-            </button>
-
-            {/* 4. Top Performers */}
-            <button
-              type="button"
-              onClick={() => {
-                setOversightSubView('top_performers');
-                if (!['top_weekly', 'top_monthly', 'top_quarterly', 'top_annual'].includes(reportViewTab)) {
-                  setReportViewTab('top_weekly');
-                }
-              }}
-              className={`p-4 rounded-2xl bg-white border text-left transition-all cursor-pointer flex items-center justify-between shadow-2xs hover:shadow-xs ${oversightSubView === 'top_performers'
-                ? 'border-teal-700 ring-2 ring-teal-600/25 bg-teal-50/10 shadow-xs'
-                : 'border-slate-200/90 hover:border-slate-300'
-                }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                  <TrophyIcon className="w-5 h-5 stroke-[2]" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xl font-bold text-slate-900 leading-none truncate">
-                    Rankings
-                  </div>
-                  <div className="text-xs font-semibold text-amber-800 mt-1 truncate">Top Performers</div>
-                </div>
-              </div>
-            </button>
-          </div>
-
-          {/* Sub-View Content */}
-          {oversightSubView === 'submissions' ? (
-            /* Submissions Grouping View */
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-4 pb-1">
-                {/* Left: Section Title / Badge */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-800 tracking-tight">Team Submissions Overview</span>
-                  <span className="text-[11px] text-slate-400 font-medium">• Grouped by Teams</span>
-                </div>
-
-                {/* Right: Search & Submissions count badge */}
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={submissionSearchQuery}
-                      onChange={(e) => setSubmissionSearchQuery(e.target.value)}
-                      placeholder="Search submissions..."
-                      className="pl-9 pr-7 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white focus:bg-white focus:border-teal-600 outline-none w-48 sm:w-60 transition"
-                    />
-                    {submissionSearchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setSubmissionSearchQuery('')}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  return (
+                    <div
+                      key={group.groupName}
+                      className={`rounded-2xl border transition-all overflow-hidden ${theme.border} ${theme.bg}`}
+                    >
+                      {/* Group Header Bar */}
+                      <div
+                        onClick={() => {
+                          setExpandedSubmissionGroups(prev => ({
+                            ...prev,
+                            [group.groupName]: !prev[group.groupName]
+                          }));
+                        }}
+                        className="px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none hover:brightness-95 transition"
                       >
-                        <XMarkIcon className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="text-xs font-semibold text-slate-500">
-                    <span className="font-bold text-slate-700">{filteredSubmissionsList.length}</span> of{' '}
-                    <span className="font-bold text-slate-700">{allDeduplicatedManagerResponses.length}</span> submissions
-                  </div>
-                </div>
-              </div>
+                        {/* Left: Chevron + Building + Group Name */}
+                        <div className="flex items-center gap-3">
+                          <ChevronRightIcon
+                            className={`w-4 h-4 transition-transform duration-200 ${theme.text} ${isExpanded ? 'rotate-90' : ''
+                              }`}
+                          />
+                          <BuildingOffice2Icon className={`w-5 h-5 ${theme.icon}`} />
+                          <span className={`text-sm font-bold tracking-tight ${theme.text}`}>
+                            {group.groupName}
+                          </span>
+                        </div>
 
-              {/* List / Accordion Rows */}
-              {submissionGroupBy !== 'none' ? (
-                <div className="space-y-3 pt-2">
-                  {submissionGroupedData.length === 0 ? (
-                    <div className="py-12 text-center text-slate-400">
-                      <BuildingOffice2Icon className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5] mb-2" />
-                      <p className="text-sm font-semibold text-slate-600">No submissions found</p>
-                      <p className="text-xs text-slate-400 mt-1">Try changing the status filter or search keyword.</p>
-                    </div>
-                  ) : (
-                    submissionGroupedData.map((group, idx) => {
-                      const rowThemes = [
-                        { bg: 'bg-[#FEF9ED]', border: 'border-[#F4E7C7]', text: 'text-[#8C6D1F]', icon: 'text-[#B89028]' },
-                        { bg: 'bg-[#FAF0F8]', border: 'border-[#EED7E9]', text: 'text-[#863870]', icon: 'text-[#B04C95]' },
-                        { bg: 'bg-[#FDF0F5]', border: 'border-[#F4D6E4]', text: 'text-[#8C3660]', icon: 'text-[#B54A80]' },
-                        { bg: 'bg-[#FDF8EE]', border: 'border-[#F0E4C3]', text: 'text-[#806B1F]', icon: 'text-[#A88C28]' },
-                        { bg: 'bg-[#F5F1FA]', border: 'border-[#E2D8F2]', text: 'text-[#6E429B]', icon: 'text-[#9359CF]' },
-                        { bg: 'bg-[#FAF8ED]', border: 'border-[#EFE5C5]', text: 'text-[#7D681C]', icon: 'text-[#A48824]' },
-                        { bg: 'bg-[#F2F1FA]', border: 'border-[#DCD6F3]', text: 'text-[#55409E]', icon: 'text-[#7458D4]' },
-                      ];
-                      const theme = submissionStatusFilter === 'completed'
-                        ? { bg: 'bg-[#ECFDF5]', border: 'border-[#A7F3D0]', text: 'text-[#065F46]', icon: 'text-[#059669]' }
-                        : submissionStatusFilter === 'with_manager'
-                          ? { bg: 'bg-[#FFFBEB]', border: 'border-[#FDE68A]', text: 'text-[#92400E]', icon: 'text-[#D97706]' }
-                          : rowThemes[idx % rowThemes.length];
-                      const isExpanded = Boolean(expandedSubmissionGroups[group.groupName]);
+                        {/* Right: Telemetry Statistics */}
+                        <div className="flex items-center gap-4 sm:gap-6 text-xs flex-wrap">
+                          <span className="text-slate-600 font-medium">
+                            <strong className="font-bold text-slate-800">{group.peopleCount}</strong> {group.peopleCount === 1 ? 'person' : 'people'}
+                          </span>
 
-                      return (
-                        <div
-                          key={group.groupName}
-                          className={`rounded-2xl border transition-all overflow-hidden ${theme.border} ${theme.bg}`}
-                        >
-                          {/* Group Header Bar */}
-                          <div
-                            onClick={() => {
-                              setExpandedSubmissionGroups(prev => ({
-                                ...prev,
-                                [group.groupName]: !prev[group.groupName]
-                              }));
-                            }}
-                            className="px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none hover:brightness-95 transition"
-                          >
-                            {/* Left: Chevron + Building + Group Name */}
-                            <div className="flex items-center gap-3">
-                              <ChevronRightIcon
-                                className={`w-4 h-4 transition-transform duration-200 ${theme.text} ${isExpanded ? 'rotate-90' : ''
-                                  }`}
-                              />
-                              <BuildingOffice2Icon className={`w-5 h-5 ${theme.icon}`} />
-                              <span className={`text-sm font-bold tracking-tight ${theme.text}`}>
-                                {group.groupName}
-                              </span>
-                            </div>
-
-                            {/* Right: Telemetry Statistics */}
-                            <div className="flex items-center gap-4 sm:gap-6 text-xs flex-wrap">
+                          {submissionStatusFilter === 'all' ? (
+                            <>
                               <span className="text-slate-600 font-medium">
-                                <strong className="font-bold text-slate-800">{group.peopleCount}</strong> {group.peopleCount === 1 ? 'person' : 'people'}
+                                <strong className="font-bold text-slate-800">{group.submittedCount}</strong> submitted
                               </span>
+                              <span className="text-slate-600 font-medium">
+                                <strong className={`font-bold ${group.openCount > 0 ? 'text-amber-700' : 'text-slate-800'}`}>{group.openCount}</strong> open
+                              </span>
+                              <span className="text-slate-600 font-medium">
+                                <strong className="font-bold text-emerald-700">{group.completedCount}</strong> completed
+                              </span>
+                            </>
+                          ) : submissionStatusFilter === 'with_manager' ? (
+                            <span className="text-slate-600 font-medium">
+                              <strong className="font-bold text-amber-700">{group.filteredCount}</strong> assigned to manager
+                            </span>
+                          ) : submissionStatusFilter === 'completed' ? (
+                            <span className="text-slate-600 font-medium">
+                              <strong className="font-bold text-emerald-700">{group.filteredCount}</strong> completed
+                            </span>
+                          ) : (
+                            <span className="text-slate-600 font-medium">
+                              <strong className="font-bold text-slate-800">{group.filteredCount}</strong> submissions
+                            </span>
+                          )}
 
-                              {submissionStatusFilter === 'all' ? (
-                                <>
-                                  <span className="text-slate-600 font-medium">
-                                    <strong className="font-bold text-slate-800">{group.submittedCount}</strong> submitted
-                                  </span>
-                                  <span className="text-slate-600 font-medium">
-                                    <strong className={`font-bold ${group.openCount > 0 ? 'text-amber-700' : 'text-slate-800'}`}>{group.openCount}</strong> open
-                                  </span>
-                                  <span className="text-slate-600 font-medium">
-                                    <strong className="font-bold text-emerald-700">{group.completedCount}</strong> completed
-                                  </span>
-                                </>
-                              ) : submissionStatusFilter === 'with_manager' ? (
-                                <span className="text-slate-600 font-medium">
-                                  <strong className="font-bold text-amber-700">{group.filteredCount}</strong> assigned to manager
-                                </span>
-                              ) : submissionStatusFilter === 'completed' ? (
-                                <span className="text-slate-600 font-medium">
-                                  <strong className="font-bold text-emerald-700">{group.filteredCount}</strong> completed
+                          <span className="text-slate-600 font-medium">
+                            avg <strong className="font-bold text-slate-900">{group.avgScore > 0 ? `${group.avgScore.toFixed(1)}%` : '—'}</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Expanded Submissions Group (Rendered directly when Group is Expanded) */}
+                      {isExpanded && (
+                        <div className="px-5 pb-4 pt-3 border-t border-slate-200/60 bg-white/70 space-y-3">
+                          {group.items.length === 0 ? (
+                            <div className="py-6 text-center text-xs text-slate-400 font-medium">
+                              No submissions in this category.
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-slate-200/80 bg-white shadow-2xs overflow-hidden">
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead>
+                                    <tr className="bg-slate-50/50 border-b border-slate-200/60 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                      <th className="px-4 py-2.5">Employee</th>
+                                      <th className="px-4 py-2.5">Form / Period</th>
+                                      <th className="px-3 py-2.5 text-center">Frequency</th>
+                                      <th className="px-3 py-2.5 text-center">Self Score</th>
+                                      <th className="px-3 py-2.5 text-center">Manager Score</th>
+                                      <th className="px-4 py-2.5 text-center">Status</th>
+                                      <th className="px-4 py-2.5 text-right">Action</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {group.items.map(r => {
+                                      const info = getEmployeeDisplayInfo(r);
+                                      const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
+
+                                      return (
+                                        <tr key={r.id} className="group/row hover:bg-slate-50/70 transition">
+                                          <td className="px-4 py-3">
+                                            <div>
+                                              <div className="font-bold text-slate-900">{info.employeeName}</div>
+                                              <div className="text-[11px] text-slate-500 font-medium">#{info.employeeCode}</div>
+                                            </div>
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {(() => {
+                                              const isEmpSubmitted = Boolean(
+                                                r.employeeSubmittedAt ||
+                                                (r as any).submitted_at ||
+                                                (r as any).submittedAt ||
+                                                (r as any).employee_submitted_at ||
+                                                (String(r.status || '') === 'manager_review' || String(r.status || '').toLowerCase().includes('submitted') || r.status === 'approved' || r.status === 'sm_final_approval' || (r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0))
+                                              );
+                                              const subDate = isEmpSubmitted
+                                                ? formatEvalDateTime(r.employeeSubmittedAt || (r as any).submitted_at || (r as any).submittedAt || (r as any).employee_submitted_at || r.updatedAt || r.createdAt)
+                                                : null;
+                                              const approvedDate = (isCalibrated || r.serviceManagerApprovedAt || r.managerReviewedAt)
+                                                ? formatEvalDateTime(r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt)
+                                                : null;
+                                              const tooltipLines: string[] = [];
+                                              if (subDate) tooltipLines.push(`Submitted: ${subDate}`);
+                                              if (approvedDate) tooltipLines.push(`Approved: ${approvedDate}`);
+                                              const nativeTooltip = tooltipLines.join(' | ');
+
+                                              return (
+                                                <SubmissionDatesHover
+                                                  subDate={subDate}
+                                                  approvedDate={approvedDate}
+                                                  isSubmitted={isEmpSubmitted}
+                                                  align="left"
+                                                  nativeTitle={nativeTooltip}
+                                                >
+                                                  <div className="font-semibold text-slate-800 hover:text-primary-700 transition-colors">
+                                                    {r.periodName || (r as any).form || 'Performance Evaluation'}
+                                                  </div>
+                                                  <div className="text-[10px] text-slate-500 font-medium">{info.teamName}</div>
+                                                </SubmissionDatesHover>
+                                              );
+                                            })()}
+                                          </td>
+                                          <td className="px-3 py-3 text-center">
+                                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200">
+                                              {r.frequency || 'Quarterly'}
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-3 text-center font-semibold text-slate-700">
+                                            {r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0
+                                              ? `${Number(r.employeeOverallScore).toFixed(1)}%`
+                                              : '—'}
+                                          </td>
+                                          <td className="px-3 py-3 text-center">
+                                            {r.managerScore != null ? (
+                                              <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                                                {Number(r.managerScore).toFixed(1)}%
+                                              </span>
+                                            ) : (
+                                              <span className="text-[11px] text-slate-400 font-medium">Pending</span>
+                                            )}
+                                          </td>
+                                          <td className="px-4 py-3 text-center">
+                                            {renderStatusBadge(r.status, r)}
+                                          </td>
+                                          <td className="px-4 py-3 text-right">
+                                            {(() => {
+                                              const isEmpSubmitted = Boolean(
+                                                r.employeeSubmittedAt ||
+                                                (r as any).submitted_at ||
+                                                (r as any).submittedAt ||
+                                                (r as any).employee_submitted_at ||
+                                                (String(r.status || '') === 'manager_review' || String(r.status || '').toLowerCase().includes('submitted') || r.status === 'approved' || r.status === 'sm_final_approval' || (r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0))
+                                              );
+                                              return (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleSelectMgrResponse(r)}
+                                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer ${isCalibrated
+                                                    ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
+                                                    : isEmpSubmitted
+                                                      ? 'bg-teal-700 hover:bg-teal-800 text-white'
+                                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
+                                                    }`}
+                                                >
+                                                  {isCalibrated ? <EyeIcon className="w-3.5 h-3.5" /> : isEmpSubmitted ? <SparklesIcon className="w-3.5 h-3.5 text-amber-300" /> : <ClockIcon className="w-3.5 h-3.5 text-slate-400" />}
+                                                  <span>{isCalibrated ? 'View Report' : isEmpSubmitted ? 'Review & Score' : 'Pending'}</span>
+                                                </button>
+                                              );
+                                            })()}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            /* Flat Submissions Table when Group by: None */
+            <div className="pt-2">
+              {filteredSubmissionsList.length === 0 ? (
+                <div className="py-12 text-center text-slate-400">
+                  <DocumentChartBarIcon className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5] mb-2" />
+                  <p className="text-sm font-semibold text-slate-600">No submissions found</p>
+                  <p className="text-xs text-slate-400 mt-1">Try changing the status filter or search keyword.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-2xs">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                        <th className="px-4 py-3.5">Employee</th>
+                        <th className="px-4 py-3.5">Department / Team</th>
+                        <th className="px-4 py-3.5">Form / Period</th>
+                        <th className="px-3 py-3.5 text-center">Frequency</th>
+                        <th className="px-3 py-3.5 text-center">Self Score</th>
+                        <th className="px-3 py-3.5 text-center">Manager Score</th>
+                        <th className="px-4 py-3.5 text-center">Status</th>
+                        <th className="px-4 py-3.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredSubmissionsList.map(r => {
+                        const info = getEmployeeDisplayInfo(r);
+                        const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
+
+                        return (
+                          <tr key={r.id} className="group/row hover:bg-slate-50/70 transition">
+                            <td className="px-4 py-3.5">
+                              <div>
+                                <div className="font-bold text-slate-900 text-xs">{info.employeeName}</div>
+                                <div className="text-[10px] font-mono text-slate-400">#{info.employeeCode}</div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <div className="font-semibold text-slate-800">{info.teamName}</div>
+                              <div className="text-[10px] text-slate-400">{info.departmentName}</div>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              {(() => {
+                                const isEmpSubmitted = Boolean(
+                                  r.employeeSubmittedAt ||
+                                  (r as any).submitted_at ||
+                                  (r as any).submittedAt ||
+                                  (r as any).employee_submitted_at ||
+                                  (String(r.status || '') === 'manager_review' || String(r.status || '').toLowerCase().includes('submitted') || r.status === 'approved' || r.status === 'sm_final_approval' || (r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0))
+                                );
+                                const subDate = isEmpSubmitted
+                                  ? formatEvalDateTime(r.employeeSubmittedAt || (r as any).submitted_at || (r as any).submittedAt || (r as any).employee_submitted_at || r.updatedAt || r.createdAt)
+                                  : null;
+                                const approvedDate = (isCalibrated || r.serviceManagerApprovedAt || r.managerReviewedAt)
+                                  ? formatEvalDateTime(r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt)
+                                  : null;
+                                const tooltipLines: string[] = [];
+                                if (subDate) tooltipLines.push(`Submitted: ${subDate}`);
+                                if (approvedDate) tooltipLines.push(`Approved: ${approvedDate}`);
+                                const nativeTooltip = tooltipLines.join(' | ');
+
+                                return (
+                                  <SubmissionDatesHover
+                                    subDate={subDate}
+                                    approvedDate={approvedDate}
+                                    isSubmitted={isEmpSubmitted}
+                                    align="left"
+                                    nativeTitle={nativeTooltip}
+                                  >
+                                    <div className="font-semibold text-slate-800 hover:text-primary-700 transition-colors">
+                                      {r.periodName || (r as any).form || 'Performance Evaluation'}
+                                    </div>
+                                  </SubmissionDatesHover>
+                                );
+                              })()}
+                            </td>
+                            <td className="px-3 py-3.5 text-center">
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200">
+                                {r.frequency || 'Quarterly'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3.5 text-center font-semibold text-slate-700">
+                              {r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0
+                                ? `${Number(r.employeeOverallScore).toFixed(1)}%`
+                                : '—'}
+                            </td>
+                            <td className="px-3 py-3.5 text-center">
+                              {r.managerScore != null ? (
+                                <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                                  {Number(r.managerScore).toFixed(1)}%
                                 </span>
                               ) : (
-                                <span className="text-slate-600 font-medium">
-                                  <strong className="font-bold text-slate-800">{group.filteredCount}</strong> submissions
-                                </span>
+                                <span className="text-[11px] text-slate-400 font-medium">Pending</span>
                               )}
+                            </td>
+                            <td className="px-4 py-3.5 text-center">
+                              {renderStatusBadge(r.status, r)}
+                            </td>
+                            <td className="px-4 py-3.5 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleSelectMgrResponse(r)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer ${isCalibrated
+                                  ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
+                                  : isEmpSubmitted
+                                    ? 'bg-teal-700 hover:bg-teal-800 text-white'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
+                                  }`}
+                              >
+                                {isCalibrated ? <EyeIcon className="w-3.5 h-3.5" /> : isEmpSubmitted ? <SparklesIcon className="w-3.5 h-3.5 text-amber-300" /> : <ClockIcon className="w-3.5 h-3.5 text-slate-400" />}
+                                <span>{isCalibrated ? 'View Report' : isEmpSubmitted ? 'Review & Score' : 'Pending'}</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Top Performers Multi-Column Layout (Image 2) */
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs space-y-4 animate-in fade-in duration-200">
+          {/* Top Performers Sub-navigation Mode Pills */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div className="inline-flex p-1 rounded-xl bg-slate-100/90 border border-slate-200/80 gap-1 items-center flex-wrap">
+              {[
+                { id: 'top_weekly', label: 'Top performers — Weekly' },
+                { id: 'top_monthly', label: 'Top performers — Monthly' },
+                { id: 'top_quarterly', label: 'Top performers — Quarterly' },
+                { id: 'top_annual', label: 'Top performers — Annual' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setReportViewTab(tab.id as any)}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${reportViewTab === tab.id
+                    ? 'bg-teal-700 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                    }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-                              <span className="text-slate-600 font-medium">
-                                avg <strong className="font-bold text-slate-900">{group.avgScore > 0 ? `${group.avgScore.toFixed(1)}%` : '—'}</strong>
-                              </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-medium">
+                {reportViewTab === 'top_weekly'
+                  ? topPerformersQuarterRangeText
+                  : `1 Apr ${topPerformersFiscalYear} - 31 Mar ${topPerformersFiscalYear + 1}`}
+              </span>
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                ranked by score
+              </span>
+            </div>
+          </div>
+
+          {/* Multi-column Side-Scroll Container */}
+          <div className="flex items-stretch gap-4 overflow-x-auto pb-3 pt-1 scroll-smooth">
+            {(reportViewTab === 'top_weekly'
+              ? topPerformersWeeklyColumns
+              : reportViewTab === 'top_monthly'
+                ? topPerformersMonthlyColumns
+                : reportViewTab === 'top_quarterly'
+                  ? topPerformersQuarterlyColumns
+                  : topPerformersAnnualColumns
+            ).map(col => (
+              <div
+                key={col.key}
+                className={`min-w-[280px] max-w-[340px] flex-1 rounded-2xl overflow-hidden shadow-2xs bg-white flex flex-col shrink-0 ${(col as any).isSummaryYear
+                  ? 'border-2 border-[#029597] shadow-md ring-1 ring-[#029597]/20'
+                  : 'border border-slate-200/80'
+                  }`}
+              >
+                {/* Column Header */}
+                <div className={`px-4 py-2.5 font-bold text-xs flex items-center justify-between ${(col as any).isSummaryYear
+                  ? 'bg-[#029597] text-white'
+                  : 'bg-slate-50 text-slate-800 border-b border-slate-200/80'
+                  }`}>
+                  <span>{col.label}</span>
+                  {col.subLabel && (
+                    <span className="text-[10px] font-normal text-slate-400">{col.subLabel}</span>
+                  )}
+                </div>
+
+                {/* Column Body */}
+                <div className="p-3 flex-1 flex flex-col justify-start space-y-3">
+                  {col.groups.length === 0 ? (
+                    <div className="py-14 text-center my-auto">
+                      <p className="text-xs text-slate-400 font-medium italic">Nothing approved.</p>
+                    </div>
+                  ) : (
+                    col.groups.map((group: any) => {
+                      const color = getTeamHeaderColor(group.teamName);
+                      return (
+                        <div key={`${group.departmentName}_${group.teamName}`} className="space-y-2 pt-2 first:pt-0 border-t first:border-t-0 border-slate-100">
+                          <div className={`px-2.5 py-1.5 rounded-lg ${color.bg}`}>
+                            <div className={`text-xs font-extrabold ${color.text} tracking-tight truncate`}>
+                              Team: {group.teamName}
                             </div>
                           </div>
 
-                          {/* Expanded Submissions Group (Rendered directly when Group is Expanded) */}
-                          {isExpanded && (
-                            <div className="px-5 pb-4 pt-3 border-t border-slate-200/60 bg-white/70 space-y-3">
-                              {group.items.length === 0 ? (
-                                <div className="py-6 text-center text-xs text-slate-400 font-medium">
-                                  No submissions in this category.
+                          <div className="space-y-1.5 px-1">
+                            {group.members.map((member: any) => (
+                              <div key={member.code || member.name} className="flex items-center justify-between text-xs py-0.5">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-xs font-bold text-slate-600 shrink-0 inline-flex items-center gap-1 whitespace-nowrap">
+                                    {member.rank === 1 ? '🥇 1.' : member.rank === 2 ? '🥈 2.' : member.rank === 3 ? '🥉 3.' : <span className="text-slate-400">{member.rank}.</span>}
+                                  </span>
+                                  <span className="font-semibold text-slate-800 truncate text-xs" title={member.name}>
+                                    {member.name}
+                                  </span>
                                 </div>
-                              ) : (
-                                <div className="rounded-xl border border-slate-200/80 bg-white shadow-2xs overflow-hidden">
-                                  <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-xs border-collapse">
-                                      <thead>
-                                        <tr className="bg-slate-50/50 border-b border-slate-200/60 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                          <th className="px-4 py-2.5">Employee</th>
-                                          <th className="px-4 py-2.5">Form / Period</th>
-                                          <th className="px-3 py-2.5 text-center">Frequency</th>
-                                          <th className="px-3 py-2.5 text-center">Self Score</th>
-                                          <th className="px-3 py-2.5 text-center">Manager Score</th>
-                                          <th className="px-4 py-2.5 text-center">Status</th>
-                                          <th className="px-4 py-2.5 text-right">Action</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100">
-                                        {group.items.map(r => {
-                                          const info = getEmployeeDisplayInfo(r);
-                                          const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
-
-                                          return (
-                                            <tr key={r.id} className="group/row hover:bg-slate-50/70 transition">
-                                              <td className="px-4 py-3">
-                                                <div>
-                                                  <div className="font-bold text-slate-900">{info.employeeName}</div>
-                                                  <div className="text-[11px] text-slate-500 font-medium">#{info.employeeCode}</div>
-                                                </div>
-                                              </td>
-                                              <td className="px-4 py-3">
-                                                {(() => {
-                                                  const isEmpSubmitted = Boolean(
-                                                    r.employeeSubmittedAt ||
-                                                    (r as any).submitted_at ||
-                                                    (r as any).submittedAt ||
-                                                    (r as any).employee_submitted_at ||
-                                                    (String(r.status || '') === 'manager_review' || String(r.status || '').toLowerCase().includes('submitted') || r.status === 'approved' || r.status === 'sm_final_approval' || (r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0))
-                                                  );
-                                                  const subDate = isEmpSubmitted
-                                                    ? formatEvalDateTime(r.employeeSubmittedAt || (r as any).submitted_at || (r as any).submittedAt || (r as any).employee_submitted_at || r.updatedAt || r.createdAt)
-                                                    : null;
-                                                  const approvedDate = (isCalibrated || r.serviceManagerApprovedAt || r.managerReviewedAt)
-                                                    ? formatEvalDateTime(r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt)
-                                                    : null;
-                                                  const tooltipLines: string[] = [];
-                                                  if (subDate) tooltipLines.push(`Submitted: ${subDate}`);
-                                                  if (approvedDate) tooltipLines.push(`Approved: ${approvedDate}`);
-                                                  const nativeTooltip = tooltipLines.join(' | ');
-
-                                                  return (
-                                                    <SubmissionDatesHover
-                                                      subDate={subDate}
-                                                      approvedDate={approvedDate}
-                                                      isSubmitted={isEmpSubmitted}
-                                                      align="left"
-                                                      nativeTitle={nativeTooltip}
-                                                    >
-                                                      <div className="font-semibold text-slate-800 hover:text-primary-700 transition-colors">
-                                                        {r.periodName || (r as any).form || 'Performance Evaluation'}
-                                                      </div>
-                                                      <div className="text-[10px] text-slate-500 font-medium">{info.teamName}</div>
-                                                    </SubmissionDatesHover>
-                                                  );
-                                                })()}
-                                              </td>
-                                              <td className="px-3 py-3 text-center">
-                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200">
-                                                  {r.frequency || 'Quarterly'}
-                                                </span>
-                                              </td>
-                                              <td className="px-3 py-3 text-center font-semibold text-slate-700">
-                                                {r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0
-                                                  ? `${Number(r.employeeOverallScore).toFixed(1)}%`
-                                                  : '—'}
-                                              </td>
-                                              <td className="px-3 py-3 text-center">
-                                                {r.managerScore != null ? (
-                                                  <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200">
-                                                    {Number(r.managerScore).toFixed(1)}%
-                                                  </span>
-                                                ) : (
-                                                  <span className="text-[11px] text-slate-400 font-medium">Pending</span>
-                                                )}
-                                              </td>
-                                              <td className="px-4 py-3 text-center">
-                                                {renderStatusBadge(r.status, r)}
-                                              </td>
-                                              <td className="px-4 py-3 text-right">
-                                                {(() => {
-                                                  const isEmpSubmitted = Boolean(
-                                                    r.employeeSubmittedAt ||
-                                                    (r as any).submitted_at ||
-                                                    (r as any).submittedAt ||
-                                                    (r as any).employee_submitted_at ||
-                                                    (String(r.status || '') === 'manager_review' || String(r.status || '').toLowerCase().includes('submitted') || r.status === 'approved' || r.status === 'sm_final_approval' || (r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0))
-                                                  );
-                                                  return (
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => handleSelectMgrResponse(r)}
-                                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer ${isCalibrated
-                                                        ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
-                                                        : isEmpSubmitted
-                                                          ? 'bg-teal-700 hover:bg-teal-800 text-white'
-                                                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
-                                                        }`}
-                                                    >
-                                                      {isCalibrated ? <EyeIcon className="w-3.5 h-3.5" /> : isEmpSubmitted ? <SparklesIcon className="w-3.5 h-3.5 text-amber-300" /> : <ClockIcon className="w-3.5 h-3.5 text-slate-400" />}
-                                                      <span>{isCalibrated ? 'View Report' : isEmpSubmitted ? 'Review & Score' : 'Pending'}</span>
-                                                    </button>
-                                                  );
-                                                })()}
-                                              </td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
+                                <span className="font-mono font-bold text-slate-900 shrink-0 ml-2">
+                                  {member.score.toFixed(2)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       );
                     })
                   )}
                 </div>
-              ) : (
-                /* Flat Submissions Table when Group by: None */
-                <div className="pt-2">
-                  {filteredSubmissionsList.length === 0 ? (
-                    <div className="py-12 text-center text-slate-400">
-                      <DocumentChartBarIcon className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5] mb-2" />
-                      <p className="text-sm font-semibold text-slate-600">No submissions found</p>
-                      <p className="text-xs text-slate-400 mt-1">Try changing the status filter or search keyword.</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+{/* ========================================================================= */ }
+{/* 4.4. DOWNLINE TEAM MEMBERS & REPORTS MODAL POPUP */ }
+{/* ========================================================================= */ }
+{
+  Boolean(selectedDownlineTeamModal) && (() => {
+    const team = selectedDownlineTeamModal;
+    const teamResponses: EvaluationResponse[] = (team.responses || []).filter((r: EvaluationResponse) => {
+      const { employeeCode, employeeName } = getEmployeeDisplayInfo(r);
+
+      // Status filter
+      if (downlineModalStatusFilter === 'pending') {
+        const isPending = r.status === 'employee_in_progress' || (r.managerScore == null && r.status !== 'approved' && r.status !== 'sm_final_approval');
+        if (!isPending) return false;
+      } else if (downlineModalStatusFilter === 'submitted') {
+        const isSubmitted = r.status === 'manager_review' || (r.employeeOverallScore != null && r.employeeOverallScore > 0 && r.managerScore == null);
+        if (!isSubmitted) return false;
+      } else if (downlineModalStatusFilter === 'approved') {
+        const isApproved = r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null;
+        if (!isApproved) return false;
+      }
+
+      // Search query filter
+      if (downlineModalSearchQuery.trim()) {
+        const query = downlineModalSearchQuery.toLowerCase().trim();
+        const matchesName = (employeeName || '').toLowerCase().includes(query);
+        const matchesCode = String(employeeCode).toLowerCase().includes(query);
+        const matchesDesignation = (r.designation || '').toLowerCase().includes(query);
+        if (!matchesName && !matchesCode && !matchesDesignation) return false;
+      }
+
+      return true;
+    });
+
+    const allCount = (team.responses || []).length;
+    const pendingCount = (team.responses || []).filter((r: any) => r.status === 'employee_in_progress' || (r.managerScore == null && r.status !== 'approved' && r.status !== 'sm_final_approval')).length;
+    const submittedCount = (team.responses || []).filter((r: any) => (r.status === 'manager_review' || (r.employeeOverallScore != null && r.employeeOverallScore > 0)) && r.status !== 'approved' && r.managerScore == null).length;
+    const approvedCount = (team.responses || []).filter((r: any) => r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null).length;
+
+    return (
+      <div className="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-950/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-5xl my-auto overflow-hidden flex flex-col max-h-[92vh]">
+          {/* Modal Header */}
+          <div className="p-5 bg-gradient-to-r from-teal-50/60 via-white to-slate-50/60 border-b border-slate-200/80 shrink-0">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center shrink-0 shadow-2xs">
+                  <BriefcaseIcon className="w-6 h-6" />
+                </div>
+                <div className="space-y-0.5 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-semibold text-slate-800 truncate">
+                      {team.department} Team Performance Overview
+                    </h3>
+                    <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/70 shadow-2xs">
+                      {team.totalEmployees} {team.totalEmployees === 1 ? 'Member' : 'Members'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap font-normal">
+                    {team.subManagerName && (
+                      <span>Reporting Manager: <span className="text-slate-700 font-medium">{team.subManagerName}</span></span>
+                    )}
+                    <span className="text-slate-300">•</span>
+                    <span>Avg Team Score: <span className="text-teal-700 font-semibold">{team.teamAvgMgrScore !== null ? `${team.teamAvgMgrScore}%` : (team.teamAvgScore !== null ? `${team.teamAvgScore}% (Self)` : 'Pending')}</span></span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedDownlineTeamModal(null)}
+                className="w-8.5 h-8.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition cursor-pointer shrink-0 shadow-2xs"
+              >
+                <XMarkIcon className="w-4 h-4 stroke-[2]" />
+              </button>
+            </div>
+
+            {/* Team Progress Telemetry Bar */}
+            <div className="mt-4 pt-3.5 border-t border-slate-200/60 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] uppercase font-medium tracking-wide text-slate-400 block">Total Headcount</span>
+                <span className="text-sm font-semibold text-slate-800">{allCount}</span>
+              </div>
+              <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] uppercase font-medium tracking-wide text-teal-600 block">Completion Rate</span>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-sm font-semibold text-teal-800">{team.completionPercentage}%</span>
+                  <div className="flex-1 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-teal-600 h-full rounded-full transition-all duration-500" style={{ width: `${team.completionPercentage}%` }} />
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] uppercase font-medium tracking-wide text-amber-600 block">Pending / In Progress</span>
+                <span className="text-sm font-semibold text-amber-700">{pendingCount}</span>
+              </div>
+              <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] uppercase font-medium tracking-wide text-emerald-600 block">Approved / Final</span>
+                <span className="text-sm font-semibold text-emerald-700">{approvedCount}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="p-3.5 bg-slate-50/70 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+            <div className="relative w-full sm:w-80">
+              <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={downlineModalSearchQuery}
+                onChange={e => setDownlineModalSearchQuery(e.target.value)}
+                placeholder="Search member name, code, role..."
+                className="w-full h-9 pl-10 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition shadow-2xs"
+              />
+              {downlineModalSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setDownlineModalSearchQuery('')}
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-600 absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                >
+                  <XMarkIcon className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto">
+              {[
+                { id: 'all', label: 'All', count: allCount },
+                { id: 'pending', label: 'Pending', count: pendingCount },
+                { id: 'submitted', label: 'Submitted', count: submittedCount },
+                { id: 'approved', label: 'Approved', count: approvedCount },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setDownlineModalStatusFilter(tab.id as any)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition whitespace-nowrap cursor-pointer ${downlineModalStatusFilter === tab.id
+                    ? 'bg-teal-700 text-white shadow-xs'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/80'
+                    }`}
+                >
+                  <span>{tab.label}</span>
+                  <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded-full ${downlineModalStatusFilter === tab.id
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-100 text-slate-600'
+                    }`}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Members List Table in Modal */}
+          <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
+            {teamResponses.length === 0 ? (
+              <div className="py-12 text-center space-y-2 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                <UserGroupIcon className="w-8 h-8 mx-auto text-slate-400" />
+                <h5 className="text-xs font-semibold text-slate-700">No member records match criteria</h5>
+                <p className="text-[11px] text-slate-400">Try changing the search query or status filter.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-slate-200/90 shadow-2xs bg-white">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50/80 text-slate-400 font-medium text-[10px] uppercase tracking-wider border-b border-slate-200/80">
+                    <tr>
+                      <th className="px-5 py-3.5">Employee & Squad</th>
+                      <th className="px-4 py-3.5 text-center">Self Score</th>
+                      <th className="px-4 py-3.5 text-center">Manager Score</th>
+                      <th className="px-4 py-3.5 text-center">Status</th>
+                      <th className="px-5 py-3.5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-normal">
+                    {teamResponses.map(r => {
+                      const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(r);
+                      const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
+                      const initials = (employeeName || 'EM').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+
+                      return (
+                        <tr key={r.id} className="hover:bg-slate-50/70 transition-colors group">
+                          <td className="px-5 py-4">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-medium text-xs text-slate-800 group-hover:text-teal-900 transition">
+                                  {employeeName || r.employeeName}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  #{employeeCode}
+                                </span>
+                              </div>
+                              <div className="text-[11px] font-normal text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200/70 shadow-2xs">
+                                  <BuildingOfficeIcon className="w-3 h-3 text-teal-600" />
+                                  <span>{teamName}</span>
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <span className="font-normal text-xs text-slate-700">
+                              {r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : '0.0%'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            {r.managerScore != null ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200/80 shadow-2xs">
+                                {Number(r.managerScore).toFixed(1)}%
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-normal bg-slate-100 text-slate-400 border border-slate-200/60">
+                                Pending
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            {renderStatusBadge(r.status, r)}
+                          </td>
+                          <td className="px-5 py-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleSelectMgrResponse(r)}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-medium shadow-2xs transition-all hover:shadow cursor-pointer"
+                            >
+                              <EyeIcon className="w-3.5 h-3.5" />
+                              <span>{isCalibrated ? 'View Scorecard' : 'View Report'}</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Modal Footer */}
+          <div className="p-4 bg-slate-50/80 border-t border-slate-200 flex items-center justify-between shrink-0">
+            <span className="text-xs text-slate-500">
+              Showing <span className="font-medium text-slate-700">{teamResponses.length}</span> of <span className="font-medium text-slate-700">{allCount}</span> members in {team.department}
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedDownlineTeamModal(null)}
+              className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-medium transition cursor-pointer border border-slate-200 shadow-2xs"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  })()
+}
+
+{/* ========================================================================= */ }
+{/* 4.5. REVIEW & SCORE / CALIBRATION MODAL POPUP DIALOG (MODERN NEAT UI) */ }
+{/* ========================================================================= */ }
+{
+  Boolean(selectedMgrResponseId && selectedMgrResponse) && (() => {
+    const isYearly = isYearlyResponse(selectedMgrResponse);
+    const isWeekly = isYearly && (selectedMgrResponse?.milestone_frequency === 'weekly' || ((selectedMgrResponse?.weekly_records || []).length > 0 && !(selectedMgrResponse?.monthly_records || []).length && !(selectedMgrResponse?.quarterly_records || []).length));
+    const isQuarterly = isYearly && (selectedMgrResponse?.milestone_frequency === 'quarterly' || ((selectedMgrResponse?.quarterly_records || []).length > 0 && !(selectedMgrResponse?.monthly_records || []).length && !(selectedMgrResponse?.weekly_records || []).length));
+    const curWeeklyRecords = selectedMgrResponse!.weekly_records || [];
+    const curWeeklyRec = isWeekly ? curWeeklyRecords.find(w => w.weekIndex === activeMgrYearlyWeekIndex) : null;
+    const curQuarterlyRecords = selectedMgrResponse!.quarterly_records || [];
+    const curQuarterlyRec = isQuarterly ? curQuarterlyRecords.find(q => q.quarterIndex === activeMgrYearlyQuarterIndex) : null;
+    const curYearlyRecords = selectedMgrResponse!.monthly_records || [];
+    const curYearlyRec = isYearly ? (isWeekly || isQuarterly ? null : curYearlyRecords.find(m => m.monthIndex === activeMgrYearlyFiscalMonth)) : null;
+    const curFiscalMonthObj = FISCAL_MONTHS.find(m => m.monthIndex === activeMgrYearlyFiscalMonth);
+    const curQuarterFiscalObj = FISCAL_QUARTERS.find(q => q.quarterIndex === activeMgrYearlyQuarterIndex);
+    const curMilestoneName = isWeekly
+      ? (curWeeklyRec?.weekLabel || `Week ${activeMgrYearlyWeekIndex}`)
+      : isQuarterly
+        ? (curQuarterlyRec?.quarterLabel || curQuarterFiscalObj?.quarterLabel || `Q${activeMgrYearlyQuarterIndex}`)
+        : (curFiscalMonthObj ? curFiscalMonthObj.monthName : `Month ${activeMgrYearlyFiscalMonth}`);
+    const curMonthName = curMilestoneName;
+
+    const approvedMilestones = isWeekly
+      ? curWeeklyRecords.filter(w => w.status === 'manager_approved')
+      : isQuarterly
+        ? curQuarterlyRecords.filter(q => q.status === 'manager_approved')
+        : curYearlyRecords.filter(m => m.status === 'manager_approved');
+    const ytdScore = approvedMilestones.length > 0
+      ? Number((approvedMilestones.reduce((acc, r: any) => acc + (Number(r.managerScore) || 0), 0) / approvedMilestones.length).toFixed(1))
+      : null;
+
+    const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(selectedMgrResponse!);
+    const empScore = isYearly
+      ? (isWeekly
+        ? (curWeeklyRec?.employeeScore != null ? Number(curWeeklyRec.employeeScore) : 0)
+        : isQuarterly
+          ? (curQuarterlyRec?.employeeScore != null ? Number(curQuarterlyRec.employeeScore) : 0)
+          : (curYearlyRec?.employeeScore != null ? Number(curYearlyRec.employeeScore) : 0))
+      : (selectedMgrResponse!.employeeOverallScore != null ? Number(selectedMgrResponse!.employeeOverallScore) : 0);
+    const rating = getRatingForScore(mgrScore);
+    const cycleForResp = cycles.find(c => c.id === selectedMgrResponse!.cycleId);
+    const cyclePeriod = isYearly
+      ? `${curMilestoneName} Milestone • ${cycleForResp?.periodName || (selectedMgrResponse as any)?.periodName || 'Annual Evaluation'}`
+      : (cycleForResp?.periodName || (selectedMgrResponse as any)?.periodName || 'Active Cycle');
+
+    const activeMilestoneStatus = isWeekly ? curWeeklyRec?.status : isQuarterly ? curQuarterlyRec?.status : curYearlyRec?.status;
+    const rawStatus = isYearly
+      ? String(activeMilestoneStatus || 'pending_employee').toLowerCase().trim()
+      : String(selectedMgrResponse!.status || '').toLowerCase().trim();
+
+    const isPendingManagerReview = isYearly
+      ? rawStatus === 'submitted_to_manager'
+      : Boolean(
+        rawStatus === 'manager_review' ||
+        rawStatus === 'submitted to manager' ||
+        rawStatus.includes('submitted')
+      );
+
+    const isAlreadyCalibrated = isYearly
+      ? rawStatus === 'manager_approved'
+      : Boolean(
+        rawStatus === 'approved' ||
+        rawStatus === 'sm_final_approval' ||
+        rawStatus === 'completed' ||
+        rawStatus.includes('calibrated') ||
+        (selectedMgrResponse!.managerScore != null && !isPendingManagerReview)
+      );
+
+    const isReadOnly = activeRole === 'downline_teams' || selectedMgrResponse!.status === 'sm_final_approval' || (activeRole !== 'manager' && !isDirectReport(getEmployeeDisplayInfo(selectedMgrResponse!).empInDb) && !isHrOrAdmin);
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-950/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-[96vw] xl:max-w-[1440px] my-auto overflow-hidden flex flex-col max-h-[92vh]">
+
+          {/* Modal Header: Candidate Profile Info & KPI Telemetry */}
+          <div className="bg-white px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 shrink-0">
+            {/* Left: Employee Details */}
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="space-y-0.5 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-base font-bold text-slate-900 tracking-tight">
+                    {employeeName}
+                  </h3>
+                  <span className="text-[11px] font-mono text-slate-400 font-medium">
+                    #{employeeCode}
+                  </span>
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+                    {teamName}
+                  </span>
+                  {renderStatusBadge(isYearly ? (activeMilestoneStatus || 'pending_employee') : selectedMgrResponse!.status, selectedMgrResponse!)}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <span>Designation: <strong className="text-slate-700 font-medium">{selectedMgrResponse!.designation || 'Team Member'}</strong></span>
+                  <span className="text-slate-300">•</span>
+                  <span>Cycle: <strong className="text-slate-700 font-medium">{cyclePeriod}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Unified Score Telemetry Strip & Close Button */}
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="hidden sm:flex items-center gap-4 bg-slate-50/90 px-4 py-2 rounded-xl border border-slate-200">
+                <div className="text-left">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
+                    {isYearly ? `${isWeekly ? curMilestoneName : isQuarterly ? (curQuarterFiscalObj?.quarterKey?.toUpperCase() || 'Q') : (curFiscalMonthObj?.shortName || 'Month')} Self` : 'Self Score'}
+                  </span>
+                  <span className="text-xs font-bold text-slate-700">{empScore.toFixed(1)}%</span>
+                </div>
+                <div className="h-6 w-px bg-slate-200" />
+                <div className="text-left">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-700 block">
+                    {isYearly ? `${isWeekly ? curMilestoneName : isQuarterly ? (curQuarterFiscalObj?.quarterKey?.toUpperCase() || 'Q') : (curFiscalMonthObj?.shortName || 'Month')} Manager` : 'Manager Score'}
+                  </span>
+                  <span className="text-sm font-black text-teal-900">{mgrScore.toFixed(1)}%</span>
+                </div>
+                {isYearly && (
+                  <>
+                    <div className="h-6 w-px bg-slate-200" />
+                    <div className="text-left">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 block">YTD Avg Score</span>
+                      <span className="text-sm font-black text-indigo-900">
+                        {ytdScore !== null ? `${ytdScore}%` : '—'}
+                      </span>
                     </div>
-                  ) : (
-                    <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-2xs">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                            <th className="px-4 py-3.5">Employee</th>
-                            <th className="px-4 py-3.5">Department / Team</th>
-                            <th className="px-4 py-3.5">Form / Period</th>
-                            <th className="px-3 py-3.5 text-center">Frequency</th>
-                            <th className="px-3 py-3.5 text-center">Self Score</th>
-                            <th className="px-3 py-3.5 text-center">Manager Score</th>
-                            <th className="px-4 py-3.5 text-center">Status</th>
-                            <th className="px-4 py-3.5 text-right">Action</th>
+                  </>
+                )}
+                <div className="h-6 w-px bg-slate-200" />
+                <div className="text-left">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 block">Performance Tier</span>
+                  <span className="text-xs font-bold text-emerald-900 block leading-tight">{rating.name}</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedMgrResponseId('')}
+                className="w-8.5 h-8.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                title="Close Dialog"
+              >
+                <XMarkIcon className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </div>
+          </div>
+
+          {/* Modal Body: Scrollable Matrix */}
+          <div className="p-5 sm:p-6 space-y-6 overflow-y-auto flex-1 bg-slate-50/50">
+            {/* Mobile Telemetry */}
+            <div className="flex sm:hidden items-center justify-between gap-3 p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+              <div>
+                <span className="text-[9px] uppercase text-slate-400 block font-semibold">{isYearly ? `${isWeekly ? curMilestoneName : isQuarterly ? (curQuarterFiscalObj?.quarterKey?.toUpperCase() || 'Q') : (curFiscalMonthObj?.shortName || 'Month')} Self` : 'Self'}</span>
+                <span className="text-xs font-bold text-slate-800">{empScore.toFixed(1)}%</span>
+              </div>
+              <div>
+                <span className="text-[9px] uppercase text-teal-700 block font-semibold">{isYearly ? `${isWeekly ? curMilestoneName : isQuarterly ? (curQuarterFiscalObj?.quarterKey?.toUpperCase() || 'Q') : (curFiscalMonthObj?.shortName || 'Month')} Mgr` : 'Manager'}</span>
+                <span className="text-xs font-bold text-teal-900">{mgrScore.toFixed(1)}%</span>
+              </div>
+              {isYearly && (
+                <div>
+                  <span className="text-[9px] uppercase text-indigo-700 block font-semibold">YTD Avg</span>
+                  <span className="text-xs font-bold text-indigo-900">{ytdScore !== null ? `${ytdScore}%` : '—'}</span>
+                </div>
+              )}
+              <div>
+                <span className="text-[9px] uppercase text-emerald-700 block font-semibold">Tier</span>
+                <span className="text-xs font-bold text-emerald-900 block leading-tight">{rating.name}</span>
+              </div>
+            </div>
+
+            {/* Milestone Stepper for Yearly Cadence (52-Week, Quarterly, or 12-Month) */}
+            {isYearly && (() => {
+              const isWeekly = selectedMgrResponse?.milestone_frequency === 'weekly' || ((selectedMgrResponse?.weekly_records || []).length > 0 && !(selectedMgrResponse?.monthly_records || []).length && !(selectedMgrResponse?.quarterly_records || []).length);
+              const isQuarterly = selectedMgrResponse?.milestone_frequency === 'quarterly' || ((selectedMgrResponse?.quarterly_records || []).length > 0 && !(selectedMgrResponse?.monthly_records || []).length && !(selectedMgrResponse?.weekly_records || []).length);
+
+              if (isWeekly) {
+                const curWeeklyRecords = selectedMgrResponse?.weekly_records || [];
+                const approvedWeeks = curWeeklyRecords.filter(w => w.status === 'manager_approved');
+                const ytdScore = approvedWeeks.length > 0
+                  ? Number((approvedWeeks.reduce((acc, w) => acc + (Number(w.managerScore) || 0), 0) / approvedWeeks.length).toFixed(1))
+                  : null;
+
+                const quarters = [
+                  { qNum: 1, name: 'Q1 (Apr – Jun)', weeks: curWeeklyRecords.filter(w => w.quarter === 1) },
+                  { qNum: 2, name: 'Q2 (Jul – Sep)', weeks: curWeeklyRecords.filter(w => w.quarter === 2) },
+                  { qNum: 3, name: 'Q3 (Oct – Dec)', weeks: curWeeklyRecords.filter(w => w.quarter === 3) },
+                  { qNum: 4, name: 'Q4 (Jan – Mar)', weeks: curWeeklyRecords.filter(w => w.quarter === 4) }
+                ];
+
+                const pendingSubmittedWeekRec = curWeeklyRecords.find(w => w.status === 'submitted_to_manager');
+                const percentComplete = Math.round((approvedWeeks.length / 52) * 100);
+
+                const effectiveQuarterFilter = mgrWeeklyQuarterFilter === 'all'
+                  ? 'all'
+                  : (typeof mgrWeeklyQuarterFilter === 'number' ? mgrWeeklyQuarterFilter : 2);
+
+                const displayedWeeks = effectiveQuarterFilter === 'all'
+                  ? curWeeklyRecords
+                  : curWeeklyRecords.filter(w => w.quarter === effectiveQuarterFilter);
+
+                const curWeekRec = curWeeklyRecords.find(w => w.weekIndex === activeMgrYearlyWeekIndex);
+                const curWeekLock = getYearlyWeekLockInfo(activeMgrYearlyWeekIndex, curWeeklyRecords);
+                const curWeekLabel = curWeekRec?.weekLabel || `Week ${activeMgrYearlyWeekIndex}`;
+
+                return (
+                  <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-3.5 sm:p-4 space-y-3">
+                    {/* Top Row: Quarter Filter Tabs + Approval Progress */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 flex-wrap">
+                        {quarters.map(q => {
+                          const isQActive = effectiveQuarterFilter === q.qNum;
+                          const qApprovedCount = q.weeks.filter(w => w.status === 'manager_approved').length;
+                          const qSubmittedCount = q.weeks.filter(w => w.status === 'submitted_to_manager').length;
+
+                          return (
+                            <button
+                              key={q.qNum}
+                              type="button"
+                              onClick={() => {
+                                setMgrWeeklyQuarterFilter(q.qNum);
+                                const qWeeks = q.weeks;
+                                if (qWeeks.length > 0 && !qWeeks.some(w => w.weekIndex === activeMgrYearlyWeekIndex)) {
+                                  const targetW = qWeeks.find(w => w.status === 'submitted_to_manager') || qWeeks[0];
+                                  if (targetW) {
+                                    switchMgrYearlyWeek(targetW.weekIndex);
+                                  }
+                                }
+                              }}
+                              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${isQActive
+                                ? 'bg-white text-teal-950 shadow-2xs border border-slate-200/90'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                                }`}
+                            >
+                              {qSubmittedCount > 0 && (
+                                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                              )}
+                              <span>{q.name}</span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${isQActive ? 'bg-teal-50 text-teal-700 font-extrabold' : 'bg-slate-200/70 text-slate-500'}`}>
+                                {qApprovedCount}/{q.weeks.length}
+                              </span>
+                            </button>
+                          );
+                        })}
+
+                        <button
+                          type="button"
+                          onClick={() => setMgrWeeklyQuarterFilter('all')}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${effectiveQuarterFilter === 'all'
+                            ? 'bg-white text-teal-950 shadow-2xs border border-slate-200/90'
+                            : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
+                            }`}
+                        >
+                          All 52 Weeks
+                        </button>
+                      </div>
+
+                      {/* Right side progress summary */}
+                      <div className="flex items-center gap-3 self-start sm:self-auto">
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-lg">
+                          <span className="text-[11px] text-slate-500 font-semibold">Approved:</span>
+                          <span className="text-xs font-bold text-slate-800">{approvedWeeks.length}/52</span>
+                          <div className="w-16 h-1.5 bg-slate-200/80 rounded-full overflow-hidden ml-1">
+                            <div
+                              className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all"
+                              style={{ width: `${percentComplete}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-teal-50/80 border border-teal-200 px-2.5 py-1 rounded-lg">
+                          <span className="text-[11px] text-teal-700 font-semibold">YTD:</span>
+                          <span className="text-xs font-extrabold text-teal-950">{ytdScore !== null ? `${ytdScore}%` : '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Middle Row: Week Selector & Actions */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-slate-50/70 p-2.5 sm:p-3 rounded-xl border border-slate-200/80">
+                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                        <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1.5">
+                          <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                          Select Milestone:
+                        </span>
+                        <div className="relative flex-1 max-w-xl">
+                          <select
+                            value={activeMgrYearlyWeekIndex}
+                            onChange={e => {
+                              const val = Number(e.target.value);
+                              switchMgrYearlyWeek(val);
+                              const rec = curWeeklyRecords.find(w => w.weekIndex === val);
+                              if (rec && rec.quarter) setMgrWeeklyQuarterFilter(rec.quarter);
+                            }}
+                            className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
+                          >
+                            {displayedWeeks.map(w => {
+                              const wLock = getYearlyWeekLockInfo(w.weekIndex, curWeeklyRecords);
+                              let badgeStr = '';
+                              if (w.status === 'manager_approved') badgeStr = `✅ Approved (${w.managerScore != null ? `${w.managerScore}%` : ''})`;
+                              else if (w.status === 'submitted_to_manager') badgeStr = '⚡ Submitted by Employee (Needs Review)';
+                              else if (wLock.isLocked) badgeStr = '🔒 Locked (Future)';
+                              else badgeStr = '📄 Open';
+
+                              const cleanDateLabel = w.weekLabel ? w.weekLabel.replace(/^W\d+\s*\(/i, '').replace(/\)$/, '') : '';
+
+                              return (
+                                <option key={w.weekIndex} value={w.weekIndex}>
+                                  W{w.weekIndex} {cleanDateLabel ? `(${cleanDateLabel})` : ''} — {badgeStr}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
+                        <button
+                          type="button"
+                          disabled={activeMgrYearlyWeekIndex <= 1}
+                          onClick={() => {
+                            const prevIndex = activeMgrYearlyWeekIndex - 1;
+                            switchMgrYearlyWeek(prevIndex);
+                            const rec = curWeeklyRecords.find(w => w.weekIndex === prevIndex);
+                            if (rec && rec.quarter) setMgrWeeklyQuarterFilter(rec.quarter);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                          title="Previous Week"
+                        >
+                          ◀ Prev
+                        </button>
+                        <button
+                          type="button"
+                          disabled={activeMgrYearlyWeekIndex >= 52}
+                          onClick={() => {
+                            const nextIndex = activeMgrYearlyWeekIndex + 1;
+                            switchMgrYearlyWeek(nextIndex);
+                            const rec = curWeeklyRecords.find(w => w.weekIndex === nextIndex);
+                            if (rec && rec.quarter) setMgrWeeklyQuarterFilter(rec.quarter);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                          title="Next Week"
+                        >
+                          Next ▶
+                        </button>
+
+                        {pendingSubmittedWeekRec && pendingSubmittedWeekRec.weekIndex !== activeMgrYearlyWeekIndex && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              switchMgrYearlyWeek(pendingSubmittedWeekRec.weekIndex);
+                              if (pendingSubmittedWeekRec.quarter) setMgrWeeklyQuarterFilter(pendingSubmittedWeekRec.quarter);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-2xs transition flex items-center gap-1.5 cursor-pointer animate-pulse"
+                            title="Jump to the milestone waiting for review"
+                          >
+                            <SparklesIcon className="w-3.5 h-3.5" />
+                            <span>Review W{pendingSubmittedWeekRec.weekIndex}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Active Week Milestone Status Banner */}
+                    <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${curWeekRec?.status === 'manager_approved'
+                      ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                      : curWeekRec?.status === 'submitted_to_manager'
+                        ? 'bg-amber-50/90 border-amber-300 text-amber-950'
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                      }`}>
+                      <div className="flex items-center gap-2.5">
+                        {curWeekRec?.status === 'manager_approved' ? (
+                          <CheckCircleIcon className="w-4 h-4 text-emerald-600 shrink-0" />
+                        ) : curWeekRec?.status === 'submitted_to_manager' ? (
+                          <ClockIcon className="w-4 h-4 text-amber-600 shrink-0" />
+                        ) : (
+                          <LockClosedIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                        )}
+                        <div>
+                          <span className="font-bold block">
+                            {curWeekLabel} Review Status: {
+                              curWeekRec?.status === 'manager_approved'
+                                ? `Approved (Manager Score: ${Number(curWeekRec.managerScore).toFixed(1)}%)`
+                                : curWeekRec?.status === 'submitted_to_manager'
+                                  ? 'Submitted by Employee (Ready for Manager Scoring)'
+                                  : curWeekLock.isLocked
+                                    ? `Locked — ${curWeekLock.lockReason}`
+                                    : 'Awaiting Employee Submission'
+                            }
+                          </span>
+                          {curWeekRec?.employeeRemarks && (
+                            <span className="text-[11px] text-slate-600 block mt-0.5">
+                              Employee Self Remarks: "{curWeekRec.employeeRemarks}"
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`px-2.5 py-1 rounded-lg font-bold text-[11px] shrink-0 ${curWeekRec?.status === 'manager_approved'
+                        ? 'bg-emerald-100 text-emerald-900'
+                        : curWeekRec?.status === 'submitted_to_manager'
+                          ? 'bg-amber-200 text-amber-950 ring-1 ring-amber-400'
+                          : 'bg-slate-200 text-slate-700'
+                        }`}>
+                        {curWeekRec?.status === 'manager_approved' ? 'Approved' : curWeekRec?.status === 'submitted_to_manager' ? 'Needs Review' : 'Pending'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
+              // 4-Quarter Milestone Stepper
+              if (isQuarterly) {
+                const curQuarterlyRecords = selectedMgrResponse?.quarterly_records || [];
+                const approvedQs = curQuarterlyRecords.filter(q => q.status === 'manager_approved');
+                const qtdScore = approvedQs.length > 0
+                  ? Number((approvedQs.reduce((acc, q) => acc + (Number(q.managerScore) || 0), 0) / approvedQs.length).toFixed(1))
+                  : null;
+
+                const curQuarterlyRec = curQuarterlyRecords.find(q => q.quarterIndex === activeMgrYearlyQuarterIndex);
+
+                return (
+                  <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-3.5 sm:p-4 space-y-3">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-slate-50/70 p-2.5 sm:p-3 rounded-xl border border-slate-200/80">
+                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                        <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1.5">
+                          <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                          Select Stage / Quarter:
+                        </span>
+                        <div className="relative flex-1 max-w-xl">
+                          <select
+                            value={activeMgrYearlyQuarterIndex}
+                            onChange={e => switchMgrYearlyQuarter(Number(e.target.value))}
+                            className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
+                          >
+                            {FISCAL_QUARTERS.map(q => {
+                              const qLockInfo = getYearlyQuarterLockInfo(q.quarterIndex, curQuarterlyRecords);
+                              let badgeStr = '';
+                              if (qLockInfo.isApproved) badgeStr = `✅ Approved (${qLockInfo.score != null ? `${qLockInfo.score}%` : ''})`;
+                              else if (qLockInfo.isSubmitted) badgeStr = '⚡ Submitted (Needs Review)';
+                              else if (qLockInfo.isLocked) badgeStr = '🔒 Locked (Upcoming)';
+                              else badgeStr = '📄 Open';
+
+                              return (
+                                <option key={q.quarterKey} value={q.quarterIndex}>
+                                  {q.quarterKey.toUpperCase()} ({q.monthsIncluded}) — {badgeStr}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                        <button
+                          type="button"
+                          disabled={activeMgrYearlyQuarterIndex <= 1}
+                          onClick={() => switchMgrYearlyQuarter(activeMgrYearlyQuarterIndex - 1)}
+                          className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                          title="Previous Quarter"
+                        >
+                          ◀ Prev
+                        </button>
+                        <button
+                          type="button"
+                          disabled={activeMgrYearlyQuarterIndex >= 4}
+                          onClick={() => switchMgrYearlyQuarter(activeMgrYearlyQuarterIndex + 1)}
+                          className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                          title="Next Quarter"
+                        >
+                          Next ▶
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Active Quarter Milestone Status Banner */}
+                    <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${curQuarterlyRec?.status === 'manager_approved'
+                      ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                      : curQuarterlyRec?.status === 'submitted_to_manager'
+                        ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                        : 'bg-slate-100/80 border-slate-200 text-slate-700'
+                      }`}>
+                      <div className="flex items-center gap-2.5">
+                        {curQuarterlyRec?.status === 'manager_approved' ? (
+                          <CheckCircleIcon className="w-4 h-4 text-emerald-600 shrink-0" />
+                        ) : curQuarterlyRec?.status === 'submitted_to_manager' ? (
+                          <ClockIcon className="w-4 h-4 text-amber-600 shrink-0" />
+                        ) : (
+                          <LockClosedIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                        )}
+                        <div>
+                          <span className="font-bold block">
+                            {curMilestoneName} Review Status: {
+                              curQuarterlyRec?.status === 'manager_approved'
+                                ? `Approved (Manager Score: ${Number(curQuarterlyRec?.managerScore ?? 0).toFixed(1)}%)`
+                                : curQuarterlyRec?.status === 'submitted_to_manager'
+                                  ? 'Submitted by Employee (Ready for Manager Scoring)'
+                                  : 'Awaiting Employee Submission'
+                            }
+                          </span>
+                          {curQuarterlyRec?.employeeRemarks && (
+                            <span className="text-[11px] text-slate-600 block mt-0.5">
+                              Employee Self Remarks: "{curQuarterlyRec.employeeRemarks}"
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-md font-bold text-[11px] shrink-0 ${curQuarterlyRec?.status === 'manager_approved'
+                        ? 'bg-emerald-100 text-emerald-900'
+                        : curQuarterlyRec?.status === 'submitted_to_manager'
+                          ? 'bg-amber-100 text-amber-900'
+                          : 'bg-slate-200 text-slate-700'
+                        }`}>
+                        {curQuarterlyRec?.status === 'manager_approved' ? 'Approved' : curQuarterlyRec?.status === 'submitted_to_manager' ? 'Needs Review' : 'Pending'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
+              // 12-Month Fallback Stepper
+              const curRecords = curYearlyRecords;
+              const approvedMonths = curRecords.filter(m => m.status === 'manager_approved');
+              const ytdScore = approvedMonths.length > 0
+                ? Number((approvedMonths.reduce((acc, m) => acc + (Number(m.managerScore) || 0), 0) / approvedMonths.length).toFixed(1))
+                : null;
+
+              return (
+                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-3.5 sm:p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-slate-50/70 p-2.5 sm:p-3 rounded-xl border border-slate-200/80">
+                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                      <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1.5">
+                        <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                        Select Month:
+                      </span>
+                      <div className="relative flex-1 max-w-xl">
+                        <select
+                          value={activeMgrYearlyFiscalMonth}
+                          onChange={e => switchMgrYearlyMonth(Number(e.target.value))}
+                          className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
+                        >
+                          {FISCAL_MONTHS.map(m => {
+                            const mLock = getYearlyMonthLockInfo(m.monthIndex, curRecords);
+                            let badgeStr = '';
+                            if (mLock.isApproved) badgeStr = `✅ Approved (${mLock.score != null ? `${mLock.score}%` : ''})`;
+                            else if (mLock.isSubmitted) badgeStr = '⚡ Submitted (Needs Review)';
+                            else if (mLock.isLocked) badgeStr = '🔒 Locked (Future)';
+                            else badgeStr = '📄 Open';
+
+                            return (
+                              <option key={m.monthKey} value={m.monthIndex}>
+                                {m.monthName} (Q{m.quarter}) — {badgeStr}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                      <button
+                        type="button"
+                        disabled={activeMgrYearlyFiscalMonth <= 1}
+                        onClick={() => switchMgrYearlyMonth(activeMgrYearlyFiscalMonth - 1)}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                        title="Previous Month"
+                      >
+                        ◀ Prev
+                      </button>
+                      <button
+                        type="button"
+                        disabled={activeMgrYearlyFiscalMonth >= 12}
+                        onClick={() => switchMgrYearlyMonth(activeMgrYearlyFiscalMonth + 1)}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                        title="Next Month"
+                      >
+                        Next ▶
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Active Month Milestone Status Banner */}
+                  <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${curYearlyRec?.status === 'manager_approved'
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                    : curYearlyRec?.status === 'submitted_to_manager'
+                      ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                      : 'bg-slate-100/80 border-slate-200 text-slate-700'
+                    }`}>
+                    <div className="flex items-center gap-2">
+                      <CalendarDaysIcon className="w-4 h-4 shrink-0" />
+                      <span>
+                        Viewing <strong>{curMonthName}{curYearlyRec?.calendarYear ? ` (${curYearlyRec.calendarYear})` : ''}</strong> milestone —{' '}
+                        {curYearlyRec?.status === 'manager_approved'
+                          ? `Approved with Manager Score of ${Number(curYearlyRec.managerScore || 0).toFixed(1)}%. You may update deliverable actuals below.`
+                          : curYearlyRec?.status === 'submitted_to_manager'
+                            ? `Submitted by employee with self-score of ${Number(curYearlyRec.employeeScore || 0).toFixed(1)}%. Ready for review & scoring.`
+                            : 'Pending employee submission for this month.'}
+                      </span>
+                    </div>
+                    {curYearlyRec?.employeeRemarks && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] italic bg-white/70 px-2.5 py-1 rounded-md border border-slate-200/50 max-w-sm truncate">
+                          Emp Note: {curYearlyRec.employeeRemarks}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Categories Loop */}
+            {selectedMgrCategories.map(cat => {
+              let catTotalMgrEarned = 0;
+              cat.kpis.forEach(kpi => {
+                const respItem = isYearly
+                  ? (isWeekly
+                    ? (curWeeklyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeeklyRec?.kpiEntries?.[kpi.name] : null))
+                    : isQuarterly
+                      ? (curQuarterlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterlyRec?.kpiEntries?.[kpi.name] : null))
+                      : (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null)))
+                  : selectedMgrResponse!.kpiResponses?.[kpi.id];
+                const empActual = respItem?.actualValue ?? respItem?.actual_value ?? '';
+                const curMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual);
+                catTotalMgrEarned += calculateKPIScore(kpi, curMgrActual).earnedScore;
+              });
+
+              return (
+                <div key={cat.id} className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+                  {/* Category Header Strip */}
+                  <div className="px-5 py-3.5 bg-slate-50/70 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <SparklesIcon className="w-4 h-4 text-teal-600 stroke-[2.2]" />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-xs text-slate-900">{cat.name}</h4>
+                          <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200/60">
+                            {cat.weightage}% Weight
+                          </span>
+                        </div>
+                        {cat.description && (
+                          <p className="text-[11px] text-slate-400 mt-0.5">{cat.description}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 self-start sm:self-center">
+                      <span className="text-xs text-slate-500">Category Score:</span>
+                      <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/60">
+                        {catTotalMgrEarned.toFixed(2)}% / {cat.weightage}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Deliverables Table (Clean, neat columns without box clutter) */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs min-w-[780px] table-auto">
+                      <thead className="bg-white text-slate-400 font-semibold border-b border-slate-100 text-[11px] uppercase tracking-wider">
+                        <tr>
+                          <th className="px-5 py-3 min-w-[200px]">Deliverable</th>
+                          <th className="px-3 py-3 text-center whitespace-nowrap min-w-[85px]">Target</th>
+                          <th className="px-3 py-3 text-center whitespace-nowrap min-w-[85px]">Weight</th>
+                          <th className="px-3 py-3 text-center whitespace-nowrap min-w-[95px]">Actual PM</th>
+                          <th className="px-3 py-3 text-center whitespace-nowrap min-w-[95px]">Earned</th>
+                          <th className="px-3 py-3 text-center whitespace-nowrap min-w-[130px]">Insufficient</th>
+                          <th className="px-3 py-3 text-center min-w-[150px] bg-slate-50/50 text-slate-700">
+                            {isReadOnly ? 'Manager Goal & Score' : 'Manager Score'}
+                          </th>
+                          {!isReadOnly && (
+                            <th className="px-5 py-3 min-w-[190px]">
+                              Manager Remarks
+                            </th>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {cat.kpis.map(kpi => {
+                          const respItem = isYearly
+                            ? (isWeekly
+                              ? (curWeeklyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeeklyRec?.kpiEntries?.[kpi.name] : null))
+                              : isQuarterly
+                                ? (curQuarterlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterlyRec?.kpiEntries?.[kpi.name] : null))
+                                : (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null)))
+                            : selectedMgrResponse!.kpiResponses?.[kpi.id];
+                          const empActual = respItem?.actualValue ?? respItem?.actual_value ?? '';
+                          const currentMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual);
+                          const calcEmp = calculateKPIScore(kpi, empActual);
+                          const calcMgr = calculateKPIScore(kpi, currentMgrActual);
+                          const currentMgrRemark = mgrKpiRemarks[kpi.id] ?? (respItem?.managerRemarks ?? respItem?.manager_remark ?? '');
+                          const isGoalModified = String(currentMgrActual).trim() !== String(empActual).trim();
+                          const parsedTarget = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
+                          const targetThreshold = parsedTarget.threshold;
+
+                          const isNeg = isNegativeKpi(kpi);
+                          const empRemark = respItem?.employeeRemarks ?? respItem?.employee_remark ?? '';
+
+                          return (
+                            <tr
+                              key={kpi.id}
+                              className={`group/delivRow transition-colors border-b border-slate-100 last:border-b-0 ${isNeg ? 'bg-rose-50/25 hover:bg-rose-50/45 border-l-4 border-l-rose-400' : 'hover:bg-slate-50/50 border-l-4 border-l-transparent'}`}
+                            >
+                              {/* Deliverable Specification */}
+                              <td className="px-5 py-3.5">
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`text-xs ${isNeg ? 'font-bold text-rose-950' : 'font-semibold text-slate-900'}`}>
+                                      {kpi.name}
+                                    </span>
+                                  </div>
+                                  {kpi.description && (
+                                    <div className={`text-[11px] mt-0.5 truncate max-w-xs ${isNeg ? 'text-rose-600/80 font-medium' : 'text-slate-400'}`}>{kpi.description}</div>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Target Goal */}
+                              <td className="px-3 py-3.5 text-center font-bold text-xs whitespace-nowrap">
+                                <div className="flex flex-col items-center justify-center gap-0.5">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${isNeg ? 'bg-rose-100/70 text-rose-800 border-rose-200 shadow-2xs' : 'text-slate-700'}`}>
+                                    {kpi.targetFromManager}
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* Target Score */}
+                              <td className="px-3 py-3.5 text-center text-slate-600 font-medium text-xs whitespace-nowrap">
+                                {kpi.targetScore}%
+                              </td>
+
+                              {/* Actual PM (Clean text with unit + Highlight if exceeding target) */}
+                              <td className="px-3 py-3.5 text-center text-xs whitespace-nowrap">
+                                <div className="flex flex-col items-center justify-center gap-1">
+                                  {empActual !== '' && empActual !== null && empActual !== undefined ? (
+                                    (() => {
+                                      const num = parseFloat(String(empActual));
+                                      const isOver = !isNaN(num) && (
+                                        isNeg
+                                          ? (parsedTarget.operator === '<' ? num >= targetThreshold : (targetThreshold === 0 ? num > 0 : num > targetThreshold))
+                                          : (targetThreshold > 0 && num > targetThreshold)
+                                      );
+                                      const isMet = !isNaN(num) && (
+                                        isNeg
+                                          ? (parsedTarget.operator === '<' ? num < targetThreshold : (targetThreshold === 0 ? num === 0 : num <= targetThreshold))
+                                          : (targetThreshold > 0 && num >= targetThreshold)
+                                      );
+
+                                      return (
+                                        <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${isNeg && isOver
+                                          ? 'bg-rose-50 text-rose-900 border-rose-300'
+                                          : isOver
+                                            ? 'bg-emerald-50 text-emerald-950 border border-emerald-400'
+                                            : isMet && !isNeg
+                                              ? 'bg-teal-50 text-teal-900 border border-teal-300'
+                                              : 'bg-slate-50 text-slate-900 border-slate-200'
+                                          }`}>
+                                          <span>{empActual} {kpi.unit}</span>
+                                          {isOver && !isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
+                                          {isOver && isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED TARGET</span>}
+                                        </span>
+                                      );
+                                    })()
+                                  ) : (
+                                    <span className="text-slate-300 font-bold">—</span>
+                                  )}
+
+                                  {/* Emp and Mgr Remark Badges below Actual PM */}
+                                  {(empRemark?.trim() || currentMgrRemark?.trim()) && (
+                                    <DeliverableRemarksHover
+                                      selfRemarks={empRemark}
+                                      mgrRemarks={currentMgrRemark}
+                                      align="center"
+                                    >
+                                      <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap cursor-pointer">
+                                        {empRemark?.trim() && (
+                                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0">
+                                            <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
+                                            <span>Emp</span>
+                                          </span>
+                                        )}
+                                        {currentMgrRemark?.trim() && (
+                                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0">
+                                            <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
+                                            <span>Mgr</span>
+                                          </span>
+                                        )}
+                                      </div>
+                                    </DeliverableRemarksHover>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Earned Score (Clean green font) */}
+                              <td className="px-3 py-3.5 text-center font-bold text-teal-700 font-mono text-xs whitespace-nowrap">
+                                {calcEmp.earnedScore.toFixed(2)}%
+                              </td>
+
+                              {/* Insufficient / Variance Column with Hover for Employee & Manager Remarks */}
+                              <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                                {(() => {
+                                  const isFlagged = respItem?.isInsufficient !== undefined && respItem?.isInsufficient !== null
+                                    ? respItem.isInsufficient
+                                    : (kpi?.isInsufficient ?? (kpi as any)?.is_insufficient ?? false);
+                                  const status = getInsufficientStatus(kpi, empActual, isFlagged);
+                                  return (
+                                    <DeliverableRemarksHover
+                                      selfRemarks={empRemark}
+                                      mgrRemarks={currentMgrRemark}
+                                      align="center"
+                                      className="w-auto inline-flex justify-center"
+                                    >
+                                      <span
+                                        className={`inline-flex items-center gap-1 font-bold px-2.5 py-0.5 rounded-full border text-[10px] shadow-2xs ${status.badgeClass} ${empRemark || currentMgrRemark ? 'cursor-help' : ''}`}
+                                      >
+                                        {status.label}
+                                        {(empRemark || currentMgrRemark) && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 ml-0.5 opacity-70 shrink-0" />}
+                                      </span>
+                                    </DeliverableRemarksHover>
+                                  );
+                                })()}
+                              </td>
+
+                              {/* Manager Goal & Score Column */}
+                              <td className="px-3 py-3.5 text-center bg-slate-50/50">
+                                {(() => {
+                                  const numMgr = parseFloat(String(currentMgrActual !== '' ? currentMgrActual : empActual));
+                                  const isOverMgr = !isNaN(numMgr) && (isNeg ? numMgr > targetThreshold : (targetThreshold > 0 && numMgr > targetThreshold));
+                                  const isMetMgr = !isNaN(numMgr) && (isNeg ? numMgr <= targetThreshold : (targetThreshold > 0 && numMgr >= targetThreshold));
+
+                                  return (
+                                    <div className="flex flex-col items-center justify-center gap-1">
+                                      {isReadOnly ? (
+                                        <div className="font-semibold text-xs text-slate-900">
+                                          <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${isGoalModified
+                                            ? 'bg-amber-100/90 text-amber-950 border-amber-300'
+                                            : isNeg && isOverMgr
+                                              ? 'bg-rose-50 text-rose-900 border-rose-300'
+                                              : isOverMgr
+                                                ? 'bg-teal-100/80 text-teal-950 border-teal-300'
+                                                : 'bg-white text-slate-900 border-slate-200'
+                                            }`}>
+                                            <span>{currentMgrActual !== '' && currentMgrActual !== null && currentMgrActual !== undefined ? currentMgrActual : (empActual || '—')} {kpi.unit || ''}</span>
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-col items-center justify-center gap-1">
+                                          <div className="flex items-center justify-center gap-1.5">
+                                            <input
+                                              type="number"
+                                              step="1"
+                                              min="0"
+                                              value={currentMgrActual !== '' && currentMgrActual !== null && currentMgrActual !== undefined ? (typeof currentMgrActual === 'number' ? Math.floor(currentMgrActual) : (String(currentMgrActual).includes('.') ? parseInt(String(currentMgrActual), 10) : currentMgrActual)) : ''}
+                                              onKeyDown={e => {
+                                                if (['.', ',', 'e', 'E', '+', '-'].includes(e.key)) {
+                                                  e.preventDefault();
+                                                }
+                                              }}
+                                              onChange={e => handleMgrRowActualChange(kpi, e.target.value)}
+                                              placeholder="0"
+                                              className={`w-16 h-8 px-2 text-center font-bold text-xs rounded-full transition shadow-2xs focus:outline-none ${isGoalModified
+                                                ? 'bg-amber-50 text-amber-950 border-2 border-amber-400 focus:border-amber-600 ring-2 ring-amber-200/50'
+                                                : isNeg && isOverMgr
+                                                  ? 'bg-rose-50 text-rose-950 border-2 border-rose-500 ring-2 ring-rose-400/30 font-black'
+                                                  : isOverMgr
+                                                    ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-400 ring-2 ring-emerald-300/30 font-black'
+                                                    : isMetMgr && !isNeg
+                                                      ? 'bg-teal-50 text-teal-950 border-2 border-teal-300 font-bold'
+                                                      : 'bg-white text-slate-900 border border-slate-300 focus:border-teal-500'
+                                                }`}
+                                            />
+                                            {kpi.unit && <span className="text-[11px] text-slate-500 font-semibold">{kpi.unit}</span>}
+                                          </div>
+                                          <div className="flex items-center gap-1">
+                                            <span className="text-[11px] font-bold text-teal-800 font-mono">
+                                              {calcMgr.earnedScore.toFixed(2)}%
+                                            </span>
+                                            {isGoalModified ? (
+                                              <span className="text-[9px] font-bold uppercase text-amber-800 px-1.5 py-0.2 rounded-full bg-amber-100 border border-amber-300">
+                                                ADJUSTED
+                                              </span>
+                                            ) : isOverMgr && !isNeg ? (
+                                              <span className="text-[9px] font-bold uppercase text-emerald-800 px-1.5 py-0.2 rounded-full bg-emerald-100 border border-emerald-300">
+                                                EXCEEDED
+                                              </span>
+                                            ) : isOverMgr && isNeg ? (
+                                              <span className="text-[9px] font-bold uppercase text-rose-800 px-1.5 py-0.2 rounded-full bg-rose-100 border border-rose-300">
+                                                EXCEEDED TARGET
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+
+                              {/* Manager Remarks Column (Only rendered when NOT read-only for editing) */}
+                              {!isReadOnly && (
+                                <td className="px-5 py-3.5 min-w-[200px]">
+                                  <ExpandableRemarkInput
+                                    value={currentMgrRemark}
+                                    onChange={val => handleMgrRowRemarkChange(kpi.id, val)}
+                                    placeholder={isGoalModified ? 'Reason for goal change...' : 'Add manager remarks...'}
+                                    className={isGoalModified && !currentMgrRemark.trim()
+                                      ? 'bg-amber-50/90 border-2 border-amber-400 focus:border-amber-600 text-slate-900 placeholder:text-amber-700'
+                                      : 'bg-slate-50 focus:bg-white border border-slate-200 focus:border-teal-500 text-slate-800'}
+                                  />
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Scorecard Overall Manager Remarks Card */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <ClipboardDocumentListIcon className="w-4 h-4 text-teal-600" />
+                <span>{isYearly ? `${curMilestoneName} Milestone Manager Remarks & Feedback` : 'Overall Manager Evaluation Summary & Feedback'}</span>
+              </label>
+              {isReadOnly ? (
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 leading-relaxed min-h-[56px] italic">
+                  {mgrRemarks || 'No overall remarks provided.'}
+                </div>
+              ) : (
+                <textarea
+                  rows={3}
+                  value={mgrRemarks}
+                  onChange={e => setMgrRemarks(e.target.value)}
+                  placeholder={isYearly ? `Enter milestone performance feedback for ${curMilestoneName}...` : "Enter comprehensive performance evaluation summary, key strengths, growth areas, and commendations..."}
+                  className="w-full p-3.5 bg-slate-50/50 focus:bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition resize-none placeholder:text-slate-400"
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Modal Sticky Footer */}
+          <div className="px-6 py-4 bg-white border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-500">{isYearly ? `${isWeekly ? curMilestoneName : isQuarterly ? (curQuarterFiscalObj?.quarterKey?.toUpperCase() || 'Q') : (curFiscalMonthObj?.shortName || 'Month')} Score:` : 'Total Score:'}</span>
+              <span className="font-bold text-slate-900 text-sm">{mgrScore.toFixed(1)}%</span>
+              {isYearly && (
+                <>
+                  <span className="text-slate-300 mx-1">•</span>
+                  <span className="text-slate-500">YTD Score:</span>
+                  <span className="font-black text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200 text-xs">
+                    {ytdScore !== null ? `${ytdScore}%` : '—'}
+                  </span>
+                </>
+              )}
+              <span className="text-slate-300 mx-1">•</span>
+              <span className="text-slate-500">Tier:</span>
+              <span className="font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200/80 text-xs inline-flex items-center gap-1.5">
+                <strong className="font-bold text-emerald-950">{rating.name}</strong>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2.5 justify-end flex-wrap">
+              {isReadOnly ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedMgrResponseId('')}
+                  className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-xs"
+                >
+                  Close Report
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMgrResponseId('')}
+                    className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer border border-slate-200"
+                  >
+                    Cancel
+                  </button>
+
+                  {isYearly ? (
+                    <div className="flex items-center gap-2">
+                      {(activeMilestoneStatus === 'manager_approved' || activeMilestoneStatus === 'submitted_to_manager') && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReopenModal(isWeekly ? activeMgrYearlyWeekIndex : (isQuarterly ? activeMgrYearlyQuarterIndex : activeMgrYearlyFiscalMonth))}
+                          className="flex items-center justify-center gap-1.5 px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                          title={`Reopen ${curMilestoneName} milestone and send back to employee for correction`}
+                        >
+                          <ArrowUturnLeftIcon className="w-4 h-4 text-amber-700 stroke-[2.2]" />
+                          <span>Reopen {curMilestoneName} for Employee</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => isWeekly ? handleManagerYearlyWeekApprove(activeMgrYearlyWeekIndex) : (isQuarterly ? handleManagerYearlyQuarterApprove(activeMgrYearlyQuarterIndex) : handleManagerYearlyMonthApprove(activeMgrYearlyFiscalMonth))}
+                        className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+                      >
+                        <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
+                        <span>{isAlreadyCalibrated ? `Update & Save ${curMilestoneName}` : `Approve & Save ${curMilestoneName} Milestone`}</span>
+                      </button>
+                    </div>
+                  ) : (() => {
+                    const otherPendingSubmittedList = (activeScopedResponsesForCards || []).filter(r =>
+                      r.id !== selectedMgrResponseId &&
+                      ((r.status as string) === 'manager_review' || (r.status as string) === 'Submitted to Manager' || String(r.status || '').toLowerCase().includes('submitted')) &&
+                      r.managerScore == null
+                    );
+
+                    return (
+                      <>
+                        {otherPendingSubmittedList.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleManagerSubmitWithNext(otherPendingSubmittedList[0])}
+                            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
+                          >
+                            <SparklesIcon className="w-4 h-4 text-amber-300" />
+                            <span>Submit & Next ({otherPendingSubmittedList.length} Left)</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={handleManagerSubmit}
+                          className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+                        >
+                          <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
+                          <span>{isAlreadyCalibrated ? 'Update Score' : 'Submit & Approve'}</span>
+                        </button>
+                      </>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  })()
+}
+
+{/* ========================================================================= */ }
+{/* MANAGER REOPEN MILESTONE / EVALUATION FEEDBACK MODAL (MANDATORY COMMENT) */ }
+{/* ========================================================================= */ }
+{
+  isReopenModalOpen && (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
+      <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200">
+        {/* Header */}
+        <div className="flex items-start justify-between pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center shrink-0 shadow-2xs">
+              <ArrowUturnLeftIcon className="w-5 h-5 stroke-[2.2]" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 tracking-tight">
+                Reopen {selectedMgrResponse && isYearlyResponse(selectedMgrResponse) && (selectedMgrResponse.milestone_frequency === 'weekly' || ((selectedMgrResponse.weekly_records || []).length > 0 && !(selectedMgrResponse.monthly_records || []).length && !(selectedMgrResponse.quarterly_records || []).length))
+                  ? `Week ${reopenTargetMonthIndex}`
+                  : selectedMgrResponse && isYearlyResponse(selectedMgrResponse) && (selectedMgrResponse.milestone_frequency === 'quarterly' || ((selectedMgrResponse.quarterly_records || []).length > 0 && !(selectedMgrResponse.monthly_records || []).length && !(selectedMgrResponse.weekly_records || []).length))
+                    ? (reopenTargetMonthIndex ? (FISCAL_QUARTERS.find(q => q.quarterIndex === reopenTargetMonthIndex)?.quarterLabel || `Q${reopenTargetMonthIndex}`) : 'Quarter')
+                    : (reopenTargetMonthIndex ? FISCAL_MONTHS.find(m => m.monthIndex === reopenTargetMonthIndex)?.monthName : 'Milestone')} for Revision
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Send back to employee to update and re-submit deliverable actuals.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsReopenModalOpen(false);
+              setReopenTargetMonthIndex(null);
+              setReopenFeedbackInput('');
+            }}
+            className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+          >
+            <XMarkIcon className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="py-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <ChatBubbleLeftEllipsisIcon className="w-4 h-4 text-amber-600" />
+              <span>Manager Revision Instructions / Feedback</span>
+            </label>
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+              Mandatory
+            </span>
+          </div>
+
+          <textarea
+            rows={4}
+            value={reopenFeedbackInput}
+            onChange={e => setReopenFeedbackInput(e.target.value)}
+            placeholder="Explain clearly why this milestone is being reopened and what deliverable actuals the employee needs to revise or correct..."
+            className="w-full p-3.5 bg-slate-50 focus:bg-white border-2 border-amber-200 focus:border-amber-500 rounded-2xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-200/50 transition resize-none placeholder:text-slate-400 leading-relaxed font-medium"
+            autoFocus
+          />
+
+          <div className="flex items-center gap-2 p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-xl text-[11px] text-amber-900">
+            <InformationCircleIcon className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>This feedback will be prominently displayed at the top of the employee's worksheet so they know what to correct.</span>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              setIsReopenModalOpen(false);
+              setReopenTargetMonthIndex(null);
+              setReopenFeedbackInput('');
+            }}
+            disabled={isReopeningAction}
+            className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer border border-slate-200"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleConfirmReopenWithFeedback}
+            disabled={isReopeningAction || !reopenFeedbackInput.trim()}
+            className="flex items-center justify-center gap-2 px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
+          >
+            {isReopeningAction ? (
+              <>
+                <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                <span>Reopening & Sending...</span>
+              </>
+            ) : (
+              <>
+                <ArrowUturnLeftIcon className="w-4 h-4 stroke-[2.2]" />
+                <span>Reopen & Send to Employee</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+{/* ========================================================================= */ }
+{/* MANAGER EDIT DELIVERABLES MATRIX MODAL */ }
+{/* ========================================================================= */ }
+{
+  isMgrEditMatrixModalOpen && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
+      <div className="bg-white rounded-3xl max-w-4xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col my-8">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-100 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <PencilSquareIcon className="w-5 h-5 stroke-[2]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900 tracking-tight">
+                  Edit Deliverables Matrix
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200/80">
+                  Unlocked (0 Submissions)
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {mgrEditTeamName || 'Team'} • Modify category weights & targets
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsMgrEditMatrixModalOpen(false)}
+            className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+          >
+            <XMarkIcon className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleMgrSaveMatrixChanges} className="overflow-y-auto space-y-5 pt-4 pr-1 flex-1">
+          {/* Form & Period Metadata */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200">
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">Form Title</label>
+              <input
+                type="text"
+                value={mgrEditFormName}
+                onChange={e => setMgrEditFormName(e.target.value)}
+                className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
+                placeholder="Form title..."
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">Period Tag</label>
+              <input
+                type="text"
+                value={mgrEditPeriod}
+                onChange={e => setMgrEditPeriod(e.target.value)}
+                className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
+                placeholder="Period..."
+                required
+              />
+            </div>
+          </div>
+
+          {/* Matrix Categories & Targets */}
+          <div className="space-y-3.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-2">
+              <div>
+                <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-teal-600"></span>
+                  Deliverables & Weights
+                </span>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Ensure weights total 100% and targets are balanced.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMgrEditCategories(DEFAULT_KPI_CATEGORIES)}
+                  className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
+                >
+                  Reset Template
+                </button>
+                <button
+                  type="button"
+                  onClick={handleMgrAddEditCategory}
+                  disabled={mgrEditTotalWeightage >= 100}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs ${mgrEditTotalWeightage >= 100
+                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                    : 'bg-teal-700 hover:bg-teal-800 text-white cursor-pointer'
+                    }`}
+                >
+                  <PlusIcon className="w-3.5 h-3.5" />
+                  <span>Add Category</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Weightage Status Alert */}
+            <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 ${mgrEditTotalWeightage === 100 && areAllMgrEditCategoriesBalanced
+              ? 'bg-teal-50 border border-teal-200 text-teal-900'
+              : 'bg-amber-50 border border-amber-200 text-amber-900'
+              }`}>
+              <div className="flex items-center gap-2">
+                {mgrEditTotalWeightage === 100 && areAllMgrEditCategoriesBalanced ? (
+                  <CheckCircleIcon className="w-4 h-4 text-teal-600 shrink-0" />
+                ) : (
+                  <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 shrink-0" />
+                )}
+                <span>
+                  Total Category Weight: <strong>{mgrEditTotalWeightage}% / 100%</strong>
+                  {!areAllMgrEditCategoriesBalanced && ' — Balance deliverable scores.'}
+                </span>
+              </div>
+            </div>
+
+            {/* Categories & KPIs List */}
+            <div className="space-y-4">
+              {mgrEditCategories.map((cat, catIdx) => {
+                const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
+                const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05;
+
+                return (
+                  <div key={cat.id} className="bg-slate-50/80 border border-slate-200/90 rounded-2xl p-4 sm:p-5 space-y-3">
+                    {/* Category Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/70">
+                      <div className="flex items-center gap-2 flex-1">
+                        <span className="w-5 h-5 rounded-full bg-teal-700 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                          {catIdx + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={cat.name}
+                          onChange={e => handleMgrUpdateEditCategoryName(cat.id, e.target.value)}
+                          placeholder="Category name..."
+                          className="font-bold text-xs text-slate-900 bg-transparent border-b border-dashed border-slate-300 focus:border-teal-600 focus:outline-none px-1 py-0.5 w-full max-w-md"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-slate-200">
+                          <span className="text-[11px] font-bold text-slate-500">Weight:</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={cat.weightage}
+                            onChange={e => handleMgrUpdateEditCategoryWeight(cat.id, Number(e.target.value))}
+                            className="w-12 text-xs font-bold text-teal-800 text-center focus:outline-none"
+                          />
+                          <span className="text-[11px] font-bold text-slate-400">%</span>
+                        </div>
+
+                        {!isBalanced && (
+                          <button
+                            type="button"
+                            onClick={() => handleMgrAutoBalanceEditCategory(cat.id)}
+                            className="px-2.5 py-1 text-[11px] font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-lg transition cursor-pointer"
+                          >
+                            Auto-Balance
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleMgrDeleteEditCategory(cat.id)}
+                          className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                          title="Delete category"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Deliverables Table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs bg-white rounded-xl border border-slate-200/80 overflow-hidden">
+                        <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200">
+                          <tr>
+                            <th className="px-3 py-2 text-left">Deliverable Name</th>
+                            <th className="px-3 py-2 w-32 text-center">Target</th>
+                            <th className="px-3 py-2 w-24 text-center">Score %</th>
+                            <th className="px-3 py-2 w-24 text-center">Unit</th>
+                            <th className="px-3 py-2 w-24 text-center">Type</th>
+                            <th className="px-2 py-2 w-10 text-center"></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {filteredSubmissionsList.map(r => {
-                            const info = getEmployeeDisplayInfo(r);
-                            const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
-
+                          {cat.kpis.map(kpi => {
+                            const isNeg = isNegativeKpi(kpi);
                             return (
-                              <tr key={r.id} className="group/row hover:bg-slate-50/70 transition">
-                                <td className="px-4 py-3.5">
-                                  <div>
-                                    <div className="font-bold text-slate-900 text-xs">{info.employeeName}</div>
-                                    <div className="text-[10px] font-mono text-slate-400">#{info.employeeCode}</div>
+                              <tr key={kpi.id} className={`transition ${isNeg ? 'bg-rose-50/25 hover:bg-rose-50/50' : 'hover:bg-slate-50/50'}`}>
+                                <td className="px-3 py-2 align-middle">
+                                  <input
+                                    type="text"
+                                    value={kpi.name}
+                                    onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'name', e.target.value)}
+                                    placeholder="Deliverable description..."
+                                    className={`w-full h-8 px-2.5 rounded-lg text-xs font-semibold focus:outline-none transition border ${isNeg
+                                      ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
+                                      : 'bg-slate-50/70 text-slate-800 border-slate-200 focus:bg-white focus:border-teal-600'
+                                      }`}
+                                  />
+                                </td>
+                                <td className="px-3 py-2 align-middle text-center">
+                                  <input
+                                    type="text"
+                                    value={kpi.targetFromManager ?? ''}
+                                    onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'targetFromManager', e.target.value)}
+                                    placeholder="e.g. 3, 11, 1950, <2"
+                                    className={`w-full h-8 px-2 rounded-lg text-xs font-bold text-center focus:outline-none transition border ${isNeg
+                                      ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
+                                      : 'bg-slate-50/70 text-teal-900 border-slate-200 focus:bg-white focus:border-teal-600'
+                                      }`}
+                                  />
+                                </td>
+                                <td className="px-3 py-2 align-middle text-center">
+                                  <div className={`flex items-center justify-center focus-within:bg-white border rounded-lg px-2 h-8 transition ${isNeg ? 'bg-rose-50/40 border-rose-200 focus-within:border-rose-500' : 'bg-slate-50/70 border-slate-200 focus-within:border-teal-600'
+                                    }`}>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      value={kpi.targetScore}
+                                      onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'targetScore', Number(e.target.value))}
+                                      className={`w-14 text-xs font-bold text-center bg-transparent focus:outline-none p-0 ${isNeg ? 'text-rose-700' : 'text-slate-800'
+                                        }`}
+                                    />
+                                    <span className="text-[11px] text-slate-400 font-bold ml-0.5">%</span>
                                   </div>
                                 </td>
-                                <td className="px-4 py-3.5">
-                                  <div className="font-semibold text-slate-800">{info.teamName}</div>
-                                  <div className="text-[10px] text-slate-400">{info.departmentName}</div>
+                                <td className="px-3 py-2 align-middle text-center">
+                                  <input
+                                    type="text"
+                                    value={kpi.unit}
+                                    onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'unit', e.target.value)}
+                                    placeholder="units"
+                                    className="w-full h-8 px-2 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-teal-600 rounded-lg text-xs font-medium text-center text-slate-700 focus:outline-none transition"
+                                  />
                                 </td>
-                                <td className="px-4 py-3.5">
-                                  {(() => {
-                                    const isEmpSubmitted = Boolean(
-                                      r.employeeSubmittedAt ||
-                                      (r as any).submitted_at ||
-                                      (r as any).submittedAt ||
-                                      (r as any).employee_submitted_at ||
-                                      (String(r.status || '') === 'manager_review' || String(r.status || '').toLowerCase().includes('submitted') || r.status === 'approved' || r.status === 'sm_final_approval' || (r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0))
-                                    );
-                                    const subDate = isEmpSubmitted
-                                      ? formatEvalDateTime(r.employeeSubmittedAt || (r as any).submitted_at || (r as any).submittedAt || (r as any).employee_submitted_at || r.updatedAt || r.createdAt)
-                                      : null;
-                                    const approvedDate = (isCalibrated || r.serviceManagerApprovedAt || r.managerReviewedAt)
-                                      ? formatEvalDateTime(r.serviceManagerApprovedAt || r.managerReviewedAt || (r as any).manager_reviewed_at || (r as any).approved_at || r.updatedAt)
-                                      : null;
-                                    const tooltipLines: string[] = [];
-                                    if (subDate) tooltipLines.push(`Submitted: ${subDate}`);
-                                    if (approvedDate) tooltipLines.push(`Approved: ${approvedDate}`);
-                                    const nativeTooltip = tooltipLines.join(' | ');
-
-                                    return (
-                                      <SubmissionDatesHover
-                                        subDate={subDate}
-                                        approvedDate={approvedDate}
-                                        isSubmitted={isEmpSubmitted}
-                                        align="left"
-                                        nativeTitle={nativeTooltip}
-                                      >
-                                        <div className="font-semibold text-slate-800 hover:text-primary-700 transition-colors">
-                                          {r.periodName || (r as any).form || 'Performance Evaluation'}
-                                        </div>
-                                      </SubmissionDatesHover>
-                                    );
-                                  })()}
-                                </td>
-                                <td className="px-3 py-3.5 text-center">
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200">
-                                    {r.frequency || 'Quarterly'}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-3.5 text-center font-semibold text-slate-700">
-                                  {r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0
-                                    ? `${Number(r.employeeOverallScore).toFixed(1)}%`
-                                    : '—'}
-                                </td>
-                                <td className="px-3 py-3.5 text-center">
-                                  {r.managerScore != null ? (
-                                    <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200">
-                                      {Number(r.managerScore).toFixed(1)}%
-                                    </span>
-                                  ) : (
-                                    <span className="text-[11px] text-slate-400 font-medium">Pending</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3.5 text-center">
-                                  {renderStatusBadge(r.status, r)}
-                                </td>
-                                <td className="px-4 py-3.5 text-right">
+                                <td className="px-3 py-2 align-middle text-center">
                                   <button
                                     type="button"
-                                    onClick={() => handleSelectMgrResponse(r)}
-                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer ${isCalibrated
-                                      ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
-                                      : isEmpSubmitted
-                                        ? 'bg-teal-700 hover:bg-teal-800 text-white'
-                                        : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
+                                    onClick={() => handleMgrUpdateEditKPI(cat.id, kpi.id, 'scoringDirection', isNeg ? 'higher_is_better' : 'lower_is_better')}
+                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition shadow-2xs cursor-pointer whitespace-nowrap ${isNeg
+                                      ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
                                       }`}
+                                    title={isNeg ? 'Negative / Penalty metric (Lower is better). Click to switch to Standard.' : 'Standard metric (Higher is better). Click to switch to Negative.'}
                                   >
-                                    {isCalibrated ? <EyeIcon className="w-3.5 h-3.5" /> : isEmpSubmitted ? <SparklesIcon className="w-3.5 h-3.5 text-amber-300" /> : <ClockIcon className="w-3.5 h-3.5 text-slate-400" />}
-                                    <span>{isCalibrated ? 'View Report' : isEmpSubmitted ? 'Review & Score' : 'Pending'}</span>
+                                    {isNeg ? '− Negative' : '+ Standard'}
+                                  </button>
+                                </td>
+                                <td className="px-2 py-2 align-middle text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMgrDeleteEditKPI(cat.id, kpi.id)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                                    title="Delete deliverable"
+                                  >
+                                    <TrashIcon className="w-3.5 h-3.5" />
                                   </button>
                                 </td>
                               </tr>
@@ -14555,1846 +18544,392 @@ export const EvaluationTab: React.FC = () => {
                         </tbody>
                       </table>
                     </div>
-                  )}
-                </div>
-              )}
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleMgrAddEditKPI(cat.id)}
+                        className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-teal-700 bg-white hover:bg-teal-50 rounded-xl transition shadow-2xs border border-teal-200/80 cursor-pointer"
+                      >
+                        <PlusIcon className="w-3.5 h-3.5" />
+                        <span>Add Row</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          ) : (
-            /* Top Performers Multi-Column Layout (Image 2) */
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs space-y-4 animate-in fade-in duration-200">
-              {/* Top Performers Sub-navigation Mode Pills */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                <div className="inline-flex p-1 rounded-xl bg-slate-100/90 border border-slate-200/80 gap-1 items-center flex-wrap">
-                  {[
-                    { id: 'top_weekly', label: 'Top performers — Weekly' },
-                    { id: 'top_monthly', label: 'Top performers — Monthly' },
-                    { id: 'top_quarterly', label: 'Top performers — Quarterly' },
-                    { id: 'top_annual', label: 'Top performers — Annual' },
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setReportViewTab(tab.id as any)}
-                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${reportViewTab === tab.id
-                        ? 'bg-teal-700 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-                        }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+          </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500 font-medium">
-                    {reportViewTab === 'top_weekly'
-                      ? topPerformersQuarterRangeText
-                      : `1 Apr ${topPerformersFiscalYear} - 31 Mar ${topPerformersFiscalYear + 1}`}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                    ranked by score
-                  </span>
-                </div>
+          {/* Modal Footer Buttons */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsMgrEditMatrixModalOpen(false)}
+              className="px-5 py-2.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              disabled={!isMgrEditWeightageValid || !areAllMgrEditCategoriesBalanced || isSavingMatrixEdit}
+              className={`flex items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all cursor-pointer ${isMgrEditWeightageValid && areAllMgrEditCategoriesBalanced && !isSavingMatrixEdit
+                ? 'bg-teal-700 hover:bg-teal-800 shadow-teal-900/10'
+                : 'bg-slate-300 cursor-not-allowed opacity-60'
+                }`}
+            >
+              <CheckCircleIcon className="w-4 h-4 stroke-[2]" />
+              <span>
+                {isSavingMatrixEdit ? 'Saving...' : 'Save Matrix Changes'}
+              </span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+{/* ========================================================================= */ }
+{/* 5. MULTI-TIER EVALUATION CONVERT & ROLLUP MODAL (Option B: Soft Archive) */ }
+{/* ========================================================================= */ }
+{
+  isConvertModalOpen && (() => {
+    const ROLLUP_TIERS: {
+      id: RollupTier;
+      label: string;
+      fromName: string;
+      toName: string;
+      badgeCount: number;
+      formulaLabel: string;
+      formulaDesc: string;
+      createFreq: 'daily' | 'weekly' | 'monthly' | 'quarterly';
+      createLabel: string;
+    }[] = [
+        {
+          id: 'daily_to_weekly',
+          label: 'Daily → Weekly',
+          fromName: 'Daily',
+          toName: 'Weekly',
+          badgeCount: allDailyGroupsForManager.reduce((a, b) => a + b.count, 0),
+          formulaLabel: 'Daily to Weekly Average (% ÷ Evaluated Days)',
+          formulaDesc: 'Weekly Score = Sum of Daily % ÷ Number of Evaluated Days',
+          createFreq: 'daily',
+          createLabel: '+ Assign Daily Deliverables Matrix'
+        },
+        {
+          id: 'weekly_to_monthly',
+          label: 'Weekly → Monthly',
+          fromName: 'Weekly',
+          toName: 'Monthly',
+          badgeCount: allWeeklyGroupsForManager.reduce((a, b) => a + b.count, 0),
+          formulaLabel: 'Weekly to Monthly Average (% ÷ Active Weeks)',
+          formulaDesc: 'Monthly Score = Sum of Weekly % ÷ Number of Active Weeks',
+          createFreq: 'weekly',
+          createLabel: '+ Assign Weekly Deliverables Matrix'
+        },
+        {
+          id: 'monthly_to_quarterly',
+          label: 'Monthly → Quarterly',
+          fromName: 'Monthly',
+          toName: 'Quarterly',
+          badgeCount: allMonthlyGroupsForManager.reduce((a, b) => a + b.count, 0),
+          formulaLabel: 'Monthly to Quarterly Average (% ÷ Months in Quarter)',
+          formulaDesc: 'Quarterly Score = Sum of Monthly % ÷ Number of Months',
+          createFreq: 'monthly',
+          createLabel: '+ Assign Monthly Deliverables Matrix'
+        },
+        {
+          id: 'quarterly_to_yearly',
+          label: 'Quarterly → Yearly',
+          fromName: 'Quarterly',
+          toName: 'Yearly (Annual)',
+          badgeCount: allQuarterlyGroupsForManager.reduce((a, b) => a + b.count, 0),
+          formulaLabel: 'Quarterly to Annual Average (% ÷ Quarters in Year)',
+          formulaDesc: 'Yearly Score = Sum of Quarterly % ÷ Number of Quarters',
+          createFreq: 'quarterly',
+          createLabel: '+ Assign Quarterly Deliverables Matrix'
+        }
+      ];
+
+    const currentTierConfig = ROLLUP_TIERS.find(t => t.id === activeRollupTier) || ROLLUP_TIERS[0];
+    const currentTierGroups = activeRollupTier === 'daily_to_weekly' ? allDailyGroupsForManager :
+      activeRollupTier === 'weekly_to_monthly' ? allWeeklyGroupsForManager :
+        activeRollupTier === 'monthly_to_quarterly' ? allMonthlyGroupsForManager : allQuarterlyGroupsForManager;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+          {/* Modal Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-linear-to-r from-teal-50/70 via-white to-amber-50/40 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <ArrowPathIcon className="w-5 h-5" />
               </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+                  Rollup & Convert Evaluations
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Consolidate evaluation cycles into higher-frequency summary records
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsConvertModalOpen(false)}
+              className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+            >
+              <XMarkIcon className="w-4 h-4" />
+            </button>
+          </div>
 
-              {/* Multi-column Side-Scroll Container */}
-              <div className="flex items-stretch gap-4 overflow-x-auto pb-3 pt-1 scroll-smooth">
-                {(reportViewTab === 'top_weekly'
-                  ? topPerformersWeeklyColumns
-                  : reportViewTab === 'top_monthly'
-                    ? topPerformersMonthlyColumns
-                    : reportViewTab === 'top_quarterly'
-                      ? topPerformersQuarterlyColumns
-                      : topPerformersAnnualColumns
-                ).map(col => (
-                  <div
-                    key={col.key}
-                    className={`min-w-[280px] max-w-[340px] flex-1 rounded-2xl overflow-hidden shadow-2xs bg-white flex flex-col shrink-0 ${(col as any).isSummaryYear
-                      ? 'border-2 border-[#029597] shadow-md ring-1 ring-[#029597]/20'
-                      : 'border border-slate-200/80'
+          {/* Conversion Tier Tabs */}
+          <div className="px-6 py-3 bg-slate-50/80 border-b border-slate-200/80 overflow-x-auto shrink-0">
+            <div className="flex items-center gap-2 min-w-max">
+              {ROLLUP_TIERS.map(tier => {
+                const isActive = activeRollupTier === tier.id;
+                return (
+                  <button
+                    key={tier.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveRollupTier(tier.id);
+                      const groups = tier.id === 'daily_to_weekly' ? allDailyGroupsForManager :
+                        tier.id === 'weekly_to_monthly' ? allWeeklyGroupsForManager :
+                          tier.id === 'monthly_to_quarterly' ? allMonthlyGroupsForManager : allQuarterlyGroupsForManager;
+                      setConvertingTarget(groups[0] || null);
+                    }}
+                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${isActive
+                      ? 'bg-teal-700 text-white shadow-xs font-bold'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70'
                       }`}
                   >
-                    {/* Column Header */}
-                    <div className={`px-4 py-2.5 font-bold text-xs flex items-center justify-between ${(col as any).isSummaryYear
-                      ? 'bg-[#029597] text-white'
-                      : 'bg-slate-50 text-slate-800 border-b border-slate-200/80'
+                    <span>{tier.label}</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${isActive
+                      ? 'bg-white/20 text-white'
+                      : tier.badgeCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-400'
                       }`}>
-                      <span>{col.label}</span>
-                      {col.subLabel && (
-                        <span className="text-[10px] font-normal text-slate-400">{col.subLabel}</span>
-                      )}
-                    </div>
-
-                    {/* Column Body */}
-                    <div className="p-3 flex-1 flex flex-col justify-start space-y-3">
-                      {col.groups.length === 0 ? (
-                        <div className="py-14 text-center my-auto">
-                          <p className="text-xs text-slate-400 font-medium italic">Nothing approved.</p>
-                        </div>
-                      ) : (
-                        col.groups.map((group: any) => {
-                          const color = getTeamHeaderColor(group.teamName);
-                          return (
-                            <div key={`${group.departmentName}_${group.teamName}`} className="space-y-2 pt-2 first:pt-0 border-t first:border-t-0 border-slate-100">
-                              <div className={`px-2.5 py-1.5 rounded-lg ${color.bg}`}>
-                                <div className={`text-xs font-extrabold ${color.text} tracking-tight truncate`}>
-                                  Team: {group.teamName}
-                                </div>
-                              </div>
-
-                              <div className="space-y-1.5 px-1">
-                                {group.members.map((member: any) => (
-                                  <div key={member.code || member.name} className="flex items-center justify-between text-xs py-0.5">
-                                    <div className="flex items-center gap-1.5 min-w-0">
-                                      <span className="text-xs font-bold text-slate-600 shrink-0 inline-flex items-center gap-1 whitespace-nowrap">
-                                        {member.rank === 1 ? '🥇 1.' : member.rank === 2 ? '🥈 2.' : member.rank === 3 ? '🥉 3.' : <span className="text-slate-400">{member.rank}.</span>}
-                                      </span>
-                                      <span className="font-semibold text-slate-800 truncate text-xs" title={member.name}>
-                                        {member.name}
-                                      </span>
-                                    </div>
-                                    <span className="font-mono font-bold text-slate-900 shrink-0 ml-2">
-                                      {member.score.toFixed(2)}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 4.4. DOWNLINE TEAM MEMBERS & REPORTS MODAL POPUP */}
-      {/* ========================================================================= */}
-      {Boolean(selectedDownlineTeamModal) && (() => {
-        const team = selectedDownlineTeamModal;
-        const teamResponses: EvaluationResponse[] = (team.responses || []).filter((r: EvaluationResponse) => {
-          const { employeeCode, employeeName } = getEmployeeDisplayInfo(r);
-
-          // Status filter
-          if (downlineModalStatusFilter === 'pending') {
-            const isPending = r.status === 'employee_in_progress' || (r.managerScore == null && r.status !== 'approved' && r.status !== 'sm_final_approval');
-            if (!isPending) return false;
-          } else if (downlineModalStatusFilter === 'submitted') {
-            const isSubmitted = r.status === 'manager_review' || (r.employeeOverallScore != null && r.employeeOverallScore > 0 && r.managerScore == null);
-            if (!isSubmitted) return false;
-          } else if (downlineModalStatusFilter === 'approved') {
-            const isApproved = r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null;
-            if (!isApproved) return false;
-          }
-
-          // Search query filter
-          if (downlineModalSearchQuery.trim()) {
-            const query = downlineModalSearchQuery.toLowerCase().trim();
-            const matchesName = (employeeName || '').toLowerCase().includes(query);
-            const matchesCode = String(employeeCode).toLowerCase().includes(query);
-            const matchesDesignation = (r.designation || '').toLowerCase().includes(query);
-            if (!matchesName && !matchesCode && !matchesDesignation) return false;
-          }
-
-          return true;
-        });
-
-        const allCount = (team.responses || []).length;
-        const pendingCount = (team.responses || []).filter((r: any) => r.status === 'employee_in_progress' || (r.managerScore == null && r.status !== 'approved' && r.status !== 'sm_final_approval')).length;
-        const submittedCount = (team.responses || []).filter((r: any) => (r.status === 'manager_review' || (r.employeeOverallScore != null && r.employeeOverallScore > 0)) && r.status !== 'approved' && r.managerScore == null).length;
-        const approvedCount = (team.responses || []).filter((r: any) => r.status === 'approved' || r.status === 'sm_final_approval' || r.managerScore != null).length;
-
-        return (
-          <div className="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-950/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-5xl my-auto overflow-hidden flex flex-col max-h-[92vh]">
-              {/* Modal Header */}
-              <div className="p-5 bg-gradient-to-r from-teal-50/60 via-white to-slate-50/60 border-b border-slate-200/80 shrink-0">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <div className="w-11 h-11 rounded-2xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center shrink-0 shadow-2xs">
-                      <BriefcaseIcon className="w-6 h-6" />
-                    </div>
-                    <div className="space-y-0.5 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-base font-semibold text-slate-800 truncate">
-                          {team.department} Team Performance Overview
-                        </h3>
-                        <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/70 shadow-2xs">
-                          {team.totalEmployees} {team.totalEmployees === 1 ? 'Member' : 'Members'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap font-normal">
-                        {team.subManagerName && (
-                          <span>Reporting Manager: <span className="text-slate-700 font-medium">{team.subManagerName}</span></span>
-                        )}
-                        <span className="text-slate-300">•</span>
-                        <span>Avg Team Score: <span className="text-teal-700 font-semibold">{team.teamAvgMgrScore !== null ? `${team.teamAvgMgrScore}%` : (team.teamAvgScore !== null ? `${team.teamAvgScore}% (Self)` : 'Pending')}</span></span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedDownlineTeamModal(null)}
-                    className="w-8.5 h-8.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition cursor-pointer shrink-0 shadow-2xs"
-                  >
-                    <XMarkIcon className="w-4 h-4 stroke-[2]" />
+                      {tier.badgeCount}
+                    </span>
                   </button>
-                </div>
+                );
+              })}
+            </div>
+          </div>
 
-                {/* Team Progress Telemetry Bar */}
-                <div className="mt-4 pt-3.5 border-t border-slate-200/60 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
-                    <span className="text-[10px] uppercase font-medium tracking-wide text-slate-400 block">Total Headcount</span>
-                    <span className="text-sm font-semibold text-slate-800">{allCount}</span>
+          {/* Modal Body */}
+          <div className="p-6 space-y-4 overflow-y-auto flex-1">
+            {convertingTarget ? (
+              <>
+                {/* Multiple Employees Selector if applicable */}
+                {currentTierGroups.length > 1 && (
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700">
+                      Select Team Member ({currentTierConfig.label})
+                    </label>
+                    <select
+                      value={convertingTarget.employeeId + (convertingTarget.weekStart || '')}
+                      onChange={e => {
+                        const found = currentTierGroups.find(g => (g.employeeId + (g.weekStart || '')) === e.target.value);
+                        if (found) setConvertingTarget(found);
+                      }}
+                      className="w-full h-9 px-3 bg-slate-50/70 hover:bg-white border border-slate-200 focus:border-teal-600 focus:ring-1 focus:ring-teal-600/20 rounded-xl text-xs font-semibold text-slate-800 cursor-pointer shadow-2xs transition"
+                    >
+                      {currentTierGroups.map((g, idx) => (
+                        <option key={g.employeeId + (g.weekStart || '') + idx} value={g.employeeId + (g.weekStart || '')}>
+                          {g.employeeName} (#{g.employeeCode}){g.weekLabel ? ` [${g.weekLabel}]` : ''} — {g.count} {currentTierConfig.fromName.toLowerCase()} records ({g.avgScore}% avg)
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
-                    <span className="text-[10px] uppercase font-medium tracking-wide text-teal-600 block">Completion Rate</span>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-sm font-semibold text-teal-800">{team.completionPercentage}%</span>
-                      <div className="flex-1 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-teal-600 h-full rounded-full transition-all duration-500" style={{ width: `${team.completionPercentage}%` }} />
-                      </div>
+                )}
+
+                {/* 3-Column Summary Cards Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Card 1: Target Member */}
+                  <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/90 flex flex-col justify-between">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                      Target Member
+                    </span>
+                    <div className="mt-1">
+                      <h4 className="text-sm font-bold text-slate-900 truncate">
+                        {convertingTarget.employeeName}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        #{convertingTarget.employeeCode} • {convertingTarget.teamName}
+                      </p>
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Target Record:</span>
+                      <span className="font-bold text-teal-900 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/70">
+                        {currentTierConfig.toName}
+                      </span>
                     </div>
                   </div>
-                  <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
-                    <span className="text-[10px] uppercase font-medium tracking-wide text-amber-600 block">Pending / In Progress</span>
-                    <span className="text-sm font-semibold text-amber-700">{pendingCount}</span>
-                  </div>
-                  <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
-                    <span className="text-[10px] uppercase font-medium tracking-wide text-emerald-600 block">Approved / Final</span>
-                    <span className="text-sm font-semibold text-emerald-700">{approvedCount}</span>
-                  </div>
-                </div>
-              </div>
 
-              {/* Search and Filters */}
-              <div className="p-3.5 bg-slate-50/70 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
-                <div className="relative w-full sm:w-80">
-                  <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={downlineModalSearchQuery}
-                    onChange={e => setDownlineModalSearchQuery(e.target.value)}
-                    placeholder="Search member name, code, role..."
-                    className="w-full h-9 pl-10 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition shadow-2xs"
-                  />
-                  {downlineModalSearchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setDownlineModalSearchQuery('')}
-                      className="p-1 rounded-full text-slate-400 hover:text-slate-600 absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
-                    >
-                      <XMarkIcon className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+                  {/* Card 2: Source Aggregation Stats */}
+                  <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/90 flex flex-col justify-between">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                      Cycle Summary
+                    </span>
+                    <div className="mt-1">
+                      <div className="text-xs font-bold text-slate-800">
+                        {convertingTarget.count} {currentTierConfig.fromName} {convertingTarget.count === 1 ? 'Evaluation' : 'Evaluations'}
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                        Combined Total: <strong className="font-mono text-slate-800">{convertingTarget.records.reduce((acc, r) => acc + Number(r.employeeOverallScore || 0), 0).toFixed(1)}%</strong>
+                      </p>
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-slate-200/60 text-[11px] text-slate-500 font-mono">
+                      Average: {convertingTarget.records.reduce((acc, r) => acc + Number(r.employeeOverallScore || 0), 0).toFixed(1)}% ÷ {convertingTarget.count}
+                    </div>
+                  </div>
 
-                <div className="flex items-center gap-1.5 overflow-x-auto">
-                  {[
-                    { id: 'all', label: 'All', count: allCount },
-                    { id: 'pending', label: 'Pending', count: pendingCount },
-                    { id: 'submitted', label: 'Submitted', count: submittedCount },
-                    { id: 'approved', label: 'Approved', count: approvedCount },
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setDownlineModalStatusFilter(tab.id as any)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition whitespace-nowrap cursor-pointer ${downlineModalStatusFilter === tab.id
-                        ? 'bg-teal-700 text-white shadow-xs'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/80'
-                        }`}
-                    >
-                      <span>{tab.label}</span>
-                      <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded-full ${downlineModalStatusFilter === tab.id
-                        ? 'bg-white/20 text-white'
-                        : 'bg-slate-100 text-slate-600'
-                        }`}>
-                        {tab.count}
+                  {/* Card 3: Rolled-Up Score */}
+                  <div className="p-3.5 bg-gradient-to-br from-teal-50/70 to-emerald-50/70 rounded-2xl border border-teal-200/90 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-bold text-teal-800 tracking-wider">
+                        Rolled-Up Score
                       </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Members List Table in Modal */}
-              <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
-                {teamResponses.length === 0 ? (
-                  <div className="py-12 text-center space-y-2 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                    <UserGroupIcon className="w-8 h-8 mx-auto text-slate-400" />
-                    <h5 className="text-xs font-semibold text-slate-700">No member records match criteria</h5>
-                    <p className="text-[11px] text-slate-400">Try changing the search query or status filter.</p>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white text-teal-800 border border-teal-200 shadow-2xs">
+                        {getRatingForScore(convertingTarget.avgScore).name}
+                      </span>
+                    </div>
+                    <div className="my-1">
+                      <span className="text-2xl font-black text-teal-900 font-mono tracking-tight">
+                        {convertingTarget.avgScore.toFixed(2)}%
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-teal-700 font-medium">
+                      Calculated for {currentTierConfig.toName}
+                    </div>
                   </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-2xl border border-slate-200/90 shadow-2xs bg-white">
+                </div>
+
+                {/* Consolidated Records Table */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800">
+                      Consolidating {convertingTarget.count} {currentTierConfig.fromName} {convertingTarget.count === 1 ? 'Record' : 'Records'}
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200/80 shadow-2xs">
                     <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50/80 text-slate-400 font-medium text-[10px] uppercase tracking-wider border-b border-slate-200/80">
+                      <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200">
                         <tr>
-                          <th className="px-5 py-3.5">Employee & Squad</th>
-                          <th className="px-4 py-3.5 text-center">Self Score</th>
-                          <th className="px-4 py-3.5 text-center">Manager Score</th>
-                          <th className="px-4 py-3.5 text-center">Status</th>
-                          <th className="px-5 py-3.5 text-right">Action</th>
+                          <th className="px-4 py-2.5">Evaluation Period / Description</th>
+                          <th className="px-4 py-2.5 text-center w-28">Self Score</th>
+                          <th className="px-4 py-2.5 text-center w-32">Manager Score</th>
+                          <th className="px-4 py-2.5 w-40">Status</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 font-normal">
-                        {teamResponses.map(r => {
-                          const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(r);
-                          const isCalibrated = r.managerScore != null || r.status === 'approved' || r.status === 'sm_final_approval';
-                          const initials = (employeeName || 'EM').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
-
-                          return (
-                            <tr key={r.id} className="hover:bg-slate-50/70 transition-colors group">
-                              <td className="px-5 py-4">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="font-medium text-xs text-slate-800 group-hover:text-teal-900 transition">
-                                      {employeeName || r.employeeName}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 font-mono">
-                                      #{employeeCode}
-                                    </span>
-                                  </div>
-                                  <div className="text-[11px] font-normal text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200/70 shadow-2xs">
-                                      <BuildingOfficeIcon className="w-3 h-3 text-teal-600" />
-                                      <span>{teamName}</span>
-                                    </span>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-4 py-4 text-center">
-                                <span className="font-normal text-xs text-slate-700">
-                                  {r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : '0.0%'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-4 text-center">
-                                {r.managerScore != null ? (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200/80 shadow-2xs">
-                                    {Number(r.managerScore).toFixed(1)}%
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-normal bg-slate-100 text-slate-400 border border-slate-200/60">
-                                    Pending
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-4 text-center">
-                                {renderStatusBadge(r.status, r)}
-                              </td>
-                              <td className="px-5 py-4 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => handleSelectMgrResponse(r)}
-                                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-medium shadow-2xs transition-all hover:shadow cursor-pointer"
-                                >
-                                  <EyeIcon className="w-3.5 h-3.5" />
-                                  <span>{isCalibrated ? 'View Scorecard' : 'View Report'}</span>
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {convertingTarget.records.map((r, idx) => (
+                          <tr key={r.id || idx} className="hover:bg-slate-50/60 transition">
+                            <td className="px-4 py-2.5 font-semibold text-slate-800">
+                              {r.periodName || (r as any).form || `${currentTierConfig.fromName} Record ${idx + 1}`}
+                            </td>
+                            <td className="px-4 py-2.5 text-center font-mono font-bold text-slate-700">
+                              {r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : '0.0%'}
+                            </td>
+                            <td className="px-4 py-2.5 text-center font-mono font-bold text-teal-800">
+                              {r.managerScore != null ? `${Number(r.managerScore).toFixed(1)}%` : '—'}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {renderStatusBadge(r.status, r)}
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
-                )}
-              </div>
-
-              {/* Modal Footer */}
-              <div className="p-4 bg-slate-50/80 border-t border-slate-200 flex items-center justify-between shrink-0">
-                <span className="text-xs text-slate-500">
-                  Showing <span className="font-medium text-slate-700">{teamResponses.length}</span> of <span className="font-medium text-slate-700">{allCount}</span> members in {team.department}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedDownlineTeamModal(null)}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-medium transition cursor-pointer border border-slate-200 shadow-2xs"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ========================================================================= */}
-      {/* 4.5. REVIEW & SCORE / CALIBRATION MODAL POPUP DIALOG (MODERN NEAT UI) */}
-      {/* ========================================================================= */}
-      {Boolean(selectedMgrResponseId && selectedMgrResponse) && (() => {
-        const isYearly = isYearlyResponse(selectedMgrResponse);
-        const curYearlyRecords = selectedMgrResponse!.monthly_records || [];
-        const curYearlyRec = isYearly ? curYearlyRecords.find(m => m.monthIndex === activeMgrYearlyFiscalMonth) : null;
-        const curFiscalMonthObj = FISCAL_MONTHS.find(m => m.monthIndex === activeMgrYearlyFiscalMonth);
-        const curMonthName = curFiscalMonthObj ? curFiscalMonthObj.monthName : `Month ${activeMgrYearlyFiscalMonth}`;
-
-        const approvedMonths = curYearlyRecords.filter(m => m.status === 'manager_approved');
-        const ytdScore = approvedMonths.length > 0
-          ? Number((approvedMonths.reduce((acc, m) => acc + (Number(m.managerScore) || 0), 0) / approvedMonths.length).toFixed(1))
-          : null;
-
-        const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(selectedMgrResponse!);
-        const empScore = isYearly
-          ? (curYearlyRec?.employeeScore != null ? Number(curYearlyRec.employeeScore) : 0)
-          : (selectedMgrResponse!.employeeOverallScore != null ? Number(selectedMgrResponse!.employeeOverallScore) : 0);
-        const rating = getRatingForScore(mgrScore);
-        const cycleForResp = cycles.find(c => c.id === selectedMgrResponse!.cycleId);
-        const cyclePeriod = isYearly
-          ? `${curMonthName} Milestone • ${cycleForResp?.periodName || (selectedMgrResponse as any)?.periodName || 'Annual Evaluation'}`
-          : (cycleForResp?.periodName || (selectedMgrResponse as any)?.periodName || 'Active Cycle');
-
-        const rawStatus = isYearly
-          ? String(curYearlyRec?.status || 'pending_employee').toLowerCase().trim()
-          : String(selectedMgrResponse!.status || '').toLowerCase().trim();
-
-        const isPendingManagerReview = isYearly
-          ? rawStatus === 'submitted_to_manager'
-          : Boolean(
-              rawStatus === 'manager_review' ||
-              rawStatus === 'submitted to manager' ||
-              rawStatus.includes('submitted')
-            );
-
-        const isAlreadyCalibrated = isYearly
-          ? rawStatus === 'manager_approved'
-          : Boolean(
-              rawStatus === 'approved' ||
-              rawStatus === 'sm_final_approval' ||
-              rawStatus === 'completed' ||
-              rawStatus.includes('calibrated') ||
-              (selectedMgrResponse!.managerScore != null && !isPendingManagerReview)
-            );
-
-        const isReadOnly = activeRole === 'downline_teams' || selectedMgrResponse!.status === 'sm_final_approval' || (activeRole !== 'manager' && !isDirectReport(getEmployeeDisplayInfo(selectedMgrResponse!).empInDb) && !isHrOrAdmin);
-
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-950/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-[96vw] xl:max-w-[1440px] my-auto overflow-hidden flex flex-col max-h-[92vh]">
-
-              {/* Modal Header: Candidate Profile Info & KPI Telemetry */}
-              <div className="bg-white px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 shrink-0">
-                {/* Left: Employee Details */}
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="space-y-0.5 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-base font-bold text-slate-900 tracking-tight">
-                        {employeeName}
-                      </h3>
-                      <span className="text-[11px] font-mono text-slate-400 font-medium">
-                        #{employeeCode}
-                      </span>
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
-                        {teamName}
-                      </span>
-                      {renderStatusBadge(isYearly ? (curYearlyRec?.status || 'pending_employee') : selectedMgrResponse!.status, selectedMgrResponse!)}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <span>Designation: <strong className="text-slate-700 font-medium">{selectedMgrResponse!.designation || 'Team Member'}</strong></span>
-                      <span className="text-slate-300">•</span>
-                      <span>Cycle: <strong className="text-slate-700 font-medium">{cyclePeriod}</strong></span>
-                    </div>
-                  </div>
                 </div>
 
-                {/* Right: Unified Score Telemetry Strip & Close Button */}
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="hidden sm:flex items-center gap-4 bg-slate-50/90 px-4 py-2 rounded-xl border border-slate-200">
-                    <div className="text-left">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
-                        {isYearly ? `${curFiscalMonthObj?.shortName || 'Month'} Self` : 'Self Score'}
-                      </span>
-                      <span className="text-xs font-bold text-slate-700">{empScore.toFixed(1)}%</span>
-                    </div>
-                    <div className="h-6 w-px bg-slate-200" />
-                    <div className="text-left">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-700 block">
-                        {isYearly ? `${curFiscalMonthObj?.shortName || 'Month'} Manager` : 'Manager Score'}
-                      </span>
-                      <span className="text-sm font-black text-teal-900">{mgrScore.toFixed(1)}%</span>
-                    </div>
-                    {isYearly && (
-                      <>
-                        <div className="h-6 w-px bg-slate-200" />
-                        <div className="text-left">
-                          <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 block">YTD Avg Score</span>
-                          <span className="text-sm font-black text-indigo-900">
-                            {ytdScore !== null ? `${ytdScore}%` : '—'}
-                          </span>
-                        </div>
-                      </>
-                    )}
-                    <div className="h-6 w-px bg-slate-200" />
-                    <div className="text-left">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 block">Performance Tier</span>
-                      <span className="text-xs font-bold text-emerald-900 block leading-tight">{rating.name}</span>
-                    </div>
-                  </div>
+                {/* Minimal Information Banner */}
+                <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/80 text-xs text-amber-900 flex items-center gap-2">
+                  <InformationCircleIcon className="w-4 h-4 text-amber-700 shrink-0" />
+                  <p className="font-medium text-[11px] leading-tight">
+                    Converting will create <strong>1 consolidated {currentTierConfig.toName} record</strong> and archive the source {currentTierConfig.fromName.toLowerCase()} entries into audit history.
+                  </p>
+                </div>
+              </>
+            ) : (
+              /* Empty state */
+              <div className="py-12 text-center space-y-3">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 shadow-2xs">
+                  <CalendarDaysIcon className="w-6 h-6" />
+                </div>
+                <div className="space-y-1 max-w-sm mx-auto">
+                  <h4 className="text-sm font-bold text-slate-900">
+                    No Active {currentTierConfig.fromName} Records to Convert
+                  </h4>
+                  <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                    There are currently no active {currentTierConfig.fromName.toLowerCase()} evaluation records ready for {currentTierConfig.label} rollup.
+                  </p>
+                </div>
 
+                <div className="pt-2">
                   <button
                     type="button"
-                    onClick={() => setSelectedMgrResponseId('')}
-                    className="w-8.5 h-8.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                    title="Close Dialog"
+                    onClick={() => {
+                      setIsConvertModalOpen(false);
+                      setMgrPeriodType(currentTierConfig.createFreq);
+                      handleOpenMgrCreateModal();
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold shadow-xs transition cursor-pointer"
                   >
-                    <XMarkIcon className="w-4 h-4 stroke-[2.2]" />
+                    <PlusIcon className="w-4 h-4 stroke-[2.5]" />
+                    <span>{currentTierConfig.createLabel}</span>
                   </button>
                 </div>
               </div>
-
-              {/* Modal Body: Scrollable Matrix */}
-              <div className="p-5 sm:p-6 space-y-6 overflow-y-auto flex-1 bg-slate-50/50">
-                {/* Mobile Telemetry */}
-                <div className="flex sm:hidden items-center justify-between gap-3 p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                  <div>
-                    <span className="text-[9px] uppercase text-slate-400 block font-semibold">{isYearly ? `${curFiscalMonthObj?.shortName} Self` : 'Self'}</span>
-                    <span className="text-xs font-bold text-slate-800">{empScore.toFixed(1)}%</span>
-                  </div>
-                  <div>
-                    <span className="text-[9px] uppercase text-teal-700 block font-semibold">{isYearly ? `${curFiscalMonthObj?.shortName} Mgr` : 'Manager'}</span>
-                    <span className="text-xs font-bold text-teal-900">{mgrScore.toFixed(1)}%</span>
-                  </div>
-                  {isYearly && (
-                    <div>
-                      <span className="text-[9px] uppercase text-indigo-700 block font-semibold">YTD Avg</span>
-                      <span className="text-xs font-bold text-indigo-900">{ytdScore !== null ? `${ytdScore}%` : '—'}</span>
-                    </div>
-                  )}
-                  <div>
-                    <span className="text-[9px] uppercase text-emerald-700 block font-semibold">Tier</span>
-                    <span className="text-xs font-bold text-emerald-900 block leading-tight">{rating.name}</span>
-                  </div>
-                </div>
-
-                {/* 12-Month Stepper for Yearly Cadence */}
-                {isYearly && (() => {
-                  const quarters = [
-                    { name: 'Q1 (Apr - Jun)', months: FISCAL_MONTHS.filter(m => m.quarter === 1) },
-                    { name: 'Q2 (Jul - Sep)', months: FISCAL_MONTHS.filter(m => m.quarter === 2) },
-                    { name: 'Q3 (Oct - Dec)', months: FISCAL_MONTHS.filter(m => m.quarter === 3) },
-                    { name: 'Q4 (Jan - Mar)', months: FISCAL_MONTHS.filter(m => m.quarter === 4) }
-                  ];
-
-                  return (
-                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-4 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center">
-                            <CalendarDaysIcon className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-900">
-                              12-Month Financial Year Milestone Reviews (April – March Cycle)
-                            </h4>
-                            <p className="text-[11px] text-slate-500">
-                              Click any monthly milestone to review employee deliverables, score performance, and maintain rolling YTD average.
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-[11px] font-semibold text-slate-500">Cumulative YTD Score:</span>
-                          <span className="text-xs font-black px-2.5 py-0.5 rounded-lg bg-teal-50 text-teal-900 border border-teal-300">
-                            {ytdScore !== null ? `${ytdScore}% (${approvedMonths.length}/12 Approved)` : '0/12 Approved'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* 4 Quarters Strip */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                        {quarters.map(q => (
-                          <div key={q.name} className="bg-slate-50/80 rounded-xl p-2.5 border border-slate-200/70 space-y-2">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                              {q.name}
-                            </div>
-                            <div className="grid grid-cols-3 gap-1.5">
-                              {q.months.map(m => {
-                                const rec = curYearlyRecords.find(r => r.monthIndex === m.monthIndex);
-                                const isSelected = activeMgrYearlyFiscalMonth === m.monthIndex;
-                                const isApproved = rec?.status === 'manager_approved';
-                                const isSubmitted = rec?.status === 'submitted_to_manager';
-                                const lockInfo = getYearlyMonthLockInfo(m.monthIndex, curYearlyRecords);
-                                const isLocked = lockInfo.isLocked;
-                                const score = isApproved && rec?.managerScore != null ? Number(rec.managerScore).toFixed(0) : null;
-
-                                return (
-                                  <button
-                                    key={m.monthKey}
-                                    type="button"
-                                    onClick={() => switchMgrYearlyMonth(m.monthIndex)}
-                                    className={`flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border shadow-2xs ${
-                                      isSelected
-                                        ? isLocked
-                                          ? 'bg-slate-700 text-white border-slate-800 ring-2 ring-slate-500/30'
-                                          : isApproved
-                                            ? 'bg-emerald-700 text-white border-emerald-800 ring-2 ring-emerald-500/30'
-                                            : isSubmitted
-                                              ? 'bg-amber-600 text-white border-amber-700 ring-2 ring-amber-500/30'
-                                              : 'bg-teal-700 text-white border-teal-800 ring-2 ring-teal-500/30'
-                                        : isApproved
-                                          ? 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
-                                          : isSubmitted
-                                            ? 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100 ring-1 ring-amber-400'
-                                            : isLocked
-                                              ? 'bg-slate-100/90 text-slate-400 border-slate-200 hover:bg-slate-200/70'
-                                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                                    }`}
-                                  >
-                                    <span className="text-[11px] flex items-center gap-1">
-                                      {isLocked && <LockClosedIcon className="w-2.5 h-2.5 stroke-[2.5]" />}
-                                      {m.shortName}
-                                    </span>
-                                    <span className={`text-[9px] font-medium leading-none mt-0.5 ${
-                                      isSelected
-                                        ? 'text-white/90 font-bold'
-                                        : isApproved
-                                          ? 'text-emerald-700 font-bold'
-                                          : isSubmitted
-                                            ? 'text-amber-700 font-bold'
-                                            : isLocked
-                                              ? 'text-slate-400'
-                                              : 'text-slate-500 font-medium'
-                                    }`}>
-                                      {score !== null
-                                        ? `${score}%`
-                                        : isSubmitted
-                                          ? 'Submitted'
-                                          : isLocked
-                                            ? 'Locked'
-                                            : m.monthIndex === 6
-                                              ? 'Pending'
-                                              : m.monthIndex < 6
-                                                ? 'Past'
-                                                : 'Pending'}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Active Month Milestone Status Banner */}
-                      <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
-                        curYearlyRec?.status === 'manager_approved'
-                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-                          : curYearlyRec?.status === 'submitted_to_manager'
-                            ? 'bg-amber-50/70 border-amber-200 text-amber-900'
-                            : 'bg-slate-100/80 border-slate-200 text-slate-700'
-                      }`}>
-                        <div className="flex items-center gap-2">
-                          <CalendarDaysIcon className="w-4 h-4 shrink-0" />
-                          <span>
-                            Viewing <strong>{curMonthName}{curYearlyRec?.calendarYear ? ` (${curYearlyRec.calendarYear})` : ''}</strong> milestone —{' '}
-                            {curYearlyRec?.status === 'manager_approved'
-                              ? `Approved with Manager Score of ${Number(curYearlyRec.managerScore || 0).toFixed(1)}%. You may update deliverable actuals below.`
-                              : curYearlyRec?.status === 'submitted_to_manager'
-                                ? `Submitted by employee with self-score of ${Number(curYearlyRec.employeeScore || 0).toFixed(1)}%. Ready for review & scoring.`
-                                : 'Pending employee submission for this month.'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {(curYearlyRec?.status === 'manager_approved' || curYearlyRec?.status === 'submitted_to_manager') && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenReopenModal(activeMgrYearlyFiscalMonth)}
-                              className="px-2.5 py-1 text-[11px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs"
-                              title={`Send ${curMonthName} milestone back to employee for correction`}
-                            >
-                              <ArrowUturnLeftIcon className="w-3.5 h-3.5 text-amber-700 stroke-[2.2]" />
-                              <span>Reopen Month</span>
-                            </button>
-                          )}
-                          {curYearlyRec?.employeeRemarks && (
-                            <span className="text-[11px] italic bg-white/70 px-2.5 py-1 rounded-md border border-slate-200/50 max-w-sm truncate">
-                              Emp Note: {curYearlyRec.employeeRemarks}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Categories Loop */}
-                {selectedMgrCategories.map(cat => {
-                  let catTotalMgrEarned = 0;
-                  cat.kpis.forEach(kpi => {
-                    const respItem = isYearly
-                      ? (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null))
-                      : selectedMgrResponse!.kpiResponses?.[kpi.id];
-                    const empActual = respItem?.actualValue ?? respItem?.actual_value ?? '';
-                    const curMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual);
-                    catTotalMgrEarned += calculateKPIScore(kpi, curMgrActual).earnedScore;
-                  });
-
-                  return (
-                    <div key={cat.id} className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-                      {/* Category Header Strip */}
-                      <div className="px-5 py-3.5 bg-slate-50/70 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div className="flex items-center gap-2.5">
-                          <SparklesIcon className="w-4 h-4 text-teal-600 stroke-[2.2]" />
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-bold text-xs text-slate-900">{cat.name}</h4>
-                              <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200/60">
-                                {cat.weightage}% Weight
-                              </span>
-                            </div>
-                            {cat.description && (
-                              <p className="text-[11px] text-slate-400 mt-0.5">{cat.description}</p>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 self-start sm:self-center">
-                          <span className="text-xs text-slate-500">Category Score:</span>
-                          <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/60">
-                            {catTotalMgrEarned.toFixed(2)}% / {cat.weightage}%
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Deliverables Table (Clean, neat columns without box clutter) */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs min-w-[780px] table-auto">
-                          <thead className="bg-white text-slate-400 font-semibold border-b border-slate-100 text-[11px] uppercase tracking-wider">
-                            <tr>
-                              <th className="px-5 py-3 min-w-[200px]">Deliverable</th>
-                              <th className="px-3 py-3 text-center whitespace-nowrap min-w-[85px]">Target</th>
-                              <th className="px-3 py-3 text-center whitespace-nowrap min-w-[85px]">Weight</th>
-                              <th className="px-3 py-3 text-center whitespace-nowrap min-w-[95px]">Actual PM</th>
-                              <th className="px-3 py-3 text-center whitespace-nowrap min-w-[95px]">Earned</th>
-                              <th className="px-3 py-3 text-center whitespace-nowrap min-w-[130px]">Insufficient</th>
-                              <th className="px-3 py-3 text-center min-w-[150px] bg-slate-50/50 text-slate-700">
-                                {isReadOnly ? 'Manager Goal & Score' : 'Manager Score'}
-                              </th>
-                              {!isReadOnly && (
-                                <th className="px-5 py-3 min-w-[190px]">
-                                  Manager Remarks
-                                </th>
-                              )}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {cat.kpis.map(kpi => {
-                              const respItem = isYearly
-                                ? (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null))
-                                : selectedMgrResponse!.kpiResponses?.[kpi.id];
-                              const empActual = respItem?.actualValue ?? respItem?.actual_value ?? '';
-                              const currentMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual);
-                              const calcEmp = calculateKPIScore(kpi, empActual);
-                              const calcMgr = calculateKPIScore(kpi, currentMgrActual);
-                              const currentMgrRemark = mgrKpiRemarks[kpi.id] ?? (respItem?.managerRemarks ?? respItem?.manager_remark ?? '');
-                              const isGoalModified = String(currentMgrActual).trim() !== String(empActual).trim();
-                              const parsedTarget = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
-                              const targetThreshold = parsedTarget.threshold;
-
-                              const isNeg = isNegativeKpi(kpi);
-                              const empRemark = respItem?.employeeRemarks ?? respItem?.employee_remark ?? '';
-
-                              return (
-                                <tr
-                                  key={kpi.id}
-                                  className={`group/delivRow transition-colors border-b border-slate-100 last:border-b-0 ${isNeg ? 'bg-rose-50/25 hover:bg-rose-50/45 border-l-4 border-l-rose-400' : 'hover:bg-slate-50/50 border-l-4 border-l-transparent'}`}
-                                >
-                                  {/* Deliverable Specification */}
-                                  <td className="px-5 py-3.5">
-                                    <div className="flex flex-col gap-1">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className={`text-xs ${isNeg ? 'font-bold text-rose-950' : 'font-semibold text-slate-900'}`}>
-                                          {kpi.name}
-                                        </span>
-                                      </div>
-                                      {kpi.description && (
-                                        <div className={`text-[11px] mt-0.5 truncate max-w-xs ${isNeg ? 'text-rose-600/80 font-medium' : 'text-slate-400'}`}>{kpi.description}</div>
-                                      )}
-                                    </div>
-                                  </td>
-
-                                  {/* Target Goal */}
-                                  <td className="px-3 py-3.5 text-center font-bold text-xs whitespace-nowrap">
-                                    <div className="flex flex-col items-center justify-center gap-0.5">
-                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${isNeg ? 'bg-rose-100/70 text-rose-800 border-rose-200 shadow-2xs' : 'text-slate-700'}`}>
-                                        {kpi.targetFromManager}
-                                      </span>
-                                    </div>
-                                  </td>
-
-                                  {/* Target Score */}
-                                  <td className="px-3 py-3.5 text-center text-slate-600 font-medium text-xs whitespace-nowrap">
-                                    {kpi.targetScore}%
-                                  </td>
-
-                                  {/* Actual PM (Clean text with unit + Highlight if exceeding target) */}
-                                  <td className="px-3 py-3.5 text-center text-xs whitespace-nowrap">
-                                    <div className="flex flex-col items-center justify-center gap-1">
-                                      {empActual !== '' && empActual !== null && empActual !== undefined ? (
-                                        (() => {
-                                          const num = parseFloat(String(empActual));
-                                          const isOver = !isNaN(num) && (
-                                            isNeg
-                                              ? (parsedTarget.operator === '<' ? num >= targetThreshold : (targetThreshold === 0 ? num > 0 : num > targetThreshold))
-                                              : (targetThreshold > 0 && num > targetThreshold)
-                                          );
-                                          const isMet = !isNaN(num) && (
-                                            isNeg
-                                              ? (parsedTarget.operator === '<' ? num < targetThreshold : (targetThreshold === 0 ? num === 0 : num <= targetThreshold))
-                                              : (targetThreshold > 0 && num >= targetThreshold)
-                                          );
-
-                                          return (
-                                            <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${isNeg && isOver
-                                              ? 'bg-rose-50 text-rose-900 border-rose-300'
-                                              : isOver
-                                                ? 'bg-emerald-50 text-emerald-950 border border-emerald-400'
-                                                : isMet && !isNeg
-                                                  ? 'bg-teal-50 text-teal-900 border border-teal-300'
-                                                  : 'bg-slate-50 text-slate-900 border-slate-200'
-                                              }`}>
-                                              <span>{empActual} {kpi.unit}</span>
-                                              {isOver && !isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED</span>}
-                                              {isOver && isNeg && <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-800 bg-rose-200/80 px-1.5 py-0.5 rounded-full">EXCEEDED TARGET</span>}
-                                            </span>
-                                          );
-                                        })()
-                                      ) : (
-                                        <span className="text-slate-300 font-bold">—</span>
-                                      )}
-
-                                      {/* Emp and Mgr Remark Badges below Actual PM */}
-                                      {(empRemark?.trim() || currentMgrRemark?.trim()) && (
-                                        <DeliverableRemarksHover
-                                          selfRemarks={empRemark}
-                                          mgrRemarks={currentMgrRemark}
-                                          align="center"
-                                        >
-                                          <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap cursor-pointer">
-                                            {empRemark?.trim() && (
-                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0">
-                                                <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
-                                                <span>Emp</span>
-                                              </span>
-                                            )}
-                                            {currentMgrRemark?.trim() && (
-                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0">
-                                                <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
-                                                <span>Mgr</span>
-                                              </span>
-                                            )}
-                                          </div>
-                                        </DeliverableRemarksHover>
-                                      )}
-                                    </div>
-                                  </td>
-
-                                  {/* Earned Score (Clean green font) */}
-                                  <td className="px-3 py-3.5 text-center font-bold text-teal-700 font-mono text-xs whitespace-nowrap">
-                                    {calcEmp.earnedScore.toFixed(2)}%
-                                  </td>
-
-                                  {/* Insufficient / Variance Column with Hover for Employee & Manager Remarks */}
-                                  <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                                    {(() => {
-                                      const isFlagged = respItem?.isInsufficient !== undefined && respItem?.isInsufficient !== null
-                                        ? respItem.isInsufficient
-                                        : (kpi?.isInsufficient ?? (kpi as any)?.is_insufficient ?? false);
-                                      const status = getInsufficientStatus(kpi, empActual, isFlagged);
-                                      return (
-                                        <DeliverableRemarksHover
-                                          selfRemarks={empRemark}
-                                          mgrRemarks={currentMgrRemark}
-                                          align="center"
-                                          className="w-auto inline-flex justify-center"
-                                        >
-                                          <span
-                                            className={`inline-flex items-center gap-1 font-bold px-2.5 py-0.5 rounded-full border text-[10px] shadow-2xs ${status.badgeClass} ${empRemark || currentMgrRemark ? 'cursor-help' : ''}`}
-                                          >
-                                            {status.label}
-                                            {(empRemark || currentMgrRemark) && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 ml-0.5 opacity-70 shrink-0" />}
-                                          </span>
-                                        </DeliverableRemarksHover>
-                                      );
-                                    })()}
-                                  </td>
-
-                                  {/* Manager Goal & Score Column */}
-                                  <td className="px-3 py-3.5 text-center bg-slate-50/50">
-                                    {(() => {
-                                      const numMgr = parseFloat(String(currentMgrActual !== '' ? currentMgrActual : empActual));
-                                      const isOverMgr = !isNaN(numMgr) && (isNeg ? numMgr > targetThreshold : (targetThreshold > 0 && numMgr > targetThreshold));
-                                      const isMetMgr = !isNaN(numMgr) && (isNeg ? numMgr <= targetThreshold : (targetThreshold > 0 && numMgr >= targetThreshold));
-
-                                      return (
-                                        <div className="flex flex-col items-center justify-center gap-1">
-                                          {isReadOnly ? (
-                                            <div className="font-semibold text-xs text-slate-900">
-                                              <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${isGoalModified
-                                                ? 'bg-amber-100/90 text-amber-950 border-amber-300'
-                                                : isNeg && isOverMgr
-                                                  ? 'bg-rose-50 text-rose-900 border-rose-300'
-                                                  : isOverMgr
-                                                    ? 'bg-teal-100/80 text-teal-950 border-teal-300'
-                                                    : 'bg-white text-slate-900 border-slate-200'
-                                                }`}>
-                                                <span>{currentMgrActual !== '' && currentMgrActual !== null && currentMgrActual !== undefined ? currentMgrActual : (empActual || '—')} {kpi.unit || ''}</span>
-                                              </span>
-                                            </div>
-                                          ) : (
-                                            <div className="flex flex-col items-center justify-center gap-1">
-                                              <div className="flex items-center justify-center gap-1.5">
-                                                <input
-                                                  type="number"
-                                                  step="1"
-                                                  min="0"
-                                                  value={currentMgrActual !== '' && currentMgrActual !== null && currentMgrActual !== undefined ? (typeof currentMgrActual === 'number' ? Math.floor(currentMgrActual) : (String(currentMgrActual).includes('.') ? parseInt(String(currentMgrActual), 10) : currentMgrActual)) : ''}
-                                                  onKeyDown={e => {
-                                                    if (['.', ',', 'e', 'E', '+', '-'].includes(e.key)) {
-                                                      e.preventDefault();
-                                                    }
-                                                  }}
-                                                  onChange={e => handleMgrRowActualChange(kpi, e.target.value)}
-                                                  placeholder="0"
-                                                  className={`w-16 h-8 px-2 text-center font-bold text-xs rounded-full transition shadow-2xs focus:outline-none ${isGoalModified
-                                                    ? 'bg-amber-50 text-amber-950 border-2 border-amber-400 focus:border-amber-600 ring-2 ring-amber-200/50'
-                                                    : isNeg && isOverMgr
-                                                      ? 'bg-rose-50 text-rose-950 border-2 border-rose-500 ring-2 ring-rose-400/30 font-black'
-                                                      : isOverMgr
-                                                        ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-400 ring-2 ring-emerald-300/30 font-black'
-                                                        : isMetMgr && !isNeg
-                                                          ? 'bg-teal-50 text-teal-950 border-2 border-teal-300 font-bold'
-                                                          : 'bg-white text-slate-900 border border-slate-300 focus:border-teal-500'
-                                                    }`}
-                                                />
-                                                {kpi.unit && <span className="text-[11px] text-slate-500 font-semibold">{kpi.unit}</span>}
-                                              </div>
-                                              <div className="flex items-center gap-1">
-                                                <span className="text-[11px] font-bold text-teal-800 font-mono">
-                                                  {calcMgr.earnedScore.toFixed(2)}%
-                                                </span>
-                                                {isGoalModified ? (
-                                                  <span className="text-[9px] font-bold uppercase text-amber-800 px-1.5 py-0.2 rounded-full bg-amber-100 border border-amber-300">
-                                                    ADJUSTED
-                                                  </span>
-                                                ) : isOverMgr && !isNeg ? (
-                                                  <span className="text-[9px] font-bold uppercase text-emerald-800 px-1.5 py-0.2 rounded-full bg-emerald-100 border border-emerald-300">
-                                                    EXCEEDED
-                                                  </span>
-                                                ) : isOverMgr && isNeg ? (
-                                                  <span className="text-[9px] font-bold uppercase text-rose-800 px-1.5 py-0.2 rounded-full bg-rose-100 border border-rose-300">
-                                                    EXCEEDED TARGET
-                                                  </span>
-                                                ) : null}
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })()}
-                                  </td>
-
-                                  {/* Manager Remarks Column (Only rendered when NOT read-only for editing) */}
-                                  {!isReadOnly && (
-                                    <td className="px-5 py-3.5 min-w-[200px]">
-                                      <ExpandableRemarkInput
-                                        value={currentMgrRemark}
-                                        onChange={val => handleMgrRowRemarkChange(kpi.id, val)}
-                                        placeholder={isGoalModified ? 'Reason for goal change...' : 'Add manager remarks...'}
-                                        className={isGoalModified && !currentMgrRemark.trim()
-                                          ? 'bg-amber-50/90 border-2 border-amber-400 focus:border-amber-600 text-slate-900 placeholder:text-amber-700'
-                                          : 'bg-slate-50 focus:bg-white border border-slate-200 focus:border-teal-500 text-slate-800'}
-                                      />
-                                    </td>
-                                  )}
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Scorecard Overall Manager Remarks Card */}
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-                  <label className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                    <ClipboardDocumentListIcon className="w-4 h-4 text-teal-600" />
-                    <span>{isYearly ? `${curMonthName} Milestone Manager Remarks & Feedback` : 'Overall Manager Evaluation Summary & Feedback'}</span>
-                  </label>
-                  {isReadOnly ? (
-                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 leading-relaxed min-h-[56px] italic">
-                      {mgrRemarks || 'No overall remarks provided.'}
-                    </div>
-                  ) : (
-                    <textarea
-                      rows={3}
-                      value={mgrRemarks}
-                      onChange={e => setMgrRemarks(e.target.value)}
-                      placeholder={isYearly ? `Enter monthly milestone performance feedback for ${curMonthName}...` : "Enter comprehensive performance evaluation summary, key strengths, growth areas, and commendations..."}
-                      className="w-full p-3.5 bg-slate-50/50 focus:bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition resize-none placeholder:text-slate-400"
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* Modal Sticky Footer */}
-              <div className="px-6 py-4 bg-white border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-slate-500">{isYearly ? `${curFiscalMonthObj?.shortName || 'Month'} Score:` : 'Total Score:'}</span>
-                  <span className="font-bold text-slate-900 text-sm">{mgrScore.toFixed(1)}%</span>
-                  {isYearly && (
-                    <>
-                      <span className="text-slate-300 mx-1">•</span>
-                      <span className="text-slate-500">YTD Score:</span>
-                      <span className="font-black text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200 text-xs">
-                        {ytdScore !== null ? `${ytdScore}%` : '—'}
-                      </span>
-                    </>
-                  )}
-                  <span className="text-slate-300 mx-1">•</span>
-                  <span className="text-slate-500">Tier:</span>
-                  <span className="font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200/80 text-xs inline-flex items-center gap-1.5">
-                    <strong className="font-bold text-emerald-950">{rating.name}</strong>
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2.5 justify-end flex-wrap">
-                  {isReadOnly ? (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedMgrResponseId('')}
-                      className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-xs"
-                    >
-                      Close Report
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedMgrResponseId('')}
-                        className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer border border-slate-200"
-                      >
-                        Cancel
-                      </button>
-
-                      {isYearly ? (
-                        <div className="flex items-center gap-2">
-                          {(curYearlyRec?.status === 'manager_approved' || curYearlyRec?.status === 'submitted_to_manager') && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenReopenModal(activeMgrYearlyFiscalMonth)}
-                              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
-                              title={`Reopen ${curMonthName} milestone and send back to employee for correction`}
-                            >
-                              <ArrowUturnLeftIcon className="w-4 h-4 text-amber-700 stroke-[2.2]" />
-                              <span>Reopen {curMonthName} for Employee</span>
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleManagerYearlyMonthApprove(activeMgrYearlyFiscalMonth)}
-                            className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
-                          >
-                            <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
-                            <span>{isAlreadyCalibrated ? `Update & Save ${curMonthName}` : `Approve & Save ${curMonthName} Milestone`}</span>
-                          </button>
-                        </div>
-                      ) : (() => {
-                        const otherPendingSubmittedList = (activeScopedResponsesForCards || []).filter(r =>
-                          r.id !== selectedMgrResponseId &&
-                          ((r.status as string) === 'manager_review' || (r.status as string) === 'Submitted to Manager' || String(r.status || '').toLowerCase().includes('submitted')) &&
-                          r.managerScore == null
-                        );
-
-                        return (
-                          <>
-                            {otherPendingSubmittedList.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => handleManagerSubmitWithNext(otherPendingSubmittedList[0])}
-                                className="flex items-center justify-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
-                              >
-                                <SparklesIcon className="w-4 h-4 text-amber-300" />
-                                <span>Submit & Next ({otherPendingSubmittedList.length} Left)</span>
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={handleManagerSubmit}
-                              className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
-                            >
-                              <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
-                              <span>{isAlreadyCalibrated ? 'Update Score' : 'Submit & Approve'}</span>
-                            </button>
-                          </>
-                        );
-                      })()}
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
+            )}
           </div>
-        );
-      })()}
 
-      {/* ========================================================================= */}
-      {/* MANAGER REOPEN MILESTONE / EVALUATION FEEDBACK MODAL (MANDATORY COMMENT) */}
-      {/* ========================================================================= */}
-      {isReopenModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200">
-            {/* Header */}
-            <div className="flex items-start justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center shrink-0 shadow-2xs">
-                  <ArrowUturnLeftIcon className="w-5 h-5 stroke-[2.2]" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 tracking-tight">
-                    Reopen {reopenTargetMonthIndex ? FISCAL_MONTHS.find(m => m.monthIndex === reopenTargetMonthIndex)?.monthName : 'Milestone'} for Revision
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Send back to employee to update and re-submit deliverable actuals.
-                  </p>
-                </div>
-              </div>
+          {/* Modal Footer */}
+          <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsConvertModalOpen(false)}
+              disabled={isConverting}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
+            >
+              Close
+            </button>
+            {convertingTarget && (
               <button
                 type="button"
-                onClick={() => {
-                  setIsReopenModalOpen(false);
-                  setReopenTargetMonthIndex(null);
-                  setReopenFeedbackInput('');
-                }}
-                className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+                onClick={handleConfirmConvert}
+                disabled={isConverting}
+                className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-60"
               >
-                <XMarkIcon className="w-4 h-4" />
+                <ArrowPathIcon className={`w-4 h-4 ${isConverting ? 'animate-spin' : ''}`} />
+                <span>{isConverting ? 'Converting...' : `Confirm & Convert to ${currentTierConfig.toName}`}</span>
               </button>
-            </div>
-
-            {/* Body */}
-            <div className="py-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <ChatBubbleLeftEllipsisIcon className="w-4 h-4 text-amber-600" />
-                  <span>Manager Revision Instructions / Feedback</span>
-                </label>
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
-                  Mandatory
-                </span>
-              </div>
-
-              <textarea
-                rows={4}
-                value={reopenFeedbackInput}
-                onChange={e => setReopenFeedbackInput(e.target.value)}
-                placeholder="Explain clearly why this milestone is being reopened and what deliverable actuals the employee needs to revise or correct..."
-                className="w-full p-3.5 bg-slate-50 focus:bg-white border-2 border-amber-200 focus:border-amber-500 rounded-2xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-200/50 transition resize-none placeholder:text-slate-400 leading-relaxed font-medium"
-                autoFocus
-              />
-
-              <div className="flex items-center gap-2 p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-xl text-[11px] text-amber-900">
-                <InformationCircleIcon className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>This feedback will be prominently displayed at the top of the employee's worksheet so they know what to correct.</span>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsReopenModalOpen(false);
-                  setReopenTargetMonthIndex(null);
-                  setReopenFeedbackInput('');
-                }}
-                disabled={isReopeningAction}
-                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer border border-slate-200"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleConfirmReopenWithFeedback}
-                disabled={isReopeningAction || !reopenFeedbackInput.trim()}
-                className="flex items-center justify-center gap-2 px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
-              >
-                {isReopeningAction ? (
-                  <>
-                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                    <span>Reopening & Sending...</span>
-                  </>
-                ) : (
-                  <>
-                    <ArrowUturnLeftIcon className="w-4 h-4 stroke-[2.2]" />
-                    <span>Reopen & Send to Employee</span>
-                  </>
-                )}
-              </button>
-            </div>
+            )}
           </div>
         </div>
-      )}
+      </div>
+    );
+  })()
+}
 
-      {/* ========================================================================= */}
-      {/* MANAGER EDIT DELIVERABLES MATRIX MODAL */}
-      {/* ========================================================================= */}
-      {isMgrEditMatrixModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-4xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col my-8">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <PencilSquareIcon className="w-5 h-5 stroke-[2]" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-slate-900 tracking-tight">
-                      Edit Deliverables Matrix
-                    </h3>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200/80">
-                      Unlocked (0 Submissions)
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    {mgrEditTeamName || 'Team'} • Modify category weights & targets
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsMgrEditMatrixModalOpen(false)}
-                className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition cursor-pointer"
-              >
-                <XMarkIcon className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleMgrSaveMatrixChanges} className="overflow-y-auto space-y-5 pt-4 pr-1 flex-1">
-              {/* Form & Period Metadata */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200">
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Form Title</label>
-                  <input
-                    type="text"
-                    value={mgrEditFormName}
-                    onChange={e => setMgrEditFormName(e.target.value)}
-                    className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
-                    placeholder="Form title..."
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Period Tag</label>
-                  <input
-                    type="text"
-                    value={mgrEditPeriod}
-                    onChange={e => setMgrEditPeriod(e.target.value)}
-                    className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 shadow-2xs"
-                    placeholder="Period..."
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* Matrix Categories & Targets */}
-              <div className="space-y-3.5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-2">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-teal-600"></span>
-                      Deliverables & Weights
-                    </span>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Ensure weights total 100% and targets are balanced.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setMgrEditCategories(DEFAULT_KPI_CATEGORIES)}
-                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
-                    >
-                      Reset Template
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleMgrAddEditCategory}
-                      disabled={mgrEditTotalWeightage >= 100}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs ${mgrEditTotalWeightage >= 100
-                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                        : 'bg-teal-700 hover:bg-teal-800 text-white cursor-pointer'
-                        }`}
-                    >
-                      <PlusIcon className="w-3.5 h-3.5" />
-                      <span>Add Category</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Weightage Status Alert */}
-                <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 ${mgrEditTotalWeightage === 100 && areAllMgrEditCategoriesBalanced
-                  ? 'bg-teal-50 border border-teal-200 text-teal-900'
-                  : 'bg-amber-50 border border-amber-200 text-amber-900'
-                  }`}>
-                  <div className="flex items-center gap-2">
-                    {mgrEditTotalWeightage === 100 && areAllMgrEditCategoriesBalanced ? (
-                      <CheckCircleIcon className="w-4 h-4 text-teal-600 shrink-0" />
-                    ) : (
-                      <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 shrink-0" />
-                    )}
-                    <span>
-                      Total Category Weight: <strong>{mgrEditTotalWeightage}% / 100%</strong>
-                      {!areAllMgrEditCategoriesBalanced && ' — Balance deliverable scores.'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Categories & KPIs List */}
-                <div className="space-y-4">
-                  {mgrEditCategories.map((cat, catIdx) => {
-                    const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
-                    const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05;
-
-                    return (
-                      <div key={cat.id} className="bg-slate-50/80 border border-slate-200/90 rounded-2xl p-4 sm:p-5 space-y-3">
-                        {/* Category Header */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/70">
-                          <div className="flex items-center gap-2 flex-1">
-                            <span className="w-5 h-5 rounded-full bg-teal-700 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-                              {catIdx + 1}
-                            </span>
-                            <input
-                              type="text"
-                              value={cat.name}
-                              onChange={e => handleMgrUpdateEditCategoryName(cat.id, e.target.value)}
-                              placeholder="Category name..."
-                              className="font-bold text-xs text-slate-900 bg-transparent border-b border-dashed border-slate-300 focus:border-teal-600 focus:outline-none px-1 py-0.5 w-full max-w-md"
-                            />
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-slate-200">
-                              <span className="text-[11px] font-bold text-slate-500">Weight:</span>
-                              <input
-                                type="number"
-                                min={1}
-                                max={100}
-                                value={cat.weightage}
-                                onChange={e => handleMgrUpdateEditCategoryWeight(cat.id, Number(e.target.value))}
-                                className="w-12 text-xs font-bold text-teal-800 text-center focus:outline-none"
-                              />
-                              <span className="text-[11px] font-bold text-slate-400">%</span>
-                            </div>
-
-                            {!isBalanced && (
-                              <button
-                                type="button"
-                                onClick={() => handleMgrAutoBalanceEditCategory(cat.id)}
-                                className="px-2.5 py-1 text-[11px] font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-lg transition cursor-pointer"
-                              >
-                                Auto-Balance
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => handleMgrDeleteEditCategory(cat.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                              title="Delete category"
-                            >
-                              <TrashIcon className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Deliverables Table */}
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs bg-white rounded-xl border border-slate-200/80 overflow-hidden">
-                            <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200">
-                              <tr>
-                                <th className="px-3 py-2 text-left">Deliverable Name</th>
-                                <th className="px-3 py-2 w-32 text-center">Target</th>
-                                <th className="px-3 py-2 w-24 text-center">Score %</th>
-                                <th className="px-3 py-2 w-24 text-center">Unit</th>
-                                <th className="px-3 py-2 w-24 text-center">Type</th>
-                                <th className="px-2 py-2 w-10 text-center"></th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {cat.kpis.map(kpi => {
-                                const isNeg = isNegativeKpi(kpi);
-                                return (
-                                  <tr key={kpi.id} className={`transition ${isNeg ? 'bg-rose-50/25 hover:bg-rose-50/50' : 'hover:bg-slate-50/50'}`}>
-                                    <td className="px-3 py-2 align-middle">
-                                      <input
-                                        type="text"
-                                        value={kpi.name}
-                                        onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'name', e.target.value)}
-                                        placeholder="Deliverable description..."
-                                        className={`w-full h-8 px-2.5 rounded-lg text-xs font-semibold focus:outline-none transition border ${isNeg
-                                          ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
-                                          : 'bg-slate-50/70 text-slate-800 border-slate-200 focus:bg-white focus:border-teal-600'
-                                          }`}
-                                      />
-                                    </td>
-                                    <td className="px-3 py-2 align-middle text-center">
-                                      <input
-                                        type="text"
-                                        value={kpi.targetFromManager ?? ''}
-                                        onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'targetFromManager', e.target.value)}
-                                        placeholder="e.g. 3, 11, 1950, <2"
-                                        className={`w-full h-8 px-2 rounded-lg text-xs font-bold text-center focus:outline-none transition border ${isNeg
-                                          ? 'bg-rose-50/50 text-rose-700 border-rose-200 focus:bg-white focus:border-rose-500'
-                                          : 'bg-slate-50/70 text-teal-900 border-slate-200 focus:bg-white focus:border-teal-600'
-                                          }`}
-                                      />
-                                    </td>
-                                    <td className="px-3 py-2 align-middle text-center">
-                                      <div className={`flex items-center justify-center focus-within:bg-white border rounded-lg px-2 h-8 transition ${isNeg ? 'bg-rose-50/40 border-rose-200 focus-within:border-rose-500' : 'bg-slate-50/70 border-slate-200 focus-within:border-teal-600'
-                                        }`}>
-                                        <input
-                                          type="number"
-                                          step="any"
-                                          value={kpi.targetScore}
-                                          onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'targetScore', Number(e.target.value))}
-                                          className={`w-14 text-xs font-bold text-center bg-transparent focus:outline-none p-0 ${isNeg ? 'text-rose-700' : 'text-slate-800'
-                                            }`}
-                                        />
-                                        <span className="text-[11px] text-slate-400 font-bold ml-0.5">%</span>
-                                      </div>
-                                    </td>
-                                    <td className="px-3 py-2 align-middle text-center">
-                                      <input
-                                        type="text"
-                                        value={kpi.unit}
-                                        onChange={e => handleMgrUpdateEditKPI(cat.id, kpi.id, 'unit', e.target.value)}
-                                        placeholder="units"
-                                        className="w-full h-8 px-2 bg-slate-50/70 focus:bg-white border border-slate-200 focus:border-teal-600 rounded-lg text-xs font-medium text-center text-slate-700 focus:outline-none transition"
-                                      />
-                                    </td>
-                                    <td className="px-3 py-2 align-middle text-center">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleMgrUpdateEditKPI(cat.id, kpi.id, 'scoringDirection', isNeg ? 'higher_is_better' : 'lower_is_better')}
-                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition shadow-2xs cursor-pointer whitespace-nowrap ${isNeg
-                                          ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
-                                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                                          }`}
-                                        title={isNeg ? 'Negative / Penalty metric (Lower is better). Click to switch to Standard.' : 'Standard metric (Higher is better). Click to switch to Negative.'}
-                                      >
-                                        {isNeg ? '− Negative' : '+ Standard'}
-                                      </button>
-                                    </td>
-                                    <td className="px-2 py-2 align-middle text-center">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleMgrDeleteEditKPI(cat.id, kpi.id)}
-                                        className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
-                                        title="Delete deliverable"
-                                      >
-                                        <TrashIcon className="w-3.5 h-3.5" />
-                                      </button>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-
-                        <div className="flex justify-end pt-1">
-                          <button
-                            type="button"
-                            onClick={() => handleMgrAddEditKPI(cat.id)}
-                            className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-teal-700 bg-white hover:bg-teal-50 rounded-xl transition shadow-2xs border border-teal-200/80 cursor-pointer"
-                          >
-                            <PlusIcon className="w-3.5 h-3.5" />
-                            <span>Add Row</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Modal Footer Buttons */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsMgrEditMatrixModalOpen(false)}
-                  className="px-5 py-2.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={!isMgrEditWeightageValid || !areAllMgrEditCategoriesBalanced || isSavingMatrixEdit}
-                  className={`flex items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all cursor-pointer ${isMgrEditWeightageValid && areAllMgrEditCategoriesBalanced && !isSavingMatrixEdit
-                    ? 'bg-teal-700 hover:bg-teal-800 shadow-teal-900/10'
-                    : 'bg-slate-300 cursor-not-allowed opacity-60'
-                    }`}
-                >
-                  <CheckCircleIcon className="w-4 h-4 stroke-[2]" />
-                  <span>
-                    {isSavingMatrixEdit ? 'Saving...' : 'Save Matrix Changes'}
-                  </span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 5. MULTI-TIER EVALUATION CONVERT & ROLLUP MODAL (Option B: Soft Archive) */}
-      {/* ========================================================================= */}
-      {isConvertModalOpen && (() => {
-        const ROLLUP_TIERS: {
-          id: RollupTier;
-          label: string;
-          fromName: string;
-          toName: string;
-          badgeCount: number;
-          formulaLabel: string;
-          formulaDesc: string;
-          createFreq: 'daily' | 'weekly' | 'monthly' | 'quarterly';
-          createLabel: string;
-        }[] = [
-            {
-              id: 'daily_to_weekly',
-              label: 'Daily → Weekly',
-              fromName: 'Daily',
-              toName: 'Weekly',
-              badgeCount: allDailyGroupsForManager.reduce((a, b) => a + b.count, 0),
-              formulaLabel: 'Daily to Weekly Average (% ÷ Evaluated Days)',
-              formulaDesc: 'Weekly Score = Sum of Daily % ÷ Number of Evaluated Days',
-              createFreq: 'daily',
-              createLabel: '+ Assign Daily Deliverables Matrix'
-            },
-            {
-              id: 'weekly_to_monthly',
-              label: 'Weekly → Monthly',
-              fromName: 'Weekly',
-              toName: 'Monthly',
-              badgeCount: allWeeklyGroupsForManager.reduce((a, b) => a + b.count, 0),
-              formulaLabel: 'Weekly to Monthly Average (% ÷ Active Weeks)',
-              formulaDesc: 'Monthly Score = Sum of Weekly % ÷ Number of Active Weeks',
-              createFreq: 'weekly',
-              createLabel: '+ Assign Weekly Deliverables Matrix'
-            },
-            {
-              id: 'monthly_to_quarterly',
-              label: 'Monthly → Quarterly',
-              fromName: 'Monthly',
-              toName: 'Quarterly',
-              badgeCount: allMonthlyGroupsForManager.reduce((a, b) => a + b.count, 0),
-              formulaLabel: 'Monthly to Quarterly Average (% ÷ Months in Quarter)',
-              formulaDesc: 'Quarterly Score = Sum of Monthly % ÷ Number of Months',
-              createFreq: 'monthly',
-              createLabel: '+ Assign Monthly Deliverables Matrix'
-            },
-            {
-              id: 'quarterly_to_yearly',
-              label: 'Quarterly → Yearly',
-              fromName: 'Quarterly',
-              toName: 'Yearly (Annual)',
-              badgeCount: allQuarterlyGroupsForManager.reduce((a, b) => a + b.count, 0),
-              formulaLabel: 'Quarterly to Annual Average (% ÷ Quarters in Year)',
-              formulaDesc: 'Yearly Score = Sum of Quarterly % ÷ Number of Quarters',
-              createFreq: 'quarterly',
-              createLabel: '+ Assign Quarterly Deliverables Matrix'
-            }
-          ];
-
-        const currentTierConfig = ROLLUP_TIERS.find(t => t.id === activeRollupTier) || ROLLUP_TIERS[0];
-        const currentTierGroups = activeRollupTier === 'daily_to_weekly' ? allDailyGroupsForManager :
-          activeRollupTier === 'weekly_to_monthly' ? allWeeklyGroupsForManager :
-            activeRollupTier === 'monthly_to_quarterly' ? allMonthlyGroupsForManager : allQuarterlyGroupsForManager;
-
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-            <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
-              {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-linear-to-r from-teal-50/70 via-white to-amber-50/40 shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
-                    <ArrowPathIcon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
-                      Rollup & Convert Evaluations
-                    </h3>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Consolidate evaluation cycles into higher-frequency summary records
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsConvertModalOpen(false)}
-                  className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition cursor-pointer"
-                >
-                  <XMarkIcon className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Conversion Tier Tabs */}
-              <div className="px-6 py-3 bg-slate-50/80 border-b border-slate-200/80 overflow-x-auto shrink-0">
-                <div className="flex items-center gap-2 min-w-max">
-                  {ROLLUP_TIERS.map(tier => {
-                    const isActive = activeRollupTier === tier.id;
-                    return (
-                      <button
-                        key={tier.id}
-                        type="button"
-                        onClick={() => {
-                          setActiveRollupTier(tier.id);
-                          const groups = tier.id === 'daily_to_weekly' ? allDailyGroupsForManager :
-                            tier.id === 'weekly_to_monthly' ? allWeeklyGroupsForManager :
-                              tier.id === 'monthly_to_quarterly' ? allMonthlyGroupsForManager : allQuarterlyGroupsForManager;
-                          setConvertingTarget(groups[0] || null);
-                        }}
-                        className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${isActive
-                          ? 'bg-teal-700 text-white shadow-xs font-bold'
-                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70'
-                          }`}
-                      >
-                        <span>{tier.label}</span>
-                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${isActive
-                          ? 'bg-white/20 text-white'
-                          : tier.badgeCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-400'
-                          }`}>
-                          {tier.badgeCount}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Modal Body */}
-              <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                {convertingTarget ? (
-                  <>
-                    {/* Multiple Employees Selector if applicable */}
-                    {currentTierGroups.length > 1 && (
-                      <div className="space-y-1.5">
-                        <label className="block text-[11px] font-bold text-slate-700">
-                          Select Team Member ({currentTierConfig.label})
-                        </label>
-                        <select
-                          value={convertingTarget.employeeId + (convertingTarget.weekStart || '')}
-                          onChange={e => {
-                            const found = currentTierGroups.find(g => (g.employeeId + (g.weekStart || '')) === e.target.value);
-                            if (found) setConvertingTarget(found);
-                          }}
-                          className="w-full h-9 px-3 bg-slate-50/70 hover:bg-white border border-slate-200 focus:border-teal-600 focus:ring-1 focus:ring-teal-600/20 rounded-xl text-xs font-semibold text-slate-800 cursor-pointer shadow-2xs transition"
-                        >
-                          {currentTierGroups.map((g, idx) => (
-                            <option key={g.employeeId + (g.weekStart || '') + idx} value={g.employeeId + (g.weekStart || '')}>
-                              {g.employeeName} (#{g.employeeCode}){g.weekLabel ? ` [${g.weekLabel}]` : ''} — {g.count} {currentTierConfig.fromName.toLowerCase()} records ({g.avgScore}% avg)
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {/* 3-Column Summary Cards Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      {/* Card 1: Target Member */}
-                      <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/90 flex flex-col justify-between">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                          Target Member
-                        </span>
-                        <div className="mt-1">
-                          <h4 className="text-sm font-bold text-slate-900 truncate">
-                            {convertingTarget.employeeName}
-                          </h4>
-                          <p className="text-[11px] text-slate-500 font-medium">
-                            #{convertingTarget.employeeCode} • {convertingTarget.teamName}
-                          </p>
-                        </div>
-                        <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-400">Target Record:</span>
-                          <span className="font-bold text-teal-900 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/70">
-                            {currentTierConfig.toName}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Card 2: Source Aggregation Stats */}
-                      <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/90 flex flex-col justify-between">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                          Cycle Summary
-                        </span>
-                        <div className="mt-1">
-                          <div className="text-xs font-bold text-slate-800">
-                            {convertingTarget.count} {currentTierConfig.fromName} {convertingTarget.count === 1 ? 'Evaluation' : 'Evaluations'}
-                          </div>
-                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                            Combined Total: <strong className="font-mono text-slate-800">{convertingTarget.records.reduce((acc, r) => acc + Number(r.employeeOverallScore || 0), 0).toFixed(1)}%</strong>
-                          </p>
-                        </div>
-                        <div className="mt-2 pt-2 border-t border-slate-200/60 text-[11px] text-slate-500 font-mono">
-                          Average: {convertingTarget.records.reduce((acc, r) => acc + Number(r.employeeOverallScore || 0), 0).toFixed(1)}% ÷ {convertingTarget.count}
-                        </div>
-                      </div>
-
-                      {/* Card 3: Rolled-Up Score */}
-                      <div className="p-3.5 bg-gradient-to-br from-teal-50/70 to-emerald-50/70 rounded-2xl border border-teal-200/90 flex flex-col justify-between">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] uppercase font-bold text-teal-800 tracking-wider">
-                            Rolled-Up Score
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white text-teal-800 border border-teal-200 shadow-2xs">
-                            {getRatingForScore(convertingTarget.avgScore).name}
-                          </span>
-                        </div>
-                        <div className="my-1">
-                          <span className="text-2xl font-black text-teal-900 font-mono tracking-tight">
-                            {convertingTarget.avgScore.toFixed(2)}%
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-teal-700 font-medium">
-                          Calculated for {currentTierConfig.toName}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Consolidated Records Table */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-800">
-                          Consolidating {convertingTarget.count} {currentTierConfig.fromName} {convertingTarget.count === 1 ? 'Record' : 'Records'}
-                        </span>
-                      </div>
-                      <div className="overflow-x-auto rounded-2xl border border-slate-200/80 shadow-2xs">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200">
-                            <tr>
-                              <th className="px-4 py-2.5">Evaluation Period / Description</th>
-                              <th className="px-4 py-2.5 text-center w-28">Self Score</th>
-                              <th className="px-4 py-2.5 text-center w-32">Manager Score</th>
-                              <th className="px-4 py-2.5 w-40">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 bg-white">
-                            {convertingTarget.records.map((r, idx) => (
-                              <tr key={r.id || idx} className="hover:bg-slate-50/60 transition">
-                                <td className="px-4 py-2.5 font-semibold text-slate-800">
-                                  {r.periodName || (r as any).form || `${currentTierConfig.fromName} Record ${idx + 1}`}
-                                </td>
-                                <td className="px-4 py-2.5 text-center font-mono font-bold text-slate-700">
-                                  {r.employeeOverallScore != null ? `${Number(r.employeeOverallScore).toFixed(1)}%` : '0.0%'}
-                                </td>
-                                <td className="px-4 py-2.5 text-center font-mono font-bold text-teal-800">
-                                  {r.managerScore != null ? `${Number(r.managerScore).toFixed(1)}%` : '—'}
-                                </td>
-                                <td className="px-4 py-2.5">
-                                  {renderStatusBadge(r.status, r)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Minimal Information Banner */}
-                    <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/80 text-xs text-amber-900 flex items-center gap-2">
-                      <InformationCircleIcon className="w-4 h-4 text-amber-700 shrink-0" />
-                      <p className="font-medium text-[11px] leading-tight">
-                        Converting will create <strong>1 consolidated {currentTierConfig.toName} record</strong> and archive the source {currentTierConfig.fromName.toLowerCase()} entries into audit history.
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  /* Empty state */
-                  <div className="py-12 text-center space-y-3">
-                    <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 shadow-2xs">
-                      <CalendarDaysIcon className="w-6 h-6" />
-                    </div>
-                    <div className="space-y-1 max-w-sm mx-auto">
-                      <h4 className="text-sm font-bold text-slate-900">
-                        No Active {currentTierConfig.fromName} Records to Convert
-                      </h4>
-                      <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                        There are currently no active {currentTierConfig.fromName.toLowerCase()} evaluation records ready for {currentTierConfig.label} rollup.
-                      </p>
-                    </div>
-
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsConvertModalOpen(false);
-                          setMgrPeriodType(currentTierConfig.createFreq);
-                          handleOpenMgrCreateModal();
-                        }}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-                      >
-                        <PlusIcon className="w-4 h-4 stroke-[2.5]" />
-                        <span>{currentTierConfig.createLabel}</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Modal Footer */}
-              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-3 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsConvertModalOpen(false)}
-                  disabled={isConverting}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
-                >
-                  Close
-                </button>
-                {convertingTarget && (
-                  <button
-                    type="button"
-                    onClick={handleConfirmConvert}
-                    disabled={isConverting}
-                    className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-60"
-                  >
-                    <ArrowPathIcon className={`w-4 h-4 ${isConverting ? 'animate-spin' : ''}`} />
-                    <span>{isConverting ? 'Converting...' : `Confirm & Convert to ${currentTierConfig.toName}`}</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Website Confirmation & Alert Dialog */}
-      <ConfirmDialog
-        isOpen={confirmDialog.isOpen}
-        title={confirmDialog.title}
-        message={confirmDialog.message}
-        description={confirmDialog.description}
-        variant={confirmDialog.variant}
-        confirmLabel={confirmDialog.confirmLabel}
-        cancelLabel={confirmDialog.cancelLabel}
-        hideCancel={confirmDialog.hideCancel}
-        onConfirm={confirmDialog.onConfirm}
-        onCancel={confirmDialog.onCancel || (() => setConfirmDialog(prev => ({ ...prev, isOpen: false })))}
-      />
-    </div>
+{/* Website Confirmation & Alert Dialog */ }
+<ConfirmDialog
+  isOpen={confirmDialog.isOpen}
+  title={confirmDialog.title}
+  message={confirmDialog.message}
+  description={confirmDialog.description}
+  variant={confirmDialog.variant}
+  confirmLabel={confirmDialog.confirmLabel}
+  cancelLabel={confirmDialog.cancelLabel}
+  hideCancel={confirmDialog.hideCancel}
+  onConfirm={confirmDialog.onConfirm}
+  onCancel={confirmDialog.onCancel || (() => setConfirmDialog(prev => ({ ...prev, isOpen: false })))}
+/>
+    </div >
   );
 };
 

@@ -30,6 +30,7 @@ def upgrade():
             sa.Column("team_name", sa.String(255), nullable=True),
             sa.Column("categories", sa.JSON(), nullable=True),
             sa.Column("is_default", sa.Boolean(), nullable=True, server_default=sa.text("false")),
+            sa.Column("status", sa.String(50), nullable=True, server_default="draft"),
             sa.Column("created_at", sa.DateTime(), nullable=True, server_default=sa.func.now()),
             sa.Column("updated_at", sa.DateTime(), nullable=True, server_default=sa.func.now()),
             sa.PrimaryKeyConstraint("id"),

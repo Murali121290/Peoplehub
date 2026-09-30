@@ -1,12 +1,17 @@
+import os
+import json
+import shutil
 from datetime import datetime
 from sqlalchemy import or_, func
 from utils.compat import Blueprint, request, jsonify
+from utils.uploads import get_uploads_dir
 from models.database import db
 from models.employee import Employee
 from models.performance import EmployeePerformance
 from models.kpi_evaluation import KpiEvaluation
 from models.manager_kpi_template import ManagerKpiTemplate
 from middleware.auth import auth_required, access_level_required
+from services.kpi_evaluation_rollup_service import calculate_evaluation_working_days
 
 performance_bp = Blueprint("performance", __name__)
 
@@ -157,66 +162,125 @@ DEFAULT_RATING_SCALE = [
     }
 ]
 
-def get_eval_store_path():
+def get_employee_eval_dir(employee_id: str) -> str:
     uploads_dir = get_uploads_dir()
-    eval_dir = os.path.join(uploads_dir, "evaluations")
-    os.makedirs(eval_dir, exist_ok=True)
-    new_path = os.path.join(eval_dir, "evaluation_store.json")
-    old_path = os.path.join(uploads_dir, "evaluation_store.json")
-    # Seamless migration: if old path exists and new doesn't, copy over
-    if os.path.exists(old_path) and not os.path.exists(new_path):
-        try:
-            import shutil
-            shutil.copy2(old_path, new_path)
-        except Exception:
-            pass
-    return new_path
+    clean_emp = str(employee_id or "").strip().lower().replace("emp-", "").replace("emp_", "")
+    emp_dir = os.path.join(uploads_dir, "employees", clean_emp)
+    os.makedirs(emp_dir, exist_ok=True)
+    return emp_dir
 
-def read_eval_store():
-    path = get_eval_store_path()
+
+def get_employee_eval_path(employee_id: str) -> str:
+    emp_dir = get_employee_eval_dir(employee_id)
+    return os.path.join(emp_dir, "evaluation.json")
+
+
+def read_employee_evaluations(employee_id: str) -> list:
+    """Reads all evaluation responses for a specific employee from their evaluation.json file."""
+    if not employee_id:
+        return []
+    clean_emp = str(employee_id).strip().lower().replace("emp-", "").replace("emp_", "")
+    path = get_employee_eval_path(clean_emp)
     if not os.path.exists(path):
-        return {"cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}
+        return []
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            if not isinstance(data, dict):
-                return {"cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}
-            if "ratingScale" not in data or not data["ratingScale"]:
-                data["ratingScale"] = DEFAULT_RATING_SCALE
-            return data
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                return data.get("responses", [])
+            return []
     except Exception:
-        return {"cycles": [], "responses": [], "ratingScale": DEFAULT_RATING_SCALE}
+        return []
+
+
+def write_employee_evaluations(employee_id: str, responses: list):
+    """Writes evaluation responses for a specific employee into their evaluation.json file."""
+    if not employee_id:
+        return
+    clean_emp = str(employee_id).strip().lower().replace("emp-", "").replace("emp_", "")
+    path = get_employee_eval_path(clean_emp)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({
+            "employee_id": clean_emp,
+            "updated_at": datetime.utcnow().isoformat(),
+            "responses": responses
+        }, f, ensure_ascii=False, indent=2)
+
+
+def read_all_employee_evaluations() -> list:
+    """Scans data/uploads/employees/*/evaluation.json and aggregates all employee responses."""
+    uploads_dir = get_uploads_dir()
+    emp_root = os.path.join(uploads_dir, "employees")
+    all_responses = []
+    if not os.path.exists(emp_root):
+        return all_responses
+    try:
+        for entry in os.scandir(emp_root):
+            if entry.is_dir():
+                eval_file = os.path.join(entry.path, "evaluation.json")
+                if os.path.exists(eval_file):
+                    try:
+                        with open(eval_file, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            resps = data if isinstance(data, list) else (data.get("responses", []) if isinstance(data, dict) else [])
+                            all_responses.extend(resps)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return all_responses
+
+
+def read_eval_store():
+    return {
+        "cycles": [],
+        "responses": read_all_employee_evaluations(),
+        "ratingScale": DEFAULT_RATING_SCALE
+    }
+
 
 def write_eval_store(data):
-    path = get_eval_store_path()
-    if "ratingScale" not in data or not data["ratingScale"]:
-        data["ratingScale"] = DEFAULT_RATING_SCALE
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    if not isinstance(data, dict):
+        return
+    if "responses" in data and isinstance(data["responses"], list):
+        emp_groups = {}
+        for r in data["responses"]:
+            emp_id = str(r.get("employeeCode") or r.get("employeeId") or r.get("employee_id") or "").strip()
+            if emp_id:
+                emp_groups.setdefault(emp_id, []).append(r)
+        for emp_id, resps in emp_groups.items():
+            write_employee_evaluations(emp_id, resps)
+
+
+def clean_legacy_evaluations_dir():
+    """Removes obsolete data/uploads/evaluations directory."""
+    try:
+        uploads_dir = get_uploads_dir()
+        eval_dir = os.path.join(uploads_dir, "evaluations")
+        if os.path.exists(eval_dir):
+            shutil.rmtree(eval_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+        # Rename or remove legacy store
+        migrated_backup = legacy_file + ".migrated"
+        if os.path.exists(legacy_file):
+            shutil.move(legacy_file, migrated_backup)
+    except Exception as err:
+        print(f"Migration error from legacy evaluation_store.json: {err}")
+
 
 def sync_postgres_kpi_to_store_and_back():
     """
-    Tiered Storage Separation:
-    - Daily & Weekly evaluations are stored strictly in JSON format (data/uploads/evaluations/evaluation_store.json).
-    - Monthly, Quarterly & Yearly evaluations are stored in PostgreSQL database (kpi_evaluations table).
+    Storage Architecture:
+    - Authoritative Evaluation Cycles, Templates, and Milestones are stored directly in PostgreSQL (kpi_evaluations & manager_kpi_templates).
+    - Per-employee JSON records are stored in data/uploads/employees/<employee_id>/evaluation.json.
+    - If a record is deleted from PostgreSQL, it is immediately synchronized and purged.
     """
     try:
-        store = read_eval_store()
-
-        # One-time migration: migrate any legacy daily or weekly rows from DB into JSON store, then clean up from DB
-        legacy_db_daily_weekly = KpiEvaluation.query.filter(
-            KpiEvaluation.frequency.in_(["daily", "weekly"])
-        ).all()
-        if legacy_db_daily_weekly:
-            existing_ids = {str(r.get("id")) for r in store.get("responses", [])}
-            existing_db_ids = {r.get("db_id") for r in store.get("responses", []) if r.get("db_id")}
-            for rec in legacy_db_daily_weekly:
-                if rec.id not in existing_db_ids and f"resp_{rec.id}" not in existing_ids:
-                    store.setdefault("responses", []).append(rec.to_dict())
-                db.session.delete(rec)
-            db.session.commit()
-            write_eval_store(store)
-
         # Query PostgreSQL strictly for Monthly, Quarterly, and Yearly evaluations
         eval_records = KpiEvaluation.query.filter(
             or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None)),
@@ -226,16 +290,43 @@ def sync_postgres_kpi_to_store_and_back():
             )
         ).order_by(KpiEvaluation.id.desc()).all()
 
+        valid_db_ids = {r.id for r in eval_records} if eval_records else set()
+
+        # Clean legacy evaluations directory if present
+        clean_legacy_evaluations_dir()
+
+        # Synchronize and clean up any dangling/deleted DB records across all employees
+        uploads_dir = get_uploads_dir()
+        emp_root = os.path.join(uploads_dir, "employees")
+        if os.path.exists(emp_root):
+            for entry in os.scandir(emp_root):
+                if entry.is_dir():
+                    emp_id = entry.name
+                    emp_resps = read_employee_evaluations(emp_id)
+                    if emp_resps:
+                        cleaned = []
+                        modified = False
+                        for r in emp_resps:
+                            r_id_str = str(r.get("id") or "")
+                            r_db_id = r.get("db_id")
+                            freq = str(r.get("frequency") or "").lower()
+                            is_db_entry = bool(r_db_id or (r_id_str.startswith("resp_") and r_id_str.replace("resp_", "").isdigit()))
+                            if is_db_entry and freq not in ["daily", "weekly"]:
+                                db_pk = int(r_db_id) if r_db_id else int(r_id_str.replace("resp_", ""))
+                                if db_pk not in valid_db_ids:
+                                    modified = True
+                                    continue
+                            cleaned.append(r)
+                        if modified:
+                            write_employee_evaluations(emp_id, cleaned)
+
+        store = read_eval_store()
         return eval_records, store
     except Exception as e:
         print(f"Error syncing KPI records: {e}")
         db.session.rollback()
-        # IMPORTANT: Do NOT return empty eval_records on exception.
-        # Previously returning [] caused get_evaluation_data() to wipe all monthly/quarterly
-        # responses from JSON on every DB error. Instead, return whatever is in the JSON store
-        # as a lightweight fallback so data persists through temporary DB issues.
         fallback_store = read_eval_store()
-        return None, fallback_store  # None signals "use JSON fallback, do not wipe"
+        return None, fallback_store
 
 def merge_kpi_responses_into_categories(categories, responses_dict):
     if not categories or not isinstance(categories, list) or not responses_dict or not isinstance(responses_dict, dict):
@@ -405,34 +496,74 @@ def get_evaluation_data():
             if emp_id and emp_id not in team_eval_groups[group_key]["employeeIds"]:
                 team_eval_groups[group_key]["employeeIds"].append(emp_id)
 
-        if eval_records:
-            cycles = []
-            for g_key, g_info in team_eval_groups.items():
+        cycles = []
+        seen_cycle_keys = set()
+        seen_cycle_ids = set()
+
+        # 1. Build cycles from PostgreSQL manager_kpi_templates where status == 'active' (sent to manager by HR)
+        try:
+            active_templates = ManagerKpiTemplate.query.filter(ManagerKpiTemplate.status == "active").all()
+            for tpl in active_templates:
+                cid = f"cycle_tpl_{tpl.id}"
+                if cid not in seen_cycle_ids:
+                    seen_cycle_ids.add(cid)
+                    c_key = f"{tpl.team_name or tpl.team_id}_{tpl.template_name}_{tpl.manager_id}"
+                    seen_cycle_keys.add(c_key)
+                    cycles.append({
+                        "id": cid,
+                        "name": tpl.template_name or "Performance Evaluation",
+                        "form": tpl.template_name or "Performance Evaluation",
+                        "frequency": "quarterly",
+                        "startDate": "",
+                        "endDate": "",
+                        "periodName": "",
+                        "description": f"Evaluation matrix for {tpl.team_name or tpl.template_name}",
+                        "teamId": tpl.team_id or "",
+                        "teamName": tpl.team_name or "",
+                        "managerId": tpl.manager_id,
+                        "managerName": tpl.manager_name or "Reporting Manager",
+                        "serviceManagerId": "",
+                        "serviceManagerName": "",
+                        "categories": tpl.categories or [],
+                        "employeeIds": [],
+                        "isActive": True,
+                        "status": "active",
+                        "createdAt": tpl.created_at.isoformat() if tpl.created_at else datetime.utcnow().isoformat(),
+                        "updatedAt": tpl.updated_at.isoformat() if tpl.updated_at else datetime.utcnow().isoformat()
+                    })
+        except Exception as e:
+            print(f"Notice loading active manager templates for cycles: {e}")
+
+        # 2. Add cycles dynamically built from PostgreSQL KpiEvaluation records
+        for g_key, g_info in team_eval_groups.items():
+            if g_key not in seen_cycle_keys:
                 categories_from_db = g_info["metrics_data"] if isinstance(g_info["metrics_data"], list) else []
                 new_c_id = f"cycle_db_{abs(hash(g_key)) % 1000000}"
-                cycles.append({
-                    "id": new_c_id,
-                    "name": g_info["form"],
-                    "form": g_info["form"],
-                    "frequency": g_info.get("frequency") or "quarterly",
-                    "startDate": g_info.get("startDate") or "",
-                    "endDate": g_info.get("endDate") or "",
-                    "periodName": g_info.get("periodName") or "",
-                    "description": g_info.get("description") or "",
-                    "teamId": g_info["teamId"],
-                    "teamName": g_info["teamName"],
-                    "managerId": g_info["managerId"],
-                    "managerName": g_info["managerName"] or "Reporting Manager",
-                    "serviceManagerId": g_info["serviceManagerId"],
-                    "serviceManagerName": g_info["serviceManagerName"] or "Service Manager",
-                    "categories": categories_from_db,
-                    "employeeIds": g_info["employeeIds"],
-                    "isActive": True,
-                    "createdAt": g_info["createdAt"],
-                    "updatedAt": g_info["updatedAt"]
-                })
-        else:
-            cycles = store.get("cycles", [])
+                if new_c_id not in seen_cycle_ids:
+                    seen_cycle_ids.add(new_c_id)
+                    seen_cycle_keys.add(g_key)
+                    cycles.append({
+                        "id": new_c_id,
+                        "name": g_info["form"],
+                        "form": g_info["form"],
+                        "frequency": g_info.get("frequency") or "quarterly",
+                        "startDate": g_info.get("startDate") or "",
+                        "endDate": g_info.get("endDate") or "",
+                        "periodName": g_info.get("periodName") or "",
+                        "description": g_info.get("description") or "",
+                        "teamId": g_info["teamId"],
+                        "teamName": g_info["teamName"],
+                        "managerId": g_info["managerId"],
+                        "managerName": g_info["managerName"] or "Reporting Manager",
+                        "serviceManagerId": g_info["serviceManagerId"],
+                        "serviceManagerName": g_info["serviceManagerName"] or "Service Manager",
+                        "categories": categories_from_db,
+                        "employeeIds": g_info["employeeIds"],
+                        "isActive": True,
+                        "status": "active",
+                        "createdAt": g_info["createdAt"],
+                        "updatedAt": g_info["updatedAt"]
+                    })
 
         # 2. Build responses directly from DB records (single source of truth)
         if eval_records:
@@ -470,9 +601,12 @@ def get_evaluation_data():
                 if rec.description and "(" in rec.description and ")" in rec.description:
                     extracted_period = rec.description.split("(", 1)[1].rsplit(")", 1)[0].strip()
 
-                # Extract categories and monthly_records from rec.metrics_data or fallback to store
+                # Extract categories, monthly_records, weekly_records, quarterly_records, and milestone_frequency from rec.metrics_data or fallback to store
                 db_cats = []
                 db_monthly_records = []
+                db_weekly_records = []
+                db_quarterly_records = []
+                milestone_freq = None
                 if isinstance(rec.metrics_data, list):
                     db_cats = rec.metrics_data
                 elif isinstance(rec.metrics_data, dict):
@@ -480,16 +614,29 @@ def get_evaluation_data():
                         db_cats = rec.metrics_data["categories"]
                     if "monthly_records" in rec.metrics_data and isinstance(rec.metrics_data["monthly_records"], list):
                         db_monthly_records = rec.metrics_data["monthly_records"]
+                    if "weekly_records" in rec.metrics_data and isinstance(rec.metrics_data["weekly_records"], list):
+                        db_weekly_records = rec.metrics_data["weekly_records"]
+                    if "quarterly_records" in rec.metrics_data and isinstance(rec.metrics_data["quarterly_records"], list):
+                        db_quarterly_records = rec.metrics_data["quarterly_records"]
+                    if "milestone_frequency" in rec.metrics_data:
+                        milestone_freq = rec.metrics_data["milestone_frequency"]
 
-                if not db_monthly_records:
+                if not db_monthly_records and not db_weekly_records and not db_quarterly_records:
                     matching_json_r = next((
                         jr for jr in json_all_responses
                         if str(jr.get("id")) == f"resp_{rec.id}" or
                            str(jr.get("db_id")) == str(rec.id) or
                            (str(jr.get("employeeCode") or jr.get("employeeId")) == actual_code and jr.get("frequency") == freq_str and (jr.get("form") == rec.form or jr.get("periodName") == extracted_period))
                     ), None)
-                    if matching_json_r and matching_json_r.get("monthly_records"):
-                        db_monthly_records = matching_json_r.get("monthly_records")
+                    if matching_json_r:
+                        if matching_json_r.get("monthly_records"):
+                            db_monthly_records = matching_json_r.get("monthly_records")
+                        if matching_json_r.get("weekly_records"):
+                            db_weekly_records = matching_json_r.get("weekly_records")
+                        if matching_json_r.get("quarterly_records"):
+                            db_quarterly_records = matching_json_r.get("quarterly_records")
+                        if matching_json_r.get("milestone_frequency"):
+                            milestone_freq = matching_json_r.get("milestone_frequency")
                         if not db_cats and matching_json_r.get("categories"):
                             db_cats = matching_json_r.get("categories")
 
@@ -524,6 +671,7 @@ def get_evaluation_data():
                     "serviceManagerScore": float(rec.service_manager_score) if (rec.service_manager_score and rec.service_manager_score.replace('.', '', 1).isdigit()) else None,
                     "serviceManagerRemarks": rec.remark or "",
                     "frequency": rec.frequency or "quarterly",
+                    "milestone_frequency": milestone_freq or ("weekly" if db_weekly_records else ("quarterly" if db_quarterly_records else ("monthly" if db_monthly_records else None))),
                     "startDate": rec.from_date.isoformat() if rec.from_date else "",
                     "endDate": rec.to_date.isoformat() if rec.to_date else "",
                     "workingDays": rec.working_days or 0,
@@ -532,6 +680,8 @@ def get_evaluation_data():
                     "categories": db_cats,
                     "metrics_data": rec.metrics_data,
                     "monthly_records": db_monthly_records,
+                    "weekly_records": db_weekly_records,
+                    "quarterly_records": db_quarterly_records,
                     "kpiResponses": db_kpis,
                     "createdAt": rec.created_at.isoformat() if rec.created_at else None,
                     "updatedAt": rec.updated_at.isoformat() if rec.updated_at else None
@@ -564,16 +714,20 @@ def get_evaluation_data():
                 merged_cycles.append(c)
                 existing_cycle_keys.add(c_key)
 
-        # Start with DB-derived responses, then append any JSON-only responses not already present.
+        # Start with DB-derived responses, then append pure daily/weekly JSON responses not already present.
         merged_responses = list(responses)
         existing_resp_ids = {r.get("id") for r in merged_responses}
-        # Also track by db_id to avoid duplicating records already fetched from DB
         existing_db_ids = {r.get("db_id") for r in merged_responses if r.get("db_id")}
         for r in json_all_responses:
             r_id = r.get("id")
             r_db_id = r.get("db_id")
-            if r_id not in existing_resp_ids and (not r_db_id or r_db_id not in existing_db_ids):
-                merged_responses.append(r)
+            r_freq = str(r.get("frequency") or "").lower()
+            # Only append daily/weekly JSON responses or non-DB responses.
+            # Monthly, quarterly, and yearly DB records are authoritative in PostgreSQL; if deleted from DB, do NOT resurrect!
+            if r_freq in ["daily", "weekly"] or (not r_db_id and not str(r_id or "").replace("resp_", "").isdigit()):
+                if r_id not in existing_resp_ids and (not r_db_id or r_db_id not in existing_db_ids):
+                    merged_responses.append(r)
+                    existing_resp_ids.add(r_id)
 
         # Clean and sanitize merged_cycles: ensure employeeIds only include active employees with valid responses or unassigned templates
         valid_merged_cycles = []
@@ -636,24 +790,51 @@ def update_rating_scale():
 @performance_bp.route("/evaluation/cycles", methods=["POST", "PUT"])
 def save_evaluation_cycle():
     try:
-        req_data = request.get_json()
-        store = read_eval_store()
-        cycles = store.get("cycles", [])
-        
-        if isinstance(req_data, list):
-            cycles = req_data
-        elif isinstance(req_data, dict):
-            cycle_id = req_data.get("id")
-            existing_idx = next((i for i, c in enumerate(cycles) if c.get("id") == cycle_id), -1)
-            if existing_idx >= 0:
-                cycles[existing_idx] = req_data
-            else:
-                cycles.insert(0, req_data)
+        req_data = request.get_json() or {}
+        cycles_list = req_data if isinstance(req_data, list) else ([req_data] if isinstance(req_data, dict) else [])
+        now = datetime.utcnow()
 
-        store["cycles"] = cycles
-        write_eval_store(store)
-        return jsonify({"success": True, "cycles": cycles}), 200
+        for c in cycles_list:
+            mgr_ids = [s.strip() for s in str(c.get("managerId") or "").split(",") if s.strip()]
+            team_id = str(c.get("teamId") or "").strip()
+            team_name = str(c.get("teamName") or "").strip()
+            cats = c.get("categories") or []
+            tpl_name = c.get("name") or c.get("form") or "Performance Evaluation"
+
+            for m_id in mgr_ids:
+                tpl = ManagerKpiTemplate.query.filter(
+                    ManagerKpiTemplate.manager_id == m_id
+                ).first()
+                if not tpl and team_id:
+                    tpl = ManagerKpiTemplate.query.filter(ManagerKpiTemplate.team_id == team_id).first()
+                if not tpl and team_name:
+                    tpl = ManagerKpiTemplate.query.filter(ManagerKpiTemplate.team_name.ilike(team_name)).first()
+
+                if tpl:
+                    tpl.status = "active"
+                    if cats:
+                        tpl.categories = cats
+                    tpl.updated_at = now
+                else:
+                    new_tpl = ManagerKpiTemplate(
+                        manager_id=m_id,
+                        manager_name=c.get("managerName") or "Manager",
+                        template_key="form_1",
+                        template_name=tpl_name,
+                        team_id=team_id if team_id else None,
+                        team_name=team_name if team_name else None,
+                        categories=cats,
+                        is_default=True,
+                        status="active",
+                        created_at=now,
+                        updated_at=now
+                    )
+                    db.session.add(new_tpl)
+
+        db.session.commit()
+        return jsonify({"success": True}), 200
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
 @performance_bp.route("/evaluation/cycles/<cycle_id>", methods=["DELETE"])
@@ -969,52 +1150,77 @@ def save_evaluation_responses():
             form_name = item.get("form") or item.get("performance_metrics") or item.get("periodName") or ""
             period_name = str(item.get("periodName") or "").strip()
 
-            if emp_id:
-                clean_id = resp_id.replace("resp_", "").replace("eval_", "").strip()
+            db_id_val = item.get("db_id") or item.get("dbId")
+            if emp_id or db_id_val:
                 eval_row = None
-                if clean_id.isdigit():
-                    eval_row = KpiEvaluation.query.get(int(clean_id))
+                if db_id_val and str(db_id_val).isdigit():
+                    eval_row = KpiEvaluation.query.get(int(db_id_val))
+
+                if not eval_row:
+                    clean_id = resp_id.replace("resp_", "").replace("eval_", "").strip()
+                    if clean_id.isdigit():
+                        eval_row = KpiEvaluation.query.get(int(clean_id))
+
+                clean_emp_id = emp_id.lower().replace("emp-", "").replace("emp_", "").strip()
+                emp_id_variants = list({emp_id, clean_emp_id, f"EMP-{clean_emp_id}", f"emp-{clean_emp_id}"} - {""})
 
                 if not eval_row and (form_name or period_name):
                     sub_conds = []
                     if form_name:
-                        sub_conds.extend([KpiEvaluation.form == form_name, KpiEvaluation.performance_metrics == form_name])
+                        sub_conds.extend([KpiEvaluation.form == form_name, KpiEvaluation.performance_metrics == form_name, KpiEvaluation.form.ilike(f"%{form_name}%")])
                     if period_name:
                         sub_conds.append(KpiEvaluation.description.ilike(f"%{period_name}%"))
                     if sub_conds:
                         eval_row = KpiEvaluation.query.filter(
-                            KpiEvaluation.employee_id == emp_id,
+                            KpiEvaluation.employee_id.in_(emp_id_variants),
                             or_(*sub_conds)
                         ).order_by(KpiEvaluation.id.desc()).first()
 
                 if not eval_row:
                     # Only match un-calibrated/pending evaluations to prevent destroying published historical records
                     eval_row = KpiEvaluation.query.filter(
-                        KpiEvaluation.employee_id == emp_id,
-                        KpiEvaluation.status.in_(["Assigned to Employee", "employee_in_progress", "Pending", "draft", "Draft", "manager_review", "Submitted to Manager"])
+                        KpiEvaluation.employee_id.in_(emp_id_variants),
+                        KpiEvaluation.status.in_(["Assigned to Employee", "employee_in_progress", "Pending", "draft", "Draft", "manager_review", "Submitted to Manager", "submitted_to_manager"])
                     ).order_by(KpiEvaluation.id.desc()).first()
 
                 if eval_row:
-                    if "monthly_records" in item and item["monthly_records"]:
-                        existing_cats = []
-                        if isinstance(eval_row.metrics_data, dict) and "categories" in eval_row.metrics_data:
-                            existing_cats = eval_row.metrics_data["categories"]
-                        elif isinstance(eval_row.metrics_data, list):
-                            existing_cats = eval_row.metrics_data
-                        elif "categories" in item:
-                            existing_cats = item["categories"]
+                    existing_cats = []
+                    if isinstance(eval_row.metrics_data, dict) and "categories" in eval_row.metrics_data:
+                        existing_cats = eval_row.metrics_data["categories"]
+                    elif isinstance(eval_row.metrics_data, list):
+                        existing_cats = eval_row.metrics_data
+                    elif "categories" in item and isinstance(item["categories"], list):
+                        existing_cats = item["categories"]
 
-                        eval_row.metrics_data = {
-                            "categories": existing_cats,
-                            "monthly_records": item["monthly_records"]
-                        }
-                    elif "kpiResponses" in item and item["kpiResponses"]:
-                        if isinstance(eval_row.metrics_data, list):
-                            eval_row.metrics_data = merge_kpi_responses_into_categories(eval_row.metrics_data, item["kpiResponses"])
-                        elif isinstance(eval_row.metrics_data, dict) and "categories" in eval_row.metrics_data:
-                            eval_row.metrics_data["categories"] = merge_kpi_responses_into_categories(eval_row.metrics_data["categories"], item["kpiResponses"])
-                        else:
-                            eval_row.metrics_data = item["kpiResponses"]
+                    metrics_dict = {
+                        "categories": existing_cats
+                    }
+
+                    if "monthly_records" in item and item["monthly_records"]:
+                        metrics_dict["monthly_records"] = item["monthly_records"]
+                    elif isinstance(eval_row.metrics_data, dict) and "monthly_records" in eval_row.metrics_data:
+                        metrics_dict["monthly_records"] = eval_row.metrics_data["monthly_records"]
+
+                    if "weekly_records" in item and item["weekly_records"]:
+                        metrics_dict["weekly_records"] = item["weekly_records"]
+                    elif isinstance(eval_row.metrics_data, dict) and "weekly_records" in eval_row.metrics_data:
+                        metrics_dict["weekly_records"] = eval_row.metrics_data["weekly_records"]
+
+                    if "quarterly_records" in item and item["quarterly_records"]:
+                        metrics_dict["quarterly_records"] = item["quarterly_records"]
+                    elif isinstance(eval_row.metrics_data, dict) and "quarterly_records" in eval_row.metrics_data:
+                        metrics_dict["quarterly_records"] = eval_row.metrics_data["quarterly_records"]
+
+                    if "milestone_frequency" in item and item["milestone_frequency"]:
+                        metrics_dict["milestone_frequency"] = item["milestone_frequency"]
+                    elif isinstance(eval_row.metrics_data, dict) and "milestone_frequency" in eval_row.metrics_data:
+                        metrics_dict["milestone_frequency"] = eval_row.metrics_data["milestone_frequency"]
+
+                    if "kpiResponses" in item and item["kpiResponses"]:
+                        metrics_dict["categories"] = merge_kpi_responses_into_categories(metrics_dict["categories"], item["kpiResponses"])
+                        metrics_dict["kpiResponses"] = item["kpiResponses"]
+
+                    eval_row.metrics_data = metrics_dict
 
                     if "employeeOverallScore" in item:
                         try:
@@ -1493,35 +1699,52 @@ def get_system_default_kpi_template():
 @performance_bp.route("/kpi-templates/manager", methods=["GET"])
 @auth_required
 def get_manager_kpi_templates():
-    """Fetches all customized templates (Form 1..4) for a specific manager from PostgreSQL."""
+    """Fetches all customized templates for a specific manager or team from PostgreSQL."""
     try:
         manager_id = request.args.get("manager_id")
-        if not manager_id:
-            return jsonify({"error": "manager_id parameter is required"}), 400
+        team_id = request.args.get("team_id")
+        team_name = request.args.get("team_name")
 
-        mgr_emp = Employee.query.filter(Employee.employee_id == str(manager_id)).first()
-        canonical_mgr_id = str(mgr_emp.employee_id) if mgr_emp and mgr_emp.employee_id else str(manager_id)
+        if not manager_id and not team_id and not team_name:
+            return jsonify({"error": "manager_id, team_id, or team_name parameter is required"}), 400
 
-        # Query all templates strictly for this manager's canonical employee_id
-        templates = ManagerKpiTemplate.query.filter(
-            ManagerKpiTemplate.manager_id == canonical_mgr_id
-        ).order_by(ManagerKpiTemplate.template_key.asc()).all()
+        from sqlalchemy import or_
+        conditions = []
+        canonical_mgr_id = None
+        if manager_id:
+            raw_id = str(manager_id).strip()
+            clean_id = raw_id.lower().replace("emp-", "").replace("emp", "").strip()
+            mgr_emp = Employee.query.filter(
+                or_(
+                    Employee.employee_id == raw_id,
+                    Employee.employee_id == clean_id,
+                    Employee.employee_id == f"emp-{clean_id}"
+                )
+            ).first()
+            canonical_mgr_id = str(mgr_emp.employee_id) if mgr_emp and mgr_emp.employee_id else raw_id
 
-        # If manager has designated/team-specific forms, clean up legacy unassigned dummy forms (Form 1..4 without team)
+            conditions.append(ManagerKpiTemplate.manager_id == canonical_mgr_id)
+            conditions.append(ManagerKpiTemplate.manager_id == raw_id)
+            conditions.append(ManagerKpiTemplate.manager_id == clean_id)
+            conditions.append(ManagerKpiTemplate.manager_id.ilike(f"%{clean_id}%"))
+
+        if team_id:
+            conditions.append(ManagerKpiTemplate.team_id == str(team_id))
+            conditions.append(ManagerKpiTemplate.team_name.ilike(f"%{team_id}%"))
+
+        if team_name and team_name != "all_teams":
+            conditions.append(ManagerKpiTemplate.team_name.ilike(f"%{team_name}%"))
+            conditions.append(ManagerKpiTemplate.template_name.ilike(f"%{team_name}%"))
+
+        templates = ManagerKpiTemplate.query.filter(or_(*conditions)).order_by(ManagerKpiTemplate.template_key.asc()).all()
+
+        # If manager/team has designated forms, filter valid templates
         valid_templates = [
             t for t in templates 
-            if (t.team_name or t.team_id) or (t.template_name and t.template_name not in ["Form 1", "Form 2", "Form 3", "Form 4"])
+            if (t.team_name or t.team_id) or (t.template_name and t.template_name not in ["Form 1", "Form 2", "Form 3", "Form 4"]) or (t.categories and len(t.categories) > 0)
         ]
         
         if valid_templates:
-            dummy_to_remove = [t for t in templates if t not in valid_templates]
-            if dummy_to_remove:
-                for d in dummy_to_remove:
-                    db.session.delete(d)
-                try:
-                    db.session.commit()
-                except Exception:
-                    db.session.rollback()
             templates = valid_templates
 
         default_tpl = next((t for t in templates if t.is_default), templates[0] if templates else None)
@@ -1529,7 +1752,7 @@ def get_manager_kpi_templates():
 
         return jsonify({
             "success": True,
-            "manager_id": canonical_mgr_id,
+            "manager_id": canonical_mgr_id or manager_id or "",
             "active_key": active_key,
             "templates": [t.to_dict() for t in templates]
         }), 200
@@ -1539,30 +1762,49 @@ def get_manager_kpi_templates():
 @performance_bp.route("/kpi-templates/manager", methods=["POST"])
 @auth_required
 def save_manager_kpi_template():
-    """Upserts a specific form template for a manager into PostgreSQL database."""
+    """Upserts a specific form template for a manager or team into PostgreSQL database."""
     try:
         data = request.get_json() or {}
         manager_id = str(data.get("manager_id") or "").strip()
-        if not manager_id:
-            return jsonify({"error": "manager_id is required"}), 400
-
-        mgr_emp = Employee.query.filter(Employee.employee_id == str(manager_id)).first()
-        canonical_mgr_id = str(mgr_emp.employee_id) if mgr_emp and mgr_emp.employee_id else str(manager_id)
-        mgr_name = (mgr_emp.name if (mgr_emp and mgr_emp.name) else None) or data.get("manager_name") or ""
-
         template_key = str(data.get("template_key") or "form_1").strip().lower()
         template_name = str(data.get("template_name") or f"Form {template_key.replace('form_', '')}").strip()
-        team_id = str(data.get("team_id") or "")
-        team_name = str(data.get("team_name") or "")
+        team_id = str(data.get("team_id") or "").strip()
+        team_name = str(data.get("team_name") or "").strip()
         categories = data.get("categories") or []
         is_default = bool(data.get("is_default", False))
+        status = str(data.get("status") or "draft").strip().lower()
+
+        if not manager_id and not team_id and not team_name:
+            return jsonify({"error": "manager_id, team_id, or team_name is required"}), 400
+
+        canonical_mgr_id = manager_id or "general"
+        mgr_name = data.get("manager_name") or ""
+        if manager_id and manager_id != "general":
+            mgr_emp = Employee.query.filter(Employee.employee_id == str(manager_id)).first()
+            if mgr_emp:
+                canonical_mgr_id = str(mgr_emp.employee_id)
+                mgr_name = mgr_emp.name or mgr_name
 
         now = datetime.utcnow()
 
-        tpl = ManagerKpiTemplate.query.filter(
-            ManagerKpiTemplate.manager_id == canonical_mgr_id,
-            ManagerKpiTemplate.template_key == template_key
-        ).first()
+        tpl = None
+        if canonical_mgr_id and canonical_mgr_id != "general":
+            tpl = ManagerKpiTemplate.query.filter(
+                ManagerKpiTemplate.manager_id == canonical_mgr_id,
+                ManagerKpiTemplate.template_key == template_key
+            ).first()
+
+        if not tpl and team_id:
+            tpl = ManagerKpiTemplate.query.filter(
+                ManagerKpiTemplate.team_id == team_id,
+                ManagerKpiTemplate.template_key == template_key
+            ).first()
+
+        if not tpl and team_name:
+            tpl = ManagerKpiTemplate.query.filter(
+                ManagerKpiTemplate.team_name.ilike(team_name),
+                ManagerKpiTemplate.template_key == template_key
+            ).first()
 
         if not tpl:
             tpl = ManagerKpiTemplate(
@@ -1574,12 +1816,14 @@ def save_manager_kpi_template():
                 team_name=team_name if team_name else None,
                 categories=categories,
                 is_default=is_default,
+                status=status,
                 created_at=now,
                 updated_at=now
             )
             db.session.add(tpl)
         else:
-            tpl.manager_id = canonical_mgr_id
+            if canonical_mgr_id and canonical_mgr_id != "general":
+                tpl.manager_id = canonical_mgr_id
             tpl.manager_name = mgr_name or tpl.manager_name
             tpl.template_name = template_name or tpl.template_name
             if team_id:
@@ -1589,9 +1833,11 @@ def save_manager_kpi_template():
             tpl.categories = categories
             if "is_default" in data:
                 tpl.is_default = is_default
+            if "status" in data:
+                tpl.status = status
             tpl.updated_at = now
 
-        if is_default:
+        if is_default and canonical_mgr_id:
             other_tpls = ManagerKpiTemplate.query.filter(
                 ManagerKpiTemplate.manager_id == canonical_mgr_id,
                 ManagerKpiTemplate.template_key != template_key
@@ -1767,7 +2013,21 @@ def assign_kpi_metrics():
         elif to_date and not from_date:
             from_date = to_date
 
-        from services.kpi_evaluation_rollup_service import calculate_evaluation_working_days
+        milestone_frequency = (data.get("milestone_frequency") or data.get("milestoneFrequency") or "monthly").lower()
+        monthly_records_input = data.get("monthly_records") or []
+        weekly_records_input = data.get("weekly_records") or []
+        quarterly_records_input = data.get("quarterly_records") or []
+
+        if frequency in ["yearly", "annual"]:
+            final_metrics_data = {
+                "categories": categories_data,
+                "milestone_frequency": milestone_frequency,
+                "monthly_records": monthly_records_input,
+                "weekly_records": weekly_records_input,
+                "quarterly_records": quarterly_records_input
+            }
+        else:
+            final_metrics_data = categories_data
 
         now = datetime.utcnow()
         created_records = []
@@ -1851,12 +2111,8 @@ def assign_kpi_metrics():
                 existing_cycle = new_cycle
 
             for emp in employees:
-                # Strictly use canonical company employee_id (e.g. "936", "2195"), not user_id or employees table integer id
-                emp_id = str(emp.get("employee_id") or emp.get("code") or "").strip()
-                if not emp_id and emp.get("id"):
-                    # Fallback only if employee_id not provided
-                    db_lookup = Employee.query.filter(Employee.id == emp.get("id")).first()
-                    emp_id = str(db_lookup.employee_id) if db_lookup and db_lookup.employee_id else str(emp.get("id"))
+                # Strictly use employee_id only
+                emp_id = str(emp.get("employee_id") or "").strip()
                 if not emp_id:
                     continue
 
@@ -1964,11 +2220,8 @@ def assign_kpi_metrics():
 
         # For Monthly, Quarterly, and Yearly evaluations: store directly in PostgreSQL database (kpi_evaluations table)
         for emp in employees:
-            # Strictly use canonical company employee_id (e.g. "936", "2195"), not user_id or employees table integer id
-            emp_id = str(emp.get("employee_id") or emp.get("code") or "").strip()
-            if not emp_id and emp.get("id"):
-                db_lookup = Employee.query.filter(Employee.id == emp.get("id")).first()
-                emp_id = str(db_lookup.employee_id) if db_lookup and db_lookup.employee_id else str(emp.get("id"))
+            # Strictly use employee_id only
+            emp_id = str(emp.get("employee_id") or "").strip()
             if not emp_id:
                 continue
 
@@ -1985,15 +2238,6 @@ def assign_kpi_metrics():
             stats = calculate_evaluation_working_days(emp_id, from_date, to_date) if (from_date and to_date) else {"working_days": 0, "leave_days": 0, "holiday_days": 0}
 
             emp_ids_to_match = [str(emp_id)]
-            if db_emp and db_emp.employee_id and str(db_emp.employee_id) not in emp_ids_to_match:
-                emp_ids_to_match.append(str(db_emp.employee_id))
-            if str(emp_id).isdigit():
-                clean_num = str(int(emp_id))
-                if clean_num not in emp_ids_to_match:
-                    emp_ids_to_match.append(clean_num)
-                emp_prefix = f"EMP-{clean_num}"
-                if emp_prefix not in emp_ids_to_match:
-                    emp_ids_to_match.append(emp_prefix)
 
             # Check if evaluation records already exist for this employee for this specific form/period
             filter_conditions = [
@@ -2020,7 +2264,7 @@ def assign_kpi_metrics():
                 record.description = desc_text
                 record.team_id = str(team_id) if team_id else record.team_id
                 record.team_name = team_name if team_name else record.team_name
-                record.metrics_data = categories_data
+                record.metrics_data = final_metrics_data
                 record.target_score = "100"
                 record.weightage = "100"
                 record.reporting_manager = reporting_manager if reporting_manager else record.reporting_manager
@@ -2037,24 +2281,11 @@ def assign_kpi_metrics():
                 record.status = "Assigned to Employee"
                 record.updated_at = now
             else:
-                # Check for existing pending evaluation in a different period
-                pending_eval = KpiEvaluation.query.filter(
-                    KpiEvaluation.employee_id.in_(emp_ids_to_match),
-                    or_(KpiEvaluation.is_archived.is_(False), KpiEvaluation.is_archived.is_(None)),
-                    or_(
-                        KpiEvaluation.manager_approve_score.is_(None),
-                        KpiEvaluation.manager_approve_score == "",
-                        KpiEvaluation.status.in_(["manager_review", "Submitted to Manager", "submitted", "Assigned to Employee", "employee_in_progress", "Draft", "returned_to_employee", "returned_to_manager"])
-                    )
-                ).first()
-                if pending_eval and (pending_eval.from_date != from_date or pending_eval.to_date != to_date or pending_eval.frequency != frequency):
-                    continue
-
                 record = KpiEvaluation(
                     form=form_name,
                     team_id=str(team_id),
                     team_name=team_name,
-                    metrics_data=categories_data,
+                    metrics_data=final_metrics_data,
                     performance_metrics=form_name,
                     description=desc_text,
                     target_score="100",

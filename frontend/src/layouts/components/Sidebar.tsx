@@ -116,13 +116,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         const access = (user?.access_level || user?.role || '').toLowerCase();
         const role = (user?.role || '').toLowerCase();
         const isHrOrAdmin = access.includes('admin') || access.includes('super') || access.includes('hr') || role.includes('hr') || role.includes('admin');
-
-        if (isHrOrAdmin) {
-          setPendingEvaluationCount(0);
-          return;
-        }
-
-        const isManagerOrLead = access.includes('manager') || access.includes('lead') || access.includes('service_manager');
+        const isManagerOrLead = access.includes('manager') || access.includes('lead') || access.includes('service_manager') || isHrOrAdmin;
 
         let reportingIdentifiers = new Set<string>();
         if (empRes && empRes.ok && user?.full_name) {
@@ -141,12 +135,28 @@ const Sidebar: React.FC<SidebarProps> = ({
           const isMe = (userEmpCode && (rEmpCode === userEmpCode)) || (userFullName && rName && rName === userFullName);
           if (!isMe) return false;
 
-          const isSubmitted = r.status === 'manager_review' ||
-            r.status === 'approved' ||
-            r.status === 'sm_final_approval' ||
-            r.status === 'Calibrated & Approved' ||
-            r.status === 'Completed' ||
-            Boolean(r.employeeSubmittedAt);
+          const isYearly = Boolean(
+            r.milestone_frequency ||
+            (r.weekly_records && r.weekly_records.length > 0) ||
+            (r.monthly_records && r.monthly_records.length > 0) ||
+            (r.quarterly_records && r.quarterly_records.length > 0)
+          );
+
+          if (isYearly) {
+            // Check if there are open milestones needing employee fill/submission
+            return false;
+          }
+
+          const statusStr = String(r.status || '').toLowerCase();
+          const isSubmitted = statusStr === 'manager_review' ||
+            statusStr === 'approved' ||
+            statusStr === 'sm_final_approval' ||
+            statusStr === 'calibrated & approved' ||
+            statusStr === 'completed' ||
+            Boolean(r.employeeSubmittedAt) ||
+            Boolean((r as any).submitted_at) ||
+            Boolean((r as any).submittedAt) ||
+            Boolean((r as any).employee_submitted_at);
           return !isSubmitted;
         });
 
@@ -154,7 +164,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           count += 1;
         }
 
-        // 2. Manager evaluation pending check (team members waiting for manager calibration)
+        // 2. Manager evaluation pending check (team members waiting for manager calibration or milestone review)
         if (isManagerOrLead) {
           const pendingTeamEvals = responses.filter((r: any) => {
             const rEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase();
@@ -162,18 +172,43 @@ const Sidebar: React.FC<SidebarProps> = ({
             const isMe = (userEmpCode && (rEmpCode === userEmpCode)) || (userFullName && rName && rName === userFullName);
             if (isMe) return false; // don't double count self
 
-            const isMyTeamMember = checkManagerMatch(r.reportingManager, user?.full_name) ||
+            const isMyTeamMember = isHrOrAdmin ||
+              checkManagerMatch(r.reportingManager, user?.full_name) ||
               (rEmpCode && reportingIdentifiers.has(rEmpCode)) ||
               (rName && reportingIdentifiers.has(rName));
 
             if (!isMyTeamMember) return false;
 
-            const isWaitingForManager = (r.status === 'manager_review' || r.status === 'Submitted to Manager' || Boolean(r.employeeSubmittedAt)) &&
-              r.status !== 'approved' &&
-              r.status !== 'sm_final_approval' &&
-              r.status !== 'Calibrated & Approved' &&
-              r.status !== 'Completed' &&
-              r.managerScore == null;
+            const isYearly = Boolean(
+              r.milestone_frequency ||
+              (r.weekly_records && r.weekly_records.length > 0) ||
+              (r.monthly_records && r.monthly_records.length > 0) ||
+              (r.quarterly_records && r.quarterly_records.length > 0)
+            );
+
+            if (isYearly) {
+              const hasSubmittedMilestone = (
+                (r.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
+                (r.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
+                (r.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+              );
+              return hasSubmittedMilestone;
+            }
+
+            const statusStr = String(r.status || '').toLowerCase();
+            const isApproved = r.status === 'approved' || r.status === 'sm_final_approval' || statusStr.includes('approved') || statusStr.includes('completed');
+            if (isApproved && r.managerScore != null) return false;
+
+            const isWaitingForManager = (
+              statusStr === 'manager_review' ||
+              statusStr === 'submitted to manager' ||
+              statusStr.includes('submitted') ||
+              Boolean(r.employeeSubmittedAt) ||
+              Boolean((r as any).submitted_at) ||
+              Boolean((r as any).submittedAt) ||
+              Boolean((r as any).employee_submitted_at) ||
+              (r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0)
+            ) && r.managerScore == null;
 
             return isWaitingForManager;
           });

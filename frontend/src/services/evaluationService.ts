@@ -9,9 +9,39 @@ import {
   EvaluationStage,
   RatingLevel,
   YearlyMonthRecord,
-  YearlyMonthKPIEntry
+  YearlyMonthKPIEntry,
+  YearlyWeekRecord,
+  YearlyQuarterRecord
 } from '../types/evaluation.types';
 import { calculateOverallScore, calculateKPIScore, setRatingScale, getRatingScale } from './scoreService';
+
+export const FISCAL_QUARTERS = [
+  { quarterIndex: 1 as const, quarterKey: 'q1' as const, shortName: 'Q1' as const, quarterLabel: 'Q1 (Apr – Jun)', quarterName: 'Quarter 1', monthsIncluded: 'April – June', startMonthName: 'April', endMonthName: 'June', startMonth: 4, endMonth: 6 },
+  { quarterIndex: 2 as const, quarterKey: 'q2' as const, shortName: 'Q2' as const, quarterLabel: 'Q2 (Jul – Sep)', quarterName: 'Quarter 2', monthsIncluded: 'July – September', startMonthName: 'July', endMonthName: 'September', startMonth: 7, endMonth: 9 },
+  { quarterIndex: 3 as const, quarterKey: 'q3' as const, shortName: 'Q3' as const, quarterLabel: 'Q3 (Oct – Dec)', quarterName: 'Quarter 3', monthsIncluded: 'October – December', startMonthName: 'October', endMonthName: 'December', startMonth: 10, endMonth: 12 },
+  { quarterIndex: 4 as const, quarterKey: 'q4' as const, shortName: 'Q4' as const, quarterLabel: 'Q4 (Jan – Mar)', quarterName: 'Quarter 4', monthsIncluded: 'January – March', startMonthName: 'January', endMonthName: 'March', startMonth: 1, endMonth: 3 },
+];
+
+export const initializeYearlyQuarterlyRecords = (baseStartYear: number): YearlyQuarterRecord[] => {
+  return FISCAL_QUARTERS.map(q => {
+    const startYear = q.quarterIndex === 4 ? baseStartYear + 1 : baseStartYear;
+    const endYear = q.quarterIndex === 4 ? baseStartYear + 1 : baseStartYear;
+    const lastDay = (q.endMonth === 6 || q.endMonth === 9) ? '30' : '31';
+    return {
+      quarterIndex: q.quarterIndex,
+      quarterKey: q.quarterKey,
+      quarterLabel: q.quarterLabel,
+      quarterName: q.quarterName,
+      monthsIncluded: q.monthsIncluded,
+      startMonthName: q.startMonthName,
+      endMonthName: q.endMonthName,
+      startDate: `${startYear}-${String(q.startMonth).padStart(2, '0')}-01`,
+      endDate: `${endYear}-${String(q.endMonth).padStart(2, '0')}-${lastDay}`,
+      status: 'pending_employee',
+      kpiEntries: {}
+    };
+  });
+};
 
 export const FISCAL_MONTHS = [
   { monthIndex: 1, monthKey: 'april', monthName: 'April', shortName: 'Apr', calendarMonth: 4, quarter: 1 as const },
@@ -31,6 +61,7 @@ export const FISCAL_MONTHS = [
 export const initializeYearlyMonthlyRecords = (baseStartYear: number): YearlyMonthRecord[] => {
   return FISCAL_MONTHS.map(m => {
     const calendarYear = m.calendarMonth >= 4 ? baseStartYear : baseStartYear + 1;
+    const lastDay = new Date(calendarYear, m.calendarMonth, 0).getDate();
     return {
       monthIndex: m.monthIndex,
       monthKey: m.monthKey,
@@ -38,10 +69,61 @@ export const initializeYearlyMonthlyRecords = (baseStartYear: number): YearlyMon
       calendarMonth: m.calendarMonth,
       calendarYear,
       quarter: m.quarter,
+      startDate: `${calendarYear}-${String(m.calendarMonth).padStart(2, '0')}-01`,
+      endDate: `${calendarYear}-${String(m.calendarMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
       status: 'pending_employee',
       kpiEntries: {}
     };
   });
+};
+
+export const initializeYearlyWeeklyRecords = (baseStartYear: number): YearlyWeekRecord[] => {
+  const records: YearlyWeekRecord[] = [];
+  
+  // April 1st of the fiscal start year
+  const startFiscalDate = new Date(baseStartYear, 3, 1);
+  const dayOfApril1 = startFiscalDate.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  // Monday of the week containing April 1st
+  const diffToMonday = dayOfApril1 === 0 ? -6 : (dayOfApril1 === 1 ? 0 : 1 - dayOfApril1);
+  const firstMonday = new Date(baseStartYear, 3, 1 + diffToMonday);
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  for (let w = 1; w <= 52; w++) {
+    // Each week w starts strictly on Monday and ends on Sunday
+    const wMonday = new Date(firstMonday.getFullYear(), firstMonday.getMonth(), firstMonday.getDate() + (w - 1) * 7);
+    const wSunday = new Date(wMonday.getFullYear(), wMonday.getMonth(), wMonday.getDate() + 6);
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const startIso = `${wMonday.getFullYear()}-${pad(wMonday.getMonth() + 1)}-${pad(wMonday.getDate())}`;
+    const endIso = `${wSunday.getFullYear()}-${pad(wSunday.getMonth() + 1)}-${pad(wSunday.getDate())}`;
+
+    const startDay = pad(wMonday.getDate());
+    const startMonth = pad(wMonday.getMonth() + 1);
+    const endDay = pad(wSunday.getDate());
+    const endMonth = pad(wSunday.getMonth() + 1);
+
+    const calMonth = wMonday.getMonth() + 1; // 1..12
+    const monthIndex = calMonth >= 4 ? calMonth - 3 : calMonth + 9; // 1=Apr..12=Mar
+    const quarter: 1 | 2 | 3 | 4 = w <= 13 ? 1 : w <= 26 ? 2 : w <= 39 ? 3 : 4;
+
+    records.push({
+      weekIndex: w,
+      weekLabel: `W${w} (${startDay}/${startMonth} - ${endDay}/${endMonth})`,
+      startDate: startIso,
+      endDate: endIso,
+      monthIndex,
+      monthName: monthNames[wMonday.getMonth()],
+      quarter,
+      status: 'pending_employee',
+      kpiEntries: {}
+    });
+  }
+
+  return records;
 };
 
 const CYCLES_STORAGE_KEY = 'peoplehub_evaluation_cycles_v2';
@@ -69,6 +151,7 @@ export interface ManagerKpiTemplateRecord {
   team_name?: string;
   categories: KPICategory[];
   is_default: boolean;
+  status?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -495,7 +578,8 @@ export const evaluationService = {
       endDate: cycleData.endDate,
       periodName: cycleData.periodName,
       frequency: cycleData.frequency || 'quarterly',
-      status: 'pending_sm_launch_approval',
+      status: 'active',
+      isActive: true,
       categories: cycleData.categories || DEFAULT_KPI_CATEGORIES,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -932,46 +1016,59 @@ export const evaluationService = {
     categories: KPICategory[];
     allEmployees: any[];
     frequency?: string;
+    milestone_frequency?: 'monthly' | 'weekly' | 'quarterly' | 'annual';
     templateKey?: string;
     templateName?: string;
   }): Promise<{ cycle: EvaluationCycle; responses: EvaluationResponse[] }> {
-    const targetEmployees = data.allEmployees.filter(e =>
-      data.employeeIds.includes(String(e.employee_id))
-    );
+    const targetEmployees = data.employeeIds.map(empId => {
+      const found = data.allEmployees.find(e => String(e.employee_id || '') === String(empId));
+      return {
+        employee_id: String(empId),
+        name: found ? (`${found.first_name || ''} ${found.last_name || ''}`.trim() || found.name) : `Employee ${empId}`
+      };
+    });
+
+    const baseStartYear = data.startDate ? parseInt(data.startDate.slice(0, 4), 10) : new Date().getFullYear();
+    const isYearly = (data.frequency || '').toLowerCase() === 'yearly' || (data.frequency || '').toLowerCase() === 'annual';
+    const subFreq = data.milestone_frequency || 'monthly';
+    const initialMonthlyRecords = isYearly && subFreq === 'monthly' ? initializeYearlyMonthlyRecords(baseStartYear) : undefined;
+    const initialWeeklyRecords = isYearly && subFreq === 'weekly' ? initializeYearlyWeeklyRecords(baseStartYear) : undefined;
+    const initialQuarterlyRecords = isYearly && subFreq === 'quarterly' ? initializeYearlyQuarterlyRecords(baseStartYear) : undefined;
 
     // 1. Assign to PostgreSQL kpi_evaluations table (strictly 1 row per employee)
-    try {
-      const token = localStorage.getItem('token') || '';
-      await fetch(`${API_URL}/api/performance/kpi-evaluations/assign`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          form: data.formName,
-          team_id: data.teamId,
-          team_name: data.teamName,
-          periodName: data.periodName,
-          frequency: data.frequency || 'quarterly',
-          startDate: data.startDate,
-          endDate: data.endDate,
-          reporting_manager: data.managerName,
-          reporting_manager_id: data.managerId,
-          service_manager: data.serviceManagerName,
-          service_manager_id: data.serviceManagerId,
-          template_key: data.templateKey || 'form_1',
-          template_name: data.templateName || '',
-          employees: targetEmployees.map(e => ({
-            employee_id: String(e.employee_id || ''),
-            id: String(e.employee_id || ''),
-            name: `${e.first_name || ''} ${e.last_name || ''}`.trim() || e.name
-          })),
-          categories: data.categories
-        })
-      });
-    } catch (dbErr) {
-      console.warn('Sync to kpi_evaluations Postgres table skipped or offline:', dbErr);
+    const token = localStorage.getItem('token') || '';
+    const assignRes = await fetch(`${API_URL}/api/performance/kpi-evaluations/assign`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        form: data.formName,
+        team_id: data.teamId,
+        team_name: data.teamName,
+        periodName: data.periodName,
+        frequency: data.frequency || 'quarterly',
+        milestone_frequency: subFreq,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        reporting_manager: data.managerName,
+        reporting_manager_id: data.managerId,
+        service_manager: data.serviceManagerName,
+        service_manager_id: data.serviceManagerId,
+        template_key: data.templateKey || 'form_1',
+        template_name: data.templateName || '',
+        monthly_records: initialMonthlyRecords,
+        weekly_records: initialWeeklyRecords,
+        quarterly_records: initialQuarterlyRecords,
+        employees: targetEmployees,
+        categories: data.categories
+      })
+    });
+
+    if (!assignRes.ok) {
+      const errJson = await assignRes.json().catch(() => ({}));
+      throw new Error(errJson.error || errJson.message || `Failed to assign KPI metrics (Status ${assignRes.status})`);
     }
 
     // 2. Fetch fresh, official data directly from DB
@@ -999,13 +1096,21 @@ export const evaluationService = {
   },
 
   // Fetch Manager Templates (Form 1..4) from PostgreSQL DB
-  async getManagerTemplates(managerId: string): Promise<{
+  async getManagerTemplates(managerId?: string, teamId?: string, teamName?: string): Promise<{
     templates: ManagerKpiTemplateRecord[];
     active_key: string;
   }> {
     try {
       const token = localStorage.getItem('token') || '';
-      const res = await fetch(`${API_URL}/api/performance/kpi-templates/manager?manager_id=${encodeURIComponent(managerId)}`, {
+      const params = new URLSearchParams();
+      if (managerId) params.append('manager_id', managerId);
+      if (teamId) params.append('team_id', teamId);
+      if (teamName) params.append('team_name', teamName);
+
+      const queryString = params.toString();
+      if (!queryString) return { templates: [], active_key: 'form_1' };
+
+      const res = await fetch(`${API_URL}/api/performance/kpi-templates/manager?${queryString}`, {
         headers: {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         }
@@ -1033,6 +1138,7 @@ export const evaluationService = {
     team_name?: string;
     categories: KPICategory[];
     is_default?: boolean;
+    status?: string;
   }): Promise<{ success: boolean; template?: ManagerKpiTemplateRecord; error?: string }> {
     try {
       const token = localStorage.getItem('token') || '';
@@ -1331,6 +1437,483 @@ export const evaluationService = {
     const updated: EvaluationResponse = {
       ...resp,
       monthly_records: updatedMonthlyRecords,
+      managerScore: overallManagerScore,
+      status: 'employee_in_progress',
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
+  },
+
+  // Yearly Evaluation: Submit Weekly Milestone Actuals by Employee (Option 1)
+  async submitYearlyWeekActuals(
+    responseId: string,
+    weekIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    employeeRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+
+    let baseYear = new Date().getFullYear();
+    if (resp.startDate) {
+      baseYear = new Date(resp.startDate).getFullYear();
+    } else if (resp.periodName) {
+      const match = resp.periodName.match(/\b(20\d\d)\b/);
+      if (match) baseYear = parseInt(match[1], 10);
+    }
+
+    let weeklyRecords: YearlyWeekRecord[] = resp.weekly_records || [];
+    if (!weeklyRecords || weeklyRecords.length === 0) {
+      weeklyRecords = initializeYearlyWeeklyRecords(baseYear);
+    }
+
+    // Calculate week employee score based on categories & kpiEntries
+    let weekScore = 0;
+    categories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+        const actualVal = entry?.actualValue ?? entry?.actual_value ?? '';
+        const calc = calculateKPIScore(kpi, actualVal);
+        weekScore += calc.earnedScore;
+      });
+    });
+    weekScore = Number(weekScore.toFixed(2));
+
+    const updatedWeeklyRecords = weeklyRecords.map(w => {
+      if (w.weekIndex === weekIndex) {
+        return {
+          ...w,
+          status: 'submitted_to_manager' as const,
+          employeeSubmittedAt: new Date().toISOString(),
+          employeeScore: weekScore,
+          employeeRemarks: employeeRemarks || '',
+          kpiEntries: { ...w.kpiEntries, ...kpiEntries }
+        };
+      }
+      return w;
+    });
+
+    const submittedOrApproved = updatedWeeklyRecords.filter(w => w.employeeScore !== undefined && w.status !== 'pending_employee');
+    const overallEmployeeScore = submittedOrApproved.length > 0
+      ? Number((submittedOrApproved.reduce((sum, w) => sum + (w.employeeScore || 0), 0) / submittedOrApproved.length).toFixed(2))
+      : weekScore;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      weekly_records: updatedWeeklyRecords,
+      employeeOverallScore: overallEmployeeScore,
+      status: 'manager_review',
+      employeeSubmittedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
+  },
+
+  // Yearly Evaluation: Approve Weekly Milestone Score by Manager (Option 1)
+  async approveYearlyWeekScore(
+    responseId: string,
+    weekIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    managerRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+
+    let baseYear = new Date().getFullYear();
+    if (resp.startDate) {
+      baseYear = new Date(resp.startDate).getFullYear();
+    } else if (resp.periodName) {
+      const match = resp.periodName.match(/\b(20\d\d)\b/);
+      if (match) baseYear = parseInt(match[1], 10);
+    }
+
+    let weeklyRecords: YearlyWeekRecord[] = resp.weekly_records || [];
+    if (!weeklyRecords || weeklyRecords.length === 0) {
+      weeklyRecords = initializeYearlyWeeklyRecords(baseYear);
+    }
+
+    // Calculate week manager score based on categories & kpiEntries
+    let weekScore = 0;
+    categories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+        const calc = calculateKPIScore(kpi, mgrActual);
+        weekScore += calc.earnedScore;
+      });
+    });
+    weekScore = Number(weekScore.toFixed(2));
+
+    const updatedWeeklyRecords = weeklyRecords.map(w => {
+      if (w.weekIndex === weekIndex) {
+        return {
+          ...w,
+          status: 'manager_approved' as const,
+          managerApprovedAt: new Date().toISOString(),
+          managerScore: weekScore,
+          managerRemarks: managerRemarks || '',
+          kpiEntries: { ...w.kpiEntries, ...kpiEntries }
+        };
+      }
+      return w;
+    });
+
+    const approvedWeeks = updatedWeeklyRecords.filter(w => w.status === 'manager_approved' && w.managerScore !== undefined);
+    const overallManagerScore = approvedWeeks.length > 0
+      ? Number((approvedWeeks.reduce((sum, w) => sum + (w.managerScore || 0), 0) / approvedWeeks.length).toFixed(2))
+      : weekScore;
+
+    const isLastWeekApproved = updatedWeeklyRecords.some(w => w.weekIndex === 52 && w.status === 'manager_approved');
+    const isYearlyComplete = approvedWeeks.length === 52 || isLastWeekApproved;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      weekly_records: updatedWeeklyRecords,
+      managerScore: overallManagerScore,
+      managerReviewedAt: new Date().toISOString(),
+      managerRemarks: managerRemarks || resp.managerRemarks || '',
+      status: isYearlyComplete ? 'approved' : 'employee_in_progress',
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
+  },
+
+  // Yearly Evaluation: Reopen Weekly Milestone by Manager (send back to employee for revision)
+  async reopenYearlyWeek(
+    responseId: string,
+    weekIndex: number,
+    reopenRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    let weeklyRecords: YearlyWeekRecord[] = resp.weekly_records || [];
+    if (!weeklyRecords || weeklyRecords.length === 0) {
+      throw new Error('No weekly records found for this yearly evaluation');
+    }
+
+    const updatedWeeklyRecords = weeklyRecords.map(w => {
+      if (w.weekIndex === weekIndex) {
+        return {
+          ...w,
+          status: 'pending_employee' as const,
+          employeeRemarks: w.employeeRemarks || '',
+          managerRemarks: reopenRemarks || w.managerRemarks || '',
+          managerScore: undefined,
+          managerApprovedAt: undefined
+        };
+      }
+      return w;
+    });
+
+    const approvedWeeks = updatedWeeklyRecords.filter(w => w.status === 'manager_approved' && w.managerScore !== undefined);
+    const overallManagerScore = approvedWeeks.length > 0
+      ? Number((approvedWeeks.reduce((sum, w) => sum + (w.managerScore || 0), 0) / approvedWeeks.length).toFixed(2))
+      : undefined;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      weekly_records: updatedWeeklyRecords,
+      managerScore: overallManagerScore,
+      status: 'employee_in_progress',
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
+  },
+
+  // Yearly Evaluation: Submit Quarterly Milestone Actuals by Employee
+  async submitYearlyQuarterActuals(
+    responseId: string,
+    quarterIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    employeeRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+
+    let baseYear = new Date().getFullYear();
+    if (resp.startDate) {
+      baseYear = new Date(resp.startDate).getFullYear();
+    } else if (resp.periodName) {
+      const match = resp.periodName.match(/\b(20\d\d)\b/);
+      if (match) baseYear = parseInt(match[1], 10);
+    }
+
+    let quarterlyRecords: YearlyQuarterRecord[] = resp.quarterly_records || [];
+    if (!quarterlyRecords || quarterlyRecords.length === 0) {
+      quarterlyRecords = initializeYearlyQuarterlyRecords(baseYear);
+    }
+
+    // Calculate quarter employee score based on categories & kpiEntries
+    let quarterScore = 0;
+    categories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+        const actualVal = entry?.actualValue ?? entry?.actual_value ?? '';
+        const calc = calculateKPIScore(kpi, actualVal);
+        quarterScore += calc.earnedScore;
+      });
+    });
+    quarterScore = Number(quarterScore.toFixed(2));
+
+    const updatedQuarterlyRecords = quarterlyRecords.map(q => {
+      if (q.quarterIndex === quarterIndex) {
+        return {
+          ...q,
+          status: 'submitted_to_manager' as const,
+          employeeSubmittedAt: new Date().toISOString(),
+          employeeScore: quarterScore,
+          employeeRemarks: employeeRemarks || '',
+          kpiEntries: { ...q.kpiEntries, ...kpiEntries }
+        };
+      }
+      return q;
+    });
+
+    const submittedOrApproved = updatedQuarterlyRecords.filter(q => q.employeeScore !== undefined && q.status !== 'pending_employee');
+    const overallEmployeeScore = submittedOrApproved.length > 0
+      ? Number((submittedOrApproved.reduce((sum, q) => sum + (q.employeeScore || 0), 0) / submittedOrApproved.length).toFixed(2))
+      : quarterScore;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      categories,
+      milestone_frequency: 'quarterly',
+      quarterly_records: updatedQuarterlyRecords,
+      employeeOverallScore: overallEmployeeScore,
+      status: 'manager_review',
+      employeeSubmittedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
+  },
+
+  // Yearly Evaluation: Approve Quarterly Milestone Score by Manager
+  async approveYearlyQuarterScore(
+    responseId: string,
+    quarterIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    managerRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+
+    let baseYear = new Date().getFullYear();
+    if (resp.startDate) {
+      baseYear = new Date(resp.startDate).getFullYear();
+    } else if (resp.periodName) {
+      const match = resp.periodName.match(/\b(20\d\d)\b/);
+      if (match) baseYear = parseInt(match[1], 10);
+    }
+
+    let quarterlyRecords: YearlyQuarterRecord[] = resp.quarterly_records || [];
+    if (!quarterlyRecords || quarterlyRecords.length === 0) {
+      quarterlyRecords = initializeYearlyQuarterlyRecords(baseYear);
+    }
+
+    // Calculate quarter manager score based on categories & kpiEntries
+    let quarterScore = 0;
+    categories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+        const calc = calculateKPIScore(kpi, mgrActual);
+        quarterScore += calc.earnedScore;
+      });
+    });
+    quarterScore = Number(quarterScore.toFixed(2));
+
+    const updatedQuarterlyRecords = quarterlyRecords.map(q => {
+      if (q.quarterIndex === quarterIndex) {
+        return {
+          ...q,
+          status: 'manager_approved' as const,
+          managerApprovedAt: new Date().toISOString(),
+          managerScore: quarterScore,
+          managerRemarks: managerRemarks || '',
+          kpiEntries: { ...q.kpiEntries, ...kpiEntries }
+        };
+      }
+      return q;
+    });
+
+    const approvedQuarters = updatedQuarterlyRecords.filter(q => q.status === 'manager_approved' && q.managerScore !== undefined);
+    const overallManagerScore = approvedQuarters.length > 0
+      ? Number((approvedQuarters.reduce((sum, q) => sum + (q.managerScore || 0), 0) / approvedQuarters.length).toFixed(2))
+      : quarterScore;
+
+    const isLastQuarterApproved = updatedQuarterlyRecords.some(q => q.quarterIndex === 4 && q.status === 'manager_approved');
+    const isYearlyComplete = approvedQuarters.length === 4 || isLastQuarterApproved;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      categories,
+      milestone_frequency: 'quarterly',
+      quarterly_records: updatedQuarterlyRecords,
+      managerScore: overallManagerScore,
+      managerReviewedAt: new Date().toISOString(),
+      managerRemarks: managerRemarks || resp.managerRemarks || '',
+      status: isYearlyComplete ? 'approved' : 'employee_in_progress',
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
+  },
+
+  // Yearly Evaluation: Reopen Quarterly Milestone by Manager (send back to employee for revision)
+  async reopenYearlyQuarter(
+    responseId: string,
+    quarterIndex: number,
+    reopenRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+    let quarterlyRecords: YearlyQuarterRecord[] = resp.quarterly_records || [];
+    if (!quarterlyRecords || quarterlyRecords.length === 0) {
+      throw new Error('No quarterly records found for this yearly evaluation');
+    }
+
+    const updatedQuarterlyRecords = quarterlyRecords.map(q => {
+      if (q.quarterIndex === quarterIndex) {
+        return {
+          ...q,
+          status: 'pending_employee' as const,
+          employeeRemarks: q.employeeRemarks || '',
+          managerRemarks: reopenRemarks || q.managerRemarks || '',
+          managerScore: undefined,
+          managerApprovedAt: undefined
+        };
+      }
+      return q;
+    });
+
+    const approvedQuarters = updatedQuarterlyRecords.filter(q => q.status === 'manager_approved' && q.managerScore !== undefined);
+    const overallManagerScore = approvedQuarters.length > 0
+      ? Number((approvedQuarters.reduce((sum, q) => sum + (q.managerScore || 0), 0) / approvedQuarters.length).toFixed(2))
+      : undefined;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      categories,
+      milestone_frequency: 'quarterly',
+      quarterly_records: updatedQuarterlyRecords,
       managerScore: overallManagerScore,
       status: 'employee_in_progress',
       updatedAt: new Date().toISOString()
