@@ -2589,14 +2589,19 @@ if (isHalfDayLeave(leave.total_days)) return false;
   }, [currentEmployee, managerName]);
 
   useEffect(() => {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const userKey = user?.id ? String(user.id) : (user?.employee_id ? String(user.employee_id) : "user");
+    const storageKey = `birthday_popup_shown_${userKey}_${todayStr}`;
+
     if (
       (birthdayEmployees.length > 0 || anniversaryEmployees.length > 0) &&
-      !sessionStorage.getItem("birthday_popup_shown")
+      !localStorage.getItem(storageKey)
     ) {
       setBirthdayModal(true);
-      sessionStorage.setItem("birthday_popup_shown", "true");
+      localStorage.setItem(storageKey, "true");
     }
-  }, [birthdayEmployees, anniversaryEmployees]);
+  }, [birthdayEmployees, anniversaryEmployees, user]);
 
   useEffect(() => {
     if (!showNotificationsPanel && !sessionStorage.getItem("attendance_popup_shown")) {
