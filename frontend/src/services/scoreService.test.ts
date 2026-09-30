@@ -102,5 +102,32 @@ describe('scoreService', () => {
       expect(calculateKPIScore(kpi, 15).achievementPercentage).toBe(100);
       expect(calculateKPIScore(kpi, 15).earnedScore).toBe(20);
     });
+
+    it('should calculate score for range targets (e.g. 12 to 15 projects)', () => {
+      const kpi: KPIItem = {
+        id: '4',
+        name: 'Active Projects',
+        targetScore: 30,
+        targetFromManager: '12 to 15'
+      } as KPIItem;
+
+      // >= 12 (e.g. 12, 14, 15, 18) -> 100% full score
+      expect(calculateKPIScore(kpi, 12).achievementPercentage).toBe(100);
+      expect(calculateKPIScore(kpi, 12).earnedScore).toBe(30);
+
+      expect(calculateKPIScore(kpi, 15).achievementPercentage).toBe(100);
+      expect(calculateKPIScore(kpi, 15).earnedScore).toBe(30);
+
+      expect(calculateKPIScore(kpi, 18).achievementPercentage).toBe(100);
+      expect(calculateKPIScore(kpi, 18).earnedScore).toBe(30);
+
+      // < 12 (e.g. 6 -> 50%, 9 -> 75%)
+      expect(calculateKPIScore(kpi, 6).achievementPercentage).toBe(50);
+      expect(calculateKPIScore(kpi, 6).earnedScore).toBe(15);
+
+      expect(calculateKPIScore(kpi, 9).achievementPercentage).toBe(75);
+      expect(calculateKPIScore(kpi, 9).earnedScore).toBe(22.5);
+    });
   });
 });
+

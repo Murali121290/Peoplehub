@@ -88,7 +88,9 @@ export interface EvaluationCycle {
   endDate: string;
   periodName: string;
   frequency?: string;
+  milestone_frequency?: 'monthly' | 'weekly' | 'quarterly' | 'annual';
   status: 'pending_sm_launch_approval' | 'active' | 'completed';
+  isActive?: boolean;
   categories: KPICategory[];
   createdAt: string;
   updatedAt: string;
@@ -122,6 +124,46 @@ export interface YearlyMonthRecord {
   calendarMonth: number; // 1-12 (4 = April, 1 = January, etc.)
   calendarYear: number;  // e.g. 2026 or 2027
   quarter: 1 | 2 | 3 | 4;
+  startDate?: string; // "2026-04-01"
+  endDate?: string;   // "2026-04-30"
+  status: 'pending_employee' | 'submitted_to_manager' | 'manager_approved' | 'returned_to_employee';
+  employeeSubmittedAt?: string;
+  managerApprovedAt?: string;
+  employeeScore?: number;
+  managerScore?: number;
+  employeeRemarks?: string;
+  managerRemarks?: string;
+  kpiEntries: Record<string, YearlyMonthKPIEntry>;
+}
+
+export interface YearlyWeekRecord {
+  weekIndex: number; // 1 to 52
+  weekLabel: string; // e.g. "W1 (01/04 - 05/04)"
+  startDate: string; // "2026-04-01"
+  endDate: string;   // "2026-04-05"
+  monthIndex: number; // 1 to 12
+  monthName: string;  // "April"
+  quarter: 1 | 2 | 3 | 4;
+  status: 'pending_employee' | 'submitted_to_manager' | 'manager_approved' | 'returned_to_employee';
+  employeeSubmittedAt?: string;
+  managerApprovedAt?: string;
+  employeeScore?: number;
+  managerScore?: number;
+  employeeRemarks?: string;
+  managerRemarks?: string;
+  kpiEntries: Record<string, YearlyMonthKPIEntry>;
+}
+
+export interface YearlyQuarterRecord {
+  quarterIndex: 1 | 2 | 3 | 4; // 1 to 4 (1 = Q1: Apr-Jun, 2 = Q2: Jul-Sep, 3 = Q3: Oct-Dec, 4 = Q4: Jan-Mar)
+  quarterKey: 'q1' | 'q2' | 'q3' | 'q4';
+  quarterLabel: string; // e.g. "Q1 (Apr - Jun)"
+  quarterName: string; // "Quarter 1"
+  monthsIncluded: string; // "April – June"
+  startMonthName: string; // "April"
+  endMonthName: string; // "June"
+  startDate: string; // "2026-04-01"
+  endDate: string; // "2026-06-30"
   status: 'pending_employee' | 'submitted_to_manager' | 'manager_approved' | 'returned_to_employee';
   employeeSubmittedAt?: string;
   managerApprovedAt?: string;
@@ -165,6 +207,9 @@ export interface EvaluationResponse {
   categories?: KPICategory[];
   metrics_data?: any;
   monthly_records?: YearlyMonthRecord[];
+  weekly_records?: YearlyWeekRecord[];
+  quarterly_records?: YearlyQuarterRecord[];
+  milestone_frequency?: 'monthly' | 'weekly' | 'quarterly' | 'annual';
   frequency?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | string;
   startDate?: string;
   endDate?: string;

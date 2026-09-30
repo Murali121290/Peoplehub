@@ -93,8 +93,9 @@ export const parseTargetExpression = (
   targetFromManager: string | number | undefined | null,
   fallbackTargetValue = 1
 ): {
-  operator: '<' | '<=' | '>' | '>=' | 'exact';
+  operator: '<' | '<=' | '>' | '>=' | 'exact' | 'range';
   threshold: number;
+  maxThreshold?: number;
   isLowerBetter: boolean;
 } => {
   if (targetFromManager === undefined || targetFromManager === null || targetFromManager === '') {
@@ -130,6 +131,21 @@ export const parseTargetExpression = (
   // Check for 0 misses / 0 escalations / 0 unplanned absences
   if (/^0\s*(miss|unplanned|delay|escalat|error|issue)/i.test(str) || str === '0') {
     return { operator: '<=', threshold: 0, isLowerBetter: true };
+  }
+
+  // Check for range with "to" or "-" (e.g. "12 to 15", "48000 to 60000", "650 to 750")
+  const rangeMatch = str.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:to|-)\s*([0-9]+(?:\.[0-9]+)?)/i);
+  if (rangeMatch) {
+    const minVal = parseFloat(rangeMatch[1]);
+    const maxVal = parseFloat(rangeMatch[2]);
+    if (!isNaN(minVal) && minVal > 0) {
+      return { 
+        operator: 'range', 
+        threshold: minVal, 
+        maxThreshold: !isNaN(maxVal) && maxVal >= minVal ? maxVal : minVal, 
+        isLowerBetter: false 
+      };
+    }
   }
 
   // Check for standard number extract

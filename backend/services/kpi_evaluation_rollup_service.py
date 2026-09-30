@@ -38,38 +38,96 @@ class RollupDict(dict):
         return dict(self)
 
 
-def get_eval_store_path():
+def get_employee_eval_dir(employee_id: str) -> str:
     uploads_dir = get_uploads_dir()
-    eval_dir = os.path.join(uploads_dir, "evaluations")
-    os.makedirs(eval_dir, exist_ok=True)
-    new_path = os.path.join(eval_dir, "evaluation_store.json")
-    old_path = os.path.join(uploads_dir, "evaluation_store.json")
-    if os.path.exists(old_path) and not os.path.exists(new_path):
-        try:
-            shutil.copy2(old_path, new_path)
-        except Exception:
-            pass
-    return new_path
+    clean_emp = str(employee_id or "").strip().lower().replace("emp-", "").replace("emp_", "")
+    emp_dir = os.path.join(uploads_dir, "employees", clean_emp)
+    os.makedirs(emp_dir, exist_ok=True)
+    return emp_dir
 
 
-def read_eval_store():
-    path = get_eval_store_path()
+def get_employee_eval_path(employee_id: str) -> str:
+    emp_dir = get_employee_eval_dir(employee_id)
+    return os.path.join(emp_dir, "evaluation.json")
+
+
+def read_employee_evaluations(employee_id: str) -> list:
+    """Reads all evaluation responses for a specific employee from their evaluation.json file."""
+    if not employee_id:
+        return []
+    clean_emp = str(employee_id).strip().lower().replace("emp-", "").replace("emp_", "")
+    path = get_employee_eval_path(clean_emp)
     if not os.path.exists(path):
-        return {"cycles": [], "responses": []}
+        return []
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            if not isinstance(data, dict):
-                return {"cycles": [], "responses": []}
-            return data
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                return data.get("responses", [])
+            return []
     except Exception:
-        return {"cycles": [], "responses": []}
+        return []
+
+
+def write_employee_evaluations(employee_id: str, responses: list):
+    """Writes evaluation responses for a specific employee into their evaluation.json file."""
+    if not employee_id:
+        return
+    clean_emp = str(employee_id).strip().lower().replace("emp-", "").replace("emp_", "")
+    path = get_employee_eval_path(clean_emp)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({
+            "employee_id": clean_emp,
+            "updated_at": datetime.utcnow().isoformat(),
+            "responses": responses
+        }, f, ensure_ascii=False, indent=2)
+
+
+def read_all_employee_evaluations() -> list:
+    """Scans data/uploads/employees/*/evaluation.json and aggregates all employee responses."""
+    uploads_dir = get_uploads_dir()
+    emp_root = os.path.join(uploads_dir, "employees")
+    all_responses = []
+    if not os.path.exists(emp_root):
+        return all_responses
+    try:
+        for entry in os.scandir(emp_root):
+            if entry.is_dir():
+                eval_file = os.path.join(entry.path, "evaluation.json")
+                if os.path.exists(eval_file):
+                    try:
+                        with open(eval_file, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            resps = data if isinstance(data, list) else (data.get("responses", []) if isinstance(data, dict) else [])
+                            all_responses.extend(resps)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return all_responses
+
+
+def read_eval_store():
+    return {
+        "cycles": [],
+        "responses": read_all_employee_evaluations()
+    }
 
 
 def write_eval_store(data):
-    path = get_eval_store_path()
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    if not isinstance(data, dict):
+        return
+    if "responses" in data and isinstance(data["responses"], list):
+        emp_groups = {}
+        for r in data["responses"]:
+            emp_id = str(r.get("employeeCode") or r.get("employeeId") or r.get("employee_id") or "").strip()
+            if emp_id:
+                emp_groups.setdefault(emp_id, []).append(r)
+        for emp_id, resps in emp_groups.items():
+            write_employee_evaluations(emp_id, resps)
 
 
 def _get_field(obj, *field_names, default=None):
