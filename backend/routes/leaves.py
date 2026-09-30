@@ -105,6 +105,28 @@ def serialize_leave(leave):
         "cancellable_dates": get_cancellable_dates(leave.from_date, leave.to_date) if (leave.request_type == "Leave" and leave.from_date and leave.to_date) else [],
     }
 
+def get_permission_cycle_range(target_date):
+    """
+    Returns (cycle_start, cycle_end) for the 25th-to-24th monthly permission cycle.
+    """
+    from datetime import date
+    if not target_date:
+        target_date = date.today()
+    if target_date.day >= 25:
+        cycle_start = date(target_date.year, target_date.month, 25)
+        if target_date.month == 12:
+            cycle_end = date(target_date.year + 1, 1, 24)
+        else:
+            cycle_end = date(target_date.year, target_date.month + 1, 24)
+    else:
+        if target_date.month == 1:
+            cycle_start = date(target_date.year - 1, 12, 25)
+        else:
+            cycle_start = date(target_date.year, target_date.month - 1, 25)
+        cycle_end = date(target_date.year, target_date.month, 24)
+    return cycle_start, cycle_end
+
+
 @leave_bp.route("/", methods=["POST"])
 def apply_leave():
 
@@ -166,7 +188,21 @@ def apply_leave():
             if balance:
                 available_balance = float(balance.available or 0.0)
 
-            if available_balance <= 0.0:
+            # Deduct pending leave requests of the same type to get effective balance
+            emp_ids = [str(employee.employee_id)]
+            if employee and employee.id:
+                emp_ids.append(str(employee.id))
+
+            pending_leaves = LeaveRequest.query.filter(
+                LeaveRequest.employee_id.in_(emp_ids),
+                LeaveRequest.request_type == "Leave",
+                func.lower(LeaveRequest.leave_type) == leave_type_lower,
+                LeaveRequest.status == "Pending"
+            ).all()
+            pending_days = sum(float(l.total_days or 0.0) for l in pending_leaves)
+            effective_balance = max(0.0, available_balance - pending_days)
+
+            if effective_balance <= 0.0:
                 if "loss of pay" not in leave_type_lower and "lop" not in leave_type_lower:
                     leave.leave_type = f"{leave.leave_type} (Loss of Pay)"
 
@@ -190,7 +226,7 @@ def apply_leave():
                 "%H:%M"
             ).time()
 
-            # Ensure minimum duration is 1 hour
+            # Ensure valid duration
             from datetime import timedelta
             dt_from = datetime.combine(leave.permission_date, leave.from_time)
             dt_to = datetime.combine(leave.permission_date, leave.to_time)
@@ -205,20 +241,46 @@ def apply_leave():
                     "error": "Permission duration must be exactly 30 minutes, 1 hour, or 2 hours."
                 }), 400
 
-            # Validate against database permission balance row
-            from models.leave import EmployeeLeaveBalance
-            from sqlalchemy import func
-            perm_bal = EmployeeLeaveBalance.query.filter(
-                EmployeeLeaveBalance.employee_id == employee.id if employee else None,
-                func.lower(EmployeeLeaveBalance.leave_type) == "permission"
-            ).first()
+            # Calculate active monthly permission cycle (25th to 24th)
+            cycle_start, cycle_end = get_permission_cycle_range(leave.permission_date)
 
-            available_hours = float(perm_bal.available) if perm_bal else 2.0
-            # if duration_hours > available_hours:
-            #     return jsonify({
-            #         "success": False,
-            #         "error": f"Applying this permission would exceed your remaining monthly permission limit. You have {available_hours:.2f} hours remaining."
-            #     }), 400
+            # Query all existing permission requests in this cycle (Approved and Pending)
+            emp_ids = [str(employee.employee_id)]
+            if employee and employee.id:
+                emp_ids.append(str(employee.id))
+
+            existing_perms = LeaveRequest.query.filter(
+                LeaveRequest.employee_id.in_(emp_ids),
+                LeaveRequest.request_type == "Permission",
+                LeaveRequest.permission_date >= cycle_start,
+                LeaveRequest.permission_date <= cycle_end,
+                LeaveRequest.status.in_(["Approved", "Pending"])
+            ).all()
+
+            approved_hours = 0.0
+            pending_hours = 0.0
+
+            for p in existing_perms:
+                if p.from_time and p.to_time:
+                    p_dt_from = datetime.combine(p.permission_date, p.from_time)
+                    p_dt_to = datetime.combine(p.permission_date, p.to_time)
+                    if p_dt_to < p_dt_from:
+                        p_dt_to += timedelta(days=1)
+                    p_hrs = (p_dt_to - p_dt_from).total_seconds() / 3600.0
+                    if p.status == "Approved":
+                        approved_hours += p_hrs
+                    elif p.status == "Pending":
+                        pending_hours += p_hrs
+
+            total_consumed = approved_hours + pending_hours
+            total_limit = 2.0  # Monthly permission limit is 2.0 hours
+            remaining_available = max(0.0, total_limit - total_consumed)
+
+            if duration_hours > (remaining_available + 0.001):
+                return jsonify({
+                    "success": False,
+                    "error": f"Applying this permission ({duration_hours:.1f} hrs) exceeds your remaining monthly permission allowance. You only have {remaining_available:.1f} hrs available for this cycle ({cycle_start} to {cycle_end}). Used: {approved_hours:.1f} hrs, Pending: {pending_hours:.1f} hrs out of {total_limit:.1f} hrs limit."
+                }), 400
 
             leave.total_days = 0
 
@@ -328,6 +390,45 @@ def approve_leave(leave_id):
         approver_name = approver.full_name if approver else "Manager"
         
         if leave.request_type == "Permission":
+            # Safeguard: Verify that total approved permissions in this cycle don't exceed 2.0 hours
+            cycle_start, cycle_end = get_permission_cycle_range(leave.permission_date)
+            emp_ids = [str(employee.employee_id)]
+            if employee.id:
+                emp_ids.append(str(employee.id))
+
+            other_approved = LeaveRequest.query.filter(
+                LeaveRequest.employee_id.in_(emp_ids),
+                LeaveRequest.request_type == "Permission",
+                LeaveRequest.permission_date >= cycle_start,
+                LeaveRequest.permission_date <= cycle_end,
+                LeaveRequest.status == "Approved",
+                LeaveRequest.id != leave.id
+            ).all()
+
+            from datetime import timedelta
+            ft = leave.from_time
+            tt = leave.to_time
+            dt_from = datetime.combine(leave.permission_date, ft)
+            dt_to = datetime.combine(leave.permission_date, tt)
+            if dt_to < dt_from:
+                dt_to += timedelta(days=1)
+            this_perm_hours = (dt_to - dt_from).total_seconds() / 3600.0
+
+            already_approved_hours = 0.0
+            for o in other_approved:
+                if o.from_time and o.to_time:
+                    o_from = datetime.combine(o.permission_date, o.from_time)
+                    o_to = datetime.combine(o.permission_date, o.to_time)
+                    if o_to < o_from:
+                        o_to += timedelta(days=1)
+                    already_approved_hours += (o_to - o_from).total_seconds() / 3600.0
+
+            if (already_approved_hours + this_perm_hours) > 2.001:
+                return jsonify({
+                    "success": False,
+                    "error": f"Cannot approve: Employee has already utilized {already_approved_hours:.1f} hrs of approved permissions in this cycle. Approving this ({this_perm_hours:.1f} hrs) would exceed the 2.0 hrs monthly limit."
+                }), 400
+
             leave.status = "Approved"
             leave.approved_by = approver_name
             leave.approved_at = datetime.utcnow()
@@ -340,11 +441,7 @@ def approve_leave(leave_id):
                 func.lower(EmployeeLeaveBalance.leave_type) == "permission"
             ).first()
             if perm_bal:
-                ft = leave.from_time
-                tt = leave.to_time
-                perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
-                perm_hours = max(perm_seconds, 0) / 3600.0
-                perm_bal.available = max(0.0, (perm_bal.available or 0.0) - perm_hours)
+                perm_bal.available = max(0.0, 2.0 - (already_approved_hours + this_perm_hours))
 
             # Commit BEFORE recalculating attendance so permission is in database
             db.session.commit()
