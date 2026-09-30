@@ -43,15 +43,7 @@ const BASE_URL = `${API_URL}/api`;
 
 const isHalfDayLeave = (totalDays: any) => Number(totalDays) <= 0.5;
 
-const checkShiftLock = (shiftName: string) => {
-  const currentHour = new Date().getHours();
-  const cleanShift = (shiftName || "").trim().toLowerCase();
-  if (cleanShift === "first shift" && currentHour < 7) {
-    return { isLocked: true, timeLabel: "07:00 AM" };
-  }
-  if (cleanShift === "night shift" && currentHour < 22) {
-    return { isLocked: true, timeLabel: "10:00 PM" };
-  }
+const checkShiftLock = (_shiftName: string) => {
   return { isLocked: false, timeLabel: "" };
 };
 
@@ -819,12 +811,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
     if (!shouldProcessChange) {
       try {
         const activeShift = todayActiveShift || "General Shift";
-        const { isLocked, timeLabel } = checkShiftLock(activeShift);
-        if (isLocked) {
-          toast.error(`${activeShift} starts at ${timeLabel}. Check-in is locked until then.`);
-          setIsActionLoading(false);
-          return;
-        }
         await handleCheckIn(activeShift);
       } catch (err) {
         console.error(err);
@@ -881,19 +867,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
         loadShiftRequests();
         loadManagerShiftRequests();
 
-        const { isLocked, timeLabel } = checkShiftLock(targetShift);
-        if (isLocked) {
-          toast.error(`${targetShift} starts at ${timeLabel}. Check-in is locked until then.`);
-          return;
-        }
-
         await handleCheckIn(targetShift);
       } else {
-        const { isLocked, timeLabel } = checkShiftLock(targetShift);
-        if (isLocked) {
-          toast.error(`${targetShift} starts at ${timeLabel}. Check-in is locked until then.`);
-          return;
-        }
         await handleCheckIn(targetShift);
       }
     } catch (err) {
