@@ -13,6 +13,7 @@ class ManagerKpiTemplate(db.Model):
     team_name = db.Column(db.String(255), nullable=True)
     categories = db.Column(db.JSON, nullable=True)
     is_default = db.Column(db.Boolean, nullable=True, default=False)
+    status = db.Column(db.String(50), nullable=True, default="draft")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -27,6 +28,7 @@ class ManagerKpiTemplate(db.Model):
             "team_name": self.team_name,
             "categories": self.categories or [],
             "is_default": bool(self.is_default),
+            "status": self.status or "draft",
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }

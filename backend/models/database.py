@@ -131,6 +131,7 @@ def init_db(app=None):
             """))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mgr_template_mgr_id ON manager_kpi_templates (manager_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mgr_template_key ON manager_kpi_templates (template_key)"))
+            conn.execute(text("ALTER TABLE manager_kpi_templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'draft'"))
             conn.commit()
     except Exception as dberr:
         print(f"Error checking/adding employee status columns: {dberr}")
