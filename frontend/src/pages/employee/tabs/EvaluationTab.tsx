@@ -11106,12 +11106,12 @@ export const EvaluationTab: React.FC = () => {
                       </div>
 
                       {/* Deliverables Table */}
-                      <div className="overflow-x-auto">
+                      <div className="overflow-x-auto pr-3 sm:pr-8">
                         <table className="w-full text-left text-xs bg-white rounded-xl border border-slate-200/80 overflow-hidden">
                           <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200 text-[11px]">
                             <tr>
-                              <th className="px-2.5 py-1.5 text-left">Deliverable Name</th>
-                              <th className="px-2 py-1.5 w-28 text-center">Target</th>
+                              <th className="px-2.5 py-1.5 text-left w-[42%]">Deliverable Name</th>
+                              <th className="px-2 py-1.5 w-24 text-center">Target</th>
                               <th className="px-2 py-1.5 w-20 text-center">Score %</th>
                               <th className="px-2 py-1.5 w-20 text-center">Unit</th>
                               <th className="px-2 py-1.5 w-24 text-center">Type</th>
@@ -15242,12 +15242,12 @@ export const EvaluationTab: React.FC = () => {
                           </div>
 
                           {/* Deliverables Table */}
-                          <div className="overflow-x-auto">
+                          <div className="overflow-x-auto pr-3 sm:pr-8">
                             <table className="w-full text-left text-xs bg-white rounded-xl border border-slate-200/80 overflow-hidden">
                               <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200 text-[11px]">
                                 <tr>
-                                  <th className="px-2.5 py-1.5 text-left">Deliverable Name</th>
-                                  <th className="px-2 py-1.5 w-28 text-center">Target</th>
+                                  <th className="px-2.5 py-1.5 text-left w-[42%]">Deliverable Name</th>
+                                  <th className="px-2 py-1.5 w-24 text-center">Target</th>
                                   <th className="px-2 py-1.5 w-20 text-center">Score %</th>
                                   <th className="px-2 py-1.5 w-20 text-center">Unit</th>
                                   <th className="px-2 py-1.5 w-24 text-center">Type</th>
@@ -18451,12 +18451,12 @@ export const EvaluationTab: React.FC = () => {
                     </div>
 
                     {/* Deliverables Table */}
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto pr-3 sm:pr-8">
                       <table className="w-full text-left text-xs bg-white rounded-xl border border-slate-200/80 overflow-hidden">
                         <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200">
                           <tr>
-                            <th className="px-3 py-2 text-left">Deliverable Name</th>
-                            <th className="px-3 py-2 w-32 text-center">Target</th>
+                            <th className="px-3 py-2 text-left w-[42%]">Deliverable Name</th>
+                            <th className="px-3 py-2 w-28 text-center">Target</th>
                             <th className="px-3 py-2 w-24 text-center">Score %</th>
                             <th className="px-3 py-2 w-24 text-center">Unit</th>
                             <th className="px-3 py-2 w-24 text-center">Type</th>
