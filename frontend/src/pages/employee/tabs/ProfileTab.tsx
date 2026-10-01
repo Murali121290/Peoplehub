@@ -60,13 +60,14 @@ const COUNTRY_CODES = [
 
 interface ProfileTabProps {
   employeeId?: string | number;
+  initialEditing?: boolean;
 }
 
-export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
+export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditing }) => {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const { updateUser, logout } = useAuthStore();
   const [profile, setProfile] = useState<any>({});
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(Boolean(initialEditing || employeeId));
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState("personal");
@@ -296,6 +297,29 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
   });
 
   const isHrOrAdmin = user.access_level?.toLowerCase() === "hr" || user.access_level?.toLowerCase() === "admin";
+  const activeEmpId = employeeId || localStorage.getItem("employee_id");
+  const isSavedInLocal = activeEmpId ? localStorage.getItem(`profile_filled_${activeEmpId}`) === "true" : false;
+  const isProfileCompleted = Boolean(
+    isSavedInLocal ||
+    profile.profile_completed ||
+    user.profile_completed ||
+    (profile.dob && profile.gender && profile.blood_group && (profile.phone || phoneDigits))
+  );
+  // HR and Admin can always edit anytime. Regular employees can only fill once if not completed.
+  const canEdit = isHrOrAdmin || Boolean(employeeId) || !isProfileCompleted;
+
+  useEffect(() => {
+    if (employeeId || initialEditing) {
+      setIsEditing(true);
+    }
+  }, [employeeId, initialEditing]);
+
+  useEffect(() => {
+    if (!canEdit && isEditing) {
+      setIsEditing(false);
+    }
+  }, [canEdit, isEditing]);
+
   const [teams, setTeams] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
 
@@ -797,7 +821,12 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
       
       const updatedUserFields: any = {};
       updatedUserFields.image_version = Date.now();
+      updatedUserFields.profile_completed = true;
       updateUser(updatedUserFields);
+      if (activeEmpId) {
+        localStorage.setItem(`profile_filled_${activeEmpId}`, "true");
+      }
+      setProfile((prev: any) => ({ ...prev, profile_completed: true }));
 
       fetchProfile();
     } catch (err: any) {
@@ -1710,33 +1739,35 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId }) => {
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
-          {isEditing ? (
-            <>
+          {canEdit && (
+            isEditing ? (
+              <>
+                <button
+                  type="button"
+                  className="px-4 py-2 border border-neutral-300 rounded-xl hover:bg-neutral-100 text-sm font-semibold text-neutral-700 transition-all shadow-sm whitespace-nowrap shrink-0"
+                  onClick={handleCancelEdit}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-primary-500/10 transition-all disabled:opacity-60 whitespace-nowrap shrink-0"
+                  onClick={handleSaveAll}
+                  disabled={isSavingAll}
+                >
+                  {isSavingAll ? "Saving..." : "Save Changes"}
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
-                className="px-4 py-2 border border-neutral-300 rounded-xl hover:bg-neutral-100 text-sm font-semibold text-neutral-700 transition-all shadow-sm whitespace-nowrap shrink-0"
-                onClick={handleCancelEdit}
+                className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-primary-500/10 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 animate-pulse hover:animate-none"
+                onClick={() => setIsEditing(true)}
               >
-                Cancel
+                <PencilIcon className="w-4 h-4 shrink-0" />
+                Edit Profile
               </button>
-              <button
-                type="button"
-                className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-primary-500/10 transition-all disabled:opacity-60 whitespace-nowrap shrink-0"
-                onClick={handleSaveAll}
-                disabled={isSavingAll}
-              >
-                {isSavingAll ? "Saving..." : "Save Changes"}
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-primary-500/10 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 animate-pulse hover:animate-none"
-              onClick={() => setIsEditing(true)}
-            >
-              <PencilIcon className="w-4 h-4 shrink-0" />
-              Edit Profile
-            </button>
+            )
           )}
         </div>
       </div>
