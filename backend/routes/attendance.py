@@ -3884,10 +3884,7 @@ def approve_attendance(employee_id):
             from models.leave import LeaveRequest
             from sqlalchemy import or_ as sql_or
             leave = LeaveRequest.query.filter(
-                sql_or(
-                    LeaveRequest.employee_id == str(emp.id),
-                    LeaveRequest.employee_id == emp.employee_id
-                ),
+                LeaveRequest.employee_id == emp.employee_id,
                 LeaveRequest.from_date <= target_date,
                 LeaveRequest.to_date >= target_date
             ).filter(LeaveRequest.status.in_(["Pending", "Approved"])).first()
@@ -3964,10 +3961,7 @@ def approve_attendance(employee_id):
                 from models.leave import LeaveRequest
                 from sqlalchemy import or_ as sql_or
                 leave_req = LeaveRequest.query.filter(
-                    sql_or(
-                        LeaveRequest.employee_id == str(emp.id),
-                        LeaveRequest.employee_id == emp.employee_id
-                    ),
+                    LeaveRequest.employee_id == emp.employee_id,
                     LeaveRequest.from_date <= target_date,
                     LeaveRequest.to_date >= target_date,
                     LeaveRequest.status == "Pending"
