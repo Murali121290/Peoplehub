@@ -2706,22 +2706,28 @@ def export_monthly_attendance():
 
                 # Check if there is an approved leave request on this date
                 day_leaves = [l for l in emp_leaves if l.from_date <= d and l.to_date >= d]
-                leave_val = 0.0
-                is_cl_sl_leave = False
-                is_pl_leave = False
-                is_lop_leave = False
+                total_day_leave_val = 0.0
+                day_leave_breakdown = []
 
-                if day_leaves:
-                    first_leave = day_leaves[0]
-                    leave_type_lower = (first_leave.leave_type or "").lower()
-                    is_cl_sl_leave = "casual" in leave_type_lower or "sick" in leave_type_lower or "cl/sl" in leave_type_lower or "cl / sl" in leave_type_lower
-                    is_pl_leave = "privilege" in leave_type_lower or "pl" in leave_type_lower
-                    is_lop_leave = "loss of pay" in leave_type_lower or "lop" in leave_type_lower or "unpaid" in leave_type_lower
+                for l in day_leaves:
+                    l_val = 0.5 if (l.total_days is not None and l.total_days <= 0.5) else 1.0
+                    allocated_val = min(l_val, max(0.0, 1.0 - total_day_leave_val))
+                    if allocated_val <= 0.0:
+                        continue
+                    total_day_leave_val += allocated_val
                     
-                    if first_leave.total_days is not None and first_leave.total_days <= 0.5:
-                        leave_val = 0.5
-                    else:
-                        leave_val = 1.0
+                    leave_type_lower = (l.leave_type or "").lower()
+                    is_cl_sl = "casual" in leave_type_lower or "sick" in leave_type_lower or "cl/sl" in leave_type_lower or "cl / sl" in leave_type_lower
+                    is_pl = "privilege" in leave_type_lower or "pl" in leave_type_lower
+                    is_lop = "loss of pay" in leave_type_lower or "lop" in leave_type_lower or "unpaid" in leave_type_lower
+
+                    day_leave_breakdown.append({
+                        "val": allocated_val,
+                        "is_half": (allocated_val <= 0.5),
+                        "is_cl_sl": is_cl_sl,
+                        "is_pl": is_pl,
+                        "is_lop": is_lop
+                    })
 
                 # Check if there is an approved one day wages request covering this date
                 day_wages = [w for w in emp_wages if w.from_date <= d and w.to_date >= d]
@@ -2776,33 +2782,35 @@ def export_monthly_attendance():
                 else:
                     # Normal working day
                     effective_status = att.status if att else None
-                    if leave_val > 0.0:
-                        # Prioritize approved leave
-                        needed_leave = min(leave_val, 1.0)
-                        is_half_leave = (needed_leave <= 0.5)
-                        if is_lop_leave:
-                            lop_leave_taken += needed_leave
-                            if (d, is_half_leave) not in lop_dates:
-                                lop_dates.append((d, is_half_leave))
-                        elif is_cl_sl_leave:
-                            cl_sl_taken += needed_leave
-                            if (d, is_half_leave) not in leave_dates:
-                                leave_dates.append((d, is_half_leave))
-                        elif is_pl_leave:
-                            pl_taken += needed_leave
-                            if (d, is_half_leave) not in leave_dates:
-                                leave_dates.append((d, is_half_leave))
+                    if total_day_leave_val > 0.0:
+                        # Prioritize approved leave(s)
+                        for item in day_leave_breakdown:
+                            item_val = item["val"]
+                            is_half = item["is_half"]
+                            if item["is_lop"]:
+                                lop_leave_taken += item_val
+                                if (d, is_half) not in lop_dates:
+                                    lop_dates.append((d, is_half))
+                            elif item["is_cl_sl"]:
+                                cl_sl_taken += item_val
+                                if (d, is_half) not in leave_dates:
+                                    leave_dates.append((d, is_half))
+                            elif item["is_pl"]:
+                                pl_taken += item_val
+                                if (d, is_half) not in leave_dates:
+                                    leave_dates.append((d, is_half))
                         
                         # Process remaining day portion with attendance
-                        remaining_day = 1.0 - needed_leave
+                        remaining_day = max(0.0, 1.0 - total_day_leave_val)
                         if remaining_day > 0.0:
                             has_punches = bool(att and (att.check_in or att.card_check_in or att.check_out or att.card_check_out))
                             if att and (effective_status in ["Present", "Half Day", "Half Day Present"] or has_punches):
                                 total_working_days += remaining_day
                             else:
                                 unauthorized_absences += remaining_day
-                                if (d, True) not in absent_dates:
-                                    absent_dates.append((d, True))
+                                is_half_absent = (remaining_day <= 0.5)
+                                if (d, is_half_absent) not in absent_dates:
+                                    absent_dates.append((d, is_half_absent))
                     else:
                         # No approved leave
                         if att and effective_status == "Present":
@@ -3170,7 +3178,9 @@ def export_monthly_attendance():
                 l_end = min(effective_end_date, l.to_date)
                 cur_l = l_start
                 while cur_l <= l_end:
-                    emp_leave_map[cur_l] = l
+                    if cur_l not in emp_leave_map:
+                        emp_leave_map[cur_l] = []
+                    emp_leave_map[cur_l].append(l)
                     cur_l += timedelta(days=1)
 
             # Metrics counters for summary
@@ -3227,11 +3237,15 @@ def export_monthly_attendance():
 
                 # Check Approved Leave
                 if d in emp_leave_map:
-                    leave_obj = emp_leave_map[d]
-                    l_type = getattr(leave_obj, "leave_type", "Leave") or "Leave"
-                    l_dur = getattr(leave_obj, "duration", "") or ""
-                    half_suffix = " (Half)" if "half" in l_dur.lower() else ""
-                    c.value = f"Leave\n[{l_type}{half_suffix}]"
+                    leave_list = emp_leave_map[d]
+                    leave_labels = []
+                    for leave_obj in leave_list:
+                        l_type = getattr(leave_obj, "leave_type", "Leave") or "Leave"
+                        l_dur = getattr(leave_obj, "duration", "") or ""
+                        is_h = "half" in l_dur.lower() or (getattr(leave_obj, "total_days", 1.0) is not None and getattr(leave_obj, "total_days", 1.0) <= 0.5)
+                        half_suffix = " (Half)" if is_h else ""
+                        leave_labels.append(f"{l_type}{half_suffix}")
+                    c.value = f"Leave\n[{' + '.join(leave_labels)}]"
                     c.font = bio_leave_font
                     c.fill = bio_leave_fill
                     total_leave_count += 1
