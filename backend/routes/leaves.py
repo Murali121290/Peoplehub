@@ -204,7 +204,7 @@ def apply_leave():
 
             if effective_balance <= 0.0:
                 if "loss of pay" not in leave_type_lower and "lop" not in leave_type_lower:
-                    leave.leave_type = f"{leave.leave_type} (Loss of Pay)"
+                    leave.leave_type = "Loss of Pay"
 
         # ===========================
         # PERMISSION REQUEST
@@ -514,7 +514,7 @@ def approve_leave(leave_id):
         if available_balance <= 0.0:
             # Entire leave is LOP
             if "loss of pay" not in leave_type and "lop" not in leave_type:
-                leave.leave_type = f"{leave.leave_type} (Loss of Pay)"
+                leave.leave_type = "Loss of Pay"
             leave.status = "Approved"
             leave.approved_by = approver_name
             leave.approved_at = datetime.utcnow()
@@ -560,7 +560,7 @@ def approve_leave(leave_id):
                 employee_id=leave.employee_id,
                 employee_name=leave.employee_name,
                 request_type="Leave",
-                leave_type=f"{leave.leave_type} (Loss of Pay)",
+                leave_type="Loss of Pay",
                 from_date=lop_from_date,
                 to_date=original_to_date,
                 total_days=lop_days,
