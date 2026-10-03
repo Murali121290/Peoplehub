@@ -3,7 +3,7 @@ import { Toaster, ToastIcon, toast, resolveValue } from 'react-hot-toast';
 
 export const AppToaster: React.FC = () => (
   <Toaster
-    position="top-right"
+    position="bottom-right"
     containerStyle={{ zIndex: 999999 }}
     toastOptions={{
       duration: 5000,

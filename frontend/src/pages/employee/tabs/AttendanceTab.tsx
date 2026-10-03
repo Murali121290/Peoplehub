@@ -117,6 +117,19 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
   const currentPayrollMonth = getInitialPayrollMonth();
   const currentPayrollYear = getInitialPayrollYear();
   const isCurrentPayrollMonthView = selectedMonth === currentPayrollMonth && selectedYear === currentPayrollYear;
+
+  // Allow resolution for current payroll month OR a 1-day grace window for the 24th cutoff day (on 25th only)
+  const isResolvablePayrollDate = (dateStr: string) => {
+    if (isCurrentPayrollMonthView) return true;
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const cellDate = new Date(y, m - 1, d);
+    const diffDays = Math.floor((today.getTime() - cellDate.getTime()) / (1000 * 60 * 60 * 24));
+    // If the date is 24th and we are within 1 day after (i.e. on 25th only)
+    if (d === 24 && diffDays >= 0 && diffDays <= 1) {
+      return true;
+    }
+    return false;
+  };
   const [viewMode, setViewMode] = useState<"calendar" | "grid">("grid");
   const [statusFilter, setStatusFilter] = useState<string>("All");
 
@@ -531,8 +544,10 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     if (isOngoingToday) return;
 
     const noLeaveOrHalf = (!cell.leaveType || cell.halfDayDuration);
+    const isResolvable = isResolvablePayrollDate(cell.dateStr);
+
     if (
-      isCurrentPayrollMonthView &&
+      isResolvable &&
       (cell.status === "Absent" || cell.status === "Half Day" || cell.status === "Leave" || cell.badgeLabel?.includes("Loss of Pay")) &&
       noLeaveOrHalf &&
       cell.dateStr <= todayKey &&
@@ -541,13 +556,13 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       setActionChoiceCell(cell);
     } else if (
       !isManager &&
-      isCurrentPayrollMonthView &&
+      isResolvable &&
       (cell.status === "Weekly Off" || cell.status === "Holiday" || ((cell.isWeeklyOff || cell.isCompanyHoliday) && !cell.wagesStatus)) &&
       cell.dateStr <= todayKey
     ) {
       setResolvingWeekendCell(cell);
     } else if (
-      isCurrentPayrollMonthView &&
+      isResolvable &&
       cell.dateStr < todayKey &&
       cell.status !== "Future" &&
       cell.status !== "Not Joined" &&
@@ -1675,34 +1690,32 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       {/* Status */}
                       <td
                         onClick={() => {
-                          const isClickableAbsent = isCurrentPayrollMonthView &&
+                          const isResolvable = isResolvablePayrollDate(dayObj.dateStr);
+                          const isClickableAbsent = isResolvable &&
                             (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                             (!dayObj.leaveType || dayObj.halfDayDuration) &&
                             (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg"))) &&
-
                             dayObj.dateStr <= todayKey;
-                          const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
+                          const isClickableWeekend = !isManager && isResolvable &&
                             (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
-
                             dayObj.dateStr <= todayKey;
-                          const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
+                          const isClickableRegularize = isResolvable && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
                           if (isClickableAbsent || isClickableWeekend || isClickableRegularize) {
                             handleCellClick(dayObj);
                           }
                         }}
                         title={
                           (() => {
-                            const isClickableAbsent = isCurrentPayrollMonthView &&
+                            const isResolvable = isResolvablePayrollDate(dayObj.dateStr);
+                            const isClickableAbsent = isResolvable &&
                               (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                               (!dayObj.leaveType || dayObj.halfDayDuration) &&
                               (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg"))) &&
-
                               dayObj.dateStr <= todayKey;
-                            const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
+                            const isClickableWeekend = !isManager && isResolvable &&
                               (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
-
                               dayObj.dateStr <= todayKey;
-                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
+                            const isClickableRegularize = isResolvable && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
                             if (isClickableAbsent) return "Click to apply leave / regularize absent day";
                             if (isClickableWeekend) return "Click to request wages for non-working day";
                             if (isClickableRegularize) return "Click to regularize attendance";
@@ -1711,17 +1724,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                         }
                         className={
                           (() => {
-                            const isClickableAbsent = isCurrentPayrollMonthView &&
+                            const isResolvable = isResolvablePayrollDate(dayObj.dateStr);
+                            const isClickableAbsent = isResolvable &&
                               (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                               (!dayObj.leaveType || dayObj.halfDayDuration) &&
                               (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg"))) &&
-
                               dayObj.dateStr <= todayKey;
-                            const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
+                            const isClickableWeekend = !isManager && isResolvable &&
                               (dayObj.status === "Weekly Off" || dayObj.status === "Holiday" || ((dayObj.isWeeklyOff || dayObj.isCompanyHoliday) && !dayObj.wagesStatus)) &&
-
                               dayObj.dateStr <= todayKey;
-                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
+                            const isClickableRegularize = isResolvable && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
                             const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
                             return `p-3 text-center border-r border-neutral-300 transition-colors ${isClickable ? "cursor-pointer hover:bg-neutral-50" : ""
                               }`;
@@ -1730,17 +1742,16 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                       >
                         <div className="flex flex-col items-center gap-1.5 justify-center">
                           {(() => {
-                            const isClickableAbsent = isCurrentPayrollMonthView &&
+                            const isResolvable = isResolvablePayrollDate(dayObj.dateStr);
+                            const isClickableAbsent = isResolvable &&
                               (dayObj.status === "Absent" || dayObj.status === "Half Day" || (dayObj.status === "Leave" && dayObj.halfDayDuration)) &&
                               (!dayObj.leaveType || dayObj.halfDayDuration) &&
                               (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg"))) &&
-
                               dayObj.dateStr <= todayKey;
-                            const isClickableWeekend = !isManager && isCurrentPayrollMonthView &&
+                            const isClickableWeekend = !isManager && isResolvable &&
                               (dayObj.status === "Weekly Off" || dayObj.status === "Holiday") &&
-
                               dayObj.dateStr <= todayKey;
-                            const isClickableRegularize = isCurrentPayrollMonthView && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
+                            const isClickableRegularize = isResolvable && dayObj.dateStr < todayKey && dayObj.status !== "Future" && dayObj.status !== "Not Joined" && dayObj.status !== "Present" && (!dayObj.leaveType || dayObj.halfDayDuration) && (!dayObj.badgeLabel || (!dayObj.badgeLabel.includes("Half Day Present") && !dayObj.badgeLabel.includes("Pending Reg")));
                             const isClickable = isClickableAbsent || isClickableWeekend || isClickableRegularize;
                             return (
                               <div className="flex flex-col gap-1 items-center w-full">

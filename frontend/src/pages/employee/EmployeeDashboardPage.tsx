@@ -43,15 +43,7 @@ const BASE_URL = `${API_URL}/api`;
 
 const isHalfDayLeave = (totalDays: any) => Number(totalDays) <= 0.5;
 
-const checkShiftLock = (shiftName: string) => {
-  const currentHour = new Date().getHours();
-  const cleanShift = (shiftName || "").trim().toLowerCase();
-  if (cleanShift === "first shift" && currentHour < 7) {
-    return { isLocked: true, timeLabel: "07:00 AM" };
-  }
-  if (cleanShift === "night shift" && currentHour < 22) {
-    return { isLocked: true, timeLabel: "10:00 PM" };
-  }
+const checkShiftLock = (_shiftName: string) => {
   return { isLocked: false, timeLabel: "" };
 };
 
@@ -819,12 +811,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
     if (!shouldProcessChange) {
       try {
         const activeShift = todayActiveShift || "General Shift";
-        const { isLocked, timeLabel } = checkShiftLock(activeShift);
-        if (isLocked) {
-          toast.error(`${activeShift} starts at ${timeLabel}. Check-in is locked until then.`);
-          setIsActionLoading(false);
-          return;
-        }
         await handleCheckIn(activeShift);
       } catch (err) {
         console.error(err);
@@ -881,19 +867,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
         loadShiftRequests();
         loadManagerShiftRequests();
 
-        const { isLocked, timeLabel } = checkShiftLock(targetShift);
-        if (isLocked) {
-          toast.error(`${targetShift} starts at ${timeLabel}. Check-in is locked until then.`);
-          return;
-        }
-
         await handleCheckIn(targetShift);
       } else {
-        const { isLocked, timeLabel } = checkShiftLock(targetShift);
-        if (isLocked) {
-          toast.error(`${targetShift} starts at ${timeLabel}. Check-in is locked until then.`);
-          return;
-        }
         await handleCheckIn(targetShift);
       }
     } catch (err) {
@@ -2589,14 +2564,19 @@ if (isHalfDayLeave(leave.total_days)) return false;
   }, [currentEmployee, managerName]);
 
   useEffect(() => {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const userKey = user?.id ? String(user.id) : (user?.employee_id ? String(user.employee_id) : "user");
+    const storageKey = `birthday_popup_shown_${userKey}_${todayStr}`;
+
     if (
       (birthdayEmployees.length > 0 || anniversaryEmployees.length > 0) &&
-      !sessionStorage.getItem("birthday_popup_shown")
+      !localStorage.getItem(storageKey)
     ) {
       setBirthdayModal(true);
-      sessionStorage.setItem("birthday_popup_shown", "true");
+      localStorage.setItem(storageKey, "true");
     }
-  }, [birthdayEmployees, anniversaryEmployees]);
+  }, [birthdayEmployees, anniversaryEmployees, user]);
 
   useEffect(() => {
     if (!showNotificationsPanel && !sessionStorage.getItem("attendance_popup_shown")) {

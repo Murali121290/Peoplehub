@@ -3023,6 +3023,352 @@ def export_monthly_attendance():
         # ws.auto_filter.ref = f"A5:R{row-1}"
         ws.auto_filter.ref = f"A5:S{row-1}"
 
+        # =========================================================
+        # SHEET 2: BIOMETRIC DAILY ATTENDANCE MATRIX
+        # =========================================================
+        from datetime import time as dt_time
+        from models.shift_request import ShiftRequest
+
+        ws_bio = wb.create_sheet(title="Biometric")
+
+        # Fills & Fonts for Biometric Sheet
+        bio_present_fill = PatternFill(fill_type="solid", fgColor="DCFCE7")  # Soft Green
+        bio_late_fill = PatternFill(fill_type="solid", fgColor="FEF3C7")     # Soft Amber
+        bio_absent_fill = PatternFill(fill_type="solid", fgColor="FEE2E2")   # Soft Red
+        bio_wfh_fill = PatternFill(fill_type="solid", fgColor="E0F2FE")      # Soft Light Blue
+        bio_leave_fill = PatternFill(fill_type="solid", fgColor="FDE68A")    # Soft Yellow
+        bio_weekoff_fill = PatternFill(fill_type="solid", fgColor="F1F5F9")  # Soft Slate
+        bio_web_only_fill = PatternFill(fill_type="solid", fgColor="FCE7F3") # Soft Pink
+        bio_holiday_work_fill = PatternFill(fill_type="solid", fgColor="CCFBF1") # Soft Teal
+
+        bio_present_font = Font(size=8.5, color="166534", bold=True)
+        bio_late_font = Font(size=8.5, color="92400E", bold=True)
+        bio_absent_font = Font(size=8.5, color="991B1B", bold=True)
+        bio_wfh_font = Font(size=8.5, color="0369A1", bold=True)
+        bio_leave_font = Font(size=8.5, color="854D0E", bold=True)
+        bio_default_font = Font(size=8.5, color="334155")
+        bio_header_font = Font(bold=True, size=10, color="FFFFFF")
+
+        # Cycle dates list
+        cycle_dates = []
+        cur_d = start_date
+        while cur_d <= effective_end_date:
+            cycle_dates.append(cur_d)
+            cur_d += timedelta(days=1)
+
+        # Base header columns
+        base_cols = ["S.No", "Emp Code", "Emp Name", "Department", "Designation", "Work Mode"]
+        date_col_headers = [f"{d.strftime('%d-%b')}\n({d.strftime('%a')})" for d in cycle_dates]
+        summary_col_headers = ["Total Present", "Total Absent", "Total Late", "Total WFH", "Total Leave"]
+
+        all_bio_headers = base_cols + date_col_headers + summary_col_headers
+        total_bio_cols = len(all_bio_headers)
+        last_bio_col_letter = get_column_letter(total_bio_cols)
+
+        # Title Rows
+        ws_bio.merge_cells(f"A1:{last_bio_col_letter}1")
+        ws_bio["A1"] = f"S4C{period_title_team} - Biometric Daily Attendance for the period from {start_day_suff} {start_date.strftime('%B')} {start_date.year} to {end_day_suff} {effective_end_date.strftime('%B')} {effective_end_date.year}"
+        ws_bio["A1"].fill = sky_blue_fill
+        ws_bio["A1"].font = Font(bold=True, size=14, color="FFFFFF")
+        ws_bio["A1"].alignment = Alignment(horizontal="center", vertical="center")
+        ws_bio.row_dimensions[1].height = 40
+
+        ws_bio.merge_cells(f"A2:{last_bio_col_letter}2")
+        ws_bio["A2"] = f"Biometric Attendance Summary {effective_end_date.strftime('%B %Y')}{period_title_team}"
+        ws_bio["A2"].fill = sky_blue_fill
+        ws_bio["A2"].font = Font(bold=True, size=11, color="FFFFFF")
+        ws_bio["A2"].alignment = Alignment(horizontal="center", vertical="center")
+        ws_bio.row_dimensions[2].height = 24
+
+        ws_bio.merge_cells(f"A3:{last_bio_col_letter}3")
+        ws_bio["A3"] = f"Attendance Cycle : {start_date.strftime('%d-%b-%Y')} to {effective_end_date.strftime('%d-%b-%Y')}"
+        ws_bio["A3"].fill = yellow_fill
+        ws_bio["A3"].font = bold_font
+        ws_bio["A3"].alignment = Alignment(horizontal="center", vertical="center")
+        ws_bio.row_dimensions[3].height = 24
+
+        # Header Row 5
+        ws_bio.row_dimensions[5].height = 45
+        for col_idx, h_text in enumerate(all_bio_headers, start=1):
+            c = ws_bio.cell(row=5, column=col_idx)
+            c.value = h_text
+            c.fill = sky_blue_fill
+            c.font = bio_header_font
+            c.border = thin_border
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        # Fill Data Rows for each employee
+        bio_row = 6
+        for index, employee in enumerate(employees, start=1):
+            ws_bio.row_dimensions[bio_row].height = 36
+
+            # Fixed Info
+            emp_code = str(getattr(employee, "employee_id", None) or getattr(employee, "user_id", "") or "")
+            emp_name = f"{employee.first_name} {employee.last_name or ''}".strip()
+            dept_name = get_emp_team_name(employee)
+            designation_name = getattr(employee, "designation", "") or ""
+
+            emp_mode_raw = (getattr(employee, "work_mode", "") or "").strip()
+            is_permanent_wfh = emp_mode_raw.lower() in ["wfh", "remote", "work from home", "home"] or "wfh" in emp_mode_raw.lower() or "remote" in emp_mode_raw.lower()
+            display_work_mode = "Permanent WFH" if is_permanent_wfh else (emp_mode_raw if emp_mode_raw else "Office")
+
+            ws_bio.cell(row=bio_row, column=1, value=index)
+            ws_bio.cell(row=bio_row, column=2, value=emp_code)
+            ws_bio.cell(row=bio_row, column=3, value=emp_name)
+            ws_bio.cell(row=bio_row, column=4, value=dept_name)
+            ws_bio.cell(row=bio_row, column=5, value=designation_name)
+            ws_bio.cell(row=bio_row, column=6, value=display_work_mode)
+
+            for c_i in range(1, 7):
+                c = ws_bio.cell(row=bio_row, column=c_i)
+                c.border = thin_border
+                c.font = Font(size=9.5, bold=(c_i in [2, 3, 6]))
+                if c_i == 6 and is_permanent_wfh:
+                    c.font = Font(size=9.5, bold=True, color="0369A1")
+                c.alignment = Alignment(horizontal="center" if c_i in [1, 2, 6] else "left", vertical="center")
+
+            # Fetch data for this employee
+            attendance_records = Attendance.query.filter(
+                Attendance.user_id == employee.user_id,
+                Attendance.attendance_date >= start_date,
+                Attendance.attendance_date <= effective_end_date
+            ).all()
+            att_by_date = {a.attendance_date: a for a in attendance_records}
+
+            valid_emp_ids = [str(employee.employee_id)] if employee.employee_id else []
+
+            # Approved leaves
+            emp_leaves = LeaveRequest.query.filter(
+                LeaveRequest.employee_id.in_(valid_emp_ids),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.request_type == "Leave",
+                LeaveRequest.from_date <= effective_end_date,
+                LeaveRequest.to_date >= start_date
+            ).all()
+
+            # Approved WFH
+            emp_wfh = ShiftRequest.query.filter(
+                ShiftRequest.employee_id.in_(valid_emp_ids),
+                ShiftRequest.status == "Approved",
+                ShiftRequest.request_type == "WFH",
+                ShiftRequest.from_date <= effective_end_date,
+                ShiftRequest.to_date >= start_date
+            ).all()
+
+            wfh_dates_set = set()
+            for w in emp_wfh:
+                w_start = max(start_date, w.from_date)
+                w_end = min(effective_end_date, w.to_date)
+                cur_w = w_start
+                while cur_w <= w_end:
+                    wfh_dates_set.add(cur_w)
+                    cur_w += timedelta(days=1)
+
+            emp_leave_map = {}
+            for l in emp_leaves:
+                l_start = max(start_date, l.from_date)
+                l_end = min(effective_end_date, l.to_date)
+                cur_l = l_start
+                while cur_l <= l_end:
+                    emp_leave_map[cur_l] = l
+                    cur_l += timedelta(days=1)
+
+            # Metrics counters for summary
+            total_present_count = 0
+            total_absent_count = 0
+            total_late_count = 0
+            total_wfh_count = 0
+            total_leave_count = 0
+
+            # Iterate through all dates in cycle (starting at col 7)
+            for d_idx, d in enumerate(cycle_dates, start=7):
+                c = ws_bio.cell(row=bio_row, column=d_idx)
+                c.border = thin_border
+                c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+                # Check employee active dates
+                emp_joined = employee.joining_date if employee.joining_date else None
+                if emp_joined and d < emp_joined:
+                    c.value = "-\n(Not Joined)"
+                    c.font = bio_default_font
+                    c.fill = bio_weekoff_fill
+                    continue
+
+                if employee.last_working_date and employee.is_active is False:
+                    lwd = employee.last_working_date.date() if isinstance(employee.last_working_date, datetime) else employee.last_working_date
+                    if d > lwd:
+                        c.value = "-\n(Relieved)"
+                        c.font = bio_default_font
+                        c.fill = bio_weekoff_fill
+                        continue
+
+                if d > today_ist:
+                    c.value = "-"
+                    c.font = bio_default_font
+                    continue
+
+                # Check Week Off / Holiday
+                is_week_off = (d.weekday() == 6)  # Sunday
+                if d.weekday() == 5:  # Saturday
+                    saturday_count = (d.day - 1) // 7 + 1
+                    if saturday_count in [2, 4]:
+                        is_week_off = True
+
+                is_holiday = d in holiday_dict
+                holiday_name = holiday_dict.get(d, "Holiday")
+                if d in override_dict:
+                    o_type, o_name = override_dict[d]
+                    if o_type == "Working Day":
+                        is_holiday = False
+                        is_week_off = False
+                    elif o_type == "Holiday":
+                        is_holiday = True
+                        holiday_name = o_name
+
+                # Check Approved Leave
+                if d in emp_leave_map:
+                    leave_obj = emp_leave_map[d]
+                    l_type = getattr(leave_obj, "leave_type", "Leave") or "Leave"
+                    l_dur = getattr(leave_obj, "duration", "") or ""
+                    half_suffix = " (Half)" if "half" in l_dur.lower() else ""
+                    c.value = f"Leave\n[{l_type}{half_suffix}]"
+                    c.font = bio_leave_font
+                    c.fill = bio_leave_fill
+                    total_leave_count += 1
+                    continue
+
+                is_wfh_day = is_permanent_wfh or (d in wfh_dates_set)
+
+                # Check Attendance record
+                att = att_by_date.get(d)
+                card_in = att.card_check_in if att else None
+                card_out = att.card_check_out if att else None
+                card_hours = float(att.card_working_hours or 0.0) if att else 0.0
+                if not card_hours and card_in and card_out:
+                    card_hours = round((card_out - card_in).total_seconds() / 3600.0, 2)
+
+                if is_week_off or is_holiday:
+                    punch_in = card_in if not is_wfh_day else (card_in or (att.check_in if att else None))
+                    punch_out = card_out if not is_wfh_day else (card_out or (att.check_out if att else None))
+                    hours = card_hours if not is_wfh_day else (card_hours if card_hours > 0 else (float(att.total_hours or 0.0) if att else 0.0))
+                    if not hours and punch_in and punch_out:
+                        hours = round((punch_out - punch_in).total_seconds() / 3600.0, 2)
+
+                    if punch_in:
+                        in_s = punch_in.strftime("%I:%M %p")
+                        out_s = punch_out.strftime("%I:%M %p") if punch_out else "No Out"
+                        c.value = f"{in_s} - {out_s}\n[ODW / Present - {hours}h]"
+                        c.font = bio_present_font
+                        c.fill = bio_holiday_work_fill
+                        total_present_count += 1
+                    else:
+                        label = holiday_name if is_holiday else "Week Off"
+                        c.value = f"{'Holiday' if is_holiday else 'Week Off'}\n[{label}]"
+                        c.font = bio_default_font
+                        c.fill = bio_weekoff_fill
+                    continue
+
+                # Normal Working Day (WFH vs Office):
+                if is_wfh_day:
+                    punch_in = (att.check_in or card_in) if att else None
+                    punch_out = (att.check_out or card_out) if att else None
+                    wfh_hours = float(att.total_hours or card_hours or 0.0) if att else 0.0
+                    if not wfh_hours and punch_in and punch_out:
+                        wfh_hours = round((punch_out - punch_in).total_seconds() / 3600.0, 2)
+
+                    if punch_in:
+                        in_s = punch_in.strftime("%I:%M %p")
+                        out_s = punch_out.strftime("%I:%M %p") if punch_out else "No Out"
+                        is_late = (punch_in.time() > dt_time(10, 30))
+                        is_short_hours = (wfh_hours < 6.0)
+
+                        if is_short_hours:
+                            c.value = f"{in_s} - {out_s}\n[WFH Absent (<6h) - {wfh_hours}h]"
+                            c.font = bio_absent_font
+                            c.fill = bio_absent_fill
+                            total_absent_count += 1
+                        elif is_late:
+                            c.value = f"{in_s} - {out_s}\n[WFH Late - {wfh_hours}h]"
+                            c.font = bio_late_font
+                            c.fill = bio_late_fill
+                            total_late_count += 1
+                            total_present_count += 1
+                            total_wfh_count += 1
+                        else:
+                            c.value = f"{in_s} - {out_s}\n[WFH Present - {wfh_hours}h]"
+                            c.font = bio_wfh_font
+                            c.fill = bio_wfh_fill
+                            total_present_count += 1
+                            total_wfh_count += 1
+                    else:
+                        c.value = "Absent\n[WFH No Punch]"
+                        c.font = bio_absent_font
+                        c.fill = bio_absent_fill
+                        total_absent_count += 1
+                else:
+                    # Pure Biometric Office Employee
+                    if card_in:
+                        in_s = card_in.strftime("%I:%M %p")
+                        out_s = card_out.strftime("%I:%M %p") if card_out else "No Out"
+                        is_late = (card_in.time() > dt_time(10, 30))
+                        is_short_hours = (card_hours < 6.0)
+
+                        if is_short_hours:
+                            c.value = f"{in_s} - {out_s}\n[Absent (<6h) - {card_hours}h]"
+                            c.font = bio_absent_font
+                            c.fill = bio_absent_fill
+                            total_absent_count += 1
+                        elif is_late:
+                            c.value = f"{in_s} - {out_s}\n[Late - {card_hours}h]"
+                            c.font = bio_late_font
+                            c.fill = bio_late_fill
+                            total_late_count += 1
+                            total_present_count += 1
+                        else:
+                            c.value = f"{in_s} - {out_s}\n[Present - {card_hours}h]"
+                            c.font = bio_present_font
+                            c.fill = bio_present_fill
+                            total_present_count += 1
+                    else:
+                        c.value = "Absent\n[No Punch]"
+                        c.font = bio_absent_font
+                        c.fill = bio_absent_fill
+                        total_absent_count += 1
+
+            # Summary values at the end
+            sum_start_col = len(base_cols) + len(cycle_dates) + 1
+            ws_bio.cell(row=bio_row, column=sum_start_col, value=total_present_count)
+            ws_bio.cell(row=bio_row, column=sum_start_col + 1, value=total_absent_count)
+            ws_bio.cell(row=bio_row, column=sum_start_col + 2, value=total_late_count)
+            ws_bio.cell(row=bio_row, column=sum_start_col + 3, value=total_wfh_count)
+            ws_bio.cell(row=bio_row, column=sum_start_col + 4, value=total_leave_count)
+
+            for s_col in range(sum_start_col, sum_start_col + 5):
+                sc = ws_bio.cell(row=bio_row, column=s_col)
+                sc.border = thin_border
+                sc.font = Font(bold=True, size=10, color="0F172A")
+                sc.alignment = Alignment(horizontal="center", vertical="center")
+
+            bio_row += 1
+
+        # Set Column Dimensions for Biometric sheet
+        ws_bio.column_dimensions["A"].width = 6   # S.No
+        ws_bio.column_dimensions["B"].width = 12  # Emp Code
+        ws_bio.column_dimensions["C"].width = 22  # Emp Name
+        ws_bio.column_dimensions["D"].width = 16  # Department
+        ws_bio.column_dimensions["E"].width = 20  # Designation
+        ws_bio.column_dimensions["F"].width = 16  # Work Mode
+
+        for d_c_idx in range(7, 7 + len(cycle_dates)):
+            ws_bio.column_dimensions[get_column_letter(d_c_idx)].width = 22
+
+        sum_start_col = len(base_cols) + len(cycle_dates) + 1
+        for s_c_idx in range(sum_start_col, sum_start_col + 5):
+            ws_bio.column_dimensions[get_column_letter(s_c_idx)].width = 14
+
+        # Freeze Panes for easy scrolling across dates
+        ws_bio.freeze_panes = "G6"
+
         # =====================================
         # SAVE FILE
         # =====================================

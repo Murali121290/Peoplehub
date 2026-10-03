@@ -286,16 +286,21 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   useEffect(() => {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const userKey = user?.id ? String(user.id) : (user?.employee_id ? String(user.employee_id) : "user");
+    const storageKey = `birthday_popup_shown_${userKey}_${todayStr}`;
+
     if (
       (birthdayEmployees.length > 0 || anniversaryEmployees.length > 0) &&
-      !sessionStorage.getItem("birthday_popup_shown")
+      !localStorage.getItem(storageKey)
     ) {
       setBirthdayModal(true);
-      sessionStorage.setItem("birthday_popup_shown", "true");
+      localStorage.setItem(storageKey, "true");
     } else {
       setShowPopup(true);
     }
-  }, [birthdayEmployees, anniversaryEmployees]);
+  }, [birthdayEmployees, anniversaryEmployees, user]);
 
   // Show attendance summary modal when navigating to Team Management
   useEffect(() => {
@@ -762,7 +767,6 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({
   const handleLogout = async () => {
     await logout();
     sessionStorage.clear();
-    localStorage.clear();
     toast.success("Logged out successfully");
     navigate("/login");
   };
