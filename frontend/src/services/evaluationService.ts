@@ -561,6 +561,7 @@ export const evaluationService = {
     periodName: string;
     frequency?: 'quarterly' | 'monthly' | 'weekly' | 'daily' | 'yearly' | string;
     categories?: KPICategory[];
+    templateKey?: string;
   }): Promise<EvaluationCycle> {
     const cycles = this.getCycles();
     const newCycle: EvaluationCycle = {
@@ -584,6 +585,10 @@ export const evaluationService = {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+    if (cycleData.templateKey) {
+      (newCycle as any).templateKey = cycleData.templateKey;
+      (newCycle as any).template_key = cycleData.templateKey;
+    }
 
     cycles.unshift(newCycle);
     await this.saveCycles(cycles);
@@ -647,7 +652,8 @@ export const evaluationService = {
   async submitEmployeeEvaluation(
     responseId: string,
     kpiResponses: Record<string, KPIResponseItem>,
-    employeeRemarks?: string
+    employeeRemarks?: string,
+    explicitCategories?: KPICategory[]
   ): Promise<EvaluationResponse> {
     const remoteData = await this.fetchRemoteEvaluationData();
     const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
@@ -665,9 +671,18 @@ export const evaluationService = {
     }
     if (index === -1) throw new Error('Evaluation response not found');
 
+    const targetResp = responses[index];
     const cycles = remoteData.cycles && remoteData.cycles.length > 0 ? remoteData.cycles : this.getCycles();
-    const cycle = cycles.find(c => c.id === responses[index].cycleId);
-    const categories = cycle?.categories || DEFAULT_KPI_CATEGORIES;
+    const cycle = cycles.find(c => c.id === targetResp.cycleId);
+
+    // Prioritize the exact categories from the active worksheet or assigned response
+    const categories: KPICategory[] = (explicitCategories && explicitCategories.length > 0)
+      ? explicitCategories
+      : ((targetResp as any).categories && Array.isArray((targetResp as any).categories) && (targetResp as any).categories.length > 0)
+        ? (targetResp as any).categories
+        : ((targetResp as any).metrics_data && Array.isArray((targetResp as any).metrics_data) && (targetResp as any).metrics_data.length > 0)
+          ? (targetResp as any).metrics_data
+          : (cycle?.categories && cycle.categories.length > 0 ? cycle.categories : []);
 
     const { overallScore } = calculateOverallScore(categories, kpiResponses);
 
@@ -769,7 +784,9 @@ export const evaluationService = {
     const cycle = cycles.find(c => c.id === current.cycleId);
     const categories: KPICategory[] = (current as any).categories && Array.isArray((current as any).categories) && (current as any).categories.length > 0
       ? (current as any).categories
-      : (cycle?.categories || DEFAULT_KPI_CATEGORIES);
+      : ((current as any).metrics_data && Array.isArray((current as any).metrics_data) && (current as any).metrics_data.length > 0)
+        ? (current as any).metrics_data
+        : (cycle?.categories || []);
 
     const { overallScore } = calculateOverallScore(categories, managerData.kpiResponses);
     const finalScore = managerData.managerScore !== undefined ? managerData.managerScore : overallScore;
@@ -1130,7 +1147,8 @@ export const evaluationService = {
 
   // Save/Upsert a specific form template for a manager in PostgreSQL DB
   async saveManagerTemplate(payload: {
-    manager_id: string;
+    manager_id?: string;
+    manager_ids?: string[];
     manager_name?: string;
     template_key: string;
     template_name?: string;
@@ -1139,7 +1157,7 @@ export const evaluationService = {
     categories: KPICategory[];
     is_default?: boolean;
     status?: string;
-  }): Promise<{ success: boolean; template?: ManagerKpiTemplateRecord; error?: string }> {
+  }): Promise<{ success: boolean; template?: ManagerKpiTemplateRecord; templates?: ManagerKpiTemplateRecord[]; error?: string }> {
     try {
       const token = localStorage.getItem('token') || '';
       const res = await fetch(`${API_URL}/api/performance/kpi-templates/manager`, {

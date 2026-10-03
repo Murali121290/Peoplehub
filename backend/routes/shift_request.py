@@ -115,9 +115,16 @@ def apply_shift():
 
             # Check for existing approved Shift/WFH/Office requests in the date range
             if data.get("request_type") != "One Day Wages":
+                new_req_type = data.get("request_type")
+                if new_req_type == "Shift":
+                    category_filter = ShiftRequest.request_type == "Shift"
+                else:
+                    category_filter = ShiftRequest.request_type.in_(["WFH", "Office"])
+
                 existing_approved_request = ShiftRequest.query.filter(
                     ShiftRequest.employee_id == employee.employee_id,
                     ShiftRequest.status == "Approved",
+                    category_filter,
                     ShiftRequest.from_date <= req_to,
                     ShiftRequest.to_date >= req_from
                 ).first()
@@ -126,7 +133,7 @@ def apply_shift():
                     req_label = existing_approved_request.request_type or "Shift/WFH"
                     return jsonify({
                         "success": False,
-                        "message": f"An approved {req_label} request already exists from {existing_approved_request.from_date} to {existing_approved_request.to_date}. Please cancel the active approved request first before applying for a new shift, WFH, or office mode."
+                        "message": f"An approved {req_label} request already exists from {existing_approved_request.from_date} to {existing_approved_request.to_date}. Please cancel the active approved request first before applying for a new {req_label.lower()}."
                     }), 400
 
         # Check if supportive_document was uploaded
@@ -879,9 +886,15 @@ def manager_submit_shift():
         to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date()
 
         # Check for existing approved Shift/WFH/Office request in the date range
+        if request_type == "Shift":
+            category_filter = ShiftRequest.request_type == "Shift"
+        else:
+            category_filter = ShiftRequest.request_type.in_(["WFH", "Office"])
+
         existing_approved_request = ShiftRequest.query.filter(
             ShiftRequest.employee_id == employee.employee_id,
             ShiftRequest.status == "Approved",
+            category_filter,
             ShiftRequest.from_date <= to_date,
             ShiftRequest.to_date >= from_date
         ).first()
@@ -890,7 +903,7 @@ def manager_submit_shift():
             req_label = existing_approved_request.request_type or "Shift/WFH"
             return jsonify({
                 "success": False,
-                "message": f"An approved {req_label} request already exists from {existing_approved_request.from_date} to {existing_approved_request.to_date}. Please cancel the active approved request first before applying for a new shift, WFH, or office mode."
+                "message": f"An approved {req_label} request already exists from {existing_approved_request.from_date} to {existing_approved_request.to_date}. Please cancel the active approved request first before applying for a new {req_label.lower()}."
             }), 400
 
         current_shift = (employee.shift_timing or "General Shift").strip()

@@ -916,6 +916,30 @@ export const EvaluationTab: React.FC = () => {
     };
   };
 
+  // Helper to determine the next strictly sequential Form number without recycling deleted form numbers
+  const getNextFormNumber = (templates: { template_key?: string; template_name?: string }[]): number => {
+    let maxNum = 0;
+    if (Array.isArray(templates)) {
+      for (const t of templates) {
+        if (t.template_key) {
+          const matchKey = String(t.template_key).match(/form_(\d+)/i);
+          if (matchKey) {
+            const n = parseInt(matchKey[1], 10);
+            if (!isNaN(n) && n > maxNum) maxNum = n;
+          }
+        }
+        if (t.template_name) {
+          const matchName = String(t.template_name).match(/Form\s*(\d+)/i);
+          if (matchName) {
+            const n = parseInt(matchName[1], 10);
+            if (!isNaN(n) && n > maxNum) maxNum = n;
+          }
+        }
+      }
+    }
+    return maxNum + 1;
+  };
+
   // Dynamic Frequency & Period Configuration State
   const [mgrPeriodType, setMgrPeriodType] = useState<'quarterly' | 'monthly' | 'weekly' | 'daily' | 'yearly'>('quarterly');
   const [mgrSubFrequency, setMgrSubFrequency] = useState<'monthly' | 'weekly' | 'quarterly' | 'annual' | ''>('');
@@ -1604,12 +1628,7 @@ export const EvaluationTab: React.FC = () => {
       return JSON.parse(JSON.stringify(existingTeamCycle.categories));
     }
 
-    // 2. If it's Project Management / PM team, provide PM default deliverables
-    if (isProjectManagementTeam(teamName)) {
-      return JSON.parse(JSON.stringify(DEFAULT_KPI_CATEGORIES));
-    }
-
-    // 3. For any other team without saved deliverables, start fresh and empty
+    // Start fresh and empty
     return [];
   };
 
@@ -1829,56 +1848,39 @@ export const EvaluationTab: React.FC = () => {
     try {
       const teamObj = dbTeams.find(t => String(t.id) === String(teamIdVal) || String(t.name).toLowerCase() === String(teamIdVal).toLowerCase() || t.id === teamIdVal || t.name === teamIdVal);
       const teamName = teamObj?.name || teamIdVal || '';
-      const isPM = isProjectManagementTeam(teamName);
-      const initialCatsForTeam = isPM ? JSON.parse(JSON.stringify(DEFAULT_KPI_CATEGORIES)) : [];
+      const initialCatsForTeam: KPICategory[] = [];
 
       const res = await evaluationService.getManagerTemplates(mgrId, String(teamObj?.id || teamIdVal || ''), teamName);
-      const validTemplates: ManagerKpiTemplateRecord[] = (res?.templates || []).filter((t: any) =>
-        (t.team_id || t.team_name) || (t.template_name && !t.template_name.match(/^Form [1-4]$/)) || (t.categories && t.categories.length > 0)
-      ).map((t: any) => ({
-        ...t,
-        manager_ids: t.manager_ids && t.manager_ids.length > 0 ? t.manager_ids : (t.manager_id ? [String(t.manager_id)] : (mgrId ? [mgrId] : []))
-      }));
+      const validTemplates: ManagerKpiTemplateRecord[] = (res?.templates || []).map((t: any) => {
+        let tName = t.template_name || '';
+        if (t.template_key === 'form_1') {
+          tName = tName.replace(/\s*\(Form\s*\d+\)/i, '').trim() || teamName || 'Form 1';
+        }
+        return {
+          ...t,
+          template_name: tName,
+          manager_ids: t.manager_ids && t.manager_ids.length > 0 ? t.manager_ids : (t.manager_id ? [String(t.manager_id)] : (mgrId ? [mgrId] : []))
+        };
+      });
 
       if (validTemplates.length > 0) {
-        // 1. Check if manager/team already has a template explicitly designated for this team
-        const teamMatching = validTemplates.find((t: any) =>
-          (t.team_id && (String(t.team_id).toLowerCase() === String(teamIdVal).toLowerCase() || String(t.team_id) === String(teamObj?.id))) ||
-          (t.team_name && t.team_name.toLowerCase() === teamName.toLowerCase()) ||
-          (t.template_name && t.template_name.toLowerCase().includes(teamName.toLowerCase()))
-        ) || validTemplates[0];
+        setHrTemplates(validTemplates);
 
-        if (teamMatching) {
-          // Found existing form for this specific team!
-          setHrTemplates(validTemplates);
-          setActiveHrTemplateKey(teamMatching.template_key);
-          if (teamMatching.categories && Array.isArray(teamMatching.categories) && teamMatching.categories.length > 0) {
-            setHrCategories(JSON.parse(JSON.stringify(teamMatching.categories)));
+        const initialTpl = (res?.active_key && validTemplates.find((t: any) => t.template_key === res.active_key))
+          || validTemplates.find((t: any) => t.template_key === activeHrTemplateKey)
+          || validTemplates.find((t: any) => t.is_default)
+          || validTemplates[0];
+
+        if (initialTpl) {
+          setActiveHrTemplateKey(initialTpl.template_key);
+          if (initialTpl.categories && Array.isArray(initialTpl.categories) && initialTpl.categories.length > 0) {
+            setHrCategories(JSON.parse(JSON.stringify(initialTpl.categories)));
           } else {
             setHrCategories(initialCatsForTeam);
           }
-          if (teamMatching.manager_ids && teamMatching.manager_ids.length > 0) {
-            setSelectedMgrIds(teamMatching.manager_ids);
+          if (initialTpl.manager_ids && initialTpl.manager_ids.length > 0) {
+            setSelectedMgrIds(initialTpl.manager_ids);
           }
-        } else {
-          // Manager has forms for other teams. Create a single new clean slot for this team!
-          const nextNum = validTemplates.length + 1;
-          const newKey = `form_${nextNum}`;
-          const newName = teamName ? `${teamName}` : `Form ${nextNum}`;
-          const newTpl: ManagerKpiTemplateRecord = {
-            manager_id: mgrId,
-            manager_ids: mgrId ? [mgrId] : [],
-            template_key: newKey,
-            template_name: newName,
-            team_id: teamIdVal,
-            team_name: teamName,
-            categories: initialCatsForTeam,
-            is_default: false
-          };
-          setHrTemplates([...validTemplates, newTpl]);
-          setActiveHrTemplateKey(newKey);
-          setHrCategories(initialCatsForTeam);
-          if (mgrId) setSelectedMgrIds([mgrId]);
         }
       } else {
         // Clean single form initialization for this manager & team
@@ -1952,7 +1954,7 @@ export const EvaluationTab: React.FC = () => {
     const teamObj = dbTeams.find(t => String(t.id) === String(selectedTeamId) || String(t.name).toLowerCase() === String(selectedTeamId).toLowerCase() || t.id === selectedTeamId || t.name === selectedTeamId);
     const teamName = teamObj?.name || selectedTeamId || '';
 
-    const nextNum = hrTemplates.length + 1;
+    const nextNum = getNextFormNumber(hrTemplates);
     const newKey = `form_${nextNum}`;
     const newName = teamName ? `${teamName} (Form ${nextNum})` : `Form ${nextNum}`;
     const newTpl: ManagerKpiTemplateRecord = {
@@ -2202,21 +2204,21 @@ export const EvaluationTab: React.FC = () => {
         mgrListToSave.push({ id: fallbackId, name: 'Manager' });
       }
 
-      for (const targetMgr of mgrListToSave) {
-        const savePayload = {
-          manager_id: targetMgr.id,
-          manager_name: targetMgr.name,
-          template_key: activeHrTemplateKey,
-          template_name: formLabel,
-          team_id: String(selectedTeam?.id || selectedTeamId || ''),
-          team_name: teamName,
-          categories: hrCategories,
-          is_default: true,
-          status: 'draft'
-        };
+      const allMgrIds = mgrListToSave.map(m => m.id);
+      const savePayload = {
+        manager_id: allMgrIds[0] || selectedMgrId || '',
+        manager_ids: allMgrIds,
+        manager_name: mgrListToSave[0]?.name || 'Manager',
+        template_key: activeHrTemplateKey,
+        template_name: formLabel,
+        team_id: String(selectedTeam?.id || selectedTeamId || ''),
+        team_name: teamName,
+        categories: hrCategories,
+        is_default: true,
+        status: 'draft'
+      };
 
-        await evaluationService.saveManagerTemplate(savePayload);
-      }
+      await evaluationService.saveManagerTemplate(savePayload);
 
       showToast(`Saved Deliverables & Targets for "${formLabel}" to database!`);
       setHrTemplates(prev => {
@@ -2525,20 +2527,26 @@ export const EvaluationTab: React.FC = () => {
         endDate,
         periodName,
         frequency: 'quarterly',
-        categories: hrCategories
+        categories: hrCategories,
+        templateKey: activeHrTemplateKey || 'form_1'
       });
 
-      // Also auto-transfer & save into each manager's templates so it appears directly on their desk
+      // Transfer & save ONLY the specifically selected form into each chosen manager's templates
       try {
+        const teamIdStr = String(selectedTeam?.id || selectedTeam?.name || selectedTeamId || '');
+        const teamNameStr = String(selectedTeam?.name || selectedTeamId || '');
+        const chosenKey = activeHrTemplateKey || 'form_1';
+
         for (const mgr of uniqueMgrMap.values()) {
           const mId = String(mgr.employee_id || '');
           const mName = mgr.name || `${mgr.first_name || ''} ${mgr.last_name || ''}`.trim() || 'Manager';
+
           const savePayload = {
             manager_name: mName,
-            template_key: activeHrTemplateKey || 'form_1',
+            template_key: chosenKey,
             template_name: formTitle,
-            team_id: String(selectedTeam?.id || selectedTeam?.name || selectedTeamId || ''),
-            team_name: String(selectedTeam?.name || selectedTeamId || ''),
+            team_id: teamIdStr,
+            team_name: teamNameStr,
             categories: hrCategories,
             is_default: true,
             manager_id: mId,
@@ -3500,26 +3508,21 @@ export const EvaluationTab: React.FC = () => {
       const tNameStr = teamObj?.name || (defaultTeamVal !== 'all_teams' ? defaultTeamVal : '');
 
       const res = await evaluationService.getManagerTemplates(code, tIdStr, tNameStr);
-      const validTemplates = (res?.templates || []).filter((t: any) =>
-        (t.team_id || t.team_name) || (t.template_name && !t.template_name.match(/^Form [1-4]$/)) || (t.categories && t.categories.length > 0)
-      );
+      const rawTemplates = Array.isArray(res?.templates) ? res.templates : [];
+      const validTemplates: ManagerKpiTemplateRecord[] = rawTemplates;
+
       if (validTemplates.length > 0) {
         setMgrTemplates(validTemplates);
-        const teamMatchingTpl = defaultTeamVal && defaultTeamVal !== 'all_teams'
-          ? validTemplates.find((t: any) =>
-            (t.team_id && (String(t.team_id).toLowerCase() === tIdStr.toLowerCase() || String(t.team_id).toLowerCase() === tNameStr.toLowerCase())) ||
-            (t.team_name && (t.team_name.toLowerCase() === tNameStr.toLowerCase() || t.team_name.toLowerCase() === tIdStr.toLowerCase())) ||
-            (t.template_name && t.template_name.toLowerCase().includes(tNameStr.toLowerCase()))
-          )
-          : null;
-        const initialTpl = teamMatchingTpl ||
-          validTemplates.find((t: any) => t.template_key === res?.active_key) ||
-          validTemplates.find((t: any) => t.is_default) ||
-          validTemplates[0];
+
+        // Select the active template from DB
+        const initialTpl = (res?.active_key && validTemplates.find((t: any) => t.template_key === res.active_key))
+          || validTemplates.find((t: any) => t.is_default)
+          || validTemplates.find((t: any) => t.template_key === activeTemplateKey)
+          || validTemplates[0];
 
         if (initialTpl) {
           setActiveTemplateKey(initialTpl.template_key);
-          if (initialTpl.categories && initialTpl.categories.length > 0) {
+          if (initialTpl.categories && Array.isArray(initialTpl.categories) && initialTpl.categories.length > 0) {
             setMgrAssignCategories(JSON.parse(JSON.stringify(initialTpl.categories)));
           } else {
             const teamCycle = cycles.find(c =>
@@ -3545,9 +3548,9 @@ export const EvaluationTab: React.FC = () => {
 
         const initialCats = (teamCycle?.categories && teamCycle.categories.length > 0)
           ? JSON.parse(JSON.stringify(teamCycle.categories))
-          : (isProjectManagementTeam(tNameStr) ? JSON.parse(JSON.stringify(DEFAULT_KPI_CATEGORIES)) : []);
+          : [];
 
-        const defaultFormName = (teamCycle?.name) || (defaultTeamVal && defaultTeamVal !== 'all_teams' ? defaultTeamVal : 'Form 1');
+        const defaultFormName = tNameStr || (defaultTeamVal && defaultTeamVal !== 'all_teams' ? defaultTeamVal : 'Form 1');
         const initialForms: ManagerKpiTemplateRecord[] = [{
           manager_id: code,
           template_key: 'form_1',
@@ -3623,10 +3626,12 @@ export const EvaluationTab: React.FC = () => {
     const tNameStr = (teamObj?.name || newTeamId || '').toLowerCase();
 
     // If a template is specifically linked to this department / team, auto-switch to it
-    const matchingTpl = mgrTemplates.find(t =>
+    const matchingTpl = mgrTemplates.find(t => t.is_default && (
       (t.team_id && (String(t.team_id).toLowerCase() === tIdStr || String(t.team_id).toLowerCase() === tNameStr)) ||
-      (t.team_name && (t.team_name.toLowerCase() === tNameStr || t.team_name.toLowerCase() === tIdStr)) ||
-      (t.template_name && t.template_name.toLowerCase().includes(tNameStr))
+      (t.team_name && (t.team_name.toLowerCase() === tNameStr || t.team_name.toLowerCase() === tIdStr))
+    )) || mgrTemplates.find(t =>
+      (t.team_id && (String(t.team_id).toLowerCase() === tIdStr || String(t.team_id).toLowerCase() === tNameStr)) ||
+      (t.team_name && (t.team_name.toLowerCase() === tNameStr || t.team_name.toLowerCase() === tIdStr))
     );
     if (matchingTpl && matchingTpl.categories && matchingTpl.categories.length > 0) {
       setActiveTemplateKey(matchingTpl.template_key);
@@ -3822,8 +3827,8 @@ export const EvaluationTab: React.FC = () => {
       }).catch(err => console.warn('Background auto-save before new form:', err));
     }
 
-    const nextNum = mgrTemplates.length + 1;
-    const newKey = `form_${Date.now()}`;
+    const nextNum = getNextFormNumber(mgrTemplates);
+    const newKey = `form_${nextNum}`;
     const newName = mgrAssignTeamId && mgrAssignTeamId !== 'all_teams' ? `${mgrAssignTeamId} (Form ${nextNum})` : `Form ${nextNum}`;
     const newTpl: ManagerKpiTemplateRecord = {
       manager_id: currentMgrEmpCode,
@@ -9901,7 +9906,7 @@ export const EvaluationTab: React.FC = () => {
         async () => {
           try {
             setIsSubmittingEmp(true);
-            const updatedResp = await evaluationService.submitEmployeeEvaluation(targetResponse.id, payloadKpiInputs, aggregatedRemarks);
+            const updatedResp = await evaluationService.submitEmployeeEvaluation(targetResponse.id, payloadKpiInputs, aggregatedRemarks, activeCategories);
             setResponses(prev => prev.map(r => r.id === targetResponse.id ? updatedResp : r));
             setSelectedResponseId(updatedResp.id);
             try {
@@ -10837,8 +10842,19 @@ export const EvaluationTab: React.FC = () => {
             {/* Team Form Selector Sub Bar */}
             {(() => {
               const defaultTeamName = selectedTeam?.name || selectedTeamId || 'Form 1';
-              const displayedTemplates = (hrTemplates && hrTemplates.length > 0)
+              const rawTemplates = (hrTemplates && hrTemplates.length > 0)
                 ? hrTemplates
+                : [];
+              const seenKeys = new Set<string>();
+              const validTemplates: typeof rawTemplates = [];
+              for (const t of rawTemplates) {
+                if (t.template_key && !seenKeys.has(t.template_key)) {
+                  seenKeys.add(t.template_key);
+                  validTemplates.push(t);
+                }
+              }
+              const displayedTemplates = validTemplates.length > 0
+                ? validTemplates
                 : [{ template_key: 'form_1', template_name: defaultTeamName, is_default: true, categories: [] }];
 
               return (
@@ -10852,6 +10868,9 @@ export const EvaluationTab: React.FC = () => {
 
                     {displayedTemplates.map(t => {
                       const isActive = t.template_key === activeHrTemplateKey;
+                      const tabLabel = t.template_key === 'form_1'
+                        ? ((t.template_name || '').replace(/\s*\(Form\s*\d+\)/i, '').trim() || defaultTeamName || 'Form 1')
+                        : (t.template_name || `Form ${t.template_key.replace('form_', '')}`);
                       return (
                         <button
                           key={t.template_key}
@@ -10862,7 +10881,7 @@ export const EvaluationTab: React.FC = () => {
                             : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                             }`}
                         >
-                          <span>{t.template_name || `Form ${t.template_key.replace('form_', '')}`}</span>
+                          <span>{tabLabel}</span>
                           {isActive && <CheckIcon className="w-3 h-3 text-teal-600" />}
                         </button>
                       );
@@ -14988,13 +15007,22 @@ export const EvaluationTab: React.FC = () => {
                   {/* Team Form Selector Bar */}
                   {(() => {
                     const activeDeptName = mgrAssignTeamId === 'all_teams' ? '' : mgrAssignTeamId;
-                    const validTemplates = (mgrTemplates && mgrTemplates.length > 0)
-                      ? mgrTemplates.filter(t => (t.team_id || t.team_name) || (t.template_name && !t.template_name.match(/^Form [1-4]$/)) || (t.categories && t.categories.length > 0))
+                    const rawTemplates = (mgrTemplates && mgrTemplates.length > 0)
+                      ? mgrTemplates
                       : [];
 
+                    const seenKeys = new Set<string>();
+                    const validTemplates: typeof rawTemplates = [];
+                    for (const t of rawTemplates) {
+                      if (t.template_key && !seenKeys.has(t.template_key)) {
+                        seenKeys.add(t.template_key);
+                        validTemplates.push(t);
+                      }
+                    }
+
                     const defaultMgrFormName = activeDeptName || (selectedTeam?.name || 'Form 1');
-                    const displayedTemplates = validTemplates.length > 0
-                      ? validTemplates
+                    const displayedTemplates = (mgrTemplates && mgrTemplates.length > 0)
+                      ? mgrTemplates
                       : [{ template_key: 'form_1', template_name: defaultMgrFormName, is_default: true, categories: [] }];
 
                     return (
@@ -15008,6 +15036,7 @@ export const EvaluationTab: React.FC = () => {
 
                           {displayedTemplates.map(t => {
                             const isActive = t.template_key === activeTemplateKey;
+                            const tabLabel = t.template_name || `Form ${t.template_key.replace('form_', '')}`;
                             return (
                               <button
                                 key={t.template_key}
@@ -15018,7 +15047,7 @@ export const EvaluationTab: React.FC = () => {
                                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                                   }`}
                               >
-                                <span>{t.template_name || `Form ${t.template_key.replace('form_', '')}`}</span>
+                                <span>{tabLabel}</span>
                                 {isActive && <CheckIcon className="w-3 h-3 text-teal-600" />}
                               </button>
                             );

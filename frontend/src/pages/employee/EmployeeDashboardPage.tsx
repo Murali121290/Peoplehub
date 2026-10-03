@@ -431,6 +431,11 @@ if (isHalfDayLeave(leave.total_days)) return false;
     });
   })();
 
+  const cleanShiftName = (shift?: string): string => {
+    if (!shift) return "General Shift";
+    return shift.replace(/\s*\((?:Office|WFH)\)/gi, "").trim();
+  };
+
   const todayActiveShift = (() => {
     if (!currentEmployee) return "General Shift";
     const todayStr = new Date().toLocaleDateString("en-CA");
@@ -439,7 +444,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
       if (shift.status !== "Approved") return false;
       return todayStr >= shift.from_date && todayStr <= shift.to_date;
     });
-    return approvedShift ? approvedShift.requested_shift : (currentEmployee.shift_timing || "General Shift");
+    const rawShift = approvedShift ? approvedShift.requested_shift : (currentEmployee.shift_timing || "General Shift");
+    return cleanShiftName(rawShift);
   })();
 
   const todayActiveWorkMode = (() => {
@@ -451,7 +457,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
       return todayStr >= shift.from_date && todayStr <= shift.to_date;
     });
     if (approvedRequest) {
-      return approvedRequest.request_type === "WFH" ? "WFH" : "Office";
+      if (approvedRequest.request_type === "WFH") return "WFH";
+      if (approvedRequest.request_type === "Office") return "Office";
+      if (approvedRequest.requested_work_mode) return approvedRequest.requested_work_mode;
     }
     return currentEmployee.work_mode || "Office";
   })();
@@ -732,9 +740,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
     }
 
     const available = getAvailableShifts();
-    const preferred = todayActiveShift || "General Shift";
-    const hasPreferred = available.some(s => s.name === preferred);
-    setSelectedCheckInShift(hasPreferred ? preferred : (available[0]?.name || "General Shift"));
+    const preferred = cleanShiftName(todayActiveShift || "General Shift");
+    const hasPreferred = available.some(s => s.name.toLowerCase() === preferred.toLowerCase());
+    setSelectedCheckInShift(hasPreferred ? preferred : (available[0]?.name || "Second Shift"));
 
     setShowCheckInShiftModal(true);
   };
@@ -821,8 +829,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
       return;
     }
 
-    const targetShift = selectedCheckInShift;
-    const isShiftChanged = (targetShift || "").trim().toLowerCase() !== (todayActiveShift || "").trim().toLowerCase();
+    const targetShift = cleanShiftName(selectedCheckInShift);
+    const isShiftChanged = targetShift.toLowerCase() !== cleanShiftName(todayActiveShift).toLowerCase();
     
     const targetWorkMode = isHybrid && wantsToChangeMode ? selectedWorkModeOpt : (todayActiveWorkMode || currentEmployee?.work_mode || "Office");
     const isWorkModeChanged = isHybrid && wantsToChangeMode && (targetWorkMode.trim().toLowerCase() !== todayActiveWorkMode.trim().toLowerCase());
