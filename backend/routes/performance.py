@@ -260,15 +260,12 @@ def clean_legacy_evaluations_dir():
     try:
         uploads_dir = get_uploads_dir()
         eval_dir = os.path.join(uploads_dir, "evaluations")
+        legacy_file = os.path.join(uploads_dir, "evaluations", "evaluation_store.json")
+        if os.path.exists(legacy_file):
+            migrated_backup = legacy_file + ".migrated"
+            shutil.move(legacy_file, migrated_backup)
         if os.path.exists(eval_dir):
             shutil.rmtree(eval_dir, ignore_errors=True)
-    except Exception:
-        pass
-
-        # Rename or remove legacy store
-        migrated_backup = legacy_file + ".migrated"
-        if os.path.exists(legacy_file):
-            shutil.move(legacy_file, migrated_backup)
     except Exception as err:
         print(f"Migration error from legacy evaluation_store.json: {err}")
 
@@ -509,6 +506,12 @@ def get_evaluation_data():
                     seen_cycle_ids.add(cid)
                     c_key = f"{tpl.team_name or tpl.team_id}_{tpl.template_name}_{tpl.manager_id}"
                     seen_cycle_keys.add(c_key)
+                    tpl_mgr_name = tpl.manager_name
+                    if (not tpl_mgr_name or tpl_mgr_name == "Manager" or tpl_mgr_name == "Reporting Manager") and tpl.manager_id:
+                        m_emp = Employee.query.filter(Employee.employee_id == str(tpl.manager_id)).first()
+                        if m_emp:
+                            tpl_mgr_name = m_emp.name or f"{m_emp.first_name} {m_emp.last_name}".strip()
+
                     cycles.append({
                         "id": cid,
                         "name": tpl.template_name or "Performance Evaluation",
@@ -521,7 +524,7 @@ def get_evaluation_data():
                         "teamId": tpl.team_id or "",
                         "teamName": tpl.team_name or "",
                         "managerId": tpl.manager_id,
-                        "managerName": tpl.manager_name or "Reporting Manager",
+                        "managerName": tpl_mgr_name or "Reporting Manager",
                         "serviceManagerId": "",
                         "serviceManagerName": "",
                         "categories": tpl.categories or [],
@@ -1757,7 +1760,29 @@ def get_manager_kpi_templates():
                 team_conditions.append(ManagerKpiTemplate.template_name.ilike(f"%{team_name}%"))
 
             if team_conditions:
-                team_templates = ManagerKpiTemplate.query.filter(or_(*team_conditions)).order_by(ManagerKpiTemplate.template_key.asc()).all()
+                base_query = ManagerKpiTemplate.query.filter(or_(*team_conditions))
+                if manager_id:
+                    # If querying for a specific manager, strictly do NOT return templates belonging to another manager!
+                    # Only allow templates that are general/unassigned or explicitly belong to this manager
+                    base_query = base_query.filter(
+                        or_(
+                            ManagerKpiTemplate.manager_id.is_(None),
+                            ManagerKpiTemplate.manager_id == "",
+                            ManagerKpiTemplate.manager_id == "general",
+                            ManagerKpiTemplate.manager_id == canonical_mgr_id,
+                            ManagerKpiTemplate.manager_id == raw_id,
+                            ManagerKpiTemplate.manager_id == clean_id
+                        )
+                    )
+                else:
+                    base_query = base_query.filter(
+                        or_(
+                            ManagerKpiTemplate.manager_id.is_(None),
+                            ManagerKpiTemplate.manager_id == "",
+                            ManagerKpiTemplate.manager_id == "general"
+                        )
+                    )
+                team_templates = base_query.order_by(ManagerKpiTemplate.template_key.asc()).all()
                 seen_keys = set()
                 deduped = []
                 for t in team_templates:
