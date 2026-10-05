@@ -880,7 +880,7 @@ export default function HRAdminDashboard() {
           title="Edit Employee Profile"
         >
           <div className="p-1 max-w-[1400px] mx-auto">
-            <ProfileTab employeeId={detailedEditEmployeeId} />
+            <ProfileTab employeeId={detailedEditEmployeeId} initialEditing={true} />
           </div>
         </Modal>
       )}

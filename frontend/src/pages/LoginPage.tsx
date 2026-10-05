@@ -109,7 +109,6 @@ const LoginPage: React.FC = () => {
       }
 
       sessionStorage.removeItem("attendance_popup_shown");
-      sessionStorage.removeItem("birthday_popup_shown");
 
       const accessLevel =
         response.access_level || response.user?.access_level || "";

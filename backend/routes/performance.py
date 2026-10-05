@@ -260,15 +260,12 @@ def clean_legacy_evaluations_dir():
     try:
         uploads_dir = get_uploads_dir()
         eval_dir = os.path.join(uploads_dir, "evaluations")
+        legacy_file = os.path.join(uploads_dir, "evaluations", "evaluation_store.json")
+        if os.path.exists(legacy_file):
+            migrated_backup = legacy_file + ".migrated"
+            shutil.move(legacy_file, migrated_backup)
         if os.path.exists(eval_dir):
             shutil.rmtree(eval_dir, ignore_errors=True)
-    except Exception:
-        pass
-
-        # Rename or remove legacy store
-        migrated_backup = legacy_file + ".migrated"
-        if os.path.exists(legacy_file):
-            shutil.move(legacy_file, migrated_backup)
     except Exception as err:
         print(f"Migration error from legacy evaluation_store.json: {err}")
 
@@ -509,6 +506,12 @@ def get_evaluation_data():
                     seen_cycle_ids.add(cid)
                     c_key = f"{tpl.team_name or tpl.team_id}_{tpl.template_name}_{tpl.manager_id}"
                     seen_cycle_keys.add(c_key)
+                    tpl_mgr_name = tpl.manager_name
+                    if (not tpl_mgr_name or tpl_mgr_name == "Manager" or tpl_mgr_name == "Reporting Manager") and tpl.manager_id:
+                        m_emp = Employee.query.filter(Employee.employee_id == str(tpl.manager_id)).first()
+                        if m_emp:
+                            tpl_mgr_name = m_emp.name or f"{m_emp.first_name} {m_emp.last_name}".strip()
+
                     cycles.append({
                         "id": cid,
                         "name": tpl.template_name or "Performance Evaluation",
@@ -521,7 +524,7 @@ def get_evaluation_data():
                         "teamId": tpl.team_id or "",
                         "teamName": tpl.team_name or "",
                         "managerId": tpl.manager_id,
-                        "managerName": tpl.manager_name or "Reporting Manager",
+                        "managerName": tpl_mgr_name or "Reporting Manager",
                         "serviceManagerId": "",
                         "serviceManagerName": "",
                         "categories": tpl.categories or [],
@@ -801,25 +804,37 @@ def save_evaluation_cycle():
             cats = c.get("categories") or []
             tpl_name = c.get("name") or c.get("form") or "Performance Evaluation"
 
+            # Determine the exact template_key from the cycle (e.g. form_3)
+            target_tpl_key = str(c.get("template_key") or c.get("templateKey") or "").strip().lower()
+            if not target_tpl_key:
+                import re
+                match = re.search(r'Form\s*(\d+)', tpl_name, re.IGNORECASE)
+                if match:
+                    target_tpl_key = f"form_{match.group(1)}"
+                else:
+                    target_tpl_key = "form_1"
+
             for m_id in mgr_ids:
                 tpl = ManagerKpiTemplate.query.filter(
-                    ManagerKpiTemplate.manager_id == m_id
+                    ManagerKpiTemplate.manager_id == m_id,
+                    ManagerKpiTemplate.template_key == target_tpl_key
                 ).first()
-                if not tpl and team_id:
-                    tpl = ManagerKpiTemplate.query.filter(ManagerKpiTemplate.team_id == team_id).first()
-                if not tpl and team_name:
-                    tpl = ManagerKpiTemplate.query.filter(ManagerKpiTemplate.team_name.ilike(team_name)).first()
 
                 if tpl:
                     tpl.status = "active"
+                    tpl.template_name = tpl_name or tpl.template_name
                     if cats:
                         tpl.categories = cats
+                    if team_id:
+                        tpl.team_id = team_id
+                    if team_name:
+                        tpl.team_name = team_name
                     tpl.updated_at = now
                 else:
                     new_tpl = ManagerKpiTemplate(
                         manager_id=m_id,
                         manager_name=c.get("managerName") or "Manager",
-                        template_key="form_1",
+                        template_key=target_tpl_key,
                         template_name=tpl_name,
                         team_id=team_id if team_id else None,
                         team_name=team_name if team_name else None,
@@ -1709,8 +1724,9 @@ def get_manager_kpi_templates():
             return jsonify({"error": "manager_id, team_id, or team_name parameter is required"}), 400
 
         from sqlalchemy import or_
-        conditions = []
+        templates = []
         canonical_mgr_id = None
+
         if manager_id:
             raw_id = str(manager_id).strip()
             clean_id = raw_id.lower().replace("emp-", "").replace("emp", "").strip()
@@ -1723,38 +1739,79 @@ def get_manager_kpi_templates():
             ).first()
             canonical_mgr_id = str(mgr_emp.employee_id) if mgr_emp and mgr_emp.employee_id else raw_id
 
-            conditions.append(ManagerKpiTemplate.manager_id == canonical_mgr_id)
-            conditions.append(ManagerKpiTemplate.manager_id == raw_id)
-            conditions.append(ManagerKpiTemplate.manager_id == clean_id)
-            conditions.append(ManagerKpiTemplate.manager_id.ilike(f"%{clean_id}%"))
+            mgr_conditions = [
+                ManagerKpiTemplate.manager_id == canonical_mgr_id,
+                ManagerKpiTemplate.manager_id == raw_id,
+                ManagerKpiTemplate.manager_id == clean_id
+            ]
 
-        if team_id:
-            conditions.append(ManagerKpiTemplate.team_id == str(team_id))
-            conditions.append(ManagerKpiTemplate.team_name.ilike(f"%{team_id}%"))
+            # 1. Primary filter: fetch templates specifically created/assigned for this manager
+            mgr_templates = ManagerKpiTemplate.query.filter(or_(*mgr_conditions)).order_by(ManagerKpiTemplate.template_key.asc()).all()
+            if mgr_templates:
+                templates = mgr_templates
 
-        if team_name and team_name != "all_teams":
-            conditions.append(ManagerKpiTemplate.team_name.ilike(f"%{team_name}%"))
-            conditions.append(ManagerKpiTemplate.template_name.ilike(f"%{team_name}%"))
+        # 2. If no templates found specifically for this manager, check team-level general templates
+        if not templates and (team_id or (team_name and team_name != "all_teams")):
+            team_conditions = []
+            if team_id:
+                team_conditions.append(ManagerKpiTemplate.team_id == str(team_id))
+            if team_name and team_name != "all_teams":
+                team_conditions.append(ManagerKpiTemplate.team_name.ilike(f"%{team_name}%"))
+                team_conditions.append(ManagerKpiTemplate.template_name.ilike(f"%{team_name}%"))
 
-        templates = ManagerKpiTemplate.query.filter(or_(*conditions)).order_by(ManagerKpiTemplate.template_key.asc()).all()
+            if team_conditions:
+                base_query = ManagerKpiTemplate.query.filter(or_(*team_conditions))
+                if manager_id:
+                    # If querying for a specific manager, strictly do NOT return templates belonging to another manager!
+                    # Only allow templates that are general/unassigned or explicitly belong to this manager
+                    base_query = base_query.filter(
+                        or_(
+                            ManagerKpiTemplate.manager_id.is_(None),
+                            ManagerKpiTemplate.manager_id == "",
+                            ManagerKpiTemplate.manager_id == "general",
+                            ManagerKpiTemplate.manager_id == canonical_mgr_id,
+                            ManagerKpiTemplate.manager_id == raw_id,
+                            ManagerKpiTemplate.manager_id == clean_id
+                        )
+                    )
+                else:
+                    base_query = base_query.filter(
+                        or_(
+                            ManagerKpiTemplate.manager_id.is_(None),
+                            ManagerKpiTemplate.manager_id == "",
+                            ManagerKpiTemplate.manager_id == "general"
+                        )
+                    )
+                team_templates = base_query.order_by(ManagerKpiTemplate.template_key.asc()).all()
+                seen_keys = set()
+                deduped = []
+                for t in team_templates:
+                    if t.template_key not in seen_keys:
+                        seen_keys.add(t.template_key)
+                        deduped.append(t)
+                templates = deduped
 
-        # If manager/team has designated forms, filter valid templates
-        valid_templates = [
-            t for t in templates 
-            if (t.team_name or t.team_id) or (t.template_name and t.template_name not in ["Form 1", "Form 2", "Form 3", "Form 4"]) or (t.categories and len(t.categories) > 0)
-        ]
-        
-        if valid_templates:
-            templates = valid_templates
+        # Deduplicate final templates by template_key
+        seen_keys = set()
+        final_templates = []
+        for t in templates:
+            if t.template_key not in seen_keys:
+                seen_keys.add(t.template_key)
+                if t.template_key == "form_1" and t.template_name and "Form" in t.template_name:
+                    import re
+                    clean_name = re.sub(r'\s*\(Form\s*\d+\)', '', t.template_name, flags=re.IGNORECASE).strip()
+                    if clean_name:
+                        t.template_name = clean_name
+                final_templates.append(t)
 
-        default_tpl = next((t for t in templates if t.is_default), templates[0] if templates else None)
-        active_key = default_tpl.template_key if default_tpl else "form_1"
+        default_tpl = next((t for t in final_templates if t.is_default), final_templates[0] if final_templates else None)
+        active_key = default_tpl.template_key if default_tpl else (final_templates[0].template_key if final_templates else "form_1")
 
         return jsonify({
             "success": True,
             "manager_id": canonical_mgr_id or manager_id or "",
             "active_key": active_key,
-            "templates": [t.to_dict() for t in templates]
+            "templates": [t.to_dict() for t in final_templates]
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1765,7 +1822,7 @@ def save_manager_kpi_template():
     """Upserts a specific form template for a manager or team into PostgreSQL database."""
     try:
         data = request.get_json() or {}
-        manager_id = str(data.get("manager_id") or "").strip()
+        manager_ids_raw = data.get("manager_ids") or data.get("manager_id") or ""
         template_key = str(data.get("template_key") or "form_1").strip().lower()
         template_name = str(data.get("template_name") or f"Form {template_key.replace('form_', '')}").strip()
         team_id = str(data.get("team_id") or "").strip()
@@ -1774,79 +1831,123 @@ def save_manager_kpi_template():
         is_default = bool(data.get("is_default", False))
         status = str(data.get("status") or "draft").strip().lower()
 
-        if not manager_id and not team_id and not team_name:
-            return jsonify({"error": "manager_id, team_id, or team_name is required"}), 400
+        if isinstance(manager_ids_raw, list):
+            mgr_id_list = [str(m).strip() for m in manager_ids_raw if str(m).strip()]
+        elif isinstance(manager_ids_raw, str) and manager_ids_raw:
+            mgr_id_list = [m.strip() for m in manager_ids_raw.split(",") if m.strip()]
+        else:
+            mgr_id_list = []
 
-        canonical_mgr_id = manager_id or "general"
-        mgr_name = data.get("manager_name") or ""
-        if manager_id and manager_id != "general":
-            mgr_emp = Employee.query.filter(Employee.employee_id == str(manager_id)).first()
-            if mgr_emp:
-                canonical_mgr_id = str(mgr_emp.employee_id)
-                mgr_name = mgr_emp.name or mgr_name
+        if not mgr_id_list and not team_id and not team_name:
+            return jsonify({"error": "manager_id, manager_ids, team_id, or team_name is required"}), 400
 
         now = datetime.utcnow()
+        saved_templates = []
 
-        tpl = None
-        if canonical_mgr_id and canonical_mgr_id != "general":
-            tpl = ManagerKpiTemplate.query.filter(
-                ManagerKpiTemplate.manager_id == canonical_mgr_id,
-                ManagerKpiTemplate.template_key == template_key
-            ).first()
+        if mgr_id_list:
+            for m_id in mgr_id_list:
+                canonical_mgr_id = m_id
+                mgr_emp = Employee.query.filter(Employee.employee_id == str(m_id)).first()
+                if mgr_emp:
+                    canonical_mgr_id = str(mgr_emp.employee_id)
+                    cur_mgr_name = mgr_emp.name or data.get("manager_name") or ""
+                else:
+                    cur_mgr_name = data.get("manager_name") or "Manager"
 
-        if not tpl and team_id:
-            tpl = ManagerKpiTemplate.query.filter(
-                ManagerKpiTemplate.team_id == team_id,
-                ManagerKpiTemplate.template_key == template_key
-            ).first()
+                tpl = ManagerKpiTemplate.query.filter(
+                    ManagerKpiTemplate.manager_id == canonical_mgr_id,
+                    ManagerKpiTemplate.template_key == template_key
+                ).first()
 
-        if not tpl and team_name:
-            tpl = ManagerKpiTemplate.query.filter(
-                ManagerKpiTemplate.team_name.ilike(team_name),
-                ManagerKpiTemplate.template_key == template_key
-            ).first()
+                if not tpl:
+                    tpl = ManagerKpiTemplate(
+                        manager_id=canonical_mgr_id,
+                        manager_name=cur_mgr_name,
+                        template_key=template_key,
+                        template_name=template_name,
+                        team_id=team_id if team_id else None,
+                        team_name=team_name if team_name else None,
+                        categories=categories,
+                        is_default=is_default,
+                        status=status,
+                        created_at=now,
+                        updated_at=now
+                    )
+                    db.session.add(tpl)
+                else:
+                    tpl.manager_id = canonical_mgr_id
+                    tpl.manager_name = cur_mgr_name or tpl.manager_name
+                    tpl.template_name = template_name or tpl.template_name
+                    if team_id:
+                        tpl.team_id = team_id
+                    if team_name:
+                        tpl.team_name = team_name
+                    tpl.categories = categories
+                    if "is_default" in data:
+                        tpl.is_default = is_default
+                    if "status" in data:
+                        tpl.status = status
+                    tpl.updated_at = now
 
-        if not tpl:
-            tpl = ManagerKpiTemplate(
-                manager_id=canonical_mgr_id,
-                manager_name=mgr_name,
-                template_key=template_key,
-                template_name=template_name,
-                team_id=team_id if team_id else None,
-                team_name=team_name if team_name else None,
-                categories=categories,
-                is_default=is_default,
-                status=status,
-                created_at=now,
-                updated_at=now
-            )
-            db.session.add(tpl)
+                if is_default and canonical_mgr_id:
+                    other_tpls = ManagerKpiTemplate.query.filter(
+                        ManagerKpiTemplate.manager_id == canonical_mgr_id,
+                        ManagerKpiTemplate.template_key != template_key
+                    ).all()
+                    for o in other_tpls:
+                        o.is_default = False
+
+                saved_templates.append(tpl)
         else:
-            if canonical_mgr_id and canonical_mgr_id != "general":
-                tpl.manager_id = canonical_mgr_id
-            tpl.manager_name = mgr_name or tpl.manager_name
-            tpl.template_name = template_name or tpl.template_name
+            # Fallback for team-only template without specific manager
+            tpl = None
             if team_id:
-                tpl.team_id = team_id
-            if team_name:
-                tpl.team_name = team_name
-            tpl.categories = categories
-            if "is_default" in data:
-                tpl.is_default = is_default
-            if "status" in data:
-                tpl.status = status
-            tpl.updated_at = now
+                tpl = ManagerKpiTemplate.query.filter(
+                    ManagerKpiTemplate.team_id == team_id,
+                    ManagerKpiTemplate.template_key == template_key
+                ).first()
+            if not tpl and team_name:
+                tpl = ManagerKpiTemplate.query.filter(
+                    ManagerKpiTemplate.team_name.ilike(team_name),
+                    ManagerKpiTemplate.template_key == template_key
+                ).first()
 
-        if is_default and canonical_mgr_id:
-            other_tpls = ManagerKpiTemplate.query.filter(
-                ManagerKpiTemplate.manager_id == canonical_mgr_id,
-                ManagerKpiTemplate.template_key != template_key
-            ).all()
-            for o in other_tpls:
-                o.is_default = False
+            if not tpl:
+                tpl = ManagerKpiTemplate(
+                    manager_id="general",
+                    manager_name=data.get("manager_name") or "Manager",
+                    template_key=template_key,
+                    template_name=template_name,
+                    team_id=team_id if team_id else None,
+                    team_name=team_name if team_name else None,
+                    categories=categories,
+                    is_default=is_default,
+                    status=status,
+                    created_at=now,
+                    updated_at=now
+                )
+                db.session.add(tpl)
+            else:
+                tpl.template_name = template_name or tpl.template_name
+                if team_id:
+                    tpl.team_id = team_id
+                if team_name:
+                    tpl.team_name = team_name
+                tpl.categories = categories
+                if "is_default" in data:
+                    tpl.is_default = is_default
+                if "status" in data:
+                    tpl.status = status
+                tpl.updated_at = now
+            saved_templates.append(tpl)
 
         db.session.commit()
-        return jsonify({"success": True, "template": tpl.to_dict()}), 200
+        last_tpl = saved_templates[-1] if saved_templates else None
+        return jsonify({
+            "success": True,
+            "template": last_tpl.to_dict() if last_tpl else {},
+            "templates": [t.to_dict() for t in saved_templates]
+        }), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500

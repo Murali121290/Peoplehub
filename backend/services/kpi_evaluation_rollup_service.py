@@ -223,9 +223,8 @@ def calculate_evaluation_working_days(employee_id: str, from_date: date, to_date
             elif is_work:
                 covering = [l for l in emp_leaves if l.from_date <= curr and l.to_date >= curr]
                 if covering:
-                    first_l = covering[0]
-                    val = 0.5 if (first_l.total_days is not None and first_l.total_days <= 0.5) else 1.0
-                    leave_count += val
+                    val = sum(0.5 if (l.total_days is not None and l.total_days <= 0.5) else 1.0 for l in covering)
+                    leave_count += min(1.0, val)
                 else:
                     scheduled_working_days += 1
 

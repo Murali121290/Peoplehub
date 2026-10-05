@@ -369,11 +369,13 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       return `${hrs} hr${hrs !== 1 ? "s" : ""} ${String(mins).padStart(2, "0")} min${mins !== 1 ? "s" : ""}`;
     };
 
-    const calcApprovedMinutes = (cycleStart: Date, cycleEnd: Date) => {
-      let mins = 0;
+    const calcPermissionMinutes = (cycleStart: Date, cycleEnd: Date) => {
+      let approvedMins = 0;
+      let pendingMins = 0;
       myRequests
         .filter((req: any) => {
-          if (req.request_type !== "Permission" || req.status !== "Approved") return false;
+          if (req.request_type !== "Permission") return false;
+          if (req.status !== "Approved" && req.status !== "Pending") return false;
           if (!req.permission_date || !req.from_time || !req.to_time) return false;
           const pd = parseLocalDate(req.permission_date);
           return pd >= cycleStart && pd <= cycleEnd;
@@ -383,36 +385,37 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           const [th, tm] = req.to_time.split(":").map(Number);
           if (!isNaN(fh) && !isNaN(fm) && !isNaN(th) && !isNaN(tm)) {
             const diff = (th * 60 + tm) - (fh * 60 + fm);
-            if (diff > 0) mins += diff;
+            if (diff > 0) {
+              if (req.status === "Approved") approvedMins += diff;
+              else if (req.status === "Pending") pendingMins += diff;
+            }
           }
         });
-      return mins;
+      return { approvedMins, pendingMins, totalMins: approvedMins + pendingMins };
     };
 
     // --- Determine which cycle to DISPLAY on the card ---
-    // Strategy: find the cycle that has approved permissions closest to / including the latest approved permission.
-    // If there's an approved permission in a future cycle, show that cycle instead of the current one.
+    // Strategy: find the cycle that has approved/pending permissions closest to / including the latest permission.
     const today = new Date();
     const { cycleStart: todayCycleStart, cycleEnd: todayCycleEnd } = getCycleBounds(today);
 
-    // Find the latest approved permission date
+    // Find the latest permission date
     let latestPermDate: Date | null = null;
     myRequests.forEach((req: any) => {
-      if (req.request_type === "Permission" && req.status === "Approved" && req.permission_date) {
+      if (req.request_type === "Permission" && (req.status === "Approved" || req.status === "Pending") && req.permission_date) {
         const pd = parseLocalDate(req.permission_date);
         if (!latestPermDate || pd > latestPermDate) latestPermDate = pd;
       }
     });
 
-    // Use the latest approved permission date's cycle for display if it's in the future
+    // Use the latest permission date's cycle for display if it's in the future
     let displayCycleStart = todayCycleStart;
     let displayCycleEnd = todayCycleEnd;
     if (latestPermDate) {
       const { cycleStart: lpCycleStart, cycleEnd: lpCycleEnd } = getCycleBounds(latestPermDate);
-      // Only switch if this cycle is strictly in the future compared to today's cycle
       if (lpCycleStart > todayCycleStart) {
-        const lpMins = calcApprovedMinutes(lpCycleStart, lpCycleEnd);
-        if (lpMins > 0) {
+        const { totalMins } = calcPermissionMinutes(lpCycleStart, lpCycleEnd);
+        if (totalMins > 0) {
           displayCycleStart = lpCycleStart;
           displayCycleEnd = lpCycleEnd;
         }
@@ -430,24 +433,26 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
     }
 
     const cycleStr = `${formatCycleDate(displayCycleStart)} - ${formatCycleDate(displayCycleEnd)}`;
-    const approvedMinutes = calcApprovedMinutes(displayCycleStart, displayCycleEnd);
-    const remainingMinutes = Math.max(0, limitMinutes - approvedMinutes);
+    const { approvedMins, pendingMins, totalMins } = calcPermissionMinutes(displayCycleStart, displayCycleEnd);
+    const remainingMinutes = Math.max(0, limitMinutes - totalMins);
 
     return {
       cycleStr,
       limitStr: formatDuration(limitMinutes),
-      approvedStr: formatDuration(approvedMinutes),
+      approvedStr: formatDuration(approvedMins),
+      pendingStr: formatDuration(pendingMins),
       remainingStr: formatDuration(remainingMinutes),
       remainingMinutes,
-      approvedMinutes,
-      // Also expose a helper for validation: get remaining for any given permission date
+      approvedMinutes: approvedMins,
+      pendingMinutes: pendingMins,
+      // Expose helper for validation: get remaining for any given permission date including pending
       getRemainingForDate: (permDateStr: string) => {
         if (!permDateStr) return remainingMinutes;
         const parsed = parseLocalDate(permDateStr);
         if (isNaN(parsed.getTime())) return remainingMinutes;
         const { cycleStart: cs, cycleEnd: ce } = getCycleBounds(parsed);
-        const used = calcApprovedMinutes(cs, ce);
-        return Math.max(0, limitMinutes - used);
+        const { totalMins: usedAndPending } = calcPermissionMinutes(cs, ce);
+        return Math.max(0, limitMinutes - usedAndPending);
       },
     };
   }, [myRequests, leaveForm.requestType, leaveForm.permissionDate]);
@@ -968,7 +973,7 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
       {mode === "permission" && (
         <motion.div
           variants={itemVariants}
-          className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6"
         >
           {/* Card 1: Monthly Limit */}
           <Card className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm hover:shadow transition-all duration-200 flex items-center justify-between" style={{ minHeight: "84px" }}>
@@ -986,9 +991,9 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
           {/* Card 2: Approved Permission */}
           <Card className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm hover:shadow transition-all duration-200 flex items-center justify-between" style={{ minHeight: "84px" }}>
             <div className="flex flex-col justify-between h-full">
-              <h4 className="text-[10px] font-bold text-slate-400 tracking-wider uppercase leading-none">Approved Permission</h4>
+              <h4 className="text-[10px] font-bold text-slate-400 tracking-wider uppercase leading-none">Approved</h4>
               <div className="flex items-baseline gap-1 mt-1">
-                <span className="text-xl font-extrabold text-slate-850">{permissionBalanceInfo.approvedStr}</span>
+                <span className="text-xl font-extrabold text-emerald-700">{permissionBalanceInfo.approvedStr}</span>
               </div>
             </div>
             <div className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
@@ -996,7 +1001,20 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
             </div>
           </Card>
 
-          {/* Card 3: Remaining Balance */}
+          {/* Card 3: Pending Approval */}
+          <Card className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm hover:shadow transition-all duration-200 flex items-center justify-between" style={{ minHeight: "84px" }}>
+            <div className="flex flex-col justify-between h-full">
+              <h4 className="text-[10px] font-bold text-slate-400 tracking-wider uppercase leading-none">Pending Approval</h4>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-xl font-extrabold text-amber-600">{permissionBalanceInfo.pendingStr}</span>
+              </div>
+            </div>
+            <div className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+              <ClockIcon className="h-4.5 w-4.5" />
+            </div>
+          </Card>
+
+          {/* Card 4: Remaining Balance */}
           <Card className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-sm hover:shadow transition-all duration-200 flex items-center justify-between" style={{ minHeight: "84px" }}>
             <div className="flex flex-col justify-between h-full">
               <h4 className="text-[10px] font-bold text-slate-400 tracking-wider uppercase leading-none">Remaining Balance</h4>
