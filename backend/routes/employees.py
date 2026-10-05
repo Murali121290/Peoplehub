@@ -1582,8 +1582,8 @@ def get_team_attendance(user_id):
                     from routes.attendance import is_holiday_or_weekoff_date
                     is_off_day = is_holiday_or_weekoff_date(today)
                     if is_off_day:
-                        req_hours = 6.0
-                        min_half_hours = 3.0
+                        req_hours = 7.0
+                        min_half_hours = 3.5
                     else:
                         is_weekend = today.weekday() >= 5
                         req_hours = 8.0 if is_weekend else 9.0

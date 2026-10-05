@@ -595,9 +595,9 @@ def calculate_attendance_status(attendance):
     Calculate and update the attendance status (Present, Half Day, Absent)
     based on the gross duration from check-in to check-out (including breaks).
     - Weekoff / Holiday / Company Leave:
-      - >= 6 hours: Present
-      - >= 3 hours: Half Day
-      - < 3 hours: Absent
+      - >= 7 hours: Present
+      - >= 3.5 hours: Half Day
+      - < 3.5 hours: Absent
     - Working Days:
       - >= 9 hours (8 hrs for Sat): Present
       - >= 4 hours: Half Day
@@ -708,8 +708,8 @@ def calculate_attendance_status(attendance):
 
     is_off_day = is_holiday_or_weekoff_date(attendance.attendance_date) if attendance.attendance_date else False
     if is_off_day:
-        req_hours = 6.0
-        min_half_hours = 3.0
+        req_hours = 7.0
+        min_half_hours = 3.5
     else:
         is_weekend = attendance.attendance_date.weekday() >= 5 if attendance.attendance_date else False
         req_hours = 8.0 if is_weekend else 9.0
@@ -1561,8 +1561,8 @@ def attendance_history(user_id):
                             is_off_day = False
                     
                     if is_off_day:
-                        req_hours = 6.0
-                        min_half_hours = 3.0
+                        req_hours = 7.0
+                        min_half_hours = 3.5
                     else:
                         is_weekend = record.attendance_date.weekday() >= 5
                         req_hours = 8.0 if is_weekend else 9.0
@@ -1869,8 +1869,8 @@ def get_attendance():
             if not status:
                 is_off_day = is_holiday_or_weekoff_date(attendance.attendance_date)
                 if is_off_day:
-                    req_hours = 6.0
-                    min_half_hours = 3.0
+                    req_hours = 7.0
+                    min_half_hours = 3.5
                 else:
                     is_weekend = attendance.attendance_date.weekday() >= 5
                     req_hours = 8.0 if is_weekend else 9.0
@@ -2203,8 +2203,8 @@ def _get_period_attendance_records(days_count, include_card_fields=False):
                     
                     is_off_day = is_holiday_or_weekoff_date(current_date)
                     if is_off_day:
-                        req_hours = 6.0
-                        min_half_hours = 3.0
+                        req_hours = 7.0
+                        min_half_hours = 3.5
                     else:
                         is_weekend = current_date.weekday() >= 5
                         req_hours = 8.0 if is_weekend else 9.0
