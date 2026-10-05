@@ -551,13 +551,57 @@ def check_out():
             "error": str(e)
         }), 500
 
+def is_date_week_off(d):
+    """
+    S4Carlisle week-off rules:
+    - Sundays (weekday == 6) are week-offs
+    - 2nd and 4th Saturdays of the month are week-offs
+    - 1st, 3rd, and 5th Saturdays are working days
+    """
+    if d.weekday() == 6:
+        return True
+    if d.weekday() == 5:
+        sat_count = 0
+        for day_num in range(1, d.day + 1):
+            from datetime import date as dt_date
+            if dt_date(d.year, d.month, day_num).weekday() == 5:
+                sat_count += 1
+        if sat_count in (2, 4):
+            return True
+    return False
+
+def is_holiday_or_weekoff_date(d):
+    """
+    Checks if a given date is a weekoff or holiday (considering overrides and holidays).
+    """
+    if not d:
+        return False
+    try:
+        from models.holiday import Holiday, HolidayOverride
+        override = HolidayOverride.query.filter_by(date=d).first()
+        if override:
+            if override.override_type in ("Holiday", "Weekly Off"):
+                return True
+            elif override.override_type == "Working Day":
+                return False
+        if Holiday.query.filter_by(date=d).first():
+            return True
+        return is_date_week_off(d)
+    except Exception as e:
+        return is_date_week_off(d)
+
 def calculate_attendance_status(attendance):
     """
     Calculate and update the attendance status (Present, Half Day, Absent)
     based on the gross duration from check-in to check-out (including breaks).
-    - < 4 hours: Absent
-    - < 7 hours: Half Day
-    - >= 7 hours: Present
+    - Weekoff / Holiday / Company Leave:
+      - >= 6 hours: Present
+      - >= 3 hours: Half Day
+      - < 3 hours: Absent
+    - Working Days:
+      - >= 9 hours (8 hrs for Sat): Present
+      - >= 4 hours: Half Day
+      - < 4 hours: Absent
     """
     # 1. Determine effective check-in and check-out (Web Entry ONLY)
     eff_in = attendance.check_in
@@ -662,45 +706,50 @@ def calculate_attendance_status(attendance):
         attendance.status = "Half Day"
         return
 
-    if status_calc_hours < 4.0:
-        attendance.status = "Absent"
+    is_off_day = is_holiday_or_weekoff_date(attendance.attendance_date) if attendance.attendance_date else False
+    if is_off_day:
+        req_hours = 6.0
+        min_half_hours = 3.0
     else:
-        is_weekend = attendance.attendance_date.weekday() >= 5
+        is_weekend = attendance.attendance_date.weekday() >= 5 if attendance.attendance_date else False
         req_hours = 8.0 if is_weekend else 9.0
-        
-        if status_calc_hours < req_hours:
-            # Check for weekly 15-minute grace period
-            if (req_hours - status_calc_hours) <= (15.0 / 60.0) and hasattr(attendance, 'used_weekly_grace'):
-                from models.attendance import Attendance
-                from sqlalchemy import cast, Date
-                from datetime import timedelta
-                
-                att_date = attendance.attendance_date
-                start_of_week = att_date - timedelta(days=att_date.weekday())
-                end_of_week = start_of_week + timedelta(days=6)
-                
-                used_grace_record = Attendance.query.filter(
-                    Attendance.user_id == attendance.user_id,
-                    cast(Attendance.attendance_date, Date) >= start_of_week,
-                    cast(Attendance.attendance_date, Date) <= end_of_week,
-                    Attendance.used_weekly_grace == True,
-                    Attendance.id != attendance.id
-                ).first()
-                
-                if not used_grace_record:
-                    attendance.used_weekly_grace = True
-                    attendance.status = "Present"
-                else:
-                    attendance.used_weekly_grace = False
-                    attendance.status = "Half Day"
+        min_half_hours = 4.0
+
+    if status_calc_hours < min_half_hours:
+        attendance.status = "Absent"
+    elif status_calc_hours >= req_hours:
+        if hasattr(attendance, 'used_weekly_grace'):
+            attendance.used_weekly_grace = False
+        attendance.status = "Present"
+    else:
+        # Check for weekly 15-minute grace period
+        if (req_hours - status_calc_hours) <= (15.0 / 60.0) and hasattr(attendance, 'used_weekly_grace'):
+            from models.attendance import Attendance
+            from sqlalchemy import cast, Date
+            from datetime import timedelta
+            
+            att_date = attendance.attendance_date
+            start_of_week = att_date - timedelta(days=att_date.weekday())
+            end_of_week = start_of_week + timedelta(days=6)
+            
+            used_grace_record = Attendance.query.filter(
+                Attendance.user_id == attendance.user_id,
+                cast(Attendance.attendance_date, Date) >= start_of_week,
+                cast(Attendance.attendance_date, Date) <= end_of_week,
+                Attendance.used_weekly_grace == True,
+                Attendance.id != attendance.id
+            ).first()
+            
+            if not used_grace_record:
+                attendance.used_weekly_grace = True
+                attendance.status = "Present"
             else:
-                if hasattr(attendance, 'used_weekly_grace'):
-                    attendance.used_weekly_grace = False
+                attendance.used_weekly_grace = False
                 attendance.status = "Half Day"
         else:
             if hasattr(attendance, 'used_weekly_grace'):
                 attendance.used_weekly_grace = False
-            attendance.status = "Present"
+            attendance.status = "Half Day"
 
 
 def sync_biometric_to_web_entry(attendance):
@@ -1504,9 +1553,22 @@ def attendance_history(user_id):
                 # Derive display status
                 display_status = record.status
                 if not display_status or display_status in ("Checked Out", "Check In"):
-                    is_weekend = record.attendance_date.weekday() >= 5
-                    req_hours = 8.0 if is_weekend else 9.0
-                    if gross_hours < 4.0:
+                    is_off_day = is_date_week_off(current_date) or (current_date in holiday_dict)
+                    if current_date in override_dict:
+                        if override_dict[current_date][0] in ("Holiday", "Weekly Off"):
+                            is_off_day = True
+                        elif override_dict[current_date][0] == "Working Day":
+                            is_off_day = False
+                    
+                    if is_off_day:
+                        req_hours = 6.0
+                        min_half_hours = 3.0
+                    else:
+                        is_weekend = record.attendance_date.weekday() >= 5
+                        req_hours = 8.0 if is_weekend else 9.0
+                        min_half_hours = 4.0
+
+                    if gross_hours < min_half_hours:
                         display_status = "Absent"
                     elif gross_hours < req_hours:
                         display_status = "Half Day"
@@ -1558,12 +1620,24 @@ def attendance_history(user_id):
                     permission_label = f"{_fmt(ft)} – {_fmt(tt)}"
 
                     # Re-evaluate status considering permission credit
-                    is_weekend = current_date.weekday() >= 5
-                    req_hours = 7.0 if is_weekend else 8.0
+                    is_off_day = is_date_week_off(current_date) or (current_date in holiday_dict)
+                    if current_date in override_dict:
+                        if override_dict[current_date][0] in ("Holiday", "Weekly Off"):
+                            is_off_day = True
+                        elif override_dict[current_date][0] == "Working Day":
+                            is_off_day = False
+                    
+                    if is_off_day:
+                        req_hours = 5.0
+                        min_half_hours = 3.0
+                    else:
+                        is_weekend = current_date.weekday() >= 5
+                        req_hours = 7.0 if is_weekend else 8.0
+                        min_half_hours = 4.0
                     eff_h = max(virtual_working_hours, effective_gross_hours)
                     if eff_h >= req_hours:
                         display_status = "Present"
-                    elif eff_h >= 4.0 and display_status == "Absent":
+                    elif eff_h >= min_half_hours and display_status == "Absent":
                         display_status = "Half Day"
 
                 leave_details = [
@@ -1793,9 +1867,15 @@ def get_attendance():
             gross_hours = int(gross_hours * 100) / 100
 
             if not status:
-                is_weekend = attendance.attendance_date.weekday() >= 5
-                req_hours = 8.0 if is_weekend else 9.0
-                if gross_hours < 4.0:
+                is_off_day = is_holiday_or_weekoff_date(attendance.attendance_date)
+                if is_off_day:
+                    req_hours = 6.0
+                    min_half_hours = 3.0
+                else:
+                    is_weekend = attendance.attendance_date.weekday() >= 5
+                    req_hours = 8.0 if is_weekend else 9.0
+                    min_half_hours = 4.0
+                if gross_hours < min_half_hours:
                     status = "Absent"
                 elif gross_hours < req_hours:
                     status = "Half Day"
@@ -2121,9 +2201,15 @@ def _get_period_attendance_records(days_count, include_card_fields=False):
                     else:
                         gross_hours = 0.0
                     
-                    is_weekend = current_date.weekday() >= 5
-                    req_hours = 8.0 if is_weekend else 9.0
-                    if gross_hours < 4.0:
+                    is_off_day = is_holiday_or_weekoff_date(current_date)
+                    if is_off_day:
+                        req_hours = 6.0
+                        min_half_hours = 3.0
+                    else:
+                        is_weekend = current_date.weekday() >= 5
+                        req_hours = 8.0 if is_weekend else 9.0
+                        min_half_hours = 4.0
+                    if gross_hours < min_half_hours:
                         status = "Absent"
                     elif gross_hours < req_hours:
                         status = "Half Day"

@@ -1579,9 +1579,17 @@ def get_team_attendance(user_id):
 
                 att_status = attendance.status
                 if not att_status or att_status in ("Checked Out", "Check In", "Absent"):
-                    is_weekend = today.weekday() >= 5
-                    req_hours = 8.0 if is_weekend else 9.0
-                    if gross_hours < 4.0:
+                    from routes.attendance import is_holiday_or_weekoff_date
+                    is_off_day = is_holiday_or_weekoff_date(today)
+                    if is_off_day:
+                        req_hours = 6.0
+                        min_half_hours = 3.0
+                    else:
+                        is_weekend = today.weekday() >= 5
+                        req_hours = 8.0 if is_weekend else 9.0
+                        min_half_hours = 4.0
+
+                    if gross_hours < min_half_hours:
                         att_status = "Absent"
                     elif gross_hours < req_hours:
                         att_status = "Half Day"
