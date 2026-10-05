@@ -456,10 +456,12 @@ def approve_shift(id):
                         attendance.check_in = check_in_dt
                         attendance.check_out = check_out_dt
                         attendance.total_hours = total_hrs
-                        if total_hrs >= 6.0:
+                        if total_hrs >= 7.0:
                             attendance.status = "Present"
-                        else:
+                        elif total_hrs >= 3.5:
                             attendance.status = "Half Day"
+                        else:
+                            attendance.status = "Absent"
                     
                     attendance.manager_status = "Approved"
 

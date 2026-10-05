@@ -327,8 +327,25 @@ const ManagerDashboardPage = () => {
 
   // Auto-calculate status based on check-in and check-out times inside edit modal
   useEffect(() => {
+    const recordDate = editingRecord?.date ? new Date(editingRecord.date) : new Date();
+    const dayOfWeek = recordDate.getDay(); // 0 = Sunday, 6 = Saturday
+    const dateNum = recordDate.getDate();
+
+    // Calculate which Saturday of the month it is
+    let satCount = 0;
+    if (dayOfWeek === 6) {
+      for (let d = 1; d <= dateNum; d++) {
+        if (new Date(recordDate.getFullYear(), recordDate.getMonth(), d).getDay() === 6) {
+          satCount++;
+        }
+      }
+    }
+    const isWeekoff = dayOfWeek === 0 || (dayOfWeek === 6 && (satCount === 2 || satCount === 4));
+    const isHolidayOrWeekoff = isWeekoff || editingRecord?.status === "Week Off" || editingRecord?.status === "Holiday" || editingRecord?.is_off_day;
+
     if (!editForm.checkIn || !editForm.checkOut) {
-      setEditForm(prev => ({ ...prev, status: "Absent" }));
+      const defaultEmptyStatus = isHolidayOrWeekoff ? (editingRecord?.status || (isWeekoff ? "Week Off" : "Holiday")) : "Absent";
+      setEditForm(prev => ({ ...prev, status: defaultEmptyStatus }));
       return;
     }
 
@@ -352,19 +369,24 @@ const ManagerDashboardPage = () => {
       effectiveHours += editingRecord.permission_hours;
     }
 
-    let computedStatus = "Absent";
-    // Check if weekend (0 = Sunday, 6 = Saturday)
-    const recordDate = editingRecord?.date ? new Date(editingRecord.date) : new Date();
-    const isWeekend = recordDate.getDay() === 0 || recordDate.getDay() === 6;
+    let computedStatus = isHolidayOrWeekoff ? (editingRecord?.status || "Week Off") : "Absent";
 
-    // Strict requirement, no automatic grace period
-    const reqHours = isWeekend ? 8.0 : 9.0;
+    // Required hours: 7.0 for Weekoff/Holiday/Leave, 8.0 for working Saturday, 9.0 for normal weekday
+    let reqHours = 9.0;
+    let minHalfHours = 4.0;
+    if (isHolidayOrWeekoff) {
+      reqHours = 7.0;
+      minHalfHours = 3.5;
+    } else if (dayOfWeek === 6) {
+      reqHours = 8.0;
+      minHalfHours = 4.0;
+    }
 
     if (effectiveHours >= reqHours) {
       computedStatus = "Present";
     } else if (effectiveHours >= reqHours - 0.25 && (editingRecord?.used_weekly_grace || editingRecord?.status === "Present" || (editingRecord?.status || "").includes("Present (15m Grace)"))) {
       computedStatus = "Present (15m Grace)";
-    } else if (effectiveHours >= 4.0) {
+    } else if (effectiveHours >= minHalfHours) {
       computedStatus = "Half Day";
     }
 
@@ -3321,7 +3343,7 @@ const ManagerDashboardPage = () => {
                     background: "#f8fafc",
                     fontSize: "12px",
                     fontWeight: 700,
-                    color: editForm.status.includes("Present") ? "#166534" : editForm.status === "Half Day" ? "#6b21a8" : "#991b1b",
+                    color: editForm.status.includes("Present") ? "#166534" : editForm.status === "Half Day" ? "#6b21a8" : editForm.status === "Week Off" ? "#475569" : editForm.status === "Holiday" ? "#1e40af" : "#991b1b",
                     display: "flex",
                     alignItems: "center",
                     gap: "6px",
@@ -3333,7 +3355,7 @@ const ManagerDashboardPage = () => {
                       width: "7px",
                       height: "7px",
                       borderRadius: "50%",
-                      background: editForm.status.includes("Present") ? "#16a34a" : editForm.status === "Half Day" ? "#a855f7" : "#dc2626",
+                      background: editForm.status.includes("Present") ? "#16a34a" : editForm.status === "Half Day" ? "#a855f7" : editForm.status === "Week Off" ? "#64748b" : editForm.status === "Holiday" ? "#3b82f6" : "#dc2626",
                     }}
                   />
                   <span>{editForm.status}</span>

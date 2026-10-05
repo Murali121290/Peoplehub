@@ -1551,29 +1551,33 @@ def attendance_history(user_id):
                 gross_hours = int(gross_hours * 100) / 100
 
                 # Derive display status
-                display_status = record.status
-                if not display_status or display_status in ("Checked Out", "Check In"):
-                    is_off_day = is_date_week_off(current_date) or (current_date in holiday_dict)
-                    if current_date in override_dict:
-                        if override_dict[current_date][0] in ("Holiday", "Weekly Off"):
-                            is_off_day = True
-                        elif override_dict[current_date][0] == "Working Day":
-                            is_off_day = False
-                    
-                    if is_off_day:
-                        req_hours = 7.0
-                        min_half_hours = 3.5
-                    else:
-                        is_weekend = record.attendance_date.weekday() >= 5
-                        req_hours = 8.0 if is_weekend else 9.0
-                        min_half_hours = 4.0
+                is_off_day = is_date_week_off(current_date) or (current_date in holiday_dict)
+                if current_date in override_dict:
+                    if override_dict[current_date][0] in ("Holiday", "Weekly Off"):
+                        is_off_day = True
+                    elif override_dict[current_date][0] == "Working Day":
+                        is_off_day = False
+                
+                if is_off_day:
+                    req_hours = 7.0
+                    min_half_hours = 3.5
+                else:
+                    is_weekend = record.attendance_date.weekday() >= 5
+                    req_hours = 8.0 if is_weekend else 9.0
+                    min_half_hours = 4.0
 
+                if eff_in and eff_out:
                     if gross_hours < min_half_hours:
                         display_status = "Absent"
                     elif gross_hours < req_hours:
-                        display_status = "Half Day"
+                        if (req_hours - gross_hours) <= (15.0 / 60.0) and getattr(record, 'used_weekly_grace', False):
+                            display_status = "Present"
+                        else:
+                            display_status = "Half Day"
                     else:
                         display_status = "Present"
+                else:
+                    display_status = record.status or ("Absent" if not is_off_day else ("Week Off" if is_date_week_off(current_date) else "Holiday"))
 
                 # If employee has checked in but not checked out today, keep 'Check In'
                 if record.check_in and not record.check_out and not record.card_check_out and is_today:
