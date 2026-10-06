@@ -27,19 +27,25 @@ const CustomSelect: React.FC<{
   placeholder: string;
 }> = ({ value, onChange, options, placeholder }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
-    const handleClose = () => setIsOpen(false);
-    document.addEventListener("click", handleClose);
-    return () => document.removeEventListener("click", handleClose);
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [isOpen]);
 
   return (
-    <div className="relative w-full text-left" onClick={(e) => e.stopPropagation()}>
+    <div ref={dropdownRef} className="relative w-full text-left">
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between rounded border border-neutral-200 bg-white px-2 py-1 text-[11px] font-semibold text-neutral-700 outline-none hover:border-neutral-300"
+        className="flex w-full items-center justify-between rounded border border-neutral-200 bg-white px-2 py-1 text-[11px] font-semibold text-neutral-700 outline-none hover:border-neutral-300 transition-colors"
         style={{ textTransform: "none" }}
       >
         <span className="truncate">{value === "All" ? placeholder : value}</span>
@@ -47,7 +53,7 @@ const CustomSelect: React.FC<{
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+        <div className="absolute left-0 z-50 mt-1 min-w-[180px] w-max max-w-[320px] max-h-60 overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-xl">
           {options.map((opt) => (
             <div
               key={opt}
@@ -55,7 +61,7 @@ const CustomSelect: React.FC<{
                 onChange(opt);
                 setIsOpen(false);
               }}
-              className={`cursor-pointer px-2.5 py-1.5 text-[11px] text-neutral-700 hover:bg-neutral-100 truncate ${
+              className={`cursor-pointer px-3 py-1.5 text-[11px] text-neutral-700 hover:bg-neutral-100 whitespace-nowrap text-left ${
                 opt === value ? "bg-primary-50 font-bold text-primary-700" : ""
               }`}
               style={{ textTransform: "none" }}
@@ -164,35 +170,35 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
     }
   };
 
-  // Dynamic filter lists from searched list
+  // Dynamic filter lists from searched list (sorted alphabetically)
   const uniqueDesignations = useMemo(() => {
     const s = new Set<string>();
     filteredEmps.forEach(e => { if (e.designation) s.add(e.designation); });
-    return ["All", ...Array.from(s)];
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))];
   }, [filteredEmps]);
 
   const uniqueManagers = useMemo(() => {
     const s = new Set<string>();
     filteredEmps.forEach(e => { if (e.reporting_manager) s.add(e.reporting_manager); });
-    return ["All", ...Array.from(s)];
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))];
   }, [filteredEmps]);
 
   const uniqueTeams = useMemo(() => {
     const s = new Set<string>();
     filteredEmps.forEach(e => { if (e.department) s.add(e.department); });
-    return ["All", ...Array.from(s)];
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))];
   }, [filteredEmps]);
 
   const uniqueShifts = useMemo(() => {
     const s = new Set<string>();
     filteredEmps.forEach(e => { if (e.shift_timing) s.add(e.shift_timing); });
-    return ["All", ...Array.from(s)];
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))];
   }, [filteredEmps]);
 
   const uniqueWorkModes = useMemo(() => {
     const s = new Set<string>();
     filteredEmps.forEach(e => { if (e.work_mode) s.add(e.work_mode); });
-    return ["All", ...Array.from(s)];
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))];
   }, [filteredEmps]);
 
   const uniqueTodayShifts = useMemo(() => {
@@ -201,13 +207,13 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
       const shift = e.today_shift || e.shift_timing || "General Shift";
       s.add(shift);
     });
-    return ["All", ...Array.from(s)];
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))];
   }, [filteredEmps]);
 
   const uniqueStatuses = useMemo(() => {
     const s = new Set<string>();
     filteredEmps.forEach(e => { if (e.status) s.add(e.status); });
-    return ["All", ...Array.from(s)];
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))];
   }, [filteredEmps]);
 
   // Apply filters and sort deactive employees to the bottom
@@ -266,7 +272,7 @@ const DirectoryTab: React.FC<DirectoryTabProps> = ({
         </div>
       </div>
 
-      <div className="overflow-x-auto overflow-y-auto max-h-[600px] rounded-xl border border-neutral-200 bg-neutral-100 shadow-sm">
+      <div className="overflow-x-auto overflow-y-auto min-h-[400px] max-h-[600px] rounded-xl border border-neutral-200 bg-neutral-100 shadow-sm">
         <table className="w-full border-collapse text-left text-[13px]">
           <thead className="sticky top-0 z-10 bg-white">
             <tr className="border-b-2 border-neutral-200 text-neutral-500">

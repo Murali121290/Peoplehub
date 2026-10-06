@@ -355,12 +355,14 @@ export default function HRAdminDashboard() {
       `${e.first_name || ""} ${e.last_name || ""}`
         .toLowerCase()
         .includes(search.toLowerCase()) ||
+      String(e.employee_id || "")
+        .toLowerCase()
+        .includes(search.toLowerCase()) ||
       (e.department || "").toLowerCase().includes(search.toLowerCase()) ||
       (e.designation || "").toLowerCase().includes(search.toLowerCase()) ||
       (e.reporting_manager || "")
         .toLowerCase()
-        .includes(search.toLowerCase()) ||
-      (e.designation || "").toLowerCase().includes(search.toLowerCase()),
+        .includes(search.toLowerCase()),
   ).map((emp) => {
     // ── Today's date string (YYYY-MM-DD) ──────────────────────────────────
     const now = new Date();

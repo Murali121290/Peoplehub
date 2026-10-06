@@ -1079,25 +1079,25 @@ const ManagerDashboardPage = () => {
   const departments = useMemo(() => {
     const s = new Set<string>();
     scopedTeamMembers.forEach((m) => { if (m.department) s.add(m.department); });
-    return ["All", ...Array.from(s)];
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))];
   }, [scopedTeamMembers]);
 
   const designations = useMemo(() => {
     const s = new Set<string>();
     scopedTeamMembers.forEach((m) => { if (m.designation) s.add(m.designation); });
-    return ["All", ...Array.from(s)];
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))];
   }, [scopedTeamMembers]);
 
   const managersList = useMemo(() => {
     const s = new Set<string>();
     scopedTeamMembers.forEach((m) => { if (m.reporting_manager) s.add(m.reporting_manager); });
-    return ["All", ...Array.from(s)];
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))];
   }, [scopedTeamMembers]);
 
   const shiftsList = useMemo(() => {
     const s = new Set<string>();
     scopedTeamMembers.forEach((m) => { if (m.shift) s.add(m.shift); });
-    return ["All", ...Array.from(s)];
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))];
   }, [scopedTeamMembers]);
 
   // ==========================
