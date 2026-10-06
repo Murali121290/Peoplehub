@@ -666,7 +666,26 @@ def calculate_attendance_status(attendance):
         attendance.status = "Absent"
     else:
         is_weekend = attendance.attendance_date.weekday() >= 5
-        req_hours = 8.0 if is_weekend else 9.0
+        is_holiday = False
+        try:
+            from models.holiday import Holiday, HolidayOverride
+            override = HolidayOverride.query.filter_by(date=attendance.attendance_date).first()
+            if override:
+                if override.override_type == "Holiday":
+                    is_holiday = True
+            else:
+                if Holiday.query.filter_by(date=attendance.attendance_date).first():
+                    is_holiday = True
+        except Exception:
+            pass
+
+        is_weekoff = is_date_week_off(attendance.attendance_date)
+        if is_holiday or is_weekoff:
+            req_hours = 7.0
+        elif attendance.attendance_date.weekday() == 5:
+            req_hours = 8.0
+        else:
+            req_hours = 9.0
         
         if status_calc_hours < req_hours:
             # Check for weekly 15-minute grace period
@@ -1505,7 +1524,19 @@ def attendance_history(user_id):
                 display_status = record.status
                 if not display_status or display_status in ("Checked Out", "Check In"):
                     is_weekend = record.attendance_date.weekday() >= 5
-                    req_hours = 8.0 if is_weekend else 9.0
+                    is_holiday = False
+                    if override_dict.get(record.attendance_date) and override_dict.get(record.attendance_date)[0] == "Holiday":
+                        is_holiday = True
+                    elif record.attendance_date in holiday_dict:
+                        is_holiday = True
+
+                    is_weekoff = is_date_week_off(record.attendance_date)
+                    if is_holiday or is_weekoff:
+                        req_hours = 7.0
+                    elif record.attendance_date.weekday() == 5:
+                        req_hours = 8.0
+                    else:
+                        req_hours = 9.0
                     if gross_hours < 4.0:
                         display_status = "Absent"
                     elif gross_hours < req_hours:
@@ -1559,7 +1590,19 @@ def attendance_history(user_id):
 
                     # Re-evaluate status considering permission credit
                     is_weekend = current_date.weekday() >= 5
-                    req_hours = 7.0 if is_weekend else 8.0
+                    is_holiday = False
+                    if override_dict.get(current_date) and override_dict.get(current_date)[0] == "Holiday":
+                        is_holiday = True
+                    elif current_date in holiday_dict:
+                        is_holiday = True
+
+                    is_weekoff = is_date_week_off(current_date)
+                    if is_holiday or is_weekoff:
+                        req_hours = 7.0
+                    elif current_date.weekday() == 5:
+                        req_hours = 8.0
+                    else:
+                        req_hours = 9.0
                     eff_h = max(virtual_working_hours, effective_gross_hours)
                     if eff_h >= req_hours:
                         display_status = "Present"
@@ -1626,6 +1669,8 @@ def attendance_history(user_id):
                     "regularization_check_out": record.regularization_check_out.strftime("%I:%M %p") if record.regularization_check_out else "-",
                     "regularization_total_hours": record.regularization_total_hours or 0.0,
                     "leave_details": leave_details,
+                    "is_holiday": is_holiday,
+                    "is_week_off": is_weekoff,
                 })
 
             else:
@@ -1729,7 +1774,9 @@ def attendance_history(user_id):
                     "wages_status": wages_status,
                     "regularization_check_in": "-",
                     "regularization_check_out": "-",
-                    "regularization_total_hours": 0.0
+                    "regularization_total_hours": 0.0,
+                    "is_holiday": status == "Holiday",
+                    "is_week_off": status == "Week Off"
                 })
 
     return jsonify(result)

@@ -353,12 +353,28 @@ const ManagerDashboardPage = () => {
     }
 
     let computedStatus = "Absent";
-    // Check if weekend (0 = Sunday, 6 = Saturday)
     const recordDate = editingRecord?.date ? new Date(editingRecord.date) : new Date();
-    const isWeekend = recordDate.getDay() === 0 || recordDate.getDay() === 6;
+    const isSunday = recordDate.getDay() === 0;
+    const isSaturday = recordDate.getDay() === 6;
+    
+    const isHolidayRecord = !!editingRecord?.is_holiday;
+    const isWeekOffRecord = !!editingRecord?.is_week_off;
 
-    // Strict requirement, no automatic grace period
-    const reqHours = isWeekend ? 8.0 : 9.0;
+    let isWeekOffSaturday = false;
+    if (isSaturday) {
+      const dateNum = recordDate.getDate();
+      const satCount = Math.ceil(dateNum / 7);
+      if (satCount === 2 || satCount === 4) {
+        isWeekOffSaturday = true;
+      }
+    }
+
+    let reqHours = 9.0;
+    if (isSunday || isWeekOffSaturday || isHolidayRecord || isWeekOffRecord) {
+      reqHours = 7.0;
+    } else if (isSaturday) {
+      reqHours = 8.0;
+    }
 
     if (effectiveHours >= reqHours) {
       computedStatus = "Present";
