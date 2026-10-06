@@ -1498,7 +1498,9 @@ def attendance_history(user_id):
                     now = get_ist_now()
                     elapsed_seconds = (now - record.check_in).total_seconds()
                     break_seconds = (record.total_break_minutes or 0) * 60
-                    hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
+                    paused_seconds = (record.paused_minutes or 0) * 60
+                    gap_seconds = (record.total_gap_minutes or 0) * 60
+                    hours_decimal = max(elapsed_seconds - break_seconds - paused_seconds - gap_seconds, 0) / 3600
                     working_hours = int(hours_decimal * 100) / 100
                     check_out_str = "-"
                 else:
@@ -1509,12 +1511,15 @@ def attendance_history(user_id):
                 # Calculate gross total hours (Web Entry ONLY)
                 eff_in = record.check_in
                 eff_out = record.check_out
+                paused_seconds_gross = (record.paused_minutes or 0) * 60
+                gap_seconds_gross = (record.total_gap_minutes or 0) * 60
+                
                 if eff_in and eff_out:
-                    gross_sec = (eff_out - eff_in).total_seconds()
+                    gross_sec = (eff_out - eff_in).total_seconds() - paused_seconds_gross - gap_seconds_gross
                     gross_hours = max(gross_sec, 0) / 3600
                 elif eff_in and is_today:
                     now_time = get_ist_now()
-                    gross_sec = (now_time - eff_in).total_seconds()
+                    gross_sec = (now_time - eff_in).total_seconds() - paused_seconds_gross - gap_seconds_gross
                     gross_hours = max(gross_sec, 0) / 3600
                 else:
                     gross_hours = 0.0
@@ -1834,13 +1839,15 @@ def get_attendance():
             
             eff_in = attendance.check_in
             eff_out = attendance.check_out
+            paused_seconds_gross = (attendance.paused_minutes or 0) * 60
+            gap_seconds_gross = (attendance.total_gap_minutes or 0) * 60
             
             if eff_in and eff_out:
-                gross_sec = (eff_out - eff_in).total_seconds()
+                gross_sec = (eff_out - eff_in).total_seconds() - paused_seconds_gross - gap_seconds_gross
                 gross_hours = max(gross_sec, 0) / 3600
             elif eff_in and today == get_ist_today():
                 now = get_ist_now()
-                gross_sec = (now - eff_in).total_seconds()
+                gross_sec = (now - eff_in).total_seconds() - paused_seconds_gross - gap_seconds_gross
                 gross_hours = max(gross_sec, 0) / 3600
             else:
                 gross_hours = 0.0
