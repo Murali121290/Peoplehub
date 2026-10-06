@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Coffee, UtensilsCrossed, Home, Clock } from "lucide-react";
+import { Coffee, UtensilsCrossed, Home, Clock, Pause, MinusCircle, PowerOff, LogOut } from "lucide-react";
 import { API_URL, getProfileImageUrl } from "../../../config/api";
 import { socket } from "../../../services/socket";
 
@@ -185,6 +185,11 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           {member.tea_break && (
             <span title="On Tea Break" className="flex items-center justify-center bg-amber-100 text-amber-700 rounded-full p-1 shadow-sm border border-amber-200">
               <Coffee className="w-3.5 h-3.5" />
+            </span>
+          )}
+          {member.is_paused && (
+            <span title="Out / Off" className="flex items-center justify-center bg-blue-100 text-blue-600 rounded-full p-1 shadow-sm border border-blue-200">
+              <LogOut className="w-3.5 h-3.5" />
             </span>
           )}
         </div>
