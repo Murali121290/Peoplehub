@@ -86,7 +86,7 @@ interface DayDetails {
   rawAttendanceRecord?: any;
   rawLeaveRecord?: any;
   baseWorkingHours?: number;
-  rawPermissionRecord?: any;
+  rawPermissionRecords?: any[];
   halfDayDuration?: string;
   isOneDayWages?: boolean;
   wagesStatus?: string | null;
@@ -669,8 +669,8 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       return l.from_date <= dateStr && l.to_date >= dateStr && !isCancelled;
     });
 
-    // Approved Permission
-    const matchedPermission = approvedLeaves.find((l: any) => {
+    // Approved Permissions
+    const matchedPermissions = approvedLeaves.filter((l: any) => {
       if (l.request_type !== "Permission") return false;
       return l.permission_date === dateStr;
     });
@@ -712,19 +712,25 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
 
     let permissionHours = 0;
     let permissionLabel = "";
-    if (matchedPermission && matchedPermission.status === "Approved" && matchedPermission.from_time && matchedPermission.to_time) {
-      const [fH, fM] = matchedPermission.from_time.split(":");
-      const [tH, tM] = matchedPermission.to_time.split(":");
-      const fMins = parseInt(fH) * 60 + parseInt(fM);
-      const tMins = parseInt(tH) * 60 + parseInt(tM);
-      permissionHours = Math.max(0, tMins - fMins) / 60;
+    if (matchedPermissions.length > 0) {
+      const pLabels: string[] = [];
+      matchedPermissions.forEach((p: any) => {
+        if (p.status === "Approved" && p.from_time && p.to_time) {
+          const [fH, fM] = p.from_time.split(":");
+          const [tH, tM] = p.to_time.split(":");
+          const fMins = parseInt(fH) * 60 + parseInt(fM);
+          const tMins = parseInt(tH) * 60 + parseInt(tM);
+          permissionHours += Math.max(0, tMins - fMins) / 60;
 
-      const format12 = (hrs: number, mins: number) => {
-        const ampm = hrs < 12 ? "AM" : "PM";
-        const h12 = hrs % 12 || 12;
-        return `${String(h12).padStart(2, "0")}:${String(mins).padStart(2, "0")} ${ampm}`;
-      };
-      permissionLabel = `${format12(parseInt(fH), parseInt(fM))} – ${format12(parseInt(tH), parseInt(tM))}`;
+          const format12 = (hrs: number, mins: number) => {
+            const ampm = hrs < 12 ? "AM" : "PM";
+            const h12 = hrs % 12 || 12;
+            return `${String(h12).padStart(2, "0")}:${String(mins).padStart(2, "0")} ${ampm}`;
+          };
+          pLabels.push(`${format12(parseInt(fH), parseInt(fM))} – ${format12(parseInt(tH), parseInt(tM))}`);
+        }
+      });
+      permissionLabel = pLabels.join(", ");
     }
 
     let addedMinutes = 0;
@@ -957,7 +963,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       rawAttendanceRecord: attRec,
       rawLeaveRecord: matchedLeaves.length > 0 ? matchedLeaves[0] : undefined,
       baseWorkingHours: baseWorkingHours,
-      rawPermissionRecord: matchedPermission,
+      rawPermissionRecords: matchedPermissions,
       halfDayDuration,
       isOneDayWages,
       wagesStatus,
@@ -1316,23 +1322,23 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             </p>
                           </div>
                         )}
-                        {cell.rawPermissionRecord && (
-                          <div className="space-y-1 bg-purple-50 p-2.5 rounded-xl border border-purple-200 text-purple-700 mb-3">
+                        {cell.rawPermissionRecords && cell.rawPermissionRecords.length > 0 && cell.rawPermissionRecords.map((perm: any, pIdx: number) => (
+                          <div key={pIdx} className="space-y-1 bg-purple-50 p-2.5 rounded-xl border border-purple-200 text-purple-700 mb-3">
                             <span className="text-[9px] uppercase font-bold text-purple-500 block">Approved Permission</span>
-                            {cell.rawPermissionRecord.from_time && cell.rawPermissionRecord.to_time ? (
+                            {perm.from_time && perm.to_time ? (
                               <p className="font-extrabold text-[12px]">
-                                {cell.rawPermissionRecord.from_time.substring(0, 5)} - {cell.rawPermissionRecord.to_time.substring(0, 5)}
+                                {perm.from_time.substring(0, 5)} - {perm.to_time.substring(0, 5)}
                               </p>
                             ) : (
                               <p className="font-extrabold text-[12px]">Approved (No Time Specified)</p>
                             )}
-                            {cell.rawPermissionRecord.reason && (
+                            {perm.reason && (
                               <p className="text-[10px] text-purple-600 font-semibold mt-0.5">
-                                Reason: {cell.rawPermissionRecord.reason}
+                                Reason: {perm.reason}
                               </p>
                             )}
                           </div>
-                        )}
+                        ))}
 
                         {cell.status === "Present" || cell.status === "Half Day" || cell.status === "Check-In" ? (
                           <div className="space-y-3">
@@ -1364,7 +1370,7 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                             </div>
 
                             {/* Show breakdown of actual work hours and permission hours if present */}
-                            {cell.rawPermissionRecord && cell.rawPermissionRecord.from_time && cell.rawPermissionRecord.to_time ? (
+                            {cell.rawPermissionRecords && cell.rawPermissionRecords.length > 0 && cell.rawPermissionRecords.some((p:any) => p.from_time && p.to_time) ? (
                               <>
                                 <div className="flex justify-between items-center px-1">
                                   <span className="text-[11px] text-neutral-500 font-bold">Actual Work Hours</span>
@@ -1373,17 +1379,25 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
                                   </span>
                                 </div>
                                 {(() => {
-                                  const [fH, fM] = cell.rawPermissionRecord.from_time.split(":");
-                                  const [tH, tM] = cell.rawPermissionRecord.to_time.split(":");
-                                  const mins = Math.max(0, (parseInt(tH) * 60 + parseInt(tM)) - (parseInt(fH) * 60 + parseInt(fM)));
-                                  return (
-                                    <div className="flex justify-between items-center px-1 text-purple-600">
-                                      <span className="text-[11px] font-bold">Permission Hours</span>
-                                      <span className="text-[12px] font-extrabold bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
-                                        +{formatHoursMinutes(mins / 60)}
-                                      </span>
-                                    </div>
-                                  );
+                                  let totalPermMins = 0;
+                                  cell.rawPermissionRecords.forEach((p:any) => {
+                                    if (p.from_time && p.to_time) {
+                                      const [fH, fM] = p.from_time.split(":");
+                                      const [tH, tM] = p.to_time.split(":");
+                                      totalPermMins += Math.max(0, (parseInt(tH) * 60 + parseInt(tM)) - (parseInt(fH) * 60 + parseInt(fM)));
+                                    }
+                                  });
+                                  if (totalPermMins > 0) {
+                                    return (
+                                      <div className="flex justify-between items-center px-1 text-purple-600">
+                                        <span className="text-[11px] font-bold">Permission Hours</span>
+                                        <span className="text-[12px] font-extrabold bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
+                                          +{formatHoursMinutes(totalPermMins / 60)}
+                                        </span>
+                                      </div>
+                                    );
+                                  }
+                                  return null;
                                 })()}
                               </>
                             ) : null}
