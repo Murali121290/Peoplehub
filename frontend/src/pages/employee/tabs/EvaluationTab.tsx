@@ -8100,8 +8100,11 @@ export const EvaluationTab: React.FC = () => {
       const qNum = parseInt(qMatch[1], 10);
       const qYearMatch = text.match(/20\d{2}/);
       const qYear = qYearMatch ? parseInt(qYearMatch[0], 10) : (start ? start.getFullYear() : 2026);
-      if (!start) start = new Date(qYear, (qNum - 1) * 3, 1);
-      if (!end) end = new Date(qYear, qNum * 3, 0);
+      // Financial quarters: Q1: Apr (month index 3), Q2: Jul (6), Q3: Oct (9), Q4: Jan (0 of next year)
+      const calMonthIndex = qNum === 1 ? 3 : qNum === 2 ? 6 : qNum === 3 ? 9 : 0;
+      const calYear = qNum === 4 ? qYear + 1 : qYear;
+      if (!start) start = new Date(calYear, calMonthIndex, 1);
+      if (!end) end = new Date(calYear, calMonthIndex + 3, 0);
     }
 
     // 2. Match Month Year e.g. "Sep 2026" or "September 2026"
@@ -8864,7 +8867,14 @@ export const EvaluationTab: React.FC = () => {
         if (subFreq === 'quarterly') {
           freqLabel = 'Quarterly';
           freqColor = 'bg-emerald-50 text-emerald-900 border-emerald-300';
-          if (range.startDate) {
+          const quarterlyRecords = (r as any).quarterly_records || [];
+          const activeQ = quarterlyRecords.slice().reverse().find((qr: any) =>
+            qr.status === 'manager_approved' || qr.status === 'approved' || qr.status === 'submitted_to_manager' || (qr.managerScore != null && Number(qr.managerScore) > 0)
+          ) || quarterlyRecords[0];
+          const activeQNum = activeQ ? (activeQ.quarterIndex || activeQ.quarter || activeQ.q || activeQ.stage) : null;
+          if (activeQNum) {
+            dateText = `Q${activeQNum} ${range.startDate?.getFullYear() || 2026}`;
+          } else if (range.startDate) {
             const mNum = range.startDate.getMonth() + 1;
             const qNum = mNum >= 4 && mNum <= 6 ? 1 : mNum >= 7 && mNum <= 9 ? 2 : mNum >= 10 && mNum <= 12 ? 3 : 4;
             dateText = `Q${qNum} ${range.startDate.getFullYear()}`;
@@ -9523,8 +9533,9 @@ export const EvaluationTab: React.FC = () => {
 
       activeScopedResponsesForCards.forEach(r => {
         if (isYearlyResponse(r)) {
+          // 1. Check monthly_records
           const qApprovedRecords = (r.monthly_records || []).filter(
-            m => fiscalMonthIndices.includes(m.monthIndex) && m.status === 'manager_approved' && m.managerScore != null && Number(m.managerScore) > 0
+            m => fiscalMonthIndices.includes(m.monthIndex) && (m.status === 'manager_approved' || (m.status as any) === 'approved') && m.managerScore != null && Number(m.managerScore) > 0
           );
           if (qApprovedRecords.length > 0) {
             const avgScore = qApprovedRecords.reduce((sum, m) => sum + Number(m.managerScore), 0) / qApprovedRecords.length;
@@ -9532,7 +9543,23 @@ export const EvaluationTab: React.FC = () => {
               ...r,
               managerScore: Number(avgScore.toFixed(1))
             });
+            return;
           }
+
+          // 2. Check quarterly_records (Yearly with Quarterly Milestones Q1, Q2, Q3, Q4)
+          const qRecord = (r.quarterly_records || []).find(
+            (qr: any) => (qr.quarterIndex === q || qr.quarter === q || qr.q === q || qr.stage === q) &&
+              (qr.status === 'manager_approved' || qr.status === 'approved' || String(qr.status || '').toLowerCase().includes('approved') || qr.managerScore != null) &&
+              qr.managerScore != null && Number(qr.managerScore) > 0
+          );
+          if (qRecord) {
+            quarterScopedItems.push({
+              ...r,
+              managerScore: Number(Number(qRecord.managerScore).toFixed(1))
+            });
+            return;
+          }
+
           return;
         }
 
