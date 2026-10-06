@@ -1854,24 +1854,28 @@ def get_reporting_employees(user_id):
             elif leave:
                 leave_type_val = leave.leave_type
 
-            yesterday_permission = LeaveRequest.query.filter(
+            yesterday_permissions = LeaveRequest.query.filter(
                 LeaveRequest.request_type == "Permission",
                 LeaveRequest.status == "Approved",
                 LeaveRequest.permission_date == date_to_check,
                 LeaveRequest.employee_id == employee.employee_id
-            ).first()
+            ).all()
 
             permission_time_val = None
             permission_hours = 0.0
-            if yesterday_permission:
-                f_time = _parse_time(yesterday_permission.from_time)
-                t_time = _parse_time(yesterday_permission.to_time)
+            perm_labels = []
+            
+            for yp in yesterday_permissions:
+                f_time = _parse_time(yp.from_time)
+                t_time = _parse_time(yp.to_time)
                 if f_time and t_time:
-                    permission_time_val = f"{f_time.strftime('%I:%M %p')} - {t_time.strftime('%I:%M %p')}"
-                    f_sec = f_time.hour * 3600 + f_time.minute * 60 + f_time.second
-                    t_sec = t_time.hour * 3600 + t_time.minute * 60 + t_time.second
-                    permission_hours = max(t_sec - f_sec, 0) / 3600.0
-                    permission_hours = max(t_sec - f_sec, 0) / 3600.0
+                    perm_labels.append(f"{f_time.strftime('%I:%M %p')} - {t_time.strftime('%I:%M %p')}")
+                    f_sec = f_time.hour * 3600 + f_time.minute * 60 + getattr(f_time, 'second', 0)
+                    t_sec = t_time.hour * 3600 + t_time.minute * 60 + getattr(t_time, 'second', 0)
+                    permission_hours += max(t_sec - f_sec, 0) / 3600.0
+            
+            if perm_labels:
+                permission_time_val = ", ".join(perm_labels)
 
             gross_hours = 0.0
             if attendance:
@@ -1997,10 +2001,10 @@ def get_reporting_employees(user_id):
                     attendance.added_minutes if attendance else 0,
 
                 "has_permission":
-                    bool(yesterday_permission),
+                    bool(yesterday_permissions),
 
                 "permission_label":
-                    "Approved" if yesterday_permission else "",
+                    "Approved" if yesterday_permissions else "",
 
                 "highlight_short_hours": highlight_short_hours,
 

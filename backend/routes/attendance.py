@@ -602,19 +602,20 @@ def calculate_attendance_status(attendance):
                 emp = Employee.query.filter_by(id=att_emp_id).first() or Employee.query.filter_by(employee_id=str(att_emp_id)).first()
             emp_code_str = str(emp.employee_id) if emp and emp.employee_id else ""
             if emp_code_str:
-                permission = LeaveRequest.query.filter(
+                permissions = LeaveRequest.query.filter(
                     LeaveRequest.request_type == "Permission",
                     LeaveRequest.status == "Approved",
                     LeaveRequest.permission_date == attendance.attendance_date,
                     LeaveRequest.employee_id == str(emp_code_str)
-                ).first()
-                if permission and permission.from_time and permission.to_time:
-                    f_time = permission.from_time
-                    t_time = permission.to_time
-                    f_sec = f_time.hour * 3600 + f_time.minute * 60 + f_time.second
-                    t_sec = t_time.hour * 3600 + t_time.minute * 60 + (t_time.second if hasattr(t_time, 'second') else 0)
-                    permission_hours = max(t_sec - f_sec, 0) / 3600.0
-                    status_calc_hours += permission_hours
+                ).all()
+                for permission in permissions:
+                    if permission.from_time and permission.to_time:
+                        f_time = permission.from_time
+                        t_time = permission.to_time
+                        f_sec = f_time.hour * 3600 + f_time.minute * 60 + getattr(f_time, 'second', 0)
+                        t_sec = t_time.hour * 3600 + t_time.minute * 60 + getattr(t_time, 'second', 0)
+                        permission_hours = max(t_sec - f_sec, 0) / 3600.0
+                        status_calc_hours += permission_hours
         except Exception as e:
             print("Error calculating permission hours in attendance status:", e)
 
@@ -1567,31 +1568,36 @@ def attendance_history(user_id):
                         display_status = "Week Off"
 
                 # Check for approved Permission on this date
-                perm_req = LR.query.filter(
+                perm_reqs = LR.query.filter(
                     LR.employee_id == employee.employee_id,
                     LR.request_type == "Permission",
                     LR.status == "Approved",
                     LR.permission_date == current_date
-                ).first()
+                ).all()
 
                 has_permission = False
                 permission_label = ""
                 perm_hours = 0
                 actual_working_hours = working_hours
-                if perm_req and perm_req.from_time and perm_req.to_time:
-                    has_permission = True
-                    ft = perm_req.from_time
-                    tt = perm_req.to_time
-                    perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
-                    perm_hours = max(perm_seconds, 0) / 3600
+                
+                def _fmt(t):
+                    h = t.hour; ampm = "AM" if h < 12 else "PM"; h12 = h % 12 or 12
+                    return f"{h12:02d}:{t.minute:02d} {ampm}"
+                    
+                perm_labels = []
+                for perm_req in perm_reqs:
+                    if perm_req.from_time and perm_req.to_time:
+                        has_permission = True
+                        ft = perm_req.from_time
+                        tt = perm_req.to_time
+                        perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
+                        perm_hours += max(perm_seconds, 0) / 3600
+                        perm_labels.append(f"{_fmt(ft)} – {_fmt(tt)}")
+                        
+                if has_permission:
                     virtual_working_hours = actual_working_hours + perm_hours
                     effective_gross_hours = gross_hours + perm_hours
-
-                    def _fmt(t):
-                        h = t.hour; ampm = "AM" if h < 12 else "PM"; h12 = h % 12 or 12
-                        return f"{h12:02d}:{t.minute:02d} {ampm}"
-
-                    permission_label = f"{_fmt(ft)} – {_fmt(tt)}"
+                    permission_label = ", ".join(perm_labels)
 
                     # Re-evaluate status considering permission credit
                     is_weekend = current_date.weekday() >= 5
@@ -1938,32 +1944,37 @@ def get_attendance():
         # Check for an approved Permission on this date and credit its hours
         from models.leave import LeaveRequest as LR
         from datetime import time as dtime
-        permission_req = LR.query.filter(
+        permission_reqs = LR.query.filter(
             LR.employee_id == employee.employee_id,
             LR.request_type == "Permission",
             LR.status == "Approved",
             LR.permission_date == today
-        ).first()
+        ).all()
 
         has_permission = False
         permission_label = ""
         actual_hours = total_hours or 0.0
-        if permission_req and permission_req.from_time and permission_req.to_time:
-            has_permission = True
-            # Calculate permission duration in hours
-            ft = permission_req.from_time
-            tt = permission_req.to_time
-            perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
-            perm_hours = max(perm_seconds, 0) / 3600
+        perm_hours = 0.0
+        
+        def fmt_time(t):
+            h = t.hour
+            ampm = "AM" if h < 12 else "PM"
+            h12 = h % 12 or 12
+            return f"{h12:02d}:{t.minute:02d} {ampm}"
+            
+        perm_labels = []
+        for p_req in permission_reqs:
+            if p_req.from_time and p_req.to_time:
+                has_permission = True
+                ft = p_req.from_time
+                tt = p_req.to_time
+                perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
+                perm_hours += max(perm_seconds, 0) / 3600
+                perm_labels.append(f"{fmt_time(ft)} – {fmt_time(tt)}")
+                
+        if has_permission:
             virtual_total_hours = actual_hours + perm_hours
-
-            def fmt_time(t):
-                h = t.hour
-                ampm = "AM" if h < 12 else "PM"
-                h12 = h % 12 or 12
-                return f"{h12:02d}:{t.minute:02d} {ampm}"
-
-            permission_label = f"{fmt_time(ft)} – {fmt_time(tt)}"
+            permission_label = ", ".join(perm_labels)
 
             # Re-evaluate status now that hours include permission credit virtually
             if status in ("Absent", "Half Day") and has_permission:
