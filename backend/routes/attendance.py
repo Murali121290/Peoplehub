@@ -1620,6 +1620,14 @@ def attendance_history(user_id):
                     if leave.from_date <= current_date and leave.to_date >= current_date
                 ]
 
+                # Universally determine if this record falls on a holiday or week off
+                rec_is_holiday = False
+                if override_dict.get(current_date) and override_dict.get(current_date)[0] == "Holiday":
+                    rec_is_holiday = True
+                elif current_date in holiday_dict:
+                    rec_is_holiday = True
+                rec_is_weekoff = is_date_week_off(current_date)
+
                 result.append({
                     "id": record.id,
                     "date": record.attendance_date.strftime("%Y-%m-%d"),
@@ -1669,8 +1677,8 @@ def attendance_history(user_id):
                     "regularization_check_out": record.regularization_check_out.strftime("%I:%M %p") if record.regularization_check_out else "-",
                     "regularization_total_hours": record.regularization_total_hours or 0.0,
                     "leave_details": leave_details,
-                    "is_holiday": is_holiday,
-                    "is_week_off": is_weekoff,
+                    "is_holiday": rec_is_holiday,
+                    "is_week_off": rec_is_weekoff,
                 })
 
             else:
