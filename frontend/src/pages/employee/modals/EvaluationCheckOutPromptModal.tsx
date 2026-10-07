@@ -65,7 +65,7 @@ export const EvaluationCheckOutPromptModal: React.FC<EvaluationCheckOutPromptMod
             {isManagerSetup
               ? !canCheckOutAnyway
                 ? 'Deliverables must be assigned today before checking out.'
-                : `Please configure and assign deliverables for your team for ${periodName} before the month ends.`
+                : `Please configure and assign deliverables for your team for ${periodName} before the 2nd of the following month.`
               : !canCheckOutAnyway
                 ? 'Self-assessment must be submitted before checking out.'
                 : `Please submit your ${periodName} self-assessment before the deadline.`}

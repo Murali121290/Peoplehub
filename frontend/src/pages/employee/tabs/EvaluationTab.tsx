@@ -2800,42 +2800,34 @@ export const EvaluationTab: React.FC = () => {
   // =========================================================================
   // MANAGER DIRECT REPORTS & SCOPED DEPARTMENTS RESOLVER
   // =========================================================================
-  const isDirectReport = (emp: any): boolean => {
-    if (!emp) return false;
+  // Helper to extract clean employee ID from any ID string or object
+  const cleanEmpId = (v: any): string => {
+    if (!v) return '';
+    return String(v).trim().toLowerCase().replace(/^emp-?/i, '');
+  };
 
-    // A user is NEVER their own direct report
-    const clean = (v: any) => String(v || '').trim().toLowerCase().replace(/^emp-?/i, '');
-    const myEmpCode = clean(currentDbUser?.employee_id || rawUserCode || user?.employee_id || userAny?.employee_id || '');
-    const empCode = clean(emp.employee_id || '');
-    if (myEmpCode && empCode && myEmpCode === empCode) return false;
-    const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim().toLowerCase();
-    const myName = (user?.full_name || `${currentDbUser?.first_name || ''} ${currentDbUser?.last_name || ''}` || userAny?.name || '').trim().toLowerCase();
-    if (empName && myName && empName === myName) return false;
+  // Pre-calculate manager employee_id map from dbEmployees
+  const empManagerIdMap = useMemo(() => {
+    const map = new Map<string, string>();
+    dbEmployees.forEach((e: any) => {
+      const eId = cleanEmpId(e.employee_id);
+      if (eId) {
+        const full = `${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase();
+        if (full) map.set(full, eId);
+        const single = String(e.name || '').trim().toLowerCase();
+        if (single) map.set(single, eId);
+      }
+    });
+    return map;
+  }, [dbEmployees]);
 
-    // Collect all valid IDs for the logged-in manager / team lead strictly from employee_id
-    const mgrIds = [
-      String(currentDbUser?.employee_id || ''),
-      String(user?.employee_id || ''),
-      String(userAny?.employee_id || ''),
-      String((user as any)?.emp_id || ''),
-      String((user as any)?.employeeId || '')
-    ].filter(Boolean).map(id => id.toLowerCase().replace(/^emp-?/i, ''));
+  // Helper to collect all manager/lead IDs referenced in an employee record
+  const extractCandidateManagerIds = (emp: any): string[] => {
+    if (!emp) return [];
+    const ids: string[] = [];
 
-    // Collect all manager names for the logged-in manager
-    const mgrFullNames = [
-      user?.full_name,
-      userAny?.name,
-      userAny?.full_name,
-      `${currentDbUser?.first_name || ''} ${currentDbUser?.last_name || ''}`.trim(),
-      `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim(),
-      `${(user as any)?.first_name || ''} ${(user as any)?.last_name || ''}`.trim(),
-      userAny?.username,
-      currentDbUser?.username,
-      (user as any)?.username
-    ].filter(Boolean).map(n => String(n).toLowerCase().trim());
-
-    // 1. Check all candidate reporting manager IDs on the employee
-    const candidateMgrIds = [
+    // Direct ID fields
+    const directFields = [
       emp.reporting_manager_id,
       emp.reportingManagerId,
       emp.manager_id,
@@ -2845,16 +2837,16 @@ export const EvaluationTab: React.FC = () => {
       emp.team_lead_id,
       emp.teamLeadId,
       emp.lead_id,
-      emp.reports_to_id,
-      emp.reports_to
-    ].filter(Boolean).map(id => String(id).trim().toLowerCase().replace(/^emp-?/i, ''));
+      emp.reports_to_id
+    ];
 
-    if (candidateMgrIds.some(id => mgrIds.includes(id))) {
-      return true;
+    for (const f of directFields) {
+      const c = cleanEmpId(f);
+      if (c) ids.push(c);
     }
 
-    // 2. Check all candidate reporting manager names on the employee
-    const candidateMgrNames = [
+    // Explicit ID inside brackets like "Murali B (#1881)" or "(1881)"
+    const textFields = [
       emp.reporting_manager,
       emp.reportingManager,
       emp.manager_name,
@@ -2863,41 +2855,47 @@ export const EvaluationTab: React.FC = () => {
       emp.team_lead,
       emp.teamLead,
       emp.lead,
-      emp.lead_name,
-      emp.leadName,
-      emp.reports_to,
-      emp.reportsTo
-    ].filter(Boolean).map(n => String(n).trim().toLowerCase());
+      emp.reports_to
+    ];
 
-    const nameMatched = candidateMgrNames.some(empMgrName => {
-      return mgrFullNames.some(name => {
-        if (!name || !empMgrName) return false;
-        if (empMgrName === name) return true;
-        const cleanEmpMgr = empMgrName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
-        const cleanMgr = name.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
-        if (cleanEmpMgr === cleanMgr || cleanEmpMgr.includes(cleanMgr) || cleanMgr.includes(cleanEmpMgr)) return true;
+    for (const t of textFields) {
+      if (!t) continue;
+      const match = String(t).match(/\(#?([a-zA-Z0-9_-]+)\)/);
+      if (match && match[1]) {
+        const c = cleanEmpId(match[1]);
+        if (c) ids.push(c);
+      } else {
+        const raw = String(t).trim().toLowerCase();
+        const mappedId = empManagerIdMap.get(raw);
+        if (mappedId) ids.push(mappedId);
+      }
+    }
 
-        // Check token intersection (e.g. "Bharathi Sanjeev" vs "Bharathi", or "Sanjeev, Bharathi")
-        const mgrTokens = cleanMgr.split(/[\s,.-]+/).filter(p => p.length >= 3);
-        const empMgrTokens = cleanEmpMgr.split(/[\s,.-]+/).filter(p => p.length >= 3);
-        if (mgrTokens.length > 0 && empMgrTokens.length > 0) {
-          if (mgrTokens.every(t => cleanEmpMgr.includes(t)) || empMgrTokens.every(t => cleanMgr.includes(t))) {
-            return true;
-          }
-          if (mgrTokens.some(t => empMgrTokens.includes(t))) {
-            return true;
-          }
-          if (mgrTokens[0] && empMgrTokens[0] && mgrTokens[0] === empMgrTokens[0] && mgrTokens[0].length >= 4) {
-            return true;
-          }
-        }
-        return false;
-      });
-    });
+    return Array.from(new Set(ids));
+  };
 
-    if (nameMatched) return true;
+  // Helper to get logged-in manager IDs
+  const getLoggedInMgrIds = (): string[] => {
+    return [
+      String(currentDbUser?.employee_id || ''),
+      String(user?.employee_id || ''),
+      String(userAny?.employee_id || ''),
+      String((user as any)?.emp_id || ''),
+      String((user as any)?.employeeId || '')
+    ].map(cleanEmpId).filter(Boolean);
+  };
 
-    return false;
+  const isDirectReport = (emp: any): boolean => {
+    if (!emp) return false;
+
+    // A user is NEVER their own direct report
+    const myMgrIds = getLoggedInMgrIds();
+    const empCode = cleanEmpId(emp.employee_id);
+    if (myMgrIds.includes(empCode)) return false;
+
+    // Check candidate reporting manager IDs strictly
+    const candidateIds = extractCandidateManagerIds(emp);
+    return candidateIds.some(id => myMgrIds.includes(id));
   };
 
   // Helper to flexibly match an employee against a selected Department / Team name
@@ -2941,58 +2939,15 @@ export const EvaluationTab: React.FC = () => {
     if (!emp) return false;
 
     // A user is NEVER their own subordinate downline report
-    const clean = (v: any) => String(v || '').trim().toLowerCase().replace(/^emp-?/i, '');
-    const myEmpCode = clean(currentDbUser?.employee_id || rawUserCode || user?.employee_id || userAny?.employee_id || '');
-    const empCode = clean(emp.employee_id || '');
-    if (myEmpCode && empCode && myEmpCode === empCode) return false;
-    const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim().toLowerCase();
-    const myName = (user?.full_name || `${currentDbUser?.first_name || ''} ${currentDbUser?.last_name || ''}` || userAny?.name || '').trim().toLowerCase();
-    if (empName && myName && empName === myName) return false;
+    const myMgrIds = getLoggedInMgrIds();
+    const empCode = cleanEmpId(emp.employee_id);
+    if (myMgrIds.includes(empCode)) return false;
 
     if (isHrOrAdmin) return true;
     if (isDirectReport(emp)) return true;
     if (isTeamLead) return false; // Team Leaders only have direct squad members
 
-    // Helper to check if a manager ID/Name matches the logged in user
-    const mgrIds = [
-      String(currentDbUser?.employee_id || ''),
-      String(user?.employee_id || ''),
-      String(userAny?.employee_id || ''),
-      String((user as any)?.emp_id || ''),
-      String((user as any)?.employeeId || '')
-    ].filter(Boolean).map(id => id.toLowerCase().replace(/^emp-?/i, ''));
-
-    const mgrFullNames = [
-      user?.full_name,
-      userAny?.name,
-      userAny?.full_name,
-      `${currentDbUser?.first_name || ''} ${currentDbUser?.last_name || ''}`.trim(),
-      `${userAny?.first_name || ''} ${userAny?.last_name || ''}`.trim(),
-      userAny?.username,
-      currentDbUser?.username
-    ].filter(Boolean).map(n => String(n).toLowerCase().trim());
-
-    const isMatchLoggedInUser = (mgrRef: string, mgrId: string) => {
-      if (mgrId) {
-        const cleanMgrId = mgrId.toLowerCase().replace(/^emp-?/i, '');
-        if (mgrIds.includes(cleanMgrId)) return true;
-      }
-      if (mgrRef) {
-        const cleanRef = mgrRef.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim().toLowerCase();
-        const matched = mgrFullNames.some(name => {
-          if (!name) return false;
-          const cleanName = name.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim().toLowerCase();
-          if (cleanRef === cleanName || cleanRef.includes(cleanName) || cleanName.includes(cleanRef)) return true;
-          const parts = cleanName.split(/\s+/).filter(p => p.length >= 3);
-          if (parts.length >= 2 && parts.every(p => cleanRef.includes(p))) return true;
-          return false;
-        });
-        if (matched) return true;
-      }
-      return false;
-    };
-
-    // Recursive / iterative upwards traversal through all levels of the reporting tree
+    // Upwards traversal strictly by employee_id -> manager_id
     const visited = new Set<string>();
     let currentLevel: any[] = [emp];
 
@@ -3000,42 +2955,17 @@ export const EvaluationTab: React.FC = () => {
       const nextLevel: any[] = [];
 
       for (const curr of currentLevel) {
-        const leads: { ref: string; id: string }[] = [
-          {
-            ref: (curr.reporting_manager || curr.manager_name || '').trim(),
-            id: String(curr.reporting_manager_id || curr.manager_id || '').trim()
-          },
-          {
-            ref: (curr.team_lead || curr.lead || '').trim(),
-            id: String(curr.team_lead_id || curr.lead_id || '').trim()
-          }
-        ].filter(item => item.ref || item.id);
+        const leadIds = extractCandidateManagerIds(curr);
 
-        for (const lead of leads) {
-          if (isMatchLoggedInUser(lead.ref, lead.id)) {
+        for (const leadId of leadIds) {
+          if (myMgrIds.includes(leadId)) {
             return true;
           }
 
-          const visitKey = `${lead.ref}_${lead.id}`.toLowerCase();
-          if (visited.has(visitKey)) continue;
-          visited.add(visitKey);
+          if (visited.has(leadId)) continue;
+          visited.add(leadId);
 
-          const intermediateMgr = dbEmployees.find(e => {
-            const cleanLeadId = lead.id.toLowerCase().replace(/^emp-?/i, '');
-            if (cleanLeadId) {
-              const eEmpId = String(e.employee_id || '').toLowerCase().replace(/^emp-?/i, '');
-              if (eEmpId === cleanLeadId) return true;
-            }
-            if (lead.ref) {
-              const eFullName = `${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase();
-              const cleanE = eFullName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
-              const cleanLead = lead.ref.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim().toLowerCase();
-              if (cleanE === cleanLead || (e.username && e.username.toLowerCase() === cleanLead)) return true;
-              const parts = cleanLead.split(/\s+/).filter(p => p.length >= 3);
-              if (parts.length >= 2 && parts.every(p => cleanE.includes(p))) return true;
-            }
-            return false;
-          });
+          const intermediateMgr = dbEmployees.find(e => cleanEmpId(e.employee_id) === leadId);
 
           if (intermediateMgr) {
             if (isDirectReport(intermediateMgr)) {
@@ -3063,39 +2993,17 @@ export const EvaluationTab: React.FC = () => {
     if (isTeamLead) return false;
     if (isHrOrAdmin || isServiceManager) return true;
 
-    const leadsToCheck: { ref: string; id: string }[] = [
-      {
-        ref: (emp.reporting_manager || '').trim().toLowerCase(),
-        id: String(emp.reporting_manager_id || emp.manager_id || '').trim()
-      },
-      {
-        ref: (emp.team_lead || emp.lead || '').trim().toLowerCase(),
-        id: String(emp.team_lead_id || emp.lead_id || '').trim()
-      }
-    ].filter(item => item.ref || item.id);
-
+    const leadIds = extractCandidateManagerIds(emp);
     const visited = new Set<string>();
 
-    for (const lead of leadsToCheck) {
-      let currentMgrRef = lead.ref;
-      let currentMgrId = lead.id;
+    for (const leadId of leadIds) {
+      let currentLeadId: string | null = leadId;
 
-      while (currentMgrRef || currentMgrId) {
-        const key = `${currentMgrRef}_${currentMgrId}`;
-        if (visited.has(key)) break;
-        visited.add(key);
+      while (currentLeadId) {
+        if (visited.has(currentLeadId)) break;
+        visited.add(currentLeadId);
 
-        const intermediateMgr = dbEmployees.find(e => {
-          if (currentMgrId && String(e.employee_id) === currentMgrId) return true;
-          if (currentMgrRef) {
-            const eFullName = `${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase();
-            const cleanE = eFullName.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
-            const cleanMgr = currentMgrRef.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim();
-            return cleanE === cleanMgr || (e.username && e.username.toLowerCase() === currentMgrRef);
-          }
-          return false;
-        });
-
+        const intermediateMgr = dbEmployees.find(e => cleanEmpId(e.employee_id) === currentLeadId);
         if (!intermediateMgr) break;
 
         // If intermediateMgr is a direct report AND a Team Lead -> ALLOW (Manager 1 -> Team Lead -> Employee)
@@ -3112,8 +3020,8 @@ export const EvaluationTab: React.FC = () => {
           break;
         }
 
-        currentMgrRef = (intermediateMgr.reporting_manager || intermediateMgr.team_lead || intermediateMgr.lead || '').trim().toLowerCase();
-        currentMgrId = String(intermediateMgr.reporting_manager_id || intermediateMgr.manager_id || intermediateMgr.team_lead_id || intermediateMgr.lead_id || '').trim();
+        const parentLeadIds = extractCandidateManagerIds(intermediateMgr);
+        currentLeadId = parentLeadIds.length > 0 ? parentLeadIds[0] : null;
       }
     }
 
@@ -3135,19 +3043,11 @@ export const EvaluationTab: React.FC = () => {
     if (isHrOrAdmin || isServiceManager) {
       return activeCandidates;
     }
-    const myIds = [
-      String(currentDbUser?.employee_id || ''),
-      String(user?.employee_id || ''),
-      String(userAny?.employee_id || '')
-    ].filter(Boolean).map(id => id.toLowerCase().replace(/^emp-?/i, ''));
-
-    const myFullName = (user?.full_name || `${currentDbUser?.first_name || ''} ${currentDbUser?.last_name || ''}` || userAny?.name || '').trim().toLowerCase();
+    const myIds = getLoggedInMgrIds();
 
     return activeCandidates.filter(e => {
-      const eId = String(e.employee_id || '').toLowerCase().replace(/^emp-?/i, '');
+      const eId = cleanEmpId(e.employee_id);
       if (myIds.includes(eId)) return false;
-      const eFullName = `${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase();
-      if (myFullName && eFullName && myFullName === eFullName) return false;
       return isAssignableSubordinate(e);
     });
   }, [dbEmployees, user, currentDbUser, userAny, isHrOrAdmin, isServiceManager]);
@@ -8100,8 +8000,11 @@ export const EvaluationTab: React.FC = () => {
       const qNum = parseInt(qMatch[1], 10);
       const qYearMatch = text.match(/20\d{2}/);
       const qYear = qYearMatch ? parseInt(qYearMatch[0], 10) : (start ? start.getFullYear() : 2026);
-      if (!start) start = new Date(qYear, (qNum - 1) * 3, 1);
-      if (!end) end = new Date(qYear, qNum * 3, 0);
+      // Financial quarters: Q1: Apr (month index 3), Q2: Jul (6), Q3: Oct (9), Q4: Jan (0 of next year)
+      const calMonthIndex = qNum === 1 ? 3 : qNum === 2 ? 6 : qNum === 3 ? 9 : 0;
+      const calYear = qNum === 4 ? qYear + 1 : qYear;
+      if (!start) start = new Date(calYear, calMonthIndex, 1);
+      if (!end) end = new Date(calYear, calMonthIndex + 3, 0);
     }
 
     // 2. Match Month Year e.g. "Sep 2026" or "September 2026"
@@ -8864,7 +8767,14 @@ export const EvaluationTab: React.FC = () => {
         if (subFreq === 'quarterly') {
           freqLabel = 'Quarterly';
           freqColor = 'bg-emerald-50 text-emerald-900 border-emerald-300';
-          if (range.startDate) {
+          const quarterlyRecords = (r as any).quarterly_records || [];
+          const activeQ = quarterlyRecords.slice().reverse().find((qr: any) =>
+            qr.status === 'manager_approved' || qr.status === 'approved' || qr.status === 'submitted_to_manager' || (qr.managerScore != null && Number(qr.managerScore) > 0)
+          ) || quarterlyRecords[0];
+          const activeQNum = activeQ ? (activeQ.quarterIndex || activeQ.quarter || activeQ.q || activeQ.stage) : null;
+          if (activeQNum) {
+            dateText = `Q${activeQNum} ${range.startDate?.getFullYear() || 2026}`;
+          } else if (range.startDate) {
             const mNum = range.startDate.getMonth() + 1;
             const qNum = mNum >= 4 && mNum <= 6 ? 1 : mNum >= 7 && mNum <= 9 ? 2 : mNum >= 10 && mNum <= 12 ? 3 : 4;
             dateText = `Q${qNum} ${range.startDate.getFullYear()}`;
@@ -9523,8 +9433,9 @@ export const EvaluationTab: React.FC = () => {
 
       activeScopedResponsesForCards.forEach(r => {
         if (isYearlyResponse(r)) {
+          // 1. Check monthly_records
           const qApprovedRecords = (r.monthly_records || []).filter(
-            m => fiscalMonthIndices.includes(m.monthIndex) && m.status === 'manager_approved' && m.managerScore != null && Number(m.managerScore) > 0
+            m => fiscalMonthIndices.includes(m.monthIndex) && (m.status === 'manager_approved' || (m.status as any) === 'approved') && m.managerScore != null && Number(m.managerScore) > 0
           );
           if (qApprovedRecords.length > 0) {
             const avgScore = qApprovedRecords.reduce((sum, m) => sum + Number(m.managerScore), 0) / qApprovedRecords.length;
@@ -9532,7 +9443,23 @@ export const EvaluationTab: React.FC = () => {
               ...r,
               managerScore: Number(avgScore.toFixed(1))
             });
+            return;
           }
+
+          // 2. Check quarterly_records (Yearly with Quarterly Milestones Q1, Q2, Q3, Q4)
+          const qRecord = (r.quarterly_records || []).find(
+            (qr: any) => (qr.quarterIndex === q || qr.quarter === q || qr.q === q || qr.stage === q) &&
+              (qr.status === 'manager_approved' || qr.status === 'approved' || String(qr.status || '').toLowerCase().includes('approved') || qr.managerScore != null) &&
+              qr.managerScore != null && Number(qr.managerScore) > 0
+          );
+          if (qRecord) {
+            quarterScopedItems.push({
+              ...r,
+              managerScore: Number(Number(qRecord.managerScore).toFixed(1))
+            });
+            return;
+          }
+
           return;
         }
 
