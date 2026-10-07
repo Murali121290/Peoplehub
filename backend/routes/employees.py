@@ -287,6 +287,14 @@ def get_employees():
 
     employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
 
+    # Build a fast lookup map of manager full name -> employee_id from active employees
+    manager_id_map = {}
+    for e in employees:
+        if e.employee_id:
+            full_name = f"{e.first_name or ''} {e.last_name or ''}".strip().lower()
+            if full_name:
+                manager_id_map[full_name] = str(e.employee_id)
+
     today = date.today()
 
     result = []
@@ -301,6 +309,9 @@ def get_employees():
         user = User.query.get(emp.user_id) if emp.user_id else None
         role_id = user.role_id if user else None
         team_id = emp.team_id or (user.team_id if user else None)
+
+        mgr_name_clean = (emp.reporting_manager or "").strip().lower()
+        resolved_mgr_id = manager_id_map.get(mgr_name_clean, "")
 
         result.append({
 
@@ -322,6 +333,10 @@ def get_employees():
 
             "reporting_manager":
                 emp.reporting_manager,
+            "reporting_manager_id":
+                resolved_mgr_id,
+            "manager_id":
+                resolved_mgr_id,
 
             "shift_timing":
                 emp.shift_timing,
