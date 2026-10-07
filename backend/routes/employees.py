@@ -2439,6 +2439,7 @@ def get_team_attendance_by_id(team_id):
                 "check_out_ip": attendance.check_out_ip if attendance else None,
                 "lunch_break": attendance.lunch_break if attendance else False,
                 "tea_break": attendance.tea_break if attendance else False,
+                "is_paused": attendance.is_paused if attendance else False,
                 "is_shift_changed": is_shift_changed,
                 "approved_shift": approved_shift,
                 "is_wfh": is_wfh,
