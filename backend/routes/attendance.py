@@ -602,19 +602,20 @@ def calculate_attendance_status(attendance):
                 emp = Employee.query.filter_by(id=att_emp_id).first() or Employee.query.filter_by(employee_id=str(att_emp_id)).first()
             emp_code_str = str(emp.employee_id) if emp and emp.employee_id else ""
             if emp_code_str:
-                permission = LeaveRequest.query.filter(
+                permissions = LeaveRequest.query.filter(
                     LeaveRequest.request_type == "Permission",
                     LeaveRequest.status == "Approved",
                     LeaveRequest.permission_date == attendance.attendance_date,
                     LeaveRequest.employee_id == str(emp_code_str)
-                ).first()
-                if permission and permission.from_time and permission.to_time:
-                    f_time = permission.from_time
-                    t_time = permission.to_time
-                    f_sec = f_time.hour * 3600 + f_time.minute * 60 + f_time.second
-                    t_sec = t_time.hour * 3600 + t_time.minute * 60 + (t_time.second if hasattr(t_time, 'second') else 0)
-                    permission_hours = max(t_sec - f_sec, 0) / 3600.0
-                    status_calc_hours += permission_hours
+                ).all()
+                for permission in permissions:
+                    if permission.from_time and permission.to_time:
+                        f_time = permission.from_time
+                        t_time = permission.to_time
+                        f_sec = f_time.hour * 3600 + f_time.minute * 60 + getattr(f_time, 'second', 0)
+                        t_sec = t_time.hour * 3600 + t_time.minute * 60 + getattr(t_time, 'second', 0)
+                        permission_hours = max(t_sec - f_sec, 0) / 3600.0
+                        status_calc_hours += permission_hours
         except Exception as e:
             print("Error calculating permission hours in attendance status:", e)
 
@@ -666,7 +667,26 @@ def calculate_attendance_status(attendance):
         attendance.status = "Absent"
     else:
         is_weekend = attendance.attendance_date.weekday() >= 5
-        req_hours = 8.0 if is_weekend else 9.0
+        is_holiday = False
+        try:
+            from models.holiday import Holiday, HolidayOverride
+            override = HolidayOverride.query.filter_by(date=attendance.attendance_date).first()
+            if override:
+                if override.override_type == "Holiday":
+                    is_holiday = True
+            else:
+                if Holiday.query.filter_by(date=attendance.attendance_date).first():
+                    is_holiday = True
+        except Exception:
+            pass
+
+        is_weekoff = is_date_week_off(attendance.attendance_date)
+        if is_holiday or is_weekoff:
+            req_hours = 7.0
+        elif attendance.attendance_date.weekday() == 5:
+            req_hours = 8.0
+        else:
+            req_hours = 9.0
         
         if status_calc_hours < req_hours:
             # Check for weekly 15-minute grace period
@@ -1479,7 +1499,9 @@ def attendance_history(user_id):
                     now = get_ist_now()
                     elapsed_seconds = (now - record.check_in).total_seconds()
                     break_seconds = (record.total_break_minutes or 0) * 60
-                    hours_decimal = max(elapsed_seconds - break_seconds, 0) / 3600
+                    paused_seconds = (record.paused_minutes or 0) * 60
+                    gap_seconds = (record.total_gap_minutes or 0) * 60
+                    hours_decimal = max(elapsed_seconds - break_seconds - paused_seconds - gap_seconds, 0) / 3600
                     working_hours = int(hours_decimal * 100) / 100
                     check_out_str = "-"
                 else:
@@ -1490,12 +1512,15 @@ def attendance_history(user_id):
                 # Calculate gross total hours (Web Entry ONLY)
                 eff_in = record.check_in
                 eff_out = record.check_out
+                paused_seconds_gross = (record.paused_minutes or 0) * 60
+                gap_seconds_gross = (record.total_gap_minutes or 0) * 60
+                
                 if eff_in and eff_out:
-                    gross_sec = (eff_out - eff_in).total_seconds()
+                    gross_sec = (eff_out - eff_in).total_seconds() - paused_seconds_gross - gap_seconds_gross
                     gross_hours = max(gross_sec, 0) / 3600
                 elif eff_in and is_today:
                     now_time = get_ist_now()
-                    gross_sec = (now_time - eff_in).total_seconds()
+                    gross_sec = (now_time - eff_in).total_seconds() - paused_seconds_gross - gap_seconds_gross
                     gross_hours = max(gross_sec, 0) / 3600
                 else:
                     gross_hours = 0.0
@@ -1505,7 +1530,19 @@ def attendance_history(user_id):
                 display_status = record.status
                 if not display_status or display_status in ("Checked Out", "Check In"):
                     is_weekend = record.attendance_date.weekday() >= 5
-                    req_hours = 8.0 if is_weekend else 9.0
+                    is_holiday = False
+                    if override_dict.get(record.attendance_date) and override_dict.get(record.attendance_date)[0] == "Holiday":
+                        is_holiday = True
+                    elif record.attendance_date in holiday_dict:
+                        is_holiday = True
+
+                    is_weekoff = is_date_week_off(record.attendance_date)
+                    if is_holiday or is_weekoff:
+                        req_hours = 7.0
+                    elif record.attendance_date.weekday() == 5:
+                        req_hours = 8.0
+                    else:
+                        req_hours = 9.0
                     if gross_hours < 4.0:
                         display_status = "Absent"
                     elif gross_hours < req_hours:
@@ -1531,35 +1568,52 @@ def attendance_history(user_id):
                         display_status = "Week Off"
 
                 # Check for approved Permission on this date
-                perm_req = LR.query.filter(
+                perm_reqs = LR.query.filter(
                     LR.employee_id == employee.employee_id,
                     LR.request_type == "Permission",
                     LR.status == "Approved",
                     LR.permission_date == current_date
-                ).first()
+                ).all()
 
                 has_permission = False
                 permission_label = ""
                 perm_hours = 0
                 actual_working_hours = working_hours
-                if perm_req and perm_req.from_time and perm_req.to_time:
-                    has_permission = True
-                    ft = perm_req.from_time
-                    tt = perm_req.to_time
-                    perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
-                    perm_hours = max(perm_seconds, 0) / 3600
+                
+                def _fmt(t):
+                    h = t.hour; ampm = "AM" if h < 12 else "PM"; h12 = h % 12 or 12
+                    return f"{h12:02d}:{t.minute:02d} {ampm}"
+                    
+                perm_labels = []
+                for perm_req in perm_reqs:
+                    if perm_req.from_time and perm_req.to_time:
+                        has_permission = True
+                        ft = perm_req.from_time
+                        tt = perm_req.to_time
+                        perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
+                        perm_hours += max(perm_seconds, 0) / 3600
+                        perm_labels.append(f"{_fmt(ft)} – {_fmt(tt)}")
+                        
+                if has_permission:
                     virtual_working_hours = actual_working_hours + perm_hours
                     effective_gross_hours = gross_hours + perm_hours
-
-                    def _fmt(t):
-                        h = t.hour; ampm = "AM" if h < 12 else "PM"; h12 = h % 12 or 12
-                        return f"{h12:02d}:{t.minute:02d} {ampm}"
-
-                    permission_label = f"{_fmt(ft)} – {_fmt(tt)}"
+                    permission_label = ", ".join(perm_labels)
 
                     # Re-evaluate status considering permission credit
                     is_weekend = current_date.weekday() >= 5
-                    req_hours = 7.0 if is_weekend else 8.0
+                    is_holiday = False
+                    if override_dict.get(current_date) and override_dict.get(current_date)[0] == "Holiday":
+                        is_holiday = True
+                    elif current_date in holiday_dict:
+                        is_holiday = True
+
+                    is_weekoff = is_date_week_off(current_date)
+                    if is_holiday or is_weekoff:
+                        req_hours = 7.0
+                    elif current_date.weekday() == 5:
+                        req_hours = 8.0
+                    else:
+                        req_hours = 9.0
                     eff_h = max(virtual_working_hours, effective_gross_hours)
                     if eff_h >= req_hours:
                         display_status = "Present"
@@ -1576,6 +1630,14 @@ def attendance_history(user_id):
                     for leave in leaves_batch
                     if leave.from_date <= current_date and leave.to_date >= current_date
                 ]
+
+                # Universally determine if this record falls on a holiday or week off
+                rec_is_holiday = False
+                if override_dict.get(current_date) and override_dict.get(current_date)[0] == "Holiday":
+                    rec_is_holiday = True
+                elif current_date in holiday_dict:
+                    rec_is_holiday = True
+                rec_is_weekoff = is_date_week_off(current_date)
 
                 result.append({
                     "id": record.id,
@@ -1626,6 +1688,8 @@ def attendance_history(user_id):
                     "regularization_check_out": record.regularization_check_out.strftime("%I:%M %p") if record.regularization_check_out else "-",
                     "regularization_total_hours": record.regularization_total_hours or 0.0,
                     "leave_details": leave_details,
+                    "is_holiday": rec_is_holiday,
+                    "is_week_off": rec_is_weekoff,
                 })
 
             else:
@@ -1729,7 +1793,9 @@ def attendance_history(user_id):
                     "wages_status": wages_status,
                     "regularization_check_in": "-",
                     "regularization_check_out": "-",
-                    "regularization_total_hours": 0.0
+                    "regularization_total_hours": 0.0,
+                    "is_holiday": status == "Holiday",
+                    "is_week_off": status == "Week Off"
                 })
 
     return jsonify(result)
@@ -1779,13 +1845,15 @@ def get_attendance():
             
             eff_in = attendance.check_in
             eff_out = attendance.check_out
+            paused_seconds_gross = (attendance.paused_minutes or 0) * 60
+            gap_seconds_gross = (attendance.total_gap_minutes or 0) * 60
             
             if eff_in and eff_out:
-                gross_sec = (eff_out - eff_in).total_seconds()
+                gross_sec = (eff_out - eff_in).total_seconds() - paused_seconds_gross - gap_seconds_gross
                 gross_hours = max(gross_sec, 0) / 3600
             elif eff_in and today == get_ist_today():
                 now = get_ist_now()
-                gross_sec = (now - eff_in).total_seconds()
+                gross_sec = (now - eff_in).total_seconds() - paused_seconds_gross - gap_seconds_gross
                 gross_hours = max(gross_sec, 0) / 3600
             else:
                 gross_hours = 0.0
@@ -1876,32 +1944,37 @@ def get_attendance():
         # Check for an approved Permission on this date and credit its hours
         from models.leave import LeaveRequest as LR
         from datetime import time as dtime
-        permission_req = LR.query.filter(
+        permission_reqs = LR.query.filter(
             LR.employee_id == employee.employee_id,
             LR.request_type == "Permission",
             LR.status == "Approved",
             LR.permission_date == today
-        ).first()
+        ).all()
 
         has_permission = False
         permission_label = ""
         actual_hours = total_hours or 0.0
-        if permission_req and permission_req.from_time and permission_req.to_time:
-            has_permission = True
-            # Calculate permission duration in hours
-            ft = permission_req.from_time
-            tt = permission_req.to_time
-            perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
-            perm_hours = max(perm_seconds, 0) / 3600
+        perm_hours = 0.0
+        
+        def fmt_time(t):
+            h = t.hour
+            ampm = "AM" if h < 12 else "PM"
+            h12 = h % 12 or 12
+            return f"{h12:02d}:{t.minute:02d} {ampm}"
+            
+        perm_labels = []
+        for p_req in permission_reqs:
+            if p_req.from_time and p_req.to_time:
+                has_permission = True
+                ft = p_req.from_time
+                tt = p_req.to_time
+                perm_seconds = (tt.hour * 3600 + tt.minute * 60) - (ft.hour * 3600 + ft.minute * 60)
+                perm_hours += max(perm_seconds, 0) / 3600
+                perm_labels.append(f"{fmt_time(ft)} – {fmt_time(tt)}")
+                
+        if has_permission:
             virtual_total_hours = actual_hours + perm_hours
-
-            def fmt_time(t):
-                h = t.hour
-                ampm = "AM" if h < 12 else "PM"
-                h12 = h % 12 or 12
-                return f"{h12:02d}:{t.minute:02d} {ampm}"
-
-            permission_label = f"{fmt_time(ft)} – {fmt_time(tt)}"
+            permission_label = ", ".join(perm_labels)
 
             # Re-evaluate status now that hours include permission credit virtually
             if status in ("Absent", "Half Day") and has_permission:
