@@ -929,10 +929,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
       const myIds = [
         clean(currentDbUser?.employee_id),
+        clean(currentDbUser?.id),
         clean(user?.employee_id),
         clean((user as any)?.emp_id),
         clean((user as any)?.employeeId),
+        clean((user as any)?.id),
         clean(localStorage.getItem("employee_id")),
+        clean(localStorage.getItem("user_id")),
       ].filter(Boolean);
 
       const myNames = [
@@ -969,8 +972,10 @@ if (isHalfDayLeave(leave.total_days)) return false;
             if (!name) return false;
             const cleanName = name.replace(/\s*\(\w+\)\s*$/, '').replace(/\./g, '').trim().toLowerCase().replace(/\s+/g, ' ');
             if (cleanRef === cleanName || cleanRef.includes(cleanName) || cleanName.includes(cleanRef)) return true;
-            const parts = cleanName.split(/\s+/).filter(p => p.length >= 3);
-            if (parts.length >= 2 && parts.every(p => cleanRef.includes(p))) return true;
+            const refParts = cleanRef.split(/\s+/).filter(p => p.length >= 3);
+            const nameParts = cleanName.split(/\s+/).filter(p => p.length >= 3);
+            if (refParts.length >= 2 && refParts.every(p => cleanName.includes(p))) return true;
+            if (nameParts.length >= 2 && nameParts.every(p => cleanRef.includes(p))) return true;
             return false;
           });
           if (matched) return true;
@@ -1088,33 +1093,74 @@ if (isHalfDayLeave(leave.total_days)) return false;
       const currentMonth = today.getMonth(); // 0-indexed
       const currentYear = today.getFullYear();
       const daysInCurrentMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-      const isLast8DaysOfCurrentMonth = todayDate >= (daysInCurrentMonth - 7); // e.g. 23rd to 30th/31st
+      const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+      const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
 
-      // 1. Manager Phase: Check unassigned subordinates in last 8 days of current month
+      // Manager setup window: Last 8 days of current month OR first 2 days of next month (extra 2 days)
+      const isEndCurrentMonth = todayDate >= (daysInCurrentMonth - 7); // e.g. 24th to 31st
+      const isEarlyNextMonth = todayDate <= 2; // e.g. 1st to 2nd of next month
+      const isManagerSetupWindow = isEndCurrentMonth || isEarlyNextMonth;
+
+      // If in early next month (1st-2nd), target previous month (e.g. Oct); otherwise current month
+      const targetEvalMonth = isEarlyNextMonth ? prevMonth : currentMonth;
+      const targetEvalYear = isEarlyNextMonth ? prevYear : currentYear;
+      const targetPeriodName = `${MONTH_NAMES[targetEvalMonth]} ${targetEvalYear}`;
+
+      // 1. Manager Phase: Check unassigned subordinates during the setup window
       const assignableDirects = dbEmps.filter(e => isAssignableSubordinate(e));
 
-      // Strictly verify if Admin has configured and assigned an evaluation cycle / matrix for this manager
+      // Strictly verify if Admin has released / assigned an evaluation cycle for this manager / manager's team
       let hasAssignedCycleFromAdmin = false;
-      const currentMgrEmpCode = myIds[0] || '';
-      
       if (assignableDirects.length > 0) {
+        const myTeams = [
+          clean(currentDbUser?.team),
+          clean(currentDbUser?.department),
+          clean(currentEmployee?.team),
+          clean(currentEmployee?.department),
+          clean((user as any)?.team),
+          clean((user as any)?.department),
+          ...assignableDirects.map((d: any) => clean(d.department)),
+          ...assignableDirects.map((d: any) => clean(d.team)),
+        ].filter(Boolean);
+
+        const currentMgrFullName = clean(
+          user?.full_name ||
+          (currentDbUser ? `${currentDbUser.first_name || ''} ${currentDbUser.last_name || ''}` : '') ||
+          `${(user as any)?.first_name || ''} ${(user as any)?.last_name || ''}` ||
+          (user as any)?.name ||
+          ''
+        );
+
         const isDirectManagerOfCycle = (c: any) => {
           if (!c) return false;
           const cMgrIds = (c.managerId || '').split(',').map((s: string) => clean(s)).filter(Boolean);
           if (myIds.some(id => cMgrIds.includes(id))) return true;
 
-          const cMgrNames = (c.managerName || '').split(',').map((s: string) => String(s).toLowerCase().trim()).filter(Boolean);
-          if (myNames.some(name => cMgrNames.some((cn: string) => cn === name || cn.includes(name) || name.includes(cn)))) {
+          const cycleMgrNames = (c.managerName || '').split(',').map((s: string) => clean(s)).filter(Boolean);
+          if (currentMgrFullName && currentMgrFullName.length >= 3) {
+            if (cycleMgrNames.some((cn: string) => cn === currentMgrFullName || cn.includes(currentMgrFullName) || currentMgrFullName.includes(cn))) {
+              return true;
+            }
+          }
+
+          // If cycle explicitly targets specific manager(s), do NOT match other managers by team name
+          if (cMgrIds.length > 0 || cycleMgrNames.length > 0) {
+            return false;
+          }
+
+          const cTeam = clean(c.teamName);
+          const cTeamId = clean(c.teamId);
+          if (myTeams.some(t => t && (t === cTeam || t === cTeamId || cTeam.includes(t)))) {
             return true;
           }
+
           return false;
         };
+
         hasAssignedCycleFromAdmin = (cycles || []).some(isDirectManagerOfCycle);
       }
 
-      if (hasAssignedCycleFromAdmin && isLast8DaysOfCurrentMonth && assignableDirects.length > 0) {
-        const currentMonthName = MONTH_NAMES[currentMonth];
-
+      if (hasAssignedCycleFromAdmin && isManagerSetupWindow && assignableDirects.length > 0) {
         const isMatchEmp = (empId: string, r: any) => {
           if (!empId || !r) return false;
           const cTarget = clean(empId);
@@ -1166,21 +1212,18 @@ if (isHalfDayLeave(leave.total_days)) return false;
             if (!isMatchEmp(empId, r)) return false;
             if (r.is_archived || r.status === 'Archived') return false;
 
-            const rFreq = String(r.frequency || '').toLowerCase();
-            if (rFreq === 'yearly') {
-              const s = String(r.status || '').toLowerCase().trim();
-              const isCompleted = s === 'completed' || s === 'sm_final_approval' || (s === 'approved' && r.managerScore != null);
-              if (!isCompleted) return true;
-            }
-
-            const mName = (MONTH_NAMES[currentMonth] || '').toLowerCase();
-            const yStr = `${currentYear}`;
+            const mName = (MONTH_NAMES[targetEvalMonth] || '').toLowerCase();
+            const yStr = `${targetEvalYear}`;
             const rText = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''}`.toLowerCase();
             if (mName && rText.includes(mName) && rText.includes(yStr)) return true;
 
             const rStart = String((r as any).startDate || (r as any).start_date || (r as any).fromDate || '').split('T')[0];
             const rEnd = String((r as any).endDate || (r as any).end_date || (r as any).toDate || '').split('T')[0];
-            if (rStart && rEnd && rStart <= todayStr && todayStr <= rEnd) return true;
+            if (rStart && rEnd) {
+              const targetFirstDay = `${targetEvalYear}-${String(targetEvalMonth + 1).padStart(2, '0')}-01`;
+              const targetLastDay = `${targetEvalYear}-${String(targetEvalMonth + 1).padStart(2, '0')}-${String(new Date(targetEvalYear, targetEvalMonth + 1, 0).getDate()).padStart(2, '0')}`;
+              if (rStart <= targetLastDay && rEnd >= targetFirstDay) return true;
+            }
 
             return false;
           });
@@ -1192,15 +1235,17 @@ if (isHalfDayLeave(leave.total_days)) return false;
         });
 
         if (unassignedDirectReports.length > 0) {
-          const daysRemaining = daysInCurrentMonth - todayDate;
-          const isLastDay = daysRemaining === 0;
+          const daysRemaining = isEarlyNextMonth
+            ? (2 - todayDate)
+            : (daysInCurrentMonth - todayDate) + 2;
+          const isLastDay = isEarlyNextMonth && todayDate === 2;
           return {
             type: 'manager_metrics_setup' as const,
-            periodName: `${currentMonthName} ${currentYear}`,
+            periodName: targetPeriodName,
             dueDateText: isLastDay
-              ? `Last Day Today (${unassignedDirectReports.length} Unassigned)`
-              : `${daysRemaining} Day${daysRemaining > 1 ? 's' : ''} Left (${unassignedDirectReports.length} Unassigned)`,
-            canCheckOutAnyway: !isLastDay, // Strict Option B: Hide checkout anyway on last day of month
+              ? `Final Due Date Today (2nd of Month - ${unassignedDirectReports.length} Unassigned)`
+              : `${daysRemaining} Day${daysRemaining > 1 ? 's' : ''} Left (Due 2nd - ${unassignedDirectReports.length} Unassigned)`,
+            canCheckOutAnyway: !isLastDay,
             isPreWeekoff: false
           };
         }
