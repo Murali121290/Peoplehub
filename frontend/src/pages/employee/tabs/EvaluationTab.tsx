@@ -1136,6 +1136,9 @@ export const EvaluationTab: React.FC = () => {
   const [historyQuarterSelection, setHistoryQuarterSelection] = useState<Record<string, number>>({});
   const [historyMonthSelection, setHistoryMonthSelection] = useState<Record<string, number>>({});
   const [historyWeekSelection, setHistoryWeekSelection] = useState<Record<string, number>>({});
+  const [auditExpandedQuarters, setAuditExpandedQuarters] = useState<Record<string, boolean>>({});
+  const [auditExpandedMonths, setAuditExpandedMonths] = useState<Record<string, boolean>>({});
+  const [expandedAuditMilestoneKey, setExpandedAuditMilestoneKey] = useState<string | null>(null);
   const [historySearchQuery, setHistorySearchQuery] = useState<string>('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'published' | 'in_review'>('all');
   const [showRubricMatrix, setShowRubricMatrix] = useState<boolean>(false);
@@ -13659,7 +13662,7 @@ export const EvaluationTab: React.FC = () => {
                                   </td>
                                 </tr>
 
-                                {/* Collapsible Deliverable Audit Drawer */}
+                                {/* Collapsible Deliverable Audit Drawer matching hierarchical drilldown (Year -> Quarter -> Month -> Week) */}
                                 {isAuditOpen && (() => {
                                   const isYearly = isYearlyResponse(r);
                                   const isWeekly = isYearly && (r.milestone_frequency === 'weekly' || ((r.weekly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.quarterly_records || []).length));
@@ -13669,426 +13672,784 @@ export const EvaluationTab: React.FC = () => {
                                   const curQuarterlyRecs = r.quarterly_records || [];
                                   const curMonthlyRecs = r.monthly_records || [];
                                   const curWeeklyRecs = r.weekly_records || [];
-                                  const todayStr = getLocalTodayDateString();
-                                  const currentActiveWeekRec = curWeeklyRecs.find(w => Boolean(w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate)) || curWeeklyRecs[0];
 
-                                  // 1. Quarter Selection
-                                  const selectedQ = historyQuarterSelection[r.id] || (isWeekly ? (currentActiveWeekRec?.quarter || 2) : currentQuarter);
-                                  const activeQRec = curQuarterlyRecs.find(q => q.quarterIndex === selectedQ) || curQuarterlyRecs[0];
+                                  const formatMilestoneRangeStr = (startStr?: string, endStr?: string, fallback?: string) => {
+                                    if (!startStr) return fallback || '';
+                                    const d1 = new Date(startStr);
+                                    if (isNaN(d1.getTime())) return fallback || startStr;
+                                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                    if (!endStr) return `${d1.getDate()} ${months[d1.getMonth()]} ${d1.getFullYear()}`;
+                                    const d2 = new Date(endStr);
+                                    if (isNaN(d2.getTime())) return `${d1.getDate()} ${months[d1.getMonth()]} ${d1.getFullYear()}`;
 
-                                  // 2. Month Selection (Filtered to selected Quarter)
-                                  const monthsInQuarter = FISCAL_MONTHS.filter(m => m.quarter === selectedQ);
-                                  const defaultMonthForQ = monthsInQuarter[monthsInQuarter.length - 1]?.monthIndex || 6;
-                                  const selectedM = historyMonthSelection[r.id] && monthsInQuarter.some(m => m.monthIndex === historyMonthSelection[r.id])
-                                    ? historyMonthSelection[r.id]
-                                    : defaultMonthForQ;
-                                  const activeMRec = curMonthlyRecs.find(m => m.monthIndex === selectedM) || curMonthlyRecs[0];
+                                    if (d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear()) {
+                                      return `${d1.getDate()} – ${d2.getDate()} ${months[d1.getMonth()]} ${d1.getFullYear()}`;
+                                    }
+                                    return `${d1.getDate()} ${months[d1.getMonth()]} – ${d2.getDate()} ${months[d2.getMonth()]} ${d2.getFullYear()}`;
+                                  };
 
-                                  // 3. Week Selection (Filtered to selected Month)
-                                  const weeksInMonth = curWeeklyRecs.filter(w => {
-                                    if (w.quarter && w.quarter !== selectedQ) return false;
-                                    if (!w.startDate) return true;
-                                    const startD = new Date(w.startDate);
-                                    const calM = startD.getMonth() + 1;
-                                    const fiscalM = calM >= 4 ? calM - 3 : calM + 9;
-                                    return fiscalM === selectedM;
-                                  });
-                                  const activeWeeksList = weeksInMonth.length > 0 ? weeksInMonth : curWeeklyRecs.filter(w => (w.quarter || 1) === selectedQ);
-                                  const selectedW = historyWeekSelection[r.id] && activeWeeksList.some(w => w.weekIndex === historyWeekSelection[r.id])
-                                    ? historyWeekSelection[r.id]
-                                    : (activeWeeksList[0]?.weekIndex || 1);
-                                  const activeWRec = curWeeklyRecs.find(w => w.weekIndex === selectedW) || curWeeklyRecs[0];
+                                  interface MilestoneAuditItem {
+                                    key: string;
+                                    title: string;
+                                    dateRange: string;
+                                    criteriaFilledCount: number;
+                                    totalCriteriaCount: number;
+                                    status: string;
+                                    score: number | null;
+                                    scoreLabel: string;
+                                    categories: KPICategory[];
+                                    entries: Record<string, any>;
+                                    managerRemarks?: string;
+                                  }
 
-                                  const currentPeriodEntries: Record<string, any> = isYearly
-                                    ? (isQuarterly ? (activeQRec?.kpiEntries || {}) : isMonthly ? (activeMRec?.kpiEntries || {}) : (activeWRec?.kpiEntries || {}))
-                                    : (r.kpiResponses || {});
+                                  interface MonthAuditGroup {
+                                    monthKey: string;
+                                    monthIndex: number;
+                                    monthName: string;
+                                    calendarMonth: number;
+                                    quarterIndex: number;
+                                    filledCount: number;
+                                    totalCount: number;
+                                    averageScore: number | null;
+                                    items: MilestoneAuditItem[];
+                                  }
 
-                                  const currentPeriodRemarks = isYearly
-                                    ? (isQuarterly ? activeQRec?.managerRemarks : isMonthly ? activeMRec?.managerRemarks : activeWRec?.managerRemarks)
-                                    : r.managerRemarks;
+                                  interface QuarterAuditGroup {
+                                    quarterKey: string;
+                                    quarterIndex: number;
+                                    quarterLabel: string;
+                                    quarterName: string;
+                                    monthsIncluded: string;
+                                    filledCount: number;
+                                    totalCount: number;
+                                    averageScore: number | null;
+                                    months?: MonthAuditGroup[];
+                                    items?: MilestoneAuditItem[];
+                                  }
+
+                                  const renderMilestoneCard = (item: MilestoneAuditItem) => {
+                                    const isExpanded = expandedAuditMilestoneKey === `${r.id}_${item.key}`;
+
+                                    return (
+                                      <div
+                                        key={item.key}
+                                        className="bg-white hover:bg-slate-50/90 border border-slate-200/90 rounded-xl shadow-2xs transition-all overflow-hidden"
+                                      >
+                                        {/* Clickable Card Header */}
+                                        <div
+                                          onClick={() => setExpandedAuditMilestoneKey(prev => prev === `${r.id}_${item.key}` ? null : `${r.id}_${item.key}`)}
+                                          className="p-3.5 flex items-center justify-between gap-3 cursor-pointer select-none group"
+                                        >
+                                          {/* Left: Chevron + Title + Date & criteria count */}
+                                          <div className="flex items-center gap-3 min-w-0">
+                                            <ChevronRightIcon
+                                              className={`w-4 h-4 text-slate-400 group-hover:text-slate-700 transition-transform duration-200 shrink-0 ${
+                                                isExpanded ? 'rotate-90 text-primary-600' : ''
+                                              }`}
+                                            />
+                                            <div className="min-w-0">
+                                              <div className="font-bold text-xs text-slate-900 group-hover:text-primary-800 transition-colors">
+                                                {item.title}
+                                              </div>
+                                              <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
+                                                <span>📅 {item.dateRange}</span>
+                                                <span className="text-slate-300">·</span>
+                                                <span>{item.criteriaFilledCount} criteria filled</span>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Right: Status Pill + Score block */}
+                                          <div className="flex items-center gap-3.5 shrink-0">
+                                            {/* Status Pill */}
+                                            {item.status === 'manager_approved' ? (
+                                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
+                                                <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-600" />
+                                                <span>Approved</span>
+                                              </span>
+                                            ) : item.status === 'submitted_to_manager' ? (
+                                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+                                                <ClockIcon className="w-3.5 h-3.5 text-amber-600" />
+                                                <span>In Review</span>
+                                              </span>
+                                            ) : (
+                                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                                <span>Pending</span>
+                                              </span>
+                                            )}
+
+                                            {/* Score Block */}
+                                            <div className="text-right min-w-[55px]">
+                                              <div className="font-mono font-extrabold text-sm text-slate-900 leading-none">
+                                                {item.score !== null ? Number(item.score).toFixed(2) : '—'}
+                                              </div>
+                                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
+                                                {item.scoreLabel}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Expanded Detailed Worksheet Table */}
+                                        {isExpanded && (
+                                          <div className="border-t border-slate-100 p-4 bg-slate-50/50 space-y-3">
+                                            <div className="rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
+                                              {item.categories.map((cat, catIdx) => {
+                                                const catEarned = cat.kpis.reduce((sum: number, k: KPIItem) => {
+                                                  const ent = item.entries[k.id];
+                                                  return sum + (ent?.earnedScore !== undefined && ent?.earnedScore !== null ? Number(ent.earnedScore) : 0);
+                                                }, 0);
+                                                const isCatExpanded = expandedAuditCategories[`${r.id}_${item.key}_${cat.id || catIdx}`] === true;
+
+                                                return (
+                                                  <div key={cat.id || catIdx} className="bg-white">
+                                                    <div
+                                                      onClick={() => setExpandedAuditCategories(prev => ({
+                                                        ...prev,
+                                                        [`${r.id}_${item.key}_${cat.id || catIdx}`]: !isCatExpanded
+                                                      }))}
+                                                      className="bg-slate-50 hover:bg-slate-100/80 text-slate-800 px-4 py-2 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
+                                                    >
+                                                      <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="p-0.5 rounded text-slate-400 group-hover:text-slate-700 transition-colors shrink-0">
+                                                          <ChevronDownIcon className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isCatExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                                                        </span>
+                                                        <span className="font-semibold text-xs text-slate-900 truncate">
+                                                          {catIdx + 1}. {cat.name}
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400">
+                                                          ({cat.kpis.length})
+                                                        </span>
+                                                      </div>
+                                                      <div className="flex items-center gap-2 shrink-0">
+                                                        <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
+                                                          Earned: <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
+                                                        </span>
+                                                      </div>
+                                                    </div>
+
+                                                    {isCatExpanded && (
+                                                      <div className="overflow-x-auto border-t border-slate-200/80">
+                                                        <table className="w-full text-left text-xs border-collapse">
+                                                          <thead className="bg-slate-100/80 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider select-none">
+                                                            <tr>
+                                                              <th className="px-3.5 py-2 text-left font-bold">KPI Metric</th>
+                                                              <th className="px-2 py-2 text-center font-bold">Weight</th>
+                                                              <th className="px-2.5 py-2 text-center font-bold">Target</th>
+                                                              <th className="px-3 py-2 text-center font-bold">Self Actual</th>
+                                                              <th className="px-2.5 py-2 text-center font-bold">Self Score</th>
+                                                              <th className="px-3 py-2 text-center font-bold bg-teal-50/60 text-teal-950 border-l border-teal-100">Mgr Actual</th>
+                                                              <th className="px-2.5 py-2 text-center font-bold bg-teal-50/60 text-teal-950">Mgr Score</th>
+                                                            </tr>
+                                                          </thead>
+                                                          <tbody className="divide-y divide-slate-100 bg-white">
+                                                            {cat.kpis.map((kpi, kIdx) => {
+                                                              const selfRes = item.entries[kpi.id];
+                                                              const selfActual = selfRes?.actualValue !== undefined && selfRes?.actualValue !== null && selfRes?.actualValue !== ''
+                                                                ? selfRes.actualValue
+                                                                : '—';
+                                                              const selfScore = selfRes?.earnedScore !== undefined && selfRes?.earnedScore !== null ? Number(selfRes.earnedScore) : 0;
+                                                              const selfRemarks = selfRes?.employeeRemarks || (selfRes as any)?.remarks || '';
+
+                                                              const rAny = r as any;
+                                                              const mgrActual = (rAny.managerKpiActuals && rAny.managerKpiActuals[kpi.id] !== undefined)
+                                                                ? rAny.managerKpiActuals[kpi.id]
+                                                                : (selfRes?.managerActualValue !== undefined && selfRes?.managerActualValue !== null && selfRes?.managerActualValue !== ''
+                                                                  ? selfRes.managerActualValue
+                                                                  : '—');
+                                                              const mgrRemarks = (rAny.managerKpiRemarks && rAny.managerKpiRemarks[kpi.id] !== undefined)
+                                                                ? rAny.managerKpiRemarks[kpi.id]
+                                                                : (selfRes?.managerRemarks || '');
+                                                              const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null ? Number(selfRes.managerScore) : null;
+
+                                                              const targetDisplay = (() => {
+                                                                const t = String(kpi.targetFromManager !== undefined && kpi.targetFromManager !== '' ? kpi.targetFromManager : (kpi.targetValue ?? '')).trim();
+                                                                const u = String(kpi.unit || '').trim();
+                                                                if (!t) return '—';
+                                                                if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
+                                                                return `${t} ${u}`;
+                                                              })();
+
+                                                              return (
+                                                                <tr
+                                                                  key={kpi.id || kIdx}
+                                                                  className="group/metricRow hover:bg-slate-50/80 transition-colors"
+                                                                >
+                                                                  <td className="px-3.5 py-2 align-middle">
+                                                                    <div className="flex flex-col gap-0.5">
+                                                                      <span className="font-semibold text-slate-800 text-xs">{kpi.name}</span>
+                                                                      {kpi.description && (
+                                                                        <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{kpi.description}</div>
+                                                                      )}
+                                                                    </div>
+                                                                  </td>
+                                                                  <td className="px-2 py-2 text-center align-middle font-mono font-medium text-slate-600 whitespace-nowrap">
+                                                                    {kpi.weightage || Math.round(cat.weightage / Math.max(1, cat.kpis.length))}%
+                                                                  </td>
+                                                                  <td className="px-2.5 py-2 text-center align-middle font-mono text-slate-600 whitespace-nowrap">
+                                                                    {targetDisplay}
+                                                                  </td>
+                                                                  <td className="px-3 py-2 text-center align-middle text-slate-800 whitespace-nowrap font-medium">
+                                                                    <div className="flex flex-col items-center justify-center gap-1">
+                                                                      <span>{selfActual} {kpi.unit || ''}</span>
+                                                                      {(selfRemarks?.trim() || mgrRemarks?.trim()) && (
+                                                                        <DeliverableRemarksHover
+                                                                          selfRemarks={selfRemarks}
+                                                                          mgrRemarks={mgrRemarks}
+                                                                          align="center"
+                                                                        >
+                                                                          <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap cursor-pointer">
+                                                                            {selfRemarks?.trim() && (
+                                                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0">
+                                                                                <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
+                                                                                <span>Emp</span>
+                                                                              </span>
+                                                                            )}
+                                                                            {mgrRemarks?.trim() && (
+                                                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0">
+                                                                                <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
+                                                                                <span>Mgr</span>
+                                                                              </span>
+                                                                            )}
+                                                                          </div>
+                                                                        </DeliverableRemarksHover>
+                                                                      )}
+                                                                    </div>
+                                                                  </td>
+                                                                  <td
+                                                                    className="px-2.5 py-2 text-center align-middle font-bold text-slate-900 whitespace-nowrap"
+                                                                  >
+                                                                    <div className="inline-flex items-center gap-1">
+                                                                      <span>{selfScore.toFixed(1)}%</span>
+                                                                      {selfRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-500/70 shrink-0" />}
+                                                                    </div>
+                                                                  </td>
+                                                                  <td className="px-3 py-2 text-center align-middle bg-teal-50/30 font-medium text-slate-900 border-l border-teal-100 whitespace-nowrap">
+                                                                    {mgrActual !== '—' ? `${mgrActual} ${kpi.unit || ''}` : '—'}
+                                                                  </td>
+                                                                  <td
+                                                                    className="px-2.5 py-2 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-teal-950"
+                                                                  >
+                                                                    <div className="inline-flex items-center gap-1">
+                                                                      <span>{mgrScore !== null ? `${mgrScore.toFixed(1)}%` : '—'}</span>
+                                                                      {mgrRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />}
+                                                                    </div>
+                                                                  </td>
+                                                                </tr>
+                                                              );
+                                                            })}
+                                                          </tbody>
+                                                        </table>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+
+                                            {/* Leadership Feedback Box inside drawer */}
+                                            {item.managerRemarks && (
+                                              <div className="p-3 bg-teal-50 rounded-xl border border-teal-200/80 space-y-1">
+                                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-teal-900 uppercase">
+                                                  <SparklesIcon className="w-3.5 h-3.5 text-teal-700" />
+                                                  Leadership Feedback
+                                                </div>
+                                                <p className="text-xs text-teal-950 leading-relaxed italic">
+                                                  "{item.managerRemarks}"
+                                                </p>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  };
+
+                                  // ==========================================
+                                  // 1. WEEKLY HIERARCHY: Quarter -> Month -> Weeks
+                                  // ==========================================
+                                  let quarterGroups: QuarterAuditGroup[] = [];
+                                  let totalMilestonesCount = 0;
+                                  let totalFilledMilestonesCount = 0;
+                                  let overallAvgScore: number | null = null;
+                                  let singleMilestoneItem: MilestoneAuditItem | null = null;
+
+                                  if (isWeekly) {
+                                    const wCats: KPICategory[] = itemCategories;
+                                    const totalKpis = wCats.reduce((sum: number, c: KPICategory) => sum + c.kpis.length, 0);
+
+                                    const getFiscalMonthForWeek = (w: YearlyWeekRecord) => {
+                                      if (w.monthIndex && w.monthIndex >= 1 && w.monthIndex <= 12) {
+                                        const fm = FISCAL_MONTHS.find(m => m.monthIndex === w.monthIndex);
+                                        if (fm) return { monthIndex: fm.monthIndex, monthName: fm.monthName, quarter: fm.quarter };
+                                      }
+                                      const wIdx = w.weekIndex || 1;
+                                      let mIdx = 1;
+                                      if (wIdx <= 4) mIdx = 1;       // Apr (w1-4)
+                                      else if (wIdx <= 8) mIdx = 2;  // May (w5-8)
+                                      else if (wIdx <= 13) mIdx = 3; // Jun (w9-13)
+                                      else if (wIdx <= 17) mIdx = 4; // Jul (w14-17)
+                                      else if (wIdx <= 21) mIdx = 5; // Aug (w18-21)
+                                      else if (wIdx <= 26) mIdx = 6; // Sep (w22-26)
+                                      else if (wIdx <= 30) mIdx = 7; // Oct (w27-30)
+                                      else if (wIdx <= 35) mIdx = 8; // Nov (w31-35)
+                                      else if (wIdx <= 39) mIdx = 9; // Dec (w36-39)
+                                      else if (wIdx <= 43) mIdx = 10;// Jan (w40-43)
+                                      else if (wIdx <= 47) mIdx = 11;// Feb (w44-47)
+                                      else mIdx = 12;                // Mar (w48-52)
+
+                                      const fm = FISCAL_MONTHS.find(m => m.monthIndex === mIdx) || FISCAL_MONTHS[0];
+                                      return { monthIndex: fm.monthIndex, monthName: fm.monthName, quarter: fm.quarter };
+                                    };
+
+                                    const sortedWeeks = [...curWeeklyRecs].sort((a, b) => (a.weekIndex || 0) - (b.weekIndex || 0));
+
+                                    quarterGroups = FISCAL_QUARTERS.map(q => {
+                                      const qMonthsMeta = FISCAL_MONTHS.filter(m => m.quarter === q.quarterIndex);
+
+                                      const monthGroups: MonthAuditGroup[] = qMonthsMeta.map(fMonth => {
+                                        const mWeeks = sortedWeeks.filter(w => {
+                                          const fInfo = getFiscalMonthForWeek(w);
+                                          return fInfo.monthIndex === fMonth.monthIndex;
+                                        });
+
+                                        const mItems: MilestoneAuditItem[] = mWeeks.map(w => {
+                                          const filledKpis = Object.values(w.kpiEntries || {}).filter(
+                                            (e: any) => (e.actualValue !== undefined && e.actualValue !== '') || (e.earnedScore != null && Number(e.earnedScore) > 0) || e.managerScore != null
+                                          ).length;
+
+                                          const scoreVal = w.managerScore != null
+                                            ? Number(w.managerScore)
+                                            : (w.employeeScore != null ? Number(w.employeeScore) : null);
+
+                                          return {
+                                            key: `week_${w.weekIndex}`,
+                                            title: w.weekLabel || `Week ${w.weekIndex}`,
+                                            dateRange: formatMilestoneRangeStr(w.startDate, w.endDate, w.weekLabel || `Week ${w.weekIndex}`),
+                                            criteriaFilledCount: filledKpis,
+                                            totalCriteriaCount: totalKpis,
+                                            status: w.status,
+                                            score: scoreVal,
+                                            scoreLabel: w.managerScore != null ? 'FINAL' : (w.employeeScore != null ? 'SELF' : 'PENDING'),
+                                            categories: wCats,
+                                            entries: w.kpiEntries || {},
+                                            managerRemarks: w.managerRemarks
+                                          };
+                                        });
+
+                                        const filledCount = mItems.filter(it => it.status === 'manager_approved' || it.status === 'submitted_to_manager' || it.criteriaFilledCount > 0).length;
+                                        const scoredItems = mItems.filter(it => it.score !== null);
+                                        const avgScore = scoredItems.length > 0
+                                          ? Number((scoredItems.reduce((acc, it) => acc + Number(it.score), 0) / scoredItems.length).toFixed(2))
+                                          : null;
+
+                                        return {
+                                          monthKey: `m_${fMonth.monthIndex}`,
+                                          monthIndex: fMonth.monthIndex,
+                                          monthName: fMonth.monthName,
+                                          calendarMonth: fMonth.calendarMonth,
+                                          quarterIndex: q.quarterIndex,
+                                          filledCount,
+                                          totalCount: mItems.length,
+                                          averageScore: avgScore,
+                                          items: mItems
+                                        };
+                                      });
+
+                                      const allQItems = monthGroups.flatMap(mg => mg.items);
+                                      const qFilledCount = allQItems.filter(it => it.status === 'manager_approved' || it.status === 'submitted_to_manager' || it.criteriaFilledCount > 0).length;
+                                      const qScoredItems = allQItems.filter(it => it.score !== null);
+                                      const qAvgScore = qScoredItems.length > 0
+                                        ? Number((qScoredItems.reduce((acc, it) => acc + Number(it.score), 0) / qScoredItems.length).toFixed(2))
+                                        : null;
+
+                                      return {
+                                        quarterKey: `q_${q.quarterIndex}`,
+                                        quarterIndex: q.quarterIndex,
+                                        quarterLabel: q.quarterLabel,
+                                        quarterName: q.quarterName,
+                                        monthsIncluded: q.monthsIncluded,
+                                        filledCount: qFilledCount,
+                                        totalCount: allQItems.length,
+                                        averageScore: qAvgScore,
+                                        months: monthGroups
+                                      };
+                                    });
+
+                                    const allWeeks = quarterGroups.flatMap(q => (q.months || []).flatMap(m => m.items));
+                                    totalMilestonesCount = allWeeks.length;
+                                    totalFilledMilestonesCount = allWeeks.filter(it => it.status === 'manager_approved' || it.status === 'submitted_to_manager' || it.criteriaFilledCount > 0).length;
+                                    const allScored = allWeeks.filter(it => it.score !== null);
+                                    if (allScored.length > 0) {
+                                      overallAvgScore = Number((allScored.reduce((acc, it) => acc + Number(it.score), 0) / allScored.length).toFixed(2));
+                                    }
+                                  } else if (isMonthly) {
+                                    // ==========================================
+                                    // 2. MONTHLY HIERARCHY: Quarter -> Months
+                                    // ==========================================
+                                    const mCats: KPICategory[] = itemCategories;
+                                    const totalKpis = mCats.reduce((sum: number, c: KPICategory) => sum + c.kpis.length, 0);
+
+                                    quarterGroups = FISCAL_QUARTERS.map(q => {
+                                      const qMonthsMeta = FISCAL_MONTHS.filter(m => m.quarter === q.quarterIndex);
+
+                                      const mItems: MilestoneAuditItem[] = qMonthsMeta.map(fMonth => {
+                                        const mRec = curMonthlyRecs.find(m => m.monthIndex === fMonth.monthIndex) || {
+                                          monthIndex: fMonth.monthIndex,
+                                          monthName: fMonth.monthName,
+                                          status: 'pending_employee' as const,
+                                          kpiEntries: {}
+                                        } as any;
+
+                                        const filledKpis = Object.values(mRec.kpiEntries || {}).filter(
+                                          (e: any) => (e.actualValue !== undefined && e.actualValue !== '') || (e.earnedScore != null && Number(e.earnedScore) > 0) || e.managerScore != null
+                                        ).length;
+
+                                        const scoreVal = mRec.managerScore != null
+                                          ? Number(mRec.managerScore)
+                                          : (mRec.employeeScore != null ? Number(mRec.employeeScore) : null);
+
+                                        return {
+                                          key: `month_${fMonth.monthIndex}`,
+                                          title: mRec.monthName || fMonth.monthName,
+                                          dateRange: formatMilestoneRangeStr(mRec.startDate, mRec.endDate, `${fMonth.monthName}`),
+                                          criteriaFilledCount: filledKpis,
+                                          totalCriteriaCount: totalKpis,
+                                          status: mRec.status || 'pending_employee',
+                                          score: scoreVal,
+                                          scoreLabel: mRec.managerScore != null ? 'FINAL' : (mRec.employeeScore != null ? 'SELF' : 'PENDING'),
+                                          categories: mCats,
+                                          entries: mRec.kpiEntries || {},
+                                          managerRemarks: mRec.managerRemarks
+                                        };
+                                      });
+
+                                      const qFilledCount = mItems.filter(it => it.status === 'manager_approved' || it.status === 'submitted_to_manager' || it.criteriaFilledCount > 0).length;
+                                      const qScoredItems = mItems.filter(it => it.score !== null);
+                                      const qAvgScore = qScoredItems.length > 0
+                                        ? Number((qScoredItems.reduce((acc, it) => acc + Number(it.score), 0) / qScoredItems.length).toFixed(2))
+                                        : null;
+
+                                      return {
+                                        quarterKey: `q_${q.quarterIndex}`,
+                                        quarterIndex: q.quarterIndex,
+                                        quarterLabel: q.quarterLabel,
+                                        quarterName: q.quarterName,
+                                        monthsIncluded: q.monthsIncluded,
+                                        filledCount: qFilledCount,
+                                        totalCount: mItems.length,
+                                        averageScore: qAvgScore,
+                                        items: mItems
+                                      };
+                                    });
+
+                                    const allMonths = quarterGroups.flatMap(q => q.items || []);
+                                    totalMilestonesCount = allMonths.length;
+                                    totalFilledMilestonesCount = allMonths.filter(it => it.status === 'manager_approved' || it.status === 'submitted_to_manager' || it.criteriaFilledCount > 0).length;
+                                    const allScored = allMonths.filter(it => it.score !== null);
+                                    if (allScored.length > 0) {
+                                      overallAvgScore = Number((allScored.reduce((acc, it) => acc + Number(it.score), 0) / allScored.length).toFixed(2));
+                                    }
+                                  } else if (isQuarterly) {
+                                    // ==========================================
+                                    // 3. QUARTERLY HIERARCHY: 4 Quarters
+                                    // ==========================================
+                                    const qCats: KPICategory[] = itemCategories;
+                                    const totalKpis = qCats.reduce((sum: number, c: KPICategory) => sum + c.kpis.length, 0);
+
+                                    const qItems: MilestoneAuditItem[] = FISCAL_QUARTERS.map(fQuarter => {
+                                      const qRec = curQuarterlyRecs.find(q => q.quarterIndex === fQuarter.quarterIndex) || {
+                                        quarterIndex: fQuarter.quarterIndex,
+                                        quarterLabel: fQuarter.quarterLabel,
+                                        status: 'pending_employee' as const,
+                                        kpiEntries: {}
+                                      } as any;
+
+                                      const filledKpis = Object.values(qRec.kpiEntries || {}).filter(
+                                        (e: any) => (e.actualValue !== undefined && e.actualValue !== '') || (e.earnedScore != null && Number(e.earnedScore) > 0) || e.managerScore != null
+                                      ).length;
+
+                                      const scoreVal = qRec.managerScore != null
+                                        ? Number(qRec.managerScore)
+                                        : (qRec.employeeScore != null ? Number(qRec.employeeScore) : null);
+
+                                      return {
+                                        key: `quarter_${fQuarter.quarterIndex}`,
+                                        title: qRec.quarterLabel || fQuarter.quarterLabel,
+                                        dateRange: qRec.monthsIncluded || fQuarter.monthsIncluded || formatMilestoneRangeStr(qRec.startDate, qRec.endDate, `Quarter ${fQuarter.quarterIndex}`),
+                                        criteriaFilledCount: filledKpis,
+                                        totalCriteriaCount: totalKpis,
+                                        status: qRec.status || 'pending_employee',
+                                        score: scoreVal,
+                                        scoreLabel: qRec.managerScore != null ? 'FINAL' : (qRec.employeeScore != null ? 'SELF' : 'PENDING'),
+                                        categories: qCats,
+                                        entries: qRec.kpiEntries || {},
+                                        managerRemarks: qRec.managerRemarks
+                                      };
+                                    });
+
+                                    quarterGroups = [
+                                      {
+                                        quarterKey: 'all_quarters',
+                                        quarterIndex: 1,
+                                        quarterLabel: 'Fiscal Year Quarters',
+                                        quarterName: itemTitle,
+                                        monthsIncluded: 'April – March',
+                                        filledCount: qItems.filter(it => it.status === 'manager_approved' || it.status === 'submitted_to_manager' || it.criteriaFilledCount > 0).length,
+                                        totalCount: qItems.length,
+                                        averageScore: itemMgrScore ?? itemSelfScore,
+                                        items: qItems
+                                      }
+                                    ];
+
+                                    totalMilestonesCount = qItems.length;
+                                    totalFilledMilestonesCount = qItems.filter(it => it.status === 'manager_approved' || it.status === 'submitted_to_manager' || it.criteriaFilledCount > 0).length;
+                                    overallAvgScore = itemMgrScore ?? itemSelfScore;
+                                  } else {
+                                    // ==========================================
+                                    // 4. STANDARD SINGLE-PERIOD
+                                    // ==========================================
+                                    const sCats: KPICategory[] = itemCategories;
+                                    const totalKpis = sCats.reduce((sum: number, c: KPICategory) => sum + c.kpis.length, 0);
+                                    const filledKpis = Object.values(r.kpiResponses || {}).filter(
+                                      (e: any) => (e.actualValue !== undefined && e.actualValue !== '') || (e.earnedScore != null && Number(e.earnedScore) > 0) || e.managerScore != null
+                                    ).length;
+
+                                    const scoreVal = itemMgrScore ?? itemSelfScore;
+
+                                    singleMilestoneItem = {
+                                      key: `single_${r.id}`,
+                                      title: r.form || r.periodName || 'Evaluation Submission',
+                                      dateRange: itemPeriodTime,
+                                      criteriaFilledCount: filledKpis,
+                                      totalCriteriaCount: totalKpis,
+                                      status: r.status,
+                                      score: scoreVal,
+                                      scoreLabel: itemMgrScore != null ? 'FINAL' : 'SELF',
+                                      categories: sCats,
+                                      entries: r.kpiResponses || {},
+                                      managerRemarks: r.managerRemarks
+                                    };
+
+                                    totalMilestonesCount = 1;
+                                    totalFilledMilestonesCount = filledKpis > 0 ? 1 : 0;
+                                    overallAvgScore = scoreVal;
+                                  }
 
                                   return (
-                                    <tr>
-                                      <td colSpan={7} className="p-4 bg-slate-50/70 border-y border-slate-200">
-                                        <div className="space-y-3.5">
-                                          <div className="flex items-center justify-between gap-3">
-                                            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                                              <TableCellsIcon className="w-4 h-4 text-teal-700" />
-                                              Deliverable Audit Breakdown ({itemTitle})
-                                            </h4>
+                                    <tr key={`${r.id}_drawer`}>
+                                      <td colSpan={7} className="p-4 sm:p-5 bg-slate-50/70 border-y border-slate-200">
+                                        <div className="space-y-4 max-w-5xl mx-auto">
+                                          {/* 1. Header: YOUR FILLED EVALUATIONS + Count badge + Avg Score + Close button */}
+                                          <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-200">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              <div className="w-1.5 h-4 bg-teal-600 rounded-full" />
+                                              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                                YOUR FILLED EVALUATIONS
+                                              </h4>
+                                              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 shadow-2xs">
+                                                {totalFilledMilestonesCount} / {totalMilestonesCount} filled
+                                              </span>
+                                              {overallAvgScore !== null && (
+                                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200 shadow-2xs">
+                                                  Avg Score: {overallAvgScore.toFixed(2)}%
+                                                </span>
+                                              )}
+                                            </div>
                                             <button
                                               type="button"
                                               onClick={() => setHistoryAuditBreakdownOpen(prev => ({ ...prev, [r.id]: false }))}
-                                              className="text-[10px] font-bold text-slate-500 hover:text-slate-700 bg-white px-2.5 py-0.5 rounded-full border border-slate-200 transition cursor-pointer shadow-2xs"
+                                              className="text-[10px] font-bold text-slate-500 hover:text-slate-800 bg-white px-3 py-1 rounded-full border border-slate-200 transition cursor-pointer shadow-2xs hover:bg-slate-50"
                                             >
                                               Close ▲
                                             </button>
                                           </div>
 
-                                          {/* Interactive Cadence Stage / Period Dropdown Selector */}
-                                          {isQuarterly && (
-                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs">
-                                              <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                                                <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1.5">
-                                                  <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
-                                                  Select Quarter / Stage:
-                                                </span>
-                                                <select
-                                                  value={selectedQ}
-                                                  onChange={e => setHistoryQuarterSelection(prev => ({ ...prev, [r.id]: Number(e.target.value) }))}
-                                                  className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer max-w-sm shadow-2xs"
-                                                >
-                                                  {FISCAL_QUARTERS.map(q => {
-                                                    const rec = curQuarterlyRecs.find(qr => qr.quarterIndex === q.quarterIndex);
-                                                    const score = rec?.managerScore != null ? `${Number(rec.managerScore).toFixed(0)}%` : (rec?.status === 'manager_approved' ? 'Approved' : rec?.status === 'submitted_to_manager' ? 'Under Review' : 'Pending');
-                                                    return (
-                                                      <option key={q.quarterKey} value={q.quarterIndex}>
-                                                        {q.quarterKey.toUpperCase()} ({q.monthsIncluded}) — {score}
-                                                      </option>
-                                                    );
-                                                  })}
-                                                </select>
-                                              </div>
-                                              <div className="flex items-center gap-2">
-                                                <span className="text-[11px] font-semibold text-slate-500">Stage Status:</span>
-                                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${activeQRec?.status === 'manager_approved'
-                                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                                  : activeQRec?.status === 'submitted_to_manager'
-                                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                                    : 'bg-slate-100 text-slate-600 border-slate-200'
-                                                  }`}>
-                                                  {activeQRec?.status === 'manager_approved' ? `Approved (${Number(activeQRec?.managerScore || 0).toFixed(0)}%)` : activeQRec?.status === 'submitted_to_manager' ? 'Under Review' : 'Pending'}
-                                                </span>
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {isMonthly && (
-                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs">
-                                              <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
-                                                {/* Level 1: Quarter */}
-                                                <div className="flex items-center gap-1.5">
-                                                  <span className="text-[11px] font-bold text-slate-500 uppercase">Quarter:</span>
-                                                  <select
-                                                    value={selectedQ}
-                                                    onChange={e => {
-                                                      const newQ = Number(e.target.value);
-                                                      setHistoryQuarterSelection(prev => ({ ...prev, [r.id]: newQ }));
-                                                      const mInQ = FISCAL_MONTHS.filter(m => m.quarter === newQ);
-                                                      if (mInQ.length > 0) {
-                                                        setHistoryMonthSelection(prev => ({ ...prev, [r.id]: mInQ[0].monthIndex }));
-                                                      }
-                                                    }}
-                                                    className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-2xs"
-                                                  >
-                                                    {FISCAL_QUARTERS.map(q => (
-                                                      <option key={q.quarterKey} value={q.quarterIndex}>
-                                                        {q.quarterKey.toUpperCase()} ({q.monthsIncluded})
-                                                      </option>
-                                                    ))}
-                                                  </select>
-                                                </div>
-
-                                                {/* Level 2: Month in that Quarter */}
-                                                <div className="flex items-center gap-1.5">
-                                                  <span className="text-[11px] font-bold text-slate-500 uppercase">Month:</span>
-                                                  <select
-                                                    value={selectedM}
-                                                    onChange={e => setHistoryMonthSelection(prev => ({ ...prev, [r.id]: Number(e.target.value) }))}
-                                                    className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-2xs"
-                                                  >
-                                                    {monthsInQuarter.map(m => {
-                                                      const rec = curMonthlyRecs.find(mr => mr.monthIndex === m.monthIndex);
-                                                      const score = rec?.managerScore != null ? `${Number(rec.managerScore).toFixed(0)}%` : (rec?.status === 'manager_approved' ? 'Approved' : rec?.status === 'submitted_to_manager' ? 'Under Review' : 'Pending');
-                                                      return (
-                                                        <option key={m.monthKey} value={m.monthIndex}>
-                                                          {m.monthName} — {score}
-                                                        </option>
-                                                      );
-                                                    })}
-                                                  </select>
-                                                </div>
-                                              </div>
-
-                                              <div className="flex items-center gap-2 shrink-0">
-                                                <span className="text-[11px] font-semibold text-slate-500">Status:</span>
-                                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${activeMRec?.status === 'manager_approved'
-                                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                                  : activeMRec?.status === 'submitted_to_manager'
-                                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                                    : 'bg-slate-100 text-slate-600 border-slate-200'
-                                                  }`}>
-                                                  {activeMRec?.status === 'manager_approved' ? `Approved (${Number(activeMRec?.managerScore || 0).toFixed(0)}%)` : activeMRec?.status === 'submitted_to_manager' ? 'Under Review' : 'Pending'}
-                                                </span>
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {isWeekly && (
-                                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs">
-                                              <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
-                                                {/* Level 1: Quarter */}
-                                                <div className="flex items-center gap-1.5">
-                                                  <span className="text-[11px] font-bold text-slate-500 uppercase">Quarter:</span>
-                                                  <select
-                                                    value={selectedQ}
-                                                    onChange={e => {
-                                                      const newQ = Number(e.target.value);
-                                                      setHistoryQuarterSelection(prev => ({ ...prev, [r.id]: newQ }));
-                                                      const mInQ = FISCAL_MONTHS.filter(m => m.quarter === newQ);
-                                                      if (mInQ.length > 0) {
-                                                        const newM = mInQ[0].monthIndex;
-                                                        setHistoryMonthSelection(prev => ({ ...prev, [r.id]: newM }));
-                                                        const wInM = curWeeklyRecs.filter(w => {
-                                                          if (w.quarter && w.quarter !== newQ) return false;
-                                                          if (!w.startDate) return true;
-                                                          const sD = new Date(w.startDate);
-                                                          const cM = sD.getMonth() + 1;
-                                                          const fM = cM >= 4 ? cM - 3 : cM + 9;
-                                                          return fM === newM;
-                                                        });
-                                                        if (wInM.length > 0) {
-                                                          setHistoryWeekSelection(prev => ({ ...prev, [r.id]: wInM[0].weekIndex }));
-                                                        }
-                                                      }
-                                                    }}
-                                                    className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-2xs"
-                                                  >
-                                                    {FISCAL_QUARTERS.map(q => (
-                                                      <option key={q.quarterKey} value={q.quarterIndex}>
-                                                        {q.quarterKey.toUpperCase()} ({q.monthsIncluded})
-                                                      </option>
-                                                    ))}
-                                                  </select>
-                                                </div>
-
-                                                {/* Level 2: Month in Quarter */}
-                                                <div className="flex items-center gap-1.5">
-                                                  <span className="text-[11px] font-bold text-slate-500 uppercase">Month:</span>
-                                                  <select
-                                                    value={selectedM}
-                                                    onChange={e => {
-                                                      const newM = Number(e.target.value);
-                                                      setHistoryMonthSelection(prev => ({ ...prev, [r.id]: newM }));
-                                                      const wInM = curWeeklyRecs.filter(w => {
-                                                        if (w.quarter && w.quarter !== selectedQ) return false;
-                                                        if (!w.startDate) return true;
-                                                        const sD = new Date(w.startDate);
-                                                        const cM = sD.getMonth() + 1;
-                                                        const fM = cM >= 4 ? cM - 3 : cM + 9;
-                                                        return fM === newM;
-                                                      });
-                                                      if (wInM.length > 0) {
-                                                        setHistoryWeekSelection(prev => ({ ...prev, [r.id]: wInM[0].weekIndex }));
-                                                      }
-                                                    }}
-                                                    className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-2xs"
-                                                  >
-                                                    {monthsInQuarter.map(m => (
-                                                      <option key={m.monthKey} value={m.monthIndex}>
-                                                        {m.monthName}
-                                                      </option>
-                                                    ))}
-                                                  </select>
-                                                </div>
-
-                                                {/* Level 3: Week in Month */}
-                                                <div className="flex items-center gap-1.5">
-                                                  <span className="text-[11px] font-bold text-slate-500 uppercase">Week:</span>
-                                                  <select
-                                                    value={selectedW}
-                                                    onChange={e => setHistoryWeekSelection(prev => ({ ...prev, [r.id]: Number(e.target.value) }))}
-                                                    className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-2xs"
-                                                  >
-                                                    {activeWeeksList.map(w => {
-                                                      const score = w.managerScore != null ? `${Number(w.managerScore).toFixed(0)}%` : (w.status === 'manager_approved' ? 'Approved' : w.status === 'submitted_to_manager' ? 'Under Review' : 'Pending');
-                                                      return (
-                                                        <option key={w.weekIndex} value={w.weekIndex}>
-                                                          {w.weekLabel || `Week ${w.weekIndex}`} — {score}
-                                                        </option>
-                                                      );
-                                                    })}
-                                                  </select>
-                                                </div>
-                                              </div>
-
-                                              <div className="flex items-center gap-2 shrink-0">
-                                                <span className="text-[11px] font-semibold text-slate-500">Status:</span>
-                                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${activeWRec?.status === 'manager_approved'
-                                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                                  : activeWRec?.status === 'submitted_to_manager'
-                                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                                    : 'bg-slate-100 text-slate-600 border-slate-200'
-                                                  }`}>
-                                                  {activeWRec?.status === 'manager_approved' ? `Approved (${Number(activeWRec?.managerScore || 0).toFixed(0)}%)` : activeWRec?.status === 'submitted_to_manager' ? 'Under Review' : 'Pending'}
-                                                </span>
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          <div className="rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
-                                            {itemCategories.map((cat, catIdx) => {
-                                              const catEarned = cat.kpis.reduce((sum, k) => {
-                                                const ent = currentPeriodEntries[k.id];
-                                                return sum + (ent?.earnedScore !== undefined && ent?.earnedScore !== null ? Number(ent.earnedScore) : 0);
-                                              }, 0);
-                                              const isCatExpanded = Boolean(expandedAuditCategories[`${r.id}_${cat.id || catIdx}`]);
+                                          {/* 2. Hierarchical Drill-Down Accordion Sections */}
+                                          <div className="space-y-3">
+                                            {/* Weekly Hierarchy: Quarter -> Month -> Week */}
+                                            {isWeekly && quarterGroups.map((q) => {
+                                              const isQExpanded = auditExpandedQuarters[`${r.id}_${q.quarterKey}`] === true;
 
                                               return (
-                                                <div key={cat.id} className="bg-white">
+                                                <div
+                                                  key={q.quarterKey}
+                                                  className="border border-purple-200/90 rounded-2xl bg-white shadow-2xs overflow-hidden transition-all"
+                                                >
+                                                  {/* Quarter Header (Clickable Dropdown Banner) */}
                                                   <div
-                                                    onClick={() => setExpandedAuditCategories(prev => ({ ...prev, [`${r.id}_${cat.id || catIdx}`]: !prev[`${r.id}_${cat.id || catIdx}`] }))}
-                                                    className="bg-slate-50 hover:bg-slate-100/80 text-slate-800 px-4 py-2 cursor-pointer transition-colors duration-150 select-none group flex items-center justify-between gap-3 w-full"
+                                                    onClick={() => setAuditExpandedQuarters(prev => ({
+                                                      ...prev,
+                                                      [`${r.id}_${q.quarterKey}`]: !isQExpanded
+                                                    }))}
+                                                    className="bg-purple-100/80 hover:bg-purple-100 px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer select-none transition-colors border-b border-purple-200/80"
                                                   >
-                                                    <div className="flex items-center gap-2 min-w-0">
-                                                      <span className="p-0.5 rounded text-slate-400 group-hover:text-slate-700 transition-colors shrink-0">
-                                                        <ChevronDownIcon className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isCatExpanded ? 'rotate-0' : '-rotate-90'}`} />
-                                                      </span>
-                                                      <span className="font-semibold text-xs text-slate-900 truncate">
-                                                        {catIdx + 1}. {cat.name}
-                                                      </span>
-                                                      <span className="text-[10px] text-slate-400">
-                                                        ({cat.kpis.length})
-                                                      </span>
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                      <ChevronDownIcon
+                                                        className={`w-4 h-4 text-purple-900 transition-transform duration-200 shrink-0 ${
+                                                          isQExpanded ? 'rotate-0' : '-rotate-90'
+                                                        }`}
+                                                      />
+                                                      <span className="text-base">🎯</span>
+                                                      <div className="min-w-0">
+                                                        <span className="font-extrabold text-xs text-purple-950">
+                                                          {q.quarterLabel}
+                                                        </span>
+                                                        <span className="text-[11px] text-purple-700/90 font-medium ml-2">
+                                                          ({q.monthsIncluded})
+                                                        </span>
+                                                      </div>
                                                     </div>
-                                                    <div className="flex items-center gap-2 shrink-0">
-                                                      <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
-                                                        Earned: <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
+
+                                                    <div className="flex items-center gap-2.5 shrink-0">
+                                                      {q.averageScore !== null ? (
+                                                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200 shadow-2xs">
+                                                          Avg: <strong className="font-mono">{q.averageScore.toFixed(2)}%</strong>
+                                                        </span>
+                                                      ) : (
+                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/70 text-purple-900 border border-purple-200">
+                                                          Pending
+                                                        </span>
+                                                      )}
+                                                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-purple-950 border border-purple-200 shadow-2xs">
+                                                        {q.filledCount} / {q.totalCount} weeks filled
                                                       </span>
                                                     </div>
                                                   </div>
 
-                                                  {isCatExpanded && (
-                                                    <div className="overflow-x-auto border-t border-slate-200/80">
-                                                      <table className="w-full text-left text-xs border-collapse">
-                                                        <thead className="bg-slate-100/80 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider select-none">
-                                                          <tr>
-                                                            <th className="px-3.5 py-2 text-left font-bold">KPI Metric</th>
-                                                            <th className="px-2 py-2 text-center font-bold">Weight</th>
-                                                            <th className="px-2.5 py-2 text-center font-bold">Target</th>
-                                                            <th className="px-3 py-2 text-center font-bold">Self Actual</th>
-                                                            <th className="px-2.5 py-2 text-center font-bold">Self Score</th>
-                                                            <th className="px-3 py-2 text-center font-bold bg-teal-50/60 text-teal-950 border-l border-teal-100">Mgr Actual</th>
-                                                            <th className="px-2.5 py-2 text-center font-bold bg-teal-50/60 text-teal-950">Mgr Score</th>
-                                                          </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-slate-100 bg-white">
-                                                          {cat.kpis.map((kpi, kIdx) => {
-                                                            const selfRes = currentPeriodEntries[kpi.id];
-                                                            const selfActual = selfRes?.actualValue !== undefined && selfRes?.actualValue !== null && selfRes?.actualValue !== ''
-                                                              ? selfRes.actualValue
-                                                              : '—';
-                                                            const selfScore = selfRes?.earnedScore !== undefined && selfRes?.earnedScore !== null ? Number(selfRes.earnedScore) : 0;
-                                                            const selfRemarks = selfRes?.employeeRemarks || (selfRes as any)?.remarks || '';
+                                                  {/* Months under this Quarter */}
+                                                  {isQExpanded && (
+                                                    <div className="p-3.5 space-y-3 bg-slate-50/40">
+                                                      {(q.months || []).map((m) => {
+                                                        const isMExpanded = auditExpandedMonths[`${r.id}_${m.monthKey}`] === true;
 
-                                                            const rAny = r as any;
-                                                            const mgrActual = (rAny.managerKpiActuals && rAny.managerKpiActuals[kpi.id] !== undefined)
-                                                              ? rAny.managerKpiActuals[kpi.id]
-                                                              : (selfRes?.managerActualValue !== undefined && selfRes?.managerActualValue !== null && selfRes?.managerActualValue !== ''
-                                                                ? selfRes.managerActualValue
-                                                                : '—');
-                                                            const mgrRemarks = (rAny.managerKpiRemarks && rAny.managerKpiRemarks[kpi.id] !== undefined)
-                                                              ? rAny.managerKpiRemarks[kpi.id]
-                                                              : (selfRes?.managerRemarks || '');
-                                                            const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null ? Number(selfRes.managerScore) : null;
+                                                        return (
+                                                          <div
+                                                            key={m.monthKey}
+                                                            className="border border-slate-200/90 rounded-xl bg-white shadow-2xs overflow-hidden transition-all"
+                                                          >
+                                                            {/* Month Header (Clickable Dropdown Banner) */}
+                                                            <div
+                                                              onClick={() => setAuditExpandedMonths(prev => ({
+                                                                ...prev,
+                                                                [`${r.id}_${m.monthKey}`]: !isMExpanded
+                                                              }))}
+                                                              className="bg-slate-50 hover:bg-slate-100/90 px-3.5 py-2 flex items-center justify-between gap-3 cursor-pointer select-none transition-colors border-b border-slate-200/80"
+                                                            >
+                                                              <div className="flex items-center gap-2 min-w-0">
+                                                                <ChevronDownIcon
+                                                                  className={`w-3.5 h-3.5 text-slate-600 transition-transform duration-200 shrink-0 ${
+                                                                    isMExpanded ? 'rotate-0' : '-rotate-90'
+                                                                  }`}
+                                                                />
+                                                                <span className="text-sm">📅</span>
+                                                                <span className="font-bold text-xs text-slate-800">
+                                                                  {m.monthName}
+                                                                </span>
+                                                                <span className="text-[10px] text-slate-400 font-medium">
+                                                                  ({m.items.length} weeks)
+                                                                </span>
+                                                              </div>
 
-                                                            const targetDisplay = (() => {
-                                                              const t = String(kpi.targetFromManager !== undefined && kpi.targetFromManager !== '' ? kpi.targetFromManager : (kpi.targetValue ?? '')).trim();
-                                                              const u = String(kpi.unit || '').trim();
-                                                              if (!t) return '—';
-                                                              if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
-                                                              return `${t} ${u}`;
-                                                            })();
+                                                              <div className="flex items-center gap-2 shrink-0">
+                                                                {m.averageScore !== null ? (
+                                                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-50 text-teal-900 border border-teal-200">
+                                                                    Week Avg: <strong className="font-mono">{m.averageScore.toFixed(2)}%</strong>
+                                                                  </span>
+                                                                ) : (
+                                                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-medium text-slate-400 bg-slate-100">
+                                                                    No scores yet
+                                                                  </span>
+                                                                )}
+                                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white text-slate-700 border border-slate-200 shadow-2xs">
+                                                                  {m.filledCount}/{m.totalCount} filled
+                                                                </span>
+                                                              </div>
+                                                            </div>
 
-                                                            return (
-                                                              <tr
-                                                                key={kpi.id || kIdx}
-                                                                className="group/metricRow hover:bg-slate-50/80 transition-colors"
-                                                              >
-                                                                <td className="px-3.5 py-2 align-middle">
-                                                                  <div className="flex flex-col gap-0.5">
-                                                                    <span className="font-semibold text-slate-800 text-xs">{kpi.name}</span>
-                                                                    {kpi.description && (
-                                                                      <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{kpi.description}</div>
-                                                                    )}
-                                                                  </div>
-                                                                </td>
-                                                                <td className="px-2 py-2 text-center align-middle font-mono font-medium text-slate-600 whitespace-nowrap">
-                                                                  {kpi.weightage || Math.round(cat.weightage / Math.max(1, cat.kpis.length))}%
-                                                                </td>
-                                                                <td className="px-2.5 py-2 text-center align-middle font-mono text-slate-600 whitespace-nowrap">
-                                                                  {targetDisplay}
-                                                                </td>
-                                                                <td className="px-3 py-2 text-center align-middle text-slate-800 whitespace-nowrap font-medium">
-                                                                  <div className="flex flex-col items-center justify-center gap-1">
-                                                                    <span>{selfActual} {kpi.unit || ''}</span>
-                                                                    {(selfRemarks?.trim() || mgrRemarks?.trim()) && (
-                                                                      <DeliverableRemarksHover
-                                                                        selfRemarks={selfRemarks}
-                                                                        mgrRemarks={mgrRemarks}
-                                                                        align="center"
-                                                                      >
-                                                                        <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap cursor-pointer">
-                                                                          {selfRemarks?.trim() && (
-                                                                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0">
-                                                                              <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
-                                                                              <span>Emp</span>
-                                                                            </span>
-                                                                          )}
-                                                                          {mgrRemarks?.trim() && (
-                                                                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0">
-                                                                              <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
-                                                                              <span>Mgr</span>
-                                                                            </span>
-                                                                          )}
-                                                                        </div>
-                                                                      </DeliverableRemarksHover>
-                                                                    )}
-                                                                  </div>
-                                                                </td>
-                                                                <td
-                                                                  className="px-2.5 py-2 text-center align-middle font-bold text-slate-900 whitespace-nowrap"
-                                                                >
-                                                                  <div className="inline-flex items-center gap-1">
-                                                                    <span>{selfScore.toFixed(1)}%</span>
-                                                                    {selfRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-500/70 shrink-0" />}
-                                                                  </div>
-                                                                </td>
-                                                                <td className="px-3 py-2 text-center align-middle bg-teal-50/30 font-medium text-slate-900 border-l border-teal-100 whitespace-nowrap">
-                                                                  {mgrActual !== '—' ? `${mgrActual} ${kpi.unit || ''}` : '—'}
-                                                                </td>
-                                                                <td
-                                                                  className="px-2.5 py-2 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-teal-950"
-                                                                >
-                                                                  <div className="inline-flex items-center gap-1">
-                                                                    <span>{mgrScore !== null ? `${mgrScore.toFixed(1)}%` : '—'}</span>
-                                                                    {mgrRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />}
-                                                                  </div>
-                                                                </td>
-                                                              </tr>
-                                                            );
-                                                          })}
-                                                        </tbody>
-                                                      </table>
+                                                            {/* Weeks under this Month */}
+                                                            {isMExpanded && (
+                                                              <div className="p-3 space-y-2 bg-slate-50/20">
+                                                                {m.items.map((wItem) => renderMilestoneCard(wItem))}
+                                                              </div>
+                                                            )}
+                                                          </div>
+                                                        );
+                                                      })}
                                                     </div>
                                                   )}
                                                 </div>
                                               );
                                             })}
-                                          </div>
 
-                                          {/* Leadership Feedback Box inside drawer */}
-                                          {currentPeriodRemarks && (
-                                            <div className="p-3 bg-teal-50 rounded-xl border border-teal-200/80 space-y-1">
-                                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-teal-900 uppercase">
-                                                <SparklesIcon className="w-3.5 h-3.5 text-teal-700" />
-                                                Leadership Feedback
+                                            {/* Monthly Hierarchy: Quarter -> Months */}
+                                            {isMonthly && quarterGroups.map((q) => {
+                                              const isQExpanded = auditExpandedQuarters[`${r.id}_${q.quarterKey}`] === true;
+
+                                              return (
+                                                <div
+                                                  key={q.quarterKey}
+                                                  className="border border-purple-200/90 rounded-2xl bg-white shadow-2xs overflow-hidden transition-all"
+                                                >
+                                                  {/* Quarter Header */}
+                                                  <div
+                                                    onClick={() => setAuditExpandedQuarters(prev => ({
+                                                      ...prev,
+                                                      [`${r.id}_${q.quarterKey}`]: !isQExpanded
+                                                    }))}
+                                                    className="bg-purple-100/80 hover:bg-purple-100 px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer select-none transition-colors border-b border-purple-200/80"
+                                                  >
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                      <ChevronDownIcon
+                                                        className={`w-4 h-4 text-purple-900 transition-transform duration-200 shrink-0 ${
+                                                          isQExpanded ? 'rotate-0' : '-rotate-90'
+                                                        }`}
+                                                      />
+                                                      <span className="text-base">🎯</span>
+                                                      <span className="font-extrabold text-xs text-purple-950">
+                                                        {q.quarterLabel}
+                                                      </span>
+                                                      <span className="text-[11px] text-purple-700 font-medium">
+                                                        ({q.monthsIncluded})
+                                                      </span>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2.5 shrink-0">
+                                                      {q.averageScore !== null && (
+                                                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200 shadow-2xs">
+                                                          Avg: <strong className="font-mono">{q.averageScore.toFixed(2)}%</strong>
+                                                        </span>
+                                                      )}
+                                                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-purple-950 border border-purple-200 shadow-2xs">
+                                                        {q.filledCount} / {q.totalCount} months filled
+                                                      </span>
+                                                    </div>
+                                                  </div>
+
+                                                  {/* Month Cards under Quarter */}
+                                                  {isQExpanded && (
+                                                    <div className="p-3.5 space-y-2 bg-slate-50/40">
+                                                      {(q.items || []).map((mItem) => renderMilestoneCard(mItem))}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              );
+                                            })}
+
+                                            {/* Quarterly Hierarchy: Quarters */}
+                                            {isQuarterly && (
+                                              <div className="space-y-2">
+                                                {(quarterGroups[0]?.items || []).map((qItem) => renderMilestoneCard(qItem))}
                                               </div>
-                                              <p className="text-xs text-teal-950 leading-relaxed italic">
-                                                "{currentPeriodRemarks}"
-                                              </p>
-                                            </div>
-                                          )}
+                                            )}
+
+                                            {/* Single Standard Submission */}
+                                            {!isYearly && singleMilestoneItem && (
+                                              <div className="space-y-2">
+                                                {renderMilestoneCard(singleMilestoneItem)}
+                                              </div>
+                                            )}
+                                          </div>
                                         </div>
                                       </td>
                                     </tr>
