@@ -28,6 +28,7 @@ import {
 import {
   calculateKPIScore,
   calculateOverallScore,
+  calculateCategoryEarned,
   getRatingForScore,
   getRatingScale,
   parseTargetExpression,
@@ -1860,10 +1861,11 @@ export const EvaluationTab: React.FC = () => {
   const totalWeightage = hrCategories.reduce((sum, cat) => sum + (Number(cat.weightage) || 0), 0);
   const isWeightageValid = totalWeightage === 100;
 
-  // Check if all individual categories have their KPI target scores sum equal to their category weight
+  // Check if all individual categories have valid KPI target scores (either matching weightage or capacity deliverables >= weightage)
   const areAllCategoriesBalanced = hrCategories.every(cat => {
+    if (!cat.kpis || cat.kpis.length === 0) return false;
     const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-    return Math.abs(catSum - Number(cat.weightage)) < 0.05;
+    return Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
   });
 
   const loadHrTemplates = async (mgrId: string, teamIdVal: string) => {
@@ -2465,11 +2467,15 @@ export const EvaluationTab: React.FC = () => {
       return;
     }
 
-    // Validate that each category's target scores sum to category weight
+    // Validate that each category has deliverables with valid scores
     for (const cat of hrCategories) {
+      if (!cat.kpis || cat.kpis.length === 0) {
+        showAlert(`Category "${cat.name}" has no deliverables. Please add at least one deliverable.`, 'Deliverable Missing');
+        return;
+      }
       const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-      if (Math.abs(catSum - Number(cat.weightage)) > 0.05) {
-        showAlert(`Category "${cat.name}" has Target Scores summing to ${catSum.toFixed(2)}%, but Category Weight is ${cat.weightage}%. The sum of Target Scores must equal Category Weight. Click "Auto-Balance Targets" or adjust manually.`, 'Balance Required');
+      if (catSum <= 0) {
+        showAlert(`Category "${cat.name}" has deliverables with 0% score. Please define valid target score percentages.`, 'Score Required');
         return;
       }
     }
@@ -2595,8 +2601,9 @@ export const EvaluationTab: React.FC = () => {
   const smTotalWeightage = smCategories.reduce((sum, cat) => sum + (Number(cat.weightage) || 0), 0);
   const isSmWeightageValid = smTotalWeightage === 100;
   const areAllSmCategoriesBalanced = smCategories.every(cat => {
+    if (!cat.kpis || cat.kpis.length === 0) return false;
     const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-    return Math.abs(catSum - Number(cat.weightage)) < 0.05;
+    return Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
   });
 
   const handleSMStartEditCycle = (cycle: EvaluationCycle) => {
@@ -2760,9 +2767,13 @@ export const EvaluationTab: React.FC = () => {
       return;
     }
     for (const cat of smCategories) {
+      if (!cat.kpis || cat.kpis.length === 0) {
+        showAlert(`Category "${cat.name}" has no deliverables. Please add at least one deliverable.`, 'Deliverable Missing');
+        return;
+      }
       const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-      if (Math.abs(catSum - Number(cat.weightage)) > 0.05) {
-        showAlert(`Category "${cat.name}" has Target Scores summing to ${catSum.toFixed(2)}%, but Category Weight is ${cat.weightage}%. The sum of Target Scores must equal Category Weight. Click "Auto-Balance Targets" or adjust manually.`, 'Balance Required');
+      if (catSum <= 0) {
+        showAlert(`Category "${cat.name}" has deliverables with 0% score. Please define valid target score percentages.`, 'Score Required');
         return;
       }
     }
@@ -2778,9 +2789,13 @@ export const EvaluationTab: React.FC = () => {
       return;
     }
     for (const cat of smCategories) {
+      if (!cat.kpis || cat.kpis.length === 0) {
+        showAlert(`Category "${cat.name}" has no deliverables. Please add at least one deliverable.`, 'Deliverable Missing');
+        return;
+      }
       const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-      if (Math.abs(catSum - Number(cat.weightage)) > 0.05) {
-        showAlert(`Category "${cat.name}" has Target Scores summing to ${catSum.toFixed(2)}%, but Category Weight is ${cat.weightage}%. The sum of Target Scores must equal Category Weight. Click "Auto-Balance Targets" or adjust manually.`, 'Balance Required');
+      if (catSum <= 0) {
+        showAlert(`Category "${cat.name}" has deliverables with 0% score. Please define valid target score percentages.`, 'Score Required');
         return;
       }
     }
@@ -4134,8 +4149,9 @@ export const EvaluationTab: React.FC = () => {
   const mgrTotalWeightage = mgrAssignCategories.reduce((sum, c) => sum + (Number(c.weightage) || 0), 0);
   const isMgrWeightageValid = mgrTotalWeightage === 100;
   const areAllMgrCategoriesBalanced = mgrAssignCategories.every(cat => {
+    if (!cat.kpis || cat.kpis.length === 0) return false;
     const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
-    return Math.abs(catSum - Number(cat.weightage)) <= 0.05;
+    return Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
   });
 
   const handleMgrSubmitAssignment = async (e: React.FormEvent) => {
@@ -4153,9 +4169,13 @@ export const EvaluationTab: React.FC = () => {
       return;
     }
     for (const cat of mgrAssignCategories) {
+      if (!cat.kpis || cat.kpis.length === 0) {
+        showAlert(`Category "${cat.name}" has no deliverables. Please add at least one deliverable.`, 'Deliverable Missing');
+        return;
+      }
       const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-      if (Math.abs(catSum - Number(cat.weightage)) > 0.05) {
-        showAlert(`Category "${cat.name}" has Target Scores summing to ${catSum.toFixed(2)}%, but Category Weight is ${cat.weightage}%. Please click "Auto-Balance Targets" or adjust.`, 'Balance Required');
+      if (catSum <= 0) {
+        showAlert(`Category "${cat.name}" has deliverables with 0% score. Please define valid target score percentages.`, 'Score Required');
         return;
       }
     }
@@ -4896,8 +4916,9 @@ export const EvaluationTab: React.FC = () => {
   const mgrEditTotalWeightage = mgrEditCategories.reduce((sum, c) => sum + (Number(c.weightage) || 0), 0);
   const isMgrEditWeightageValid = mgrEditTotalWeightage === 100;
   const areAllMgrEditCategoriesBalanced = mgrEditCategories.every(cat => {
+    if (!cat.kpis || cat.kpis.length === 0) return false;
     const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
-    return Math.abs(catSum - Number(cat.weightage)) <= 0.05;
+    return Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
   });
 
   const handleMgrSaveMatrixChanges = async (e: React.FormEvent) => {
@@ -4919,9 +4940,13 @@ export const EvaluationTab: React.FC = () => {
     }
 
     for (const cat of mgrEditCategories) {
+      if (!cat.kpis || cat.kpis.length === 0) {
+        showAlert(`Category "${cat.name}" has no deliverables. Please add at least one deliverable.`, 'Deliverable Missing');
+        return;
+      }
       const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-      if (Math.abs(catSum - Number(cat.weightage)) > 0.05) {
-        showAlert(`Category "${cat.name}" has Target Scores summing to ${catSum.toFixed(2)}%, but Category Weight is ${cat.weightage}%. Please click "Auto-Balance Targets" or adjust.`, 'Balance Required');
+      if (catSum <= 0) {
+        showAlert(`Category "${cat.name}" has deliverables with 0% score. Please define valid target score percentages.`, 'Score Required');
         return;
       }
     }
@@ -5322,15 +5347,17 @@ export const EvaluationTab: React.FC = () => {
   const liveEmployeeScore = useMemo(() => {
     let sum = 0;
     activeCategories.forEach(cat => {
+      let rawEarned = 0;
       cat.kpis.forEach(k => {
         const item = getKpiResponseItem(k);
         const val = item?.actualValue ?? '';
-        sum += calculateKPIScore(k, val).earnedScore;
+        rawEarned += calculateKPIScore(k, val).earnedScore;
       });
+      sum += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawEarned);
     });
     const finalScore = (isEmpSubmitted && activeEmpResponse?.employeeOverallScore !== undefined && activeEmpResponse.employeeOverallScore !== null)
       ? Number(activeEmpResponse.employeeOverallScore)
-      : Number(sum.toFixed(2));
+      : Number(Math.min(100, sum).toFixed(2));
     return { overallScore: finalScore };
   }, [activeCategories, kpiInputs, activeEmpResponse?.kpiResponses, activeEmpResponse?.employeeOverallScore, isEmpSubmitted]);
 
@@ -6288,13 +6315,15 @@ export const EvaluationTab: React.FC = () => {
 
     let totalScore = 0;
     selectedMgrCategories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const actualVal = nextActuals[kpi.id];
         const calc = calculateKPIScore(kpi, actualVal);
-        totalScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    setMgrScore(Number(totalScore.toFixed(2)));
+    setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
     setMgrRemarks(curWeekRec?.managerRemarks || '');
   };
 
@@ -6547,13 +6576,15 @@ export const EvaluationTab: React.FC = () => {
 
     let totalScore = 0;
     selectedMgrCategories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const actualVal = nextActuals[kpi.id];
         const calc = calculateKPIScore(kpi, actualVal);
-        totalScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    setMgrScore(Number(totalScore.toFixed(2)));
+    setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
     setMgrRemarks(curQuarterRec?.managerRemarks || '');
   };
 
@@ -6807,13 +6838,15 @@ export const EvaluationTab: React.FC = () => {
 
     let totalScore = 0;
     selectedMgrCategories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const actualVal = nextActuals[kpi.id];
         const calc = calculateKPIScore(kpi, actualVal);
-        totalScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    setMgrScore(Number(totalScore.toFixed(2)));
+    setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
     setMgrRemarks(curMonthRec?.managerRemarks || '');
   };
 
@@ -10100,13 +10133,15 @@ export const EvaluationTab: React.FC = () => {
         setMgrKpiRemarks(initialRemarks);
         let totalScore = 0;
         targetCats.forEach((cat: KPICategory) => {
+          let rawCat = 0;
           cat.kpis.forEach((kpi: KPIItem) => {
             const actualVal = initialActuals[kpi.id];
             const calc = calculateKPIScore(kpi, actualVal);
-            totalScore += calc.earnedScore;
+            rawCat += calc.earnedScore;
           });
+          totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
         });
-        setMgrScore(Number(totalScore.toFixed(2)));
+        setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
         setMgrRemarks(curWeekRec?.managerRemarks || '');
         return;
       }
@@ -10142,13 +10177,15 @@ export const EvaluationTab: React.FC = () => {
         setMgrKpiRemarks(initialRemarks);
         let totalScore = 0;
         targetCats.forEach((cat: KPICategory) => {
+          let rawCat = 0;
           cat.kpis.forEach((kpi: KPIItem) => {
             const actualVal = initialActuals[kpi.id];
             const calc = calculateKPIScore(kpi, actualVal);
-            totalScore += calc.earnedScore;
+            rawCat += calc.earnedScore;
           });
+          totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
         });
-        setMgrScore(Number(totalScore.toFixed(2)));
+        setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
         setMgrRemarks(curQuarterRec?.managerRemarks || '');
         return;
       }
@@ -10178,13 +10215,15 @@ export const EvaluationTab: React.FC = () => {
       setMgrKpiRemarks(initialRemarks);
       let totalScore = 0;
       targetCats.forEach((cat: KPICategory) => {
+        let rawCat = 0;
         cat.kpis.forEach((kpi: KPIItem) => {
           const actualVal = initialActuals[kpi.id];
           const calc = calculateKPIScore(kpi, actualVal);
-          totalScore += calc.earnedScore;
+          rawCat += calc.earnedScore;
         });
+        totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
       });
-      setMgrScore(Number(totalScore.toFixed(2)));
+      setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
       setMgrRemarks(curMonthRec?.managerRemarks || '');
       return;
     }
@@ -10207,14 +10246,16 @@ export const EvaluationTab: React.FC = () => {
 
     let totalScore = 0;
     targetCats.forEach((cat: KPICategory) => {
+      let rawCat = 0;
       cat.kpis.forEach((kpi: KPIItem) => {
         const actualVal = initialActuals[kpi.id];
         const calc = calculateKPIScore(kpi, actualVal);
-        totalScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
 
-    const calculatedScore = Number(totalScore.toFixed(2));
+    const calculatedScore = Number(Math.min(100, totalScore).toFixed(2));
     setMgrScore(isPendingReview ? calculatedScore : (r.managerScore != null ? Number(r.managerScore) : calculatedScore));
     setMgrRemarks(r.managerRemarks || '');
   };
@@ -10239,6 +10280,7 @@ export const EvaluationTab: React.FC = () => {
       const curQuarterlyRec = isQuarterly ? (selectedMgrResponse?.quarterly_records || []).find(q => q.quarterIndex === activeMgrYearlyQuarterIndex) : null;
 
       selectedMgrCategories.forEach(cat => {
+        let rawCat = 0;
         cat.kpis.forEach(k => {
           const yearlyEntry = isQuarterly
             ? (curQuarterlyRec?.kpiEntries?.[k.id] || (k.name ? curQuarterlyRec?.kpiEntries?.[k.name] : null))
@@ -10248,10 +10290,11 @@ export const EvaluationTab: React.FC = () => {
             : (selectedMgrResponse?.kpiResponses?.[k.id]?.actualValue ?? '');
           const val = updated[k.id] !== undefined ? updated[k.id] : fallbackEmpVal;
           const calc = calculateKPIScore(k, val);
-          sum += calc.earnedScore;
+          rawCat += calc.earnedScore;
         });
+        sum += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
       });
-      setMgrScore(Number(sum.toFixed(2)));
+      setMgrScore(Number(Math.min(100, sum).toFixed(2)));
       return updated;
     });
   };
@@ -11088,7 +11131,7 @@ export const EvaluationTab: React.FC = () => {
               <div className="space-y-3.5">
                 {hrCategories.map((cat, catIdx) => {
                   const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
-                  const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05;
+                  const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
 
                   return (
                     <div key={cat.id} className="bg-slate-50/80 border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 space-y-2.5">
@@ -11433,17 +11476,21 @@ export const EvaluationTab: React.FC = () => {
 
             // Category performance analysis
             const categoryPerformance = activeCategories.map(cat => {
-              const catEarned = cat.kpis.reduce((sum, k) => {
+              const rawCatEarned = cat.kpis.reduce((sum, k) => {
                 const respItem = getKpiResponseItem(k);
                 const val = respItem?.actualValue ?? '';
                 return sum + calculateKPIScore(k, val).earnedScore;
               }, 0);
-              const catMgrEarned = cat.kpis.reduce((sum, k) => {
+              const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
+
+              const rawCatMgrEarned = cat.kpis.reduce((sum, k) => {
                 const respItem = getKpiResponseItem(k);
                 if (respItem?.managerScore !== undefined && respItem?.managerScore !== null) return sum + Number(respItem.managerScore);
                 if (respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== '') return sum + calculateKPIScore(k, respItem.managerActualValue).earnedScore;
                 return sum;
               }, 0);
+              const catMgrEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatMgrEarned);
+
               const targetWeight = Number(cat.weightage) || 1;
               const effectiveScore = (isEmpSubmitted && activeEmpResponse?.status === 'approved' && activeEmpResponse?.managerScore !== undefined) ? catMgrEarned : catEarned;
               const achievementRate = (effectiveScore / targetWeight) * 100;
@@ -12251,7 +12298,7 @@ export const EvaluationTab: React.FC = () => {
                           : Boolean(isYearly && (curYearlyRecord?.status === 'submitted_to_manager' || curYearlyRecord?.status === 'manager_approved')));
                       const isThisMonthLocked = isYearly ? (!lockInfo?.isEditable) : isEmpSubmitted;
 
-                      const catEarned = cat.kpis.reduce((sum, k) => {
+                      const rawCatEarned = cat.kpis.reduce((sum, k) => {
                         const yearlyEntry = isWeekly
                           ? (curWeeklyRecord?.kpiEntries?.[k.id] || (k.name ? curWeeklyRecord?.kpiEntries?.[k.name] : null))
                           : (isQuarterly
@@ -12272,6 +12319,7 @@ export const EvaluationTab: React.FC = () => {
                               : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''))));
                         return sum + calculateKPIScore(k, val).earnedScore;
                       }, 0);
+                      const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
 
                       const isExpanded = Object.keys(expandedCategories).length === 0 ? catIdx === 0 : Boolean(expandedCategories[cat.id]);
 
@@ -12812,6 +12860,7 @@ export const EvaluationTab: React.FC = () => {
 
                       let periodSelfSum = 0;
                       activeCategories.forEach(cat => {
+                        let catRaw = 0;
                         cat.kpis.forEach(k => {
                           const yearlyEntry = isWeekly
                             ? (curWeeklyRec?.kpiEntries?.[k.id] || (k.name ? curWeeklyRec?.kpiEntries?.[k.name] : null))
@@ -12831,8 +12880,9 @@ export const EvaluationTab: React.FC = () => {
                                   ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                                   : (yearlyEntry?.actualValue ?? ''))
                                 : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''))));
-                          periodSelfSum += calculateKPIScore(k, val).earnedScore;
+                          catRaw += calculateKPIScore(k, val).earnedScore;
                         });
+                        periodSelfSum += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, catRaw);
                       });
                       const displayScore = isYearly ? Number(periodSelfSum.toFixed(1)) : selfScoreNum;
                       const activeMilestoneLabel = isWeekly ? (curWeeklyRec?.weekLabel || `Week ${activeYearlyWeekIndex}`) : (isQuarterly ? quarterName : monthName);
@@ -15692,7 +15742,7 @@ export const EvaluationTab: React.FC = () => {
                         <div className="space-y-3">
                           {mgrAssignCategories.map((cat, catIdx) => {
                             const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
-                            const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05;
+                            const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
 
                             return (
                               <div key={cat.id} className="bg-slate-50/80 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5">
@@ -18935,7 +18985,7 @@ export const EvaluationTab: React.FC = () => {
                   <div className="space-y-4">
                     {mgrEditCategories.map((cat, catIdx) => {
                       const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
-                      const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05;
+                      const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
 
                       return (
                         <div key={cat.id} className="bg-slate-50/80 border border-slate-200/90 rounded-2xl p-4 sm:p-5 space-y-3">
