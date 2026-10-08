@@ -6312,11 +6312,20 @@ export const EvaluationTab: React.FC = () => {
       cat.kpis.forEach(kpi => {
         const respEntry = curWeekRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeekRec?.kpiEntries?.[kpi.name] : null);
         const empActual = respEntry?.actualValue ?? respEntry?.actual_value ?? '';
+        const empScore = respEntry?.earnedScore ?? (respEntry as any)?.earned_score ?? (empActual !== '' ? calculateKPIScore(kpi, empActual).earnedScore : 0);
+        const empRem = respEntry?.employeeRemarks ?? (respEntry as any)?.employee_remarks ?? (respEntry as any)?.employee_remark ?? (respEntry as any)?.remarks ?? '';
+        const isInsuff = Boolean(respEntry?.isInsufficient ?? (respEntry as any)?.is_insufficient);
         const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
         const calc = calculateKPIScore(kpi, mgrActual);
         payloadEntries[kpi.id] = {
           actualValue: empActual,
           actual_value: empActual,
+          earnedScore: empScore,
+          earned_score: empScore,
+          employeeRemarks: empRem,
+          employee_remark: empRem,
+          isInsufficient: isInsuff,
+          is_insufficient: isInsuff,
           managerActualValue: mgrActual,
           manager_actual_pm: mgrActual,
           managerScore: Number(calc.earnedScore.toFixed(2)),
@@ -6562,11 +6571,20 @@ export const EvaluationTab: React.FC = () => {
       cat.kpis.forEach(kpi => {
         const respEntry = curQuarterRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterRec?.kpiEntries?.[kpi.name] : null);
         const empActual = respEntry?.actualValue ?? respEntry?.actual_value ?? '';
+        const empScore = respEntry?.earnedScore ?? (respEntry as any)?.earned_score ?? (empActual !== '' ? calculateKPIScore(kpi, empActual).earnedScore : 0);
+        const empRem = respEntry?.employeeRemarks ?? (respEntry as any)?.employee_remarks ?? (respEntry as any)?.employee_remark ?? (respEntry as any)?.remarks ?? '';
+        const isInsuff = Boolean(respEntry?.isInsufficient ?? (respEntry as any)?.is_insufficient);
         const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
         const calc = calculateKPIScore(kpi, mgrActual);
         payloadEntries[kpi.id] = {
           actualValue: empActual,
           actual_value: empActual,
+          earnedScore: empScore,
+          earned_score: empScore,
+          employeeRemarks: empRem,
+          employee_remark: empRem,
+          isInsufficient: isInsuff,
+          is_insufficient: isInsuff,
           managerActualValue: mgrActual,
           manager_actual_pm: mgrActual,
           managerScore: Number(calc.earnedScore.toFixed(2)),
@@ -6815,11 +6833,20 @@ export const EvaluationTab: React.FC = () => {
       cat.kpis.forEach(kpi => {
         const respEntry = curMonthRec?.kpiEntries?.[kpi.id] || (kpi.name ? curMonthRec?.kpiEntries?.[kpi.name] : null);
         const empActual = respEntry?.actualValue ?? respEntry?.actual_value ?? '';
+        const empScore = respEntry?.earnedScore ?? (respEntry as any)?.earned_score ?? (empActual !== '' ? calculateKPIScore(kpi, empActual).earnedScore : 0);
+        const empRem = respEntry?.employeeRemarks ?? (respEntry as any)?.employee_remarks ?? (respEntry as any)?.employee_remark ?? (respEntry as any)?.remarks ?? '';
+        const isInsuff = Boolean(respEntry?.isInsufficient ?? (respEntry as any)?.is_insufficient);
         const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
         const calc = calculateKPIScore(kpi, mgrActual);
         payloadEntries[kpi.id] = {
           actualValue: empActual,
           actual_value: empActual,
+          earnedScore: empScore,
+          earned_score: empScore,
+          employeeRemarks: empRem,
+          employee_remark: empRem,
+          isInsufficient: isInsuff,
+          is_insufficient: isInsuff,
           managerActualValue: mgrActual,
           manager_actual_pm: mgrActual,
           managerScore: Number(calc.earnedScore.toFixed(2)),
@@ -13796,8 +13823,23 @@ export const EvaluationTab: React.FC = () => {
                                             <div className="rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
                                               {item.categories.map((cat, catIdx) => {
                                                 const catEarned = cat.kpis.reduce((sum: number, k: KPIItem) => {
-                                                  const ent = item.entries[k.id];
-                                                  return sum + (ent?.earnedScore !== undefined && ent?.earnedScore !== null ? Number(ent.earnedScore) : 0);
+                                                  const ent = item.entries?.[k.id] || (k.name ? item.entries?.[k.name] : null);
+                                                  const entActual = ent?.actualValue !== undefined && ent?.actualValue !== null && ent?.actualValue !== ''
+                                                    ? ent.actualValue
+                                                    : (ent?.actual_value ?? '');
+                                                  const entMgrActual = ent?.managerActualValue !== undefined && ent?.managerActualValue !== null && ent?.managerActualValue !== ''
+                                                    ? ent.managerActualValue
+                                                    : (ent?.manager_actual_pm ?? '');
+                                                  const score = ent?.managerScore !== undefined && ent?.managerScore !== null
+                                                    ? Number(ent.managerScore)
+                                                    : ((ent as any)?.manager_score !== undefined && (ent as any)?.manager_score !== null
+                                                      ? Number((ent as any).manager_score)
+                                                      : (ent?.earnedScore !== undefined && ent?.earnedScore !== null
+                                                        ? Number(ent.earnedScore)
+                                                        : ((ent as any)?.earned_score !== undefined && (ent as any)?.earned_score !== null
+                                                          ? Number((ent as any).earned_score)
+                                                          : (entMgrActual !== '' ? calculateKPIScore(k, entMgrActual).earnedScore : (entActual !== '' ? calculateKPIScore(k, entActual).earnedScore : 0)))));
+                                                  return sum + score;
                                                 }, 0);
                                                 const isCatExpanded = expandedAuditCategories[`${r.id}_${item.key}_${cat.id || catIdx}`] === true;
 
@@ -13844,23 +13886,66 @@ export const EvaluationTab: React.FC = () => {
                                                           </thead>
                                                           <tbody className="divide-y divide-slate-100 bg-white">
                                                             {cat.kpis.map((kpi, kIdx) => {
-                                                              const selfRes = item.entries[kpi.id];
+                                                              const selfRes = item.entries?.[kpi.id] || (kpi.name ? item.entries?.[kpi.name] : null);
                                                               const selfActual = selfRes?.actualValue !== undefined && selfRes?.actualValue !== null && selfRes?.actualValue !== ''
                                                                 ? selfRes.actualValue
-                                                                : '—';
-                                                              const selfScore = selfRes?.earnedScore !== undefined && selfRes?.earnedScore !== null ? Number(selfRes.earnedScore) : 0;
-                                                              const selfRemarks = selfRes?.employeeRemarks || (selfRes as any)?.remarks || '';
+                                                                : (selfRes?.actual_value !== undefined && selfRes?.actual_value !== null && selfRes?.actual_value !== ''
+                                                                  ? selfRes.actual_value
+                                                                  : ((selfRes as any)?.employeeActual !== undefined && (selfRes as any)?.employeeActual !== null && (selfRes as any)?.employeeActual !== ''
+                                                                    ? (selfRes as any).employeeActual
+                                                                    : '—'));
+
+                                                              const calc = selfActual !== '—' ? calculateKPIScore(kpi, selfActual) : { earnedScore: 0 };
+                                                              const selfScore = selfRes?.earnedScore !== undefined && selfRes?.earnedScore !== null
+                                                                ? Number(selfRes.earnedScore)
+                                                                : ((selfRes as any)?.earned_score !== undefined && (selfRes as any)?.earned_score !== null
+                                                                  ? Number((selfRes as any).earned_score)
+                                                                  : (selfActual !== '—' ? calc.earnedScore : 0));
+
+                                                              const selfRemarks = String(
+                                                                selfRes?.employeeRemarks ||
+                                                                (selfRes as any)?.employee_remarks ||
+                                                                (selfRes as any)?.remarks ||
+                                                                (selfRes as any)?.employee_remark ||
+                                                                (selfRes as any)?.employeeComment ||
+                                                                (selfRes as any)?.employee_comment ||
+                                                                (selfRes as any)?.comment ||
+                                                                (selfRes as any)?.note ||
+                                                                ''
+                                                              ).trim();
 
                                                               const rAny = r as any;
-                                                              const mgrActual = (rAny.managerKpiActuals && rAny.managerKpiActuals[kpi.id] !== undefined)
-                                                                ? rAny.managerKpiActuals[kpi.id]
+                                                              const mgrActual = (rAny.managerKpiActuals && (rAny.managerKpiActuals[kpi.id] !== undefined ? rAny.managerKpiActuals[kpi.id] : (kpi.name && rAny.managerKpiActuals[kpi.name])))
+                                                                ? (rAny.managerKpiActuals[kpi.id] ?? rAny.managerKpiActuals[kpi.name])
                                                                 : (selfRes?.managerActualValue !== undefined && selfRes?.managerActualValue !== null && selfRes?.managerActualValue !== ''
                                                                   ? selfRes.managerActualValue
-                                                                  : '—');
-                                                              const mgrRemarks = (rAny.managerKpiRemarks && rAny.managerKpiRemarks[kpi.id] !== undefined)
-                                                                ? rAny.managerKpiRemarks[kpi.id]
-                                                                : (selfRes?.managerRemarks || '');
-                                                              const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null ? Number(selfRes.managerScore) : null;
+                                                                  : ((selfRes as any)?.manager_actual_pm !== undefined && (selfRes as any)?.manager_actual_pm !== null && (selfRes as any)?.manager_actual_pm !== ''
+                                                                    ? (selfRes as any).manager_actual_pm
+                                                                    : '—'));
+
+                                                              const mgrCalc = mgrActual !== '—' ? calculateKPIScore(kpi, mgrActual) : { earnedScore: 0 };
+                                                              const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null
+                                                                ? Number(selfRes.managerScore)
+                                                                : ((selfRes as any)?.manager_score !== undefined && (selfRes as any)?.manager_score !== null
+                                                                  ? Number((selfRes as any).manager_score)
+                                                                  : (mgrActual !== '—' ? mgrCalc.earnedScore : null));
+
+                                                              const mgrRemarks = String(
+                                                                (rAny.managerKpiRemarks && (rAny.managerKpiRemarks[kpi.id] !== undefined ? rAny.managerKpiRemarks[kpi.id] : (kpi.name && rAny.managerKpiRemarks[kpi.name]))) ||
+                                                                selfRes?.managerRemarks ||
+                                                                (selfRes as any)?.manager_remarks ||
+                                                                (selfRes as any)?.manager_remark ||
+                                                                (selfRes as any)?.mgr_remarks ||
+                                                                (selfRes as any)?.mgr_remark ||
+                                                                (selfRes as any)?.managerComment ||
+                                                                (selfRes as any)?.manager_comment ||
+                                                                (selfRes as any)?.reviewerRemarks ||
+                                                                (selfRes as any)?.reviewer_remarks ||
+                                                                (selfRes as any)?.reviewerComment ||
+                                                                ''
+                                                              ).trim();
+
+                                                              const hasRemarks = Boolean(selfRemarks || mgrRemarks);
 
                                                               const targetDisplay = (() => {
                                                                 const t = String(kpi.targetFromManager !== undefined && kpi.targetFromManager !== '' ? kpi.targetFromManager : (kpi.targetValue ?? '')).trim();
@@ -13869,6 +13954,10 @@ export const EvaluationTab: React.FC = () => {
                                                                 if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
                                                                 return `${t} ${u}`;
                                                               })();
+
+                                                              const deficitStatus = selfActual !== '—'
+                                                                ? getInsufficientStatus(kpi, selfActual, Boolean(selfRes?.isInsufficient || (selfRes as any)?.is_insufficient))
+                                                                : null;
 
                                                               return (
                                                                 <tr
@@ -13890,50 +13979,87 @@ export const EvaluationTab: React.FC = () => {
                                                                     {targetDisplay}
                                                                   </td>
                                                                   <td className="px-3 py-2 text-center align-middle text-slate-800 whitespace-nowrap font-medium">
-                                                                    <div className="flex flex-col items-center justify-center gap-1">
-                                                                      <span>{selfActual} {kpi.unit || ''}</span>
-                                                                      {(selfRemarks?.trim() || mgrRemarks?.trim()) && (
-                                                                        <DeliverableRemarksHover
-                                                                          selfRemarks={selfRemarks}
-                                                                          mgrRemarks={mgrRemarks}
-                                                                          align="center"
-                                                                        >
-                                                                          <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap cursor-pointer">
-                                                                            {selfRemarks?.trim() && (
-                                                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0">
+                                                                    <DeliverableRemarksHover
+                                                                      selfRemarks={selfRemarks}
+                                                                      mgrRemarks={mgrRemarks}
+                                                                      align="center"
+                                                                    >
+                                                                      <div className="flex flex-col items-center justify-center gap-1 cursor-pointer">
+                                                                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                                                          <span>{selfActual !== '—' ? `${selfActual} ${kpi.unit || ''}` : '—'}</span>
+                                                                          {deficitStatus && deficitStatus.status !== 'not_filled' && deficitStatus.status !== 'met' && (
+                                                                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${deficitStatus.badgeClass}`}>
+                                                                              {deficitStatus.label}
+                                                                            </span>
+                                                                          )}
+                                                                        </div>
+                                                                        {hasRemarks && (
+                                                                          <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap">
+                                                                            {selfRemarks && (
+                                                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0 shadow-2xs">
                                                                                 <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
                                                                                 <span>Emp</span>
                                                                               </span>
                                                                             )}
-                                                                            {mgrRemarks?.trim() && (
-                                                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0">
+                                                                            {mgrRemarks && (
+                                                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0 shadow-2xs">
                                                                                 <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
                                                                                 <span>Mgr</span>
                                                                               </span>
                                                                             )}
                                                                           </div>
-                                                                        </DeliverableRemarksHover>
-                                                                      )}
-                                                                    </div>
+                                                                        )}
+                                                                      </div>
+                                                                    </DeliverableRemarksHover>
                                                                   </td>
                                                                   <td
                                                                     className="px-2.5 py-2 text-center align-middle font-bold text-slate-900 whitespace-nowrap"
                                                                   >
-                                                                    <div className="inline-flex items-center gap-1">
-                                                                      <span>{selfScore.toFixed(1)}%</span>
-                                                                      {selfRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-500/70 shrink-0" />}
-                                                                    </div>
+                                                                    <DeliverableRemarksHover
+                                                                      selfRemarks={selfRemarks}
+                                                                      mgrRemarks={mgrRemarks}
+                                                                      align="center"
+                                                                    >
+                                                                      <div className="inline-flex items-center justify-center gap-1 cursor-pointer">
+                                                                        <span>{selfScore.toFixed(1)}%</span>
+                                                                        {selfRemarks && (
+                                                                          <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[8px] font-bold bg-primary-50 text-primary-700 border border-primary-200" title="Employee Remarks: Hover to view">
+                                                                            <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
+                                                                            <span>Emp</span>
+                                                                          </span>
+                                                                        )}
+                                                                      </div>
+                                                                    </DeliverableRemarksHover>
                                                                   </td>
                                                                   <td className="px-3 py-2 text-center align-middle bg-teal-50/30 font-medium text-slate-900 border-l border-teal-100 whitespace-nowrap">
-                                                                    {mgrActual !== '—' ? `${mgrActual} ${kpi.unit || ''}` : '—'}
+                                                                    <DeliverableRemarksHover
+                                                                      selfRemarks={selfRemarks}
+                                                                      mgrRemarks={mgrRemarks}
+                                                                      align="center"
+                                                                    >
+                                                                      <div className="cursor-pointer">
+                                                                        {mgrActual !== '—' ? `${mgrActual} ${kpi.unit || ''}` : '—'}
+                                                                      </div>
+                                                                    </DeliverableRemarksHover>
                                                                   </td>
                                                                   <td
                                                                     className="px-2.5 py-2 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-teal-950"
                                                                   >
-                                                                    <div className="inline-flex items-center gap-1">
-                                                                      <span>{mgrScore !== null ? `${mgrScore.toFixed(1)}%` : '—'}</span>
-                                                                      {mgrRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />}
-                                                                    </div>
+                                                                    <DeliverableRemarksHover
+                                                                      selfRemarks={selfRemarks}
+                                                                      mgrRemarks={mgrRemarks}
+                                                                      align="center"
+                                                                    >
+                                                                      <div className="inline-flex items-center justify-center gap-1 cursor-pointer">
+                                                                        <span>{mgrScore !== null ? `${mgrScore.toFixed(1)}%` : '—'}</span>
+                                                                        {mgrRemarks && (
+                                                                          <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[8px] font-bold bg-teal-50 text-teal-800 border border-teal-200" title="Manager Remarks: Hover to view">
+                                                                            <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
+                                                                            <span>Mgr</span>
+                                                                          </span>
+                                                                        )}
+                                                                      </div>
+                                                                    </DeliverableRemarksHover>
                                                                   </td>
                                                                 </tr>
                                                               );
