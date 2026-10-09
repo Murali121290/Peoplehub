@@ -305,12 +305,15 @@ export const calculateCategoryEarned = (
   if (!catWeight || catWeight <= 0) return Number(rawEarnedSum.toFixed(2));
   const kpisWeightSum = kpis.reduce((sum, k) => sum + (Number(k.targetScore ?? k.weightage) || 0), 0);
 
+  if (kpisWeightSum <= 0) return 0;
+
+  // When deliverables have percentage target scores (e.g. 100% each, or kpisWeightSum > catWeight),
+  // achieving >= 100% total across deliverables awards the full category weightage:
   if (kpisWeightSum > catWeight) {
-    // Capacity / proportional scale capped at category weightage
     const scaled = (rawEarnedSum / 100) * catWeight;
     return Number(Math.min(catWeight, scaled).toFixed(2));
   } else {
-    // Direct sum capped at category weightage
+    // Direct sum when deliverable scores partition the category weight directly
     return Number(Math.min(catWeight, rawEarnedSum).toFixed(2));
   }
 };

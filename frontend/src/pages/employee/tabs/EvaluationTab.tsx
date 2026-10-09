@@ -103,19 +103,32 @@ import { ConfirmDialog } from '../../../components/ui/Modal/ConfirmDialog';
  * - Low-target KPIs: actual > 0 (delays/misses/escalations occurred).
  * If target is met exactly / standard, remark is optional.
  */
-/**
- * Determines if remarks are mandatory for an employee deliverable.
- * Remarks are mandatory when:
- * 1. The deliverable is Low Target or High / Exceeded Target compared to goal.
- * 2. Or the employee has selected / ticked the Insufficient checkbox.
- */
+export const isHoursKpi = (kpi: any): boolean => {
+  const name = String(kpi?.name || '').toLowerCase();
+  const unit = String(kpi?.unit || '').toLowerCase();
+  const target = String(kpi?.targetFromManager || '').toLowerCase();
+  return (
+    name.includes('hour') ||
+    name.includes('hrs') ||
+    unit.includes('hour') ||
+    unit.includes('hrs') ||
+    target.includes('hour') ||
+    target.includes('hrs')
+  );
+};
+
 export const isKpiRemarkMandatory = (
   kpi: Partial<KPIItem> | null | undefined,
   val: string | number | undefined | null,
-  isFlaggedByEmployee?: boolean
+  isFlaggedByEmployee?: boolean,
+  isCategoryTargetMet?: boolean
 ): boolean => {
   if (isFlaggedByEmployee) return true;
   if (!kpi || val === '' || val === undefined || val === null) {
+    return false;
+  }
+  // When category total achievement is >= 100% (target met for pooled deliverables), remarks are not mandatory
+  if (isCategoryTargetMet) {
     return false;
   }
   const numericVal = typeof val === 'string' ? parseFloat(val) : Number(val);
@@ -216,7 +229,8 @@ export const computeMetricDeficitLabel = (
 export const getInsufficientStatus = (
   kpi: Partial<KPIItem> | null | undefined,
   val: string | number | undefined | null,
-  isFlaggedByEmployee?: boolean
+  isFlaggedByEmployee?: boolean,
+  isCategoryTargetMet?: boolean
 ): InsufficientStatusResult => {
   if (val === '' || val === undefined || val === null || String(val).trim() === '') {
     return {
@@ -235,11 +249,47 @@ export const getInsufficientStatus = (
     };
   }
 
+  if (num === 0) {
+    return {
+      status: 'not_filled',
+      label: 'Not Filled',
+      badgeClass: 'bg-slate-100 text-slate-500 border-slate-200'
+    };
+  }
+
   const isNeg = isNegativeKpi(kpi);
   const parsedTarget = parseTargetExpression(kpi?.targetFromManager, kpi?.targetValue || 1);
   const target = parsedTarget.threshold;
   const rawUnit = (kpi?.unit || '').trim();
   const unitSuffix = rawUnit ? ` ${rawUnit}` : '';
+
+  // If the category overall has met or exceeded target (e.g. >= 100% total score)
+  // and employee hasn't manually flagged insufficient:
+  if (isCategoryTargetMet && !isFlaggedByEmployee) {
+    if (isNeg) {
+      if (num <= target) {
+        return {
+          status: 'met',
+          label: 'Target Met',
+          badgeClass: 'bg-teal-50 text-teal-800 border-teal-200'
+        };
+      }
+    } else {
+      if (num > target) {
+        const surplus = Math.round((num - target) * 100) / 100;
+        return {
+          status: 'exceeded',
+          label: 'High Target',
+          badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200'
+        };
+      }
+      return {
+        status: 'met',
+        label: 'Target Met',
+        badgeClass: 'bg-teal-50 text-teal-800 border-teal-200'
+      };
+    }
+  }
 
   // Range target handling (e.g. 650 to 750)
   if (!isNeg && parsedTarget.operator === 'range') {
@@ -255,7 +305,7 @@ export const getInsufficientStatus = (
       };
     }
 
-    // Above upper range (e.g. > 750) -> Exceeded / High Target
+    // Above target range (e.g. > 750) -> Exceeded / High Target
     if (num > maxVal) {
       const surplus = Math.round((num - maxVal) * 100) / 100;
       return isFlaggedByEmployee
@@ -2385,23 +2435,12 @@ export const EvaluationTab: React.FC = () => {
   const handleAddKPI = (catId: string) => {
     setHrCategories(prev => prev.map(c => {
       if (c.id !== catId) return c;
-      const count = c.kpis.length + 1;
-      const catWeight = Number(c.weightage) || 0;
-      const perKpi = Number((catWeight / count).toFixed(2));
-      let remaining = catWeight;
-
-      const existingUpdated = c.kpis.map(k => {
-        remaining -= perKpi;
-        return { ...k, targetScore: perKpi, weightage: perKpi };
-      });
-
-      const finalScore = Number(remaining.toFixed(2));
       const newKPI: KPIItem = {
-        id: `kpi_${Date.now()}`,
+        id: `kpi_${Date.now()}_${c.kpis.length + 1}`,
         name: '',
         description: '',
-        targetScore: finalScore,
-        weightage: finalScore,
+        targetScore: 100,
+        weightage: 100,
         targetFromManager: '1',
         targetValue: 1,
         unit: 'projects',
@@ -2409,7 +2448,7 @@ export const EvaluationTab: React.FC = () => {
         measurementType: 'number',
         isRequired: true
       };
-      return { ...c, kpis: [...existingUpdated, newKPI] };
+      return { ...c, kpis: [...c.kpis, newKPI] };
     }));
   };
 
@@ -2418,7 +2457,13 @@ export const EvaluationTab: React.FC = () => {
       if (c.id !== catId) return c;
       return {
         ...c,
-        kpis: c.kpis.map(k => k.id === kpiId ? { ...k, [field]: val } : k)
+        kpis: c.kpis.map(k => {
+          if (k.id !== kpiId) return k;
+          if (field === 'targetScore') {
+            return { ...k, targetScore: val, weightage: val };
+          }
+          return { ...k, [field]: val };
+        })
       };
     }));
   };
@@ -2657,26 +2702,7 @@ export const EvaluationTab: React.FC = () => {
     const newWeight = Math.max(0, Math.min(100, Number(weight) || 0));
     setSmCategories(prev => prev.map(c => {
       if (c.id !== catId) return c;
-      const oldWeight = Number(c.weightage) || 1;
-      const count = c.kpis.length;
-      if (count === 0) return { ...c, weightage: newWeight };
-
-      let remaining = newWeight;
-      const updatedKpis = c.kpis.map((k, i) => {
-        if (i === count - 1) {
-          const finalScore = Number(remaining.toFixed(2));
-          return { ...k, targetScore: finalScore, weightage: finalScore };
-        }
-        const scaled = Number(((Number(k.targetScore || 0) / oldWeight) * newWeight).toFixed(2));
-        remaining -= scaled;
-        return { ...k, targetScore: scaled, weightage: scaled };
-      });
-
-      return {
-        ...c,
-        weightage: newWeight,
-        kpis: updatedKpis
-      };
+      return { ...c, weightage: newWeight };
     }));
   };
 
@@ -2705,23 +2731,12 @@ export const EvaluationTab: React.FC = () => {
   const handleSMAddKPI = (catId: string) => {
     setSmCategories(prev => prev.map(c => {
       if (c.id !== catId) return c;
-      const count = c.kpis.length + 1;
-      const catWeight = Number(c.weightage) || 0;
-      const perKpi = Number((catWeight / count).toFixed(2));
-      let remaining = catWeight;
-
-      const existingUpdated = c.kpis.map((k, idx) => {
-        remaining -= perKpi;
-        return { ...k, targetScore: perKpi, weightage: perKpi };
-      });
-
-      const finalScore = Number(remaining.toFixed(2));
       const newKpi: KPIItem = {
-        id: `sm_kpi_${Date.now()}`,
+        id: `sm_kpi_${Date.now()}_${c.kpis.length + 1}`,
         name: '',
         description: '',
-        targetScore: finalScore,
-        weightage: finalScore,
+        targetScore: 100,
+        weightage: 100,
         targetFromManager: '',
         targetValue: 0,
         unit: 'units',
@@ -2732,7 +2747,7 @@ export const EvaluationTab: React.FC = () => {
 
       return {
         ...c,
-        kpis: [...existingUpdated, newKpi]
+        kpis: [...c.kpis, newKpi]
       };
     }));
   };
@@ -2742,7 +2757,13 @@ export const EvaluationTab: React.FC = () => {
       if (c.id !== catId) return c;
       return {
         ...c,
-        kpis: c.kpis.map(k => k.id === kpiId ? { ...k, [field]: val } : k)
+        kpis: c.kpis.map(k => {
+          if (k.id !== kpiId) return k;
+          if (field === 'targetScore') {
+            return { ...k, targetScore: val, weightage: val };
+          }
+          return { ...k, [field]: val };
+        })
       };
     }));
   };
@@ -4035,21 +4056,7 @@ export const EvaluationTab: React.FC = () => {
     const newWeight = Math.max(0, Math.min(100, Number(weight) || 0));
     setMgrAssignCategories(prev => prev.map(c => {
       if (c.id !== catId) return c;
-      const count = c.kpis.length;
-      if (count === 0) return { ...c, weightage: newWeight };
-
-      const perKpi = Number((newWeight / count).toFixed(2));
-      let remaining = newWeight;
-      const updatedKpis = c.kpis.map((k, i) => {
-        if (i === count - 1) {
-          const finalScore = Number(remaining.toFixed(2));
-          return { ...k, targetScore: finalScore, weightage: finalScore };
-        }
-        remaining -= perKpi;
-        return { ...k, targetScore: perKpi, weightage: perKpi };
-      });
-
-      return { ...c, weightage: newWeight, kpis: updatedKpis };
+      return { ...c, weightage: newWeight };
     }));
   };
 
@@ -4078,32 +4085,21 @@ export const EvaluationTab: React.FC = () => {
   const handleMgrAddKPI = (catId: string) => {
     setMgrAssignCategories(prev => prev.map(c => {
       if (c.id !== catId) return c;
-      const count = c.kpis.length + 1;
-      const catWeight = Number(c.weightage) || 0;
-      const perKpi = Number((catWeight / count).toFixed(2));
-      let remaining = catWeight;
-
-      const existingUpdated = c.kpis.map(k => {
-        remaining -= perKpi;
-        return { ...k, targetScore: perKpi, weightage: perKpi };
-      });
-
-      const finalScore = Number(remaining.toFixed(2));
       const newKpi: KPIItem = {
-        id: `mgr_kpi_${Date.now()}`,
+        id: `mgr_kpi_${Date.now()}_${c.kpis.length + 1}`,
         name: '',
         description: '',
-        targetScore: finalScore,
-        weightage: finalScore,
+        targetScore: 100,
+        weightage: 100,
         targetFromManager: '1',
         targetValue: 1,
-        unit: 'units',
+        unit: 'projects',
         scoringDirection: 'higher_is_better',
         measurementType: 'number',
         isRequired: true
       };
 
-      return { ...c, kpis: [...existingUpdated, newKpi] };
+      return { ...c, kpis: [...c.kpis, newKpi] };
     }));
   };
 
@@ -4114,22 +4110,7 @@ export const EvaluationTab: React.FC = () => {
         showAlert('A performance category must have at least one deliverable item.', 'Validation Error');
         return c;
       }
-      const filtered = c.kpis.filter(k => k.id !== kpiId);
-      const count = filtered.length;
-      const catWeight = Number(c.weightage) || 0;
-      const perKpi = Number((catWeight / count).toFixed(2));
-      let remaining = catWeight;
-
-      const updatedKpis = filtered.map((k, idx) => {
-        if (idx === count - 1) {
-          const finalScore = Number(remaining.toFixed(2));
-          return { ...k, targetScore: finalScore, weightage: finalScore };
-        }
-        remaining -= perKpi;
-        return { ...k, targetScore: perKpi, weightage: perKpi };
-      });
-
-      return { ...c, kpis: updatedKpis };
+      return { ...c, kpis: c.kpis.filter(k => k.id !== kpiId) };
     }));
   };
 
@@ -4140,6 +4121,9 @@ export const EvaluationTab: React.FC = () => {
         ...c,
         kpis: c.kpis.map(k => {
           if (k.id !== kpiId) return k;
+          if (field === 'targetScore') {
+            return { ...k, targetScore: value, weightage: value };
+          }
           return { ...k, [field]: value };
         })
       };
@@ -4802,21 +4786,7 @@ export const EvaluationTab: React.FC = () => {
     const newWeight = Math.max(0, Math.min(100, Number(weight) || 0));
     setMgrEditCategories(prev => prev.map(c => {
       if (c.id !== catId) return c;
-      const count = c.kpis.length;
-      if (count === 0) return { ...c, weightage: newWeight };
-
-      const perKpi = Number((newWeight / count).toFixed(2));
-      let remaining = newWeight;
-      const updatedKpis = c.kpis.map((k, i) => {
-        if (i === count - 1) {
-          const finalScore = Number(remaining.toFixed(2));
-          return { ...k, targetScore: finalScore, weightage: finalScore };
-        }
-        remaining -= perKpi;
-        return { ...k, targetScore: perKpi, weightage: perKpi };
-      });
-
-      return { ...c, weightage: newWeight, kpis: updatedKpis };
+      return { ...c, weightage: newWeight };
     }));
   };
 
@@ -4845,32 +4815,21 @@ export const EvaluationTab: React.FC = () => {
   const handleMgrAddEditKPI = (catId: string) => {
     setMgrEditCategories(prev => prev.map(c => {
       if (c.id !== catId) return c;
-      const count = c.kpis.length + 1;
-      const catWeight = Number(c.weightage) || 0;
-      const perKpi = Number((catWeight / count).toFixed(2));
-      let remaining = catWeight;
-
-      const existingUpdated = c.kpis.map(k => {
-        remaining -= perKpi;
-        return { ...k, targetScore: perKpi, weightage: perKpi };
-      });
-
-      const finalScore = Number(remaining.toFixed(2));
       const newKpi: KPIItem = {
-        id: `mgr_kpi_${Date.now()}`,
+        id: `mgr_kpi_${Date.now()}_${c.kpis.length + 1}`,
         name: '',
         description: '',
-        targetScore: finalScore,
-        weightage: finalScore,
+        targetScore: 100,
+        weightage: 100,
         targetFromManager: '1',
         targetValue: 1,
-        unit: 'units',
+        unit: 'projects',
         scoringDirection: 'higher_is_better',
         measurementType: 'number',
         isRequired: true
       };
 
-      return { ...c, kpis: [...existingUpdated, newKpi] };
+      return { ...c, kpis: [...c.kpis, newKpi] };
     }));
   };
 
@@ -4881,22 +4840,7 @@ export const EvaluationTab: React.FC = () => {
         showAlert('A performance category must have at least one deliverable item.', 'Validation Error');
         return c;
       }
-      const filtered = c.kpis.filter(k => k.id !== kpiId);
-      const count = filtered.length;
-      const catWeight = Number(c.weightage) || 0;
-      const perKpi = Number((catWeight / count).toFixed(2));
-      let remaining = catWeight;
-
-      const updatedKpis = filtered.map((k, idx) => {
-        if (idx === count - 1) {
-          const finalScore = Number(remaining.toFixed(2));
-          return { ...k, targetScore: finalScore, weightage: finalScore };
-        }
-        remaining -= perKpi;
-        return { ...k, targetScore: perKpi, weightage: perKpi };
-      });
-
-      return { ...c, kpis: updatedKpis };
+      return { ...c, kpis: c.kpis.filter(k => k.id !== kpiId) };
     }));
   };
 
@@ -4907,6 +4851,9 @@ export const EvaluationTab: React.FC = () => {
         ...c,
         kpis: c.kpis.map(k => {
           if (k.id !== kpiId) return k;
+          if (field === 'targetScore') {
+            return { ...k, targetScore: value, weightage: value };
+          }
           return { ...k, [field]: value };
         })
       };
@@ -5716,13 +5663,24 @@ export const EvaluationTab: React.FC = () => {
   // Resolve all assigned categories and deliverables for manager review
   const selectedMgrCategories: KPICategory[] = useMemo(() => {
     if (!selectedMgrResponse) return activeManagerCycle?.categories || managerTeamCategories;
+    // 1. Prefer categories explicitly attached to the evaluation response
     if ((selectedMgrResponse as any).categories && Array.isArray((selectedMgrResponse as any).categories) && (selectedMgrResponse as any).categories.length > 0) {
       return (selectedMgrResponse as any).categories;
     }
     if ((selectedMgrResponse as any).metrics_data && Array.isArray((selectedMgrResponse as any).metrics_data) && (selectedMgrResponse as any).metrics_data.length > 0) {
       return (selectedMgrResponse as any).metrics_data;
     }
-    // If metrics_data or kpiResponses is a dictionary of KPIs, wrap them into a category
+    // 2. Check the cycle's categories from DB
+    if (selectedMgrCycle?.categories && Array.isArray(selectedMgrCycle.categories) && selectedMgrCycle.categories.length > 0) {
+      return selectedMgrCycle.categories;
+    }
+    if (activeManagerCycle?.categories && Array.isArray(activeManagerCycle.categories) && activeManagerCycle.categories.length > 0) {
+      return activeManagerCycle.categories;
+    }
+    if (managerTeamCategories && managerTeamCategories.length > 0) {
+      return managerTeamCategories;
+    }
+    // 3. Fallback: If metrics_data or kpiResponses is a dictionary of KPIs, wrap them into a category
     const mData = (selectedMgrResponse as any).metrics_data || selectedMgrResponse.kpiResponses;
     if (mData && typeof mData === 'object' && !Array.isArray(mData)) {
       const kpisList: KPIItem[] = [];
@@ -5756,10 +5714,7 @@ export const EvaluationTab: React.FC = () => {
         }];
       }
     }
-    if (selectedMgrCycle?.categories && selectedMgrCycle.categories.length > 0) {
-      return selectedMgrCycle.categories;
-    }
-    return (managerTeamCategories && managerTeamCategories.length > 0) ? managerTeamCategories : DEFAULT_KPI_CATEGORIES;
+    return DEFAULT_KPI_CATEGORIES;
   }, [selectedMgrResponse, selectedMgrCycle, managerTeamCategories, activeManagerCycle]);
 
   // Helper to determine if an evaluation response is a Yearly / Annual evaluation
@@ -6227,13 +6182,26 @@ export const EvaluationTab: React.FC = () => {
     const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
 
     activeCategories.forEach(cat => {
+      let rawCatEarned = 0;
+      cat.kpis.forEach(k => {
+        const entry = currentWeekEntries[k.id] || (k.name ? currentWeekEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        if (val !== '' && val !== undefined && val !== null) {
+          rawCatEarned += calculateKPIScore(k, val).earnedScore;
+        }
+      });
+      const kpisWeightSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore ?? k.weightage) || 0), 0);
+      const isPooledCategory = kpisWeightSum > Number(cat.weightage);
+      const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
+      const isCategoryTargetMet = isPooledCategory ? rawCatEarned >= 100 : (catEarned >= Number(cat.weightage) && Number(cat.weightage) > 0);
+
       cat.kpis.forEach(k => {
         const entry = currentWeekEntries[k.id] || (k.name ? currentWeekEntries[k.name] : null);
         const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
         const rem = (entry?.employeeRemarks || entry?.employee_remark || '').trim();
         const isInsufficient = Boolean(entry?.isInsufficient ?? (k as any)?.isInsufficient);
 
-        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient);
+        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient, isCategoryTargetMet);
         if (isMandatory && !rem) {
           missingRemarksKpi.push(`"${k.name}"`);
         }
@@ -6488,13 +6456,26 @@ export const EvaluationTab: React.FC = () => {
     const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
 
     activeCategories.forEach(cat => {
+      let rawCatEarned = 0;
+      cat.kpis.forEach(k => {
+        const entry = currentQuarterEntries[k.id] || (k.name ? currentQuarterEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        if (val !== '' && val !== undefined && val !== null) {
+          rawCatEarned += calculateKPIScore(k, val).earnedScore;
+        }
+      });
+      const kpisWeightSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore ?? k.weightage) || 0), 0);
+      const isPooledCategory = kpisWeightSum > Number(cat.weightage);
+      const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
+      const isCategoryTargetMet = isPooledCategory ? rawCatEarned >= 100 : (catEarned >= Number(cat.weightage) && Number(cat.weightage) > 0);
+
       cat.kpis.forEach(k => {
         const entry = currentQuarterEntries[k.id] || (k.name ? currentQuarterEntries[k.name] : null);
         const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
         const rem = (entry?.employeeRemarks || entry?.employee_remark || '').trim();
         const isInsufficient = Boolean(entry?.isInsufficient ?? (k as any)?.isInsufficient);
 
-        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient);
+        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient, isCategoryTargetMet);
         if (isMandatory && !rem) {
           missingRemarksKpi.push(`"${k.name}"`);
         }
@@ -6749,13 +6730,26 @@ export const EvaluationTab: React.FC = () => {
     const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
 
     activeCategories.forEach(cat => {
+      let rawCatEarned = 0;
+      cat.kpis.forEach(k => {
+        const entry = currentMonthEntries[k.id] || (k.name ? currentMonthEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        if (val !== '' && val !== undefined && val !== null) {
+          rawCatEarned += calculateKPIScore(k, val).earnedScore;
+        }
+      });
+      const kpisWeightSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore ?? k.weightage) || 0), 0);
+      const isPooledCategory = kpisWeightSum > Number(cat.weightage);
+      const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
+      const isCategoryTargetMet = isPooledCategory ? rawCatEarned >= 100 : (catEarned >= Number(cat.weightage) && Number(cat.weightage) > 0);
+
       cat.kpis.forEach(k => {
         const entry = currentMonthEntries[k.id] || (k.name ? currentMonthEntries[k.name] : null);
         const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
         const rem = (entry?.employeeRemarks || entry?.employee_remark || '').trim();
         const isInsufficient = Boolean(entry?.isInsufficient ?? (k as any)?.isInsufficient);
 
-        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient);
+        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient, isCategoryTargetMet);
         if (isMandatory && !rem) {
           missingRemarksKpi.push(`"${k.name}"`);
         }
@@ -9893,6 +9887,22 @@ export const EvaluationTab: React.FC = () => {
     const payloadKpiInputs: Record<string, KPIResponseItem> = { ...kpiInputs };
 
     activeCategories.forEach(cat => {
+      let rawCatEarned = 0;
+      cat.kpis.forEach(k => {
+        const item = getKpiResponseItem(k);
+        const inputItem = kpiInputs[k.id] || (k.name ? kpiInputs[k.name] : null);
+        const val = inputItem?.actualValue !== undefined && inputItem?.actualValue !== null && inputItem?.actualValue !== ''
+          ? inputItem.actualValue
+          : (item?.actualValue !== undefined && item?.actualValue !== null ? item.actualValue : '');
+        if (val !== '' && val !== undefined && val !== null) {
+          rawCatEarned += calculateKPIScore(k, val).earnedScore;
+        }
+      });
+      const kpisWeightSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore ?? k.weightage) || 0), 0);
+      const isPooledCategory = kpisWeightSum > Number(cat.weightage);
+      const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
+      const isCategoryTargetMet = isPooledCategory ? rawCatEarned >= 100 : (catEarned >= Number(cat.weightage) && Number(cat.weightage) > 0);
+
       cat.kpis.forEach(k => {
         const item = getKpiResponseItem(k);
         const inputItem = kpiInputs[k.id] || (k.name ? kpiInputs[k.name] : null);
@@ -9905,7 +9915,7 @@ export const EvaluationTab: React.FC = () => {
           ? Boolean(inputItem.isInsufficient)
           : Boolean(item?.isInsufficient);
 
-        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient);
+        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient, isCategoryTargetMet);
         if (isMandatory && !rem) {
           missingRemarksKpi.push(`"${k.name}"`);
         }
@@ -12320,6 +12330,9 @@ export const EvaluationTab: React.FC = () => {
                         return sum + calculateKPIScore(k, val).earnedScore;
                       }, 0);
                       const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
+                      const kpisWeightSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore ?? k.weightage) || 0), 0);
+                      const isPooledCategory = kpisWeightSum > Number(cat.weightage);
+                      const isCategoryTargetMet = isPooledCategory ? rawCatEarned >= 100 : (catEarned >= Number(cat.weightage) && Number(cat.weightage) > 0);
 
                       const isExpanded = Object.keys(expandedCategories).length === 0 ? catIdx === 0 : Boolean(expandedCategories[cat.id]);
 
@@ -12349,8 +12362,16 @@ export const EvaluationTab: React.FC = () => {
                               </span>
                             </div>
                             <div className="flex items-center gap-2.5 shrink-0 text-xs">
-                              <span className="text-[11px] text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
-                                <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
+                              <span className="text-[11px] text-slate-600 bg-white border border-slate-200 px-2.5 py-0.5 rounded shadow-2xs whitespace-nowrap flex items-center gap-1.5">
+                                {isPooledCategory && (
+                                  <span className="text-slate-500">
+                                    Total: <strong className="text-slate-800 font-bold">{rawCatEarned.toFixed(1)}%</strong>
+                                    <span className="mx-1 text-slate-300">|</span>
+                                  </span>
+                                )}
+                                <span>
+                                  <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
+                                </span>
                               </span>
                               <span className="text-[11px] font-medium text-teal-700 group-hover:text-teal-900 flex items-center gap-0.5">
                                 {isExpanded ? 'Collapse' : 'Expand'}
@@ -12407,8 +12428,9 @@ export const EvaluationTab: React.FC = () => {
                                             : (respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
                                               ? respItem.actualValue
                                               : (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '')))));
+                                    const isHours = isHoursKpi(kpi);
                                     const val = rawVal !== '' && rawVal !== undefined && rawVal !== null
-                                      ? (typeof rawVal === 'number' ? Math.floor(rawVal) : (String(rawVal).includes('.') ? parseInt(String(rawVal), 10) : rawVal))
+                                      ? (isHours ? rawVal : (typeof rawVal === 'number' ? Math.floor(rawVal) : (String(rawVal).includes('.') ? parseInt(String(rawVal), 10) : rawVal)))
                                       : '';
                                     const calc = calculateKPIScore(kpi, val);
                                     const remarks = isWeekly
@@ -12464,7 +12486,7 @@ export const EvaluationTab: React.FC = () => {
                                               ? respItem.isInsufficient
                                               : (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : ((kpi as any)?.isInsufficient ?? (kpi as any)?.is_insufficient ?? false)))))));
                                     const isRowInsufficient = Boolean(rawInsufficient);
-                                    const statusObj = getInsufficientStatus(kpi, val, isRowInsufficient);
+                                    const statusObj = getInsufficientStatus(kpi, val, isRowInsufficient, isCategoryTargetMet);
 
                                     return (
                                       <tr
@@ -12511,7 +12533,7 @@ export const EvaluationTab: React.FC = () => {
                                         {/* 3. Weight */}
                                         <td className="px-2 py-3 align-middle text-center whitespace-nowrap">
                                           <span className={`text-xs font-bold ${isNeg ? 'text-rose-900' : 'text-slate-700'}`}>
-                                            {kpi.weightage || kpi.targetScore}%
+                                            {kpi.targetScore ?? kpi.weightage}%
                                           </span>
                                         </td>
 
@@ -12564,7 +12586,7 @@ export const EvaluationTab: React.FC = () => {
                                                     </span>
                                                   );
                                                 }
-                                                if (isMetTarget) {
+                                                if (isMetTarget || (isCategoryTargetMet && !isRowInsufficient)) {
                                                   return (
                                                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-teal-950 border border-teal-300 font-bold text-xs shadow-2xs">
                                                       <span>{val} {kpi.unit || ''}</span>
@@ -12588,12 +12610,13 @@ export const EvaluationTab: React.FC = () => {
                                                 <div className="flex flex-col items-center justify-center gap-1">
                                                   <input
                                                     type="number"
-                                                    step="1"
+                                                    step={isHours ? "any" : "1"}
                                                     min="0"
                                                     value={val}
                                                     disabled={isSubmittingEmp}
                                                     onKeyDown={e => {
-                                                      if (['.', ',', 'e', 'E', '+', '-'].includes(e.key)) {
+                                                      const blockedKeys = isHours ? ['e', 'E', '+', '-'] : ['.', ',', 'e', 'E', '+', '-'];
+                                                      if (blockedKeys.includes(e.key)) {
                                                         e.preventDefault();
                                                       }
                                                     }}
@@ -12615,9 +12638,9 @@ export const EvaluationTab: React.FC = () => {
                                                         ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
                                                         : isOverTarget
                                                           ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-500 ring-2 ring-emerald-400/30 font-black'
-                                                          : isLowTarget
+                                                          : (isLowTarget && !isCategoryTargetMet)
                                                             ? 'bg-amber-50 text-amber-950 border-2 border-amber-400 ring-2 ring-amber-300/30 font-black'
-                                                            : isMetTarget
+                                                            : (isMetTarget || (isCategoryTargetMet && !isRowInsufficient))
                                                               ? 'bg-teal-50/80 text-teal-950 border-2 border-teal-400 font-bold focus:border-teal-600'
                                                               : isNeg
                                                                 ? 'bg-rose-50/40 text-rose-950 border-2 border-rose-200/90 focus:border-rose-500 focus:bg-white placeholder:text-rose-300'
@@ -12671,56 +12694,22 @@ export const EvaluationTab: React.FC = () => {
                                           </div>
                                         </td>
 
-                                        {/* Insufficient Status & Employee Toggle */}
+                                        {/* Insufficient Status */}
                                         <td className="px-3 py-3 text-center align-middle whitespace-nowrap">
-                                          {!isThisMonthLocked ? (
-                                            (() => {
-                                              const isTargetMetOrEmpty = statusObj.status === 'met' || statusObj.status === 'not_filled';
-                                              return (
-                                                <label
-                                                  className={`inline-flex items-center justify-center gap-1.5 select-none ${isTargetMetOrEmpty ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
-                                                    }`}
-                                                  title={isTargetMetOrEmpty ? 'Target met or not filled' : 'Click to flag variance details'}
-                                                >
-                                                  <input
-                                                    type="checkbox"
-                                                    disabled={isTargetMetOrEmpty}
-                                                    checked={!isTargetMetOrEmpty && Boolean(isRowInsufficient)}
-                                                    onChange={e => {
-                                                      if (isWeekly) {
-                                                        handleYearlyWeekKpiInsufficient(kpi, e.target.checked);
-                                                      } else if (isQuarterly) {
-                                                        handleYearlyQuarterKpiInsufficient(kpi, e.target.checked);
-                                                      } else if (isYearly) {
-                                                        handleYearlyMonthKpiInsufficient(kpi, e.target.checked);
-                                                      } else {
-                                                        handleKPIToggleInsufficient(kpi, e.target.checked);
-                                                      }
-                                                    }}
-                                                    className="w-4 h-4 text-primary-600 accent-primary-600 rounded border-slate-300 focus:ring-primary-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 transition"
-                                                  />
-                                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shadow-2xs border ${statusObj.badgeClass}`}>
-                                                    {statusObj.label}
-                                                  </span>
-                                                </label>
-                                              );
-                                            })()
-                                          ) : (
-                                            <div className="inline-flex items-center justify-center">
-                                              <span
-                                                className={`inline-flex items-center gap-1 font-bold px-2.5 py-0.5 rounded-full border text-[10px] shadow-2xs ${statusObj.badgeClass}`}
-                                              >
-                                                {statusObj.label}
-                                              </span>
-                                            </div>
-                                          )}
+                                          <div className="inline-flex items-center justify-center">
+                                            <span
+                                              className={`inline-flex items-center gap-1 font-bold px-2.5 py-0.5 rounded-full border text-[10px] shadow-2xs ${statusObj.badgeClass}`}
+                                            >
+                                              {statusObj.label}
+                                            </span>
+                                          </div>
                                         </td>
 
                                         {/* Self Remarks: Only rendered when NOT submitted (when employee needs to edit) */}
                                         {!isThisMonthLocked && (
                                           <td className="px-3.5 py-3 align-middle text-xs min-w-[140px] max-w-[220px]">
                                             {(() => {
-                                              const isMandatory = isKpiRemarkMandatory(kpi, val, isRowInsufficient);
+                                              const isMandatory = isKpiRemarkMandatory(kpi, val, isRowInsufficient, isCategoryTargetMet);
                                               const hasRemark = Boolean(remarks && remarks.trim());
 
                                               return (
@@ -13872,7 +13861,20 @@ export const EvaluationTab: React.FC = () => {
                                           <div className="border-t border-slate-100 p-4 bg-slate-50/50 space-y-3">
                                             <div className="rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
                                               {item.categories.map((cat, catIdx) => {
-                                                const catEarned = cat.kpis.reduce((sum: number, k: KPIItem) => {
+                                                const rawCatSelfScoreSum = cat.kpis.reduce((sum: number, k: KPIItem) => {
+                                                  const ent = item.entries?.[k.id] || (k.name ? item.entries?.[k.name] : null);
+                                                  const entActual = ent?.actualValue !== undefined && ent?.actualValue !== null && ent?.actualValue !== ''
+                                                    ? ent.actualValue
+                                                    : (ent?.actual_value ?? '');
+                                                  const score = ent?.earnedScore !== undefined && ent?.earnedScore !== null
+                                                    ? Number(ent.earnedScore)
+                                                    : ((ent as any)?.earned_score !== undefined && (ent as any)?.earned_score !== null
+                                                      ? Number((ent as any).earned_score)
+                                                      : (entActual !== '' ? calculateKPIScore(k, entActual).earnedScore : 0));
+                                                  return sum + score;
+                                                }, 0);
+
+                                                const rawCatScoreSum = cat.kpis.reduce((sum: number, k: KPIItem) => {
                                                   const ent = item.entries?.[k.id] || (k.name ? item.entries?.[k.name] : null);
                                                   const entActual = ent?.actualValue !== undefined && ent?.actualValue !== null && ent?.actualValue !== ''
                                                     ? ent.actualValue
@@ -13891,6 +13893,9 @@ export const EvaluationTab: React.FC = () => {
                                                           : (entMgrActual !== '' ? calculateKPIScore(k, entMgrActual).earnedScore : (entActual !== '' ? calculateKPIScore(k, entActual).earnedScore : 0)))));
                                                   return sum + score;
                                                 }, 0);
+                                                const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatScoreSum);
+                                                const kpisWeightSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore ?? k.weightage) || 0), 0);
+                                                const isPooledCategory = kpisWeightSum > Number(cat.weightage);
                                                 const isCatExpanded = expandedAuditCategories[`${r.id}_${item.key}_${cat.id || catIdx}`] === true;
 
                                                 return (
@@ -13914,8 +13919,16 @@ export const EvaluationTab: React.FC = () => {
                                                         </span>
                                                       </div>
                                                       <div className="flex items-center gap-2 shrink-0">
-                                                        <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
-                                                          Earned: <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
+                                                        <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200 px-2.5 py-0.5 rounded shadow-2xs whitespace-nowrap flex items-center gap-1.5">
+                                                          {isPooledCategory && (
+                                                            <span className="text-slate-500">
+                                                              Self Total: <strong className="text-slate-800 font-bold">{rawCatSelfScoreSum.toFixed(1)}%</strong>
+                                                              <span className="mx-1 text-slate-300">|</span>
+                                                            </span>
+                                                          )}
+                                                          <span>
+                                                            Earned: <strong className="text-teal-900 font-bold">{catEarned.toFixed(1)}%</strong> / {cat.weightage}%
+                                                          </span>
                                                         </span>
                                                       </div>
                                                     </div>
@@ -18295,7 +18308,11 @@ export const EvaluationTab: React.FC = () => {
 
                   {/* Categories Loop */}
                   {selectedMgrCategories.map(cat => {
-                    let catTotalMgrEarned = 0;
+                    const kpisWeightSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore ?? k.weightage) || 0), 0);
+                    const isPooledCategory = kpisWeightSum > Number(cat.weightage);
+                    let rawEmpScoreSum = 0;
+                    let rawMgrScoreSum = 0;
+
                     cat.kpis.forEach(kpi => {
                       const respItem = isYearly
                         ? (isWeekly
@@ -18303,11 +18320,18 @@ export const EvaluationTab: React.FC = () => {
                           : isQuarterly
                             ? (curQuarterlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterlyRec?.kpiEntries?.[kpi.name] : null))
                             : (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null)))
-                        : selectedMgrResponse!.kpiResponses?.[kpi.id];
+                        : (selectedMgrResponse!.kpiResponses?.[kpi.id] || (kpi.name ? selectedMgrResponse!.kpiResponses?.[kpi.name] : null));
                       const empActual = respItem?.actualValue ?? respItem?.actual_value ?? '';
-                      const curMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual);
-                      catTotalMgrEarned += calculateKPIScore(kpi, curMgrActual).earnedScore;
+                      const curMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : ((kpi.name && mgrKpiActuals[kpi.name] !== undefined) ? mgrKpiActuals[kpi.name] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual));
+                      if (empActual !== '' && empActual !== null && empActual !== undefined) {
+                        rawEmpScoreSum += calculateKPIScore(kpi, empActual).earnedScore;
+                      }
+                      if (curMgrActual !== '' && curMgrActual !== null && curMgrActual !== undefined) {
+                        rawMgrScoreSum += calculateKPIScore(kpi, curMgrActual).earnedScore;
+                      }
                     });
+                    const catTotalMgrEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawMgrScoreSum);
+                    const isCatTargetMet = isPooledCategory ? rawEmpScoreSum >= 100 : (catTotalMgrEarned >= Number(cat.weightage) && Number(cat.weightage) > 0);
 
                     return (
                       <div key={cat.id} className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
@@ -18329,9 +18353,31 @@ export const EvaluationTab: React.FC = () => {
                           </div>
 
                           <div className="flex items-center gap-1.5 self-start sm:self-center">
-                            <span className="text-xs text-slate-500">Category Score:</span>
-                            <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/60">
-                              {catTotalMgrEarned.toFixed(2)}% / {cat.weightage}%
+                            <span className="text-[11px] text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-md shadow-2xs whitespace-nowrap flex items-center gap-1.5">
+                              {isPooledCategory && (
+                                <>
+                                  {Math.abs(rawMgrScoreSum - rawEmpScoreSum) < 0.01 ? (
+                                    <span className="text-slate-500">
+                                      Total: <strong className="text-slate-800 font-bold">{rawEmpScoreSum.toFixed(1)}%</strong>
+                                    </span>
+                                  ) : (
+                                    <>
+                                      <span className="text-slate-500">
+                                        Self Total: <strong className="text-slate-800 font-bold">{rawEmpScoreSum.toFixed(1)}%</strong>
+                                      </span>
+                                      <span className="text-slate-300">|</span>
+                                      <span className="text-teal-700">
+                                        Mgr Total: <strong className="text-teal-900 font-bold">{rawMgrScoreSum.toFixed(1)}%</strong>
+                                      </span>
+                                    </>
+                                  )}
+                                  <span className="text-slate-300">|</span>
+                                </>
+                              )}
+                              <span className="text-slate-500">Category Score:</span>
+                              <span>
+                                <strong className="text-teal-900 font-bold">{catTotalMgrEarned.toFixed(1)}%</strong> / {cat.weightage}%
+                              </span>
                             </span>
                           </div>
                         </div>
@@ -18365,9 +18411,9 @@ export const EvaluationTab: React.FC = () => {
                                     : isQuarterly
                                       ? (curQuarterlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterlyRec?.kpiEntries?.[kpi.name] : null))
                                       : (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null)))
-                                  : selectedMgrResponse!.kpiResponses?.[kpi.id];
+                                  : (selectedMgrResponse!.kpiResponses?.[kpi.id] || (kpi.name ? selectedMgrResponse!.kpiResponses?.[kpi.name] : null));
                                 const empActual = respItem?.actualValue ?? respItem?.actual_value ?? '';
-                                const currentMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual);
+                                const currentMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : ((kpi.name && mgrKpiActuals[kpi.name] !== undefined) ? mgrKpiActuals[kpi.name] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual));
                                 const calcEmp = calculateKPIScore(kpi, empActual);
                                 const calcMgr = calculateKPIScore(kpi, currentMgrActual);
                                 const currentMgrRemark = mgrKpiRemarks[kpi.id] ?? (respItem?.managerRemarks ?? respItem?.manager_remark ?? '');
@@ -18376,6 +18422,7 @@ export const EvaluationTab: React.FC = () => {
                                 const targetThreshold = parsedTarget.threshold;
 
                                 const isNeg = isNegativeKpi(kpi);
+                                const isHours = isHoursKpi(kpi);
                                 const empRemark = respItem?.employeeRemarks ?? respItem?.employee_remark ?? '';
 
                                 return (
@@ -18484,7 +18531,7 @@ export const EvaluationTab: React.FC = () => {
                                         const isFlagged = respItem?.isInsufficient !== undefined && respItem?.isInsufficient !== null
                                           ? respItem.isInsufficient
                                           : (kpi?.isInsufficient ?? (kpi as any)?.is_insufficient ?? false);
-                                        const status = getInsufficientStatus(kpi, empActual, isFlagged);
+                                        const status = getInsufficientStatus(kpi, empActual, isFlagged, isCatTargetMet);
                                         return (
                                           <DeliverableRemarksHover
                                             selfRemarks={empRemark}
@@ -18530,12 +18577,13 @@ export const EvaluationTab: React.FC = () => {
                                                 <div className="flex items-center justify-center gap-1.5">
                                                   <input
                                                     type="number"
-                                                    step="1"
+                                                    step={isHours ? "any" : "1"}
                                                     min="0"
                                                     disabled={!isPendingManagerReview && !isAlreadyCalibrated}
-                                                    value={currentMgrActual !== '' && currentMgrActual !== null && currentMgrActual !== undefined ? (typeof currentMgrActual === 'number' ? Math.floor(currentMgrActual) : (String(currentMgrActual).includes('.') ? parseInt(String(currentMgrActual), 10) : currentMgrActual)) : ''}
+                                                    value={currentMgrActual !== '' && currentMgrActual !== null && currentMgrActual !== undefined ? (isHours ? currentMgrActual : (typeof currentMgrActual === 'number' ? Math.floor(currentMgrActual) : (String(currentMgrActual).includes('.') ? parseInt(String(currentMgrActual), 10) : currentMgrActual))) : ''}
                                                     onKeyDown={e => {
-                                                      if (['.', ',', 'e', 'E', '+', '-'].includes(e.key)) {
+                                                      const blockedKeys = isHours ? ['e', 'E', '+', '-'] : ['.', ',', 'e', 'E', '+', '-'];
+                                                      if (blockedKeys.includes(e.key)) {
                                                         e.preventDefault();
                                                       }
                                                     }}
