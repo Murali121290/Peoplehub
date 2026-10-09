@@ -28,6 +28,7 @@ import {
 import {
   calculateKPIScore,
   calculateOverallScore,
+  calculateCategoryEarned,
   getRatingForScore,
   getRatingScale,
   parseTargetExpression,
@@ -1860,10 +1861,11 @@ export const EvaluationTab: React.FC = () => {
   const totalWeightage = hrCategories.reduce((sum, cat) => sum + (Number(cat.weightage) || 0), 0);
   const isWeightageValid = totalWeightage === 100;
 
-  // Check if all individual categories have their KPI target scores sum equal to their category weight
+  // Check if all individual categories have valid KPI target scores (either matching weightage or capacity deliverables >= weightage)
   const areAllCategoriesBalanced = hrCategories.every(cat => {
+    if (!cat.kpis || cat.kpis.length === 0) return false;
     const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-    return Math.abs(catSum - Number(cat.weightage)) < 0.05;
+    return Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
   });
 
   const loadHrTemplates = async (mgrId: string, teamIdVal: string) => {
@@ -2465,11 +2467,15 @@ export const EvaluationTab: React.FC = () => {
       return;
     }
 
-    // Validate that each category's target scores sum to category weight
+    // Validate that each category has deliverables with valid scores
     for (const cat of hrCategories) {
+      if (!cat.kpis || cat.kpis.length === 0) {
+        showAlert(`Category "${cat.name}" has no deliverables. Please add at least one deliverable.`, 'Deliverable Missing');
+        return;
+      }
       const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-      if (Math.abs(catSum - Number(cat.weightage)) > 0.05) {
-        showAlert(`Category "${cat.name}" has Target Scores summing to ${catSum.toFixed(2)}%, but Category Weight is ${cat.weightage}%. The sum of Target Scores must equal Category Weight. Click "Auto-Balance Targets" or adjust manually.`, 'Balance Required');
+      if (catSum <= 0) {
+        showAlert(`Category "${cat.name}" has deliverables with 0% score. Please define valid target score percentages.`, 'Score Required');
         return;
       }
     }
@@ -2595,8 +2601,9 @@ export const EvaluationTab: React.FC = () => {
   const smTotalWeightage = smCategories.reduce((sum, cat) => sum + (Number(cat.weightage) || 0), 0);
   const isSmWeightageValid = smTotalWeightage === 100;
   const areAllSmCategoriesBalanced = smCategories.every(cat => {
+    if (!cat.kpis || cat.kpis.length === 0) return false;
     const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-    return Math.abs(catSum - Number(cat.weightage)) < 0.05;
+    return Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
   });
 
   const handleSMStartEditCycle = (cycle: EvaluationCycle) => {
@@ -2760,9 +2767,13 @@ export const EvaluationTab: React.FC = () => {
       return;
     }
     for (const cat of smCategories) {
+      if (!cat.kpis || cat.kpis.length === 0) {
+        showAlert(`Category "${cat.name}" has no deliverables. Please add at least one deliverable.`, 'Deliverable Missing');
+        return;
+      }
       const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-      if (Math.abs(catSum - Number(cat.weightage)) > 0.05) {
-        showAlert(`Category "${cat.name}" has Target Scores summing to ${catSum.toFixed(2)}%, but Category Weight is ${cat.weightage}%. The sum of Target Scores must equal Category Weight. Click "Auto-Balance Targets" or adjust manually.`, 'Balance Required');
+      if (catSum <= 0) {
+        showAlert(`Category "${cat.name}" has deliverables with 0% score. Please define valid target score percentages.`, 'Score Required');
         return;
       }
     }
@@ -2778,9 +2789,13 @@ export const EvaluationTab: React.FC = () => {
       return;
     }
     for (const cat of smCategories) {
+      if (!cat.kpis || cat.kpis.length === 0) {
+        showAlert(`Category "${cat.name}" has no deliverables. Please add at least one deliverable.`, 'Deliverable Missing');
+        return;
+      }
       const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-      if (Math.abs(catSum - Number(cat.weightage)) > 0.05) {
-        showAlert(`Category "${cat.name}" has Target Scores summing to ${catSum.toFixed(2)}%, but Category Weight is ${cat.weightage}%. The sum of Target Scores must equal Category Weight. Click "Auto-Balance Targets" or adjust manually.`, 'Balance Required');
+      if (catSum <= 0) {
+        showAlert(`Category "${cat.name}" has deliverables with 0% score. Please define valid target score percentages.`, 'Score Required');
         return;
       }
     }
@@ -4134,8 +4149,9 @@ export const EvaluationTab: React.FC = () => {
   const mgrTotalWeightage = mgrAssignCategories.reduce((sum, c) => sum + (Number(c.weightage) || 0), 0);
   const isMgrWeightageValid = mgrTotalWeightage === 100;
   const areAllMgrCategoriesBalanced = mgrAssignCategories.every(cat => {
+    if (!cat.kpis || cat.kpis.length === 0) return false;
     const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
-    return Math.abs(catSum - Number(cat.weightage)) <= 0.05;
+    return Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
   });
 
   const handleMgrSubmitAssignment = async (e: React.FormEvent) => {
@@ -4153,9 +4169,13 @@ export const EvaluationTab: React.FC = () => {
       return;
     }
     for (const cat of mgrAssignCategories) {
+      if (!cat.kpis || cat.kpis.length === 0) {
+        showAlert(`Category "${cat.name}" has no deliverables. Please add at least one deliverable.`, 'Deliverable Missing');
+        return;
+      }
       const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-      if (Math.abs(catSum - Number(cat.weightage)) > 0.05) {
-        showAlert(`Category "${cat.name}" has Target Scores summing to ${catSum.toFixed(2)}%, but Category Weight is ${cat.weightage}%. Please click "Auto-Balance Targets" or adjust.`, 'Balance Required');
+      if (catSum <= 0) {
+        showAlert(`Category "${cat.name}" has deliverables with 0% score. Please define valid target score percentages.`, 'Score Required');
         return;
       }
     }
@@ -4896,8 +4916,9 @@ export const EvaluationTab: React.FC = () => {
   const mgrEditTotalWeightage = mgrEditCategories.reduce((sum, c) => sum + (Number(c.weightage) || 0), 0);
   const isMgrEditWeightageValid = mgrEditTotalWeightage === 100;
   const areAllMgrEditCategoriesBalanced = mgrEditCategories.every(cat => {
+    if (!cat.kpis || cat.kpis.length === 0) return false;
     const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
-    return Math.abs(catSum - Number(cat.weightage)) <= 0.05;
+    return Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
   });
 
   const handleMgrSaveMatrixChanges = async (e: React.FormEvent) => {
@@ -4919,9 +4940,13 @@ export const EvaluationTab: React.FC = () => {
     }
 
     for (const cat of mgrEditCategories) {
+      if (!cat.kpis || cat.kpis.length === 0) {
+        showAlert(`Category "${cat.name}" has no deliverables. Please add at least one deliverable.`, 'Deliverable Missing');
+        return;
+      }
       const catSum = cat.kpis.reduce((s, k) => s + (Number(k.targetScore) || 0), 0);
-      if (Math.abs(catSum - Number(cat.weightage)) > 0.05) {
-        showAlert(`Category "${cat.name}" has Target Scores summing to ${catSum.toFixed(2)}%, but Category Weight is ${cat.weightage}%. Please click "Auto-Balance Targets" or adjust.`, 'Balance Required');
+      if (catSum <= 0) {
+        showAlert(`Category "${cat.name}" has deliverables with 0% score. Please define valid target score percentages.`, 'Score Required');
         return;
       }
     }
@@ -5322,15 +5347,17 @@ export const EvaluationTab: React.FC = () => {
   const liveEmployeeScore = useMemo(() => {
     let sum = 0;
     activeCategories.forEach(cat => {
+      let rawEarned = 0;
       cat.kpis.forEach(k => {
         const item = getKpiResponseItem(k);
         const val = item?.actualValue ?? '';
-        sum += calculateKPIScore(k, val).earnedScore;
+        rawEarned += calculateKPIScore(k, val).earnedScore;
       });
+      sum += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawEarned);
     });
     const finalScore = (isEmpSubmitted && activeEmpResponse?.employeeOverallScore !== undefined && activeEmpResponse.employeeOverallScore !== null)
       ? Number(activeEmpResponse.employeeOverallScore)
-      : Number(sum.toFixed(2));
+      : Number(Math.min(100, sum).toFixed(2));
     return { overallScore: finalScore };
   }, [activeCategories, kpiInputs, activeEmpResponse?.kpiResponses, activeEmpResponse?.employeeOverallScore, isEmpSubmitted]);
 
@@ -6288,13 +6315,15 @@ export const EvaluationTab: React.FC = () => {
 
     let totalScore = 0;
     selectedMgrCategories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const actualVal = nextActuals[kpi.id];
         const calc = calculateKPIScore(kpi, actualVal);
-        totalScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    setMgrScore(Number(totalScore.toFixed(2)));
+    setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
     setMgrRemarks(curWeekRec?.managerRemarks || '');
   };
 
@@ -6312,11 +6341,20 @@ export const EvaluationTab: React.FC = () => {
       cat.kpis.forEach(kpi => {
         const respEntry = curWeekRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeekRec?.kpiEntries?.[kpi.name] : null);
         const empActual = respEntry?.actualValue ?? respEntry?.actual_value ?? '';
+        const empScore = respEntry?.earnedScore ?? (respEntry as any)?.earned_score ?? (empActual !== '' ? calculateKPIScore(kpi, empActual).earnedScore : 0);
+        const empRem = respEntry?.employeeRemarks ?? (respEntry as any)?.employee_remarks ?? (respEntry as any)?.employee_remark ?? (respEntry as any)?.remarks ?? '';
+        const isInsuff = Boolean(respEntry?.isInsufficient ?? (respEntry as any)?.is_insufficient);
         const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
         const calc = calculateKPIScore(kpi, mgrActual);
         payloadEntries[kpi.id] = {
           actualValue: empActual,
           actual_value: empActual,
+          earnedScore: empScore,
+          earned_score: empScore,
+          employeeRemarks: empRem,
+          employee_remark: empRem,
+          isInsufficient: isInsuff,
+          is_insufficient: isInsuff,
           managerActualValue: mgrActual,
           manager_actual_pm: mgrActual,
           managerScore: Number(calc.earnedScore.toFixed(2)),
@@ -6538,13 +6576,15 @@ export const EvaluationTab: React.FC = () => {
 
     let totalScore = 0;
     selectedMgrCategories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const actualVal = nextActuals[kpi.id];
         const calc = calculateKPIScore(kpi, actualVal);
-        totalScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    setMgrScore(Number(totalScore.toFixed(2)));
+    setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
     setMgrRemarks(curQuarterRec?.managerRemarks || '');
   };
 
@@ -6562,11 +6602,20 @@ export const EvaluationTab: React.FC = () => {
       cat.kpis.forEach(kpi => {
         const respEntry = curQuarterRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterRec?.kpiEntries?.[kpi.name] : null);
         const empActual = respEntry?.actualValue ?? respEntry?.actual_value ?? '';
+        const empScore = respEntry?.earnedScore ?? (respEntry as any)?.earned_score ?? (empActual !== '' ? calculateKPIScore(kpi, empActual).earnedScore : 0);
+        const empRem = respEntry?.employeeRemarks ?? (respEntry as any)?.employee_remarks ?? (respEntry as any)?.employee_remark ?? (respEntry as any)?.remarks ?? '';
+        const isInsuff = Boolean(respEntry?.isInsufficient ?? (respEntry as any)?.is_insufficient);
         const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
         const calc = calculateKPIScore(kpi, mgrActual);
         payloadEntries[kpi.id] = {
           actualValue: empActual,
           actual_value: empActual,
+          earnedScore: empScore,
+          earned_score: empScore,
+          employeeRemarks: empRem,
+          employee_remark: empRem,
+          isInsufficient: isInsuff,
+          is_insufficient: isInsuff,
           managerActualValue: mgrActual,
           manager_actual_pm: mgrActual,
           managerScore: Number(calc.earnedScore.toFixed(2)),
@@ -6789,13 +6838,15 @@ export const EvaluationTab: React.FC = () => {
 
     let totalScore = 0;
     selectedMgrCategories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const actualVal = nextActuals[kpi.id];
         const calc = calculateKPIScore(kpi, actualVal);
-        totalScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    setMgrScore(Number(totalScore.toFixed(2)));
+    setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
     setMgrRemarks(curMonthRec?.managerRemarks || '');
   };
 
@@ -6815,11 +6866,20 @@ export const EvaluationTab: React.FC = () => {
       cat.kpis.forEach(kpi => {
         const respEntry = curMonthRec?.kpiEntries?.[kpi.id] || (kpi.name ? curMonthRec?.kpiEntries?.[kpi.name] : null);
         const empActual = respEntry?.actualValue ?? respEntry?.actual_value ?? '';
+        const empScore = respEntry?.earnedScore ?? (respEntry as any)?.earned_score ?? (empActual !== '' ? calculateKPIScore(kpi, empActual).earnedScore : 0);
+        const empRem = respEntry?.employeeRemarks ?? (respEntry as any)?.employee_remarks ?? (respEntry as any)?.employee_remark ?? (respEntry as any)?.remarks ?? '';
+        const isInsuff = Boolean(respEntry?.isInsufficient ?? (respEntry as any)?.is_insufficient);
         const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
         const calc = calculateKPIScore(kpi, mgrActual);
         payloadEntries[kpi.id] = {
           actualValue: empActual,
           actual_value: empActual,
+          earnedScore: empScore,
+          earned_score: empScore,
+          employeeRemarks: empRem,
+          employee_remark: empRem,
+          isInsufficient: isInsuff,
+          is_insufficient: isInsuff,
           managerActualValue: mgrActual,
           manager_actual_pm: mgrActual,
           managerScore: Number(calc.earnedScore.toFixed(2)),
@@ -10073,13 +10133,15 @@ export const EvaluationTab: React.FC = () => {
         setMgrKpiRemarks(initialRemarks);
         let totalScore = 0;
         targetCats.forEach((cat: KPICategory) => {
+          let rawCat = 0;
           cat.kpis.forEach((kpi: KPIItem) => {
             const actualVal = initialActuals[kpi.id];
             const calc = calculateKPIScore(kpi, actualVal);
-            totalScore += calc.earnedScore;
+            rawCat += calc.earnedScore;
           });
+          totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
         });
-        setMgrScore(Number(totalScore.toFixed(2)));
+        setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
         setMgrRemarks(curWeekRec?.managerRemarks || '');
         return;
       }
@@ -10115,13 +10177,15 @@ export const EvaluationTab: React.FC = () => {
         setMgrKpiRemarks(initialRemarks);
         let totalScore = 0;
         targetCats.forEach((cat: KPICategory) => {
+          let rawCat = 0;
           cat.kpis.forEach((kpi: KPIItem) => {
             const actualVal = initialActuals[kpi.id];
             const calc = calculateKPIScore(kpi, actualVal);
-            totalScore += calc.earnedScore;
+            rawCat += calc.earnedScore;
           });
+          totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
         });
-        setMgrScore(Number(totalScore.toFixed(2)));
+        setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
         setMgrRemarks(curQuarterRec?.managerRemarks || '');
         return;
       }
@@ -10151,13 +10215,15 @@ export const EvaluationTab: React.FC = () => {
       setMgrKpiRemarks(initialRemarks);
       let totalScore = 0;
       targetCats.forEach((cat: KPICategory) => {
+        let rawCat = 0;
         cat.kpis.forEach((kpi: KPIItem) => {
           const actualVal = initialActuals[kpi.id];
           const calc = calculateKPIScore(kpi, actualVal);
-          totalScore += calc.earnedScore;
+          rawCat += calc.earnedScore;
         });
+        totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
       });
-      setMgrScore(Number(totalScore.toFixed(2)));
+      setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
       setMgrRemarks(curMonthRec?.managerRemarks || '');
       return;
     }
@@ -10180,14 +10246,16 @@ export const EvaluationTab: React.FC = () => {
 
     let totalScore = 0;
     targetCats.forEach((cat: KPICategory) => {
+      let rawCat = 0;
       cat.kpis.forEach((kpi: KPIItem) => {
         const actualVal = initialActuals[kpi.id];
         const calc = calculateKPIScore(kpi, actualVal);
-        totalScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
 
-    const calculatedScore = Number(totalScore.toFixed(2));
+    const calculatedScore = Number(Math.min(100, totalScore).toFixed(2));
     setMgrScore(isPendingReview ? calculatedScore : (r.managerScore != null ? Number(r.managerScore) : calculatedScore));
     setMgrRemarks(r.managerRemarks || '');
   };
@@ -10212,6 +10280,7 @@ export const EvaluationTab: React.FC = () => {
       const curQuarterlyRec = isQuarterly ? (selectedMgrResponse?.quarterly_records || []).find(q => q.quarterIndex === activeMgrYearlyQuarterIndex) : null;
 
       selectedMgrCategories.forEach(cat => {
+        let rawCat = 0;
         cat.kpis.forEach(k => {
           const yearlyEntry = isQuarterly
             ? (curQuarterlyRec?.kpiEntries?.[k.id] || (k.name ? curQuarterlyRec?.kpiEntries?.[k.name] : null))
@@ -10221,10 +10290,11 @@ export const EvaluationTab: React.FC = () => {
             : (selectedMgrResponse?.kpiResponses?.[k.id]?.actualValue ?? '');
           const val = updated[k.id] !== undefined ? updated[k.id] : fallbackEmpVal;
           const calc = calculateKPIScore(k, val);
-          sum += calc.earnedScore;
+          rawCat += calc.earnedScore;
         });
+        sum += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
       });
-      setMgrScore(Number(sum.toFixed(2)));
+      setMgrScore(Number(Math.min(100, sum).toFixed(2)));
       return updated;
     });
   };
@@ -11061,7 +11131,7 @@ export const EvaluationTab: React.FC = () => {
               <div className="space-y-3.5">
                 {hrCategories.map((cat, catIdx) => {
                   const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
-                  const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05;
+                  const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
 
                   return (
                     <div key={cat.id} className="bg-slate-50/80 border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 space-y-2.5">
@@ -11406,17 +11476,21 @@ export const EvaluationTab: React.FC = () => {
 
             // Category performance analysis
             const categoryPerformance = activeCategories.map(cat => {
-              const catEarned = cat.kpis.reduce((sum, k) => {
+              const rawCatEarned = cat.kpis.reduce((sum, k) => {
                 const respItem = getKpiResponseItem(k);
                 const val = respItem?.actualValue ?? '';
                 return sum + calculateKPIScore(k, val).earnedScore;
               }, 0);
-              const catMgrEarned = cat.kpis.reduce((sum, k) => {
+              const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
+
+              const rawCatMgrEarned = cat.kpis.reduce((sum, k) => {
                 const respItem = getKpiResponseItem(k);
                 if (respItem?.managerScore !== undefined && respItem?.managerScore !== null) return sum + Number(respItem.managerScore);
                 if (respItem?.managerActualValue !== undefined && respItem?.managerActualValue !== '') return sum + calculateKPIScore(k, respItem.managerActualValue).earnedScore;
                 return sum;
               }, 0);
+              const catMgrEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatMgrEarned);
+
               const targetWeight = Number(cat.weightage) || 1;
               const effectiveScore = (isEmpSubmitted && activeEmpResponse?.status === 'approved' && activeEmpResponse?.managerScore !== undefined) ? catMgrEarned : catEarned;
               const achievementRate = (effectiveScore / targetWeight) * 100;
@@ -12224,7 +12298,7 @@ export const EvaluationTab: React.FC = () => {
                           : Boolean(isYearly && (curYearlyRecord?.status === 'submitted_to_manager' || curYearlyRecord?.status === 'manager_approved')));
                       const isThisMonthLocked = isYearly ? (!lockInfo?.isEditable) : isEmpSubmitted;
 
-                      const catEarned = cat.kpis.reduce((sum, k) => {
+                      const rawCatEarned = cat.kpis.reduce((sum, k) => {
                         const yearlyEntry = isWeekly
                           ? (curWeeklyRecord?.kpiEntries?.[k.id] || (k.name ? curWeeklyRecord?.kpiEntries?.[k.name] : null))
                           : (isQuarterly
@@ -12245,6 +12319,7 @@ export const EvaluationTab: React.FC = () => {
                               : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''))));
                         return sum + calculateKPIScore(k, val).earnedScore;
                       }, 0);
+                      const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
 
                       const isExpanded = Object.keys(expandedCategories).length === 0 ? catIdx === 0 : Boolean(expandedCategories[cat.id]);
 
@@ -12785,6 +12860,7 @@ export const EvaluationTab: React.FC = () => {
 
                       let periodSelfSum = 0;
                       activeCategories.forEach(cat => {
+                        let catRaw = 0;
                         cat.kpis.forEach(k => {
                           const yearlyEntry = isWeekly
                             ? (curWeeklyRec?.kpiEntries?.[k.id] || (k.name ? curWeeklyRec?.kpiEntries?.[k.name] : null))
@@ -12804,8 +12880,9 @@ export const EvaluationTab: React.FC = () => {
                                   ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                                   : (yearlyEntry?.actualValue ?? ''))
                                 : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''))));
-                          periodSelfSum += calculateKPIScore(k, val).earnedScore;
+                          catRaw += calculateKPIScore(k, val).earnedScore;
                         });
+                        periodSelfSum += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, catRaw);
                       });
                       const displayScore = isYearly ? Number(periodSelfSum.toFixed(1)) : selfScoreNum;
                       const activeMilestoneLabel = isWeekly ? (curWeeklyRec?.weekLabel || `Week ${activeYearlyWeekIndex}`) : (isQuarterly ? quarterName : monthName);
@@ -13796,8 +13873,23 @@ export const EvaluationTab: React.FC = () => {
                                             <div className="rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
                                               {item.categories.map((cat, catIdx) => {
                                                 const catEarned = cat.kpis.reduce((sum: number, k: KPIItem) => {
-                                                  const ent = item.entries[k.id];
-                                                  return sum + (ent?.earnedScore !== undefined && ent?.earnedScore !== null ? Number(ent.earnedScore) : 0);
+                                                  const ent = item.entries?.[k.id] || (k.name ? item.entries?.[k.name] : null);
+                                                  const entActual = ent?.actualValue !== undefined && ent?.actualValue !== null && ent?.actualValue !== ''
+                                                    ? ent.actualValue
+                                                    : (ent?.actual_value ?? '');
+                                                  const entMgrActual = ent?.managerActualValue !== undefined && ent?.managerActualValue !== null && ent?.managerActualValue !== ''
+                                                    ? ent.managerActualValue
+                                                    : (ent?.manager_actual_pm ?? '');
+                                                  const score = ent?.managerScore !== undefined && ent?.managerScore !== null
+                                                    ? Number(ent.managerScore)
+                                                    : ((ent as any)?.manager_score !== undefined && (ent as any)?.manager_score !== null
+                                                      ? Number((ent as any).manager_score)
+                                                      : (ent?.earnedScore !== undefined && ent?.earnedScore !== null
+                                                        ? Number(ent.earnedScore)
+                                                        : ((ent as any)?.earned_score !== undefined && (ent as any)?.earned_score !== null
+                                                          ? Number((ent as any).earned_score)
+                                                          : (entMgrActual !== '' ? calculateKPIScore(k, entMgrActual).earnedScore : (entActual !== '' ? calculateKPIScore(k, entActual).earnedScore : 0)))));
+                                                  return sum + score;
                                                 }, 0);
                                                 const isCatExpanded = expandedAuditCategories[`${r.id}_${item.key}_${cat.id || catIdx}`] === true;
 
@@ -13844,23 +13936,66 @@ export const EvaluationTab: React.FC = () => {
                                                           </thead>
                                                           <tbody className="divide-y divide-slate-100 bg-white">
                                                             {cat.kpis.map((kpi, kIdx) => {
-                                                              const selfRes = item.entries[kpi.id];
+                                                              const selfRes = item.entries?.[kpi.id] || (kpi.name ? item.entries?.[kpi.name] : null);
                                                               const selfActual = selfRes?.actualValue !== undefined && selfRes?.actualValue !== null && selfRes?.actualValue !== ''
                                                                 ? selfRes.actualValue
-                                                                : '—';
-                                                              const selfScore = selfRes?.earnedScore !== undefined && selfRes?.earnedScore !== null ? Number(selfRes.earnedScore) : 0;
-                                                              const selfRemarks = selfRes?.employeeRemarks || (selfRes as any)?.remarks || '';
+                                                                : (selfRes?.actual_value !== undefined && selfRes?.actual_value !== null && selfRes?.actual_value !== ''
+                                                                  ? selfRes.actual_value
+                                                                  : ((selfRes as any)?.employeeActual !== undefined && (selfRes as any)?.employeeActual !== null && (selfRes as any)?.employeeActual !== ''
+                                                                    ? (selfRes as any).employeeActual
+                                                                    : '—'));
+
+                                                              const calc = selfActual !== '—' ? calculateKPIScore(kpi, selfActual) : { earnedScore: 0 };
+                                                              const selfScore = selfRes?.earnedScore !== undefined && selfRes?.earnedScore !== null
+                                                                ? Number(selfRes.earnedScore)
+                                                                : ((selfRes as any)?.earned_score !== undefined && (selfRes as any)?.earned_score !== null
+                                                                  ? Number((selfRes as any).earned_score)
+                                                                  : (selfActual !== '—' ? calc.earnedScore : 0));
+
+                                                              const selfRemarks = String(
+                                                                selfRes?.employeeRemarks ||
+                                                                (selfRes as any)?.employee_remarks ||
+                                                                (selfRes as any)?.remarks ||
+                                                                (selfRes as any)?.employee_remark ||
+                                                                (selfRes as any)?.employeeComment ||
+                                                                (selfRes as any)?.employee_comment ||
+                                                                (selfRes as any)?.comment ||
+                                                                (selfRes as any)?.note ||
+                                                                ''
+                                                              ).trim();
 
                                                               const rAny = r as any;
-                                                              const mgrActual = (rAny.managerKpiActuals && rAny.managerKpiActuals[kpi.id] !== undefined)
-                                                                ? rAny.managerKpiActuals[kpi.id]
+                                                              const mgrActual = (rAny.managerKpiActuals && (rAny.managerKpiActuals[kpi.id] !== undefined ? rAny.managerKpiActuals[kpi.id] : (kpi.name && rAny.managerKpiActuals[kpi.name])))
+                                                                ? (rAny.managerKpiActuals[kpi.id] ?? rAny.managerKpiActuals[kpi.name])
                                                                 : (selfRes?.managerActualValue !== undefined && selfRes?.managerActualValue !== null && selfRes?.managerActualValue !== ''
                                                                   ? selfRes.managerActualValue
-                                                                  : '—');
-                                                              const mgrRemarks = (rAny.managerKpiRemarks && rAny.managerKpiRemarks[kpi.id] !== undefined)
-                                                                ? rAny.managerKpiRemarks[kpi.id]
-                                                                : (selfRes?.managerRemarks || '');
-                                                              const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null ? Number(selfRes.managerScore) : null;
+                                                                  : ((selfRes as any)?.manager_actual_pm !== undefined && (selfRes as any)?.manager_actual_pm !== null && (selfRes as any)?.manager_actual_pm !== ''
+                                                                    ? (selfRes as any).manager_actual_pm
+                                                                    : '—'));
+
+                                                              const mgrCalc = mgrActual !== '—' ? calculateKPIScore(kpi, mgrActual) : { earnedScore: 0 };
+                                                              const mgrScore = selfRes?.managerScore !== undefined && selfRes?.managerScore !== null
+                                                                ? Number(selfRes.managerScore)
+                                                                : ((selfRes as any)?.manager_score !== undefined && (selfRes as any)?.manager_score !== null
+                                                                  ? Number((selfRes as any).manager_score)
+                                                                  : (mgrActual !== '—' ? mgrCalc.earnedScore : null));
+
+                                                              const mgrRemarks = String(
+                                                                (rAny.managerKpiRemarks && (rAny.managerKpiRemarks[kpi.id] !== undefined ? rAny.managerKpiRemarks[kpi.id] : (kpi.name && rAny.managerKpiRemarks[kpi.name]))) ||
+                                                                selfRes?.managerRemarks ||
+                                                                (selfRes as any)?.manager_remarks ||
+                                                                (selfRes as any)?.manager_remark ||
+                                                                (selfRes as any)?.mgr_remarks ||
+                                                                (selfRes as any)?.mgr_remark ||
+                                                                (selfRes as any)?.managerComment ||
+                                                                (selfRes as any)?.manager_comment ||
+                                                                (selfRes as any)?.reviewerRemarks ||
+                                                                (selfRes as any)?.reviewer_remarks ||
+                                                                (selfRes as any)?.reviewerComment ||
+                                                                ''
+                                                              ).trim();
+
+                                                              const hasRemarks = Boolean(selfRemarks || mgrRemarks);
 
                                                               const targetDisplay = (() => {
                                                                 const t = String(kpi.targetFromManager !== undefined && kpi.targetFromManager !== '' ? kpi.targetFromManager : (kpi.targetValue ?? '')).trim();
@@ -13869,6 +14004,10 @@ export const EvaluationTab: React.FC = () => {
                                                                 if (!u || t.toLowerCase().includes(u.toLowerCase())) return t;
                                                                 return `${t} ${u}`;
                                                               })();
+
+                                                              const deficitStatus = selfActual !== '—'
+                                                                ? getInsufficientStatus(kpi, selfActual, Boolean(selfRes?.isInsufficient || (selfRes as any)?.is_insufficient))
+                                                                : null;
 
                                                               return (
                                                                 <tr
@@ -13890,50 +14029,87 @@ export const EvaluationTab: React.FC = () => {
                                                                     {targetDisplay}
                                                                   </td>
                                                                   <td className="px-3 py-2 text-center align-middle text-slate-800 whitespace-nowrap font-medium">
-                                                                    <div className="flex flex-col items-center justify-center gap-1">
-                                                                      <span>{selfActual} {kpi.unit || ''}</span>
-                                                                      {(selfRemarks?.trim() || mgrRemarks?.trim()) && (
-                                                                        <DeliverableRemarksHover
-                                                                          selfRemarks={selfRemarks}
-                                                                          mgrRemarks={mgrRemarks}
-                                                                          align="center"
-                                                                        >
-                                                                          <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap cursor-pointer">
-                                                                            {selfRemarks?.trim() && (
-                                                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0">
+                                                                    <DeliverableRemarksHover
+                                                                      selfRemarks={selfRemarks}
+                                                                      mgrRemarks={mgrRemarks}
+                                                                      align="center"
+                                                                    >
+                                                                      <div className="flex flex-col items-center justify-center gap-1 cursor-pointer">
+                                                                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                                                          <span>{selfActual !== '—' ? `${selfActual} ${kpi.unit || ''}` : '—'}</span>
+                                                                          {deficitStatus && deficitStatus.status !== 'not_filled' && deficitStatus.status !== 'met' && (
+                                                                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${deficitStatus.badgeClass}`}>
+                                                                              {deficitStatus.label}
+                                                                            </span>
+                                                                          )}
+                                                                        </div>
+                                                                        {hasRemarks && (
+                                                                          <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap">
+                                                                            {selfRemarks && (
+                                                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-primary-50 text-primary-700 border border-primary-200 cursor-help shrink-0 shadow-2xs">
                                                                                 <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
                                                                                 <span>Emp</span>
                                                                               </span>
                                                                             )}
-                                                                            {mgrRemarks?.trim() && (
-                                                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0">
+                                                                            {mgrRemarks && (
+                                                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-help shrink-0 shadow-2xs">
                                                                                 <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
                                                                                 <span>Mgr</span>
                                                                               </span>
                                                                             )}
                                                                           </div>
-                                                                        </DeliverableRemarksHover>
-                                                                      )}
-                                                                    </div>
+                                                                        )}
+                                                                      </div>
+                                                                    </DeliverableRemarksHover>
                                                                   </td>
                                                                   <td
                                                                     className="px-2.5 py-2 text-center align-middle font-bold text-slate-900 whitespace-nowrap"
                                                                   >
-                                                                    <div className="inline-flex items-center gap-1">
-                                                                      <span>{selfScore.toFixed(1)}%</span>
-                                                                      {selfRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-primary-500/70 shrink-0" />}
-                                                                    </div>
+                                                                    <DeliverableRemarksHover
+                                                                      selfRemarks={selfRemarks}
+                                                                      mgrRemarks={mgrRemarks}
+                                                                      align="center"
+                                                                    >
+                                                                      <div className="inline-flex items-center justify-center gap-1 cursor-pointer">
+                                                                        <span>{selfScore.toFixed(1)}%</span>
+                                                                        {selfRemarks && (
+                                                                          <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[8px] font-bold bg-primary-50 text-primary-700 border border-primary-200" title="Employee Remarks: Hover to view">
+                                                                            <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-primary-600" />
+                                                                            <span>Emp</span>
+                                                                          </span>
+                                                                        )}
+                                                                      </div>
+                                                                    </DeliverableRemarksHover>
                                                                   </td>
                                                                   <td className="px-3 py-2 text-center align-middle bg-teal-50/30 font-medium text-slate-900 border-l border-teal-100 whitespace-nowrap">
-                                                                    {mgrActual !== '—' ? `${mgrActual} ${kpi.unit || ''}` : '—'}
+                                                                    <DeliverableRemarksHover
+                                                                      selfRemarks={selfRemarks}
+                                                                      mgrRemarks={mgrRemarks}
+                                                                      align="center"
+                                                                    >
+                                                                      <div className="cursor-pointer">
+                                                                        {mgrActual !== '—' ? `${mgrActual} ${kpi.unit || ''}` : '—'}
+                                                                      </div>
+                                                                    </DeliverableRemarksHover>
                                                                   </td>
                                                                   <td
                                                                     className="px-2.5 py-2 text-center align-middle bg-teal-50/30 whitespace-nowrap font-bold text-teal-950"
                                                                   >
-                                                                    <div className="inline-flex items-center gap-1">
-                                                                      <span>{mgrScore !== null ? `${mgrScore.toFixed(1)}%` : '—'}</span>
-                                                                      {mgrRemarks?.trim() && <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />}
-                                                                    </div>
+                                                                    <DeliverableRemarksHover
+                                                                      selfRemarks={selfRemarks}
+                                                                      mgrRemarks={mgrRemarks}
+                                                                      align="center"
+                                                                    >
+                                                                      <div className="inline-flex items-center justify-center gap-1 cursor-pointer">
+                                                                        <span>{mgrScore !== null ? `${mgrScore.toFixed(1)}%` : '—'}</span>
+                                                                        {mgrRemarks && (
+                                                                          <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[8px] font-bold bg-teal-50 text-teal-800 border border-teal-200" title="Manager Remarks: Hover to view">
+                                                                            <ChatBubbleLeftEllipsisIcon className="w-2.5 h-2.5 text-teal-600" />
+                                                                            <span>Mgr</span>
+                                                                          </span>
+                                                                        )}
+                                                                      </div>
+                                                                    </DeliverableRemarksHover>
                                                                   </td>
                                                                 </tr>
                                                               );
@@ -15566,7 +15742,7 @@ export const EvaluationTab: React.FC = () => {
                         <div className="space-y-3">
                           {mgrAssignCategories.map((cat, catIdx) => {
                             const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
-                            const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05;
+                            const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
 
                             return (
                               <div key={cat.id} className="bg-slate-50/80 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5">
@@ -18809,7 +18985,7 @@ export const EvaluationTab: React.FC = () => {
                   <div className="space-y-4">
                     {mgrEditCategories.map((cat, catIdx) => {
                       const catSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore) || 0), 0);
-                      const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05;
+                      const isBalanced = Math.abs(catSum - Number(cat.weightage)) <= 0.05 || (catSum >= Number(cat.weightage) && catSum > 0);
 
                       return (
                         <div key={cat.id} className="bg-slate-50/80 border border-slate-200/90 rounded-2xl p-4 sm:p-5 space-y-3">
