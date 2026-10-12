@@ -297,30 +297,52 @@ export const calculateKPIScore = (
   };
 };
 
+export const calculateCategoryEarned = (
+  catWeight: number,
+  kpis: KPIItem[],
+  rawEarnedSum: number
+): number => {
+  if (!catWeight || catWeight <= 0) return Number(rawEarnedSum.toFixed(2));
+  const kpisWeightSum = kpis.reduce((sum, k) => sum + (Number(k.targetScore ?? k.weightage) || 0), 0);
+
+  if (kpisWeightSum <= 0) return 0;
+
+  // When deliverables have percentage target scores (e.g. 100% each, or kpisWeightSum > catWeight),
+  // achieving >= 100% total across deliverables awards the full category weightage:
+  if (kpisWeightSum > catWeight) {
+    const scaled = (rawEarnedSum / 100) * catWeight;
+    return Number(Math.min(catWeight, scaled).toFixed(2));
+  } else {
+    // Direct sum when deliverable scores partition the category weight directly
+    return Number(Math.min(catWeight, rawEarnedSum).toFixed(2));
+  }
+};
+
 export const calculateOverallScore = (
   categories: KPICategory[],
   kpiResponses: Record<string, KPIResponseItem>
 ): { overallScore: number; categoryScores: { categoryId: string; name: string; weightage: number; earned: number }[] } => {
   let totalScore = 0;
   const categoryScores = categories.map(cat => {
-    let catEarned = 0;
+    let rawEarnedSum = 0;
     cat.kpis.forEach(kpi => {
-      const resp = kpiResponses[kpi.id];
+      const resp = kpiResponses[kpi.id] || (kpi.name ? kpiResponses[kpi.name] : undefined);
       if (resp) {
-        catEarned += resp.earnedScore || 0;
+        rawEarnedSum += resp.earnedScore || 0;
       }
     });
+    const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawEarnedSum);
     totalScore += catEarned;
     return {
       categoryId: cat.id,
       name: cat.name,
       weightage: cat.weightage,
-      earned: Number(catEarned.toFixed(2))
+      earned: catEarned
     };
   });
 
   return {
-    overallScore: Number(totalScore.toFixed(2)),
+    overallScore: Number(Math.min(100, totalScore).toFixed(2)),
     categoryScores
   };
 };
