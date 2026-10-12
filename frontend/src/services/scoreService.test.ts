@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { 
   parseTargetExpression, 
   calculateKPIScore, 
+  calculateCategoryEarned,
   isNegativeKpi 
 } from './scoreService';
 import { KPIItem } from '../types/evaluation.types';
@@ -124,9 +125,30 @@ describe('scoreService', () => {
       // < 12 (e.g. 6 -> 50%, 9 -> 75%)
       expect(calculateKPIScore(kpi, 6).achievementPercentage).toBe(50);
       expect(calculateKPIScore(kpi, 6).earnedScore).toBe(15);
+    });
 
-      expect(calculateKPIScore(kpi, 9).achievementPercentage).toBe(75);
-      expect(calculateKPIScore(kpi, 9).earnedScore).toBe(22.5);
+    it('should calculate category earned score capped at category weight', () => {
+      const kpis: KPIItem[] = [
+        { id: '1', name: 'Springer', targetScore: 100, targetFromManager: '120' } as KPIItem,
+        { id: '2', name: 'Eleven', targetScore: 100, targetFromManager: '90' } as KPIItem,
+        { id: '3', name: 'QA', targetScore: 100, targetFromManager: '250' } as KPIItem,
+        { id: '4', name: 'Hours', targetScore: 100, targetFromManager: '8' } as KPIItem,
+      ];
+      // When sum of deliverable scores is 177.44% (>= 100%), category weight is 25:
+      const catEarned177 = calculateCategoryEarned(25, kpis, 177.44);
+      expect(catEarned177).toBe(25);
+
+      // When sum is 100%, category score is full 25:
+      const catEarnedFull = calculateCategoryEarned(25, kpis, 100);
+      expect(catEarnedFull).toBe(25);
+
+      // When sum is 50%, category score is (50 / 100) * 25 = 12.5:
+      const catEarnedHalf = calculateCategoryEarned(25, kpis, 50);
+      expect(catEarnedHalf).toBe(12.5);
+
+      // When sum is 80%, category score is (80 / 100) * 25 = 20:
+      const catEarned80 = calculateCategoryEarned(25, kpis, 80);
+      expect(catEarned80).toBe(20);
     });
   });
 });

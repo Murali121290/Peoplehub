@@ -13,7 +13,7 @@ import {
   YearlyWeekRecord,
   YearlyQuarterRecord
 } from '../types/evaluation.types';
-import { calculateOverallScore, calculateKPIScore, setRatingScale, getRatingScale } from './scoreService';
+import { calculateOverallScore, calculateKPIScore, calculateCategoryEarned, setRatingScale, getRatingScale } from './scoreService';
 
 export const FISCAL_QUARTERS = [
   { quarterIndex: 1 as const, quarterKey: 'q1' as const, shortName: 'Q1' as const, quarterLabel: 'Q1 (Apr – Jun)', quarterName: 'Quarter 1', monthsIncluded: 'April – June', startMonthName: 'April', endMonthName: 'June', startMonth: 4, endMonth: 6 },
@@ -1273,14 +1273,16 @@ export const evaluationService = {
     // Calculate month employee score based on categories & kpiEntries
     let monthScore = 0;
     categories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
         const actualVal = entry?.actualValue ?? entry?.actual_value ?? '';
         const calc = calculateKPIScore(kpi, actualVal);
-        monthScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      monthScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    monthScore = Number(monthScore.toFixed(2));
+    monthScore = Number(Math.min(100, monthScore).toFixed(2));
 
     const updatedMonthlyRecords = monthlyRecords.map(m => {
       if (m.monthIndex === monthIndex) {
@@ -1358,14 +1360,16 @@ export const evaluationService = {
     // Calculate month manager score based on categories & kpiEntries
     let monthScore = 0;
     categories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
         const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
         const calc = calculateKPIScore(kpi, mgrActual);
-        monthScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      monthScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    monthScore = Number(monthScore.toFixed(2));
+    monthScore = Number(Math.min(100, monthScore).toFixed(2));
 
     const updatedMonthlyRecords = monthlyRecords.map(m => {
       if (m.monthIndex === monthIndex) {
@@ -1508,14 +1512,16 @@ export const evaluationService = {
     // Calculate week employee score based on categories & kpiEntries
     let weekScore = 0;
     categories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
         const actualVal = entry?.actualValue ?? entry?.actual_value ?? '';
         const calc = calculateKPIScore(kpi, actualVal);
-        weekScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      weekScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    weekScore = Number(weekScore.toFixed(2));
+    weekScore = Number(Math.min(100, weekScore).toFixed(2));
 
     const updatedWeeklyRecords = weeklyRecords.map(w => {
       if (w.weekIndex === weekIndex) {
@@ -1593,14 +1599,16 @@ export const evaluationService = {
     // Calculate week manager score based on categories & kpiEntries
     let weekScore = 0;
     categories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
         const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
         const calc = calculateKPIScore(kpi, mgrActual);
-        weekScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      weekScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    weekScore = Number(weekScore.toFixed(2));
+    weekScore = Number(Math.min(100, weekScore).toFixed(2));
 
     const updatedWeeklyRecords = weeklyRecords.map(w => {
       if (w.weekIndex === weekIndex) {
@@ -1743,14 +1751,16 @@ export const evaluationService = {
     // Calculate quarter employee score based on categories & kpiEntries
     let quarterScore = 0;
     categories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
         const actualVal = entry?.actualValue ?? entry?.actual_value ?? '';
         const calc = calculateKPIScore(kpi, actualVal);
-        quarterScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      quarterScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    quarterScore = Number(quarterScore.toFixed(2));
+    quarterScore = Number(Math.min(100, quarterScore).toFixed(2));
 
     const updatedQuarterlyRecords = quarterlyRecords.map(q => {
       if (q.quarterIndex === quarterIndex) {
@@ -1830,14 +1840,16 @@ export const evaluationService = {
     // Calculate quarter manager score based on categories & kpiEntries
     let quarterScore = 0;
     categories.forEach(cat => {
+      let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
         const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
         const calc = calculateKPIScore(kpi, mgrActual);
-        quarterScore += calc.earnedScore;
+        rawCat += calc.earnedScore;
       });
+      quarterScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
-    quarterScore = Number(quarterScore.toFixed(2));
+    quarterScore = Number(Math.min(100, quarterScore).toFixed(2));
 
     const updatedQuarterlyRecords = quarterlyRecords.map(q => {
       if (q.quarterIndex === quarterIndex) {
