@@ -104,6 +104,11 @@ import { ConfirmDialog } from '../../../components/ui/Modal/ConfirmDialog';
  * If target is met exactly / standard, remark is optional.
  */
 export const isHoursKpi = (kpi: any): boolean => {
+  if (!kpi) return false;
+  if (typeof kpi === 'string') {
+    const s = kpi.toLowerCase();
+    return s.includes('hour') || s.includes('hrs');
+  }
   const name = String(kpi?.name || '').toLowerCase();
   const unit = String(kpi?.unit || '').toLowerCase();
   const target = String(kpi?.targetFromManager || '').toLowerCase();
@@ -115,6 +120,29 @@ export const isHoursKpi = (kpi: any): boolean => {
     target.includes('hour') ||
     target.includes('hrs')
   );
+};
+
+export const sanitizeKpiActualValue = (kpi: any, val: string | number): string | number => {
+  if (val === '' || val === undefined || val === null) {
+    return '';
+  }
+  if (isHoursKpi(kpi)) {
+    const sVal = String(val).trim();
+    if (sVal === '.' || sVal.endsWith('.')) {
+      return sVal;
+    }
+    const num = typeof val === 'number' ? val : parseFloat(sVal);
+    if (!isNaN(num)) {
+      return num < 0 ? 0 : sVal;
+    }
+    return '';
+  }
+  // Only allow whole integer numbers (disallow decimal values) for non-hours KPIs
+  const num = typeof val === 'number' ? Math.floor(val) : parseInt(String(val), 10);
+  if (!isNaN(num)) {
+    return num < 0 ? 0 : num;
+  }
+  return '';
 };
 
 export const isKpiRemarkMandatory = (
@@ -5470,15 +5498,7 @@ export const EvaluationTab: React.FC = () => {
   // 3. Employee Input Change & Live Recalculation
   const handleKPIChange = (kpi: any, val: string | number) => {
     if (isEmpSubmitted) return;
-    let cleanVal: string | number = '';
-
-    if (val !== '' && val !== undefined && val !== null) {
-      // Only allow whole integer numbers (disallow decimal values)
-      const num = typeof val === 'number' ? Math.floor(val) : parseInt(String(val), 10);
-      if (!isNaN(num)) {
-        cleanVal = num < 0 ? 0 : num;
-      }
-    }
+    const cleanVal = sanitizeKpiActualValue(kpi, val);
 
     const calc = calculateKPIScore(kpi, cleanVal);
     setKpiInputs(prev => {
@@ -6092,14 +6112,15 @@ export const EvaluationTab: React.FC = () => {
   const handleYearlyWeekKpiChange = (kpi: any, val: string | number) => {
     const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
     const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    const cleanVal = sanitizeKpiActualValue(kpi, val);
     setYearlyWeekKpiInputs(prev => {
       const weekInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyWeekIndex] || {};
       const current = weekInputs[kpiId] || (kpiName ? weekInputs[kpiName] : null) || {};
-      const calc = calculateKPIScore(kpi, val);
+      const calc = calculateKPIScore(kpi, cleanVal);
       const updatedItem: YearlyMonthKPIEntry = {
         ...current,
-        actualValue: val,
-        actual_value: val,
+        actualValue: cleanVal,
+        actual_value: cleanVal,
         earnedScore: calc.earnedScore,
         earned_score: calc.earnedScore
       };
@@ -6366,14 +6387,15 @@ export const EvaluationTab: React.FC = () => {
   const handleYearlyQuarterKpiChange = (kpi: any, val: string | number) => {
     const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
     const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    const cleanVal = sanitizeKpiActualValue(kpi, val);
     setYearlyQuarterKpiInputs(prev => {
       const quarterInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyQuarterIndex] || {};
       const current = quarterInputs[kpiId] || (kpiName ? quarterInputs[kpiName] : null) || {};
-      const calc = calculateKPIScore(kpi, val);
+      const calc = calculateKPIScore(kpi, cleanVal);
       const updatedItem: YearlyMonthKPIEntry = {
         ...current,
-        actualValue: val,
-        actual_value: val,
+        actualValue: cleanVal,
+        actual_value: cleanVal,
         earnedScore: calc.earnedScore,
         earned_score: calc.earnedScore
       };
@@ -6640,14 +6662,15 @@ export const EvaluationTab: React.FC = () => {
   const handleYearlyMonthKpiChange = (kpi: any, val: string | number) => {
     const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
     const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    const cleanVal = sanitizeKpiActualValue(kpi, val);
     setYearlyMonthKpiInputs(prev => {
       const monthInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyFiscalMonth] || {};
       const current = monthInputs[kpiId] || (kpiName ? monthInputs[kpiName] : null) || {};
-      const calc = calculateKPIScore(kpi, val);
+      const calc = calculateKPIScore(kpi, cleanVal);
       const updatedItem: YearlyMonthKPIEntry = {
         ...current,
-        actualValue: val,
-        actual_value: val,
+        actualValue: cleanVal,
+        actual_value: cleanVal,
         earnedScore: calc.earnedScore,
         earned_score: calc.earnedScore
       };
@@ -10271,14 +10294,7 @@ export const EvaluationTab: React.FC = () => {
   };
 
   const handleMgrRowActualChange = (kpi: KPIItem, newActualVal: string | number) => {
-    let sanitizedVal: string | number = '';
-    if (newActualVal !== '' && newActualVal !== undefined && newActualVal !== null) {
-      // Only allow whole integer numbers (disallow decimal values)
-      const num = typeof newActualVal === 'number' ? Math.floor(newActualVal) : parseInt(String(newActualVal), 10);
-      if (!isNaN(num)) {
-        sanitizedVal = num < 0 ? 0 : num;
-      }
-    }
+    const sanitizedVal = sanitizeKpiActualValue(kpi, newActualVal);
 
     setMgrKpiActuals(prev => {
       const updated = { ...prev, [kpi.id]: sanitizedVal };
@@ -12616,7 +12632,7 @@ export const EvaluationTab: React.FC = () => {
                                                     disabled={isSubmittingEmp}
                                                     onKeyDown={e => {
                                                       const blockedKeys = isHours ? ['e', 'E', '+', '-'] : ['.', ',', 'e', 'E', '+', '-'];
-                                                      if (blockedKeys.includes(e.key)) {
+                                                      if (blockedKeys.includes(e.key) || (isHours && e.key === '.' && String(val).includes('.'))) {
                                                         e.preventDefault();
                                                       }
                                                     }}
@@ -18583,7 +18599,7 @@ export const EvaluationTab: React.FC = () => {
                                                     value={currentMgrActual !== '' && currentMgrActual !== null && currentMgrActual !== undefined ? (isHours ? currentMgrActual : (typeof currentMgrActual === 'number' ? Math.floor(currentMgrActual) : (String(currentMgrActual).includes('.') ? parseInt(String(currentMgrActual), 10) : currentMgrActual))) : ''}
                                                     onKeyDown={e => {
                                                       const blockedKeys = isHours ? ['e', 'E', '+', '-'] : ['.', ',', 'e', 'E', '+', '-'];
-                                                      if (blockedKeys.includes(e.key)) {
+                                                      if (blockedKeys.includes(e.key) || (isHours && e.key === '.' && String(currentMgrActual).includes('.'))) {
                                                         e.preventDefault();
                                                       }
                                                     }}
