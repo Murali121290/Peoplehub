@@ -234,7 +234,26 @@ def apply_leave():
                 dt_to += timedelta(days=1)
             duration_hours = (dt_to - dt_from).total_seconds() / 3600.0
             duration_minutes = (dt_to - dt_from).total_seconds() / 60.0
-            
+
+            # Block duplicate Pending or Approved permission on same day
+            _perm_emp_ids = [str(employee.employee_id)]
+            if employee and employee.id:
+                _perm_emp_ids.append(str(employee.id))
+
+            existing_perm_same_day = LeaveRequest.query.filter(
+                LeaveRequest.employee_id.in_(_perm_emp_ids),
+                LeaveRequest.request_type == "Permission",
+                LeaveRequest.permission_date == leave.permission_date,
+                LeaveRequest.status.in_(["Pending", "Approved"])
+            ).first()
+
+            if existing_perm_same_day:
+                status_label = existing_perm_same_day.status.lower()
+                return jsonify({
+                    "success": False,
+                    "error": f"You already have an {status_label} permission request for {leave.permission_date}. Only one permission request per day is allowed."
+                }), 400
+
             if abs(duration_minutes - 30.0) > 0.1 and abs(duration_minutes - 60.0) > 0.1 and abs(duration_minutes - 120.0) > 0.1:
                 return jsonify({
                     "success": False,

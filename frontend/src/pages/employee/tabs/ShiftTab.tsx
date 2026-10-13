@@ -170,6 +170,21 @@ const ShiftTab: React.FC<ShiftTabProps> = ({
       return;
     }
 
+    // Block if a Pending request already exists for the same date & type
+    const hasPendingDuplicate = (Array.isArray(shiftRequests) ? shiftRequests : []).some(
+      (req: any) =>
+        String(req.employee_id) === String(currentEmployee?.employee_id) &&
+        req.status === "Pending" &&
+        req.request_type === requestType &&
+        req.from_date &&
+        req.from_date.slice(0, 10) === fromDate
+    );
+
+    if (hasPendingDuplicate) {
+      toast.error(`You already have a Pending ${requestType} request for this date. Please wait for it to be approved or rejected.`);
+      return;
+    }
+
     onSubmitShift({
       employee_id: currentEmployee.employee_id,
       employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
