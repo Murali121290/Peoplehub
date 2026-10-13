@@ -121,6 +121,22 @@ def apply_shift():
                 else:
                     category_filter = ShiftRequest.request_type.in_(["WFH", "Office"])
 
+                # Block if a Pending request already exists for the same date range & type
+                existing_pending_request = ShiftRequest.query.filter(
+                    ShiftRequest.employee_id == employee.employee_id,
+                    ShiftRequest.status == "Pending",
+                    category_filter,
+                    ShiftRequest.from_date <= req_to,
+                    ShiftRequest.to_date >= req_from
+                ).first()
+
+                if existing_pending_request:
+                    req_label = existing_pending_request.request_type or "Shift/WFH"
+                    return jsonify({
+                        "success": False,
+                        "message": f"You already have a Pending {req_label} request for {existing_pending_request.from_date}. Please wait for it to be approved or rejected before submitting a new one."
+                    }), 400
+
                 existing_approved_request = ShiftRequest.query.filter(
                     ShiftRequest.employee_id == employee.employee_id,
                     ShiftRequest.status == "Approved",

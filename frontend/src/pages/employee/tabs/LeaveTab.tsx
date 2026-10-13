@@ -738,6 +738,24 @@ const LeaveTab: React.FC<LeaveTabProps> = ({
         return;
       }
 
+      // Block duplicate Pending or Approved permission on same day (frontend guard)
+      const existingPermission = leaveRequests.find((req: any) =>
+        String(req.employee_id) === String(currentEmployee?.employee_id) &&
+        req.request_type === "Permission" &&
+        (req.status === "Pending" || req.status === "Approved") &&
+        req.permission_date === leaveForm.permissionDate
+      );
+
+      if (existingPermission) {
+        const statusLabel = existingPermission.status.toLowerCase();
+        setValidationError({
+          type: "insufficient",
+          title: "Permission Already Exists",
+          message: `You already have an ${statusLabel} permission request for ${leaveForm.permissionDate}. Only one permission request per day is allowed.`
+        });
+        return;
+      }
+
       const [fh, fm] = leaveForm.fromTime.split(":").map(Number);
       const [th, tm] = leaveForm.toTime.split(":").map(Number);
       const requestedMinutes = (th * 60 + tm) - (fh * 60 + fm);
