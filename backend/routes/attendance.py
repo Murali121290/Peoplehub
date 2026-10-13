@@ -4154,6 +4154,15 @@ def submit_regularization(employee_id):
             attendance_date=target_date
         ).first()
 
+        # Block re-submission if a regularization is already Pending or Approved
+        if attendance and attendance.is_regularization:
+            if attendance.manager_status in ("Clarification Provided", "Approved"):
+                status_label = "pending approval" if attendance.manager_status == "Clarification Provided" else "already approved"
+                return jsonify({
+                    "success": False,
+                    "error": f"A time adjustment request for {target_date} is {status_label}. You cannot re-submit until the manager rejects it."
+                }), 400
+
         msg_entry = {
             "id": f"msg_{int(datetime.now().timestamp())}",
             "sender_role": "employee",

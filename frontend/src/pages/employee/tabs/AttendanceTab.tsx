@@ -432,6 +432,17 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
       return;
     }
 
+    // Block re-submission if a regularization is already Pending or Approved
+    const rawRec = regularizingCell.rawAttendanceRecord;
+    if (rawRec?.is_regularization) {
+      const ms = rawRec.manager_status || "";
+      if (ms === "Clarification Provided" || ms === "Approved") {
+        const label = ms === "Clarification Provided" ? "pending approval" : "already approved";
+        toast.error(`A time adjustment for ${regularizingCell.dateStr} is ${label}. Please wait for the manager to reject it before re-submitting.`);
+        return;
+      }
+    }
+
     setIsSubmittingReg(true);
     try {
       const res = await apiService.put(`/attendance/submit-regularization/${targetEmpId}`, {
@@ -473,6 +484,17 @@ const AttendanceTab: React.FC<AttendanceTabProps> = ({ attendanceData: initialAt
     if (!permReason.trim()) {
       toast.error("Please enter a reason for the permission request");
       return;
+    }
+
+    // Block re-submission if employee already has a Pending or Approved permission on this date
+    if (resolvingPermissionCell.rawPermissionRecords && resolvingPermissionCell.rawPermissionRecords.length > 0) {
+      const hasPendingOrApproved = resolvingPermissionCell.rawPermissionRecords.some(
+        (p: any) => p.status === "Pending" || p.status === "Approved"
+      );
+      if (hasPendingOrApproved) {
+        toast.error(`You already have a Pending or Approved permission request for ${resolvingPermissionCell.dateStr}. Only one request per day is allowed.`);
+        return;
+      }
     }
 
     setIsSubmittingPerm(true);
