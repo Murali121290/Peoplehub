@@ -42,18 +42,27 @@ _DATE_FIELDS = {"joining_date", "dob", "last_working_date", "salary_paid_date"}
 
 def _get_redis():
     global _redis_client, _redis_init_attempted
-    if _redis_client is not None or _redis_init_attempted:
+    if _redis_client is not None:
         return _redis_client
-    _redis_init_attempted = True
-    redis_url = os.environ.get("REDIS_URL")
-    if not redis_url:
+    if _redis_init_attempted and _redis_client is None:
         return None
-    try:
-        import redis
-        _redis_client = redis.from_url(redis_url, socket_connect_timeout=1, socket_timeout=1)
-        _redis_client.ping()
-    except Exception:
-        _redis_client = None
+    _redis_init_attempted = True
+    redis_url = os.environ.get("REDIS_URL") or "redis://redis:6379/0"
+    urls_to_try = [redis_url]
+    if "localhost" in redis_url or "127.0.0.1" in redis_url:
+        urls_to_try.append("redis://redis:6379/0")
+        urls_to_try.append("redis://peoplehub_redis:6379/0")
+
+    import redis
+    for u in urls_to_try:
+        try:
+            client = redis.from_url(u, socket_connect_timeout=0.5, socket_timeout=1)
+            client.ping()
+            _redis_client = client
+            return _redis_client
+        except Exception:
+            continue
+    _redis_client = None
     return _redis_client
 
 

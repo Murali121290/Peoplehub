@@ -12,7 +12,7 @@ from utils.employee_cache import get_all_employees_cached
 
 
 def check_missed_checkins():
-    print("\n========== CHECK-IN MONITOR RUNNING ==========")
+    # print("\n========== CHECK-IN MONITOR RUNNING ==========")
 
     try:
         now = datetime.now(ZoneInfo("Asia/Kolkata"))
@@ -127,7 +127,7 @@ def check_missed_checkins():
                         print(f"Failed to emit break-end socket: {str(e)}")
 
         db.session.commit()
-        print("========== CHECK-IN MONITOR COMPLETED ==========\n")
+        # print("========== CHECK-IN MONITOR COMPLETED ==========\n")
 
     except Exception as e:
         print(f"❌ CHECK-IN MONITOR ERROR: {str(e)}")

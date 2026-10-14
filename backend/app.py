@@ -9,6 +9,17 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
+# Auto-detect Redis container inside Docker network
+redis_env = os.environ.get("REDIS_URL", "")
+if "localhost" in redis_env or "127.0.0.1" in redis_env or not redis_env:
+    try:
+        import redis
+        client = redis.from_url(redis_env or "redis://localhost:6379/0", socket_connect_timeout=0.2)
+        client.ping()
+    except Exception:
+        os.environ["REDIS_URL"] = "redis://redis:6379/0"
+
+
 # Import models & database
 from models.database import init_db, engine, db_session
 # pyrefly: ignore [missing-import]
