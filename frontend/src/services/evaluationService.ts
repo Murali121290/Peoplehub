@@ -1368,7 +1368,9 @@ export const evaluationService = {
     responseId: string,
     monthIndex: number,
     kpiEntries: Record<string, YearlyMonthKPIEntry>,
-    managerRemarks?: string
+    managerRemarks?: string,
+    explicitCategories?: KPICategory[],
+    explicitScore?: number
   ): Promise<EvaluationResponse> {
     const remoteData = await this.fetchRemoteEvaluationData();
     const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
@@ -1379,7 +1381,9 @@ export const evaluationService = {
     if (index === -1) throw new Error('Evaluation response not found');
 
     const resp = responses[index];
-    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+    const categories: KPICategory[] = explicitCategories && explicitCategories.length > 0
+      ? explicitCategories
+      : (resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES);
 
     let baseYear = new Date().getFullYear();
     if (resp.startDate) {
@@ -1394,19 +1398,27 @@ export const evaluationService = {
       monthlyRecords = initializeYearlyMonthlyRecords(baseYear);
     }
 
-    // Calculate month manager score based on categories & kpiEntries
+    // Calculate month manager score based on explicitScore or categories & kpiEntries
     let monthScore = 0;
-    categories.forEach(cat => {
-      let rawCat = 0;
-      cat.kpis.forEach(kpi => {
-        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
-        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
-        const calc = calculateKPIScore(kpi, mgrActual);
-        rawCat += calc.earnedScore;
+    if (explicitScore !== undefined && !isNaN(explicitScore) && explicitScore !== null) {
+      monthScore = Number(Math.min(100, explicitScore).toFixed(2));
+    } else {
+      categories.forEach(cat => {
+        let rawCat = 0;
+        cat.kpis.forEach(kpi => {
+          const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+          if (entry?.isWaived || (entry as any)?.fullCreditGranted) {
+            rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+          } else {
+            const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+            const calc = calculateKPIScore(kpi, mgrActual);
+            rawCat += calc.earnedScore;
+          }
+        });
+        monthScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
       });
-      monthScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
-    });
-    monthScore = Number(Math.min(100, monthScore).toFixed(2));
+      monthScore = Number(Math.min(100, monthScore).toFixed(2));
+    }
 
     const updatedMonthlyRecords = monthlyRecords.map(m => {
       if (m.monthIndex === monthIndex) {
@@ -1607,7 +1619,9 @@ export const evaluationService = {
     responseId: string,
     weekIndex: number,
     kpiEntries: Record<string, YearlyMonthKPIEntry>,
-    managerRemarks?: string
+    managerRemarks?: string,
+    explicitCategories?: KPICategory[],
+    explicitScore?: number
   ): Promise<EvaluationResponse> {
     const remoteData = await this.fetchRemoteEvaluationData();
     const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
@@ -1618,7 +1632,9 @@ export const evaluationService = {
     if (index === -1) throw new Error('Evaluation response not found');
 
     const resp = responses[index];
-    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+    const categories: KPICategory[] = explicitCategories && explicitCategories.length > 0
+      ? explicitCategories
+      : (resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES);
 
     let baseYear = new Date().getFullYear();
     if (resp.startDate) {
@@ -1633,19 +1649,27 @@ export const evaluationService = {
       weeklyRecords = initializeYearlyWeeklyRecords(baseYear);
     }
 
-    // Calculate week manager score based on categories & kpiEntries
+    // Calculate week manager score based on explicitScore or categories & kpiEntries
     let weekScore = 0;
-    categories.forEach(cat => {
-      let rawCat = 0;
-      cat.kpis.forEach(kpi => {
-        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
-        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
-        const calc = calculateKPIScore(kpi, mgrActual);
-        rawCat += calc.earnedScore;
+    if (explicitScore !== undefined && !isNaN(explicitScore) && explicitScore !== null) {
+      weekScore = Number(Math.min(100, explicitScore).toFixed(2));
+    } else {
+      categories.forEach(cat => {
+        let rawCat = 0;
+        cat.kpis.forEach(kpi => {
+          const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+          if (entry?.isWaived || (entry as any)?.fullCreditGranted) {
+            rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+          } else {
+            const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+            const calc = calculateKPIScore(kpi, mgrActual);
+            rawCat += calc.earnedScore;
+          }
+        });
+        weekScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
       });
-      weekScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
-    });
-    weekScore = Number(Math.min(100, weekScore).toFixed(2));
+      weekScore = Number(Math.min(100, weekScore).toFixed(2));
+    }
 
     const updatedWeeklyRecords = weeklyRecords.map(w => {
       if (w.weekIndex === weekIndex) {
@@ -1848,7 +1872,9 @@ export const evaluationService = {
     responseId: string,
     quarterIndex: number,
     kpiEntries: Record<string, YearlyMonthKPIEntry>,
-    managerRemarks?: string
+    managerRemarks?: string,
+    explicitCategories?: KPICategory[],
+    explicitScore?: number
   ): Promise<EvaluationResponse> {
     const remoteData = await this.fetchRemoteEvaluationData();
     const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
@@ -1859,7 +1885,9 @@ export const evaluationService = {
     if (index === -1) throw new Error('Evaluation response not found');
 
     const resp = responses[index];
-    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+    const categories: KPICategory[] = explicitCategories && explicitCategories.length > 0
+      ? explicitCategories
+      : (resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES);
 
     let baseYear = new Date().getFullYear();
     if (resp.startDate) {
@@ -1874,19 +1902,27 @@ export const evaluationService = {
       quarterlyRecords = initializeYearlyQuarterlyRecords(baseYear);
     }
 
-    // Calculate quarter manager score based on categories & kpiEntries
+    // Calculate quarter manager score based on explicitScore or categories & kpiEntries
     let quarterScore = 0;
-    categories.forEach(cat => {
-      let rawCat = 0;
-      cat.kpis.forEach(kpi => {
-        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
-        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
-        const calc = calculateKPIScore(kpi, mgrActual);
-        rawCat += calc.earnedScore;
+    if (explicitScore !== undefined && !isNaN(explicitScore) && explicitScore !== null) {
+      quarterScore = Number(Math.min(100, explicitScore).toFixed(2));
+    } else {
+      categories.forEach(cat => {
+        let rawCat = 0;
+        cat.kpis.forEach(kpi => {
+          const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+          if (entry?.isWaived || (entry as any)?.fullCreditGranted) {
+            rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+          } else {
+            const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+            const calc = calculateKPIScore(kpi, mgrActual);
+            rawCat += calc.earnedScore;
+          }
+        });
+        quarterScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
       });
-      quarterScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
-    });
-    quarterScore = Number(Math.min(100, quarterScore).toFixed(2));
+      quarterScore = Number(Math.min(100, quarterScore).toFixed(2));
+    }
 
     const updatedQuarterlyRecords = quarterlyRecords.map(q => {
       if (q.quarterIndex === quarterIndex) {
@@ -2088,7 +2124,9 @@ export const evaluationService = {
     responseId: string,
     dayIndex: number,
     kpiEntries: Record<string, YearlyMonthKPIEntry>,
-    managerRemarks?: string
+    managerRemarks?: string,
+    explicitCategories?: KPICategory[],
+    explicitScore?: number
   ): Promise<EvaluationResponse> {
     const remoteData = await this.fetchRemoteEvaluationData();
     const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
@@ -2099,7 +2137,9 @@ export const evaluationService = {
     if (index === -1) throw new Error('Evaluation response not found');
 
     const resp = responses[index];
-    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+    const categories: KPICategory[] = explicitCategories && explicitCategories.length > 0
+      ? explicitCategories
+      : (resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES);
 
     let dailyRecords: YearlyDailyRecord[] = resp.daily_records || [];
     if (!dailyRecords || dailyRecords.length === 0) {
@@ -2108,23 +2148,27 @@ export const evaluationService = {
       }
     }
 
-    // Calculate day manager score based on categories & kpiEntries
+    // Calculate day manager score based on explicitScore or categories & kpiEntries
     let dayScore = 0;
-    categories.forEach(cat => {
-      let rawCat = 0;
-      cat.kpis.forEach(kpi => {
-        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
-        if (entry?.isWaived || (entry as any)?.fullCreditGranted) {
-          rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
-        } else {
-          const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
-          const calc = calculateKPIScore(kpi, mgrActual);
-          rawCat += calc.earnedScore;
-        }
+    if (explicitScore !== undefined && !isNaN(explicitScore) && explicitScore !== null) {
+      dayScore = Number(Math.min(100, explicitScore).toFixed(2));
+    } else {
+      categories.forEach(cat => {
+        let rawCat = 0;
+        cat.kpis.forEach(kpi => {
+          const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+          if (entry?.isWaived || (entry as any)?.fullCreditGranted) {
+            rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+          } else {
+            const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+            const calc = calculateKPIScore(kpi, mgrActual);
+            rawCat += calc.earnedScore;
+          }
+        });
+        dayScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
       });
-      dayScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
-    });
-    dayScore = Number(Math.min(100, dayScore).toFixed(2));
+      dayScore = Number(Math.min(100, dayScore).toFixed(2));
+    }
 
     const updatedDailyRecords = dailyRecords.map(d => {
       if (d.dayIndex === dayIndex) {

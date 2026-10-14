@@ -424,13 +424,14 @@ export const getInsufficientStatus = (
 };
 
 const ExpandableRemarkInput: React.FC<{
+  id?: string;
   value: string;
   onChange: (val: string) => void;
   placeholder?: string;
   disabled?: boolean;
   required?: boolean;
   className?: string;
-}> = ({ value, onChange, placeholder = 'Remarks...', disabled = false, required = false, className = '' }) => {
+}> = ({ id, value, onChange, placeholder = 'Remarks...', disabled = false, required = false, className = '' }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const isLong = (value || '').length > 30 || (value || '').includes('\n');
 
@@ -451,6 +452,7 @@ const ExpandableRemarkInput: React.FC<{
   return (
     <div className="relative group w-full flex flex-col items-end">
       <textarea
+        id={id}
         rows={isExpanded ? 3 : 1}
         value={value}
         disabled={disabled}
@@ -6680,6 +6682,29 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
+    // Validate that remark is provided for any waived deliverable
+    const missingWaivedRemarks: string[] = [];
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        if (mgrWaivedShortfall[kpi.id] && !mgrKpiRemarks[kpi.id]?.trim()) {
+          missingWaivedRemarks.push(kpi.name || `Deliverable`);
+        }
+      });
+    });
+
+    if (missingWaivedRemarks.length > 0) {
+      showAlert(
+        `Please enter remarks explaining the reason for waiving shortage for:\n• ${missingWaivedRemarks.join('\n• ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      const firstMissing = selectedMgrCategories.flatMap(c => c.kpis).find(k => mgrWaivedShortfall[k.id] && !mgrKpiRemarks[k.id]?.trim());
+      if (firstMissing) {
+        const elem = document.getElementById(`mgr-remark-${firstMissing.id}`);
+        if (elem) elem.focus();
+      }
+      return;
+    }
     showConfirm(
       `Approve ${weekLabel} performance score and update Year-to-Date rolling average?`,
       async () => {
@@ -6689,7 +6714,9 @@ export const EvaluationTab: React.FC = () => {
             selectedMgrResponse.id,
             wIndex,
             payloadEntries,
-            mgrRemarks
+            mgrRemarks,
+            selectedMgrCategories,
+            mgrScore
           );
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
@@ -6991,6 +7018,29 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
+    // Validate that remark is provided for any waived deliverable
+    const missingWaivedRemarks: string[] = [];
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        if (mgrWaivedShortfall[kpi.id] && !mgrKpiRemarks[kpi.id]?.trim()) {
+          missingWaivedRemarks.push(kpi.name || `Deliverable`);
+        }
+      });
+    });
+
+    if (missingWaivedRemarks.length > 0) {
+      showAlert(
+        `Please enter remarks explaining the reason for waiving shortage for:\n• ${missingWaivedRemarks.join('\n• ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      const firstMissing = selectedMgrCategories.flatMap(c => c.kpis).find(k => mgrWaivedShortfall[k.id] && !mgrKpiRemarks[k.id]?.trim());
+      if (firstMissing) {
+        const elem = document.getElementById(`mgr-remark-${firstMissing.id}`);
+        if (elem) elem.focus();
+      }
+      return;
+    }
     showConfirm(
       `Approve ${quarterLabel} performance score and update Year-to-Date rolling average?`,
       async () => {
@@ -7000,7 +7050,9 @@ export const EvaluationTab: React.FC = () => {
             selectedMgrResponse.id,
             qIndex,
             payloadEntries,
-            mgrRemarks
+            mgrRemarks,
+            selectedMgrCategories,
+            mgrScore
           );
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
@@ -7195,8 +7247,10 @@ export const EvaluationTab: React.FC = () => {
 
   const handleToggleWaiveShortfall = (kpi: KPIItem) => {
     const kpiId = kpi.id;
+    let willBeWaived = false;
     setMgrWaivedShortfall(prev => {
-      const nextState = { ...prev, [kpiId]: !prev[kpiId] };
+      willBeWaived = !prev[kpiId];
+      const nextState = { ...prev, [kpiId]: willBeWaived };
       let totalScore = 0;
       selectedMgrCategories.forEach(cat => {
         let rawCat = 0;
@@ -7214,6 +7268,13 @@ export const EvaluationTab: React.FC = () => {
       setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
       return nextState;
     });
+
+    if (willBeWaived) {
+      setTimeout(() => {
+        const elem = document.getElementById(`mgr-remark-${kpiId}`);
+        if (elem) elem.focus();
+      }, 100);
+    }
   };
 
   const handleManagerYearlyDailyApprove = async (dIndex: number) => {
@@ -7261,6 +7322,29 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
+    // Validate that remark is provided for any waived deliverable
+    const missingWaivedRemarks: string[] = [];
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        if (mgrWaivedShortfall[kpi.id] && !mgrKpiRemarks[kpi.id]?.trim()) {
+          missingWaivedRemarks.push(kpi.name || `Deliverable`);
+        }
+      });
+    });
+
+    if (missingWaivedRemarks.length > 0) {
+      showAlert(
+        `Please enter remarks explaining the reason for waiving shortage for:\n• ${missingWaivedRemarks.join('\n• ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      const firstMissing = selectedMgrCategories.flatMap(c => c.kpis).find(k => mgrWaivedShortfall[k.id] && !mgrKpiRemarks[k.id]?.trim());
+      if (firstMissing) {
+        const elem = document.getElementById(`mgr-remark-${firstMissing.id}`);
+        if (elem) elem.focus();
+      }
+      return;
+    }
     showConfirm(
       `Approve ${dayLabel} performance score and update Year-to-Date rolling average?`,
       async () => {
@@ -7270,7 +7354,9 @@ export const EvaluationTab: React.FC = () => {
             selectedMgrResponse.id,
             dIndex,
             payloadEntries,
-            mgrRemarks
+            mgrRemarks,
+            selectedMgrCategories,
+            mgrScore
           );
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
@@ -7575,6 +7661,29 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
+    // Validate that remark is provided for any waived deliverable
+    const missingWaivedRemarks: string[] = [];
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        if (mgrWaivedShortfall[kpi.id] && !mgrKpiRemarks[kpi.id]?.trim()) {
+          missingWaivedRemarks.push(kpi.name || `Deliverable`);
+        }
+      });
+    });
+
+    if (missingWaivedRemarks.length > 0) {
+      showAlert(
+        `Please enter remarks explaining the reason for waiving shortage for:\n• ${missingWaivedRemarks.join('\n• ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      const firstMissing = selectedMgrCategories.flatMap(c => c.kpis).find(k => mgrWaivedShortfall[k.id] && !mgrKpiRemarks[k.id]?.trim());
+      if (firstMissing) {
+        const elem = document.getElementById(`mgr-remark-${firstMissing.id}`);
+        if (elem) elem.focus();
+      }
+      return;
+    }
     showConfirm(
       `Approve ${monthName} performance score and update Year-to-Date rolling average?`,
       async () => {
@@ -7584,7 +7693,9 @@ export const EvaluationTab: React.FC = () => {
             selectedMgrResponse.id,
             mIndex,
             payloadEntries,
-            mgrRemarks
+            mgrRemarks,
+            selectedMgrCategories,
+            mgrScore
           );
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
@@ -11189,7 +11300,7 @@ export const EvaluationTab: React.FC = () => {
         const currentRemark = (mgrKpiRemarks[kpi.id] || '').trim();
 
         // If manager adjusted the goal/actual away from employee's actual, remarks are required!
-        if (currentMgrActual !== empActual && !currentRemark) {
+        if ((currentMgrActual !== empActual || mgrWaivedShortfall[kpi.id]) && !currentRemark) {
           missingRemarksDeliverables.push(`"${kpi.name}"`);
         }
       });
@@ -11257,7 +11368,7 @@ export const EvaluationTab: React.FC = () => {
         const currentMgrActual = String(mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual).trim();
         const currentRemark = (mgrKpiRemarks[kpi.id] || '').trim();
 
-        if (currentMgrActual !== empActual && !currentRemark) {
+        if ((currentMgrActual !== empActual || mgrWaivedShortfall[kpi.id]) && !currentRemark) {
           missingRemarksDeliverables.push(`"${kpi.name}"`);
         }
       });
@@ -12443,9 +12554,36 @@ export const EvaluationTab: React.FC = () => {
                         <div className="px-2.5 py-1 flex items-center gap-1">
                           <span className="text-[10px] text-slate-400 font-medium">Mgr</span>
                           <strong className="text-primary-950 font-bold">
-                            {activeEmpResponse && (activeEmpResponse.status === 'approved' || activeEmpResponse.status === 'sm_final_approval' || (activeEmpResponse.managerReviewedAt && activeEmpResponse.status !== 'manager_review')) && activeEmpResponse.managerScore != null
-                              ? `${Number(activeEmpResponse.managerScore).toFixed(1)}%`
-                              : 'Pending'}
+                            {(() => {
+                              if (!activeEmpResponse) return 'Pending';
+                              if (isYearlyResponse(activeEmpResponse)) {
+                                const dRecs = getResponseDailyRecords(activeEmpResponse);
+                                const wRecs = activeEmpResponse?.weekly_records || [];
+                                const qRecs = activeEmpResponse?.quarterly_records || [];
+                                const mRecs = activeEmpResponse?.monthly_records || [];
+                                const isD = activeEmpResponse?.milestone_frequency === 'daily' || (dRecs.length > 0 && !wRecs.length && !qRecs.length && !mRecs.length);
+                                const isW = activeEmpResponse?.milestone_frequency === 'weekly' || (wRecs.length > 0 && !dRecs.length && !qRecs.length && !mRecs.length);
+                                const isQ = activeEmpResponse?.milestone_frequency === 'quarterly' || (qRecs.length > 0 && !dRecs.length && !wRecs.length && !mRecs.length);
+
+                                const curMilestone = isD
+                                  ? dRecs.find(d => d.dayIndex === activeYearlyDailyIndex)
+                                  : (isW
+                                    ? wRecs.find(w => w.weekIndex === activeYearlyWeekIndex)
+                                    : (isQ
+                                      ? qRecs.find(q => q.quarterIndex === activeYearlyQuarterIndex)
+                                      : mRecs.find(m => m.monthIndex === activeYearlyFiscalMonth)));
+
+                                if (curMilestone && curMilestone.status === 'manager_approved' && curMilestone.managerScore != null) {
+                                  return `${Number(curMilestone.managerScore).toFixed(1)}%`;
+                                }
+                                if (curMilestone && (curMilestone.status === 'submitted_to_manager' || curMilestone.status === 'pending_employee')) {
+                                  return 'Pending';
+                                }
+                              }
+                              return (activeEmpResponse.status === 'approved' || activeEmpResponse.status === 'sm_final_approval' || (activeEmpResponse.managerReviewedAt && activeEmpResponse.status !== 'manager_review')) && activeEmpResponse.managerScore != null
+                                ? `${Number(activeEmpResponse.managerScore).toFixed(1)}%`
+                                : 'Pending';
+                            })()}
                           </strong>
                         </div>
                         {isYearlyResponse(activeEmpResponse) && (
@@ -12453,8 +12591,13 @@ export const EvaluationTab: React.FC = () => {
                             <span className="text-[10px] text-teal-700 font-bold">YTD</span>
                             <strong className="text-teal-950 font-extrabold">
                               {(() => {
+                                const isD = activeEmpResponse?.milestone_frequency === 'daily' || ((getResponseDailyRecords(activeEmpResponse)).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length);
                                 const isW = activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length);
                                 const isQ = activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length);
+                                if (isD) {
+                                  const appD = getResponseDailyRecords(activeEmpResponse).filter(d => d.status === 'manager_approved');
+                                  return appD.length > 0 ? `${(appD.reduce((a, b) => a + (Number(b.managerScore) || 0), 0) / appD.length).toFixed(1)}%` : '—';
+                                }
                                 if (isW) {
                                   const appW = (activeEmpResponse?.weekly_records || []).filter(w => w.status === 'manager_approved');
                                   return appW.length > 0 ? `${(appW.reduce((a, b) => a + (Number(b.managerScore) || 0), 0) / appW.length).toFixed(0)}%` : '—';
@@ -13316,6 +13459,17 @@ export const EvaluationTab: React.FC = () => {
                                   ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                                   : (yearlyEntry?.actualValue ?? ''))
                                 : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? '')))));
+                        const isThisMilestoneApproved = Boolean(lockInfo?.isApproved);
+                        if (isThisMilestoneApproved) {
+                          const isWaived = Boolean(yearlyEntry?.isWaived || (yearlyEntry as any)?.fullCreditGranted);
+                          if (isWaived) {
+                            return sum + (Number(k.targetScore ?? k.weightage) || 0);
+                          }
+                          const mgrVal = (yearlyEntry?.managerActualValue !== undefined && yearlyEntry?.managerActualValue !== '')
+                            ? yearlyEntry.managerActualValue
+                            : val;
+                          return sum + calculateKPIScore(k, mgrVal).earnedScore;
+                        }
                         return sum + calculateKPIScore(k, val).earnedScore;
                       }, 0);
                       const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
@@ -13463,11 +13617,14 @@ export const EvaluationTab: React.FC = () => {
 
                                     const isActualModifiedByMgr = hasMgrActual && String(mgrActualVal).trim() !== String(val).trim();
                                     const mgrCalc = calculateKPIScore(kpi, hasMgrActual ? mgrActualVal : val);
-                                    const mgrEarnedScore = isYearly
-                                      ? (yearlyEntry?.managerScore !== undefined && yearlyEntry?.managerScore !== null ? Number(yearlyEntry.managerScore) : (hasMgrActual ? mgrCalc.earnedScore : null))
-                                      : ((respItem?.managerScore !== undefined && respItem?.managerScore !== null)
-                                        ? Number(respItem.managerScore)
-                                        : (hasMgrActual ? mgrCalc.earnedScore : null));
+                                    const isDeliverableWaived = Boolean(yearlyEntry?.isWaived || (yearlyEntry as any)?.fullCreditGranted);
+                                    const mgrEarnedScore = isDeliverableWaived
+                                      ? (Number(kpi.targetScore ?? kpi.weightage) || 0)
+                                      : (isYearly
+                                        ? (yearlyEntry?.managerScore !== undefined && yearlyEntry?.managerScore !== null ? Number(yearlyEntry.managerScore) : (hasMgrActual ? mgrCalc.earnedScore : null))
+                                        : ((respItem?.managerScore !== undefined && respItem?.managerScore !== null)
+                                          ? Number(respItem.managerScore)
+                                          : (hasMgrActual ? mgrCalc.earnedScore : null)));
                                     const mgrRemarks = isYearly
                                       ? (yearlyEntry?.managerRemarks || '')
                                       : (respItem?.managerRemarks ?? mgrKpiRemarks[kpi.id] ?? '');
@@ -13800,6 +13957,11 @@ export const EvaluationTab: React.FC = () => {
                                                   }`}>
                                                   {mgrEarnedScore !== null ? `${mgrEarnedScore.toFixed(2)}%` : '—'}
                                                 </span>
+                                                  {isDeliverableWaived && (
+                                                    <span className="text-[9px] font-bold uppercase text-teal-800 px-1.5 py-0.5 rounded bg-teal-100 border border-teal-300 shadow-2xs">
+                                                      WAIVED
+                                                    </span>
+                                                  )}
                                                 {mgrRemarks?.trim() && (
                                                   <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />
                                                 )}
@@ -20202,11 +20364,12 @@ export const EvaluationTab: React.FC = () => {
                                         const maxScore = Number(kpi.targetScore ?? kpi.weightage) || 0;
                                         const currentScore = calcMgr.earnedScore;
                                         const diff = Math.max(0, maxScore - currentScore);
+                                        const hasGap = diff > 0.01;
 
                                         if (isReadOnly) {
                                           return isWaived ? (
                                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-300 shadow-2xs">
-                                              <span>✔ Full Credit</span>
+                                              <span className="inline-flex items-center gap-1"><CheckIcon className="w-3 h-3" /> Full Credit</span>
                                             </span>
                                           ) : (
                                             <span className="text-slate-300 text-xs">—</span>
@@ -20216,19 +20379,25 @@ export const EvaluationTab: React.FC = () => {
                                         return (
                                           <div className="flex flex-col items-center justify-center gap-1">
                                             <label
-                                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all cursor-pointer select-none text-xs font-semibold ${
+                                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all select-none text-xs font-semibold ${
                                                 isWaived
-                                                  ? 'bg-teal-600 text-white border-teal-700 shadow-xs ring-2 ring-teal-300/40'
-                                                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-2xs'
+                                                  ? 'bg-teal-600 text-white border-teal-700 shadow-xs ring-2 ring-teal-300/40 cursor-pointer'
+                                                  : hasGap
+                                                    ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-2xs cursor-pointer'
+                                                    : 'bg-slate-100/80 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
                                               }`}
-                                              title="If available workload was limited (e.g. employee completed all available work like 1000/1200 pages), check this to grant the remaining score and award full 100% score for this deliverable."
+                                              title={
+                                                !hasGap
+                                                  ? "Target is already fully met (no shortfall exists to waive)."
+                                                  : "If available workload was limited (e.g. employee completed all available work like 1000/1200 pages), check this to grant the remaining score and award full 100% score for this deliverable."
+                                              }
                                             >
                                               <input
                                                 type="checkbox"
                                                 checked={isWaived}
-                                                disabled={!isPendingManagerReview && !isAlreadyCalibrated}
+                                                disabled={(!isPendingManagerReview && !isAlreadyCalibrated) || !hasGap}
                                                 onChange={() => handleToggleWaiveShortfall(kpi)}
-                                                className="w-3.5 h-3.5 rounded text-teal-600 focus:ring-teal-500 cursor-pointer accent-teal-600"
+                                                className={`w-3.5 h-3.5 rounded text-teal-600 focus:ring-teal-500 accent-teal-600 ${!hasGap ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
                                               />
                                               <span className="text-[11px] font-bold">
                                                 {isWaived ? 'Full Credit' : 'Waive Shortage'}
@@ -20238,30 +20407,45 @@ export const EvaluationTab: React.FC = () => {
                                               <span className="text-[10px] font-bold text-teal-700 font-mono">
                                                 {diff > 0.01 ? `+${diff.toFixed(2)}% added (${maxScore}%)` : `Full Score (${maxScore}%)`}
                                               </span>
+                                            ) : hasGap ? (
+                                              <span className="text-[9px] text-rose-500 font-bold bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                                                Gap: -{diff.toFixed(2)}%
+                                              </span>
                                             ) : (
-                                              diff > 0.01 && (
-                                                <span className="text-[9px] text-slate-400 font-medium">
-                                                  Gap: -{diff.toFixed(2)}%
-                                                </span>
-                                              )
+                                              <span className="text-[9px] text-emerald-700 font-semibold flex items-center gap-0.5"><CheckIcon className="w-2.5 h-2.5 text-emerald-600 stroke-[2.5]" /> Target Met (No Gap)</span>
                                             )}
                                           </div>
                                         );
                                       })()}
                                     </td>
-
                                     {/* Manager Remarks Column (Only rendered when NOT read-only for editing) */}
                                     {!isReadOnly && (
                                       <td className="px-5 py-3.5 min-w-[200px]">
-                                        <ExpandableRemarkInput
-                                          value={currentMgrRemark}
-                                          onChange={val => handleMgrRowRemarkChange(kpi.id, val)}
-                                          disabled={!isPendingManagerReview && !isAlreadyCalibrated}
-                                          placeholder={isGoalModified ? 'Reason for goal change...' : 'Add manager remarks...'}
-                                          className={isGoalModified && !currentMgrRemark.trim()
-                                            ? 'bg-amber-50/90 border-2 border-amber-400 focus:border-amber-600 text-slate-900 placeholder:text-amber-700 disabled:opacity-50 disabled:cursor-not-allowed'
-                                            : 'bg-slate-50 focus:bg-white border border-slate-200 focus:border-teal-500 text-slate-800 disabled:opacity-50 disabled:cursor-not-allowed'}
-                                        />
+                                        <div className="space-y-1">
+                                          <ExpandableRemarkInput
+                                            id={`mgr-remark-${kpi.id}`}
+                                            value={currentMgrRemark}
+                                            onChange={val => handleMgrRowRemarkChange(kpi.id, val)}
+                                            disabled={!isPendingManagerReview && !isAlreadyCalibrated}
+                                            placeholder={
+                                              mgrWaivedShortfall[kpi.id]
+                                                ? 'Reason for waiving shortage (Required)...'
+                                                : (isGoalModified ? 'Reason for goal change...' : 'Add manager remarks...')
+                                            }
+                                            className={
+                                              mgrWaivedShortfall[kpi.id] && !currentMgrRemark.trim()
+                                                ? 'bg-amber-50/90 border-2 border-amber-500 focus:border-amber-600 text-slate-900 placeholder:text-amber-800 ring-2 ring-amber-300/40 disabled:opacity-50 disabled:cursor-not-allowed'
+                                                : isGoalModified && !currentMgrRemark.trim()
+                                                  ? 'bg-amber-50/90 border-2 border-amber-400 focus:border-amber-600 text-slate-900 placeholder:text-amber-700 disabled:opacity-50 disabled:cursor-not-allowed'
+                                                  : 'bg-slate-50 focus:bg-white border border-slate-200 focus:border-teal-500 text-slate-800 disabled:opacity-50 disabled:cursor-not-allowed'
+                                            }
+                                          />
+                                          {mgrWaivedShortfall[kpi.id] && !currentMgrRemark.trim() && (
+                                            <span className="text-[10px] font-bold text-amber-800 flex items-center gap-1">
+                                              * Reason required for waiving shortage
+                                            </span>
+                                          )}
+                                        </div>
                                       </td>
                                     )}
                                   </tr>
