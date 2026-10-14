@@ -11,7 +11,8 @@ import {
   YearlyMonthRecord,
   YearlyMonthKPIEntry,
   YearlyWeekRecord,
-  YearlyQuarterRecord
+  YearlyQuarterRecord,
+  YearlyDailyRecord
 } from '../types/evaluation.types';
 import { calculateOverallScore, calculateKPIScore, calculateCategoryEarned, setRatingScale, getRatingScale } from './scoreService';
 
@@ -41,6 +42,38 @@ export const initializeYearlyQuarterlyRecords = (baseStartYear: number): YearlyQ
       kpiEntries: {}
     };
   });
+};
+
+export const initializeYearlyDailyRecords = (startDateStr: string, endDateStr: string): YearlyDailyRecord[] => {
+  const records: YearlyDailyRecord[] = [];
+  if (!startDateStr || !endDateStr) return records;
+  const start = new Date(startDateStr + 'T00:00:00');
+  const end = new Date(endDateStr + 'T00:00:00');
+  let current = new Date(start);
+  let index = 1;
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  while (current <= end) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dateIso = `${current.getFullYear()}-${pad(current.getMonth() + 1)}-${pad(current.getDate())}`;
+    const dayName = dayNames[current.getDay()];
+    const shortDay = dayShort[current.getDay()];
+    const dayLabel = `${pad(current.getDate())}/${pad(current.getMonth() + 1)} (${shortDay})`;
+
+    records.push({
+      dayIndex: index,
+      date: dateIso,
+      dayLabel,
+      dayName,
+      status: 'pending_employee',
+      kpiEntries: {}
+    });
+
+    current.setDate(current.getDate() + 1);
+    index++;
+  }
+  return records;
 };
 
 export const FISCAL_MONTHS = [
@@ -374,6 +407,7 @@ export const DEFAULT_KPI_CATEGORIES: KPICategory[] = [
 ];
 
 export const evaluationService = {
+  initializeYearlyDailyRecords,
   // DB Fetchers
   async fetchDBEmployees(): Promise<any[]> {
     try {
@@ -1033,7 +1067,7 @@ export const evaluationService = {
     categories: KPICategory[];
     allEmployees: any[];
     frequency?: string;
-    milestone_frequency?: 'monthly' | 'weekly' | 'quarterly' | 'annual';
+    milestone_frequency?: 'monthly' | 'weekly' | 'quarterly' | 'annual' | 'daily';
     templateKey?: string;
     templateName?: string;
   }): Promise<{ cycle: EvaluationCycle; responses: EvaluationResponse[] }> {
@@ -1047,10 +1081,12 @@ export const evaluationService = {
 
     const baseStartYear = data.startDate ? parseInt(data.startDate.slice(0, 4), 10) : new Date().getFullYear();
     const isYearly = (data.frequency || '').toLowerCase() === 'yearly' || (data.frequency || '').toLowerCase() === 'annual';
-    const subFreq = data.milestone_frequency || 'monthly';
+    const isDaily = (data.frequency || '').toLowerCase() === 'daily' || data.milestone_frequency === 'daily';
+    const subFreq = data.milestone_frequency || (isDaily ? 'daily' : ((data.frequency || '').toLowerCase() === 'weekly' ? 'weekly' : 'monthly'));
     const initialMonthlyRecords = isYearly && subFreq === 'monthly' ? initializeYearlyMonthlyRecords(baseStartYear) : undefined;
     const initialWeeklyRecords = isYearly && subFreq === 'weekly' ? initializeYearlyWeeklyRecords(baseStartYear) : undefined;
     const initialQuarterlyRecords = isYearly && subFreq === 'quarterly' ? initializeYearlyQuarterlyRecords(baseStartYear) : undefined;
+    const initialDailyRecords = isDaily ? initializeYearlyDailyRecords(data.startDate, data.endDate) : undefined;
 
     // 1. Assign to PostgreSQL kpi_evaluations table (strictly 1 row per employee)
     const token = localStorage.getItem('token') || '';
@@ -1078,6 +1114,7 @@ export const evaluationService = {
         monthly_records: initialMonthlyRecords,
         weekly_records: initialWeeklyRecords,
         quarterly_records: initialQuarterlyRecords,
+        daily_records: initialDailyRecords,
         employees: targetEmployees,
         categories: data.categories
       })
@@ -1331,7 +1368,9 @@ export const evaluationService = {
     responseId: string,
     monthIndex: number,
     kpiEntries: Record<string, YearlyMonthKPIEntry>,
-    managerRemarks?: string
+    managerRemarks?: string,
+    explicitCategories?: KPICategory[],
+    explicitScore?: number
   ): Promise<EvaluationResponse> {
     const remoteData = await this.fetchRemoteEvaluationData();
     const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
@@ -1342,7 +1381,9 @@ export const evaluationService = {
     if (index === -1) throw new Error('Evaluation response not found');
 
     const resp = responses[index];
-    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+    const categories: KPICategory[] = explicitCategories && explicitCategories.length > 0
+      ? explicitCategories
+      : (resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES);
 
     let baseYear = new Date().getFullYear();
     if (resp.startDate) {
@@ -1357,19 +1398,27 @@ export const evaluationService = {
       monthlyRecords = initializeYearlyMonthlyRecords(baseYear);
     }
 
-    // Calculate month manager score based on categories & kpiEntries
+    // Calculate month manager score based on explicitScore or categories & kpiEntries
     let monthScore = 0;
-    categories.forEach(cat => {
-      let rawCat = 0;
-      cat.kpis.forEach(kpi => {
-        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
-        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
-        const calc = calculateKPIScore(kpi, mgrActual);
-        rawCat += calc.earnedScore;
+    if (explicitScore !== undefined && !isNaN(explicitScore) && explicitScore !== null) {
+      monthScore = Number(Math.min(100, explicitScore).toFixed(2));
+    } else {
+      categories.forEach(cat => {
+        let rawCat = 0;
+        cat.kpis.forEach(kpi => {
+          const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+          if (entry?.isWaived || (entry as any)?.fullCreditGranted) {
+            rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+          } else {
+            const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+            const calc = calculateKPIScore(kpi, mgrActual);
+            rawCat += calc.earnedScore;
+          }
+        });
+        monthScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
       });
-      monthScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
-    });
-    monthScore = Number(Math.min(100, monthScore).toFixed(2));
+      monthScore = Number(Math.min(100, monthScore).toFixed(2));
+    }
 
     const updatedMonthlyRecords = monthlyRecords.map(m => {
       if (m.monthIndex === monthIndex) {
@@ -1570,7 +1619,9 @@ export const evaluationService = {
     responseId: string,
     weekIndex: number,
     kpiEntries: Record<string, YearlyMonthKPIEntry>,
-    managerRemarks?: string
+    managerRemarks?: string,
+    explicitCategories?: KPICategory[],
+    explicitScore?: number
   ): Promise<EvaluationResponse> {
     const remoteData = await this.fetchRemoteEvaluationData();
     const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
@@ -1581,7 +1632,9 @@ export const evaluationService = {
     if (index === -1) throw new Error('Evaluation response not found');
 
     const resp = responses[index];
-    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+    const categories: KPICategory[] = explicitCategories && explicitCategories.length > 0
+      ? explicitCategories
+      : (resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES);
 
     let baseYear = new Date().getFullYear();
     if (resp.startDate) {
@@ -1596,19 +1649,27 @@ export const evaluationService = {
       weeklyRecords = initializeYearlyWeeklyRecords(baseYear);
     }
 
-    // Calculate week manager score based on categories & kpiEntries
+    // Calculate week manager score based on explicitScore or categories & kpiEntries
     let weekScore = 0;
-    categories.forEach(cat => {
-      let rawCat = 0;
-      cat.kpis.forEach(kpi => {
-        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
-        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
-        const calc = calculateKPIScore(kpi, mgrActual);
-        rawCat += calc.earnedScore;
+    if (explicitScore !== undefined && !isNaN(explicitScore) && explicitScore !== null) {
+      weekScore = Number(Math.min(100, explicitScore).toFixed(2));
+    } else {
+      categories.forEach(cat => {
+        let rawCat = 0;
+        cat.kpis.forEach(kpi => {
+          const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+          if (entry?.isWaived || (entry as any)?.fullCreditGranted) {
+            rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+          } else {
+            const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+            const calc = calculateKPIScore(kpi, mgrActual);
+            rawCat += calc.earnedScore;
+          }
+        });
+        weekScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
       });
-      weekScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
-    });
-    weekScore = Number(Math.min(100, weekScore).toFixed(2));
+      weekScore = Number(Math.min(100, weekScore).toFixed(2));
+    }
 
     const updatedWeeklyRecords = weeklyRecords.map(w => {
       if (w.weekIndex === weekIndex) {
@@ -1811,7 +1872,9 @@ export const evaluationService = {
     responseId: string,
     quarterIndex: number,
     kpiEntries: Record<string, YearlyMonthKPIEntry>,
-    managerRemarks?: string
+    managerRemarks?: string,
+    explicitCategories?: KPICategory[],
+    explicitScore?: number
   ): Promise<EvaluationResponse> {
     const remoteData = await this.fetchRemoteEvaluationData();
     const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
@@ -1822,7 +1885,9 @@ export const evaluationService = {
     if (index === -1) throw new Error('Evaluation response not found');
 
     const resp = responses[index];
-    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+    const categories: KPICategory[] = explicitCategories && explicitCategories.length > 0
+      ? explicitCategories
+      : (resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES);
 
     let baseYear = new Date().getFullYear();
     if (resp.startDate) {
@@ -1837,19 +1902,27 @@ export const evaluationService = {
       quarterlyRecords = initializeYearlyQuarterlyRecords(baseYear);
     }
 
-    // Calculate quarter manager score based on categories & kpiEntries
+    // Calculate quarter manager score based on explicitScore or categories & kpiEntries
     let quarterScore = 0;
-    categories.forEach(cat => {
-      let rawCat = 0;
-      cat.kpis.forEach(kpi => {
-        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
-        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
-        const calc = calculateKPIScore(kpi, mgrActual);
-        rawCat += calc.earnedScore;
+    if (explicitScore !== undefined && !isNaN(explicitScore) && explicitScore !== null) {
+      quarterScore = Number(Math.min(100, explicitScore).toFixed(2));
+    } else {
+      categories.forEach(cat => {
+        let rawCat = 0;
+        cat.kpis.forEach(kpi => {
+          const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+          if (entry?.isWaived || (entry as any)?.fullCreditGranted) {
+            rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+          } else {
+            const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+            const calc = calculateKPIScore(kpi, mgrActual);
+            rawCat += calc.earnedScore;
+          }
+        });
+        quarterScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
       });
-      quarterScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
-    });
-    quarterScore = Number(Math.min(100, quarterScore).toFixed(2));
+      quarterScore = Number(Math.min(100, quarterScore).toFixed(2));
+    }
 
     const updatedQuarterlyRecords = quarterlyRecords.map(q => {
       if (q.quarterIndex === quarterIndex) {
@@ -1961,6 +2034,252 @@ export const evaluationService = {
     this.saveResponsesLocal(localResponses);
 
     return updated;
+  },
+
+  // Yearly / Multi-Stage Evaluation: Submit Daily Milestone Actuals by Employee
+  async submitYearlyDailyActuals(
+    responseId: string,
+    dayIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    employeeRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+
+    let dailyRecords: YearlyDailyRecord[] = resp.daily_records || [];
+    if (!dailyRecords || dailyRecords.length === 0) {
+      if (resp.startDate && resp.endDate) {
+        dailyRecords = initializeYearlyDailyRecords(resp.startDate, resp.endDate);
+      }
+    }
+
+    // Calculate day employee score based on categories & kpiEntries
+    let dayScore = 0;
+    categories.forEach(cat => {
+      let rawCat = 0;
+      cat.kpis.forEach(kpi => {
+        const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+        const actualVal = entry?.actualValue ?? entry?.actual_value ?? '';
+        const calc = calculateKPIScore(kpi, actualVal);
+        rawCat += calc.earnedScore;
+      });
+      dayScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
+    });
+    dayScore = Number(Math.min(100, dayScore).toFixed(2));
+
+    const updatedDailyRecords = dailyRecords.map(d => {
+      if (d.dayIndex === dayIndex) {
+        return {
+          ...d,
+          status: 'submitted_to_manager' as const,
+          employeeSubmittedAt: new Date().toISOString(),
+          employeeScore: dayScore,
+          employeeRemarks: employeeRemarks || '',
+          kpiEntries: { ...d.kpiEntries, ...kpiEntries }
+        };
+      }
+      return d;
+    });
+
+    const submittedOrApproved = updatedDailyRecords.filter(d => d.employeeScore !== undefined && d.status !== 'pending_employee');
+    const overallEmployeeScore = submittedOrApproved.length > 0
+      ? Number((submittedOrApproved.reduce((sum, d) => sum + (d.employeeScore || 0), 0) / submittedOrApproved.length).toFixed(2))
+      : dayScore;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      categories,
+      milestone_frequency: 'daily',
+      daily_records: updatedDailyRecords,
+      employeeOverallScore: overallEmployeeScore,
+      status: 'manager_review',
+      employeeSubmittedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
+  },
+
+  // Yearly / Multi-Stage Evaluation: Approve Daily Milestone Score by Manager
+  async approveYearlyDailyScore(
+    responseId: string,
+    dayIndex: number,
+    kpiEntries: Record<string, YearlyMonthKPIEntry>,
+    managerRemarks?: string,
+    explicitCategories?: KPICategory[],
+    explicitScore?: number
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = explicitCategories && explicitCategories.length > 0
+      ? explicitCategories
+      : (resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES);
+
+    let dailyRecords: YearlyDailyRecord[] = resp.daily_records || [];
+    if (!dailyRecords || dailyRecords.length === 0) {
+      if (resp.startDate && resp.endDate) {
+        dailyRecords = initializeYearlyDailyRecords(resp.startDate, resp.endDate);
+      }
+    }
+
+    // Calculate day manager score based on explicitScore or categories & kpiEntries
+    let dayScore = 0;
+    if (explicitScore !== undefined && !isNaN(explicitScore) && explicitScore !== null) {
+      dayScore = Number(Math.min(100, explicitScore).toFixed(2));
+    } else {
+      categories.forEach(cat => {
+        let rawCat = 0;
+        cat.kpis.forEach(kpi => {
+          const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
+          if (entry?.isWaived || (entry as any)?.fullCreditGranted) {
+            rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+          } else {
+            const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+            const calc = calculateKPIScore(kpi, mgrActual);
+            rawCat += calc.earnedScore;
+          }
+        });
+        dayScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
+      });
+      dayScore = Number(Math.min(100, dayScore).toFixed(2));
+    }
+
+    const updatedDailyRecords = dailyRecords.map(d => {
+      if (d.dayIndex === dayIndex) {
+        return {
+          ...d,
+          status: 'manager_approved' as const,
+          managerApprovedAt: new Date().toISOString(),
+          managerScore: dayScore,
+          managerRemarks: managerRemarks || '',
+          kpiEntries: { ...d.kpiEntries, ...kpiEntries }
+        };
+      }
+      return d;
+    });
+
+    const approvedDays = updatedDailyRecords.filter(d => d.status === 'manager_approved' && d.managerScore !== undefined);
+    const overallManagerScore = approvedDays.length > 0
+      ? Number((approvedDays.reduce((sum, d) => sum + (d.managerScore || 0), 0) / approvedDays.length).toFixed(2))
+      : dayScore;
+
+    const isAllApproved = updatedDailyRecords.length > 0 && approvedDays.length === updatedDailyRecords.length;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      categories,
+      milestone_frequency: 'daily',
+      daily_records: updatedDailyRecords,
+      managerScore: overallManagerScore,
+      managerReviewedAt: new Date().toISOString(),
+      managerRemarks: managerRemarks || resp.managerRemarks || '',
+      status: isAllApproved ? 'approved' : 'employee_in_progress',
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
+  },
+
+  // Yearly / Multi-Stage Evaluation: Reopen Daily Milestone by Manager (send back to employee for revision)
+  async reopenYearlyDaily(
+    responseId: string,
+    dayIndex: number,
+    reopenRemarks?: string
+  ): Promise<EvaluationResponse> {
+    const remoteData = await this.fetchRemoteEvaluationData();
+    const responses = remoteData.responses && remoteData.responses.length > 0 ? remoteData.responses : this.getResponses();
+    let index = responses.findIndex(r => r.id === responseId);
+    if (index === -1) {
+      index = responses.findIndex(r => r.id.includes(responseId) || responseId.includes(r.id));
+    }
+    if (index === -1) throw new Error('Evaluation response not found');
+
+    const resp = responses[index];
+    const categories: KPICategory[] = resp.categories && resp.categories.length > 0 ? resp.categories : DEFAULT_KPI_CATEGORIES;
+    let dailyRecords: YearlyDailyRecord[] = resp.daily_records || [];
+    if (!dailyRecords || dailyRecords.length === 0) {
+      throw new Error('No daily records found for this evaluation');
+    }
+
+    const updatedDailyRecords = dailyRecords.map(d => {
+      if (d.dayIndex === dayIndex) {
+        return {
+          ...d,
+          status: 'pending_employee' as const,
+          employeeRemarks: d.employeeRemarks || '',
+          managerRemarks: reopenRemarks || d.managerRemarks || '',
+          managerScore: undefined,
+          managerApprovedAt: undefined
+        };
+      }
+      return d;
+    });
+
+    const approvedDays = updatedDailyRecords.filter(d => d.status === 'manager_approved' && d.managerScore !== undefined);
+    const overallManagerScore = approvedDays.length > 0
+      ? Number((approvedDays.reduce((sum, d) => sum + (d.managerScore || 0), 0) / approvedDays.length).toFixed(2))
+      : undefined;
+
+    const updated: EvaluationResponse = {
+      ...resp,
+      categories,
+      milestone_frequency: 'daily',
+      daily_records: updatedDailyRecords,
+      managerScore: overallManagerScore,
+      status: 'employee_in_progress',
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.saveResponses([updated]);
+
+    const localResponses = this.getResponses();
+    const localIdx = localResponses.findIndex(r => r.id === updated.id);
+    if (localIdx >= 0) {
+      localResponses[localIdx] = updated;
+    } else {
+      localResponses.push(updated);
+    }
+    this.saveResponsesLocal(localResponses);
+
+    return updated;
   }
 };
+
 
