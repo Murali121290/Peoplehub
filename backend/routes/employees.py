@@ -25,8 +25,19 @@ def _get_redis():
     """Return a Redis client, or None if Redis is unavailable."""
     try:
         import redis
-        url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
-        return redis.from_url(url, decode_responses=True, socket_connect_timeout=1)
+        url = os.environ.get("REDIS_URL") or "redis://redis:6379/0"
+        urls_to_try = [url]
+        if "localhost" in url or "127.0.0.1" in url:
+            urls_to_try.append("redis://redis:6379/0")
+            urls_to_try.append("redis://peoplehub_redis:6379/0")
+        for u in urls_to_try:
+            try:
+                client = redis.from_url(u, decode_responses=True, socket_connect_timeout=0.5)
+                client.ping()
+                return client
+            except Exception:
+                continue
+        return None
     except Exception:
         return None
 
@@ -284,6 +295,17 @@ def create_employee():
 # ======================================
 @employees_bp.route("/", methods=["GET"])
 def get_employees():
+    import json
+    r = _get_redis()
+    cache_key = "peoplehub:api:employees:active:v2"
+    if r:
+        try:
+            cached = r.get(cache_key)
+            if cached:
+                from utils.compat import Response
+                return Response(cached, mimetype="application/json")
+        except Exception:
+            pass
 
     employees = [e for e in get_all_employees_cached() if (e.status or "").lower() != "inactive"]
 
@@ -296,89 +318,90 @@ def get_employees():
                 manager_id_map[full_name] = str(e.employee_id)
 
     today = date.today()
+    user_ids = [e.user_id for e in employees if e.user_id]
+    emp_ids = [e.employee_id for e in employees if e.employee_id]
+
+    # Batch load all attendances, users, and approved leaves (eliminates ~400 N+1 queries)
+    attendances_by_user = {}
+    users_by_id = {}
+    approved_leave_emp_ids = set()
+
+    if user_ids:
+        try:
+            atts = Attendance.query.filter(
+                Attendance.user_id.in_(user_ids),
+                Attendance.attendance_date == today
+            ).all()
+            attendances_by_user = {a.user_id: a for a in atts}
+        except Exception:
+            pass
+
+        try:
+            usrs = User.query.filter(User.id.in_(user_ids)).all()
+            users_by_id = {u.id: u for u in usrs}
+        except Exception:
+            pass
+
+    if emp_ids:
+        try:
+            leaves = LeaveRequest.query.filter(
+                LeaveRequest.employee_id.in_(emp_ids),
+                LeaveRequest.status == "Approved",
+                LeaveRequest.from_date <= today,
+                LeaveRequest.to_date >= today
+            ).all()
+            approved_leave_emp_ids = {l.employee_id for l in leaves}
+        except Exception:
+            pass
 
     result = []
-
     for emp in employees:
-
-        attendance = Attendance.query.filter_by(
-            user_id=emp.user_id,
-            attendance_date=today
-        ).first()
-
-        user = User.query.get(emp.user_id) if emp.user_id else None
+        attendance = attendances_by_user.get(emp.user_id)
+        user = users_by_id.get(emp.user_id)
         role_id = user.role_id if user else None
         team_id = emp.team_id or (user.team_id if user else None)
 
         mgr_name_clean = (emp.reporting_manager or "").strip().lower()
         resolved_mgr_id = manager_id_map.get(mgr_name_clean, "")
 
-        result.append({
+        if emp.joining_date and today < emp.joining_date:
+            status = "Not Joined"
+        elif attendance:
+            status = attendance.status
+        elif emp.employee_id in approved_leave_emp_ids:
+            status = "Leave"
+        else:
+            status = "Absent"
 
+        result.append({
             "id": emp.id,
             "user_id": emp.user_id,
             "employee_id": emp.employee_id,
-
             "first_name": emp.first_name,
             "last_name": emp.last_name,
-
             "email": emp.email,
             "phone": emp.phone,
-
             "department": emp.department,
             "designation": emp.designation,
             "access_level": user.access_level if user else None,
             "role_id": role_id,
             "team_id": team_id,
-
-            "reporting_manager":
-                emp.reporting_manager,
-            "reporting_manager_id":
-                resolved_mgr_id,
-            "manager_id":
-                resolved_mgr_id,
-
-            "shift_timing":
-                emp.shift_timing,
-
-            "work_mode":
-                emp.work_mode,
-
-            "status":
-                "Not Joined"
-                if emp.joining_date and today < emp.joining_date
-                 else (attendance.status
-                if attendance
-                else ("Leave" if LeaveRequest.query.filter(
-                    LeaveRequest.employee_id == emp.employee_id,
-                    LeaveRequest.status == "Approved",
-                    LeaveRequest.from_date <= today,
-                    LeaveRequest.to_date >= today
-                ).first() else "Absent")),
-
-            "salary":
-                emp.salary,
-
-            "sick_leave":
-                emp.sick_leave,
-
-            "casual_leave":
-                emp.casual_leave,
-
-             "privilege_leave":
-                emp.privilege_leave,
-            "earned_leave":
-                emp.privilege_leave,
-            "joining_date":
-                emp.joining_date.isoformat() if emp.joining_date else None,
-            "is_active":
-                emp.is_active if hasattr(emp, "is_active") and emp.is_active is not None else True,
-            "deactivation_reason":
-                emp.deactivation_reason if hasattr(emp, "deactivation_reason") else None,
-            "last_working_date":
-                emp.last_working_date.isoformat() if hasattr(emp, "last_working_date") and emp.last_working_date else None,
-            "profile_image":
-                get_profile_image_url(emp),
+            "reporting_manager": emp.reporting_manager,
+            "reporting_manager_id": resolved_mgr_id,
+            "manager_id": resolved_mgr_id,
+            "shift_timing": emp.shift_timing,
+            "work_mode": emp.work_mode,
+            "status": status,
+            "salary": emp.salary,
+            "sick_leave": emp.sick_leave,
+            "casual_leave": emp.casual_leave,
+            "privilege_leave": emp.privilege_leave,
+            "earned_leave": emp.privilege_leave,
+            "joining_date": emp.joining_date.isoformat() if emp.joining_date else None,
+            "is_active": emp.is_active if hasattr(emp, "is_active") and emp.is_active is not None else True,
+            "deactivation_reason": emp.deactivation_reason if hasattr(emp, "deactivation_reason") else None,
+            "last_working_date": emp.last_working_date.isoformat() if hasattr(emp, "last_working_date") and emp.last_working_date else None,
+            "profile_image": get_profile_image_url(emp),
             "basic": emp.basic,
             "hra": emp.hra,
             "lta": emp.lta,
@@ -389,7 +412,15 @@ def get_employees():
             "branch_code": emp.branch_code
         })
 
-    return jsonify(result)
+    payload_json = json.dumps(result)
+    if r:
+        try:
+            r.setex(cache_key, 20, payload_json)
+        except Exception:
+            pass
+
+    from utils.compat import Response
+    return Response(payload_json, mimetype="application/json")
 
 # ======================================
 # DOWNLOAD EMPLOYEE DOCUMENT
@@ -658,7 +689,9 @@ def get_employee_image(employee_id):
             from utils.compat import send_file
             ext = os.path.splitext(full_path)[1].lower()
             mimetype = "image/png" if ext == ".png" else "image/jpeg"
-            return send_file(full_path, mimetype=mimetype)
+            resp = send_file(full_path, mimetype=mimetype)
+            resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
+            return resp
         return jsonify({
             "error": "Image file not found on disk"
         }), 404

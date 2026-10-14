@@ -36,7 +36,7 @@ import DashboardHeaderActions from "./components/DashboardHeaderActions";
 import NotificationsPanel from "./components/NotificationsPanel";
 import { BookLoader } from "../../components/ui/Spinner";
 import { ConfirmDialog } from "../../components/ui/Modal/ConfirmDialog";
-import { evaluationService } from "../../services/evaluationService";
+import { evaluationService, initializeYearlyDailyRecords } from "../../services/evaluationService";
 import { EvaluationCheckOutPromptModal } from "./modals/EvaluationCheckOutPromptModal";
 
 const BASE_URL = `${API_URL}/api`;
@@ -1087,7 +1087,8 @@ if (isHalfDayLeave(leave.total_days)) return false;
       ];
 
       const today = new Date();
-      const todayStr = today.toISOString().split("T")[0];
+      const localTodayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const todayStr = today.toISOString().split("T")[0] || localTodayStr;
       const todayDate = today.getDate();
       const todayDay = today.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
       const currentMonth = today.getMonth(); // 0-indexed
@@ -1251,45 +1252,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
         }
       }
 
-      // 2. Employee Phase: Pending self-assessment check
-      const userResponses = (responses || []).filter((r) => {
-        if (!r) return false;
-        const isYearly = ((r as any).monthly_records && (r as any).monthly_records.length > 0) || ((r as any).weekly_records && (r as any).weekly_records.length > 0);
-        const hasPendingMonth = isYearly && (r as any).monthly_records && (r as any).monthly_records.some((m: any) => {
-          if (m.status !== 'pending_employee') return false;
-          if (m.monthIndex === 6) return true;
-          if (m.monthIndex > 6) {
-            const prev = (r as any).monthly_records.find((p: any) => p.monthIndex === m.monthIndex - 1);
-            return prev?.status === 'manager_approved';
-          }
-          return false;
-        });
-        const hasPendingWeek = isYearly && (r as any).weekly_records && (r as any).weekly_records.some((w: any) => {
-          if (w.status !== 'pending_employee') return false;
-          if (w.weekIndex === 26) return true;
-          if (w.weekIndex > 26) {
-            const prev = (r as any).weekly_records.find((p: any) => p.weekIndex === w.weekIndex - 1);
-            return prev?.status === 'manager_approved';
-          }
-          return false;
-        });
-
-        const isPending = hasPendingMonth || hasPendingWeek || r.status === 'employee_in_progress' || r.status === 'returned_to_employee' || !r.employeeSubmittedAt;
-        if (!isPending) return false;
-
-        const rEmpCode = clean(r.employeeCode);
-        const rEmpId = clean(r.employeeId);
-        const rDbId = clean((r as any).employee_id);
-        const rName = String(r.employeeName || '').trim().toLowerCase().replace(/\s+/g, ' ');
-
-        const isCodeMatch = myIds.some(id => id && (id === rEmpCode || id === rEmpId || id === rDbId));
-        const isNameMatch = myNames.some(name => name && rName && (name === rName || rName.includes(name) || name.includes(rName)));
-
-        return isCodeMatch || isNameMatch;
-      });
-
-      if (!userResponses || userResponses.length === 0) return null;
-
       // Helper: check if a date string is an approved leave day for the current employee
       const isApprovedLeaveDay = (dateStr: string): boolean => {
         if (!leaveRequests.length) return false;
@@ -1310,6 +1272,116 @@ if (isHalfDayLeave(leave.total_days)) return false;
         });
       };
 
+      const getDailyRecordsForResponse = (r: any, c?: any): any[] => {
+        if (r.daily_records && Array.isArray(r.daily_records) && r.daily_records.length > 0) {
+          return r.daily_records;
+        }
+        const startDate = r.startDate || r.start_date || c?.startDate || c?.start_date || '';
+        const endDate = r.endDate || r.end_date || c?.endDate || c?.end_date || '';
+        if (startDate && endDate) {
+          return initializeYearlyDailyRecords(startDate, endDate);
+        }
+        return [];
+      };
+
+      const isDailyResponse = (r: any, c?: any, pName?: string): boolean => {
+        const p = (pName || c?.periodName || c?.name || r?.periodName || '').toLowerCase();
+        return (
+          r?.milestone_frequency === 'daily' ||
+          r?.frequency === 'daily' ||
+          c?.frequency === 'daily' ||
+          Boolean(r?.daily_records && Array.isArray(r.daily_records) && r.daily_records.length > 0) ||
+          p.includes('daily')
+        );
+      };
+
+      let holidaysList: any[] = [];
+      try {
+        const token = localStorage.getItem('token');
+        const hRes = await fetch(`${BASE_URL}/employee/holidays?month=${today.getMonth() + 1}&year=${today.getFullYear()}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (hRes.ok) {
+          const hData = await hRes.json();
+          holidaysList = Array.isArray(hData?.current_month_schedule) ? hData.current_month_schedule : [];
+        }
+      } catch (e) {}
+
+      const isCompanyHoliday = (dateStr: string): boolean => {
+        return holidaysList.some((h: any) => {
+          const hDate = h.date ? String(h.date).split('T')[0] : '';
+          return hDate === dateStr && (h.is_holiday || h.holiday_name || h.type === 'Holiday' || h.type === 'Company Holiday');
+        });
+      };
+
+      const isApprovedLeaveOrHoliday = (dateStr: string): boolean => {
+        return isApprovedLeaveDay(dateStr) || isCompanyHoliday(dateStr);
+      };
+
+      // 2. Employee Phase: Pending self-assessment check
+      const userResponses = (responses || []).filter((r) => {
+        if (!r) return false;
+        const cycle = (cycles || []).find((c) => c.id === r.cycleId);
+        const periodName = cycle?.periodName || cycle?.name || r.periodName || "Performance Metrics";
+
+        const isDaily = isDailyResponse(r, cycle, periodName);
+
+        const isYearly = ((r as any).monthly_records && (r as any).monthly_records.length > 0) ||
+          ((r as any).weekly_records && (r as any).weekly_records.length > 0) ||
+          ((r as any).daily_records && (r as any).daily_records.length > 0) ||
+          isDaily;
+
+        const hasPendingMonth = isYearly && !isDaily && (r as any).monthly_records && (r as any).monthly_records.some((m: any) => {
+          if (m.status !== 'pending_employee') return false;
+          if (m.monthIndex === 6) return true;
+          if (m.monthIndex > 6) {
+            const prev = (r as any).monthly_records.find((p: any) => p.monthIndex === m.monthIndex - 1);
+            return prev?.status === 'manager_approved';
+          }
+          return false;
+        });
+
+        const hasPendingWeek = isYearly && !isDaily && (r as any).weekly_records && (r as any).weekly_records.some((w: any) => {
+          if (w.status !== 'pending_employee') return false;
+          if (w.weekIndex === 26) return true;
+          if (w.weekIndex > 26) {
+            const prev = (r as any).weekly_records.find((p: any) => p.weekIndex === w.weekIndex - 1);
+            return prev?.status === 'manager_approved';
+          }
+          return false;
+        });
+
+        const hasPendingDay = isDaily && (() => {
+          const dailyRecords = getDailyRecordsForResponse(r, cycle);
+          if (dailyRecords.length > 0) {
+            const todayRec = dailyRecords.find((d: any) => d.date === todayStr || d.date === localTodayStr);
+            if (todayRec) {
+              return todayRec.status === 'pending_employee';
+            }
+            const startDateStr = r.startDate || r.start_date || cycle?.startDate || '';
+            const endDateStr = r.endDate || r.end_date || cycle?.endDate || '';
+            const isTodayInCycle = (!startDateStr || todayStr >= startDateStr || localTodayStr >= startDateStr) && (!endDateStr || todayStr <= endDateStr || localTodayStr <= endDateStr);
+            return isTodayInCycle && dailyRecords.some((d: any) => d.status === 'pending_employee');
+          }
+          return r.status !== 'submitted_to_manager' && r.status !== 'manager_approved';
+        })();
+
+        const isPending = hasPendingDay || hasPendingMonth || hasPendingWeek || r.status === 'employee_in_progress' || r.status === 'returned_to_employee' || r.status === 'Assigned to Employee' || r.status === 'pending_employee' || !r.employeeSubmittedAt;
+        if (!isPending) return false;
+
+        const rEmpCode = clean(r.employeeCode);
+        const rEmpId = clean(r.employeeId);
+        const rDbId = clean((r as any).employee_id);
+        const rName = String(r.employeeName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+        const isCodeMatch = myIds.some(id => id && (id === rEmpCode || id === rEmpId || id === rDbId));
+        const isNameMatch = myNames.some(name => name && rName && (name === rName || rName.includes(name) || name.includes(rName)));
+
+        return isCodeMatch || isNameMatch;
+      });
+
+      if (!userResponses || userResponses.length === 0) return null;
+
       // Helper: find the last working day before a given date (skips weekends + approved leave days)
       const getPrevWorkingDay = (dateStr: string): string => {
         const d = new Date(dateStr);
@@ -1319,7 +1391,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
           const dayOfWeek = d.getDay();
           const dStr = d.toISOString().split("T")[0];
           const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-          const isLeave = isApprovedLeaveDay(dStr);
+          const isLeave = isApprovedLeaveOrHoliday(dStr);
           if (!isWeekend && !isLeave) return dStr;
           d.setDate(d.getDate() - 1);
           safety++;
@@ -1333,13 +1405,15 @@ if (isHalfDayLeave(leave.total_days)) return false;
         const periodName = cycle?.periodName || cycle?.name || "Performance Metrics";
         const dueDateRaw = (cycle as any)?.dueDate || (cycle as any)?.due_date || cycle?.endDate;
         const endDateStr = dueDateRaw ? dueDateRaw.split("T")[0] : todayStr;
+        const startDateRaw = cycle?.startDate || (resp as any)?.startDate || (resp as any)?.start_date;
+        const startDateStr = startDateRaw ? String(startDateRaw).split("T")[0] : "";
 
         const endDateObj = new Date(endDateStr);
         const endDay = endDateObj.getDay();
 
         const isDueToday = endDateStr === todayStr;
         const isWeekendDue = endDay === 6 || endDay === 0;
-        const isLeaveDue = !isDueToday && isApprovedLeaveDay(endDateStr);
+        const isLeaveDue = !isDueToday && isApprovedLeaveOrHoliday(endDateStr);
 
         const diffTime = endDateObj.getTime() - new Date(todayStr).getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -1347,6 +1421,51 @@ if (isHalfDayLeave(leave.total_days)) return false;
         const isPreWeekoff = todayDay === 5 && isWeekendDue && diffDays >= 0 && diffDays <= 2;
         const prevWorkingDay = (isLeaveDue || isWeekendDue) ? getPrevWorkingDay(endDateStr) : null;
         const isPreLeaveDay = Boolean(prevWorkingDay && todayStr === prevWorkingDay);
+
+        // =========================================================================
+        // 1. DAILY MILESTONE CADENCE CHECK (Priority 1)
+        // =========================================================================
+        const isDaily = isDailyResponse(resp, cycle, periodName);
+        if (isDaily) {
+          const isTodayWeekend = todayDay === 0 || todayDay === 6;
+          const isTodayLeaveOrHoliday = isApprovedLeaveOrHoliday(todayStr);
+
+          // Week-offs (Saturday & Sunday), company holidays, and approved leave days are strictly exempt from daily checkout blocking
+          if (!isTodayWeekend && !isTodayLeaveOrHoliday) {
+            const dailyRecords: any[] = getDailyRecordsForResponse(resp, cycle);
+            let isTodayPending = false;
+            let dayLabel = 'Today';
+
+            if (dailyRecords.length > 0) {
+              const todayRec = dailyRecords.find((d: any) => d.date === todayStr || d.date === localTodayStr);
+              if (todayRec) {
+                isTodayPending = todayRec.status === 'pending_employee';
+                dayLabel = todayRec.dayLabel || 'Today';
+              } else {
+                const isTodayActive = (!startDateStr || todayStr >= startDateStr || localTodayStr >= startDateStr) && (!endDateStr || todayStr <= endDateStr || localTodayStr <= endDateStr);
+                if (isTodayActive) {
+                  isTodayPending = dailyRecords.some((d: any) => d.status === 'pending_employee');
+                }
+              }
+            } else {
+              const isTodayActive = (!startDateStr || todayStr >= startDateStr || localTodayStr >= startDateStr) && (!endDateStr || todayStr <= endDateStr || localTodayStr <= endDateStr);
+              isTodayPending = isTodayActive && (resp.status === 'pending_employee' || resp.status === 'employee_in_progress' || resp.status === 'Assigned to Employee' || !resp.employeeSubmittedAt);
+            }
+
+            if (isTodayPending) {
+              return {
+                type: 'employee_eval' as const,
+                periodName: `${periodName} (${dayLabel})`,
+                dueDateText: 'Daily Evaluation Due Today',
+                canCheckOutAnyway: false, // Strict block: cannot checkout until today's daily metrics are completed
+                isPreWeekoff: isPreWeekoff || isPreLeaveDay,
+              };
+            }
+          }
+
+          // If today is exempt or already submitted/approved, do not fall through to yearly monthly checks
+          continue;
+        }
 
         const isWeekly = cycle?.frequency === 'weekly';
         const isYearly = cycle?.frequency === 'yearly' || resp.frequency === 'yearly' || (resp.monthly_records && resp.monthly_records.length > 0) || (resp.weekly_records && resp.weekly_records.length > 0) || periodName.toLowerCase().includes('annual') || periodName.toLowerCase().includes('yearly') || periodName.toLowerCase().includes('fy 20');
@@ -1371,7 +1490,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
             const dayOfWeek = curr.getDay();
             const currStr = curr.toISOString().split('T')[0];
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-            const isLeave = isApprovedLeaveDay(currStr);
+            const isLeave = isApprovedLeaveOrHoliday(currStr);
             if (!isWeekend && !isLeave) {
               count++;
             }
@@ -1390,7 +1509,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
             const dayOfWeek = curr.getDay();
             const currStr = curr.toISOString().split('T')[0];
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-            const isLeave = isApprovedLeaveDay(currStr);
+            const isLeave = isApprovedLeaveOrHoliday(currStr);
             if (!isWeekend && !isLeave) {
               count++;
             }
@@ -1575,7 +1694,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
             }
           }
         } else {
-          // Quarterly / Weekly / Daily / Other cycles
+          // Quarterly / Weekly / Other cycles
           const isQuarterlyCycle = cycle?.frequency === 'quarterly' || resp.frequency === 'quarterly' || periodName.toLowerCase().includes('q1') || periodName.toLowerCase().includes('q2') || periodName.toLowerCase().includes('q3') || periodName.toLowerCase().includes('q4');
           
           if (isQuarterlyCycle) {

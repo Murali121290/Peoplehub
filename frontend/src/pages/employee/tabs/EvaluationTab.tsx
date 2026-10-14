@@ -13,7 +13,8 @@ import {
   YearlyMonthRecord,
   YearlyMonthKPIEntry,
   YearlyWeekRecord,
-  YearlyQuarterRecord
+  YearlyQuarterRecord,
+  YearlyDailyRecord
 } from '../../../types/evaluation.types';
 import {
   evaluationService,
@@ -23,7 +24,8 @@ import {
   FISCAL_QUARTERS,
   initializeYearlyMonthlyRecords,
   initializeYearlyWeeklyRecords,
-  initializeYearlyQuarterlyRecords
+  initializeYearlyQuarterlyRecords,
+  initializeYearlyDailyRecords
 } from '../../../services/evaluationService';
 import {
   calculateKPIScore,
@@ -152,11 +154,11 @@ export const isKpiRemarkMandatory = (
   isCategoryTargetMet?: boolean
 ): boolean => {
   if (isFlaggedByEmployee) return true;
-  if (!kpi || val === '' || val === undefined || val === null) {
-    return false;
-  }
   // When category total achievement is >= 100% (target met for pooled deliverables), remarks are not mandatory
   if (isCategoryTargetMet) {
+    return false;
+  }
+  if (!kpi || val === '' || val === undefined || val === null) {
     return false;
   }
   const numericVal = typeof val === 'string' ? parseFloat(val) : Number(val);
@@ -260,24 +262,23 @@ export const getInsufficientStatus = (
   isFlaggedByEmployee?: boolean,
   isCategoryTargetMet?: boolean
 ): InsufficientStatusResult => {
-  if (val === '' || val === undefined || val === null || String(val).trim() === '') {
-    return {
-      status: 'not_filled',
-      label: 'Not Filled',
-      badgeClass: 'bg-slate-100 text-slate-500 border-slate-200'
-    };
+  const isUnfilled = val === '' || val === undefined || val === null || String(val).trim() === '';
+  const num = !isUnfilled && typeof val === 'string' ? parseFloat(val) : (!isUnfilled ? Number(val) : NaN);
+  const isZero = !isUnfilled && !isNaN(num) && num === 0;
+
+  // When category total target is met or exceeded:
+  // Unfilled or 0 deliverables in this category are completely optional and met by category coverage!
+  if (isCategoryTargetMet && !isFlaggedByEmployee) {
+    if (isUnfilled || isZero) {
+      return {
+        status: 'met',
+        label: 'Target Met',
+        badgeClass: 'bg-teal-50 text-teal-800 border-teal-200'
+      };
+    }
   }
 
-  const num = typeof val === 'string' ? parseFloat(val) : Number(val);
-  if (isNaN(num)) {
-    return {
-      status: 'not_filled',
-      label: 'Not Filled',
-      badgeClass: 'bg-slate-100 text-slate-500 border-slate-200'
-    };
-  }
-
-  if (num === 0) {
+  if (isUnfilled || isNaN(num) || isZero) {
     return {
       status: 'not_filled',
       label: 'Not Filled',
@@ -423,13 +424,14 @@ export const getInsufficientStatus = (
 };
 
 const ExpandableRemarkInput: React.FC<{
+  id?: string;
   value: string;
   onChange: (val: string) => void;
   placeholder?: string;
   disabled?: boolean;
   required?: boolean;
   className?: string;
-}> = ({ value, onChange, placeholder = 'Remarks...', disabled = false, required = false, className = '' }) => {
+}> = ({ id, value, onChange, placeholder = 'Remarks...', disabled = false, required = false, className = '' }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const isLong = (value || '').length > 30 || (value || '').includes('\n');
 
@@ -450,6 +452,7 @@ const ExpandableRemarkInput: React.FC<{
   return (
     <div className="relative group w-full flex flex-col items-end">
       <textarea
+        id={id}
         rows={isExpanded ? 3 : 1}
         value={value}
         disabled={disabled}
@@ -1041,7 +1044,7 @@ export const EvaluationTab: React.FC = () => {
 
   // Dynamic Frequency & Period Configuration State
   const [mgrPeriodType, setMgrPeriodType] = useState<'quarterly' | 'monthly' | 'weekly' | 'daily' | 'yearly'>('quarterly');
-  const [mgrSubFrequency, setMgrSubFrequency] = useState<'monthly' | 'weekly' | 'quarterly' | 'annual' | ''>('');
+  const [mgrSubFrequency, setMgrSubFrequency] = useState<'monthly' | 'weekly' | 'quarterly' | 'annual' | 'daily' | ''>('');
   const [mgrPeriodQuarter, setMgrPeriodQuarter] = useState<number>(currentQuarter); // 1, 2, 3, 4 (Stage 1..4)
   const [mgrPeriodYear, setMgrPeriodYear] = useState<number>(currentYear);
   const [mgrPeriodMonth, setMgrPeriodMonth] = useState<number>(currentMonth);
@@ -1181,11 +1184,18 @@ export const EvaluationTab: React.FC = () => {
       setMgrPeriodDueDate(autoDueDate);
     } else if (pType === 'daily') {
       const todayStr = getLocalTodayDateString();
-      const actualDue = pDue || todayStr;
-      const dueFmt = formatDisplayDate(actualDue);
-      periodStr = `Daily (${dueFmt})`;
-      formTitle = `Daily Deliverables (${dueFmt}) - ${formTeamLabel}`;
-      setMgrPeriodDueDate(actualDue);
+      const actualFrom = pFrom || todayStr;
+      const actualTo = pTo || actualFrom;
+      const fromFmt = formatDisplayDate(actualFrom);
+      const toFmt = formatDisplayDate(actualTo);
+      if (actualFrom !== actualTo) {
+        periodStr = `Daily (${fromFmt} - ${toFmt})`;
+        formTitle = `Daily Deliverables (${fromFmt} - ${toFmt}) - ${formTeamLabel}`;
+      } else {
+        periodStr = `Daily (${fromFmt})`;
+        formTitle = `Daily Deliverables (${fromFmt}) - ${formTeamLabel}`;
+      }
+      setMgrPeriodDueDate(actualTo);
     } else if (pType === 'yearly' || (pType as string) === 'annual') {
       periodStr = `FY ${pYear}-${pYear + 1} (April - March)`;
       formTitle = `FY ${pYear}-${pYear + 1} Performance Metrics - ${formTeamLabel}`;
@@ -1244,6 +1254,10 @@ export const EvaluationTab: React.FC = () => {
   const [activeMgrYearlyQuarterIndex, setActiveMgrYearlyQuarterIndex] = useState<number>(getCurrentFiscalQuarterIndex());
   const [yearlyQuarterKpiInputs, setYearlyQuarterKpiInputs] = useState<Record<number, Record<string, YearlyMonthKPIEntry>>>({});
   const [yearlyQuarterRemarks, setYearlyQuarterRemarks] = useState<Record<number, string>>({});
+  const [activeYearlyDailyIndex, setActiveYearlyDailyIndex] = useState<number>(1);
+  const [activeMgrYearlyDailyIndex, setActiveMgrYearlyDailyIndex] = useState<number>(1);
+  const [yearlyDailyKpiInputs, setYearlyDailyKpiInputs] = useState<Record<number, Record<string, YearlyMonthKPIEntry>>>({});
+  const [yearlyDailyRemarks, setYearlyDailyRemarks] = useState<Record<number, string>>({});
 
   // Manager Form State
   const [selectedMgrResponseId, setSelectedMgrResponseId] = useState<string>('');
@@ -1251,6 +1265,7 @@ export const EvaluationTab: React.FC = () => {
   const [mgrRemarks, setMgrRemarks] = useState<string>('');
   const [mgrKpiActuals, setMgrKpiActuals] = useState<Record<string, string | number>>({});
   const [mgrKpiRemarks, setMgrKpiRemarks] = useState<Record<string, string>>({});
+  const [mgrWaivedShortfall, setMgrWaivedShortfall] = useState<Record<string, boolean>>({});
   const [showManagerDeliverablesMatrix, setShowManagerDeliverablesMatrix] = useState<boolean>(false);
   const [managerFilterDept, setManagerFilterDept] = useState<string>('');
   const [mgrSearchQuery, setMgrSearchQuery] = useState<string>('');
@@ -1497,6 +1512,8 @@ export const EvaluationTab: React.FC = () => {
 
   // Sync inputs ONLY when selectedResponseId explicitly changes
   const prevResponseIdRef = React.useRef<string>('');
+  // Guard: auto-switch to My Evaluation only once on initial load, never after user has manually navigated
+  const hasAutoSwitchedRef = React.useRef<boolean>(false);
   useEffect(() => {
     if (selectedResponseId && selectedResponseId !== prevResponseIdRef.current) {
       prevResponseIdRef.current = selectedResponseId;
@@ -1680,13 +1697,19 @@ export const EvaluationTab: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-switch to "My Evaluation" tab when:
+  // Auto-switch to "My Evaluation" tab ONCE on initial page load when:
   // - User is a manager/service manager (default tab is 'manager')
   // - They have NO direct-report assigned cycles (nothing to review)
-  // - BUT they DO have a pending personal evaluation assigned to them (e.g. Vinoth's "Assigned to Employee" record)
+  // - BUT they DO have a pending personal evaluation assigned to them
   // This prevents the "E2R Under Process" overlay showing for managers who are also evaluatees.
+  // IMPORTANT: This only fires once. After the initial load, the user controls their own tab.
   useEffect(() => {
-    if (!isPageLoading && (isManager || isServiceManager) && !isHrOrAdmin && activeRole === 'manager') {
+    // Don't auto-switch while the user is on the Assign Performance Metrics page
+    if (isMgrCreateModalOpen) return;
+    // Only run once — skip if already auto-switched or if page is still loading
+    if (hasAutoSwitchedRef.current) return;
+    if (isPageLoading) return;
+    if ((isManager || isServiceManager) && !isHrOrAdmin && activeRole === 'manager') {
       const hasPendingPersonalEval = responses.some(r => {
         if (!isResponseForUser(r)) return false;
         const st = String((r as any).status || '');
@@ -1705,11 +1728,13 @@ export const EvaluationTab: React.FC = () => {
         const cMgrIds = (c.managerId || '').split(',').map((s: string) => cleanStr(s)).filter(Boolean);
         return myCode && cMgrIds.includes(myCode);
       });
+      // Mark as done regardless of outcome — don't try again after user navigates
+      hasAutoSwitchedRef.current = true;
       if (hasPendingPersonalEval && !hasDirectCycles) {
         setActiveRole('employee');
       }
     }
-  }, [isPageLoading, responses, cycles]);
+  }, [isPageLoading, responses, cycles, isMgrCreateModalOpen]);
 
   const isProjectManagementTeam = (tName: string) => {
     const n = (tName || '').toLowerCase().trim();
@@ -4202,8 +4227,8 @@ export const EvaluationTab: React.FC = () => {
       let effectiveStartDate = startDate;
       let effectiveEndDate = endDate;
       if (mgrPeriodType === 'daily') {
-        effectiveStartDate = mgrPeriodDueDate;
-        effectiveEndDate = mgrPeriodDueDate;
+        effectiveStartDate = mgrPeriodFromDate || mgrPeriodDueDate || getLocalTodayDateString();
+        effectiveEndDate = mgrPeriodToDate || mgrPeriodDueDate || effectiveStartDate;
       } else if (mgrPeriodType === 'weekly') {
         effectiveStartDate = mgrPeriodFromDate;
         effectiveEndDate = mgrPeriodToDate;
@@ -4226,12 +4251,17 @@ export const EvaluationTab: React.FC = () => {
         }
       } else if (mgrPeriodType === 'yearly' || (mgrPeriodType as string) === 'annual') {
         if (!mgrSubFrequency) {
-          showAlert('Please select a Milestone Tracking Cadence (Monthly, Weekly, Quarterly, or Annual) for the automated rollout.', 'Milestone Cadence Required');
+          showAlert('Please select a Milestone Tracking Cadence (Daily, Monthly, Weekly, Quarterly, or Annual) for the automated rollout.', 'Milestone Cadence Required');
           setIsAssigning(false);
           return;
         }
-        effectiveStartDate = `${mgrPeriodYear}-04-01`;
-        effectiveEndDate = `${mgrPeriodYear + 1}-03-31`;
+        if (mgrSubFrequency === 'daily') {
+          effectiveStartDate = mgrPeriodFromDate || `${mgrPeriodYear}-04-01`;
+          effectiveEndDate = mgrPeriodToDate || `${mgrPeriodYear + 1}-03-31`;
+        } else {
+          effectiveStartDate = `${mgrPeriodYear}-04-01`;
+          effectiveEndDate = `${mgrPeriodYear + 1}-03-31`;
+        }
       }
 
       const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.employee_id || '');
@@ -4328,7 +4358,7 @@ export const EvaluationTab: React.FC = () => {
         categories: mgrAssignCategories,
         allEmployees: dbEmployees.filter(isEmployeeActive),
         frequency: mgrPeriodType,
-        milestone_frequency: (mgrPeriodType === 'yearly' && mgrSubFrequency) ? mgrSubFrequency : undefined,
+        milestone_frequency: mgrPeriodType === 'daily' ? 'daily' : ((mgrPeriodType === 'yearly' && mgrSubFrequency) ? mgrSubFrequency : undefined),
         templateKey: activeTemplateKey,
         templateName: activeFormLabel
       });
@@ -5344,8 +5374,32 @@ export const EvaluationTab: React.FC = () => {
       lastActiveRespIdRef.current = activeEmpResponse.id;
 
       if (isYearlyResponse(activeEmpResponse)) {
-        const isWeekly = activeEmpResponse.milestone_frequency === 'weekly' || ((activeEmpResponse.weekly_records || []).length > 0 && !(activeEmpResponse.monthly_records || []).length && !(activeEmpResponse.quarterly_records || []).length);
-        const isQuarterly = activeEmpResponse.milestone_frequency === 'quarterly' || ((activeEmpResponse.quarterly_records || []).length > 0 && !(activeEmpResponse.monthly_records || []).length && !(activeEmpResponse.weekly_records || []).length);
+        const empCadence = getResponseCadence(activeEmpResponse);
+        const isDaily = empCadence === 'daily';
+        const isWeekly = empCadence === 'weekly';
+        const isQuarterly = empCadence === 'quarterly';
+
+        if (isDaily) {
+          const curDailyRecords = getResponseDailyRecords(activeEmpResponse);
+          const initialDailyInputs: Record<number, Record<string, YearlyMonthKPIEntry>> = {};
+          const initialDailyRemarks: Record<number, string> = {};
+          curDailyRecords.forEach(rec => {
+            initialDailyInputs[rec.dayIndex] = rec.kpiEntries || {};
+            initialDailyRemarks[rec.dayIndex] = rec.employeeRemarks || '';
+          });
+          setYearlyDailyKpiInputs(initialDailyInputs);
+          setYearlyDailyRemarks(initialDailyRemarks);
+
+          if (isDifferentResp || !activeYearlyDailyIndex) {
+            const todayStr = getLocalTodayDateString();
+            const todayRec = curDailyRecords.find(d => d.date === todayStr);
+            const pendingRec = curDailyRecords.find(d => d.status === 'pending_employee');
+            const targetRec = todayRec || pendingRec || curDailyRecords[0];
+            if (targetRec) {
+              setActiveYearlyDailyIndex(targetRec.dayIndex);
+            }
+          }
+        }
 
         const curRecords = activeEmpResponse.monthly_records || [];
         const initialYearlyInputs: Record<number, Record<string, YearlyMonthKPIEntry>> = {};
@@ -5442,7 +5496,7 @@ export const EvaluationTab: React.FC = () => {
           }
         }
 
-        if (isDifferentResp && !isWeekly && !isQuarterly) {
+        if (isDifferentResp && !isWeekly && !isQuarterly && !isDaily) {
           const curFiscalMonthIndex = getCurrentFiscalMonthIndex();
 
           const revisionReqMonth = curRecords.find(m => {
@@ -5737,12 +5791,80 @@ export const EvaluationTab: React.FC = () => {
     return DEFAULT_KPI_CATEGORIES;
   }, [selectedMgrResponse, selectedMgrCycle, managerTeamCategories, activeManagerCycle]);
 
+  // Robust cadence resolver prioritizing DB-assigned milestone frequency
+  const getResponseCadence = (r?: EvaluationResponse | null): 'daily' | 'weekly' | 'quarterly' | 'monthly' => {
+    if (!r) return 'monthly';
+    const mFreq = String(r.milestone_frequency || '').toLowerCase().trim();
+    if (mFreq === 'daily') return 'daily';
+    if (mFreq === 'weekly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'weekly';
+    }
+    if (mFreq === 'quarterly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'quarterly';
+    }
+    if (mFreq === 'monthly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'monthly';
+    }
+
+    const freq = String(r.frequency || (r as any).periodType || '').toLowerCase().trim();
+    if (freq === 'daily') return 'daily';
+    if (freq === 'weekly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'weekly';
+    }
+    if (freq === 'quarterly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'quarterly';
+    }
+    if (freq === 'monthly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'monthly';
+    }
+
+    // Check DB-assigned records
+    if (r.weekly_records && r.weekly_records.length > 0) {
+      if (r.daily_records) delete r.daily_records;
+      return 'weekly';
+    }
+    if (r.quarterly_records && r.quarterly_records.length > 0) {
+      if (r.daily_records) delete r.daily_records;
+      return 'quarterly';
+    }
+    if (r.daily_records && r.daily_records.length > 0) return 'daily';
+    if (r.monthly_records && r.monthly_records.length > 0) return 'monthly';
+
+    const respCycle = cycles.find(c => c.id === r.cycleId);
+    const cycleFreq = String((respCycle as any)?.frequency || '').toLowerCase().trim();
+    if (cycleFreq === 'daily') return 'daily';
+    if (cycleFreq === 'weekly') {
+      if (r.daily_records) delete r.daily_records;
+      return 'weekly';
+    }
+    if (cycleFreq === 'quarterly') return 'quarterly';
+    if (cycleFreq === 'monthly') return 'monthly';
+
+    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
+    if (p.includes('daily')) return 'daily';
+    if (p.includes('weekly') || p.includes('week')) {
+      if (r.daily_records) delete r.daily_records;
+      return 'weekly';
+    }
+    if (p.includes('quarterly') || p.includes('quarter')) return 'quarterly';
+
+    return 'monthly';
+  };
+
   // Helper to determine if an evaluation response is a Yearly / Annual evaluation
   const isYearlyResponse = (r?: EvaluationResponse | null): boolean => {
     if (!r) return false;
     if (r.monthly_records && r.monthly_records.length > 0) return true;
     if (r.weekly_records && r.weekly_records.length > 0) return true;
     if (r.quarterly_records && r.quarterly_records.length > 0) return true;
+    if (r.daily_records && r.daily_records.length > 0) return true;
+    if (r.milestone_frequency === 'daily' || r.milestone_frequency === 'weekly' || r.milestone_frequency === 'quarterly' || r.milestone_frequency === 'monthly') return true;
     const respCycle = cycles.find(c => c.id === r.cycleId);
     const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
     if (f === 'yearly' || f === 'annual') return true;
@@ -6109,6 +6231,162 @@ export const EvaluationTab: React.FC = () => {
     };
   };
 
+  const getResponseDailyRecords = (r: EvaluationResponse | null | undefined): YearlyDailyRecord[] => {
+    if (!r) return [];
+    if (getResponseCadence(r) !== 'daily') return [];
+    if (r.daily_records && r.daily_records.length > 0) return r.daily_records;
+    const startD = r.startDate || activeCycle?.startDate || '2026-10-01';
+    const endD = r.endDate || activeCycle?.endDate || '2026-10-31';
+    const records = initializeYearlyDailyRecords(startD, endD);
+    r.daily_records = records;
+    return records;
+  };
+
+  /**
+   * Evaluates sequential date lock status for Daily cycle:
+   * - Approved days: read-only, displays score.
+   * - Submitted days: under review.
+   * - Future days: locked until that date arrives.
+   * - Current & past days: editable / open for deliverables.
+   */
+  const getYearlyDailyLockInfo = (
+    dayIndex: number,
+    dailyRecords: YearlyDailyRecord[] = []
+  ) => {
+    const todayStr = getLocalTodayDateString();
+    const curRec = dailyRecords.find(d => d.dayIndex === dayIndex);
+    const isApproved = curRec?.status === 'manager_approved';
+    const isSubmitted = curRec?.status === 'submitted_to_manager';
+    const score = isApproved && curRec?.managerScore != null ? Number(curRec.managerScore) : null;
+
+    const currentDayLabel = curRec?.dayLabel || `Day ${dayIndex}`;
+    const isFutureDay = Boolean(curRec?.date && curRec.date > todayStr);
+    const isCurrentActiveDay = Boolean(curRec?.date && curRec.date === todayStr);
+
+    if (isApproved) {
+      return {
+        isLocked: false,
+        isApproved: true,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'manager_approved' as const,
+        statusLabel: 'Approved',
+        currentDayLabel,
+        score
+      };
+    }
+
+    if (isSubmitted) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: true,
+        isEditable: false,
+        status: 'submitted_to_manager' as const,
+        statusLabel: 'Submitted for Review',
+        currentDayLabel,
+        score: null
+      };
+    }
+
+    if (isFutureDay) {
+      return {
+        isLocked: true,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'locked' as const,
+        statusLabel: 'Upcoming',
+        lockReason: `${currentDayLabel} milestone is scheduled for the future and will unlock on ${curRec?.date}.`,
+        currentDayLabel,
+        score: null
+      };
+    }
+
+    return {
+      isLocked: false,
+      isApproved: false,
+      isSubmitted: false,
+      isEditable: true,
+      status: 'pending_employee' as const,
+      statusLabel: isCurrentActiveDay ? 'Current Active Day' : 'Past Period (Open)',
+      currentDayLabel,
+      score: null
+    };
+  };
+
+  const handleYearlyDailyKpiChange = (kpi: any, val: string | number) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    const cleanVal = sanitizeKpiActualValue(kpi, val);
+    setYearlyDailyKpiInputs(prev => {
+      const dayInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyDailyIndex] || {};
+      const current = dayInputs[kpiId] || (kpiName ? dayInputs[kpiName] : null) || {};
+      const calc = calculateKPIScore(kpi, cleanVal);
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        actualValue: cleanVal,
+        actual_value: cleanVal,
+        earnedScore: calc.earnedScore,
+        earned_score: calc.earnedScore
+      };
+      const nextDayInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...dayInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextDayInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyDailyIndex]: nextDayInputs
+      };
+    });
+  };
+
+  const handleYearlyDailyKpiRemarkChange = (kpi: any, remarks: string) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    setYearlyDailyKpiInputs(prev => {
+      const dayInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyDailyIndex] || {};
+      const current = dayInputs[kpiId] || (kpiName ? dayInputs[kpiName] : null) || {};
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        employeeRemarks: remarks,
+        employee_remark: remarks
+      };
+      const nextDayInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...dayInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextDayInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyDailyIndex]: nextDayInputs
+      };
+    });
+  };
+
+  const handleYearlyDailyKpiInsufficient = (kpi: any, isInsufficient: boolean) => {
+    const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
+    const kpiName = typeof kpi === 'object' ? kpi.name : '';
+    setYearlyDailyKpiInputs(prev => {
+      const dayInputs: Record<string, YearlyMonthKPIEntry> = prev[activeYearlyDailyIndex] || {};
+      const current = dayInputs[kpiId] || (kpiName ? dayInputs[kpiName] : null) || {};
+      const updatedItem: YearlyMonthKPIEntry = {
+        ...current,
+        isInsufficient
+      };
+      const nextDayInputs: Record<string, YearlyMonthKPIEntry> = {
+        ...dayInputs,
+        [kpiId]: updatedItem
+      };
+      if (kpiName) nextDayInputs[kpiName] = updatedItem;
+      return {
+        ...prev,
+        [activeYearlyDailyIndex]: nextDayInputs
+      };
+    });
+  };
+
   const handleYearlyWeekKpiChange = (kpi: any, val: string | number) => {
     const kpiId = typeof kpi === 'string' ? kpi : kpi.id;
     const kpiName = typeof kpi === 'object' ? kpi.name : '';
@@ -6199,7 +6477,28 @@ export const EvaluationTab: React.FC = () => {
     if (isSubmittingEmp) return;
     const targetWeekRecord = (activeEmpResponse.weekly_records || []).find(w => w.weekIndex === wIndex);
     const currentWeekEntries = yearlyWeekKpiInputs[wIndex] || targetWeekRecord?.kpiEntries || {};
+
+    // Validate that employee has filled in at least one deliverable
+    let hasAnyDeliverableFilled = false;
+    activeCategories.forEach(cat => {
+      cat.kpis.forEach(k => {
+        const entry = currentWeekEntries[k.id] || (k.name ? currentWeekEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        if (val !== '' && val !== undefined && val !== null && String(val).trim() !== '') {
+          const num = typeof val === 'string' ? parseFloat(val) : Number(val);
+          if (!isNaN(num) && num > 0) {
+            hasAnyDeliverableFilled = true;
+          }
+        }
+      });
+    });
+    if (!hasAnyDeliverableFilled) {
+      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
+      return;
+    }
+
     const missingRemarksKpi: string[] = [];
+    const missingDeliverablesKpi: string[] = [];
     const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
 
     activeCategories.forEach(cat => {
@@ -6222,8 +6521,14 @@ export const EvaluationTab: React.FC = () => {
         const rem = (entry?.employeeRemarks || entry?.employee_remark || '').trim();
         const isInsufficient = Boolean(entry?.isInsufficient ?? (k as any)?.isInsufficient);
 
+        const isUnfilled = val === '' || val === undefined || val === null || String(val).trim() === '';
+        // If deliverable is not filled and category target is NOT met, block submission
+        if (isUnfilled && !isCategoryTargetMet) {
+          missingDeliverablesKpi.push(`"${k.name}"`);
+        }
+
         const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient, isCategoryTargetMet);
-        if (isMandatory && !rem) {
+        if (isMandatory && !rem && !isUnfilled) {
           missingRemarksKpi.push(`"${k.name}"`);
         }
 
@@ -6242,6 +6547,15 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
+
+    if (missingDeliverablesKpi.length > 0) {
+      showAlert(
+        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
+        'Deliverables Required',
+        'warning'
+      );
+      return;
+    }
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -6289,6 +6603,7 @@ export const EvaluationTab: React.FC = () => {
     const nextActuals: Record<string, string | number> = {};
     const nextRemarks: Record<string, string> = {};
 
+    const nextWaived: Record<string, boolean> = {};
     selectedMgrCategories.forEach(cat => {
       cat.kpis.forEach(kpi => {
         const entry = curWeekRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeekRec?.kpiEntries?.[kpi.name] : null);
@@ -6296,19 +6611,25 @@ export const EvaluationTab: React.FC = () => {
         const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
         nextActuals[kpi.id] = mgrActual;
         nextRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+        nextWaived[kpi.id] = Boolean(entry?.isWaived || entry?.fullCreditGranted);
       });
     });
 
     setMgrKpiActuals(nextActuals);
     setMgrKpiRemarks(nextRemarks);
+    setMgrWaivedShortfall(nextWaived);
 
     let totalScore = 0;
     selectedMgrCategories.forEach(cat => {
       let rawCat = 0;
       cat.kpis.forEach(kpi => {
-        const actualVal = nextActuals[kpi.id];
-        const calc = calculateKPIScore(kpi, actualVal);
-        rawCat += calc.earnedScore;
+        if (nextWaived[kpi.id]) {
+          rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+        } else {
+          const actualVal = nextActuals[kpi.id];
+          const calc = calculateKPIScore(kpi, actualVal);
+          rawCat += calc.earnedScore;
+        }
       });
       totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
@@ -6333,8 +6654,10 @@ export const EvaluationTab: React.FC = () => {
         const empScore = respEntry?.earnedScore ?? (respEntry as any)?.earned_score ?? (empActual !== '' ? calculateKPIScore(kpi, empActual).earnedScore : 0);
         const empRem = respEntry?.employeeRemarks ?? (respEntry as any)?.employee_remarks ?? (respEntry as any)?.employee_remark ?? (respEntry as any)?.remarks ?? '';
         const isInsuff = Boolean(respEntry?.isInsufficient ?? (respEntry as any)?.is_insufficient);
+        const isWaived = Boolean(mgrWaivedShortfall[kpi.id]);
         const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
         const calc = calculateKPIScore(kpi, mgrActual);
+        const finalScore = isWaived ? (Number(kpi.targetScore ?? kpi.weightage) || 0) : calc.earnedScore;
         payloadEntries[kpi.id] = {
           actualValue: empActual,
           actual_value: empActual,
@@ -6346,10 +6669,12 @@ export const EvaluationTab: React.FC = () => {
           is_insufficient: isInsuff,
           managerActualValue: mgrActual,
           manager_actual_pm: mgrActual,
-          managerScore: Number(calc.earnedScore.toFixed(2)),
-          manager_score: Number(calc.earnedScore.toFixed(2)),
+          managerScore: Number(finalScore.toFixed(2)),
+          manager_score: Number(finalScore.toFixed(2)),
           managerRemarks: mgrKpiRemarks[kpi.id] || '',
-          manager_remark: mgrKpiRemarks[kpi.id] || ''
+          manager_remark: mgrKpiRemarks[kpi.id] || '',
+          isWaived: isWaived,
+          fullCreditGranted: isWaived
         };
         if (kpi.name) {
           payloadEntries[kpi.name] = payloadEntries[kpi.id];
@@ -6357,6 +6682,29 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
+    // Validate that remark is provided for any waived deliverable
+    const missingWaivedRemarks: string[] = [];
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        if (mgrWaivedShortfall[kpi.id] && !mgrKpiRemarks[kpi.id]?.trim()) {
+          missingWaivedRemarks.push(kpi.name || `Deliverable`);
+        }
+      });
+    });
+
+    if (missingWaivedRemarks.length > 0) {
+      showAlert(
+        `Please enter remarks explaining the reason for waiving shortage for:\n• ${missingWaivedRemarks.join('\n• ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      const firstMissing = selectedMgrCategories.flatMap(c => c.kpis).find(k => mgrWaivedShortfall[k.id] && !mgrKpiRemarks[k.id]?.trim());
+      if (firstMissing) {
+        const elem = document.getElementById(`mgr-remark-${firstMissing.id}`);
+        if (elem) elem.focus();
+      }
+      return;
+    }
     showConfirm(
       `Approve ${weekLabel} performance score and update Year-to-Date rolling average?`,
       async () => {
@@ -6366,7 +6714,9 @@ export const EvaluationTab: React.FC = () => {
             selectedMgrResponse.id,
             wIndex,
             payloadEntries,
-            mgrRemarks
+            mgrRemarks,
+            selectedMgrCategories,
+            mgrScore
           );
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
@@ -6474,7 +6824,28 @@ export const EvaluationTab: React.FC = () => {
     if (isSubmittingEmp) return;
     const targetQuarterRecord = (activeEmpResponse.quarterly_records || []).find(q => q.quarterIndex === qIndex);
     const currentQuarterEntries = yearlyQuarterKpiInputs[qIndex] || targetQuarterRecord?.kpiEntries || {};
+
+    // Validate that employee has filled in at least one deliverable
+    let hasAnyDeliverableFilled = false;
+    activeCategories.forEach(cat => {
+      cat.kpis.forEach(k => {
+        const entry = currentQuarterEntries[k.id] || (k.name ? currentQuarterEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        if (val !== '' && val !== undefined && val !== null && String(val).trim() !== '') {
+          const num = typeof val === 'string' ? parseFloat(val) : Number(val);
+          if (!isNaN(num) && num > 0) {
+            hasAnyDeliverableFilled = true;
+          }
+        }
+      });
+    });
+    if (!hasAnyDeliverableFilled) {
+      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
+      return;
+    }
+
     const missingRemarksKpi: string[] = [];
+    const missingDeliverablesKpi: string[] = [];
     const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
 
     activeCategories.forEach(cat => {
@@ -6497,8 +6868,14 @@ export const EvaluationTab: React.FC = () => {
         const rem = (entry?.employeeRemarks || entry?.employee_remark || '').trim();
         const isInsufficient = Boolean(entry?.isInsufficient ?? (k as any)?.isInsufficient);
 
+        const isUnfilled = val === '' || val === undefined || val === null || String(val).trim() === '';
+        // If deliverable is not filled and category target is NOT met, block submission
+        if (isUnfilled && !isCategoryTargetMet) {
+          missingDeliverablesKpi.push(`"${k.name}"`);
+        }
+
         const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient, isCategoryTargetMet);
-        if (isMandatory && !rem) {
+        if (isMandatory && !rem && !isUnfilled) {
           missingRemarksKpi.push(`"${k.name}"`);
         }
 
@@ -6517,6 +6894,15 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
+
+    if (missingDeliverablesKpi.length > 0) {
+      showAlert(
+        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
+        'Deliverables Required',
+        'warning'
+      );
+      return;
+    }
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -6632,6 +7018,29 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
+    // Validate that remark is provided for any waived deliverable
+    const missingWaivedRemarks: string[] = [];
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        if (mgrWaivedShortfall[kpi.id] && !mgrKpiRemarks[kpi.id]?.trim()) {
+          missingWaivedRemarks.push(kpi.name || `Deliverable`);
+        }
+      });
+    });
+
+    if (missingWaivedRemarks.length > 0) {
+      showAlert(
+        `Please enter remarks explaining the reason for waiving shortage for:\n• ${missingWaivedRemarks.join('\n• ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      const firstMissing = selectedMgrCategories.flatMap(c => c.kpis).find(k => mgrWaivedShortfall[k.id] && !mgrKpiRemarks[k.id]?.trim());
+      if (firstMissing) {
+        const elem = document.getElementById(`mgr-remark-${firstMissing.id}`);
+        if (elem) elem.focus();
+      }
+      return;
+    }
     showConfirm(
       `Approve ${quarterLabel} performance score and update Year-to-Date rolling average?`,
       async () => {
@@ -6641,7 +7050,9 @@ export const EvaluationTab: React.FC = () => {
             selectedMgrResponse.id,
             qIndex,
             payloadEntries,
-            mgrRemarks
+            mgrRemarks,
+            selectedMgrCategories,
+            mgrScore
           );
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
@@ -6654,6 +7065,310 @@ export const EvaluationTab: React.FC = () => {
         }
       },
       `Approve ${quarterLabel} Milestone`,
+      'info',
+      'Approve & Save Milestone'
+    );
+  };
+
+  const handleYearlyDailySubmit = async (dIndex: number) => {
+    if (!activeEmpResponse) return;
+    const curDailyRecords = getResponseDailyRecords(activeEmpResponse);
+    const lockInfo = getYearlyDailyLockInfo(dIndex, curDailyRecords);
+    if (lockInfo.isLocked) {
+      showAlert(lockInfo.lockReason || `Day ${dIndex} milestone is locked.`, 'Milestone Locked', 'warning');
+      return;
+    }
+    if (lockInfo.isApproved) {
+      showAlert(`Deliverables for ${lockInfo.currentDayLabel} have already been approved by your Manager.`, 'Already Approved');
+      return;
+    }
+    if (lockInfo.isSubmitted) {
+      showAlert(`Deliverables for ${lockInfo.currentDayLabel} have already been submitted to your Manager for review.`, 'Already Submitted');
+      return;
+    }
+    if (isSubmittingEmp) return;
+
+    const targetDayRecord = curDailyRecords.find(d => d.dayIndex === dIndex);
+    const currentDayEntries = yearlyDailyKpiInputs[dIndex] || targetDayRecord?.kpiEntries || {};
+
+    // Validate that employee has filled in at least one deliverable
+    let hasAnyDeliverableFilled = false;
+    activeCategories.forEach(cat => {
+      cat.kpis.forEach(k => {
+        const entry = currentDayEntries[k.id] || (k.name ? currentDayEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        if (val !== '' && val !== undefined && val !== null && String(val).trim() !== '') {
+          const num = typeof val === 'string' ? parseFloat(val) : Number(val);
+          if (!isNaN(num) && num > 0) {
+            hasAnyDeliverableFilled = true;
+          }
+        }
+      });
+    });
+    if (!hasAnyDeliverableFilled) {
+      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
+      return;
+    }
+
+    const missingRemarksKpi: string[] = [];
+    const missingDeliverablesKpi: string[] = [];
+    const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
+
+    activeCategories.forEach(cat => {
+      let rawCatEarned = 0;
+      cat.kpis.forEach(k => {
+        const entry = currentDayEntries[k.id] || (k.name ? currentDayEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        if (val !== '' && val !== undefined && val !== null) {
+          rawCatEarned += calculateKPIScore(k, val).earnedScore;
+        }
+      });
+      const kpisWeightSum = cat.kpis.reduce((sum, k) => sum + (Number(k.targetScore ?? k.weightage) || 0), 0);
+      const isPooledCategory = kpisWeightSum > Number(cat.weightage);
+      const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
+      const isCategoryTargetMet = isPooledCategory ? rawCatEarned >= 100 : (catEarned >= Number(cat.weightage) && Number(cat.weightage) > 0);
+
+      cat.kpis.forEach(k => {
+        const entry = currentDayEntries[k.id] || (k.name ? currentDayEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        const rem = (entry?.employeeRemarks || entry?.employee_remark || '').trim();
+        const isInsufficient = Boolean(entry?.isInsufficient ?? (k as any)?.isInsufficient);
+
+        const isUnfilled = val === '' || val === undefined || val === null || String(val).trim() === '';
+        // If deliverable is not filled and category target is NOT met, block submission
+        if (isUnfilled && !isCategoryTargetMet) {
+          missingDeliverablesKpi.push(`"${k.name}"`);
+        }
+
+        const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient, isCategoryTargetMet);
+        if (isMandatory && !rem && !isUnfilled) {
+          missingRemarksKpi.push(`"${k.name}"`);
+        }
+
+        const calc = calculateKPIScore(k, val);
+        payloadEntries[k.id] = {
+          actualValue: val,
+          actual_value: val,
+          earnedScore: calc.earnedScore,
+          earned_score: calc.earnedScore,
+          employeeRemarks: rem,
+          employee_remark: rem,
+          isInsufficient
+        };
+        if (k.name) {
+          payloadEntries[k.name] = payloadEntries[k.id];
+        }
+      });
+    });
+
+    if (missingDeliverablesKpi.length > 0) {
+      showAlert(
+        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
+        'Deliverables Required',
+        'warning'
+      );
+      return;
+    }
+
+    if (missingRemarksKpi.length > 0) {
+      showAlert(
+        `Remarks are mandatory for deliverables that are higher/lower than target or selected. Please provide remarks for: ${missingRemarksKpi.join(', ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      return;
+    }
+
+    const dayLabel = targetDayRecord?.dayLabel || `Day ${dIndex}`;
+    const remarks = yearlyDailyRemarks[dIndex] || `${dayLabel} Daily Progress Actuals`;
+
+    showConfirm(
+      `Submit ${dayLabel} deliverables to your Manager for review and scoring?`,
+      async () => {
+        try {
+          setIsSubmittingEmp(true);
+          const updatedResp = await evaluationService.submitYearlyDailyActuals(
+            activeEmpResponse.id,
+            dIndex,
+            payloadEntries,
+            remarks
+          );
+          setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+          setSelectedResponseId(updatedResp.id);
+          await loadAllData();
+          showToast(`${dayLabel} deliverables successfully submitted to Manager!`);
+        } catch (err: any) {
+          showAlert(`Failed to submit daily actuals: ${err?.message || 'Unknown error'}`, 'Submission Error');
+        } finally {
+          setIsSubmittingEmp(false);
+        }
+      },
+      `Submit ${dayLabel} Milestone`,
+      'info',
+      'Submit to Manager'
+    );
+  };
+
+  const switchMgrYearlyDay = (dayIdx: number) => {
+    setActiveMgrYearlyDailyIndex(dayIdx);
+    if (!selectedMgrResponse) return;
+    const curDailyRec = getResponseDailyRecords(selectedMgrResponse).find(d => d.dayIndex === dayIdx);
+    const nextActuals: Record<string, string | number> = {};
+    const nextRemarks: Record<string, string> = {};
+    const nextWaived: Record<string, boolean> = {};
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const entry = curDailyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curDailyRec?.kpiEntries?.[kpi.name] : null);
+        nextActuals[kpi.id] = entry?.managerActualValue ?? entry?.actualValue ?? '';
+        nextRemarks[kpi.id] = entry?.managerRemarks ?? '';
+        nextWaived[kpi.id] = Boolean(entry?.isWaived || entry?.fullCreditGranted);
+      });
+    });
+    setMgrKpiActuals(nextActuals);
+    setMgrKpiRemarks(nextRemarks);
+    setMgrWaivedShortfall(nextWaived);
+    let totalScore = 0;
+    selectedMgrCategories.forEach(cat => {
+      let rawCat = 0;
+      cat.kpis.forEach(kpi => {
+        if (nextWaived[kpi.id]) {
+          rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+        } else {
+          const actualVal = nextActuals[kpi.id];
+          const calc = calculateKPIScore(kpi, actualVal);
+          rawCat += calc.earnedScore;
+        }
+      });
+      totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
+    });
+    setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
+    setMgrRemarks(curDailyRec?.managerRemarks || '');
+  };
+
+  const handleToggleWaiveShortfall = (kpi: KPIItem) => {
+    const kpiId = kpi.id;
+    let willBeWaived = false;
+    setMgrWaivedShortfall(prev => {
+      willBeWaived = !prev[kpiId];
+      const nextState = { ...prev, [kpiId]: willBeWaived };
+      let totalScore = 0;
+      selectedMgrCategories.forEach(cat => {
+        let rawCat = 0;
+        cat.kpis.forEach(item => {
+          if (nextState[item.id]) {
+            rawCat += (Number(item.targetScore ?? item.weightage) || 0);
+          } else {
+            const actualVal = mgrKpiActuals[item.id] !== undefined ? mgrKpiActuals[item.id] : ((item.name && mgrKpiActuals[item.name] !== undefined) ? mgrKpiActuals[item.name] : '');
+            const calc = calculateKPIScore(item, actualVal);
+            rawCat += calc.earnedScore;
+          }
+        });
+        totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
+      });
+      setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
+      return nextState;
+    });
+
+    if (willBeWaived) {
+      setTimeout(() => {
+        const elem = document.getElementById(`mgr-remark-${kpiId}`);
+        if (elem) elem.focus();
+      }, 100);
+    }
+  };
+
+  const handleManagerYearlyDailyApprove = async (dIndex: number) => {
+    if (!selectedMgrResponseId || !selectedMgrResponse) return;
+    const curDailyRec = getResponseDailyRecords(selectedMgrResponse).find(d => d.dayIndex === dIndex);
+    if (curDailyRec?.status !== 'submitted_to_manager' && curDailyRec?.status !== 'manager_approved') {
+      showAlert('This daily milestone has not been submitted by the employee yet.', 'Cannot Approve');
+      return;
+    }
+    const dayLabel = curDailyRec?.dayLabel || `Day ${dIndex}`;
+    const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
+
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        const respEntry = curDailyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curDailyRec?.kpiEntries?.[kpi.name] : null);
+        const empActual = respEntry?.actualValue ?? respEntry?.actual_value ?? '';
+        const empScore = respEntry?.earnedScore ?? (respEntry as any)?.earned_score ?? (empActual !== '' ? calculateKPIScore(kpi, empActual).earnedScore : 0);
+        const empRem = respEntry?.employeeRemarks ?? (respEntry as any)?.employee_remarks ?? (respEntry as any)?.employee_remark ?? (respEntry as any)?.remarks ?? '';
+        const isInsuff = Boolean(respEntry?.isInsufficient ?? (respEntry as any)?.is_insufficient);
+        const isWaived = Boolean(mgrWaivedShortfall[kpi.id]);
+        const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
+        const calc = calculateKPIScore(kpi, mgrActual);
+        const finalScore = isWaived ? (Number(kpi.targetScore ?? kpi.weightage) || 0) : calc.earnedScore;
+        payloadEntries[kpi.id] = {
+          actualValue: empActual,
+          actual_value: empActual,
+          earnedScore: empScore,
+          earned_score: empScore,
+          employeeRemarks: empRem,
+          employee_remark: empRem,
+          isInsufficient: isInsuff,
+          is_insufficient: isInsuff,
+          managerActualValue: mgrActual,
+          manager_actual_pm: mgrActual,
+          managerScore: Number(finalScore.toFixed(2)),
+          manager_score: Number(finalScore.toFixed(2)),
+          managerRemarks: mgrKpiRemarks[kpi.id] || '',
+          manager_remark: mgrKpiRemarks[kpi.id] || '',
+          isWaived: isWaived,
+          fullCreditGranted: isWaived
+        };
+        if (kpi.name) {
+          payloadEntries[kpi.name] = payloadEntries[kpi.id];
+        }
+      });
+    });
+
+    // Validate that remark is provided for any waived deliverable
+    const missingWaivedRemarks: string[] = [];
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        if (mgrWaivedShortfall[kpi.id] && !mgrKpiRemarks[kpi.id]?.trim()) {
+          missingWaivedRemarks.push(kpi.name || `Deliverable`);
+        }
+      });
+    });
+
+    if (missingWaivedRemarks.length > 0) {
+      showAlert(
+        `Please enter remarks explaining the reason for waiving shortage for:\n• ${missingWaivedRemarks.join('\n• ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      const firstMissing = selectedMgrCategories.flatMap(c => c.kpis).find(k => mgrWaivedShortfall[k.id] && !mgrKpiRemarks[k.id]?.trim());
+      if (firstMissing) {
+        const elem = document.getElementById(`mgr-remark-${firstMissing.id}`);
+        if (elem) elem.focus();
+      }
+      return;
+    }
+    showConfirm(
+      `Approve ${dayLabel} performance score and update Year-to-Date rolling average?`,
+      async () => {
+        try {
+          setIsActionLoading(true);
+          const updatedResp = await evaluationService.approveYearlyDailyScore(
+            selectedMgrResponse.id,
+            dIndex,
+            payloadEntries,
+            mgrRemarks,
+            selectedMgrCategories,
+            mgrScore
+          );
+          setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
+          await loadAllData();
+          showToast(`${dayLabel} milestone score approved successfully!`);
+          setSelectedMgrResponseId('');
+        } catch (err: any) {
+          showAlert(`Failed to approve daily milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+      `Approve ${dayLabel} Milestone`,
       'info',
       'Approve & Save Milestone'
     );
@@ -6749,7 +7464,28 @@ export const EvaluationTab: React.FC = () => {
     if (isSubmittingEmp) return;
     const targetMonthRecord = (activeEmpResponse.monthly_records || []).find(m => m.monthIndex === mIndex);
     const currentMonthEntries = yearlyMonthKpiInputs[mIndex] || targetMonthRecord?.kpiEntries || {};
+
+    // Validate that employee has filled in at least one deliverable
+    let hasAnyDeliverableFilled = false;
+    activeCategories.forEach(cat => {
+      cat.kpis.forEach(k => {
+        const entry = currentMonthEntries[k.id] || (k.name ? currentMonthEntries[k.name] : null);
+        const val = entry?.actualValue !== undefined && entry?.actualValue !== null ? entry.actualValue : (entry?.actual_value ?? '');
+        if (val !== '' && val !== undefined && val !== null && String(val).trim() !== '') {
+          const num = typeof val === 'string' ? parseFloat(val) : Number(val);
+          if (!isNaN(num) && num > 0) {
+            hasAnyDeliverableFilled = true;
+          }
+        }
+      });
+    });
+    if (!hasAnyDeliverableFilled) {
+      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
+      return;
+    }
+
     const missingRemarksKpi: string[] = [];
+    const missingDeliverablesKpi: string[] = [];
     const payloadEntries: Record<string, YearlyMonthKPIEntry> = {};
 
     activeCategories.forEach(cat => {
@@ -6772,8 +7508,14 @@ export const EvaluationTab: React.FC = () => {
         const rem = (entry?.employeeRemarks || entry?.employee_remark || '').trim();
         const isInsufficient = Boolean(entry?.isInsufficient ?? (k as any)?.isInsufficient);
 
+        const isUnfilled = val === '' || val === undefined || val === null || String(val).trim() === '';
+        // If deliverable is not filled and category target is NOT met, block submission
+        if (isUnfilled && !isCategoryTargetMet) {
+          missingDeliverablesKpi.push(`"${k.name}"`);
+        }
+
         const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient, isCategoryTargetMet);
-        if (isMandatory && !rem) {
+        if (isMandatory && !rem && !isUnfilled) {
           missingRemarksKpi.push(`"${k.name}"`);
         }
 
@@ -6792,6 +7534,15 @@ export const EvaluationTab: React.FC = () => {
         }
       });
     });
+
+    if (missingDeliverablesKpi.length > 0) {
+      showAlert(
+        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
+        'Deliverables Required',
+        'warning'
+      );
+      return;
+    }
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -6910,6 +7661,29 @@ export const EvaluationTab: React.FC = () => {
       });
     });
 
+    // Validate that remark is provided for any waived deliverable
+    const missingWaivedRemarks: string[] = [];
+    selectedMgrCategories.forEach(cat => {
+      cat.kpis.forEach(kpi => {
+        if (mgrWaivedShortfall[kpi.id] && !mgrKpiRemarks[kpi.id]?.trim()) {
+          missingWaivedRemarks.push(kpi.name || `Deliverable`);
+        }
+      });
+    });
+
+    if (missingWaivedRemarks.length > 0) {
+      showAlert(
+        `Please enter remarks explaining the reason for waiving shortage for:\n• ${missingWaivedRemarks.join('\n• ')}`,
+        'Remarks Required',
+        'warning'
+      );
+      const firstMissing = selectedMgrCategories.flatMap(c => c.kpis).find(k => mgrWaivedShortfall[k.id] && !mgrKpiRemarks[k.id]?.trim());
+      if (firstMissing) {
+        const elem = document.getElementById(`mgr-remark-${firstMissing.id}`);
+        if (elem) elem.focus();
+      }
+      return;
+    }
     showConfirm(
       `Approve ${monthName} performance score and update Year-to-Date rolling average?`,
       async () => {
@@ -6919,7 +7693,9 @@ export const EvaluationTab: React.FC = () => {
             selectedMgrResponse.id,
             mIndex,
             payloadEntries,
-            mgrRemarks
+            mgrRemarks,
+            selectedMgrCategories,
+            mgrScore
           );
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
@@ -6951,33 +7727,43 @@ export const EvaluationTab: React.FC = () => {
       return;
     }
 
-    const isWeekly = isYearlyResponse(selectedMgrResponse) && (selectedMgrResponse.milestone_frequency === 'weekly' || ((selectedMgrResponse.weekly_records || []).length > 0 && !(selectedMgrResponse.monthly_records || []).length && !(selectedMgrResponse.quarterly_records || []).length));
-    const isQuarterly = isYearlyResponse(selectedMgrResponse) && (selectedMgrResponse.milestone_frequency === 'quarterly' || ((selectedMgrResponse.quarterly_records || []).length > 0 && !(selectedMgrResponse.monthly_records || []).length && !(selectedMgrResponse.weekly_records || []).length));
-    const targetLabel = isWeekly
-      ? `Week ${reopenTargetMonthIndex}`
-      : (isQuarterly
-        ? `Q${reopenTargetMonthIndex} (${FISCAL_QUARTERS.find(q => q.quarterIndex === reopenTargetMonthIndex)?.quarterLabel || `Quarter ${reopenTargetMonthIndex}`})`
-        : (FISCAL_MONTHS.find(m => m.monthIndex === reopenTargetMonthIndex)?.monthName || `Month ${reopenTargetMonthIndex}`));
+    const mgrCadence = getResponseCadence(selectedMgrResponse);
+    const isDaily = isYearlyResponse(selectedMgrResponse) && mgrCadence === 'daily';
+    const isWeekly = isYearlyResponse(selectedMgrResponse) && mgrCadence === 'weekly';
+    const isQuarterly = isYearlyResponse(selectedMgrResponse) && mgrCadence === 'quarterly';
+    const targetLabel = isDaily
+      ? (getResponseDailyRecords(selectedMgrResponse).find(d => d.dayIndex === reopenTargetMonthIndex)?.dayLabel || `Day ${reopenTargetMonthIndex}`)
+      : (isWeekly
+        ? `Week ${reopenTargetMonthIndex}`
+        : (isQuarterly
+          ? `Q${reopenTargetMonthIndex} (${FISCAL_QUARTERS.find(q => q.quarterIndex === reopenTargetMonthIndex)?.quarterLabel || `Quarter ${reopenTargetMonthIndex}`})`
+          : (FISCAL_MONTHS.find(m => m.monthIndex === reopenTargetMonthIndex)?.monthName || `Month ${reopenTargetMonthIndex}`)));
 
     try {
       setIsReopeningAction(true);
-      const updatedResp = isWeekly
-        ? await evaluationService.reopenYearlyWeek(
+      const updatedResp = isDaily
+        ? await evaluationService.reopenYearlyDaily(
           selectedMgrResponse.id,
           reopenTargetMonthIndex,
           trimmedFeedback
         )
-        : (isQuarterly
-          ? await evaluationService.reopenYearlyQuarter(
+        : (isWeekly
+          ? await evaluationService.reopenYearlyWeek(
             selectedMgrResponse.id,
             reopenTargetMonthIndex,
             trimmedFeedback
           )
-          : await evaluationService.reopenYearlyMonth(
-            selectedMgrResponse.id,
-            reopenTargetMonthIndex,
-            trimmedFeedback
-          ));
+          : (isQuarterly
+            ? await evaluationService.reopenYearlyQuarter(
+              selectedMgrResponse.id,
+              reopenTargetMonthIndex,
+              trimmedFeedback
+            )
+            : await evaluationService.reopenYearlyMonth(
+              selectedMgrResponse.id,
+              reopenTargetMonthIndex,
+              trimmedFeedback
+            )));
       setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
       await loadAllData();
       showToast(`${targetLabel} milestone reopened! Feedback sent to employee.`);
@@ -7048,10 +7834,40 @@ export const EvaluationTab: React.FC = () => {
     const s = String(status || '').toLowerCase().replace(/[_\s]+/g, ' ').trim();
 
     if (r && isYearlyResponse(r)) {
-      const isWeekly = r.milestone_frequency === 'weekly' || ((r.weekly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.quarterly_records || []).length);
-      const isQuarterly = r.milestone_frequency === 'quarterly' || ((r.quarterly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.weekly_records || []).length);
+      const rCadence = getResponseCadence(r);
+      const isDaily = rCadence === 'daily';
+      const isWeekly = rCadence === 'weekly';
+      const isQuarterly = rCadence === 'quarterly';
 
-      if (isQuarterly) {
+      if (isDaily) {
+        const dailyRecords = r.daily_records || [];
+        const approvedCount = dailyRecords.filter(d => d.status === 'manager_approved').length;
+        const submittedCount = dailyRecords.filter(d => d.status === 'submitted_to_manager').length;
+        if (submittedCount > 0) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+              <span>Milestone Submitted ({approvedCount}/{dailyRecords.length} Approved)</span>
+            </span>
+          );
+        }
+        if (approvedCount === dailyRecords.length && dailyRecords.length > 0) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span>Cycle Completed & Approved</span>
+            </span>
+          );
+        }
+        if (approvedCount > 0) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200/80 shadow-2xs shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
+              <span>In Progress ({approvedCount}/{dailyRecords.length} Approved)</span>
+            </span>
+          );
+        }
+      } else if (isQuarterly) {
         const quarterlyRecords = r.quarterly_records || [];
         const approvedCount = quarterlyRecords.filter(q => q.status === 'manager_approved').length;
         const submittedCount = quarterlyRecords.filter(q => q.status === 'submitted_to_manager').length;
@@ -7222,11 +8038,13 @@ export const EvaluationTab: React.FC = () => {
         } else {
           // Prioritize pending reviews requiring manager attention
           const rPending = (r.status as string) === 'manager_review' || (r.status as string) === 'Submitted to Manager' ||
+            (r.daily_records || []).some(d => d.status === 'submitted_to_manager') ||
             (r.quarterly_records || []).some(q => q.status === 'submitted_to_manager') ||
             (r.weekly_records || []).some(w => w.status === 'submitted_to_manager') ||
             (r.monthly_records || []).some(m => m.status === 'submitted_to_manager') ||
             r.managerScore == null;
           const exPending = (existing.status as string) === 'manager_review' || (existing.status as string) === 'Submitted to Manager' ||
+            (existing.daily_records || []).some(d => d.status === 'submitted_to_manager') ||
             (existing.quarterly_records || []).some(q => q.status === 'submitted_to_manager') ||
             (existing.weekly_records || []).some(w => w.status === 'submitted_to_manager') ||
             (existing.monthly_records || []).some(m => m.status === 'submitted_to_manager') ||
@@ -7253,11 +8071,13 @@ export const EvaluationTab: React.FC = () => {
     return Array.from(map.values()).sort((a, b) => {
       // 1. Pending reviews (needing manager attention) ALWAYS sort to the top!
       const aPending = (a.status as string) === 'manager_review' || (a.status as string) === 'Submitted to Manager' ||
+        (a.daily_records || []).some(d => d.status === 'submitted_to_manager') ||
         (a.quarterly_records || []).some(q => q.status === 'submitted_to_manager') ||
         (a.weekly_records || []).some(w => w.status === 'submitted_to_manager') ||
         (a.monthly_records || []).some(m => m.status === 'submitted_to_manager') ||
         a.managerScore == null;
       const bPending = (b.status as string) === 'manager_review' || (b.status as string) === 'Submitted to Manager' ||
+        (b.daily_records || []).some(d => d.status === 'submitted_to_manager') ||
         (b.quarterly_records || []).some(q => q.status === 'submitted_to_manager') ||
         (b.weekly_records || []).some(w => w.status === 'submitted_to_manager') ||
         (b.monthly_records || []).some(m => m.status === 'submitted_to_manager') ||
@@ -7296,22 +8116,26 @@ export const EvaluationTab: React.FC = () => {
     const smStatus = String((r as any).service_manager_approve_status || '').toLowerCase().trim();
 
     if (isYearlyResponse(r)) {
+      const curDailyRecords = r.daily_records || [];
       const curYearlyRecords = r.monthly_records || [];
       const curWeeklyRecords = r.weekly_records || [];
       const curQuarterlyRecords = r.quarterly_records || [];
-      const hasPendingSubmitted = curYearlyRecords.some((m: any) => m.status === 'submitted_to_manager') ||
+      const hasPendingSubmitted = curDailyRecords.some((d: any) => d.status === 'submitted_to_manager') ||
+        curYearlyRecords.some((m: any) => m.status === 'submitted_to_manager') ||
         curWeeklyRecords.some((w: any) => w.status === 'submitted_to_manager') ||
         curQuarterlyRecords.some((q: any) => q.status === 'submitted_to_manager');
       if (hasPendingSubmitted) {
         return 'with_manager';
       }
-      const allApproved = (curQuarterlyRecords.length === 4 && curQuarterlyRecords.every((q: any) => q.status === 'manager_approved')) ||
+      const allApproved = (curDailyRecords.length > 0 && curDailyRecords.every((d: any) => d.status === 'manager_approved')) ||
+        (curQuarterlyRecords.length === 4 && curQuarterlyRecords.every((q: any) => q.status === 'manager_approved')) ||
         (curWeeklyRecords.length === 52 && curWeeklyRecords.every((w: any) => w.status === 'manager_approved')) ||
         (curYearlyRecords.length === 12 && curYearlyRecords.every((m: any) => m.status === 'manager_approved'));
       if (allApproved || s === 'completed' || s === 'sm_final_approval') {
         return 'completed';
       }
-      if (curQuarterlyRecords.some((q: any) => q.status === 'manager_approved') ||
+      if (curDailyRecords.some((d: any) => d.status === 'manager_approved') ||
+        curQuarterlyRecords.some((q: any) => q.status === 'manager_approved') ||
         curWeeklyRecords.some((w: any) => w.status === 'manager_approved') ||
         curYearlyRecords.some((m: any) => m.status === 'manager_approved') ||
         r.managerScore != null) {
@@ -7360,15 +8184,18 @@ export const EvaluationTab: React.FC = () => {
     all.forEach(r => {
       const s = String(r.status || '').toLowerCase().trim();
       const isYearly = isYearlyResponse(r);
+      const curDailyRecords = r.daily_records || [];
       const curYearlyRecords = r.monthly_records || [];
       const curWeeklyRecords = r.weekly_records || [];
       const curQuarterlyRecords = r.quarterly_records || [];
       const hasYearlyPending = isYearly && (
+        curDailyRecords.some((d: any) => d.status === 'submitted_to_manager') ||
         curYearlyRecords.some((m: any) => m.status === 'submitted_to_manager') ||
         curWeeklyRecords.some((w: any) => w.status === 'submitted_to_manager') ||
         curQuarterlyRecords.some((q: any) => q.status === 'submitted_to_manager')
       );
-      const isAllApproved = (curQuarterlyRecords.length === 4 && curQuarterlyRecords.every((q: any) => q.status === 'manager_approved')) ||
+      const isAllApproved = (curDailyRecords.length > 0 && curDailyRecords.every((d: any) => d.status === 'manager_approved')) ||
+        (curQuarterlyRecords.length === 4 && curQuarterlyRecords.every((q: any) => q.status === 'manager_approved')) ||
         (curWeeklyRecords.length === 52 && curWeeklyRecords.every((w: any) => w.status === 'manager_approved')) ||
         (curYearlyRecords.length === 12 && curYearlyRecords.every((m: any) => m.status === 'manager_approved'));
       const isCompleted = !hasYearlyPending && (s === 'completed' || s === 'sm_final_approval' || (isYearly ? isAllApproved : (r.managerScore != null || s === 'approved')));
@@ -7814,6 +8641,7 @@ export const EvaluationTab: React.FC = () => {
       const isYearly = isYearlyResponse(r);
       if (isYearly) {
         return (
+          (r.daily_records || []).some((d: any) => d.status === 'submitted_to_manager' || d.status === 'manager_approved') ||
           (r.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager' || q.status === 'manager_approved') ||
           (r.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager' || w.status === 'manager_approved') ||
           (r.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager' || m.status === 'manager_approved')
@@ -7832,6 +8660,7 @@ export const EvaluationTab: React.FC = () => {
       const isYearly = isYearlyResponse(r);
       if (isYearly) {
         return (
+          (r.daily_records || []).some((d: any) => d.status === 'manager_approved') ||
           (r.quarterly_records || []).some((q: any) => q.status === 'manager_approved') ||
           (r.weekly_records || []).some((w: any) => w.status === 'manager_approved') ||
           (r.monthly_records || []).some((m: any) => m.status === 'manager_approved')
@@ -7859,6 +8688,7 @@ export const EvaluationTab: React.FC = () => {
       const isYearly = isYearlyResponse(r);
       if (isYearly) {
         return (
+          (r.daily_records || []).some((d: any) => d.status === 'submitted_to_manager' || d.status === 'manager_approved') ||
           (r.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager' || q.status === 'manager_approved') ||
           (r.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager' || w.status === 'manager_approved') ||
           (r.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager' || m.status === 'manager_approved')
@@ -7877,6 +8707,7 @@ export const EvaluationTab: React.FC = () => {
       const isYearly = isYearlyResponse(r);
       if (isYearly) {
         return (
+          (r.daily_records || []).some((d: any) => d.status === 'manager_approved') ||
           (r.quarterly_records || []).some((q: any) => q.status === 'manager_approved') ||
           (r.weekly_records || []).some((w: any) => w.status === 'manager_approved') ||
           (r.monthly_records || []).some((m: any) => m.status === 'manager_approved')
@@ -7898,11 +8729,13 @@ export const EvaluationTab: React.FC = () => {
       const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(r);
       const isYearly = isYearlyResponse(r);
       const hasSubmittedMilestone = isYearly && (
+        (r.daily_records || []).some((d: any) => d.status === 'submitted_to_manager') ||
         (r.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
         (r.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
         (r.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
       );
       const hasApprovedMilestone = isYearly && (
+        (r.daily_records || []).some((d: any) => d.status === 'manager_approved') ||
         (r.quarterly_records || []).some((q: any) => q.status === 'manager_approved') ||
         (r.weekly_records || []).some((w: any) => w.status === 'manager_approved') ||
         (r.monthly_records || []).some((m: any) => m.status === 'manager_approved')
@@ -7948,48 +8781,10 @@ export const EvaluationTab: React.FC = () => {
     });
   }, [deduplicatedManagerResponses, mgrStatusFilter, mgrSearchQuery, dbEmployees]);
 
-  const isDailyResponse = (r: EvaluationResponse) => {
-    const respCycle = cycles.find(c => c.id === r.cycleId);
-    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
-    if (f === 'daily') return true;
-    if (f && f !== 'daily') return false;
-    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
-    return p.includes('daily');
-  };
-
-  const isWeeklyResponse = (r: EvaluationResponse) => {
-    const respCycle = cycles.find(c => c.id === r.cycleId);
-    const subFreq = (r as any).milestone_frequency || ((r as any).weekly_records?.length ? 'weekly' : '');
-    if (subFreq === 'weekly') return true;
-    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
-    if (f === 'weekly') return true;
-    if (f && f !== 'weekly') return false;
-    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
-    return p.includes('weekly') || p.includes('week');
-  };
-
-  const isMonthlyResponse = (r: EvaluationResponse) => {
-    const respCycle = cycles.find(c => c.id === r.cycleId);
-    const subFreq = (r as any).milestone_frequency || ((r as any).monthly_records?.length ? 'monthly' : '');
-    if (subFreq === 'monthly') return true;
-    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
-    if (f === 'monthly') return true;
-    if (f && f !== 'monthly') return false;
-    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
-    return (p.includes('monthly') || p.includes('month')) && !p.includes('weekly') && !p.includes('daily');
-  };
-
-  const isQuarterlyResponse = (r: EvaluationResponse) => {
-    const respCycle = cycles.find(c => c.id === r.cycleId);
-    const subFreq = (r as any).milestone_frequency || ((r as any).quarterly_records?.length ? 'quarterly' : '');
-    if (subFreq === 'quarterly') return true;
-    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
-    if (f === 'quarterly') return true;
-    if (f && f !== 'quarterly') return false;
-    const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
-    if (p.includes('annual') || p.includes('yearly')) return false;
-    return p.includes('quarter') || p.includes('stage') || /q[1-4]/i.test(p);
-  };
+  const isDailyResponse = (r: EvaluationResponse) => getResponseCadence(r) === 'daily';
+  const isWeeklyResponse = (r: EvaluationResponse) => getResponseCadence(r) === 'weekly';
+  const isMonthlyResponse = (r: EvaluationResponse) => getResponseCadence(r) === 'monthly';
+  const isQuarterlyResponse = (r: EvaluationResponse) => getResponseCadence(r) === 'quarterly';
 
 
 
@@ -8070,6 +8865,34 @@ export const EvaluationTab: React.FC = () => {
     if (rawEnd) {
       const d = new Date(rawEnd);
       if (!isNaN(d.getTime())) end = d;
+    }
+
+    if ((!start || !end || start.getTime() === end.getTime()) && Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+      const dRecs = (r as any).daily_records;
+      const validDates = dRecs.map((d: any) => d?.date ? new Date(d.date) : null).filter((d: any) => d && !isNaN(d.getTime())) as Date[];
+      if (validDates.length > 0) {
+        validDates.sort((a, b) => a.getTime() - b.getTime());
+        if (!start || (start && end && start.getTime() === end.getTime() && validDates.length > 1)) {
+          start = validDates[0];
+          end = validDates[validDates.length - 1];
+        }
+      }
+    }
+
+    if ((!start || !end || start.getTime() === end.getTime()) && r.cycleId) {
+      const cy = cycles.find(c => c.id === r.cycleId);
+      if (cy) {
+        const cyStart = cy.startDate || (cy as any).start_date;
+        const cyEnd = cy.endDate || (cy as any).end_date;
+        if (cyStart && (!start || (start && end && start.getTime() === end.getTime()))) {
+          const d = new Date(cyStart);
+          if (!isNaN(d.getTime())) start = d;
+        }
+        if (cyEnd) {
+          const d = new Date(cyEnd);
+          if (!isNaN(d.getTime())) end = d;
+        }
+      }
     }
 
     const text = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''}`;
@@ -8782,10 +9605,14 @@ export const EvaluationTab: React.FC = () => {
         : ((r as any).manager_score != null && !isNaN(Number((r as any).manager_score)) ? Number((r as any).manager_score) : null);
 
       if (isYearlyResponse(r)) {
+        const approvedDays = (r.daily_records || []).filter((d: any) => d.status === 'manager_approved');
         const approvedQuarters = (r.quarterly_records || []).filter(q => q.status === 'manager_approved');
         const approvedWeeks = (r.weekly_records || []).filter(w => w.status === 'manager_approved');
         const approvedMonths = (r.monthly_records || []).filter(m => m.status === 'manager_approved');
-        if (approvedQuarters.length > 0) {
+        if (approvedDays.length > 0) {
+          const ytdScore = approvedDays.reduce((acc: number, d: any) => acc + (Number(d.managerScore) || 0), 0) / approvedDays.length;
+          mgrScoreNum = Number(ytdScore.toFixed(1));
+        } else if (approvedQuarters.length > 0) {
           const ytdScore = approvedQuarters.reduce((acc, q) => acc + (Number(q.managerScore) || 0), 0) / approvedQuarters.length;
           mgrScoreNum = Number(ytdScore.toFixed(1));
         } else if (approvedWeeks.length > 0) {
@@ -8814,11 +9641,21 @@ export const EvaluationTab: React.FC = () => {
       let freqColor = 'bg-slate-100 text-slate-700 border-slate-200';
       let dateText = '';
 
+      const formatDailyDateRange = (s: Date, e?: Date | null) => {
+        if (!e || s.getTime() === e.getTime()) {
+          return `${pad2(s.getDate())} ${monthsShortList[s.getMonth()]} ${s.getFullYear()}`;
+        }
+        if (s.getFullYear() === e.getFullYear()) {
+          return `${pad2(s.getDate())} ${monthsShortList[s.getMonth()]} - ${pad2(e.getDate())} ${monthsShortList[e.getMonth()]} ${e.getFullYear()}`;
+        }
+        return `${pad2(s.getDate())} ${monthsShortList[s.getMonth()]} ${s.getFullYear()} - ${pad2(e.getDate())} ${monthsShortList[e.getMonth()]} ${e.getFullYear()}`;
+      };
+
       if (isDailyResponse(r)) {
         freqLabel = 'Daily';
         freqColor = 'bg-amber-50 text-amber-900 border-amber-300';
         if (range.startDate) {
-          dateText = `${range.startDate.getDate()} ${monthsShortList[range.startDate.getMonth()]} ${range.startDate.getFullYear()}`;
+          dateText = formatDailyDateRange(range.startDate, range.endDate);
         }
       } else if (isWeeklyResponse(r)) {
         freqLabel = 'Weekly';
@@ -8843,8 +9680,27 @@ export const EvaluationTab: React.FC = () => {
           dateText = `Q${qNum} ${range.startDate.getFullYear()}`;
         }
       } else if (isYearlyResponse(r)) {
-        const subFreq = (r as any).milestone_frequency || ((r as any).quarterly_records?.length ? 'quarterly' : (r as any).weekly_records?.length ? 'weekly' : (r as any).monthly_records?.length ? 'monthly' : '');
-        if (subFreq === 'quarterly') {
+        const subFreq = (r as any).milestone_frequency || ((r as any).daily_records?.length ? 'daily' : (r as any).quarterly_records?.length ? 'quarterly' : (r as any).weekly_records?.length ? 'weekly' : (r as any).monthly_records?.length ? 'monthly' : '');
+        if (subFreq === 'daily') {
+          freqLabel = 'Daily';
+          freqColor = 'bg-amber-50 text-amber-900 border-amber-300';
+          const dailyRecords = (r as any).daily_records || [];
+          if (range.startDate) {
+            dateText = formatDailyDateRange(range.startDate, range.endDate);
+          } else {
+            const activeD = dailyRecords.slice().reverse().find((dr: any) =>
+              dr.status === 'manager_approved' || dr.status === 'approved' || dr.status === 'submitted_to_manager' || (dr.managerScore != null && Number(dr.managerScore) > 0)
+            ) || dailyRecords[0];
+            if (activeD?.date) {
+              const dObj = new Date(activeD.date);
+              if (!isNaN(dObj.getTime())) {
+                dateText = `${pad2(dObj.getDate())} ${monthsShortList[dObj.getMonth()]} ${dObj.getFullYear()}`;
+              } else {
+                dateText = activeD.dayLabel || activeD.date;
+              }
+            }
+          }
+        } else if (subFreq === 'quarterly') {
           freqLabel = 'Quarterly';
           freqColor = 'bg-emerald-50 text-emerald-900 border-emerald-300';
           const quarterlyRecords = (r as any).quarterly_records || [];
@@ -9905,8 +10761,31 @@ export const EvaluationTab: React.FC = () => {
     }
     if (isSubmittingEmp) return;
 
-    // Validate that Self Remarks are filled for deliverable rows where performance is High or Low
+    // Validate that employee has filled in at least one deliverable
+    let hasAnyDeliverableFilled = false;
+    activeCategories.forEach(cat => {
+      cat.kpis.forEach(k => {
+        const item = getKpiResponseItem(k);
+        const inputItem = kpiInputs[k.id] || (k.name ? kpiInputs[k.name] : null);
+        const val = inputItem?.actualValue !== undefined && inputItem?.actualValue !== null && inputItem?.actualValue !== ''
+          ? inputItem.actualValue
+          : (item?.actualValue !== undefined && item?.actualValue !== null ? item.actualValue : '');
+        if (val !== '' && val !== undefined && val !== null && String(val).trim() !== '') {
+          const num = typeof val === 'string' ? parseFloat(val) : Number(val);
+          if (!isNaN(num) && num > 0) {
+            hasAnyDeliverableFilled = true;
+          }
+        }
+      });
+    });
+    if (!hasAnyDeliverableFilled) {
+      showAlert('Please enter your actual deliverables data before submitting.', 'Deliverables Required', 'warning');
+      return;
+    }
+
+    // Validate that Self Remarks and Deliverables are filled
     const missingRemarksKpi: string[] = [];
+    const missingDeliverablesKpi: string[] = [];
     const payloadKpiInputs: Record<string, KPIResponseItem> = { ...kpiInputs };
 
     activeCategories.forEach(cat => {
@@ -9938,8 +10817,14 @@ export const EvaluationTab: React.FC = () => {
           ? Boolean(inputItem.isInsufficient)
           : Boolean(item?.isInsufficient);
 
+        const isUnfilled = val === '' || val === undefined || val === null || String(val).trim() === '';
+        // If deliverable is not filled and category target is NOT met, block submission
+        if (isUnfilled && !isCategoryTargetMet) {
+          missingDeliverablesKpi.push(`"${k.name}"`);
+        }
+
         const isMandatory = isKpiRemarkMandatory(k, val, isInsufficient, isCategoryTargetMet);
-        if (isMandatory && !rem) {
+        if (isMandatory && !rem && !isUnfilled) {
           missingRemarksKpi.push(`"${k.name}"`);
         }
 
@@ -9959,6 +10844,15 @@ export const EvaluationTab: React.FC = () => {
         if (k.name) payloadKpiInputs[k.name] = resolvedItem;
       });
     });
+
+    if (missingDeliverablesKpi.length > 0) {
+      showAlert(
+        `Please fill in the actual deliverables data for: ${missingDeliverablesKpi.join(', ')} before submitting.`,
+        'Deliverables Required',
+        'warning'
+      );
+      return;
+    }
 
     if (missingRemarksKpi.length > 0) {
       showAlert(
@@ -10133,8 +11027,55 @@ export const EvaluationTab: React.FC = () => {
     }
 
     if (isYearlyResponse(r)) {
-      const isWeekly = r.milestone_frequency === 'weekly' || ((r.weekly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.quarterly_records || []).length);
-      const isQuarterly = r.milestone_frequency === 'quarterly' || ((r.quarterly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.weekly_records || []).length);
+      const rCadence = getResponseCadence(r);
+      const isDaily = rCadence === 'daily';
+      const isWeekly = rCadence === 'weekly';
+      const isQuarterly = rCadence === 'quarterly';
+
+      if (isDaily) {
+        let curDailyRecords = getResponseDailyRecords(r);
+        const submittedDay = curDailyRecords.find(d => d.status === 'submitted_to_manager');
+        const firstActionableDay = curDailyRecords.find(d => {
+          const lockInfo = getYearlyDailyLockInfo(d.dayIndex, curDailyRecords);
+          return lockInfo.isEditable || lockInfo.isSubmitted;
+        }) || curDailyRecords[0];
+
+        const targetDIndex = submittedDay ? submittedDay.dayIndex : (firstActionableDay ? firstActionableDay.dayIndex : 1);
+        setActiveMgrYearlyDailyIndex(targetDIndex);
+
+        const initialWaived: Record<string, boolean> = {};
+        const curDayRec = curDailyRecords.find(d => d.dayIndex === targetDIndex);
+        targetCats.forEach((cat: KPICategory) => {
+          cat.kpis.forEach((kpi: KPIItem) => {
+            const entry = curDayRec?.kpiEntries?.[kpi.id] || (kpi.name ? curDayRec?.kpiEntries?.[kpi.name] : null);
+            const empActual = entry?.actualValue ?? entry?.actual_value ?? '';
+            const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
+            initialActuals[kpi.id] = mgrActual;
+            initialRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+            initialWaived[kpi.id] = Boolean(entry?.isWaived || (entry as any)?.fullCreditGranted);
+          });
+        });
+        setMgrKpiActuals(initialActuals);
+        setMgrKpiRemarks(initialRemarks);
+        setMgrWaivedShortfall(initialWaived);
+        let totalScore = 0;
+        targetCats.forEach((cat: KPICategory) => {
+          let rawCat = 0;
+          cat.kpis.forEach((kpi: KPIItem) => {
+            if (initialWaived[kpi.id]) {
+              rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+            } else {
+              const actualVal = initialActuals[kpi.id];
+              const calc = calculateKPIScore(kpi, actualVal);
+              rawCat += calc.earnedScore;
+            }
+          });
+          totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
+        });
+        setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
+        setMgrRemarks(curDayRec?.managerRemarks || '');
+        return;
+      }
 
       if (isWeekly) {
         let curWeeklyRecords = r.weekly_records || [];
@@ -10152,6 +11093,7 @@ export const EvaluationTab: React.FC = () => {
         const targetWIndex = submittedWeek ? submittedWeek.weekIndex : (firstActionableWeek ? firstActionableWeek.weekIndex : 26);
         setActiveMgrYearlyWeekIndex(targetWIndex);
 
+        const initialWaived: Record<string, boolean> = {};
         const curWeekRec = curWeeklyRecords.find(w => w.weekIndex === targetWIndex);
         targetCats.forEach((cat: KPICategory) => {
           cat.kpis.forEach((kpi: KPIItem) => {
@@ -10160,17 +11102,23 @@ export const EvaluationTab: React.FC = () => {
             const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
             initialActuals[kpi.id] = mgrActual;
             initialRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+            initialWaived[kpi.id] = Boolean(entry?.isWaived || (entry as any)?.fullCreditGranted);
           });
         });
         setMgrKpiActuals(initialActuals);
         setMgrKpiRemarks(initialRemarks);
+        setMgrWaivedShortfall(initialWaived);
         let totalScore = 0;
         targetCats.forEach((cat: KPICategory) => {
           let rawCat = 0;
           cat.kpis.forEach((kpi: KPIItem) => {
-            const actualVal = initialActuals[kpi.id];
-            const calc = calculateKPIScore(kpi, actualVal);
-            rawCat += calc.earnedScore;
+            if (initialWaived[kpi.id]) {
+              rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+            } else {
+              const actualVal = initialActuals[kpi.id];
+              const calc = calculateKPIScore(kpi, actualVal);
+              rawCat += calc.earnedScore;
+            }
           });
           totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
         });
@@ -10352,7 +11300,7 @@ export const EvaluationTab: React.FC = () => {
         const currentRemark = (mgrKpiRemarks[kpi.id] || '').trim();
 
         // If manager adjusted the goal/actual away from employee's actual, remarks are required!
-        if (currentMgrActual !== empActual && !currentRemark) {
+        if ((currentMgrActual !== empActual || mgrWaivedShortfall[kpi.id]) && !currentRemark) {
           missingRemarksDeliverables.push(`"${kpi.name}"`);
         }
       });
@@ -10420,7 +11368,7 @@ export const EvaluationTab: React.FC = () => {
         const currentMgrActual = String(mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual).trim();
         const currentRemark = (mgrKpiRemarks[kpi.id] || '').trim();
 
-        if (currentMgrActual !== empActual && !currentRemark) {
+        if ((currentMgrActual !== empActual || mgrWaivedShortfall[kpi.id]) && !currentRemark) {
           missingRemarksDeliverables.push(`"${kpi.name}"`);
         }
       });
@@ -11606,9 +12554,36 @@ export const EvaluationTab: React.FC = () => {
                         <div className="px-2.5 py-1 flex items-center gap-1">
                           <span className="text-[10px] text-slate-400 font-medium">Mgr</span>
                           <strong className="text-primary-950 font-bold">
-                            {activeEmpResponse && (activeEmpResponse.status === 'approved' || activeEmpResponse.status === 'sm_final_approval' || (activeEmpResponse.managerReviewedAt && activeEmpResponse.status !== 'manager_review')) && activeEmpResponse.managerScore != null
-                              ? `${Number(activeEmpResponse.managerScore).toFixed(1)}%`
-                              : 'Pending'}
+                            {(() => {
+                              if (!activeEmpResponse) return 'Pending';
+                              if (isYearlyResponse(activeEmpResponse)) {
+                                const dRecs = getResponseDailyRecords(activeEmpResponse);
+                                const wRecs = activeEmpResponse?.weekly_records || [];
+                                const qRecs = activeEmpResponse?.quarterly_records || [];
+                                const mRecs = activeEmpResponse?.monthly_records || [];
+                                const isD = activeEmpResponse?.milestone_frequency === 'daily' || (dRecs.length > 0 && !wRecs.length && !qRecs.length && !mRecs.length);
+                                const isW = activeEmpResponse?.milestone_frequency === 'weekly' || (wRecs.length > 0 && !dRecs.length && !qRecs.length && !mRecs.length);
+                                const isQ = activeEmpResponse?.milestone_frequency === 'quarterly' || (qRecs.length > 0 && !dRecs.length && !wRecs.length && !mRecs.length);
+
+                                const curMilestone = isD
+                                  ? dRecs.find(d => d.dayIndex === activeYearlyDailyIndex)
+                                  : (isW
+                                    ? wRecs.find(w => w.weekIndex === activeYearlyWeekIndex)
+                                    : (isQ
+                                      ? qRecs.find(q => q.quarterIndex === activeYearlyQuarterIndex)
+                                      : mRecs.find(m => m.monthIndex === activeYearlyFiscalMonth)));
+
+                                if (curMilestone && curMilestone.status === 'manager_approved' && curMilestone.managerScore != null) {
+                                  return `${Number(curMilestone.managerScore).toFixed(1)}%`;
+                                }
+                                if (curMilestone && (curMilestone.status === 'submitted_to_manager' || curMilestone.status === 'pending_employee')) {
+                                  return 'Pending';
+                                }
+                              }
+                              return (activeEmpResponse.status === 'approved' || activeEmpResponse.status === 'sm_final_approval' || (activeEmpResponse.managerReviewedAt && activeEmpResponse.status !== 'manager_review')) && activeEmpResponse.managerScore != null
+                                ? `${Number(activeEmpResponse.managerScore).toFixed(1)}%`
+                                : 'Pending';
+                            })()}
                           </strong>
                         </div>
                         {isYearlyResponse(activeEmpResponse) && (
@@ -11616,8 +12591,13 @@ export const EvaluationTab: React.FC = () => {
                             <span className="text-[10px] text-teal-700 font-bold">YTD</span>
                             <strong className="text-teal-950 font-extrabold">
                               {(() => {
+                                const isD = activeEmpResponse?.milestone_frequency === 'daily' || ((getResponseDailyRecords(activeEmpResponse)).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length);
                                 const isW = activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length);
                                 const isQ = activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length);
+                                if (isD) {
+                                  const appD = getResponseDailyRecords(activeEmpResponse).filter(d => d.status === 'manager_approved');
+                                  return appD.length > 0 ? `${(appD.reduce((a, b) => a + (Number(b.managerScore) || 0), 0) / appD.length).toFixed(1)}%` : '—';
+                                }
                                 if (isW) {
                                   const appW = (activeEmpResponse?.weekly_records || []).filter(w => w.status === 'manager_approved');
                                   return appW.length > 0 ? `${(appW.reduce((a, b) => a + (Number(b.managerScore) || 0), 0) / appW.length).toFixed(0)}%` : '—';
@@ -11717,8 +12697,120 @@ export const EvaluationTab: React.FC = () => {
 
                   {/* Milestone Progress Stepper for Yearly Cadence (52-Week, Quarterly, or 12-Month) Embedded Inside Unified Card */}
                   {isYearlyResponse(activeEmpResponse) && (() => {
-                    const isWeekly = activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length);
-                    const isQuarterly = activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length);
+                    const empCadence = getResponseCadence(activeEmpResponse);
+                    const isDaily = empCadence === 'daily';
+                    const isWeekly = empCadence === 'weekly';
+                    const isQuarterly = empCadence === 'quarterly';
+
+                    if (isDaily) {
+                      const curDailyRecords = getResponseDailyRecords(activeEmpResponse);
+                      const lockInfo = getYearlyDailyLockInfo(activeYearlyDailyIndex, curDailyRecords);
+                      const targetDayRecord = curDailyRecords.find(d => d.dayIndex === activeYearlyDailyIndex);
+                      const hasManagerReopenedNote = Boolean(targetDayRecord?.managerRemarks && targetDayRecord?.status === 'pending_employee');
+                      const approvedDays = curDailyRecords.filter(d => d.status === 'manager_approved');
+                      const percentComplete = curDailyRecords.length > 0 ? Math.round((approvedDays.length / curDailyRecords.length) * 100) : 0;
+                      const todayStr = getLocalTodayDateString();
+                      const todayDayRecord = curDailyRecords.find(d => d.date === todayStr);
+
+                      return (
+                        <div className="border-t border-slate-200/80 bg-slate-50/50 p-3 sm:p-4 space-y-3">
+                          {/* Approval Progress */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-700">Daily Milestone Progress:</span>
+                              <span className="text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-md">
+                                {approvedDays.length} / {curDailyRecords.length} Days Approved ({percentComplete}%)
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 sm:w-32 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all"
+                                  style={{ width: `${percentComplete}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200/90 shadow-2xs">
+                            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                              <span className="text-xs font-bold text-slate-700 shrink-0 flex items-center gap-1.5">
+                                <CalendarDaysIcon className="w-4 h-4 text-teal-600" />
+                                Select Date / Day:
+                              </span>
+                              <div className="relative flex-1 max-w-xl">
+                                <select
+                                  value={activeYearlyDailyIndex}
+                                  onChange={e => setActiveYearlyDailyIndex(Number(e.target.value))}
+                                  className="w-full bg-slate-50/70 hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
+                                >
+                                  {curDailyRecords.map(d => {
+                                    const dLockInfo = getYearlyDailyLockInfo(d.dayIndex, curDailyRecords);
+                                    const isToday = d.date === todayStr;
+                                    let badgeStr = '';
+                                    if (dLockInfo.isApproved) badgeStr = `✅ Approved (${dLockInfo.score != null ? `${dLockInfo.score}%` : ''})`;
+                                    else if (dLockInfo.isSubmitted) badgeStr = '⏳ Under Review';
+                                    else if (dLockInfo.isLocked) badgeStr = '🔒 Locked (Future)';
+                                    else if (isToday) badgeStr = '🟢 Today (Active)';
+                                    else badgeStr = '📄 Open';
+
+                                    return (
+                                      <option key={d.dayIndex} value={d.dayIndex}>
+                                        {d.dayLabel} — {badgeStr}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                              <button
+                                type="button"
+                                disabled={activeYearlyDailyIndex <= 1}
+                                onClick={() => setActiveYearlyDailyIndex(prev => prev - 1)}
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                                title="Previous Day"
+                              >
+                                ◀ Prev
+                              </button>
+                              <button
+                                type="button"
+                                disabled={activeYearlyDailyIndex >= curDailyRecords.length}
+                                onClick={() => setActiveYearlyDailyIndex(prev => prev + 1)}
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
+                                title="Next Day"
+                              >
+                                Next ▶
+                              </button>
+
+                              {todayDayRecord && activeYearlyDailyIndex !== todayDayRecord.dayIndex && (
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveYearlyDailyIndex(todayDayRecord.dayIndex)}
+                                  className="text-[11px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/90 px-3 py-1.5 rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
+                                >
+                                  <SparklesIcon className="w-3.5 h-3.5 text-teal-600" />
+                                  Today ({todayDayRecord.dayLabel})
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {hasManagerReopenedNote && (
+                            <div className="p-3 bg-amber-50/95 border border-amber-300 rounded-xl text-xs space-y-1">
+                              <div className="flex items-center gap-1.5 font-bold text-amber-900 text-[11px]">
+                                <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                                <span>Manager Feedback for {lockInfo.currentDayLabel}:</span>
+                              </div>
+                              <div className="text-slate-800 text-[11px] italic font-medium">
+                                "{targetDayRecord?.managerRemarks}"
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
 
                     if (isQuarterly) {
                       const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
@@ -12186,8 +13278,14 @@ export const EvaluationTab: React.FC = () => {
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                         Deliverables {isYearlyResponse(activeEmpResponse) && (() => {
-                          const isWeekly = activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length);
-                          const isQuarterly = activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length);
+                          const empCadence = getResponseCadence(activeEmpResponse);
+                          const isDaily = empCadence === 'daily';
+                          const isWeekly = empCadence === 'weekly';
+                          const isQuarterly = empCadence === 'quarterly';
+                          if (isDaily) {
+                            const curD = getResponseDailyRecords(activeEmpResponse).find(d => d.dayIndex === activeYearlyDailyIndex);
+                            return `— ${curD?.dayLabel || `Day ${activeYearlyDailyIndex}`}`;
+                          }
                           if (isWeekly) {
                             const curW = (activeEmpResponse?.weekly_records || []).find(w => w.weekIndex === activeYearlyWeekIndex);
                             return `— ${curW?.weekLabel || `Week ${activeYearlyWeekIndex}`}`;
@@ -12230,16 +13328,20 @@ export const EvaluationTab: React.FC = () => {
 
                       {(() => {
                         const isYearly = isYearlyResponse(activeEmpResponse);
-                        const isWeekly = isYearly && (activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length));
-                        const isQuarterly = isYearly && (activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length));
+                        const isDaily = isYearly && (activeEmpResponse?.milestone_frequency === 'daily' || ((activeEmpResponse?.daily_records || []).length > 0) || activeEmpResponse?.frequency === 'daily');
+                        const isWeekly = !isDaily && isYearly && (activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length));
+                        const isQuarterly = !isDaily && isYearly && (activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length));
                         const curRecords = activeEmpResponse?.monthly_records || [];
                         const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
                         const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
-                        const lockInfo = isWeekly
-                          ? getYearlyWeekLockInfo(activeYearlyWeekIndex, curWeeklyRecords)
-                          : (isQuarterly
-                            ? getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords)
-                            : (isYearly ? getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords) : null));
+                        const curDailyRecords = getResponseDailyRecords(activeEmpResponse);
+                        const lockInfo = isDaily
+                          ? getYearlyDailyLockInfo(activeYearlyDailyIndex, curDailyRecords)
+                          : (isWeekly
+                            ? getYearlyWeekLockInfo(activeYearlyWeekIndex, curWeeklyRecords)
+                            : (isQuarterly
+                              ? getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords)
+                              : (isYearly ? getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords) : null)));
                         const isLocked = isYearly ? !lockInfo?.isEditable : isEmpSubmitted;
 
                         if (isLocked) {
@@ -12304,45 +13406,70 @@ export const EvaluationTab: React.FC = () => {
                   <div className="rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-200/90 bg-white">
                     {filteredCategories.map((cat, catIdx) => {
                       const isYearly = isYearlyResponse(activeEmpResponse);
-                      const isWeekly = isYearly && (activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length));
-                      const isQuarterly = isYearly && (activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length));
+                      const empCadence = isYearly ? getResponseCadence(activeEmpResponse) : null;
+                      const isDaily = empCadence === 'daily';
+                      const isWeekly = empCadence === 'weekly';
+                      const isQuarterly = empCadence === 'quarterly';
                       const curRecords = activeEmpResponse?.monthly_records || [];
                       const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
                       const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
-                      const lockInfo = isWeekly
-                        ? getYearlyWeekLockInfo(activeYearlyWeekIndex, curWeeklyRecords)
-                        : (isQuarterly
-                          ? getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords)
-                          : (isYearly ? getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords) : null));
+                      const curDailyRecords = getResponseDailyRecords(activeEmpResponse);
+                      const lockInfo = isDaily
+                        ? getYearlyDailyLockInfo(activeYearlyDailyIndex, curDailyRecords)
+                        : (isWeekly
+                          ? getYearlyWeekLockInfo(activeYearlyWeekIndex, curWeeklyRecords)
+                          : (isQuarterly
+                            ? getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords)
+                            : (isYearly ? getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords) : null)));
+                      const curDailyRecord = isDaily ? curDailyRecords.find(d => d.dayIndex === activeYearlyDailyIndex) : null;
                       const curYearlyRecord = isYearly ? curRecords.find(m => m.monthIndex === activeYearlyFiscalMonth) : null;
                       const curWeeklyRecord = isWeekly ? curWeeklyRecords.find(w => w.weekIndex === activeYearlyWeekIndex) : null;
                       const curQuarterlyRecord = isQuarterly ? curQuarterlyRecords.find(q => q.quarterIndex === activeYearlyQuarterIndex) : null;
-                      const isYearlySubmitted = isWeekly
-                        ? Boolean(curWeeklyRecord?.status === 'submitted_to_manager' || curWeeklyRecord?.status === 'manager_approved')
-                        : (isQuarterly
-                          ? Boolean(curQuarterlyRecord?.status === 'submitted_to_manager' || curQuarterlyRecord?.status === 'manager_approved')
-                          : Boolean(isYearly && (curYearlyRecord?.status === 'submitted_to_manager' || curYearlyRecord?.status === 'manager_approved')));
+                      const isYearlySubmitted = isDaily
+                        ? Boolean(curDailyRecord?.status === 'submitted_to_manager' || curDailyRecord?.status === 'manager_approved')
+                        : (isWeekly
+                          ? Boolean(curWeeklyRecord?.status === 'submitted_to_manager' || curWeeklyRecord?.status === 'manager_approved')
+                          : (isQuarterly
+                            ? Boolean(curQuarterlyRecord?.status === 'submitted_to_manager' || curQuarterlyRecord?.status === 'manager_approved')
+                            : Boolean(isYearly && (curYearlyRecord?.status === 'submitted_to_manager' || curYearlyRecord?.status === 'manager_approved'))));
                       const isThisMonthLocked = isYearly ? (!lockInfo?.isEditable) : isEmpSubmitted;
 
                       const rawCatEarned = cat.kpis.reduce((sum, k) => {
-                        const yearlyEntry = isWeekly
-                          ? (curWeeklyRecord?.kpiEntries?.[k.id] || (k.name ? curWeeklyRecord?.kpiEntries?.[k.name] : null))
-                          : (isQuarterly
-                            ? (curQuarterlyRecord?.kpiEntries?.[k.id] || (k.name ? curQuarterlyRecord?.kpiEntries?.[k.name] : null))
-                            : (curYearlyRecord?.kpiEntries?.[k.id] || (k.name ? curYearlyRecord?.kpiEntries?.[k.name] : null)));
-                        const val = isWeekly
+                        const yearlyEntry = isDaily
+                          ? (curDailyRecord?.kpiEntries?.[k.id] || (k.name ? curDailyRecord?.kpiEntries?.[k.name] : null))
+                          : (isWeekly
+                            ? (curWeeklyRecord?.kpiEntries?.[k.id] || (k.name ? curWeeklyRecord?.kpiEntries?.[k.name] : null))
+                            : (isQuarterly
+                              ? (curQuarterlyRecord?.kpiEntries?.[k.id] || (k.name ? curQuarterlyRecord?.kpiEntries?.[k.name] : null))
+                              : (curYearlyRecord?.kpiEntries?.[k.id] || (k.name ? curYearlyRecord?.kpiEntries?.[k.name] : null))));
+                        const val = isDaily
                           ? (!isYearlySubmitted
-                            ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                            ? (yearlyDailyKpiInputs[activeYearlyDailyIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyDailyKpiInputs[activeYearlyDailyIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                             : (yearlyEntry?.actualValue ?? ''))
-                          : (isQuarterly
+                          : (isWeekly
                             ? (!isYearlySubmitted
-                              ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                              ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                               : (yearlyEntry?.actualValue ?? ''))
-                            : (isYearly
+                            : (isQuarterly
                               ? (!isYearlySubmitted
-                                ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                                 : (yearlyEntry?.actualValue ?? ''))
-                              : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''))));
+                              : (isYearly
+                                ? (!isYearlySubmitted
+                                  ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                  : (yearlyEntry?.actualValue ?? ''))
+                                : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? '')))));
+                        const isThisMilestoneApproved = Boolean(lockInfo?.isApproved);
+                        if (isThisMilestoneApproved) {
+                          const isWaived = Boolean(yearlyEntry?.isWaived || (yearlyEntry as any)?.fullCreditGranted);
+                          if (isWaived) {
+                            return sum + (Number(k.targetScore ?? k.weightage) || 0);
+                          }
+                          const mgrVal = (yearlyEntry?.managerActualValue !== undefined && yearlyEntry?.managerActualValue !== '')
+                            ? yearlyEntry.managerActualValue
+                            : val;
+                          return sum + calculateKPIScore(k, mgrVal).earnedScore;
+                        }
                         return sum + calculateKPIScore(k, val).earnedScore;
                       }, 0);
                       const catEarned = calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCatEarned);
@@ -12421,51 +13548,61 @@ export const EvaluationTab: React.FC = () => {
                                 <tbody className="divide-y divide-slate-100 bg-white">
                                   {cat.matchingKpis.map((kpi) => {
                                     const respItem = getKpiResponseItem(kpi);
-                                    const yearlyEntry = isWeekly
-                                      ? (curWeeklyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curWeeklyRecord?.kpiEntries?.[kpi.name] : null))
-                                      : (isQuarterly
-                                        ? (curQuarterlyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterlyRecord?.kpiEntries?.[kpi.name] : null))
-                                        : (curYearlyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRecord?.kpiEntries?.[kpi.name] : null)));
+                                    const yearlyEntry = isDaily
+                                      ? (curDailyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curDailyRecord?.kpiEntries?.[kpi.name] : null))
+                                      : (isWeekly
+                                        ? (curWeeklyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curWeeklyRecord?.kpiEntries?.[kpi.name] : null))
+                                        : (isQuarterly
+                                          ? (curQuarterlyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterlyRecord?.kpiEntries?.[kpi.name] : null))
+                                          : (curYearlyRecord?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRecord?.kpiEntries?.[kpi.name] : null))));
 
-                                    const rawVal = isWeekly
+                                    const rawVal = isDaily
                                       ? (!isYearlySubmitted
-                                        ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                        ? (yearlyDailyKpiInputs[activeYearlyDailyIndex]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyDailyKpiInputs[activeYearlyDailyIndex]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                                         : (yearlyEntry?.actualValue ?? ''))
-                                      : (isQuarterly
+                                      : (isWeekly
                                         ? (!isYearlySubmitted
-                                          ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                          ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                                           : (yearlyEntry?.actualValue ?? ''))
-                                        : (isYearly
+                                        : (isQuarterly
                                           ? (!isYearlySubmitted
-                                            ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                            ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                                             : (yearlyEntry?.actualValue ?? ''))
-                                          : (!isEmpSubmitted
-                                            ? (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '')
-                                            : (respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
-                                              ? respItem.actualValue
-                                              : (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '')))));
+                                          : (isYearly
+                                            ? (!isYearlySubmitted
+                                              ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.actualValue ?? (kpi.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                              : (yearlyEntry?.actualValue ?? ''))
+                                            : (!isEmpSubmitted
+                                              ? (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? '')
+                                              : (respItem?.actualValue !== undefined && respItem?.actualValue !== null && respItem?.actualValue !== ''
+                                                ? respItem.actualValue
+                                                : (kpiInputs[kpi.id]?.actualValue ?? (kpi.name ? kpiInputs[kpi.name]?.actualValue : '') ?? ''))))));
                                     const isHours = isHoursKpi(kpi);
                                     const val = rawVal !== '' && rawVal !== undefined && rawVal !== null
                                       ? (isHours ? rawVal : (typeof rawVal === 'number' ? Math.floor(rawVal) : (String(rawVal).includes('.') ? parseInt(String(rawVal), 10) : rawVal)))
                                       : '';
                                     const calc = calculateKPIScore(kpi, val);
-                                    const remarks = isWeekly
+                                    const remarks = isDaily
                                       ? (!isYearlySubmitted
-                                        ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
+                                        ? (yearlyDailyKpiInputs[activeYearlyDailyIndex]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyDailyKpiInputs[activeYearlyDailyIndex]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
                                         : (yearlyEntry?.employeeRemarks ?? ''))
-                                      : (isQuarterly
+                                      : (isWeekly
                                         ? (!isYearlySubmitted
-                                          ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
+                                          ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
                                           : (yearlyEntry?.employeeRemarks ?? ''))
-                                        : (isYearly
+                                        : (isQuarterly
                                           ? (!isYearlySubmitted
-                                            ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
+                                            ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
                                             : (yearlyEntry?.employeeRemarks ?? ''))
-                                          : (!isEmpSubmitted
-                                            ? (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '')
-                                            : (respItem?.employeeRemarks !== undefined && respItem?.employeeRemarks !== null
-                                              ? respItem.employeeRemarks
-                                              : (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '')))));
+                                          : (isYearly
+                                            ? (!isYearlySubmitted
+                                              ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.employeeRemarks ?? (kpi.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.name]?.employeeRemarks : '') ?? yearlyEntry?.employeeRemarks ?? '')
+                                              : (yearlyEntry?.employeeRemarks ?? ''))
+                                            : (!isEmpSubmitted
+                                              ? (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? '')
+                                              : (respItem?.employeeRemarks !== undefined && respItem?.employeeRemarks !== null
+                                                ? respItem.employeeRemarks
+                                                : (kpiInputs[kpi.id]?.employeeRemarks ?? (kpi.name ? kpiInputs[kpi.name]?.employeeRemarks : '') ?? ''))))));
                                     const parsedTarget = parseTargetExpression(kpi.targetFromManager, kpi.targetValue || 1);
                                     const targetThreshold = parsedTarget.threshold;
 
@@ -12480,27 +13617,32 @@ export const EvaluationTab: React.FC = () => {
 
                                     const isActualModifiedByMgr = hasMgrActual && String(mgrActualVal).trim() !== String(val).trim();
                                     const mgrCalc = calculateKPIScore(kpi, hasMgrActual ? mgrActualVal : val);
-                                    const mgrEarnedScore = isYearly
-                                      ? (yearlyEntry?.managerScore !== undefined && yearlyEntry?.managerScore !== null ? Number(yearlyEntry.managerScore) : (hasMgrActual ? mgrCalc.earnedScore : null))
-                                      : ((respItem?.managerScore !== undefined && respItem?.managerScore !== null)
-                                        ? Number(respItem.managerScore)
-                                        : (hasMgrActual ? mgrCalc.earnedScore : null));
+                                    const isDeliverableWaived = Boolean(yearlyEntry?.isWaived || (yearlyEntry as any)?.fullCreditGranted);
+                                    const mgrEarnedScore = isDeliverableWaived
+                                      ? (Number(kpi.targetScore ?? kpi.weightage) || 0)
+                                      : (isYearly
+                                        ? (yearlyEntry?.managerScore !== undefined && yearlyEntry?.managerScore !== null ? Number(yearlyEntry.managerScore) : (hasMgrActual ? mgrCalc.earnedScore : null))
+                                        : ((respItem?.managerScore !== undefined && respItem?.managerScore !== null)
+                                          ? Number(respItem.managerScore)
+                                          : (hasMgrActual ? mgrCalc.earnedScore : null)));
                                     const mgrRemarks = isYearly
                                       ? (yearlyEntry?.managerRemarks || '')
                                       : (respItem?.managerRemarks ?? mgrKpiRemarks[kpi.id] ?? '');
 
                                     const isNeg = isNegativeKpi(kpi);
-                                    const rawInsufficient = isWeekly
-                                      ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
-                                      : (isQuarterly
-                                        ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
-                                        : (isYearly
-                                          ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
-                                          : (!isEmpSubmitted
-                                            ? (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : false))
-                                            : (respItem?.isInsufficient !== undefined && respItem?.isInsufficient !== null
-                                              ? respItem.isInsufficient
-                                              : (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : ((kpi as any)?.isInsufficient ?? (kpi as any)?.is_insufficient ?? false)))))));
+                                    const rawInsufficient = isDaily
+                                      ? (yearlyDailyKpiInputs[activeYearlyDailyIndex]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
+                                      : (isWeekly
+                                        ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
+                                        : (isQuarterly
+                                          ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
+                                          : (isYearly
+                                            ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[kpi.id]?.isInsufficient ?? yearlyEntry?.isInsufficient ?? false)
+                                            : (!isEmpSubmitted
+                                              ? (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : false))
+                                              : (respItem?.isInsufficient !== undefined && respItem?.isInsufficient !== null
+                                                ? respItem.isInsufficient
+                                                : (kpiInputs[kpi.id]?.isInsufficient ?? (kpi.name ? kpiInputs[kpi.name]?.isInsufficient : ((kpi as any)?.isInsufficient ?? (kpi as any)?.is_insufficient ?? false))))))));
                                     const isRowInsufficient = Boolean(rawInsufficient);
                                     const statusObj = getInsufficientStatus(kpi, val, isRowInsufficient, isCategoryTargetMet);
 
@@ -12637,7 +13779,9 @@ export const EvaluationTab: React.FC = () => {
                                                       }
                                                     }}
                                                     onChange={e => {
-                                                      if (isWeekly) {
+                                                      if (isDaily) {
+                                                        handleYearlyDailyKpiChange(kpi, e.target.value);
+                                                      } else if (isWeekly) {
                                                         handleYearlyWeekKpiChange(kpi, e.target.value);
                                                       } else if (isQuarterly) {
                                                         handleYearlyQuarterKpiChange(kpi, e.target.value);
@@ -12650,7 +13794,7 @@ export const EvaluationTab: React.FC = () => {
                                                     placeholder="0"
                                                     className={`w-24 h-8 px-2 text-center font-bold text-xs rounded-xl transition shadow-2xs focus:outline-none ${isNeg && isOverTarget
                                                       ? 'bg-rose-100 text-rose-950 border-2 border-rose-500 ring-2 ring-rose-400/30 font-black'
-                                                      : !isNeg && calc.earnedScore === 0 && val !== ''
+                                                      : !isNeg && calc.earnedScore === 0 && val !== '' && !isCategoryTargetMet
                                                         ? 'bg-rose-50 text-rose-950 border-2 border-rose-400 ring-2 ring-rose-400/20 font-black'
                                                         : isOverTarget
                                                           ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-500 ring-2 ring-emerald-400/30 font-black'
@@ -12700,7 +13844,9 @@ export const EvaluationTab: React.FC = () => {
                                           <div className="inline-flex items-center justify-center gap-1">
                                             <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black shadow-2xs ${calc.earnedScore > 0
                                               ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/90'
-                                              : 'bg-rose-50 text-rose-900 border border-rose-200/90'
+                                              : isCategoryTargetMet
+                                                ? 'bg-teal-50 text-teal-800 border border-teal-200/90'
+                                                : 'bg-rose-50 text-rose-900 border border-rose-200/90'
                                               }`}>
                                               {calc.earnedScore.toFixed(2)}%
                                             </span>
@@ -12734,7 +13880,9 @@ export const EvaluationTab: React.FC = () => {
                                                     value={remarks}
                                                     disabled={isSubmittingEmp}
                                                     onChange={val => {
-                                                      if (isWeekly) {
+                                                      if (isDaily) {
+                                                        handleYearlyDailyKpiRemarkChange(kpi, val);
+                                                      } else if (isWeekly) {
                                                         handleYearlyWeekKpiRemarkChange(kpi, val);
                                                       } else if (isQuarterly) {
                                                         handleYearlyQuarterKpiRemarkChange(kpi, val);
@@ -12809,6 +13957,11 @@ export const EvaluationTab: React.FC = () => {
                                                   }`}>
                                                   {mgrEarnedScore !== null ? `${mgrEarnedScore.toFixed(2)}%` : '—'}
                                                 </span>
+                                                  {isDeliverableWaived && (
+                                                    <span className="text-[9px] font-bold uppercase text-teal-800 px-1.5 py-0.5 rounded bg-teal-100 border border-teal-300 shadow-2xs">
+                                                      WAIVED
+                                                    </span>
+                                                  )}
                                                 {mgrRemarks?.trim() && (
                                                   <ChatBubbleLeftEllipsisIcon className="w-3 h-3 text-teal-600/70 shrink-0" />
                                                 )}
@@ -12832,11 +13985,14 @@ export const EvaluationTab: React.FC = () => {
                   <div className="p-5 bg-gradient-to-r from-slate-50 via-teal-50/20 to-slate-50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     {(() => {
                       const isYearly = isYearlyResponse(activeEmpResponse);
-                      const isWeekly = isYearly && (activeEmpResponse?.milestone_frequency === 'weekly' || ((activeEmpResponse?.weekly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.quarterly_records || []).length));
-                      const isQuarterly = isYearly && (activeEmpResponse?.milestone_frequency === 'quarterly' || ((activeEmpResponse?.quarterly_records || []).length > 0 && !(activeEmpResponse?.monthly_records || []).length && !(activeEmpResponse?.weekly_records || []).length));
+                      const empCadence = isYearly ? getResponseCadence(activeEmpResponse) : null;
+                      const isDaily = empCadence === 'daily';
+                      const isWeekly = empCadence === 'weekly';
+                      const isQuarterly = empCadence === 'quarterly';
                       const curRecords = activeEmpResponse?.monthly_records || [];
                       const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
                       const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
+                      const curDailyRecords = getResponseDailyRecords(activeEmpResponse);
 
                       const mObj = FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth);
                       const monthName = mObj ? mObj.monthName : `Month ${activeYearlyFiscalMonth}`;
@@ -12846,18 +14002,23 @@ export const EvaluationTab: React.FC = () => {
                       const curYearlyRec = isYearly ? curRecords.find(m => m.monthIndex === activeYearlyFiscalMonth) : null;
                       const curWeeklyRec = isWeekly ? curWeeklyRecords.find(w => w.weekIndex === activeYearlyWeekIndex) : null;
                       const curQuarterlyRec = isQuarterly ? curQuarterlyRecords.find(q => q.quarterIndex === activeYearlyQuarterIndex) : null;
+                      const curDailyRec = isDaily ? curDailyRecords.find(d => d.dayIndex === activeYearlyDailyIndex) : null;
 
-                      const isYearlyPeriodSubmitted = isWeekly
-                        ? Boolean(curWeeklyRec?.status === 'submitted_to_manager' || curWeeklyRec?.status === 'manager_approved')
-                        : (isQuarterly
-                          ? Boolean(curQuarterlyRec?.status === 'submitted_to_manager' || curQuarterlyRec?.status === 'manager_approved')
-                          : Boolean(isYearly && (curYearlyRec?.status === 'submitted_to_manager' || curYearlyRec?.status === 'manager_approved')));
+                      const isYearlyPeriodSubmitted = isDaily
+                        ? Boolean(curDailyRec?.status === 'submitted_to_manager' || curDailyRec?.status === 'manager_approved')
+                        : (isWeekly
+                          ? Boolean(curWeeklyRec?.status === 'submitted_to_manager' || curWeeklyRec?.status === 'manager_approved')
+                          : (isQuarterly
+                            ? Boolean(curQuarterlyRec?.status === 'submitted_to_manager' || curQuarterlyRec?.status === 'manager_approved')
+                            : Boolean(isYearly && (curYearlyRec?.status === 'submitted_to_manager' || curYearlyRec?.status === 'manager_approved'))));
 
-                      const approvedPeriodsList = isWeekly
-                        ? curWeeklyRecords.filter(w => w.status === 'manager_approved')
-                        : (isQuarterly
-                          ? curQuarterlyRecords.filter(q => q.status === 'manager_approved')
-                          : curRecords.filter(m => m.status === 'manager_approved'));
+                      const approvedPeriodsList = isDaily
+                        ? curDailyRecords.filter(d => d.status === 'manager_approved')
+                        : (isWeekly
+                          ? curWeeklyRecords.filter(w => w.status === 'manager_approved')
+                          : (isQuarterly
+                            ? curQuarterlyRecords.filter(q => q.status === 'manager_approved')
+                            : curRecords.filter(m => m.status === 'manager_approved')));
 
                       const ytdAvgScore = approvedPeriodsList.length > 0
                         ? Number((approvedPeriodsList.reduce((sum, r: any) => sum + (Number(r.managerScore) || 0), 0) / approvedPeriodsList.length).toFixed(1))
@@ -12867,31 +14028,41 @@ export const EvaluationTab: React.FC = () => {
                       activeCategories.forEach(cat => {
                         let catRaw = 0;
                         cat.kpis.forEach(k => {
-                          const yearlyEntry = isWeekly
-                            ? (curWeeklyRec?.kpiEntries?.[k.id] || (k.name ? curWeeklyRec?.kpiEntries?.[k.name] : null))
-                            : (isQuarterly
-                              ? (curQuarterlyRec?.kpiEntries?.[k.id] || (k.name ? curQuarterlyRec?.kpiEntries?.[k.name] : null))
-                              : (curYearlyRec?.kpiEntries?.[k.id] || (k.name ? curYearlyRec?.kpiEntries?.[k.name] : null)));
-                          const val = isWeekly
+                          const yearlyEntry = isDaily
+                            ? (curDailyRec?.kpiEntries?.[k.id] || (k.name ? curDailyRec?.kpiEntries?.[k.name] : null))
+                            : (isWeekly
+                              ? (curWeeklyRec?.kpiEntries?.[k.id] || (k.name ? curWeeklyRec?.kpiEntries?.[k.name] : null))
+                              : (isQuarterly
+                                ? (curQuarterlyRec?.kpiEntries?.[k.id] || (k.name ? curQuarterlyRec?.kpiEntries?.[k.name] : null))
+                                : (curYearlyRec?.kpiEntries?.[k.id] || (k.name ? curYearlyRec?.kpiEntries?.[k.name] : null))));
+                          const val = isDaily
                             ? (!isYearlyPeriodSubmitted
-                              ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                              ? (yearlyDailyKpiInputs[activeYearlyDailyIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyDailyKpiInputs[activeYearlyDailyIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                               : (yearlyEntry?.actualValue ?? ''))
-                            : (isQuarterly
+                            : (isWeekly
                               ? (!isYearlyPeriodSubmitted
-                                ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                ? (yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyWeekKpiInputs[activeYearlyWeekIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                                 : (yearlyEntry?.actualValue ?? ''))
-                              : (isYearly
+                              : (isQuarterly
                                 ? (!isYearlyPeriodSubmitted
-                                  ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                  ? (yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.id]?.actualValue ?? (k.name ? yearlyQuarterKpiInputs[activeYearlyQuarterIndex]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
                                   : (yearlyEntry?.actualValue ?? ''))
-                                : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? ''))));
+                                : (isYearly
+                                  ? (!isYearlyPeriodSubmitted
+                                    ? (yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.id]?.actualValue ?? (k.name ? yearlyMonthKpiInputs[activeYearlyFiscalMonth]?.[k.name]?.actualValue : '') ?? yearlyEntry?.actualValue ?? '')
+                                    : (yearlyEntry?.actualValue ?? ''))
+                                  : (getKpiResponseItem(k)?.actualValue ?? (kpiInputs[k.id]?.actualValue ?? '')))));
                           catRaw += calculateKPIScore(k, val).earnedScore;
                         });
                         periodSelfSum += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, catRaw);
                       });
                       const displayScore = isYearly ? Number(periodSelfSum.toFixed(1)) : selfScoreNum;
-                      const activeMilestoneLabel = isWeekly ? (curWeeklyRec?.weekLabel || `Week ${activeYearlyWeekIndex}`) : (isQuarterly ? quarterName : monthName);
-                      const activeMilestoneMgrScore = isWeekly ? curWeeklyRec?.managerScore : (isQuarterly ? curQuarterlyRec?.managerScore : curYearlyRec?.managerScore);
+                      const activeMilestoneLabel = isDaily
+                        ? (curDailyRec?.dayLabel || `Day ${activeYearlyDailyIndex}`)
+                        : (isWeekly ? (curWeeklyRec?.weekLabel || `Week ${activeYearlyWeekIndex}`) : (isQuarterly ? quarterName : monthName));
+                      const activeMilestoneMgrScore = isDaily
+                        ? curDailyRec?.managerScore
+                        : (isWeekly ? curWeeklyRec?.managerScore : (isQuarterly ? curQuarterlyRec?.managerScore : curYearlyRec?.managerScore));
 
                       return (
                         <>
@@ -12936,6 +14107,109 @@ export const EvaluationTab: React.FC = () => {
                           </div>
 
                           {isYearly ? (() => {
+                            if (isDaily) {
+                              const dayLockInfo = getYearlyDailyLockInfo(activeYearlyDailyIndex, curDailyRecords);
+                              const dayLabel = curDailyRec?.dayLabel || `Day ${activeYearlyDailyIndex}`;
+                              if (dayLockInfo.isLocked) {
+                                return (
+                                  <div className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 shadow-2xs">
+                                    <LockClosedIcon className="w-4 h-4 text-slate-500" />
+                                    <span>{dayLockInfo.lockReason || `${dayLabel} is Locked`}</span>
+                                  </div>
+                                );
+                              }
+                              if (dayLockInfo.isSubmitted) {
+                                return (
+                                  <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-50 text-amber-900 rounded-xl text-xs font-bold border border-amber-200 shadow-2xs">
+                                    <ClockIcon className="w-4 h-4 text-amber-700" />
+                                    <span>{dayLabel} Deliverables Submitted to Manager (Under Review)</span>
+                                  </div>
+                                );
+                              }
+                              if (dayLockInfo.isApproved) {
+                                return (
+                                  <div className="flex items-center gap-2 px-5 py-2.5 bg-emerald-50 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-200 shadow-2xs">
+                                    <CheckCircleIcon className="w-4 h-4 text-emerald-700" />
+                                    <span>{dayLabel} Milestone Approved ({curDailyRec?.managerScore != null ? `${Number(curDailyRec.managerScore).toFixed(1)}%` : 'Approved'})</span>
+                                  </div>
+                                );
+                              }
+
+                              const expandedCatIndices = filteredCategories
+                                .map((cat, idx) => {
+                                  const isCatOpen = Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                                  return isCatOpen ? idx : -1;
+                                })
+                                .filter(idx => idx !== -1);
+
+                              const currentActiveCatIdx = expandedCatIndices.length > 0
+                                ? Math.max(...expandedCatIndices)
+                                : 0;
+
+                              const allCatsOpen = filteredCategories.length > 0 && filteredCategories.every((cat, idx) => {
+                                return Object.keys(expandedCategories).length === 0 ? idx === 0 : Boolean(expandedCategories[cat.id]);
+                              });
+
+                              const isLastCategory = filteredCategories.length <= 1 || currentActiveCatIdx >= filteredCategories.length - 1 || allCatsOpen;
+
+                              return (
+                                <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                                  {currentActiveCatIdx > 0 && !allCatsOpen && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const prevIdx = Math.max(currentActiveCatIdx - 1, 0);
+                                        const prevCat = filteredCategories[prevIdx];
+                                        if (prevCat) {
+                                          setExpandedCategories({ [prevCat.id]: true });
+                                        }
+                                      }}
+                                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                                    >
+                                      <ArrowLeftIcon className="w-3.5 h-3.5" />
+                                      <span>Previous</span>
+                                    </button>
+                                  )}
+
+                                  {!isLastCategory ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const nextIdx = Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1);
+                                        const nextCat = filteredCategories[nextIdx];
+                                        if (nextCat) {
+                                          setExpandedCategories({ [nextCat.id]: true });
+                                        }
+                                      }}
+                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                    >
+                                      <span>Next: {filteredCategories[Math.min(currentActiveCatIdx + 1, filteredCategories.length - 1)]?.name || 'Next Category'}</span>
+                                      <ArrowRightIcon className="w-4 h-4 stroke-[2]" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleYearlyDailySubmit(activeYearlyDailyIndex)}
+                                      disabled={isSubmittingEmp}
+                                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-teal-900/10 transition cursor-pointer"
+                                    >
+                                      {isSubmittingEmp ? (
+                                        <>
+                                          <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                                          <span>Submitting {dayLabel}...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <CheckCircleIcon className="w-4 h-4" />
+                                          <span>Submit {dayLabel} Deliverables to Manager</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            }
+
                             if (isQuarterly) {
                               const quarterLockInfo = getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords);
                               if (quarterLockInfo.isLocked) {
@@ -13525,11 +14799,18 @@ export const EvaluationTab: React.FC = () => {
                               const desc = String(itemCycle?.description || (r as any).description || '').trim();
                               const rawPeriod = String(itemCycle?.periodName || (r as any).periodName || (r as any).reviewPeriod || '').trim();
 
+                              const range = getEvaluationDateRange(r);
+                              if (range.startDate && range.endDate && range.startDate.getTime() !== range.endDate.getTime()) {
+                                return `${formatDisplayDate(range.startDate.toISOString())} – ${formatDisplayDate(range.endDate.toISOString())}`;
+                              }
                               if (itemCycle?.startDate && itemCycle?.endDate && itemCycle.startDate === itemCycle.endDate) {
                                 return `Daily (${formatDisplayDate(itemCycle.startDate)})`;
                               }
                               if (itemCycle?.startDate && itemCycle?.endDate) {
                                 return `${formatDisplayDate(itemCycle.startDate)} – ${formatDisplayDate(itemCycle.endDate)}`;
+                              }
+                              if (range.startDate) {
+                                return formatDisplayDate(range.startDate.toISOString());
                               }
                               if (desc && desc.toLowerCase() !== (itemCycle?.name || '').toLowerCase()) {
                                 return desc.replace(/^\(/, '').replace(/\)$/, '').trim();
@@ -13550,10 +14831,31 @@ export const EvaluationTab: React.FC = () => {
                             let itemMgrScore: number | null = null;
 
                             if (isYearly) {
-                              const isWeekly = r.milestone_frequency === 'weekly' || ((r.weekly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.quarterly_records || []).length);
-                              const isQuarterly = r.milestone_frequency === 'quarterly' || ((r.quarterly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.weekly_records || []).length);
+                              const rCadence = getResponseCadence(r);
+                              const isDaily = rCadence === 'daily';
+                              const isWeekly = rCadence === 'weekly';
+                              const isQuarterly = rCadence === 'quarterly';
 
-                              if (isQuarterly) {
+                              if (isDaily) {
+                                const dRecs = getResponseDailyRecords(r);
+                                const appD = dRecs.filter(d => d.status === 'manager_approved' && d.managerScore != null);
+                                if (appD.length > 0) {
+                                  itemMgrScore = Number((appD.reduce((s, d) => s + (Number(d.managerScore) || 0), 0) / appD.length).toFixed(1));
+                                }
+                                const subD = dRecs.filter(d => d.status === 'submitted_to_manager' || d.status === 'manager_approved');
+                                if (subD.length > 0) {
+                                  let totSelf = 0, cnt = 0;
+                                  subD.forEach(d => {
+                                    const kpis = Object.values(d.kpiEntries || {});
+                                    let dTot = 0, dCnt = 0;
+                                    kpis.forEach((k: any) => {
+                                      if (k?.earnedScore != null && Number(k.earnedScore) > 0) { dTot += Number(k.earnedScore); dCnt++; }
+                                    });
+                                    if (dCnt > 0) { totSelf += (dTot / dCnt); cnt++; }
+                                  });
+                                  if (cnt > 0) itemSelfScore = Number((totSelf / cnt).toFixed(1));
+                                }
+                              } else if (isQuarterly) {
                                 const qRecs = r.quarterly_records || [];
                                 const appQ = qRecs.filter(q => q.status === 'manager_approved' && q.managerScore != null);
                                 if (appQ.length > 0) {
@@ -13747,10 +15049,13 @@ export const EvaluationTab: React.FC = () => {
                                 {/* Collapsible Deliverable Audit Drawer matching hierarchical drilldown (Year -> Quarter -> Month -> Week) */}
                                 {isAuditOpen && (() => {
                                   const isYearly = isYearlyResponse(r);
-                                  const isWeekly = isYearly && (r.milestone_frequency === 'weekly' || ((r.weekly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.quarterly_records || []).length));
-                                  const isQuarterly = isYearly && (r.milestone_frequency === 'quarterly' || ((r.quarterly_records || []).length > 0 && !(r.monthly_records || []).length && !(r.weekly_records || []).length));
-                                  const isMonthly = isYearly && !isWeekly && !isQuarterly;
+                                  const rAudCadence = getResponseCadence(r);
+                                  const isDaily = rAudCadence === 'daily';
+                                  const isWeekly = rAudCadence === 'weekly';
+                                  const isQuarterly = rAudCadence === 'quarterly';
+                                  const isMonthly = isYearly && !isDaily && !isWeekly && !isQuarterly;
 
+                                  const curDailyRecs = getResponseDailyRecords(r);
                                   const curQuarterlyRecs = r.quarterly_records || [];
                                   const curMonthlyRecs = r.monthly_records || [];
                                   const curWeeklyRecs = r.weekly_records || [];
@@ -14171,7 +15476,7 @@ export const EvaluationTab: React.FC = () => {
                                   };
 
                                   // ==========================================
-                                  // 1. WEEKLY HIERARCHY: Quarter -> Month -> Weeks
+                                  // 1. DAILY HIERARCHY: Quarter -> Month -> Weeks -> Days
                                   // ==========================================
                                   let quarterGroups: QuarterAuditGroup[] = [];
                                   let totalMilestonesCount = 0;
@@ -14179,7 +15484,142 @@ export const EvaluationTab: React.FC = () => {
                                   let overallAvgScore: number | null = null;
                                   let singleMilestoneItem: MilestoneAuditItem | null = null;
 
-                                  if (isWeekly) {
+                                  if (isDaily) {
+                                    const dCats: KPICategory[] = itemCategories;
+                                    const totalKpis = dCats.reduce((sum: number, c: KPICategory) => sum + c.kpis.length, 0);
+
+                                    // Map each day to fiscal quarter, month, and week
+                                    const getDayFiscalInfo = (rec: YearlyDailyRecord) => {
+                                      let dDate: Date | null = null;
+                                      if (rec.date) {
+                                        const parsed = new Date(rec.date);
+                                        if (!isNaN(parsed.getTime())) dDate = parsed;
+                                      }
+                                      if (!dDate) {
+                                        dDate = new Date();
+                                      }
+
+                                      const calMonth = dDate.getMonth() + 1; // 1..12
+                                      const dayOfMonth = dDate.getDate(); // 1..31
+                                      // Fiscal month index (1 = Apr ... 12 = Mar)
+                                      const fiscalMonthIdx = calMonth >= 4 ? calMonth - 3 : calMonth + 9;
+                                      const fmObj = FISCAL_MONTHS.find(m => m.monthIndex === fiscalMonthIdx) || FISCAL_MONTHS[0];
+                                      const quarterIdx = fmObj.quarter;
+
+                                      // Approximate week of month (W1: 1-7, W2: 8-14, W3: 15-21, W4: 22-28, W5: 29+)
+                                      const weekInMonthNum = Math.min(5, Math.ceil(dayOfMonth / 7));
+                                      const weekLabel = `Week ${weekInMonthNum} (${fmObj.monthName})`;
+
+                                      return {
+                                        quarterIndex: quarterIdx,
+                                        monthIndex: fmObj.monthIndex,
+                                        monthName: fmObj.monthName,
+                                        calendarMonth: calMonth,
+                                        weekInMonthNum,
+                                        weekLabel
+                                      };
+                                    };
+
+                                    const sortedDays = [...curDailyRecs].sort((a, b) => (a.dayIndex || 0) - (b.dayIndex || 0));
+
+                                    // Build hierarchy: Quarter -> Month -> Week -> Days
+                                    quarterGroups = FISCAL_QUARTERS.map(q => {
+                                      const qMonthsMeta = FISCAL_MONTHS.filter(m => m.quarter === q.quarterIndex);
+
+                                      // For each month, group days by week
+                                      const monthGroups: MonthAuditGroup[] = qMonthsMeta.map(fMonth => {
+                                        const mDays = sortedDays.filter(d => {
+                                          const info = getDayFiscalInfo(d);
+                                          return info.monthIndex === fMonth.monthIndex;
+                                        });
+
+                                        const dayAuditItems: MilestoneAuditItem[] = mDays.map(d => {
+                                          const filledKpis = Object.values(d.kpiEntries || {}).filter(
+                                            (e: any) => (e.actualValue !== undefined && e.actualValue !== '') || (e.earnedScore != null && Number(e.earnedScore) > 0) || e.managerScore != null
+                                          ).length;
+
+                                          const scoreVal = d.managerScore != null
+                                            ? Number(d.managerScore)
+                                            : (d.employeeScore != null ? Number(d.employeeScore) : null);
+
+                                          return {
+                                            key: `day_${d.dayIndex}`,
+                                            title: d.dayLabel ? `${d.dayLabel} (${d.dayName || ''})` : `Day ${d.dayIndex}`,
+                                            dateRange: d.date || `Day ${d.dayIndex}`,
+                                            criteriaFilledCount: filledKpis,
+                                            totalCriteriaCount: totalKpis,
+                                            status: d.status,
+                                            score: scoreVal,
+                                            scoreLabel: d.managerScore != null ? 'FINAL' : (d.employeeScore != null ? 'SELF' : 'PENDING'),
+                                            categories: dCats,
+                                            entries: d.kpiEntries || {},
+                                            managerRemarks: d.managerRemarks
+                                          };
+                                        });
+
+                                        const filledCount = dayAuditItems.filter(it => it.status === 'manager_approved' || it.status === 'submitted_to_manager' || it.criteriaFilledCount > 0).length;
+                                        const scoredItems = dayAuditItems.filter(it => it.score !== null);
+                                        const avgScore = scoredItems.length > 0
+                                          ? Number((scoredItems.reduce((acc, it) => acc + Number(it.score), 0) / scoredItems.length).toFixed(2))
+                                          : null;
+
+                                        return {
+                                          monthKey: `m_${fMonth.monthIndex}`,
+                                          monthIndex: fMonth.monthIndex,
+                                          monthName: fMonth.monthName,
+                                          calendarMonth: fMonth.calendarMonth,
+                                          quarterIndex: q.quarterIndex,
+                                          filledCount,
+                                          totalCount: dayAuditItems.length,
+                                          averageScore: avgScore,
+                                          items: dayAuditItems
+                                        };
+                                      });
+
+                                      // Only include month groups that either have days or if there are none, keep empty
+                                      const allQItems = monthGroups.flatMap(mg => mg.items);
+                                      const qFilledCount = allQItems.filter(it => it.status === 'manager_approved' || it.status === 'submitted_to_manager' || it.criteriaFilledCount > 0).length;
+                                      const qScoredItems = allQItems.filter(it => it.score !== null);
+                                      const qAvgScore = qScoredItems.length > 0
+                                        ? Number((qScoredItems.reduce((acc, it) => acc + Number(it.score), 0) / qScoredItems.length).toFixed(2))
+                                        : null;
+
+                                      return {
+                                        quarterKey: `q_${q.quarterIndex}`,
+                                        quarterIndex: q.quarterIndex,
+                                        quarterLabel: q.quarterLabel,
+                                        quarterName: q.quarterName,
+                                        monthsIncluded: q.monthsIncluded,
+                                        filledCount: qFilledCount,
+                                        totalCount: allQItems.length,
+                                        averageScore: qAvgScore,
+                                        months: monthGroups
+                                      };
+                                    }).filter(q => q.totalCount > 0); // only show quarters that have days in the cycle range (or all if empty)
+
+                                    if (quarterGroups.length === 0) {
+                                      // Fallback if no specific date matched fiscal quarters
+                                      quarterGroups = FISCAL_QUARTERS.map(q => ({
+                                        quarterKey: `q_${q.quarterIndex}`,
+                                        quarterIndex: q.quarterIndex,
+                                        quarterLabel: q.quarterLabel,
+                                        quarterName: q.quarterName,
+                                        monthsIncluded: q.monthsIncluded,
+                                        filledCount: 0,
+                                        totalCount: 0,
+                                        averageScore: null,
+                                        months: []
+                                      }));
+                                    }
+
+                                    const allDays = quarterGroups.flatMap(q => (q.months || []).flatMap(m => m.items));
+                                    totalMilestonesCount = allDays.length;
+                                    totalFilledMilestonesCount = allDays.filter(it => it.status === 'manager_approved' || it.status === 'submitted_to_manager' || it.criteriaFilledCount > 0).length;
+                                    const allScored = allDays.filter(it => it.score !== null);
+                                    if (allScored.length > 0) {
+                                      overallAvgScore = Number((allScored.reduce((acc, it) => acc + Number(it.score), 0) / allScored.length).toFixed(2));
+                                    }
+                                  } else if (isWeekly) {
                                     const wCats: KPICategory[] = itemCategories;
                                     const totalKpis = wCats.reduce((sum: number, c: KPICategory) => sum + c.kpis.length, 0);
 
@@ -14472,6 +15912,121 @@ export const EvaluationTab: React.FC = () => {
 
                                           {/* 2. Hierarchical Drill-Down Accordion Sections */}
                                           <div className="space-y-3">
+                                            {/* Daily Hierarchy: Quarter -> Month -> Days */}
+                                            {isDaily && quarterGroups.map((q) => {
+                                              const isQExpanded = auditExpandedQuarters[`${r.id}_${q.quarterKey}`] !== false; // default open so employee sees their days immediately
+
+                                              return (
+                                                <div
+                                                  key={q.quarterKey}
+                                                  className="border border-purple-200/90 rounded-2xl bg-white shadow-2xs overflow-hidden transition-all"
+                                                >
+                                                  {/* Quarter Header (Clickable Dropdown Banner) */}
+                                                  <div
+                                                    onClick={() => setAuditExpandedQuarters(prev => ({
+                                                      ...prev,
+                                                      [`${r.id}_${q.quarterKey}`]: !isQExpanded
+                                                    }))}
+                                                    className="bg-purple-100/80 hover:bg-purple-100 px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer select-none transition-colors border-b border-purple-200/80"
+                                                  >
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                      <ChevronDownIcon
+                                                        className={`w-4 h-4 text-purple-900 transition-transform duration-200 shrink-0 ${
+                                                          isQExpanded ? 'rotate-0' : '-rotate-90'
+                                                        }`}
+                                                      />
+                                                      <span className="text-base">🎯</span>
+                                                      <div className="min-w-0">
+                                                        <span className="font-extrabold text-xs text-purple-950">
+                                                          {q.quarterLabel}
+                                                        </span>
+                                                        <span className="text-[11px] text-purple-700/90 font-medium ml-2">
+                                                          ({q.monthsIncluded})
+                                                        </span>
+                                                      </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2.5 shrink-0">
+                                                      {q.averageScore !== null ? (
+                                                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200 shadow-2xs">
+                                                          Avg: <strong className="font-mono">{q.averageScore.toFixed(2)}%</strong>
+                                                        </span>
+                                                      ) : (
+                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/70 text-purple-900 border border-purple-200">
+                                                          Pending
+                                                        </span>
+                                                      )}
+                                                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-purple-950 border border-purple-200 shadow-2xs">
+                                                        {q.filledCount} / {q.totalCount} days filled
+                                                      </span>
+                                                    </div>
+                                                  </div>
+
+                                                  {/* Months under this Quarter */}
+                                                  {isQExpanded && (
+                                                    <div className="p-3.5 space-y-3 bg-slate-50/40">
+                                                      {(q.months || []).filter(m => m.totalCount > 0).map((m) => {
+                                                        const isMExpanded = auditExpandedMonths[`${r.id}_${m.monthKey}`] !== false; // default open
+
+                                                        return (
+                                                          <div
+                                                            key={m.monthKey}
+                                                            className="border border-slate-200/90 rounded-xl bg-white shadow-2xs overflow-hidden transition-all"
+                                                          >
+                                                            {/* Month Header (Clickable Dropdown Banner) */}
+                                                            <div
+                                                              onClick={() => setAuditExpandedMonths(prev => ({
+                                                                ...prev,
+                                                                [`${r.id}_${m.monthKey}`]: !isMExpanded
+                                                              }))}
+                                                              className="bg-slate-50 hover:bg-slate-100/90 px-3.5 py-2 flex items-center justify-between gap-3 cursor-pointer select-none transition-colors border-b border-slate-200/80"
+                                                            >
+                                                              <div className="flex items-center gap-2 min-w-0">
+                                                                <ChevronDownIcon
+                                                                  className={`w-3.5 h-3.5 text-slate-600 transition-transform duration-200 shrink-0 ${
+                                                                    isMExpanded ? 'rotate-0' : '-rotate-90'
+                                                                  }`}
+                                                                />
+                                                                <span className="text-sm">📅</span>
+                                                                <span className="font-bold text-xs text-slate-800">
+                                                                  {m.monthName}
+                                                                </span>
+                                                                <span className="text-[10px] text-slate-400 font-medium">
+                                                                  ({m.items.length} days)
+                                                                </span>
+                                                              </div>
+
+                                                              <div className="flex items-center gap-2 shrink-0">
+                                                                {m.averageScore !== null ? (
+                                                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-50 text-teal-900 border border-teal-200">
+                                                                    Day Avg: <strong className="font-mono">{m.averageScore.toFixed(2)}%</strong>
+                                                                  </span>
+                                                                ) : (
+                                                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-medium text-slate-400 bg-slate-100">
+                                                                    No scores yet
+                                                                  </span>
+                                                                )}
+                                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white text-slate-700 border border-slate-200 shadow-2xs">
+                                                                  {m.filledCount}/{m.totalCount} filled
+                                                                </span>
+                                                              </div>
+                                                            </div>
+
+                                                            {/* Days under this Month */}
+                                                            {isMExpanded && (
+                                                              <div className="p-3 space-y-2 bg-slate-50/20">
+                                                                {m.items.map((dItem) => renderMilestoneCard(dItem))}
+                                                              </div>
+                                                            )}
+                                                          </div>
+                                                        );
+                                                      })}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              );
+                                            })}
+
                                             {/* Weekly Hierarchy: Quarter -> Month -> Week */}
                                             {isWeekly && quarterGroups.map((q) => {
                                               const isQExpanded = auditExpandedQuarters[`${r.id}_${q.quarterKey}`] === true;
@@ -14923,8 +16478,10 @@ export const EvaluationTab: React.FC = () => {
                                 if (newType === 'daily') {
                                   setMgrSubFrequency('');
                                   const todayStr = getLocalTodayDateString();
+                                  setMgrPeriodFromDate(todayStr);
+                                  setMgrPeriodToDate(todayStr);
                                   setMgrPeriodDueDate(todayStr);
-                                  syncPeriodAndFormName(newType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, todayStr, mgrAssignTeamId);
+                                  syncPeriodAndFormName(newType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, todayStr, todayStr, todayStr, mgrAssignTeamId);
                                 } else if (newType === 'weekly') {
                                   setMgrSubFrequency('');
                                   const week = getLocalCurrentWeekRange();
@@ -15068,17 +16625,19 @@ export const EvaluationTab: React.FC = () => {
                           )}
 
                           {mgrPeriodType === 'daily' && (
-                            <div className="sm:col-span-2 bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                            <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs col-span-1 sm:col-span-2">
                               <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                                Due Date <span className="text-rose-500">*</span>
+                                Evaluation Date <span className="text-rose-500">*</span>
                               </label>
                               <DatePicker
-                                value={mgrPeriodDueDate}
-                                onChange={(newDue: string) => {
-                                  setMgrPeriodDueDate(newDue);
-                                  syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, mgrPeriodToDate, newDue, mgrAssignTeamId);
+                                value={mgrPeriodFromDate || getLocalTodayDateString()}
+                                onChange={(newDate: string) => {
+                                  setMgrPeriodFromDate(newDate);
+                                  setMgrPeriodToDate(newDate);
+                                  setMgrPeriodDueDate(newDate);
+                                  syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, newDate, newDate, newDate, mgrAssignTeamId);
                                 }}
-                                placeholder="Select Due Date"
+                                placeholder="Select Evaluation Date"
                                 className="w-full font-medium text-slate-700"
                               />
                             </div>
@@ -15110,19 +16669,59 @@ export const EvaluationTab: React.FC = () => {
                                 <select
                                   value={mgrSubFrequency}
                                   onChange={e => {
-                                    const newSub = e.target.value as 'monthly' | 'weekly' | 'quarterly' | 'annual' | '';
+                                    const newSub = e.target.value as 'monthly' | 'weekly' | 'quarterly' | 'annual' | 'daily' | '';
                                     setMgrSubFrequency(newSub);
+                                    if (newSub === 'daily') {
+                                      const todayStr = getLocalTodayDateString();
+                                      if (!mgrPeriodFromDate) setMgrPeriodFromDate(todayStr);
+                                      if (!mgrPeriodToDate) setMgrPeriodToDate(todayStr);
+                                    }
                                   }}
                                   className={`w-full h-10 px-3 bg-white hover:bg-slate-50/50 focus:bg-white border rounded-lg text-xs sm:text-sm font-medium transition cursor-pointer ${!mgrSubFrequency ? 'border-amber-400 text-slate-500' : 'border-slate-200 text-slate-700 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20'
                                     }`}
                                 >
                                   <option value="" disabled>-- Select Milestone Tracking Cadence --</option>
-                                  <option value="monthly"> Monthly </option>
+                                  <option value="daily"> Daily </option>
                                   <option value="weekly"> Weekly </option>
+                                  <option value="monthly"> Monthly </option>
                                   <option value="quarterly"> Quarterly </option>
                                   <option value="annual"> Annual </option>
                                 </select>
                               </div>
+
+                              {mgrSubFrequency === 'daily' && (
+                                <>
+                                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                                    <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                                      From Date <span className="text-rose-500">*</span>
+                                    </label>
+                                    <DatePicker
+                                      value={mgrPeriodFromDate}
+                                      onChange={(newFrom: string) => {
+                                        setMgrPeriodFromDate(newFrom);
+                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, newFrom, mgrPeriodToDate, newFrom, mgrAssignTeamId);
+                                      }}
+                                      placeholder="Select From Date"
+                                      className="w-full font-medium text-slate-700"
+                                    />
+                                  </div>
+
+                                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                                    <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                                      To Date <span className="text-rose-500">*</span>
+                                    </label>
+                                    <DatePicker
+                                      value={mgrPeriodToDate}
+                                      onChange={(newTo: string) => {
+                                        setMgrPeriodToDate(newTo);
+                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, newTo, newTo, mgrAssignTeamId);
+                                      }}
+                                      placeholder="Select To Date"
+                                      className="w-full font-medium text-slate-700"
+                                    />
+                                  </div>
+                                </>
+                              )}
                             </>
                           )}
                         </div>
@@ -15456,7 +17055,7 @@ export const EvaluationTab: React.FC = () => {
                               return;
                             }
                             if ((mgrPeriodType === 'yearly' || (mgrPeriodType as string) === 'annual') && !mgrSubFrequency) {
-                              showAlert('Please select a Milestone Tracking Cadence (Monthly, Weekly, Quarterly, or Annual) for the automated rollout.', 'Milestone Cadence Required');
+                              showAlert('Please select a Milestone Tracking Cadence (Daily, Monthly, Weekly, Quarterly, or Annual) for the automated rollout.', 'Milestone Cadence Required');
                               return;
                             }
                             setMgrWizardStep(2);
@@ -16001,20 +17600,7 @@ export const EvaluationTab: React.FC = () => {
 
                     {activeRole === 'manager' && (
                       <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenConvertModal()}
-                          className="flex items-center gap-2 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
-                          title="Rollup & Convert Evaluations across frequencies (Daily -> Weekly, Weekly -> Monthly, Monthly -> Quarterly, Quarterly -> Yearly)"
-                        >
-                          <ArrowPathIcon className="w-4 h-4 text-amber-700" />
-                          <span>Rollup & Convert</span>
-                          {totalConvertibleCount > 0 && (
-                            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-amber-200 text-amber-900">
-                              {totalConvertibleCount}
-                            </span>
-                          )}
-                        </button>
+
 
                         {canCreateMetrics && (
                           <button
@@ -16539,7 +18125,9 @@ export const EvaluationTab: React.FC = () => {
                                             const teamPendingCount = teamGroup.members.filter(m => {
                                               const isYearly = isYearlyResponse(m.response);
                                               if (isYearly) {
+                                                const dRecords = getResponseDailyRecords(m.response);
                                                 return (
+                                                  dRecords.some((d: any) => d.status === 'submitted_to_manager') ||
                                                   (m.response.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
                                                   (m.response.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
                                                   (m.response.monthly_records || []).some((mRec: any) => mRec.status === 'submitted_to_manager')
@@ -16554,15 +18142,15 @@ export const EvaluationTab: React.FC = () => {
                                             }).length;
                                             if (teamPendingCount === 0) return null;
                                             return (
-                                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50/90 text-amber-900 border border-amber-200/90 shadow-2xs shrink-0">
-                                                <span className="relative flex h-1.5 w-1.5 shrink-0">
-                                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
+                                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs shrink-0 animate-pulse">
+                                                <span className="relative flex h-2 w-2 shrink-0">
+                                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-600"></span>
                                                 </span>
-                                                <ClockIcon className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                                <ClockIcon className="w-3.5 h-3.5 text-amber-700 shrink-0" />
                                                 <span>
-                                                  <strong className="font-semibold text-amber-950">{teamPendingCount}</strong>{' '}
-                                                  {teamPendingCount === 1 ? 'Submission Awaiting Approval' : 'Submissions Awaiting Approval'}
+                                                  <strong>{teamPendingCount}</strong>{' '}
+                                                  {teamPendingCount === 1 ? 'Needs Approval' : 'Need Approval'}
                                                 </span>
                                               </span>
                                             );
@@ -16637,12 +18225,15 @@ export const EvaluationTab: React.FC = () => {
                                   {/* Members inside Team (Rendered directly when Team is Expanded) */}
                                   {isTeamExpanded && teamGroup.members.map(member => {
                                     const isYearly = isYearlyResponse(member.response);
+                                    const curDailyRecords = getResponseDailyRecords(member.response);
                                     const hasYearlySubmittedMilestone = isYearly && (
+                                      curDailyRecords.some((d: any) => d.status === 'submitted_to_manager') ||
                                       (member.response.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
                                       (member.response.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
                                       (member.response.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
                                     );
                                     const hasYearlyApprovedMilestone = isYearly && (
+                                      curDailyRecords.some((d: any) => d.status === 'manager_approved') ||
                                       (member.response.quarterly_records || []).some((q: any) => q.status === 'manager_approved') ||
                                       (member.response.weekly_records || []).some((w: any) => w.status === 'manager_approved') ||
                                       (member.response.monthly_records || []).some((m: any) => m.status === 'manager_approved')
@@ -17722,39 +19313,49 @@ export const EvaluationTab: React.FC = () => {
       {
         Boolean(selectedMgrResponseId && selectedMgrResponse) && (() => {
           const isYearly = isYearlyResponse(selectedMgrResponse);
-          const isWeekly = isYearly && (selectedMgrResponse?.milestone_frequency === 'weekly' || ((selectedMgrResponse?.weekly_records || []).length > 0 && !(selectedMgrResponse?.monthly_records || []).length && !(selectedMgrResponse?.quarterly_records || []).length));
-          const isQuarterly = isYearly && (selectedMgrResponse?.milestone_frequency === 'quarterly' || ((selectedMgrResponse?.quarterly_records || []).length > 0 && !(selectedMgrResponse?.monthly_records || []).length && !(selectedMgrResponse?.weekly_records || []).length));
+          const mgrRespCadence = isYearly ? getResponseCadence(selectedMgrResponse) : null;
+          const isDaily = mgrRespCadence === 'daily';
+          const isWeekly = mgrRespCadence === 'weekly';
+          const isQuarterly = mgrRespCadence === 'quarterly';
+          const curDailyRecords = getResponseDailyRecords(selectedMgrResponse);
+          const curDailyRec = isDaily ? curDailyRecords.find(d => d.dayIndex === activeMgrYearlyDailyIndex) : null;
           const curWeeklyRecords = selectedMgrResponse!.weekly_records || [];
           const curWeeklyRec = isWeekly ? curWeeklyRecords.find(w => w.weekIndex === activeMgrYearlyWeekIndex) : null;
           const curQuarterlyRecords = selectedMgrResponse!.quarterly_records || [];
           const curQuarterlyRec = isQuarterly ? curQuarterlyRecords.find(q => q.quarterIndex === activeMgrYearlyQuarterIndex) : null;
           const curYearlyRecords = selectedMgrResponse!.monthly_records || [];
-          const curYearlyRec = isYearly ? (isWeekly || isQuarterly ? null : curYearlyRecords.find(m => m.monthIndex === activeMgrYearlyFiscalMonth)) : null;
+          const curYearlyRec = isYearly ? (isDaily || isWeekly || isQuarterly ? null : curYearlyRecords.find(m => m.monthIndex === activeMgrYearlyFiscalMonth)) : null;
           const curFiscalMonthObj = FISCAL_MONTHS.find(m => m.monthIndex === activeMgrYearlyFiscalMonth);
           const curQuarterFiscalObj = FISCAL_QUARTERS.find(q => q.quarterIndex === activeMgrYearlyQuarterIndex);
-          const curMilestoneName = isWeekly
-            ? (curWeeklyRec?.weekLabel || `Week ${activeMgrYearlyWeekIndex}`)
-            : isQuarterly
-              ? (curQuarterlyRec?.quarterLabel || curQuarterFiscalObj?.quarterLabel || `Q${activeMgrYearlyQuarterIndex}`)
-              : (curFiscalMonthObj ? curFiscalMonthObj.monthName : `Month ${activeMgrYearlyFiscalMonth}`);
+          const curMilestoneName = isDaily
+            ? (curDailyRec?.dayLabel || `Day ${activeMgrYearlyDailyIndex}`)
+            : (isWeekly
+              ? (curWeeklyRec?.weekLabel || `Week ${activeMgrYearlyWeekIndex}`)
+              : isQuarterly
+                ? (curQuarterlyRec?.quarterLabel || curQuarterFiscalObj?.quarterLabel || `Q${activeMgrYearlyQuarterIndex}`)
+                : (curFiscalMonthObj ? curFiscalMonthObj.monthName : `Month ${activeMgrYearlyFiscalMonth}`));
           const curMonthName = curMilestoneName;
 
-          const approvedMilestones = isWeekly
-            ? curWeeklyRecords.filter(w => w.status === 'manager_approved')
-            : isQuarterly
-              ? curQuarterlyRecords.filter(q => q.status === 'manager_approved')
-              : curYearlyRecords.filter(m => m.status === 'manager_approved');
+          const approvedMilestones = isDaily
+            ? curDailyRecords.filter(d => d.status === 'manager_approved')
+            : (isWeekly
+              ? curWeeklyRecords.filter(w => w.status === 'manager_approved')
+              : isQuarterly
+                ? curQuarterlyRecords.filter(q => q.status === 'manager_approved')
+                : curYearlyRecords.filter(m => m.status === 'manager_approved'));
           const ytdScore = approvedMilestones.length > 0
             ? Number((approvedMilestones.reduce((acc, r: any) => acc + (Number(r.managerScore) || 0), 0) / approvedMilestones.length).toFixed(1))
             : null;
 
           const { employeeCode, employeeName, teamName } = getEmployeeDisplayInfo(selectedMgrResponse!);
           const empScore = isYearly
-            ? (isWeekly
-              ? (curWeeklyRec?.employeeScore != null ? Number(curWeeklyRec.employeeScore) : 0)
-              : isQuarterly
-                ? (curQuarterlyRec?.employeeScore != null ? Number(curQuarterlyRec.employeeScore) : 0)
-                : (curYearlyRec?.employeeScore != null ? Number(curYearlyRec.employeeScore) : 0))
+            ? (isDaily
+              ? (curDailyRec?.employeeScore != null ? Number(curDailyRec.employeeScore) : 0)
+              : (isWeekly
+                ? (curWeeklyRec?.employeeScore != null ? Number(curWeeklyRec.employeeScore) : 0)
+                : isQuarterly
+                  ? (curQuarterlyRec?.employeeScore != null ? Number(curQuarterlyRec.employeeScore) : 0)
+                  : (curYearlyRec?.employeeScore != null ? Number(curYearlyRec.employeeScore) : 0)))
             : (selectedMgrResponse!.employeeOverallScore != null ? Number(selectedMgrResponse!.employeeOverallScore) : 0);
           const rating = getRatingForScore(mgrScore);
           const cycleForResp = cycles.find(c => c.id === selectedMgrResponse!.cycleId);
@@ -17762,7 +19363,7 @@ export const EvaluationTab: React.FC = () => {
             ? `${curMilestoneName} Milestone • ${cycleForResp?.periodName || (selectedMgrResponse as any)?.periodName || 'Annual Evaluation'}`
             : (cycleForResp?.periodName || (selectedMgrResponse as any)?.periodName || 'Active Cycle');
 
-          const activeMilestoneStatus = isWeekly ? curWeeklyRec?.status : isQuarterly ? curQuarterlyRec?.status : curYearlyRec?.status;
+          const activeMilestoneStatus = isDaily ? curDailyRec?.status : (isWeekly ? curWeeklyRec?.status : isQuarterly ? curQuarterlyRec?.status : curYearlyRec?.status);
           const rawStatus = isYearly
             ? String(activeMilestoneStatus || 'pending_employee').toLowerCase().trim()
             : String(selectedMgrResponse!.status || '').toLowerCase().trim();
@@ -17887,8 +19488,105 @@ export const EvaluationTab: React.FC = () => {
 
                   {/* Milestone Stepper for Yearly Cadence (52-Week, Quarterly, or 12-Month) */}
                   {isYearly && (() => {
-                    const isWeekly = selectedMgrResponse?.milestone_frequency === 'weekly' || ((selectedMgrResponse?.weekly_records || []).length > 0 && !(selectedMgrResponse?.monthly_records || []).length && !(selectedMgrResponse?.quarterly_records || []).length);
-                    const isQuarterly = selectedMgrResponse?.milestone_frequency === 'quarterly' || ((selectedMgrResponse?.quarterly_records || []).length > 0 && !(selectedMgrResponse?.monthly_records || []).length && !(selectedMgrResponse?.weekly_records || []).length);
+                    const mgrStepperCadence = getResponseCadence(selectedMgrResponse);
+                    const isDaily = mgrStepperCadence === 'daily';
+                    const isWeekly = mgrStepperCadence === 'weekly';
+                    const isQuarterly = mgrStepperCadence === 'quarterly';
+
+                    if (isDaily) {
+                      const curDailyRecords = getResponseDailyRecords(selectedMgrResponse);
+                      const approvedDays = curDailyRecords.filter(d => d.status === 'manager_approved');
+                      const pendingSubmittedDayRec = curDailyRecords.find(d => d.status === 'submitted_to_manager');
+                      const curDayRec = curDailyRecords.find(d => d.dayIndex === activeMgrYearlyDailyIndex);
+                      const curDayLabel = curDayRec?.dayLabel || `Day ${activeMgrYearlyDailyIndex}`;
+
+                      const currentDayIdx = curDailyRecords.findIndex(d => d.dayIndex === activeMgrYearlyDailyIndex);
+                      const prevDay = currentDayIdx > 0 ? curDailyRecords[currentDayIdx - 1] : null;
+                      const nextDay = currentDayIdx < curDailyRecords.length - 1 ? curDailyRecords[currentDayIdx + 1] : null;
+
+                      return (
+                        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-3.5 sm:p-4 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-700">Select Date / Day:</span>
+                              <div className="relative">
+                                <select
+                                  value={activeMgrYearlyDailyIndex}
+                                  onChange={e => switchMgrYearlyDay(Number(e.target.value))}
+                                  className="h-8.5 pl-3 pr-8 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer appearance-none shadow-2xs"
+                                >
+                                  {curDailyRecords.map(d => {
+                                    const dApproved = d.status === 'manager_approved';
+                                    const dSubmitted = d.status === 'submitted_to_manager';
+                                    const icon = dApproved ? '✓ ' : dSubmitted ? '● ' : '';
+                                    return (
+                                      <option key={d.dayIndex} value={d.dayIndex}>
+                                        {icon}{d.dayLabel} — {dApproved ? 'Approved' : dSubmitted ? 'Submitted (Review)' : 'Pending'}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                                <ChevronDownIcon className="w-4 h-4 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-xs">
+                              {pendingSubmittedDayRec && (
+                                <button
+                                  type="button"
+                                  onClick={() => switchMgrYearlyDay(pendingSubmittedDayRec.dayIndex)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg font-bold text-xs shadow-2xs transition cursor-pointer"
+                                >
+                                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                                  <span>Jump to Submitted: {pendingSubmittedDayRec.dayLabel}</span>
+                                </button>
+                              )}
+                              <span className="text-slate-500 font-medium">
+                                Approved: <strong className="text-emerald-700 font-bold">{approvedDays.length}/{curDailyRecords.length} Days</strong>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Stepper Navigation bar */}
+                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                            <button
+                              type="button"
+                              onClick={() => prevDay && switchMgrYearlyDay(prevDay.dayIndex)}
+                              disabled={!prevDay}
+                              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                            >
+                              <ArrowLeftIcon className="w-3.5 h-3.5" />
+                              <span>Prev Day</span>
+                            </button>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black text-slate-800">
+                                {curDayLabel} ({curDayRec?.date})
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                curDayRec?.status === 'manager_approved'
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                  : curDayRec?.status === 'submitted_to_manager'
+                                    ? 'bg-amber-50 text-amber-800 border border-amber-200 animate-pulse'
+                                    : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {curDayRec?.status === 'manager_approved' ? 'Approved' : curDayRec?.status === 'submitted_to_manager' ? 'Ready for Review' : 'Pending Employee'}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => nextDay && switchMgrYearlyDay(nextDay.dayIndex)}
+                              disabled={!nextDay}
+                              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                            >
+                              <span>Next Day</span>
+                              <ArrowRightIcon className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
 
                     if (isWeekly) {
                       const curWeeklyRecords = selectedMgrResponse?.weekly_records || [];
@@ -18331,18 +20029,22 @@ export const EvaluationTab: React.FC = () => {
 
                     cat.kpis.forEach(kpi => {
                       const respItem = isYearly
-                        ? (isWeekly
-                          ? (curWeeklyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeeklyRec?.kpiEntries?.[kpi.name] : null))
-                          : isQuarterly
-                            ? (curQuarterlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterlyRec?.kpiEntries?.[kpi.name] : null))
-                            : (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null)))
+                        ? (isDaily
+                          ? (curDailyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curDailyRec?.kpiEntries?.[kpi.name] : null))
+                          : (isWeekly
+                            ? (curWeeklyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeeklyRec?.kpiEntries?.[kpi.name] : null))
+                            : isQuarterly
+                              ? (curQuarterlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterlyRec?.kpiEntries?.[kpi.name] : null))
+                              : (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null))))
                         : (selectedMgrResponse!.kpiResponses?.[kpi.id] || (kpi.name ? selectedMgrResponse!.kpiResponses?.[kpi.name] : null));
                       const empActual = respItem?.actualValue ?? respItem?.actual_value ?? '';
                       const curMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : ((kpi.name && mgrKpiActuals[kpi.name] !== undefined) ? mgrKpiActuals[kpi.name] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual));
                       if (empActual !== '' && empActual !== null && empActual !== undefined) {
                         rawEmpScoreSum += calculateKPIScore(kpi, empActual).earnedScore;
                       }
-                      if (curMgrActual !== '' && curMgrActual !== null && curMgrActual !== undefined) {
+                      if (mgrWaivedShortfall[kpi.id]) {
+                        rawMgrScoreSum += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+                      } else if (curMgrActual !== '' && curMgrActual !== null && curMgrActual !== undefined) {
                         rawMgrScoreSum += calculateKPIScore(kpi, curMgrActual).earnedScore;
                       }
                     });
@@ -18412,6 +20114,9 @@ export const EvaluationTab: React.FC = () => {
                                 <th className="px-3 py-3 text-center min-w-[150px] bg-slate-50/50 text-slate-700">
                                   {isReadOnly ? 'Manager Goal & Score' : 'Manager Score'}
                                 </th>
+                                <th className="px-3 py-3 text-center min-w-[140px] whitespace-nowrap text-teal-900 bg-teal-50/40">
+                                  Full Credit (Workload Met)
+                                </th>
                                 {!isReadOnly && (
                                   <th className="px-5 py-3 min-w-[190px]">
                                     Manager Remarks
@@ -18422,11 +20127,13 @@ export const EvaluationTab: React.FC = () => {
                             <tbody className="divide-y divide-slate-100">
                               {cat.kpis.map(kpi => {
                                 const respItem = isYearly
-                                  ? (isWeekly
-                                    ? (curWeeklyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeeklyRec?.kpiEntries?.[kpi.name] : null))
-                                    : isQuarterly
-                                      ? (curQuarterlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterlyRec?.kpiEntries?.[kpi.name] : null))
-                                      : (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null)))
+                                  ? (isDaily
+                                    ? (curDailyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curDailyRec?.kpiEntries?.[kpi.name] : null))
+                                    : (isWeekly
+                                      ? (curWeeklyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeeklyRec?.kpiEntries?.[kpi.name] : null))
+                                      : isQuarterly
+                                        ? (curQuarterlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curQuarterlyRec?.kpiEntries?.[kpi.name] : null))
+                                        : (curYearlyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curYearlyRec?.kpiEntries?.[kpi.name] : null))))
                                   : (selectedMgrResponse!.kpiResponses?.[kpi.id] || (kpi.name ? selectedMgrResponse!.kpiResponses?.[kpi.name] : null));
                                 const empActual = respItem?.actualValue ?? respItem?.actual_value ?? '';
                                 const currentMgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : ((kpi.name && mgrKpiActuals[kpi.name] !== undefined) ? mgrKpiActuals[kpi.name] : (respItem?.managerActualValue ?? respItem?.manager_actual_pm ?? empActual));
@@ -18576,16 +20283,19 @@ export const EvaluationTab: React.FC = () => {
                                         return (
                                           <div className="flex flex-col items-center justify-center gap-1">
                                             {isReadOnly ? (
-                                              <div className="font-semibold text-xs text-slate-900">
+                                              <div className="flex flex-col items-center justify-center gap-1 font-semibold text-xs text-slate-900">
                                                 <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${isGoalModified
                                                   ? 'bg-amber-100/90 text-amber-950 border-amber-300'
                                                   : isNeg && isOverMgr
                                                     ? 'bg-rose-50 text-rose-900 border-rose-300'
                                                     : isOverMgr
                                                       ? 'bg-teal-100/80 text-teal-950 border-teal-300'
-                                                      : 'bg-white text-slate-900 border-slate-200'
+                                                      : 'bg-white text-slate-900 border border-slate-200'
                                                   }`}>
                                                   <span>{currentMgrActual !== '' && currentMgrActual !== null && currentMgrActual !== undefined ? currentMgrActual : (empActual || '—')} {kpi.unit || ''}</span>
+                                                </span>
+                                                <span className="text-[11px] font-bold text-teal-800 font-mono">
+                                                  {respItem?.isWaived || (respItem as any)?.fullCreditGranted ? `${(Number(kpi.targetScore ?? kpi.weightage) || 0).toFixed(2)}%` : (respItem?.managerScore != null ? `${Number(respItem.managerScore).toFixed(2)}%` : `${calcMgr.earnedScore.toFixed(2)}%`)}
                                                 </span>
                                               </div>
                                             ) : (
@@ -18619,10 +20329,14 @@ export const EvaluationTab: React.FC = () => {
                                                   {kpi.unit && <span className="text-[11px] text-slate-500 font-semibold">{kpi.unit}</span>}
                                                 </div>
                                                 <div className="flex items-center gap-1">
-                                                  <span className="text-[11px] font-bold text-teal-800 font-mono">
-                                                    {calcMgr.earnedScore.toFixed(2)}%
+                                                  <span className={`text-[11px] font-bold font-mono ${mgrWaivedShortfall[kpi.id] ? 'text-teal-900 font-extrabold' : 'text-teal-800'}`}>
+                                                    {mgrWaivedShortfall[kpi.id] ? (Number(kpi.targetScore ?? kpi.weightage) || 0).toFixed(2) : calcMgr.earnedScore.toFixed(2)}%
                                                   </span>
-                                                  {isGoalModified ? (
+                                                  {mgrWaivedShortfall[kpi.id] ? (
+                                                    <span className="text-[9px] font-bold uppercase text-teal-800 px-1.5 py-0.2 rounded-full bg-teal-100 border border-teal-300">
+                                                      WAIVED
+                                                    </span>
+                                                  ) : isGoalModified ? (
                                                     <span className="text-[9px] font-bold uppercase text-amber-800 px-1.5 py-0.2 rounded-full bg-amber-100 border border-amber-300">
                                                       ADJUSTED
                                                     </span>
@@ -18643,18 +20357,95 @@ export const EvaluationTab: React.FC = () => {
                                       })()}
                                     </td>
 
+                                    {/* Full Credit / Workload Met Column (Option A) */}
+                                    <td className="px-3 py-3.5 text-center whitespace-nowrap bg-teal-50/20">
+                                      {(() => {
+                                        const isWaived = Boolean(mgrWaivedShortfall[kpi.id]);
+                                        const maxScore = Number(kpi.targetScore ?? kpi.weightage) || 0;
+                                        const currentScore = calcMgr.earnedScore;
+                                        const diff = Math.max(0, maxScore - currentScore);
+                                        const hasGap = diff > 0.01;
+
+                                        if (isReadOnly) {
+                                          return isWaived ? (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-300 shadow-2xs">
+                                              <span className="inline-flex items-center gap-1"><CheckIcon className="w-3 h-3" /> Full Credit</span>
+                                            </span>
+                                          ) : (
+                                            <span className="text-slate-300 text-xs">—</span>
+                                          );
+                                        }
+
+                                        return (
+                                          <div className="flex flex-col items-center justify-center gap-1">
+                                            <label
+                                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all select-none text-xs font-semibold ${
+                                                isWaived
+                                                  ? 'bg-teal-600 text-white border-teal-700 shadow-xs ring-2 ring-teal-300/40 cursor-pointer'
+                                                  : hasGap
+                                                    ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-2xs cursor-pointer'
+                                                    : 'bg-slate-100/80 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                                              }`}
+                                              title={
+                                                !hasGap
+                                                  ? "Target is already fully met (no shortfall exists to waive)."
+                                                  : "If available workload was limited (e.g. employee completed all available work like 1000/1200 pages), check this to grant the remaining score and award full 100% score for this deliverable."
+                                              }
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={isWaived}
+                                                disabled={(!isPendingManagerReview && !isAlreadyCalibrated) || !hasGap}
+                                                onChange={() => handleToggleWaiveShortfall(kpi)}
+                                                className={`w-3.5 h-3.5 rounded text-teal-600 focus:ring-teal-500 accent-teal-600 ${!hasGap ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
+                                              />
+                                              <span className="text-[11px] font-bold">
+                                                {isWaived ? 'Full Credit' : 'Waive Shortage'}
+                                              </span>
+                                            </label>
+                                            {isWaived ? (
+                                              <span className="text-[10px] font-bold text-teal-700 font-mono">
+                                                {diff > 0.01 ? `+${diff.toFixed(2)}% added (${maxScore}%)` : `Full Score (${maxScore}%)`}
+                                              </span>
+                                            ) : hasGap ? (
+                                              <span className="text-[9px] text-rose-500 font-bold bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                                                Gap: -{diff.toFixed(2)}%
+                                              </span>
+                                            ) : (
+                                              <span className="text-[9px] text-emerald-700 font-semibold flex items-center gap-0.5"><CheckIcon className="w-2.5 h-2.5 text-emerald-600 stroke-[2.5]" /> Target Met (No Gap)</span>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                    </td>
                                     {/* Manager Remarks Column (Only rendered when NOT read-only for editing) */}
                                     {!isReadOnly && (
                                       <td className="px-5 py-3.5 min-w-[200px]">
-                                        <ExpandableRemarkInput
-                                          value={currentMgrRemark}
-                                          onChange={val => handleMgrRowRemarkChange(kpi.id, val)}
-                                          disabled={!isPendingManagerReview && !isAlreadyCalibrated}
-                                          placeholder={isGoalModified ? 'Reason for goal change...' : 'Add manager remarks...'}
-                                          className={isGoalModified && !currentMgrRemark.trim()
-                                            ? 'bg-amber-50/90 border-2 border-amber-400 focus:border-amber-600 text-slate-900 placeholder:text-amber-700 disabled:opacity-50 disabled:cursor-not-allowed'
-                                            : 'bg-slate-50 focus:bg-white border border-slate-200 focus:border-teal-500 text-slate-800 disabled:opacity-50 disabled:cursor-not-allowed'}
-                                        />
+                                        <div className="space-y-1">
+                                          <ExpandableRemarkInput
+                                            id={`mgr-remark-${kpi.id}`}
+                                            value={currentMgrRemark}
+                                            onChange={val => handleMgrRowRemarkChange(kpi.id, val)}
+                                            disabled={!isPendingManagerReview && !isAlreadyCalibrated}
+                                            placeholder={
+                                              mgrWaivedShortfall[kpi.id]
+                                                ? 'Reason for waiving shortage (Required)...'
+                                                : (isGoalModified ? 'Reason for goal change...' : 'Add manager remarks...')
+                                            }
+                                            className={
+                                              mgrWaivedShortfall[kpi.id] && !currentMgrRemark.trim()
+                                                ? 'bg-amber-50/90 border-2 border-amber-500 focus:border-amber-600 text-slate-900 placeholder:text-amber-800 ring-2 ring-amber-300/40 disabled:opacity-50 disabled:cursor-not-allowed'
+                                                : isGoalModified && !currentMgrRemark.trim()
+                                                  ? 'bg-amber-50/90 border-2 border-amber-400 focus:border-amber-600 text-slate-900 placeholder:text-amber-700 disabled:opacity-50 disabled:cursor-not-allowed'
+                                                  : 'bg-slate-50 focus:bg-white border border-slate-200 focus:border-teal-500 text-slate-800 disabled:opacity-50 disabled:cursor-not-allowed'
+                                            }
+                                          />
+                                          {mgrWaivedShortfall[kpi.id] && !currentMgrRemark.trim() && (
+                                            <span className="text-[10px] font-bold text-amber-800 flex items-center gap-1">
+                                              * Reason required for waiving shortage
+                                            </span>
+                                          )}
+                                        </div>
                                       </td>
                                     )}
                                   </tr>
@@ -18734,7 +20525,7 @@ export const EvaluationTab: React.FC = () => {
                             {(activeMilestoneStatus === 'manager_approved' || activeMilestoneStatus === 'submitted_to_manager') && (
                               <button
                                 type="button"
-                                onClick={() => handleOpenReopenModal(isWeekly ? activeMgrYearlyWeekIndex : (isQuarterly ? activeMgrYearlyQuarterIndex : activeMgrYearlyFiscalMonth))}
+                                onClick={() => handleOpenReopenModal(isDaily ? activeMgrYearlyDailyIndex : (isWeekly ? activeMgrYearlyWeekIndex : (isQuarterly ? activeMgrYearlyQuarterIndex : activeMgrYearlyFiscalMonth)))}
                                 className="flex items-center justify-center gap-1.5 px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
                                 title={`Reopen ${curMilestoneName} milestone and send back to employee for correction`}
                               >
@@ -18745,7 +20536,7 @@ export const EvaluationTab: React.FC = () => {
                             {isPendingManagerReview ? (
                               <button
                                 type="button"
-                                onClick={() => isWeekly ? handleManagerYearlyWeekApprove(activeMgrYearlyWeekIndex) : (isQuarterly ? handleManagerYearlyQuarterApprove(activeMgrYearlyQuarterIndex) : handleManagerYearlyMonthApprove(activeMgrYearlyFiscalMonth))}
+                                onClick={() => isDaily ? handleManagerYearlyDailyApprove(activeMgrYearlyDailyIndex) : (isWeekly ? handleManagerYearlyWeekApprove(activeMgrYearlyWeekIndex) : (isQuarterly ? handleManagerYearlyQuarterApprove(activeMgrYearlyQuarterIndex) : handleManagerYearlyMonthApprove(activeMgrYearlyFiscalMonth)))}
                                 className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
                               >
                                 <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
@@ -18754,7 +20545,7 @@ export const EvaluationTab: React.FC = () => {
                             ) : isAlreadyCalibrated ? (
                               <button
                                 type="button"
-                                onClick={() => isWeekly ? handleManagerYearlyWeekApprove(activeMgrYearlyWeekIndex) : (isQuarterly ? handleManagerYearlyQuarterApprove(activeMgrYearlyQuarterIndex) : handleManagerYearlyMonthApprove(activeMgrYearlyFiscalMonth))}
+                                onClick={() => isDaily ? handleManagerYearlyDailyApprove(activeMgrYearlyDailyIndex) : (isWeekly ? handleManagerYearlyWeekApprove(activeMgrYearlyWeekIndex) : (isQuarterly ? handleManagerYearlyQuarterApprove(activeMgrYearlyQuarterIndex) : handleManagerYearlyMonthApprove(activeMgrYearlyFiscalMonth)))}
                                 className="flex items-center justify-center gap-2 px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
                               >
                                 <CheckCircleIcon className="w-4 h-4 stroke-[2.2]" />
@@ -18839,11 +20630,13 @@ export const EvaluationTab: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-slate-900 tracking-tight">
-                      Reopen {selectedMgrResponse && isYearlyResponse(selectedMgrResponse) && (selectedMgrResponse.milestone_frequency === 'weekly' || ((selectedMgrResponse.weekly_records || []).length > 0 && !(selectedMgrResponse.monthly_records || []).length && !(selectedMgrResponse.quarterly_records || []).length))
-                        ? `Week ${reopenTargetMonthIndex}`
-                        : selectedMgrResponse && isYearlyResponse(selectedMgrResponse) && (selectedMgrResponse.milestone_frequency === 'quarterly' || ((selectedMgrResponse.quarterly_records || []).length > 0 && !(selectedMgrResponse.monthly_records || []).length && !(selectedMgrResponse.weekly_records || []).length))
-                          ? (reopenTargetMonthIndex ? (FISCAL_QUARTERS.find(q => q.quarterIndex === reopenTargetMonthIndex)?.quarterLabel || `Q${reopenTargetMonthIndex}`) : 'Quarter')
-                          : (reopenTargetMonthIndex ? FISCAL_MONTHS.find(m => m.monthIndex === reopenTargetMonthIndex)?.monthName : 'Milestone')} for Revision
+                      Reopen {selectedMgrResponse && isYearlyResponse(selectedMgrResponse) && (selectedMgrResponse.milestone_frequency === 'daily' || ((selectedMgrResponse.daily_records || []).length > 0))
+                        ? (getResponseDailyRecords(selectedMgrResponse).find(d => d.dayIndex === reopenTargetMonthIndex)?.dayLabel || `Day ${reopenTargetMonthIndex}`)
+                        : selectedMgrResponse && isYearlyResponse(selectedMgrResponse) && (selectedMgrResponse.milestone_frequency === 'weekly' || ((selectedMgrResponse.weekly_records || []).length > 0 && !(selectedMgrResponse.monthly_records || []).length && !(selectedMgrResponse.quarterly_records || []).length))
+                          ? `Week ${reopenTargetMonthIndex}`
+                          : selectedMgrResponse && isYearlyResponse(selectedMgrResponse) && (selectedMgrResponse.milestone_frequency === 'quarterly' || ((selectedMgrResponse.quarterly_records || []).length > 0 && !(selectedMgrResponse.monthly_records || []).length && !(selectedMgrResponse.weekly_records || []).length))
+                            ? (reopenTargetMonthIndex ? (FISCAL_QUARTERS.find(q => q.quarterIndex === reopenTargetMonthIndex)?.quarterLabel || `Q${reopenTargetMonthIndex}`) : 'Quarter')
+                            : (reopenTargetMonthIndex ? FISCAL_MONTHS.find(m => m.monthIndex === reopenTargetMonthIndex)?.monthName : 'Milestone')} for Revision
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
                       Send back to employee to update and re-submit deliverable actuals.
