@@ -111,44 +111,84 @@ const Sidebar: React.FC<SidebarProps> = ({
         const cycles: any[] = Array.isArray(evalData?.cycles) ? evalData.cycles : [];
         const responses: any[] = Array.isArray(evalData?.responses) ? evalData.responses : [];
 
-        const userEmpCode = String(user?.employee_id || localStorage.getItem('employee_id') || '').trim().toLowerCase();
-        const userFullName = (user?.full_name || user?.name || '').trim().toLowerCase();
+        const userEmpCode = String(user?.employee_id || localStorage.getItem('employee_id') || '').trim().toLowerCase().replace(/^emp-?/i, '');
+        const userFullName = (user?.full_name || user?.name || `${user?.first_name || ''} ${user?.last_name || ''}`).trim().toLowerCase();
+        const userEmail = String(user?.email || '').trim().toLowerCase();
         const access = (user?.access_level || user?.role || '').toLowerCase();
         const role = (user?.role || '').toLowerCase();
         const isHrOrAdmin = access.includes('admin') || access.includes('super') || access.includes('hr') || role.includes('hr') || role.includes('admin');
         const isManagerOrLead = access.includes('manager') || access.includes('lead') || access.includes('service_manager') || isHrOrAdmin;
 
-        let reportingIdentifiers = new Set<string>();
+        let directReportingIdentifiers = new Set<string>();
         if (empRes && empRes.ok && user?.full_name) {
           const employees = await empRes.json().catch(() => []);
           if (Array.isArray(employees)) {
-            reportingIdentifiers = getRecursiveReportingIdentifiers(user.full_name, employees);
+            for (const emp of employees) {
+              if (checkManagerMatch(emp.reporting_manager, user.full_name)) {
+                if (emp.employee_id) directReportingIdentifiers.add(String(emp.employee_id).toLowerCase());
+                const empFullName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.name || "";
+                if (empFullName) directReportingIdentifiers.add(empFullName.toLowerCase());
+              }
+            }
           }
         }
 
         let count = 0;
 
-        // 1. Employee self-evaluation pending check
-        const hasPendingEmployeeEvaluation = responses.some((r: any) => {
-          const rEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase();
-          const rName = (r.employeeName || '').trim().toLowerCase();
-          const isMe = (userEmpCode && (rEmpCode === userEmpCode)) || (userFullName && rName && rName === userFullName);
+        // 1. Employee self-evaluation pending check (When manager assigns E2R form to employee)
+        const pendingEmployeeEvals = responses.filter((r: any) => {
+          if (!r) return false;
+          const rEmpCode = String(r.employeeCode || r.employeeId || (r as any).employee_id || '').trim().toLowerCase().replace(/^emp-?/i, '');
+          const rName = (r.employeeName || (r as any).name || '').trim().toLowerCase();
+          const rEmail = String((r as any).email || '').trim().toLowerCase();
+
+          const isMe = (userEmpCode && rEmpCode && (rEmpCode === userEmpCode)) ||
+            (userFullName && rName && (rName === userFullName || rName.includes(userFullName) || userFullName.includes(rName))) ||
+            (userEmail && rEmail && (rEmail === userEmail));
+
           if (!isMe) return false;
 
           const isYearly = Boolean(
             r.milestone_frequency ||
+            r.frequency === 'daily' ||
+            (r.daily_records && r.daily_records.length > 0) ||
             (r.weekly_records && r.weekly_records.length > 0) ||
             (r.monthly_records && r.monthly_records.length > 0) ||
             (r.quarterly_records && r.quarterly_records.length > 0)
           );
 
           if (isYearly) {
-            // Check if there are open milestones needing employee fill/submission
-            return false;
+            // Check for open/pending daily, weekly, monthly, or quarterly milestones
+            const hasPendingDaily = Array.isArray(r.daily_records) && r.daily_records.some((d: any) =>
+              d && (d.status === 'pending_employee' || d.status === 'Assigned to Employee' || d.status === 'employee_in_progress')
+            );
+            const hasPendingWeekly = Array.isArray(r.weekly_records) && r.weekly_records.some((w: any) =>
+              w && (w.status === 'pending_employee' || w.status === 'Assigned to Employee' || w.status === 'employee_in_progress')
+            );
+            const hasPendingMonthly = Array.isArray(r.monthly_records) && r.monthly_records.some((m: any) =>
+              m && (m.status === 'pending_employee' || m.status === 'Assigned to Employee' || m.status === 'employee_in_progress')
+            );
+            const hasPendingQuarterly = Array.isArray(r.quarterly_records) && r.quarterly_records.some((q: any) =>
+              q && (q.status === 'pending_employee' || q.status === 'Assigned to Employee' || q.status === 'employee_in_progress')
+            );
+
+            if (hasPendingDaily || hasPendingWeekly || hasPendingMonthly || hasPendingQuarterly) {
+              return true;
+            }
+
+            // If milestone array is empty or newly assigned without sub-records filled yet
+            const mainStatus = String(r.status || '').toLowerCase();
+            const isMainPending = mainStatus === 'assigned to employee' ||
+              mainStatus === 'pending_employee' ||
+              mainStatus === 'employee_in_progress' ||
+              mainStatus === 'draft';
+            return isMainPending;
           }
 
           const statusStr = String(r.status || '').toLowerCase();
           const isSubmitted = statusStr === 'manager_review' ||
+            statusStr === 'submitted to manager' ||
+            statusStr === 'submitted' ||
             statusStr === 'approved' ||
             statusStr === 'sm_final_approval' ||
             statusStr === 'calibrated & approved' ||
@@ -157,30 +197,39 @@ const Sidebar: React.FC<SidebarProps> = ({
             Boolean((r as any).submitted_at) ||
             Boolean((r as any).submittedAt) ||
             Boolean((r as any).employee_submitted_at);
+
           return !isSubmitted;
         });
 
-        if (hasPendingEmployeeEvaluation) {
-          count += 1;
-        }
+        count += pendingEmployeeEvals.length;
 
-        // 2. Manager evaluation pending check (team members waiting for manager calibration or milestone review)
+        // 2. Manager evaluation pending check (strictly direct team members waiting for manager calibration or milestone review — excluding Department Oversight downline)
         if (isManagerOrLead) {
           const pendingTeamEvals = responses.filter((r: any) => {
-            const rEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase();
+            const rEmpCode = String(r.employeeCode || r.employeeId || '').trim().toLowerCase().replace(/^emp-?/i, '');
             const rName = (r.employeeName || '').trim().toLowerCase();
             const isMe = (userEmpCode && (rEmpCode === userEmpCode)) || (userFullName && rName && rName === userFullName);
             if (isMe) return false; // don't double count self
 
-            const isMyTeamMember = isHrOrAdmin ||
-              checkManagerMatch(r.reportingManager, user?.full_name) ||
-              (rEmpCode && reportingIdentifiers.has(rEmpCode)) ||
-              (rName && reportingIdentifiers.has(rName));
+            const respMgrId = String((r as any).reporting_manager_id || (r as any).manager_id || r.reportingManagerId || r.managerId || '').trim().toLowerCase();
+            const isDirectMgr = checkManagerMatch(r.reportingManager, user?.full_name) ||
+              checkManagerMatch((r as any).reporting_manager, user?.full_name) ||
+              checkManagerMatch((r as any).managerName, user?.full_name) ||
+              checkManagerMatch((r as any).manager_name, user?.full_name) ||
+              (userEmpCode && respMgrId && respMgrId === userEmpCode);
 
-            if (!isMyTeamMember) return false;
+            const isDirectReportEmp = (rEmpCode && directReportingIdentifiers.has(rEmpCode)) ||
+              (rName && directReportingIdentifiers.has(rName));
+
+            // Strictly direct reports only — Department Oversight (indirect downline reports) must NOT trigger the manager's action badge
+            const isMyDirectTeamMember = isDirectMgr || isDirectReportEmp;
+
+            if (!isMyDirectTeamMember) return false;
 
             const isYearly = Boolean(
               r.milestone_frequency ||
+              r.frequency === 'daily' ||
+              (r.daily_records && r.daily_records.length > 0) ||
               (r.weekly_records && r.weekly_records.length > 0) ||
               (r.monthly_records && r.monthly_records.length > 0) ||
               (r.quarterly_records && r.quarterly_records.length > 0)
@@ -190,7 +239,8 @@ const Sidebar: React.FC<SidebarProps> = ({
               const hasSubmittedMilestone = (
                 (r.quarterly_records || []).some((q: any) => q.status === 'submitted_to_manager') ||
                 (r.weekly_records || []).some((w: any) => w.status === 'submitted_to_manager') ||
-                (r.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager')
+                (r.monthly_records || []).some((m: any) => m.status === 'submitted_to_manager') ||
+                (r.daily_records || []).some((d: any) => d.status === 'submitted_to_manager')
               );
               return hasSubmittedMilestone;
             }
@@ -206,8 +256,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               Boolean(r.employeeSubmittedAt) ||
               Boolean((r as any).submitted_at) ||
               Boolean((r as any).submittedAt) ||
-              Boolean((r as any).employee_submitted_at) ||
-              (r.employeeOverallScore != null && Number(r.employeeOverallScore) > 0)
+              Boolean((r as any).employee_submitted_at)
             ) && r.managerScore == null;
 
             return isWaitingForManager;
@@ -604,10 +653,10 @@ const Sidebar: React.FC<SidebarProps> = ({
             {effectiveShift && (
               <span
                 className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${effectiveShift.is_wfh
-                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                    : effectiveShift.is_shift_changed
-                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                      : 'bg-neutral-50 text-neutral-500 border border-neutral-200'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                  : effectiveShift.is_shift_changed
+                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                    : 'bg-neutral-50 text-neutral-500 border border-neutral-200'
                   }`}
                 title={effectiveShift.is_shift_changed ? `Today: ${effectiveShift.effective_shift}` : effectiveShift.effective_shift}
               >

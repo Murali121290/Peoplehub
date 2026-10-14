@@ -88,7 +88,7 @@ export interface EvaluationCycle {
   endDate: string;
   periodName: string;
   frequency?: string;
-  milestone_frequency?: 'monthly' | 'weekly' | 'quarterly' | 'annual';
+  milestone_frequency?: 'monthly' | 'weekly' | 'quarterly' | 'annual' | 'daily';
   status: 'pending_sm_launch_approval' | 'active' | 'completed';
   isActive?: boolean;
   categories: KPICategory[];
@@ -154,6 +154,21 @@ export interface YearlyWeekRecord {
   kpiEntries: Record<string, YearlyMonthKPIEntry>;
 }
 
+export interface YearlyDailyRecord {
+  dayIndex: number; // 1, 2, 3...
+  date: string; // e.g. "2026-10-01"
+  dayLabel: string; // e.g. "01/10 (Thu)"
+  dayName: string; // "Thursday"
+  status: 'pending_employee' | 'submitted_to_manager' | 'manager_approved' | 'returned_to_employee';
+  employeeSubmittedAt?: string;
+  managerApprovedAt?: string;
+  employeeScore?: number;
+  managerScore?: number;
+  employeeRemarks?: string;
+  managerRemarks?: string;
+  kpiEntries: Record<string, YearlyMonthKPIEntry>;
+}
+
 export interface YearlyQuarterRecord {
   quarterIndex: 1 | 2 | 3 | 4; // 1 to 4 (1 = Q1: Apr-Jun, 2 = Q2: Jul-Sep, 3 = Q3: Oct-Dec, 4 = Q4: Jan-Mar)
   quarterKey: 'q1' | 'q2' | 'q3' | 'q4';
@@ -209,7 +224,8 @@ export interface EvaluationResponse {
   monthly_records?: YearlyMonthRecord[];
   weekly_records?: YearlyWeekRecord[];
   quarterly_records?: YearlyQuarterRecord[];
-  milestone_frequency?: 'monthly' | 'weekly' | 'quarterly' | 'annual';
+  daily_records?: YearlyDailyRecord[];
+  milestone_frequency?: 'monthly' | 'weekly' | 'quarterly' | 'annual' | 'daily';
   frequency?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | string;
   startDate?: string;
   endDate?: string;

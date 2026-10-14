@@ -604,11 +604,12 @@ def get_evaluation_data():
                 if rec.description and "(" in rec.description and ")" in rec.description:
                     extracted_period = rec.description.split("(", 1)[1].rsplit(")", 1)[0].strip()
 
-                # Extract categories, monthly_records, weekly_records, quarterly_records, and milestone_frequency from rec.metrics_data or fallback to store
+                # Extract categories, monthly_records, weekly_records, quarterly_records, daily_records, and milestone_frequency from rec.metrics_data or fallback to store
                 db_cats = []
                 db_monthly_records = []
                 db_weekly_records = []
                 db_quarterly_records = []
+                db_daily_records = []
                 milestone_freq = None
                 if isinstance(rec.metrics_data, list):
                     db_cats = rec.metrics_data
@@ -621,10 +622,12 @@ def get_evaluation_data():
                         db_weekly_records = rec.metrics_data["weekly_records"]
                     if "quarterly_records" in rec.metrics_data and isinstance(rec.metrics_data["quarterly_records"], list):
                         db_quarterly_records = rec.metrics_data["quarterly_records"]
+                    if "daily_records" in rec.metrics_data and isinstance(rec.metrics_data["daily_records"], list):
+                        db_daily_records = rec.metrics_data["daily_records"]
                     if "milestone_frequency" in rec.metrics_data:
                         milestone_freq = rec.metrics_data["milestone_frequency"]
 
-                if not db_monthly_records and not db_weekly_records and not db_quarterly_records:
+                if not db_monthly_records and not db_weekly_records and not db_quarterly_records and not db_daily_records:
                     matching_json_r = next((
                         jr for jr in json_all_responses
                         if str(jr.get("id")) == f"resp_{rec.id}" or
@@ -638,6 +641,8 @@ def get_evaluation_data():
                             db_weekly_records = matching_json_r.get("weekly_records")
                         if matching_json_r.get("quarterly_records"):
                             db_quarterly_records = matching_json_r.get("quarterly_records")
+                        if matching_json_r.get("daily_records"):
+                            db_daily_records = matching_json_r.get("daily_records")
                         if matching_json_r.get("milestone_frequency"):
                             milestone_freq = matching_json_r.get("milestone_frequency")
                         if not db_cats and matching_json_r.get("categories"):
@@ -674,7 +679,7 @@ def get_evaluation_data():
                     "serviceManagerScore": float(rec.service_manager_score) if (rec.service_manager_score and rec.service_manager_score.replace('.', '', 1).isdigit()) else None,
                     "serviceManagerRemarks": rec.remark or "",
                     "frequency": rec.frequency or "quarterly",
-                    "milestone_frequency": milestone_freq or ("weekly" if db_weekly_records else ("quarterly" if db_quarterly_records else ("monthly" if db_monthly_records else None))),
+                    "milestone_frequency": milestone_freq or ("daily" if db_daily_records else ("weekly" if db_weekly_records else ("quarterly" if db_quarterly_records else ("monthly" if db_monthly_records else None)))),
                     "startDate": rec.from_date.isoformat() if rec.from_date else "",
                     "endDate": rec.to_date.isoformat() if rec.to_date else "",
                     "workingDays": rec.working_days or 0,
@@ -685,6 +690,7 @@ def get_evaluation_data():
                     "monthly_records": db_monthly_records,
                     "weekly_records": db_weekly_records,
                     "quarterly_records": db_quarterly_records,
+                    "daily_records": db_daily_records,
                     "kpiResponses": db_kpis,
                     "createdAt": rec.created_at.isoformat() if rec.created_at else None,
                     "updatedAt": rec.updated_at.isoformat() if rec.updated_at else None
@@ -1064,6 +1070,18 @@ def delete_evaluation_response(resp_id_or_emp_id):
 
             store["cycles"] = updated_cycles
             write_eval_store(store)
+
+            # Explicitly overwrite the deleted employee's per-employee file.
+            # write_eval_store() only writes files for employees still present in remaining_resps.
+            # If ALL records for this employee were deleted, their file is never touched and the
+            # deleted record resurrects on the next read_eval_store() call. Force-write it here.
+            if clean_target_emp:
+                emp_remaining = [
+                    r for r in remaining_resps
+                    if str(r.get("employeeCode") or r.get("employeeId") or "").strip().lower()
+                       .replace("emp-", "").replace("emp_", "") == clean_target_emp
+                ]
+                write_employee_evaluations(clean_target_emp, emp_remaining)
         except Exception as store_err:
             print(f"[delete_evaluation_response] JSON store error: {store_err}")
 
@@ -2119,13 +2137,14 @@ def assign_kpi_metrics():
         weekly_records_input = data.get("weekly_records") or []
         quarterly_records_input = data.get("quarterly_records") or []
 
-        if frequency in ["yearly", "annual"]:
+        if frequency in ["yearly", "annual"] or frequency == "daily" or milestone_frequency == "daily":
             final_metrics_data = {
                 "categories": categories_data,
                 "milestone_frequency": milestone_frequency,
                 "monthly_records": monthly_records_input,
                 "weekly_records": weekly_records_input,
-                "quarterly_records": quarterly_records_input
+                "quarterly_records": quarterly_records_input,
+                "daily_records": data.get("daily_records") or []
             }
         else:
             final_metrics_data = categories_data
@@ -2169,7 +2188,7 @@ def assign_kpi_metrics():
             db.session.rollback()
             print(f"Non-blocking template auto-save notice: {tpl_auto_err}")
 
-        if frequency in ["daily", "weekly"]:
+        if frequency in ["daily", "weekly"] and milestone_frequency != "daily":
             store = read_eval_store()
             from_str = from_date.isoformat() if from_date else ""
             to_str = to_date.isoformat() if to_date else ""
@@ -2257,6 +2276,8 @@ def assign_kpi_metrics():
                     existing_resp["frequency"] = frequency
                     existing_resp["startDate"] = from_str
                     existing_resp["endDate"] = to_str
+                    existing_resp["daily_records"] = data.get("daily_records") or []
+                    existing_resp["milestone_frequency"] = milestone_frequency
                     existing_resp["status"] = "Assigned to Employee"
                     existing_resp["updatedAt"] = now.isoformat()
                     created_records.append(existing_resp)
@@ -2305,6 +2326,8 @@ def assign_kpi_metrics():
                         "holidayDays": stats["holiday_days"],
                         "categories": categories_data,
                         "metrics_data": categories_data,
+                        "daily_records": data.get("daily_records") or [],
+                        "milestone_frequency": milestone_frequency,
                         "kpiResponses": {},
                         "createdAt": now.isoformat(),
                         "updatedAt": now.isoformat()
@@ -2526,6 +2549,12 @@ def assign_kpi_metrics():
             write_eval_store(store_json)
         except Exception as json_sync_err:
             print(f"Warning: Could not dual-write assignment to JSON store: {json_sync_err}")
+
+        try:
+            from extensions import socketio
+            socketio.emit("evaluation_update", {"action": "assigned", "count": len(created_records)})
+        except Exception as sock_err:
+            print(f"Socket emit notice: {sock_err}")
 
         return jsonify({
             "success": True,
