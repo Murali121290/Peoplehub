@@ -1263,6 +1263,7 @@ export const EvaluationTab: React.FC = () => {
   const [mgrRemarks, setMgrRemarks] = useState<string>('');
   const [mgrKpiActuals, setMgrKpiActuals] = useState<Record<string, string | number>>({});
   const [mgrKpiRemarks, setMgrKpiRemarks] = useState<Record<string, string>>({});
+  const [mgrWaivedShortfall, setMgrWaivedShortfall] = useState<Record<string, boolean>>({});
   const [showManagerDeliverablesMatrix, setShowManagerDeliverablesMatrix] = useState<boolean>(false);
   const [managerFilterDept, setManagerFilterDept] = useState<string>('');
   const [mgrSearchQuery, setMgrSearchQuery] = useState<string>('');
@@ -4355,7 +4356,7 @@ export const EvaluationTab: React.FC = () => {
         categories: mgrAssignCategories,
         allEmployees: dbEmployees.filter(isEmployeeActive),
         frequency: mgrPeriodType,
-        milestone_frequency: (mgrPeriodType === 'yearly' && mgrSubFrequency) ? mgrSubFrequency : undefined,
+        milestone_frequency: mgrPeriodType === 'daily' ? 'daily' : ((mgrPeriodType === 'yearly' && mgrSubFrequency) ? mgrSubFrequency : undefined),
         templateKey: activeTemplateKey,
         templateName: activeFormLabel
       });
@@ -6600,6 +6601,7 @@ export const EvaluationTab: React.FC = () => {
     const nextActuals: Record<string, string | number> = {};
     const nextRemarks: Record<string, string> = {};
 
+    const nextWaived: Record<string, boolean> = {};
     selectedMgrCategories.forEach(cat => {
       cat.kpis.forEach(kpi => {
         const entry = curWeekRec?.kpiEntries?.[kpi.id] || (kpi.name ? curWeekRec?.kpiEntries?.[kpi.name] : null);
@@ -6607,19 +6609,25 @@ export const EvaluationTab: React.FC = () => {
         const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
         nextActuals[kpi.id] = mgrActual;
         nextRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+        nextWaived[kpi.id] = Boolean(entry?.isWaived || entry?.fullCreditGranted);
       });
     });
 
     setMgrKpiActuals(nextActuals);
     setMgrKpiRemarks(nextRemarks);
+    setMgrWaivedShortfall(nextWaived);
 
     let totalScore = 0;
     selectedMgrCategories.forEach(cat => {
       let rawCat = 0;
       cat.kpis.forEach(kpi => {
-        const actualVal = nextActuals[kpi.id];
-        const calc = calculateKPIScore(kpi, actualVal);
-        rawCat += calc.earnedScore;
+        if (nextWaived[kpi.id]) {
+          rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+        } else {
+          const actualVal = nextActuals[kpi.id];
+          const calc = calculateKPIScore(kpi, actualVal);
+          rawCat += calc.earnedScore;
+        }
       });
       totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
@@ -6644,8 +6652,10 @@ export const EvaluationTab: React.FC = () => {
         const empScore = respEntry?.earnedScore ?? (respEntry as any)?.earned_score ?? (empActual !== '' ? calculateKPIScore(kpi, empActual).earnedScore : 0);
         const empRem = respEntry?.employeeRemarks ?? (respEntry as any)?.employee_remarks ?? (respEntry as any)?.employee_remark ?? (respEntry as any)?.remarks ?? '';
         const isInsuff = Boolean(respEntry?.isInsufficient ?? (respEntry as any)?.is_insufficient);
+        const isWaived = Boolean(mgrWaivedShortfall[kpi.id]);
         const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
         const calc = calculateKPIScore(kpi, mgrActual);
+        const finalScore = isWaived ? (Number(kpi.targetScore ?? kpi.weightage) || 0) : calc.earnedScore;
         payloadEntries[kpi.id] = {
           actualValue: empActual,
           actual_value: empActual,
@@ -6657,10 +6667,12 @@ export const EvaluationTab: React.FC = () => {
           is_insufficient: isInsuff,
           managerActualValue: mgrActual,
           manager_actual_pm: mgrActual,
-          managerScore: Number(calc.earnedScore.toFixed(2)),
-          manager_score: Number(calc.earnedScore.toFixed(2)),
+          managerScore: Number(finalScore.toFixed(2)),
+          manager_score: Number(finalScore.toFixed(2)),
           managerRemarks: mgrKpiRemarks[kpi.id] || '',
-          manager_remark: mgrKpiRemarks[kpi.id] || ''
+          manager_remark: mgrKpiRemarks[kpi.id] || '',
+          isWaived: isWaived,
+          fullCreditGranted: isWaived
         };
         if (kpi.name) {
           payloadEntries[kpi.name] = payloadEntries[kpi.id];
@@ -7151,27 +7163,57 @@ export const EvaluationTab: React.FC = () => {
     const curDailyRec = getResponseDailyRecords(selectedMgrResponse).find(d => d.dayIndex === dayIdx);
     const nextActuals: Record<string, string | number> = {};
     const nextRemarks: Record<string, string> = {};
+    const nextWaived: Record<string, boolean> = {};
     selectedMgrCategories.forEach(cat => {
       cat.kpis.forEach(kpi => {
         const entry = curDailyRec?.kpiEntries?.[kpi.id] || (kpi.name ? curDailyRec?.kpiEntries?.[kpi.name] : null);
         nextActuals[kpi.id] = entry?.managerActualValue ?? entry?.actualValue ?? '';
         nextRemarks[kpi.id] = entry?.managerRemarks ?? '';
+        nextWaived[kpi.id] = Boolean(entry?.isWaived || entry?.fullCreditGranted);
       });
     });
     setMgrKpiActuals(nextActuals);
     setMgrKpiRemarks(nextRemarks);
+    setMgrWaivedShortfall(nextWaived);
     let totalScore = 0;
     selectedMgrCategories.forEach(cat => {
       let rawCat = 0;
       cat.kpis.forEach(kpi => {
-        const actualVal = nextActuals[kpi.id];
-        const calc = calculateKPIScore(kpi, actualVal);
-        rawCat += calc.earnedScore;
+        if (nextWaived[kpi.id]) {
+          rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+        } else {
+          const actualVal = nextActuals[kpi.id];
+          const calc = calculateKPIScore(kpi, actualVal);
+          rawCat += calc.earnedScore;
+        }
       });
       totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });
     setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
     setMgrRemarks(curDailyRec?.managerRemarks || '');
+  };
+
+  const handleToggleWaiveShortfall = (kpi: KPIItem) => {
+    const kpiId = kpi.id;
+    setMgrWaivedShortfall(prev => {
+      const nextState = { ...prev, [kpiId]: !prev[kpiId] };
+      let totalScore = 0;
+      selectedMgrCategories.forEach(cat => {
+        let rawCat = 0;
+        cat.kpis.forEach(item => {
+          if (nextState[item.id]) {
+            rawCat += (Number(item.targetScore ?? item.weightage) || 0);
+          } else {
+            const actualVal = mgrKpiActuals[item.id] !== undefined ? mgrKpiActuals[item.id] : ((item.name && mgrKpiActuals[item.name] !== undefined) ? mgrKpiActuals[item.name] : '');
+            const calc = calculateKPIScore(item, actualVal);
+            rawCat += calc.earnedScore;
+          }
+        });
+        totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
+      });
+      setMgrScore(Number(Math.min(100, totalScore).toFixed(2)));
+      return nextState;
+    });
   };
 
   const handleManagerYearlyDailyApprove = async (dIndex: number) => {
@@ -7191,8 +7233,10 @@ export const EvaluationTab: React.FC = () => {
         const empScore = respEntry?.earnedScore ?? (respEntry as any)?.earned_score ?? (empActual !== '' ? calculateKPIScore(kpi, empActual).earnedScore : 0);
         const empRem = respEntry?.employeeRemarks ?? (respEntry as any)?.employee_remarks ?? (respEntry as any)?.employee_remark ?? (respEntry as any)?.remarks ?? '';
         const isInsuff = Boolean(respEntry?.isInsufficient ?? (respEntry as any)?.is_insufficient);
+        const isWaived = Boolean(mgrWaivedShortfall[kpi.id]);
         const mgrActual = mgrKpiActuals[kpi.id] !== undefined ? mgrKpiActuals[kpi.id] : empActual;
         const calc = calculateKPIScore(kpi, mgrActual);
+        const finalScore = isWaived ? (Number(kpi.targetScore ?? kpi.weightage) || 0) : calc.earnedScore;
         payloadEntries[kpi.id] = {
           actualValue: empActual,
           actual_value: empActual,
@@ -7204,10 +7248,12 @@ export const EvaluationTab: React.FC = () => {
           is_insufficient: isInsuff,
           managerActualValue: mgrActual,
           manager_actual_pm: mgrActual,
-          managerScore: Number(calc.earnedScore.toFixed(2)),
-          manager_score: Number(calc.earnedScore.toFixed(2)),
+          managerScore: Number(finalScore.toFixed(2)),
+          manager_score: Number(finalScore.toFixed(2)),
           managerRemarks: mgrKpiRemarks[kpi.id] || '',
-          manager_remark: mgrKpiRemarks[kpi.id] || ''
+          manager_remark: mgrKpiRemarks[kpi.id] || '',
+          isWaived: isWaived,
+          fullCreditGranted: isWaived
         };
         if (kpi.name) {
           payloadEntries[kpi.name] = payloadEntries[kpi.id];
@@ -10886,6 +10932,7 @@ export const EvaluationTab: React.FC = () => {
         const targetDIndex = submittedDay ? submittedDay.dayIndex : (firstActionableDay ? firstActionableDay.dayIndex : 1);
         setActiveMgrYearlyDailyIndex(targetDIndex);
 
+        const initialWaived: Record<string, boolean> = {};
         const curDayRec = curDailyRecords.find(d => d.dayIndex === targetDIndex);
         targetCats.forEach((cat: KPICategory) => {
           cat.kpis.forEach((kpi: KPIItem) => {
@@ -10894,17 +10941,23 @@ export const EvaluationTab: React.FC = () => {
             const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
             initialActuals[kpi.id] = mgrActual;
             initialRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+            initialWaived[kpi.id] = Boolean(entry?.isWaived || (entry as any)?.fullCreditGranted);
           });
         });
         setMgrKpiActuals(initialActuals);
         setMgrKpiRemarks(initialRemarks);
+        setMgrWaivedShortfall(initialWaived);
         let totalScore = 0;
         targetCats.forEach((cat: KPICategory) => {
           let rawCat = 0;
           cat.kpis.forEach((kpi: KPIItem) => {
-            const actualVal = initialActuals[kpi.id];
-            const calc = calculateKPIScore(kpi, actualVal);
-            rawCat += calc.earnedScore;
+            if (initialWaived[kpi.id]) {
+              rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+            } else {
+              const actualVal = initialActuals[kpi.id];
+              const calc = calculateKPIScore(kpi, actualVal);
+              rawCat += calc.earnedScore;
+            }
           });
           totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
         });
@@ -10929,6 +10982,7 @@ export const EvaluationTab: React.FC = () => {
         const targetWIndex = submittedWeek ? submittedWeek.weekIndex : (firstActionableWeek ? firstActionableWeek.weekIndex : 26);
         setActiveMgrYearlyWeekIndex(targetWIndex);
 
+        const initialWaived: Record<string, boolean> = {};
         const curWeekRec = curWeeklyRecords.find(w => w.weekIndex === targetWIndex);
         targetCats.forEach((cat: KPICategory) => {
           cat.kpis.forEach((kpi: KPIItem) => {
@@ -10937,17 +10991,23 @@ export const EvaluationTab: React.FC = () => {
             const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? empActual;
             initialActuals[kpi.id] = mgrActual;
             initialRemarks[kpi.id] = entry?.managerRemarks ?? entry?.manager_remark ?? '';
+            initialWaived[kpi.id] = Boolean(entry?.isWaived || (entry as any)?.fullCreditGranted);
           });
         });
         setMgrKpiActuals(initialActuals);
         setMgrKpiRemarks(initialRemarks);
+        setMgrWaivedShortfall(initialWaived);
         let totalScore = 0;
         targetCats.forEach((cat: KPICategory) => {
           let rawCat = 0;
           cat.kpis.forEach((kpi: KPIItem) => {
-            const actualVal = initialActuals[kpi.id];
-            const calc = calculateKPIScore(kpi, actualVal);
-            rawCat += calc.earnedScore;
+            if (initialWaived[kpi.id]) {
+              rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+            } else {
+              const actualVal = initialActuals[kpi.id];
+              const calc = calculateKPIScore(kpi, actualVal);
+              rawCat += calc.earnedScore;
+            }
           });
           totalScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
         });
@@ -16403,37 +16463,22 @@ export const EvaluationTab: React.FC = () => {
                           )}
 
                           {mgrPeriodType === 'daily' && (
-                            <>
-                              <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-                                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                                  From Date <span className="text-rose-500">*</span>
-                                </label>
-                                <DatePicker
-                                  value={mgrPeriodFromDate}
-                                  onChange={(newFrom: string) => {
-                                    setMgrPeriodFromDate(newFrom);
-                                    syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, newFrom, mgrPeriodToDate, newFrom, mgrAssignTeamId);
-                                  }}
-                                  placeholder="Select From Date"
-                                  className="w-full font-medium text-slate-700"
-                                />
-                              </div>
-
-                              <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-                                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                                  To Date <span className="text-rose-500">*</span>
-                                </label>
-                                <DatePicker
-                                  value={mgrPeriodToDate}
-                                  onChange={(newTo: string) => {
-                                    setMgrPeriodToDate(newTo);
-                                    syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, newTo, newTo, mgrAssignTeamId);
-                                  }}
-                                  placeholder="Select To Date"
-                                  className="w-full font-medium text-slate-700"
-                                />
-                              </div>
-                            </>
+                            <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs col-span-1 sm:col-span-2">
+                              <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                                Evaluation Date <span className="text-rose-500">*</span>
+                              </label>
+                              <DatePicker
+                                value={mgrPeriodFromDate || getLocalTodayDateString()}
+                                onChange={(newDate: string) => {
+                                  setMgrPeriodFromDate(newDate);
+                                  setMgrPeriodToDate(newDate);
+                                  setMgrPeriodDueDate(newDate);
+                                  syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, newDate, newDate, newDate, mgrAssignTeamId);
+                                }}
+                                placeholder="Select Evaluation Date"
+                                className="w-full font-medium text-slate-700"
+                              />
+                            </div>
                           )}
 
                           {(mgrPeriodType === 'yearly' || (mgrPeriodType as string) === 'annual') && (
@@ -19835,7 +19880,9 @@ export const EvaluationTab: React.FC = () => {
                       if (empActual !== '' && empActual !== null && empActual !== undefined) {
                         rawEmpScoreSum += calculateKPIScore(kpi, empActual).earnedScore;
                       }
-                      if (curMgrActual !== '' && curMgrActual !== null && curMgrActual !== undefined) {
+                      if (mgrWaivedShortfall[kpi.id]) {
+                        rawMgrScoreSum += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+                      } else if (curMgrActual !== '' && curMgrActual !== null && curMgrActual !== undefined) {
                         rawMgrScoreSum += calculateKPIScore(kpi, curMgrActual).earnedScore;
                       }
                     });
@@ -19904,6 +19951,9 @@ export const EvaluationTab: React.FC = () => {
                                 <th className="px-3 py-3 text-center whitespace-nowrap min-w-[130px]">Insufficient</th>
                                 <th className="px-3 py-3 text-center min-w-[150px] bg-slate-50/50 text-slate-700">
                                   {isReadOnly ? 'Manager Goal & Score' : 'Manager Score'}
+                                </th>
+                                <th className="px-3 py-3 text-center min-w-[140px] whitespace-nowrap text-teal-900 bg-teal-50/40">
+                                  Full Credit (Workload Met)
                                 </th>
                                 {!isReadOnly && (
                                   <th className="px-5 py-3 min-w-[190px]">
@@ -20071,16 +20121,19 @@ export const EvaluationTab: React.FC = () => {
                                         return (
                                           <div className="flex flex-col items-center justify-center gap-1">
                                             {isReadOnly ? (
-                                              <div className="font-semibold text-xs text-slate-900">
+                                              <div className="flex flex-col items-center justify-center gap-1 font-semibold text-xs text-slate-900">
                                                 <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-full border text-xs shadow-2xs ${isGoalModified
                                                   ? 'bg-amber-100/90 text-amber-950 border-amber-300'
                                                   : isNeg && isOverMgr
                                                     ? 'bg-rose-50 text-rose-900 border-rose-300'
                                                     : isOverMgr
                                                       ? 'bg-teal-100/80 text-teal-950 border-teal-300'
-                                                      : 'bg-white text-slate-900 border-slate-200'
+                                                      : 'bg-white text-slate-900 border border-slate-200'
                                                   }`}>
                                                   <span>{currentMgrActual !== '' && currentMgrActual !== null && currentMgrActual !== undefined ? currentMgrActual : (empActual || '—')} {kpi.unit || ''}</span>
+                                                </span>
+                                                <span className="text-[11px] font-bold text-teal-800 font-mono">
+                                                  {respItem?.isWaived || (respItem as any)?.fullCreditGranted ? `${(Number(kpi.targetScore ?? kpi.weightage) || 0).toFixed(2)}%` : (respItem?.managerScore != null ? `${Number(respItem.managerScore).toFixed(2)}%` : `${calcMgr.earnedScore.toFixed(2)}%`)}
                                                 </span>
                                               </div>
                                             ) : (
@@ -20114,10 +20167,14 @@ export const EvaluationTab: React.FC = () => {
                                                   {kpi.unit && <span className="text-[11px] text-slate-500 font-semibold">{kpi.unit}</span>}
                                                 </div>
                                                 <div className="flex items-center gap-1">
-                                                  <span className="text-[11px] font-bold text-teal-800 font-mono">
-                                                    {calcMgr.earnedScore.toFixed(2)}%
+                                                  <span className={`text-[11px] font-bold font-mono ${mgrWaivedShortfall[kpi.id] ? 'text-teal-900 font-extrabold' : 'text-teal-800'}`}>
+                                                    {mgrWaivedShortfall[kpi.id] ? (Number(kpi.targetScore ?? kpi.weightage) || 0).toFixed(2) : calcMgr.earnedScore.toFixed(2)}%
                                                   </span>
-                                                  {isGoalModified ? (
+                                                  {mgrWaivedShortfall[kpi.id] ? (
+                                                    <span className="text-[9px] font-bold uppercase text-teal-800 px-1.5 py-0.2 rounded-full bg-teal-100 border border-teal-300">
+                                                      WAIVED
+                                                    </span>
+                                                  ) : isGoalModified ? (
                                                     <span className="text-[9px] font-bold uppercase text-amber-800 px-1.5 py-0.2 rounded-full bg-amber-100 border border-amber-300">
                                                       ADJUSTED
                                                     </span>
@@ -20132,6 +20189,61 @@ export const EvaluationTab: React.FC = () => {
                                                   ) : null}
                                                 </div>
                                               </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                    </td>
+
+                                    {/* Full Credit / Workload Met Column (Option A) */}
+                                    <td className="px-3 py-3.5 text-center whitespace-nowrap bg-teal-50/20">
+                                      {(() => {
+                                        const isWaived = Boolean(mgrWaivedShortfall[kpi.id]);
+                                        const maxScore = Number(kpi.targetScore ?? kpi.weightage) || 0;
+                                        const currentScore = calcMgr.earnedScore;
+                                        const diff = Math.max(0, maxScore - currentScore);
+
+                                        if (isReadOnly) {
+                                          return isWaived ? (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-300 shadow-2xs">
+                                              <span>✔ Full Credit</span>
+                                            </span>
+                                          ) : (
+                                            <span className="text-slate-300 text-xs">—</span>
+                                          );
+                                        }
+
+                                        return (
+                                          <div className="flex flex-col items-center justify-center gap-1">
+                                            <label
+                                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all cursor-pointer select-none text-xs font-semibold ${
+                                                isWaived
+                                                  ? 'bg-teal-600 text-white border-teal-700 shadow-xs ring-2 ring-teal-300/40'
+                                                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-2xs'
+                                              }`}
+                                              title="If available workload was limited (e.g. employee completed all available work like 1000/1200 pages), check this to grant the remaining score and award full 100% score for this deliverable."
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={isWaived}
+                                                disabled={!isPendingManagerReview && !isAlreadyCalibrated}
+                                                onChange={() => handleToggleWaiveShortfall(kpi)}
+                                                className="w-3.5 h-3.5 rounded text-teal-600 focus:ring-teal-500 cursor-pointer accent-teal-600"
+                                              />
+                                              <span className="text-[11px] font-bold">
+                                                {isWaived ? 'Full Credit' : 'Waive Shortage'}
+                                              </span>
+                                            </label>
+                                            {isWaived ? (
+                                              <span className="text-[10px] font-bold text-teal-700 font-mono">
+                                                {diff > 0.01 ? `+${diff.toFixed(2)}% added (${maxScore}%)` : `Full Score (${maxScore}%)`}
+                                              </span>
+                                            ) : (
+                                              diff > 0.01 && (
+                                                <span className="text-[9px] text-slate-400 font-medium">
+                                                  Gap: -{diff.toFixed(2)}%
+                                                </span>
+                                              )
                                             )}
                                           </div>
                                         );

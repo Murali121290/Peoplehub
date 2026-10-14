@@ -71,6 +71,8 @@ export interface KPIResponseItem {
   managerRemarks?: string;
   manager_remark?: string;
   serviceManagerRemarks?: string;
+  isWaived?: boolean;
+  fullCreditGranted?: boolean;
 }
 
 export interface EvaluationCycle {
@@ -115,6 +117,8 @@ export interface YearlyMonthKPIEntry {
   manager_score?: number | null;
   managerRemarks?: string;
   manager_remark?: string;
+  isWaived?: boolean;
+  fullCreditGranted?: boolean;
 }
 
 export interface YearlyMonthRecord {

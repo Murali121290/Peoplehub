@@ -1081,8 +1081,8 @@ export const evaluationService = {
 
     const baseStartYear = data.startDate ? parseInt(data.startDate.slice(0, 4), 10) : new Date().getFullYear();
     const isYearly = (data.frequency || '').toLowerCase() === 'yearly' || (data.frequency || '').toLowerCase() === 'annual';
-    const subFreq = data.milestone_frequency || 'monthly';
-    const isDaily = (data.frequency || '').toLowerCase() === 'daily' || subFreq === 'daily';
+    const isDaily = (data.frequency || '').toLowerCase() === 'daily' || data.milestone_frequency === 'daily';
+    const subFreq = data.milestone_frequency || (isDaily ? 'daily' : ((data.frequency || '').toLowerCase() === 'weekly' ? 'weekly' : 'monthly'));
     const initialMonthlyRecords = isYearly && subFreq === 'monthly' ? initializeYearlyMonthlyRecords(baseStartYear) : undefined;
     const initialWeeklyRecords = isYearly && subFreq === 'weekly' ? initializeYearlyWeeklyRecords(baseStartYear) : undefined;
     const initialQuarterlyRecords = isYearly && subFreq === 'quarterly' ? initializeYearlyQuarterlyRecords(baseStartYear) : undefined;
@@ -2114,9 +2114,13 @@ export const evaluationService = {
       let rawCat = 0;
       cat.kpis.forEach(kpi => {
         const entry = kpiEntries[kpi.id] || (kpi.name ? kpiEntries[kpi.name] : null);
-        const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
-        const calc = calculateKPIScore(kpi, mgrActual);
-        rawCat += calc.earnedScore;
+        if (entry?.isWaived || (entry as any)?.fullCreditGranted) {
+          rawCat += (Number(kpi.targetScore ?? kpi.weightage) || 0);
+        } else {
+          const mgrActual = entry?.managerActualValue ?? entry?.manager_actual_pm ?? entry?.actualValue ?? '';
+          const calc = calculateKPIScore(kpi, mgrActual);
+          rawCat += calc.earnedScore;
+        }
       });
       dayScore += calculateCategoryEarned(Number(cat.weightage) || 0, cat.kpis, rawCat);
     });

@@ -1229,6 +1229,11 @@ def save_evaluation_responses():
                         "categories": existing_cats
                     }
 
+                    if "daily_records" in item and item["daily_records"]:
+                        metrics_dict["daily_records"] = item["daily_records"]
+                    elif isinstance(eval_row.metrics_data, dict) and "daily_records" in eval_row.metrics_data:
+                        metrics_dict["daily_records"] = eval_row.metrics_data["daily_records"]
+
                     if "monthly_records" in item and item["monthly_records"]:
                         metrics_dict["monthly_records"] = item["monthly_records"]
                     elif isinstance(eval_row.metrics_data, dict) and "monthly_records" in eval_row.metrics_data:
@@ -2132,7 +2137,7 @@ def assign_kpi_metrics():
         elif to_date and not from_date:
             from_date = to_date
 
-        milestone_frequency = (data.get("milestone_frequency") or data.get("milestoneFrequency") or "monthly").lower()
+        milestone_frequency = (data.get("milestone_frequency") or data.get("milestoneFrequency") or ("daily" if frequency == "daily" else ("weekly" if frequency == "weekly" else "monthly"))).lower()
         monthly_records_input = data.get("monthly_records") or []
         weekly_records_input = data.get("weekly_records") or []
         quarterly_records_input = data.get("quarterly_records") or []
@@ -2188,7 +2193,7 @@ def assign_kpi_metrics():
             db.session.rollback()
             print(f"Non-blocking template auto-save notice: {tpl_auto_err}")
 
-        if frequency in ["daily", "weekly"] and milestone_frequency != "daily":
+        if frequency in ["weekly"] and milestone_frequency not in ["daily", "weekly"]:
             store = read_eval_store()
             from_str = from_date.isoformat() if from_date else ""
             to_str = to_date.isoformat() if to_date else ""
