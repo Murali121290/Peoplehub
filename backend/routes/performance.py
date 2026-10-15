@@ -289,6 +289,78 @@ def sync_postgres_kpi_to_store_and_back():
 
         valid_db_ids = {r.id for r in eval_records} if eval_records else set()
 
+        # Migrate any daily/weekly records that were accidentally stored in PostgreSQL → move to JSON store
+        try:
+            daily_db_records = KpiEvaluation.query.filter(
+                or_(KpiEvaluation.is_archived == False, KpiEvaluation.is_archived.is_(None)),
+                KpiEvaluation.frequency.in_(["daily"])
+            ).all()
+            if daily_db_records:
+                for rec in daily_db_records:
+                    emp_id = str(rec.employee_id or "").strip()
+                    if not emp_id:
+                        continue
+                    metrics = rec.metrics_data or {}
+                    cats = metrics.get("categories", []) if isinstance(metrics, dict) else (metrics if isinstance(metrics, list) else [])
+                    milestone_freq = metrics.get("milestone_frequency", "daily") if isinstance(metrics, dict) else "daily"
+                    daily_recs = metrics.get("daily_records", []) if isinstance(metrics, dict) else []
+                    period_label = ""
+                    if rec.description and "(" in rec.description and ")" in rec.description:
+                        period_label = rec.description.split("(", 1)[1].rsplit(")", 1)[0].strip()
+                    from_str = rec.from_date.isoformat() if rec.from_date else ""
+                    to_str = rec.to_date.isoformat() if rec.to_date else ""
+                    emp_json_resps = read_employee_evaluations(emp_id)
+                    existing_in_json = next((
+                        r for r in emp_json_resps
+                        if (r.get("form") == rec.form or r.get("performance_metrics") == rec.form) and
+                           r.get("frequency") == rec.frequency and
+                           r.get("startDate") == from_str and r.get("endDate") == to_str
+                    ), None)
+                    if not existing_in_json:
+                        migrated_resp = {
+                            "id": f"resp_json_{abs(hash(f'{emp_id}_{rec.form}_{period_label}_{rec.id}')) % 10000000}",
+                            "cycleId": f"cycle_json_{abs(hash(f'{rec.team_name}_{rec.form}_{rec.frequency}_{from_str}_{to_str}_{period_label}')) % 1000000}",
+                            "teamId": str(rec.team_id or "General"),
+                            "teamName": rec.team_name or "General",
+                            "employeeId": emp_id,
+                            "employeeCode": emp_id,
+                            "employeeName": rec.employee_name or f"Employee {emp_id}",
+                            "form": rec.form or rec.performance_metrics or "",
+                            "performance_metrics": rec.performance_metrics or rec.form or "",
+                            "periodName": period_label or rec.form or "",
+                            "description": rec.description or "",
+                            "status": rec.status or "Assigned to Employee",
+                            "employeeOverallScore": float(rec.employee_overall_score or 0),
+                            "employeeRemarks": rec.employee_remark or "",
+                            "managerScore": rec.manager_score,
+                            "managerRemarks": rec.manager_remark or "",
+                            "serviceManagerScore": float(rec.service_manager_score) if (rec.service_manager_score and rec.service_manager_score.replace('.','',1).isdigit()) else None,
+                            "reportingManager": rec.reporting_manager or "",
+                            "reporting_manager": rec.reporting_manager or "",
+                            "reporting_manager_id": str(rec.reporting_manager_id or rec.manager_id or ""),
+                            "serviceManager": rec.service_manager or "",
+                            "service_manager": rec.service_manager or "",
+                            "service_manager_id": str(rec.service_manager_id or ""),
+                            "frequency": rec.frequency or "daily",
+                            "startDate": from_str,
+                            "endDate": to_str,
+                            "categories": cats,
+                            "metrics_data": cats,
+                            "daily_records": daily_recs,
+                            "milestone_frequency": milestone_freq,
+                            "kpiResponses": {},
+                            "createdAt": rec.created_at.isoformat() if rec.created_at else None,
+                            "updatedAt": rec.updated_at.isoformat() if rec.updated_at else None,
+                        }
+                        emp_json_resps.append(migrated_resp)
+                        write_employee_evaluations(emp_id, emp_json_resps)
+                    # Delete from Postgres
+                    db.session.delete(rec)
+                db.session.commit()
+        except Exception as migrate_err:
+            db.session.rollback()
+            print(f"Non-blocking: daily Postgres→JSON migration error: {migrate_err}")
+
         # Clean legacy evaluations directory if present
         clean_legacy_evaluations_dir()
 
@@ -2193,7 +2265,7 @@ def assign_kpi_metrics():
             db.session.rollback()
             print(f"Non-blocking template auto-save notice: {tpl_auto_err}")
 
-        if frequency in ["weekly"] and milestone_frequency not in ["daily", "weekly"]:
+        if frequency in ["weekly", "daily"]:
             store = read_eval_store()
             from_str = from_date.isoformat() if from_date else ""
             to_str = to_date.isoformat() if to_date else ""
