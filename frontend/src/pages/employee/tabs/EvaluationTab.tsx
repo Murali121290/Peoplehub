@@ -8881,28 +8881,26 @@ export const EvaluationTab: React.FC = () => {
       if (!isNaN(d.getTime())) end = d;
     }
 
-    if ((!start || !end || start.getTime() === end.getTime()) && Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+    if ((!start || !end) && Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
       const dRecs = (r as any).daily_records;
       const validDates = dRecs.map((d: any) => d?.date ? new Date(d.date) : null).filter((d: any) => d && !isNaN(d.getTime())) as Date[];
       if (validDates.length > 0) {
         validDates.sort((a, b) => a.getTime() - b.getTime());
-        if (!start || (start && end && start.getTime() === end.getTime() && validDates.length > 1)) {
-          start = validDates[0];
-          end = validDates[validDates.length - 1];
-        }
+        if (!start) start = validDates[0];
+        if (!end) end = validDates[validDates.length - 1];
       }
     }
 
-    if ((!start || !end || start.getTime() === end.getTime()) && r.cycleId) {
+    if ((!start || !end) && r.cycleId) {
       const cy = cycles.find(c => c.id === r.cycleId);
       if (cy) {
         const cyStart = cy.startDate || (cy as any).start_date;
         const cyEnd = cy.endDate || (cy as any).end_date;
-        if (cyStart && (!start || (start && end && start.getTime() === end.getTime()))) {
+        if (cyStart && !start) {
           const d = new Date(cyStart);
           if (!isNaN(d.getTime())) start = d;
         }
-        if (cyEnd) {
+        if (cyEnd && !end) {
           const d = new Date(cyEnd);
           if (!isNaN(d.getTime())) end = d;
         }
@@ -10222,38 +10220,145 @@ export const EvaluationTab: React.FC = () => {
     const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const pad = (n: number) => String(n).padStart(2, '0');
 
-    // Filter responses for the active month (including approved monthly records from 12-Month Financial Year cycles)
-    const curMonthResponses: any[] = [];
-    activeScopedResponsesForCards.forEach(r => {
-      if (isYearlyResponse(r)) {
-        const calMonth = topPerformersMonth + 1;
-        const calYear = topPerformersYear;
-        const rec = (r.monthly_records || []).find(m =>
-          (m.calendarMonth === calMonth && (m.calendarYear === calYear || !m.calendarYear)) ||
-          (m.monthIndex === (calMonth >= 4 ? calMonth - 3 : calMonth + 9))
-        );
-        if (rec && rec.status === 'manager_approved' && rec.managerScore != null && Number(rec.managerScore) > 0) {
-          curMonthResponses.push({
+    // Helper to extract approved evaluations and milestone records that fall into a specific date range [rangeStart, rangeEnd]
+    const extractApprovedResponsesForRange = (rangeStart: Date, rangeEnd: Date) => {
+      const items: any[] = [];
+      activeScopedResponsesForCards.forEach(r => {
+        const cadence = getResponseCadence(r);
+        const isYearly = isYearlyResponse(r);
+
+        // Exclude Quarterly evaluations from Weekly rankings!
+        if (cadence === 'quarterly') {
+          return;
+        }
+
+        // 1. Check daily_records (Yearly or Daily evaluation with day milestones)
+        if (Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+          const matchingDays = (r as any).daily_records.filter((d: any) => {
+            if (!d?.date) return false;
+            const dDate = new Date(d.date);
+            if (isNaN(dDate.getTime())) return false;
+            return dDate >= rangeStart && dDate <= rangeEnd;
+          });
+          const approvedDays = matchingDays.filter((d: any) =>
+            d.status === 'manager_approved' ||
+            (d.status as any) === 'approved' ||
+            (d.managerScore != null && Number(d.managerScore) > 0)
+          );
+          if (approvedDays.length > 0) {
+            const scores = approvedDays.map((d: any) => {
+              if (d.managerScore != null && Number(d.managerScore) > 0) return Number(d.managerScore);
+              if (d.earnedScore != null && Number(d.earnedScore) > 0) return Number(d.earnedScore);
+              if (d.employeeScore != null && Number(d.employeeScore) > 0) return Number(d.employeeScore);
+              if (r.managerScore != null && Number(r.managerScore) > 0) return Number(r.managerScore);
+              return Number(r.employeeOverallScore || 0);
+            }).filter((s: number) => s > 0);
+            if (scores.length > 0) {
+              const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+              items.push({
+                ...r,
+                managerScore: Number(avg.toFixed(1))
+              });
+              return;
+            }
+          }
+          // Do not fall through to container dates for evaluations with milestone records
+          return;
+        }
+
+        // 2. Check weekly_records (Yearly or Weekly evaluation with week milestones)
+        if (Array.isArray((r as any).weekly_records) && (r as any).weekly_records.length > 0) {
+          const matchingWeeks = (r as any).weekly_records.filter((w: any) => {
+            if (w.startDate && w.endDate) {
+              const wStart = new Date(w.startDate);
+              const wEnd = new Date(w.endDate);
+              if (!isNaN(wStart.getTime()) && !isNaN(wEnd.getTime())) {
+                return (wStart <= rangeEnd && wEnd >= rangeStart);
+              }
+            }
+            return false;
+          });
+          const approvedWeeks = matchingWeeks.filter((w: any) =>
+            w.status === 'manager_approved' ||
+            (w.status as any) === 'approved' ||
+            (w.managerScore != null && Number(w.managerScore) > 0)
+          );
+          if (approvedWeeks.length > 0) {
+            const scores = approvedWeeks.map((w: any) => {
+              if (w.managerScore != null && Number(w.managerScore) > 0) return Number(w.managerScore);
+              if (w.earnedScore != null && Number(w.earnedScore) > 0) return Number(w.earnedScore);
+              if (w.employeeScore != null && Number(w.employeeScore) > 0) return Number(w.employeeScore);
+              if (r.managerScore != null && Number(r.managerScore) > 0) return Number(r.managerScore);
+              return Number(r.employeeOverallScore || 0);
+            }).filter((s: number) => s > 0);
+            if (scores.length > 0) {
+              const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+              items.push({
+                ...r,
+                managerScore: Number(avg.toFixed(1))
+              });
+              return;
+            }
+          }
+          // Do not fall through to container dates for evaluations with milestone records
+          return;
+        }
+
+        // Standalone evaluations in weekly tab MUST strictly be daily or weekly
+        if (cadence !== 'daily' && cadence !== 'weekly') {
+          return;
+        }
+
+        // 3. Standalone daily / weekly evaluations
+        const range = getEvaluationDateRange(r);
+        if (!range.startDate) return;
+        const rStart = range.startDate;
+        const rEnd = range.endDate || range.startDate;
+
+        const diffDays = Math.abs((rEnd.getTime() - rStart.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (cadence === 'daily') {
+          // A single daily evaluation must fall precisely on a date within [rangeStart, rangeEnd]
+          // If range spans > 2 days, it is a multi-day assignment container, not an individual day response
+          if (diffDays > 2) return;
+          if (rStart < rangeStart || rStart > rangeEnd) return;
+        } else if (cadence === 'weekly') {
+          // Weekly evaluation covers ~7 days; skip multi-month containers
+          if (diffDays > 14) return;
+          const overlaps = (rStart >= rangeStart && rStart <= rangeEnd) ||
+            (rEnd >= rangeStart && rEnd <= rangeEnd) ||
+            (rStart <= rangeStart && rEnd >= rangeEnd);
+          if (!overlaps) return;
+        }
+
+        const isApproved = r.status === 'approved' ||
+          r.status === 'sm_final_approval' ||
+          (r.status as string) === 'Cycle Completed & Approved' ||
+          (r.status as string) === 'completed' ||
+          r.managerScore != null;
+
+        const scoreVal = r.managerScore != null
+          ? Number(r.managerScore)
+          : ((r as any).manager_score != null
+            ? Number((r as any).manager_score)
+            : (r.employeeOverallScore != null ? Number(r.employeeOverallScore) : null));
+
+        if (isApproved && scoreVal != null && scoreVal > 0) {
+          items.push({
             ...r,
-            managerScore: Number(rec.managerScore)
+            managerScore: scoreVal
           });
         }
-        return;
-      }
-
-      const range = getEvaluationDateRange(r);
-      if (!range.startDate) return;
-      if (range.startDate.getFullYear() === topPerformersYear && range.startDate.getMonth() === topPerformersMonth) {
-        curMonthResponses.push(r);
-      }
-    });
+      });
+      return items;
+    };
 
     const firstDate = new Date(topPerformersYear, topPerformersMonth, 1);
     const lastDate = new Date(topPerformersYear, topPerformersMonth + 1, 0);
 
     const dayOfWeek = firstDate.getDay();
     const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    let currMon = new Date(topPerformersYear, topPerformersMonth, 1 + diffToMonday);
+    let currMon = new Date(topPerformersYear, topPerformersMonth, 1 + diffToMonday, 0, 0, 0, 0);
 
     const now = new Date();
     const isCurrentMonthNow = now.getFullYear() === topPerformersYear && now.getMonth() === topPerformersMonth;
@@ -10273,19 +10378,12 @@ export const EvaluationTab: React.FC = () => {
 
     let weekNum = 1;
     while (currMon <= lastDate) {
-      const currSun = new Date(currMon.getFullYear(), currMon.getMonth(), currMon.getDate() + 6);
+      const currSun = new Date(currMon.getFullYear(), currMon.getMonth(), currMon.getDate() + 6, 23, 59, 59, 999);
       const startStr = `${currMon.getFullYear()}-${pad(currMon.getMonth() + 1)}-${pad(currMon.getDate())}`;
       const isCurrentWeek = isCurrentMonthNow && now >= currMon && now <= currSun;
 
-      // Filter all responses falling in this week
-      const weekResponses = curMonthResponses.filter(r => {
-        const range = getEvaluationDateRange(r);
-        if (!range.startDate) return false;
-        const rStart = range.startDate;
-        const rEnd = range.endDate || range.startDate;
-        return (rStart >= currMon && rStart <= currSun) || (rEnd >= currMon && rEnd <= currSun);
-      });
-
+      // Extract all approved responses falling in this week
+      const weekResponses = extractApprovedResponsesForRange(currMon, currSun);
       const groups = computeTopPerformersGroups(weekResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
       const weekLabel = `${currMon.getDate()} ${monthNamesShort[currMon.getMonth()]} - ${currSun.getDate()} ${monthNamesShort[currSun.getMonth()]}`;
 
@@ -10299,10 +10397,32 @@ export const EvaluationTab: React.FC = () => {
       });
 
       weekNum++;
-      currMon = new Date(currMon.getFullYear(), currMon.getMonth(), currMon.getDate() + 7);
+      currMon = new Date(currMon.getFullYear(), currMon.getMonth(), currMon.getDate() + 7, 0, 0, 0, 0);
     }
 
-    // Month Summary Column (e.g. Sep'26 (month))
+    // Month Summary Column (e.g. Oct'26 (month))
+    const monthStart = new Date(topPerformersYear, topPerformersMonth, 1, 0, 0, 0, 0);
+    const monthEnd = new Date(topPerformersYear, topPerformersMonth + 1, 0, 23, 59, 59, 999);
+    const curMonthResponses = extractApprovedResponsesForRange(monthStart, monthEnd);
+
+    // Also include approved monthly records for Yearly evaluations
+    activeScopedResponsesForCards.forEach(r => {
+      if (isYearlyResponse(r)) {
+        const calMonth = topPerformersMonth + 1;
+        const calYear = topPerformersYear;
+        const rec = (r.monthly_records || []).find(m =>
+          (m.calendarMonth === calMonth && (m.calendarYear === calYear || !m.calendarYear)) ||
+          (m.monthIndex === (calMonth >= 4 ? calMonth - 3 : calMonth + 9))
+        );
+        if (rec && (rec.status === 'manager_approved' || (rec.status as any) === 'approved') && rec.managerScore != null && Number(rec.managerScore) > 0) {
+          curMonthResponses.push({
+            ...r,
+            managerScore: Number(rec.managerScore)
+          });
+        }
+      }
+    });
+
     const yearShort = String(topPerformersYear).slice(-2);
     const monthGroups = computeTopPerformersGroups(curMonthResponses, reportFilterDept, reportFilterTeam, mgrSearchQuery);
     const monthSummaryCol = {
@@ -10329,28 +10449,97 @@ export const EvaluationTab: React.FC = () => {
       const yrShort = fMonth.calendarMonth >= 4 ? startYearShort : endYearShort;
       const monthLabel = `${fMonth.shortName}'${yrShort}`;
       const mIdx = fMonth.calendarMonth - 1;
+      const mStart = new Date(calYear, mIdx, 1, 0, 0, 0, 0);
+      const mEnd = new Date(calYear, mIdx + 1, 0, 23, 59, 59, 999);
 
       const monthScopedItems: any[] = [];
       activeScopedResponsesForCards.forEach(r => {
-        if (isYearlyResponse(r)) {
+        const cadence = getResponseCadence(r);
+        const isYearly = isYearlyResponse(r);
+
+        // Quarterly evaluations belong in the Quarterly view, not in individual months
+        if (cadence === 'quarterly') {
+          return;
+        }
+
+        if (isYearly) {
           const rec = (r.monthly_records || []).find(m =>
             m.monthIndex === fMonth.monthIndex ||
             (m.calendarMonth === fMonth.calendarMonth && (m.calendarYear === calYear || !m.calendarYear))
           );
-          if (rec && rec.status === 'manager_approved' && rec.managerScore != null && Number(rec.managerScore) > 0) {
+          if (rec && (rec.status === 'manager_approved' || (rec.status as any) === 'approved') && rec.managerScore != null && Number(rec.managerScore) > 0) {
             monthScopedItems.push({
               ...r,
               managerScore: Number(rec.managerScore)
             });
+            return;
+          }
+
+          // Check daily_records in this month
+          if (Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+            const approvedDays = (r as any).daily_records.filter((d: any) => {
+              if (!d?.date) return false;
+              const dDate = new Date(d.date);
+              return !isNaN(dDate.getTime()) && dDate >= mStart && dDate <= mEnd && (d.status === 'manager_approved' || d.status === 'approved' || (d.managerScore != null && Number(d.managerScore) > 0));
+            });
+            if (approvedDays.length > 0) {
+              const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
+          }
+
+          // Check weekly_records in this month
+          if (Array.isArray((r as any).weekly_records) && (r as any).weekly_records.length > 0) {
+            const approvedWeeks = (r as any).weekly_records.filter((w: any) => {
+              if (!w.startDate) return false;
+              const wDate = new Date(w.startDate);
+              return !isNaN(wDate.getTime()) && wDate >= mStart && wDate <= mEnd && (w.status === 'manager_approved' || w.status === 'approved' || (w.managerScore != null && Number(w.managerScore) > 0));
+            });
+            if (approvedWeeks.length > 0) {
+              const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
           }
           return;
         }
 
         const range = getEvaluationDateRange(r);
         if (!range.startDate) return;
-        if (range.startDate.getFullYear() === calYear && range.startDate.getMonth() === mIdx) {
-          if (r.managerScore != null || r.employeeOverallScore != null) {
-            monthScopedItems.push(r);
+        const rStart = range.startDate;
+        const rEnd = range.endDate || range.startDate;
+
+        // Skip multi-month container cycles from matching every month
+        const diffDays = Math.abs((rEnd.getTime() - rStart.getTime()) / (1000 * 60 * 60 * 24));
+        if (cadence === 'daily' && diffDays > 2) return;
+        if (cadence === 'weekly' && diffDays > 14) return;
+        if (cadence === 'monthly' && diffDays > 35) return;
+
+        const overlaps = (rStart >= mStart && rStart <= mEnd) ||
+          (rEnd >= mStart && rEnd <= mEnd);
+
+        if (overlaps) {
+          const isApproved = r.status === 'approved' ||
+            r.status === 'sm_final_approval' ||
+            (r.status as string) === 'Cycle Completed & Approved' ||
+            (r.status as string) === 'completed' ||
+            r.managerScore != null;
+
+          const scoreVal = r.managerScore != null
+            ? Number(r.managerScore)
+            : ((r as any).manager_score != null
+              ? Number((r as any).manager_score)
+              : (r.employeeOverallScore != null ? Number(r.employeeOverallScore) : null));
+
+          if (isApproved && scoreVal != null && scoreVal > 0) {
+            monthScopedItems.push({ ...r, managerScore: scoreVal });
           }
         }
       });
@@ -10410,6 +10599,42 @@ export const EvaluationTab: React.FC = () => {
             return;
           }
 
+          // 3. Check daily_records in this quarter
+          if (Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+            const approvedDays = (r as any).daily_records.filter((d: any) => {
+              if (!d?.date) return false;
+              const dDate = new Date(d.date);
+              if (isNaN(dDate.getTime())) return false;
+              return dDate.getFullYear() === year && calMonths.includes(dDate.getMonth() + 1) && (d.status === 'manager_approved' || d.status === 'approved' || (d.managerScore != null && Number(d.managerScore) > 0));
+            });
+            if (approvedDays.length > 0) {
+              const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                quarterScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
+          }
+
+          // 4. Check weekly_records in this quarter
+          if (Array.isArray((r as any).weekly_records) && (r as any).weekly_records.length > 0) {
+            const approvedWeeks = (r as any).weekly_records.filter((w: any) => {
+              if (!w.startDate) return false;
+              const wDate = new Date(w.startDate);
+              if (isNaN(wDate.getTime())) return false;
+              return wDate.getFullYear() === year && calMonths.includes(wDate.getMonth() + 1) && (w.status === 'manager_approved' || w.status === 'approved' || (w.managerScore != null && Number(w.managerScore) > 0));
+            });
+            if (approvedWeeks.length > 0) {
+              const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                quarterScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
+          }
+
           return;
         }
 
@@ -10464,7 +10689,43 @@ export const EvaluationTab: React.FC = () => {
               ...r,
               managerScore: Number(rec.managerScore)
             });
+            return;
           }
+
+          // Check daily_records
+          if (Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+            const approvedDays = (r as any).daily_records.filter((d: any) => {
+              if (!d?.date) return false;
+              const dDate = new Date(d.date);
+              return !isNaN(dDate.getTime()) && dDate.getFullYear() === calYear && (dDate.getMonth() === mIdx) && (d.status === 'manager_approved' || d.status === 'approved' || (d.managerScore != null && Number(d.managerScore) > 0));
+            });
+            if (approvedDays.length > 0) {
+              const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
+          }
+
+          // Check weekly_records
+          if (Array.isArray((r as any).weekly_records) && (r as any).weekly_records.length > 0) {
+            const approvedWeeks = (r as any).weekly_records.filter((w: any) => {
+              if (!w.startDate) return false;
+              const wDate = new Date(w.startDate);
+              return !isNaN(wDate.getTime()) && wDate.getFullYear() === calYear && (wDate.getMonth() === mIdx) && (w.status === 'manager_approved' || w.status === 'approved' || (w.managerScore != null && Number(w.managerScore) > 0));
+            });
+            if (approvedWeeks.length > 0) {
+              const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
+              if (scores.length > 0) {
+                const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+                monthScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+                return;
+              }
+            }
+          }
+
           return;
         }
 
@@ -10492,6 +10753,8 @@ export const EvaluationTab: React.FC = () => {
 
     // 13th Column: Overall Financial Year Summary (e.g. FY 2026-2027 (Annual))
     const yearScopedItems: any[] = [];
+    const fyStart = new Date(startYear, 3, 1, 0, 0, 0, 0); // 1 Apr
+    const fyEnd = new Date(endYear, 2, 31, 23, 59, 59, 999); // 31 Mar
 
     activeScopedResponsesForCards.forEach(r => {
       if (isYearlyResponse(r)) {
@@ -10504,7 +10767,44 @@ export const EvaluationTab: React.FC = () => {
             ...r,
             managerScore: Number(avgScore.toFixed(1))
           });
-        } else if (r.managerScore != null && Number(r.managerScore) > 0) {
+          return;
+        }
+
+        // Check daily_records in FY
+        if (Array.isArray((r as any).daily_records) && (r as any).daily_records.length > 0) {
+          const approvedDays = (r as any).daily_records.filter((d: any) => {
+            if (!d?.date) return false;
+            const dDate = new Date(d.date);
+            return !isNaN(dDate.getTime()) && dDate >= fyStart && dDate <= fyEnd && (d.status === 'manager_approved' || d.status === 'approved' || (d.managerScore != null && Number(d.managerScore) > 0));
+          });
+          if (approvedDays.length > 0) {
+            const scores = approvedDays.map((d: any) => Number(d.managerScore || d.earnedScore || d.employeeScore || 0)).filter((s: number) => s > 0);
+            if (scores.length > 0) {
+              const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+              yearScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+              return;
+            }
+          }
+        }
+
+        // Check weekly_records in FY
+        if (Array.isArray((r as any).weekly_records) && (r as any).weekly_records.length > 0) {
+          const approvedWeeks = (r as any).weekly_records.filter((w: any) => {
+            if (!w.startDate) return false;
+            const wDate = new Date(w.startDate);
+            return !isNaN(wDate.getTime()) && wDate >= fyStart && wDate <= fyEnd && (w.status === 'manager_approved' || w.status === 'approved' || (w.managerScore != null && Number(w.managerScore) > 0));
+          });
+          if (approvedWeeks.length > 0) {
+            const scores = approvedWeeks.map((w: any) => Number(w.managerScore || w.earnedScore || w.employeeScore || 0)).filter((s: number) => s > 0);
+            if (scores.length > 0) {
+              const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+              yearScopedItems.push({ ...r, managerScore: Number(avg.toFixed(1)) });
+              return;
+            }
+          }
+        }
+
+        if (r.managerScore != null && Number(r.managerScore) > 0) {
           yearScopedItems.push(r);
         }
         return;
@@ -10514,8 +10814,6 @@ export const EvaluationTab: React.FC = () => {
       const range = getEvaluationDateRange(r);
       if (!range.startDate) return;
       const d = range.startDate;
-      const fyStart = new Date(startYear, 3, 1); // 1 Apr
-      const fyEnd = new Date(endYear, 2, 31, 23, 59, 59); // 31 Mar
       if (d >= fyStart && d <= fyEnd) {
         if (r.managerScore != null || r.employeeOverallScore != null) {
           yearScopedItems.push(r);
