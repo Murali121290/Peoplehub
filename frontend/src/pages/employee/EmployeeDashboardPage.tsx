@@ -1467,9 +1467,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
           continue;
         }
 
-        const isWeekly = cycle?.frequency === 'weekly';
-        const isYearly = cycle?.frequency === 'yearly' || resp.frequency === 'yearly' || (resp.monthly_records && resp.monthly_records.length > 0) || (resp.weekly_records && resp.weekly_records.length > 0) || periodName.toLowerCase().includes('annual') || periodName.toLowerCase().includes('yearly') || periodName.toLowerCase().includes('fy 20');
-        const isMonthly = cycle?.frequency === 'monthly' || (!isWeekly && !isYearly && !cycle?.frequency);
+        const isWeekly = cycle?.frequency === 'weekly' || resp?.frequency === 'weekly';
+        const isYearly = !isWeekly && (cycle?.frequency === 'yearly' || resp?.frequency === 'yearly' || (resp?.monthly_records && resp.monthly_records.length > 0) || (resp?.weekly_records && resp.weekly_records.length > 0) || periodName.toLowerCase().includes('annual') || periodName.toLowerCase().includes('yearly') || periodName.toLowerCase().includes('fy 20'));
+        const isMonthly = cycle?.frequency === 'monthly' || resp?.frequency === 'monthly' || (!isWeekly && !isYearly && !cycle?.frequency);
 
         const formatDDMMYYYY = (isoStr: string) => {
           try {

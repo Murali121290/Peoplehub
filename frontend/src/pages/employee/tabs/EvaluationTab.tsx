@@ -5860,16 +5860,30 @@ export const EvaluationTab: React.FC = () => {
   // Helper to determine if an evaluation response is a Yearly / Annual evaluation
   const isYearlyResponse = (r?: EvaluationResponse | null): boolean => {
     if (!r) return false;
-    if (r.monthly_records && r.monthly_records.length > 0) return true;
-    if (r.weekly_records && r.weekly_records.length > 0) return true;
-    if (r.quarterly_records && r.quarterly_records.length > 0) return true;
-    if (r.daily_records && r.daily_records.length > 0) return true;
-    if (r.milestone_frequency === 'daily' || r.milestone_frequency === 'weekly' || r.milestone_frequency === 'quarterly' || r.milestone_frequency === 'monthly') return true;
     const respCycle = cycles.find(c => c.id === r.cycleId);
-    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase();
+    const f = String(r.frequency || (r as any).periodType || (respCycle as any)?.frequency || '').toLowerCase().trim();
+
+    // Standalone daily, weekly, monthly, and quarterly evaluations must NEVER be treated as yearly
+    if (f === 'daily' || f === 'weekly' || f === 'monthly' || f === 'quarterly') {
+      return false;
+    }
+
     if (f === 'yearly' || f === 'annual') return true;
-    if (f && f !== 'yearly' && f !== 'annual') return false;
+
+    // Check records only if frequency is not explicitly daily/weekly/monthly/quarterly
+    if (r.monthly_records && r.monthly_records.length > 0) return true;
+    if (r.quarterly_records && r.quarterly_records.length > 0) return true;
+    if (r.weekly_records && r.weekly_records.length > 0 && !f) return true;
+    if (r.daily_records && r.daily_records.length > 0 && !f) return true;
+
+    if ((r.milestone_frequency === 'daily' || r.milestone_frequency === 'weekly' || r.milestone_frequency === 'quarterly' || r.milestone_frequency === 'monthly') && (!f || f === 'yearly' || f === 'annual')) {
+      return true;
+    }
+
     const p = `${r.periodName || ''} ${(r as any).form || ''} ${(r as any).description || ''} ${respCycle?.name || ''} ${respCycle?.periodName || ''}`.toLowerCase();
+    if (p.includes('weekly') || p.includes('daily') || p.includes('quarterly') || p.includes('monthly')) {
+      return false;
+    }
     return p.includes('annual') || p.includes('yearly') || p.includes('year') || p.includes('fy 20') || p.includes('fy20') || p.includes('financial year');
   };
 
@@ -12525,7 +12539,7 @@ export const EvaluationTab: React.FC = () => {
                               {allUserResponses.length > 0 ? (
                                 allUserResponses.map((r, idx) => {
                                   const c = cycles.find(cy => cy.id === r.cycleId);
-                                  const raw = c?.periodName || c?.name || (r as any).periodName || `Cycle ${idx + 1}`;
+                                  const raw = (r as any).periodName || c?.periodName || c?.name || (r as any).form || `Cycle ${idx + 1}`;
                                   // Clean up wordy phrases from the label
                                   const cleanLabel = raw.replace(/Executive Evaluation/gi, '').replace(/\s+/g, ' ').trim();
                                   const isLatest = idx === 0;
@@ -13277,26 +13291,36 @@ export const EvaluationTab: React.FC = () => {
                     {/* Left: Deliverable Title & Category Filters */}
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                        Deliverables {isYearlyResponse(activeEmpResponse) && (() => {
-                          const empCadence = getResponseCadence(activeEmpResponse);
-                          const isDaily = empCadence === 'daily';
-                          const isWeekly = empCadence === 'weekly';
-                          const isQuarterly = empCadence === 'quarterly';
-                          if (isDaily) {
-                            const curD = getResponseDailyRecords(activeEmpResponse).find(d => d.dayIndex === activeYearlyDailyIndex);
-                            return `— ${curD?.dayLabel || `Day ${activeYearlyDailyIndex}`}`;
+                        Deliverables {(() => {
+                          if (isYearlyResponse(activeEmpResponse)) {
+                            const empCadence = getResponseCadence(activeEmpResponse);
+                            const isDaily = empCadence === 'daily';
+                            const isWeekly = empCadence === 'weekly';
+                            const isQuarterly = empCadence === 'quarterly';
+                            if (isDaily) {
+                              const curD = getResponseDailyRecords(activeEmpResponse).find(d => d.dayIndex === activeYearlyDailyIndex);
+                              return `— ${curD?.dayLabel || `Day ${activeYearlyDailyIndex}`}`;
+                            }
+                            if (isWeekly) {
+                              const curW = (activeEmpResponse?.weekly_records || []).find(w => w.weekIndex === activeYearlyWeekIndex);
+                              return `— ${curW?.weekLabel || `Week ${activeYearlyWeekIndex}`}`;
+                            }
+                            if (isQuarterly) {
+                              const curQ = (activeEmpResponse?.quarterly_records || []).find(q => q.quarterIndex === activeYearlyQuarterIndex);
+                              const qObj = FISCAL_QUARTERS.find(q => q.quarterIndex === activeYearlyQuarterIndex);
+                              return `— ${curQ?.quarterLabel || qObj?.quarterLabel || `Q${activeYearlyQuarterIndex}`}`;
+                            }
+                            const mObj = FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth);
+                            return `— ${mObj ? mObj.monthName : `Month ${activeYearlyFiscalMonth}`}`;
                           }
-                          if (isWeekly) {
-                            const curW = (activeEmpResponse?.weekly_records || []).find(w => w.weekIndex === activeYearlyWeekIndex);
-                            return `— ${curW?.weekLabel || `Week ${activeYearlyWeekIndex}`}`;
+                          const f = String(activeEmpResponse?.frequency || '').toLowerCase();
+                          if (f === 'weekly') {
+                            return activeEmpResponse?.periodName ? `— ${activeEmpResponse.periodName}` : '— Weekly';
                           }
-                          if (isQuarterly) {
-                            const curQ = (activeEmpResponse?.quarterly_records || []).find(q => q.quarterIndex === activeYearlyQuarterIndex);
-                            const qObj = FISCAL_QUARTERS.find(q => q.quarterIndex === activeYearlyQuarterIndex);
-                            return `— ${curQ?.quarterLabel || qObj?.quarterLabel || `Q${activeYearlyQuarterIndex}`}`;
+                          if (f === 'daily') {
+                            return activeEmpResponse?.periodName ? `— ${activeEmpResponse.periodName}` : '— Daily';
                           }
-                          const mObj = FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth);
-                          return `— ${mObj ? mObj.monthName : `Month ${activeYearlyFiscalMonth}`}`;
+                          return '';
                         })()}
                       </h4>
 
