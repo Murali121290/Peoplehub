@@ -1257,6 +1257,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
 
           {renderEditField("Employee Type", "employee_type", "select", "", ["Full-Time", "Part-Time", "Contract", "Intern"])}
           {renderEditField("Work Location", "work_location", "select", "", ["Office", "Remote", "Hybrid"])}
+          {renderEditField("Work Mode", "work_mode", "select", "", ["Office", "WFH", "Hybrid", "Flexible"])}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider">Shift Timing</label>
             {isHrOrAdmin ? (
@@ -1294,6 +1295,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ employeeId, initialEditi
         {renderField(UserGroupIcon, "Reporting Manager", profile.reporting_manager)}
         {renderField(BriefcaseIcon, "Employee Type", profile.employee_type)}
         {renderField(MapPinIcon, "Work Location", profile.work_location)}
+        {renderField(BriefcaseIcon, "Work Mode", profile.work_mode || "Office")}
         {renderField(ClockIcon, "Shift Timing", profile.shift_timing)}
         
         <div className="col-span-full border-t border-neutral-100 my-2 pt-4">
