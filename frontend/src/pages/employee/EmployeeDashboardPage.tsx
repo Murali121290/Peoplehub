@@ -295,7 +295,7 @@ const EmployeeDashboardPage: React.FC = () => {
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [wantsToChangeMode, setWantsToChangeMode] = useState(false);
   const [wagesConfirmData, setWagesConfirmData] = useState<{ isOpen: boolean; reason: string } | null>(null);
-  const [selectedWorkModeOpt, setSelectedWorkModeOpt] = useState<"Office" | "WFH" | "Hybrid">("Office");
+  const [selectedWorkModeOpt, setSelectedWorkModeOpt] = useState<"Office" | "WFH" | "Hybrid" | "Flexible">("Office");
   // Modal state
   const [pendingClarifications, setPendingClarifications] = useState<any[]>([]);
   const [confirmModal, setConfirmModal] = useState(false);
@@ -732,9 +732,12 @@ if (isHalfDayLeave(leave.total_days)) return false;
   const proceedToCheckInModal = () => {
     const isCurrentlyWFH = todayActiveWorkMode === "WFH";
     const isCurrentlyHybrid = todayActiveWorkMode === "Hybrid";
+    const isCurrentlyFlexible = todayActiveWorkMode === "Flexible";
 
     if (isCurrentlyHybrid) {
       setSelectedWorkModeOpt("Hybrid");
+    } else if (isCurrentlyFlexible) {
+      setSelectedWorkModeOpt("Flexible");
     } else {
       setSelectedWorkModeOpt(isCurrentlyWFH ? "WFH" : "Office");
     }
@@ -813,7 +816,63 @@ if (isHalfDayLeave(leave.total_days)) return false;
     setShowCheckInShiftModal(false);
     setIsActionLoading(true);
 
-    const isHybrid = (currentEmployee?.work_mode || "").toLowerCase() === "hybrid";
+    const empMode = (currentEmployee?.work_mode || "").toLowerCase();
+    const isHybrid = empMode === "hybrid";
+    const isFlexible = empMode === "flexible";
+
+    const targetShift = cleanShiftName(selectedCheckInShift);
+
+    // Flexible mode check-in: Automatically approved immediately, no manager request sent
+    if (isFlexible) {
+      try {
+        if (!currentEmployee) {
+          toast.error("Employee details not found");
+          return;
+        }
+
+        const todayStr = new Date().toLocaleDateString("en-CA");
+        const targetWorkMode = wantsToChangeMode ? "WFH" : "Office";
+
+        const payload = {
+          employee_id: currentEmployee.employee_id || currentEmployee.id,
+          employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
+          current_shift: todayActiveShift,
+          requested_shift: targetShift,
+          current_work_mode: todayActiveWorkMode || currentEmployee.work_mode || "Flexible",
+          requested_work_mode: targetWorkMode,
+          request_type: targetWorkMode === "WFH" ? "WFH" : "Shift",
+          from_date: todayStr,
+          to_date: todayStr,
+          reporting_manager: currentEmployee.reporting_manager || "Admin",
+          reason: "Flexible mode check-in for today.",
+          auto_approve: true,
+        };
+
+        const response = await fetch(`${BASE_URL}/shifts/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          toast.error(data.message || "Failed to confirm attendance mode.");
+          return;
+        }
+
+        toast.success(`Checked in under Flexible Mode (${targetWorkMode} - ${targetShift}).`);
+        loadShiftRequests();
+
+        await handleCheckIn(targetShift);
+      } catch (err) {
+        console.error(err);
+        toast.error("Error setting flexible attendance mode.");
+      } finally {
+        setIsActionLoading(false);
+      }
+      return;
+    }
+
     const shouldProcessChange = true;
 
     if (!shouldProcessChange) {
@@ -829,7 +888,6 @@ if (isHalfDayLeave(leave.total_days)) return false;
       return;
     }
 
-    const targetShift = cleanShiftName(selectedCheckInShift);
     const isShiftChanged = targetShift.toLowerCase() !== cleanShiftName(todayActiveShift).toLowerCase();
     
     const targetWorkMode = isHybrid && wantsToChangeMode ? selectedWorkModeOpt : (todayActiveWorkMode || currentEmployee?.work_mode || "Office");
@@ -1467,9 +1525,9 @@ if (isHalfDayLeave(leave.total_days)) return false;
           continue;
         }
 
-        const isWeekly = cycle?.frequency === 'weekly';
-        const isYearly = cycle?.frequency === 'yearly' || resp.frequency === 'yearly' || (resp.monthly_records && resp.monthly_records.length > 0) || (resp.weekly_records && resp.weekly_records.length > 0) || periodName.toLowerCase().includes('annual') || periodName.toLowerCase().includes('yearly') || periodName.toLowerCase().includes('fy 20');
-        const isMonthly = cycle?.frequency === 'monthly' || (!isWeekly && !isYearly && !cycle?.frequency);
+        const isWeekly = cycle?.frequency === 'weekly' || resp?.frequency === 'weekly';
+        const isYearly = !isWeekly && (cycle?.frequency === 'yearly' || resp?.frequency === 'yearly' || (resp?.monthly_records && resp.monthly_records.length > 0) || (resp?.weekly_records && resp.weekly_records.length > 0) || periodName.toLowerCase().includes('annual') || periodName.toLowerCase().includes('yearly') || periodName.toLowerCase().includes('fy 20'));
+        const isMonthly = cycle?.frequency === 'monthly' || resp?.frequency === 'monthly' || (!isWeekly && !isYearly && !cycle?.frequency);
 
         const formatDDMMYYYY = (isoStr: string) => {
           try {
@@ -2981,7 +3039,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
                     onCheckInOut={() => isCheckedIn ? handleCheckOutAction() : handleCheckInClick()}
                     onLunchBreak={handleLunchBreak}
                     onTeaBreak={handleTeaBreak}
-                    isHybrid={(currentEmployee?.work_mode || "").toLowerCase() === "hybrid"}
+                    isHybrid={["hybrid", "flexible"].includes((currentEmployee?.work_mode || "").toLowerCase())}
                     isPaused={isPaused}
                     pausedTimer={pausedTimer}
                     onPauseToggle={handlePauseToggle}
@@ -3101,15 +3159,22 @@ if (isHalfDayLeave(leave.total_days)) return false;
             </div>
             {/* Conditionally render content based on employee's work mode */}
             {(() => {
-              const isHybrid = (currentEmployee?.work_mode || "").toLowerCase() === "hybrid";
-                if (isHybrid) {
+              const empMode = (currentEmployee?.work_mode || "").toLowerCase();
+              const isHybrid = empMode === "hybrid";
+              const isFlexible = empMode === "flexible";
+
+              if (isHybrid || isFlexible) {
                 return (
                   <>
                     {/* Toggle to change details */}
                     <div className="flex items-center justify-between p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/60 shadow-xs">
                       <div className="flex flex-col gap-0.5 select-none">
-                        <span className="text-[12.5px] font-bold text-neutral-800">Request WFH (Work From Home) today?</span>
-                        <span className="text-[10px] text-neutral-450 font-semibold tracking-wide">Toggle on to request WFH for today</span>
+                        <span className="text-[12.5px] font-bold text-neutral-800">
+                          {isFlexible ? "Work From Home (WFH) today?" : "Request WFH (Work From Home) today?"}
+                        </span>
+                        <span className="text-[10px] text-neutral-450 font-semibold tracking-wide">
+                          {isFlexible ? "Toggle on to work from home today (Auto-approved)" : "Toggle on to request WFH for today"}
+                        </span>
                       </div>
                       <button
                         type="button"
@@ -3133,7 +3198,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
                     {/* Helper text indicating active mode */}
                     {wantsToChangeMode ? (
                       <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-emerald-800 text-[12px] font-bold shadow-xs">
-                        <span>🏠</span> You will request Work From Home (WFH) today.
+                        <span>🏠</span> {isFlexible ? "You will work from Home (WFH) today." : "You will request Work From Home (WFH) today."}
                       </div>
                     ) : (
                       <div className="p-3 bg-primary-50 border border-primary-200 rounded-2xl flex items-center gap-2 text-primary-800 text-[12px] font-bold shadow-xs">

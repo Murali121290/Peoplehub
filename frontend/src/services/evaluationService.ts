@@ -1081,10 +1081,11 @@ export const evaluationService = {
 
     const baseStartYear = data.startDate ? parseInt(data.startDate.slice(0, 4), 10) : new Date().getFullYear();
     const isYearly = (data.frequency || '').toLowerCase() === 'yearly' || (data.frequency || '').toLowerCase() === 'annual';
-    const isDaily = (data.frequency || '').toLowerCase() === 'daily' || data.milestone_frequency === 'daily';
-    const subFreq = data.milestone_frequency || (isDaily ? 'daily' : ((data.frequency || '').toLowerCase() === 'weekly' ? 'weekly' : 'monthly'));
+    const isDaily = (data.frequency || '').toLowerCase() === 'daily';
+    const isWeekly = (data.frequency || '').toLowerCase() === 'weekly';
+    const subFreq = isYearly ? (data.milestone_frequency || 'monthly') : (isDaily ? 'daily' : undefined);
     const initialMonthlyRecords = isYearly && subFreq === 'monthly' ? initializeYearlyMonthlyRecords(baseStartYear) : undefined;
-    const initialWeeklyRecords = isYearly && subFreq === 'weekly' ? initializeYearlyWeeklyRecords(baseStartYear) : undefined;
+    const initialWeeklyRecords = isYearly && subFreq === 'weekly' ? initializeYearlyWeeklyRecords(baseStartYear) : (isWeekly ? [] : undefined);
     const initialQuarterlyRecords = isYearly && subFreq === 'quarterly' ? initializeYearlyQuarterlyRecords(baseStartYear) : undefined;
     const initialDailyRecords = isDaily ? initializeYearlyDailyRecords(data.startDate, data.endDate) : undefined;
 
@@ -1112,7 +1113,7 @@ export const evaluationService = {
         template_key: data.templateKey || 'form_1',
         template_name: data.templateName || '',
         monthly_records: initialMonthlyRecords,
-        weekly_records: initialWeeklyRecords,
+        weekly_records: isWeekly ? [] : initialWeeklyRecords,
         quarterly_records: initialQuarterlyRecords,
         daily_records: initialDailyRecords,
         employees: targetEmployees,
