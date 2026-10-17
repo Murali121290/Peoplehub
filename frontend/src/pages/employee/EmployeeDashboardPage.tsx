@@ -306,6 +306,7 @@ const EmployeeDashboardPage: React.FC = () => {
     dueDateText: string;
     isPreWeekoff: boolean;
     canCheckOutAnyway?: boolean;
+    targetWeek?: number;
   } | null>(null);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [birthdayEmployees, setBirthdayEmployees] = useState<any[]>([]);
@@ -1391,22 +1392,29 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
         const hasPendingMonth = isYearly && !isDaily && (r as any).monthly_records && (r as any).monthly_records.some((m: any) => {
           if (m.status !== 'pending_employee') return false;
-          if (m.monthIndex === 6) return true;
-          if (m.monthIndex > 6) {
-            const prev = (r as any).monthly_records.find((p: any) => p.monthIndex === m.monthIndex - 1);
-            return prev?.status === 'manager_approved';
-          }
-          return false;
+          const monthlyRecords: any[] = (r as any).monthly_records;
+          const minMonth = monthlyRecords.length > 0 ? Math.min(...monthlyRecords.map((item: any) => item.monthIndex)) : 1;
+          if (m.monthIndex === minMonth) return true;
+          const prev = monthlyRecords.find((p: any) => p.monthIndex === m.monthIndex - 1);
+          return !prev || prev.status === 'manager_approved' || prev.status === 'submitted_to_manager';
+        });
+
+        const hasPendingQuarter = isYearly && !isDaily && (r as any).quarterly_records && (r as any).quarterly_records.some((q: any) => {
+          if (q.status !== 'pending_employee') return false;
+          const quarterlyRecords: any[] = (r as any).quarterly_records;
+          const minQuarter = quarterlyRecords.length > 0 ? Math.min(...quarterlyRecords.map((item: any) => item.quarterIndex)) : 1;
+          if (q.quarterIndex === minQuarter) return true;
+          const prev = quarterlyRecords.find((p: any) => p.quarterIndex === q.quarterIndex - 1);
+          return !prev || prev.status === 'manager_approved' || prev.status === 'submitted_to_manager';
         });
 
         const hasPendingWeek = isYearly && !isDaily && (r as any).weekly_records && (r as any).weekly_records.some((w: any) => {
           if (w.status !== 'pending_employee') return false;
-          if (w.weekIndex === 26) return true;
-          if (w.weekIndex > 26) {
-            const prev = (r as any).weekly_records.find((p: any) => p.weekIndex === w.weekIndex - 1);
-            return prev?.status === 'manager_approved';
-          }
-          return false;
+          const weeklyRecords: any[] = (r as any).weekly_records;
+          const minWeek = weeklyRecords.length > 0 ? Math.min(...weeklyRecords.map((item: any) => item.weekIndex)) : 1;
+          if (w.weekIndex === minWeek || w.weekIndex === 26) return true;
+          const prev = weeklyRecords.find((p: any) => p.weekIndex === w.weekIndex - 1);
+          return !prev || prev.status === 'manager_approved' || prev.status === 'submitted_to_manager';
         });
 
         const hasPendingDay = isDaily && (() => {
@@ -1424,7 +1432,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
           return r.status !== 'submitted_to_manager' && r.status !== 'manager_approved';
         })();
 
-        const isPending = hasPendingDay || hasPendingMonth || hasPendingWeek || r.status === 'employee_in_progress' || r.status === 'returned_to_employee' || r.status === 'Assigned to Employee' || r.status === 'pending_employee' || !r.employeeSubmittedAt;
+        const isPending = hasPendingDay || hasPendingMonth || hasPendingQuarter || hasPendingWeek || r.status === 'employee_in_progress' || r.status === 'returned_to_employee' || r.status === 'Assigned to Employee' || r.status === 'pending_employee' || !r.employeeSubmittedAt;
         if (!isPending) return false;
 
         const rEmpCode = clean(r.employeeCode);
@@ -1582,53 +1590,54 @@ if (isHalfDayLeave(leave.total_days)) return false;
 
           if (isWeeklySub) {
             const weeklyRecords: any[] = (resp as any).weekly_records || [];
+            const minWeek = weeklyRecords.length > 0 ? Math.min(...weeklyRecords.map((item: any) => item.weekIndex)) : 1;
             const curWeekRec = weeklyRecords.find((w: any) => {
               if (w.status !== 'pending_employee') return false;
-              if (w.weekIndex === 26) return true;
-              if (w.weekIndex > 26) {
-                const prevRec = weeklyRecords.find((p: any) => p.weekIndex === w.weekIndex - 1);
-                return prevRec?.status === 'manager_approved';
-              }
-              return false;
+              if (w.weekIndex === minWeek || w.weekIndex === 26) return true;
+              const prevRec = weeklyRecords.find((p: any) => p.weekIndex === w.weekIndex - 1);
+              return !prevRec || prevRec.status === 'manager_approved' || prevRec.status === 'submitted_to_manager';
             });
 
             if (curWeekRec && curWeekRec.status === 'pending_employee') {
               const weekLabel = curWeekRec.weekLabel || `Week ${curWeekRec.weekIndex}`;
               const wEndDateStr = curWeekRec.endDate ? String(curWeekRec.endDate).split('T')[0] : endDateStr;
-              const wEndObj = new Date(wEndDateStr);
-              const wDiffTime = wEndObj.getTime() - new Date(todayStr).getTime();
-              const wDiffDays = Math.ceil(wDiffTime / (1000 * 60 * 60 * 24));
 
-              const elapsedWorkingDays = countWorkingDaysBetween(wEndDateStr, todayStr);
-              const isOverdueStrict = elapsedWorkingDays > 2;
-              const isLastGraceDay = elapsedWorkingDays === 2;
-              const isWithinPrompt = elapsedWorkingDays >= 1 || wDiffDays <= 1;
-
-              if (isWithinPrompt || isOverdueStrict || wDiffDays <= 0) {
-                const workingDaysLeft = Math.max(0, 2 - elapsedWorkingDays);
-                return {
-                  type: 'employee_eval' as const,
-                  periodName: `${periodName} (${weekLabel})`,
-                  dueDateText: isOverdueStrict
-                    ? `Overdue (${weekLabel} submission required)`
-                    : isLastGraceDay
-                      ? `Final Working Day to Submit ${weekLabel}`
-                      : `Due in ${workingDaysLeft} Working Day${workingDaysLeft > 1 ? 's' : ''}`,
-                  canCheckOutAnyway: !isOverdueStrict && !isLastGraceDay,
-                  isPreWeekoff: isPreWeekoff || isPreLeaveDay,
-                };
+              // If the current week is still ongoing (e.g. Monday-Sunday, 12/10 - 18/10), do not prompt checkout yet!
+              if (todayStr <= wEndDateStr) {
+                continue;
               }
+
+              // The week has ended (Sunday passed). Working days start counting from Monday:
+              // Day 1 (Monday): Prompt with grace period ("Check Out Anyway" allowed)
+              // Day 2 (Tuesday): Prompt with grace period ("Check Out Anyway" allowed)
+              // Day 3 (Wednesday): MANDATORY ("Final Working Day to Submit / Check Out Anyway" blocked)
+              // Day > 3: OVERDUE (Strictly blocked until submitted)
+              const elapsedWorkingDays = countWorkingDaysBetween(wEndDateStr, todayStr);
+              const isOverdueStrict = elapsedWorkingDays > 3;
+              const isLastGraceDay = elapsedWorkingDays === 3; // Wednesday is mandatory
+              const workingDaysLeft = Math.max(0, 3 - elapsedWorkingDays);
+
+              return {
+                type: 'employee_eval' as const,
+                periodName: `${periodName} (${weekLabel})`,
+                dueDateText: isOverdueStrict
+                  ? `Overdue (${weekLabel} submission mandatory)`
+                  : isLastGraceDay
+                    ? `Mandatory: Final Day to Submit ${weekLabel} (Wednesday)`
+                    : `Due in ${workingDaysLeft} Working Day${workingDaysLeft > 1 ? 's' : ''} (Wednesday)`,
+                canCheckOutAnyway: !isOverdueStrict && !isLastGraceDay,
+                isPreWeekoff: isPreWeekoff || isPreLeaveDay,
+                targetWeek: curWeekRec.weekIndex,
+              };
             }
           } else if (isQuarterlySub) {
             const quarterlyRecords: any[] = (resp as any).quarterly_records || [];
+            const minQuarter = quarterlyRecords.length > 0 ? Math.min(...quarterlyRecords.map((item: any) => item.quarterIndex)) : 1;
             const curQuarterRec = quarterlyRecords.find((q: any) => {
               if (q.status !== 'pending_employee') return false;
-              if (q.quarterIndex === 2) return true;
-              if (q.quarterIndex > 2) {
-                const prevRec = quarterlyRecords.find((p: any) => p.quarterIndex === q.quarterIndex - 1);
-                return prevRec?.status === 'manager_approved';
-              }
-              return false;
+              if (q.quarterIndex === minQuarter) return true;
+              const prevRec = quarterlyRecords.find((p: any) => p.quarterIndex === q.quarterIndex - 1);
+              return !prevRec || prevRec.status === 'manager_approved' || prevRec.status === 'submitted_to_manager';
             });
 
             if (curQuarterRec && curQuarterRec.status === 'pending_employee') {
@@ -1670,18 +1679,16 @@ if (isHalfDayLeave(leave.total_days)) return false;
               }
             }
           } else {
-            // Yearly Evaluation: Check the active actionable unlocked monthly milestone starting from September (Month 6) onwards
+            // Yearly Evaluation: Check the active actionable unlocked monthly milestone starting from first available month onwards
             const monthlyRecords: any[] = (resp as any).monthly_records || [];
+            const minMonth = monthlyRecords.length > 0 ? Math.min(...monthlyRecords.map((item: any) => item.monthIndex)) : 1;
             const curMonthRec = monthlyRecords.find((m: any) => {
               if (m.status !== 'pending_employee') return false;
-              if (m.monthIndex === 6) return true;
-              if (m.monthIndex > 6) {
-                const prevRec = monthlyRecords.find((p: any) => p.monthIndex === m.monthIndex - 1);
-                return prevRec?.status === 'manager_approved';
-              }
-              return false;
+              if (m.monthIndex === minMonth) return true;
+              const prevRec = monthlyRecords.find((p: any) => p.monthIndex === m.monthIndex - 1);
+              return !prevRec || prevRec.status === 'manager_approved' || prevRec.status === 'submitted_to_manager';
             });
-            const monthTitle = curMonthRec ? curMonthRec.monthName : 'September Progress';
+            const monthTitle = curMonthRec ? curMonthRec.monthName : 'Monthly Progress';
 
             if (curMonthRec && curMonthRec.status === 'pending_employee') {
               let mEndStr = curMonthRec.endDate ? String(curMonthRec.endDate).split('T')[0] : '';
@@ -1783,9 +1790,32 @@ if (isHalfDayLeave(leave.total_days)) return false;
             }
           }
 
-          const isWithinPromptWindow = isWeekly
-            ? (diffDays >= 0 && diffDays <= 3) // Last 3 days of week
-            : (diffDays >= 0 && diffDays <= 2);
+          if (isWeekly) {
+            const isWeekStillInProgress = todayStr <= endDateStr;
+            if (isWeekStillInProgress) {
+              // Current week is still ongoing (Mon-Sun) - do not interrupt checkout
+              continue;
+            } else {
+              const elapsedWorkingDays = countWorkingDaysBetween(endDateStr, todayStr);
+              const isOverdueStrict = elapsedWorkingDays > 3;
+              const isLastGraceDay = elapsedWorkingDays === 3; // Wednesday is mandatory
+              const workingDaysLeft = Math.max(0, 3 - elapsedWorkingDays);
+
+              return {
+                type: 'employee_eval' as const,
+                periodName,
+                dueDateText: isOverdueStrict
+                  ? `Overdue (${periodName} submission mandatory)`
+                  : isLastGraceDay
+                    ? `Mandatory: Final Day to Submit ${periodName} (Wednesday)`
+                    : `Due in ${workingDaysLeft} Working Day${workingDaysLeft > 1 ? 's' : ''} (Wednesday)`,
+                canCheckOutAnyway: !isOverdueStrict && !isLastGraceDay,
+                isPreWeekoff: isPreWeekoff || isPreLeaveDay,
+              };
+            }
+          }
+
+          const isWithinPromptWindow = (diffDays >= 0 && diffDays <= 2);
 
           if (isDueToday || diffDays <= 0 || isPreWeekoff || isPreLeaveDay || isWithinPromptWindow) {
             const isStrictBlocked = isDueToday || diffDays <= 0;
@@ -1823,6 +1853,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
         dueDateText: pendingEval.dueDateText,
         isPreWeekoff: pendingEval.isPreWeekoff,
         canCheckOutAnyway: pendingEval.canCheckOutAnyway,
+        targetWeek: (pendingEval as any).targetWeek,
       });
     } else {
       setConfirmModal(true);
@@ -2945,8 +2976,13 @@ if (isHalfDayLeave(leave.total_days)) return false;
           isPreWeekoff={pendingEvalPrompt.isPreWeekoff}
           canCheckOutAnyway={pendingEvalPrompt.canCheckOutAnyway}
           onCompleteNow={() => {
+            const tw = pendingEvalPrompt.targetWeek;
             setPendingEvalPrompt(null);
-            navigate("/evaluation");
+            if (tw) {
+              navigate(`/evaluation?week=${tw}`);
+            } else {
+              navigate("/evaluation");
+            }
           }}
           onCheckOutAnyway={async () => {
             setPendingEvalPrompt(null);

@@ -110,7 +110,11 @@ export const initializeYearlyMonthlyRecords = (baseStartYear: number): YearlyMon
   });
 };
 
-export const initializeYearlyWeeklyRecords = (baseStartYear: number): YearlyWeekRecord[] => {
+export const initializeYearlyWeeklyRecords = (
+  baseStartYear: number,
+  startDate?: string,
+  endDate?: string
+): YearlyWeekRecord[] => {
   const records: YearlyWeekRecord[] = [];
   
   // April 1st of the fiscal start year
@@ -125,6 +129,9 @@ export const initializeYearlyWeeklyRecords = (baseStartYear: number): YearlyWeek
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
+  const filterStart = startDate ? startDate.slice(0, 10) : '';
+  const filterEnd = endDate ? endDate.slice(0, 10) : '';
+
   for (let w = 1; w <= 52; w++) {
     // Each week w starts strictly on Monday and ends on Sunday
     const wMonday = new Date(firstMonday.getFullYear(), firstMonday.getMonth(), firstMonday.getDate() + (w - 1) * 7);
@@ -133,6 +140,14 @@ export const initializeYearlyWeeklyRecords = (baseStartYear: number): YearlyWeek
     const pad = (n: number) => String(n).padStart(2, '0');
     const startIso = `${wMonday.getFullYear()}-${pad(wMonday.getMonth() + 1)}-${pad(wMonday.getDate())}`;
     const endIso = `${wSunday.getFullYear()}-${pad(wSunday.getMonth() + 1)}-${pad(wSunday.getDate())}`;
+
+    // If an explicit date range is specified, only include weeks that overlap with that range
+    if (filterStart && endIso < filterStart) {
+      continue;
+    }
+    if (filterEnd && startIso > filterEnd) {
+      continue;
+    }
 
     const startDay = pad(wMonday.getDate());
     const startMonth = pad(wMonday.getMonth() + 1);
@@ -1085,7 +1100,7 @@ export const evaluationService = {
     const isWeekly = (data.frequency || '').toLowerCase() === 'weekly';
     const subFreq = isYearly ? (data.milestone_frequency || 'monthly') : (isDaily ? 'daily' : undefined);
     const initialMonthlyRecords = isYearly && subFreq === 'monthly' ? initializeYearlyMonthlyRecords(baseStartYear) : undefined;
-    const initialWeeklyRecords = isYearly && subFreq === 'weekly' ? initializeYearlyWeeklyRecords(baseStartYear) : (isWeekly ? [] : undefined);
+    const initialWeeklyRecords = isYearly && subFreq === 'weekly' ? initializeYearlyWeeklyRecords(baseStartYear, data.startDate, data.endDate) : (isWeekly ? [] : undefined);
     const initialQuarterlyRecords = isYearly && subFreq === 'quarterly' ? initializeYearlyQuarterlyRecords(baseStartYear) : undefined;
     const initialDailyRecords = isDaily ? initializeYearlyDailyRecords(data.startDate, data.endDate) : undefined;
 
