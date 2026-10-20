@@ -813,7 +813,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
     proceedToCheckInModal();
   };
 
-  const handleConfirmCheckInShift = async () => {
+  const handleConfirmCheckInShift = async (directMode?: "WFH" | "Office") => {
     setShowCheckInShiftModal(false);
     setIsActionLoading(true);
 
@@ -832,12 +832,12 @@ if (isHalfDayLeave(leave.total_days)) return false;
         }
 
         const todayStr = new Date().toLocaleDateString("en-CA");
-        const targetWorkMode = wantsToChangeMode ? "WFH" : "Office";
+        const targetWorkMode = directMode || (wantsToChangeMode ? "WFH" : "Office");
 
         const payload = {
           employee_id: currentEmployee.employee_id || currentEmployee.id,
           employee_name: `${currentEmployee.first_name} ${currentEmployee.last_name}`,
-          current_shift: todayActiveShift,
+          current_shift: todayActiveShift || targetShift,
           requested_shift: targetShift,
           current_work_mode: todayActiveWorkMode || currentEmployee.work_mode || "Flexible",
           requested_work_mode: targetWorkMode,
@@ -845,7 +845,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
           from_date: todayStr,
           to_date: todayStr,
           reporting_manager: currentEmployee.reporting_manager || "Admin",
-          reason: "Flexible mode check-in for today.",
+          reason: `Flexible mode check-in (${targetWorkMode}).`,
           auto_approve: true,
         };
 
@@ -3234,17 +3234,106 @@ if (isHalfDayLeave(leave.total_days)) return false;
               const isHybrid = empMode === "hybrid";
               const isFlexible = empMode === "flexible";
 
-              if (isHybrid || isFlexible) {
+              // 1. Flexible Mode: Show WFO vs WFH stacked vertically (one below the other)
+              if (isFlexible) {
+                return (
+                  <div className="flex flex-col gap-3 py-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                      Select Attendance Mode
+                    </span>
+
+                    <div className="flex flex-col gap-2.5">
+                      {/* Work From Office (WFO) */}
+                      <div
+                        onClick={() => setSelectedWorkModeOpt("Office")}
+                        className={`flex items-center gap-3 p-3.5 border rounded-2xl cursor-pointer transition-all duration-200 ${
+                          selectedWorkModeOpt === "Office"
+                            ? "border-teal-600 bg-teal-50/30 ring-2 ring-teal-100 shadow-xs"
+                            : "border-neutral-200 hover:bg-neutral-50/70 hover:border-neutral-300"
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center text-xl shrink-0">
+                          🏢
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[13px] font-bold text-neutral-900 block">
+                            Work From Office (WFO)
+                          </span>
+                          <span className="text-[11px] text-neutral-500 font-semibold block mt-0.5">
+                            Working directly from company premises • Auto-Approved
+                          </span>
+                        </div>
+                        {selectedWorkModeOpt === "Office" && (
+                          <span className="w-5 h-5 rounded-full bg-teal-700 flex items-center justify-center shrink-0">
+                            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
+                            </svg>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Work From Home (WFH) */}
+                      <div
+                        onClick={() => setSelectedWorkModeOpt("WFH")}
+                        className={`flex items-center gap-3 p-3.5 border rounded-2xl cursor-pointer transition-all duration-200 ${
+                          selectedWorkModeOpt === "WFH"
+                            ? "border-teal-600 bg-teal-50/30 ring-2 ring-teal-100 shadow-xs"
+                            : "border-neutral-200 hover:bg-neutral-50/70 hover:border-neutral-300"
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center text-xl shrink-0">
+                          🏠
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[13px] font-bold text-neutral-900 block">
+                            Work From Home (WFH)
+                          </span>
+                          <span className="text-[11px] text-neutral-500 font-semibold block mt-0.5">
+                            Working remotely from home today • Auto-Approved
+                          </span>
+                        </div>
+                        {selectedWorkModeOpt === "WFH" && (
+                          <span className="w-5 h-5 rounded-full bg-teal-700 flex items-center justify-center shrink-0">
+                            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
+                            </svg>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions: Cancel and Confirm */}
+                    <div className="flex gap-3 pt-3 border-t border-neutral-100">
+                      <button
+                        type="button"
+                        onClick={() => setShowCheckInShiftModal(false)}
+                        className="flex-1 py-2.5 border border-neutral-200 rounded-2xl text-sm font-bold text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800 transition-all duration-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmCheckInShift(selectedWorkModeOpt === "WFH" ? "WFH" : "Office")}
+                        className="flex-1 py-2.5 bg-teal-800 hover:bg-teal-900 text-white rounded-2xl text-sm font-extrabold shadow-md hover:shadow-lg transition-all duration-200"
+                      >
+                        Confirm today's mode
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (isHybrid) {
                 return (
                   <>
                     {/* Toggle to change details */}
                     <div className="flex items-center justify-between p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/60 shadow-xs">
                       <div className="flex flex-col gap-0.5 select-none">
                         <span className="text-[12.5px] font-bold text-neutral-800">
-                          {isFlexible ? "Work From Home (WFH) today?" : "Request WFH (Work From Home) today?"}
+                          Request WFH (Work From Home) today?
                         </span>
                         <span className="text-[10px] text-neutral-450 font-semibold tracking-wide">
-                          {isFlexible ? "Toggle on to work from home today (Auto-approved)" : "Toggle on to request WFH for today"}
+                          Toggle on to request WFH for today
                         </span>
                       </div>
                       <button
@@ -3269,7 +3358,7 @@ if (isHalfDayLeave(leave.total_days)) return false;
                     {/* Helper text indicating active mode */}
                     {wantsToChangeMode ? (
                       <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-emerald-800 text-[12px] font-bold shadow-xs">
-                        <span>🏠</span> {isFlexible ? "You will work from Home (WFH) today." : "You will request Work From Home (WFH) today."}
+                        <span>🏠</span> You will request Work From Home (WFH) today.
                       </div>
                     ) : (
                       <div className="p-3 bg-primary-50 border border-primary-200 rounded-2xl flex items-center gap-2 text-primary-800 text-[12px] font-bold shadow-xs">
@@ -3310,65 +3399,85 @@ if (isHalfDayLeave(leave.total_days)) return false;
                         })}
                       </div>
                     </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-3 pt-3 border-t border-neutral-100">
+                      <button
+                        type="button"
+                        onClick={() => setShowCheckInShiftModal(false)}
+                        className="flex-1 py-2.5 border border-neutral-200 rounded-2xl text-sm font-bold text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800 transition-all duration-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmCheckInShift()}
+                        className="flex-1 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-2xl text-sm font-extrabold shadow-md hover:shadow-lg transition-all duration-200"
+                      >
+                        Confirm today's mode
+                      </button>
+                    </div>
                   </>
                 );
               } else {
                 // Non-Hybrid Employees: Only show the three shifts directly
                 return (
-                  <div className="flex flex-col gap-3">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
-                    <div className="grid grid-cols-1 gap-2">
-                      {getAvailableShifts().map((opt) => {
-                        const isSelected = selectedCheckInShift === opt.name;
-                        return (
-                          <div
-                            key={opt.name}
-                            onClick={() => setSelectedCheckInShift(opt.name)}
-                            className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all duration-200 ${
-                              isSelected
-                                ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
-                                : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
-                            }`}
-                          >
-                            <div className="min-w-0 flex-1 flex items-center justify-between">
-                              <div>
-                                <span className="text-[13px] font-bold text-neutral-850 block">{opt.name}</span>
-                                <span className="text-[10px] text-neutral-450 font-semibold block mt-0.5">{opt.time}</span>
+                  <>
+                    <div className="flex flex-col gap-3">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Select Shift Timing</span>
+                      <div className="grid grid-cols-1 gap-2">
+                        {getAvailableShifts().map((opt) => {
+                          const isSelected = selectedCheckInShift === opt.name;
+                          return (
+                            <div
+                              key={opt.name}
+                              onClick={() => setSelectedCheckInShift(opt.name)}
+                              className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all duration-200 ${
+                                isSelected
+                                  ? "border-primary-500 bg-primary-50/20 ring-2 ring-primary-100 shadow-sm"
+                                  : "border-neutral-200 hover:bg-neutral-50/60 hover:border-neutral-300"
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1 flex items-center justify-between">
+                                <div>
+                                  <span className="text-[13px] font-bold text-neutral-850 block">{opt.name}</span>
+                                  <span className="text-[10px] text-neutral-450 font-semibold block mt-0.5">{opt.time}</span>
+                                </div>
+                                {isSelected && (
+                                  <span className="w-4 h-4 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+                                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                  </span>
+                                )}
                               </div>
-                              {isSelected && (
-                                <span className="w-4 h-4 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
-                                  <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/>
-                                  </svg>
-                                </span>
-                              )}
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-3 pt-3 border-t border-neutral-100">
+                      <button
+                        type="button"
+                        onClick={() => setShowCheckInShiftModal(false)}
+                        className="flex-1 py-2.5 border border-neutral-200 rounded-2xl text-sm font-bold text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800 transition-all duration-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmCheckInShift()}
+                        className="flex-1 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-2xl text-sm font-extrabold shadow-md hover:shadow-lg transition-all duration-200"
+                      >
+                        Confirm today's mode
+                      </button>
+                    </div>
+                  </>
                 );
               }
             })()}
-
-            {/* Actions */}
-            <div className="flex gap-3 pt-3 border-t border-neutral-100">
-              <button
-                type="button"
-                onClick={() => setShowCheckInShiftModal(false)}
-                className="flex-1 py-2.5 border border-neutral-200 rounded-2xl text-sm font-bold text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800 transition-all duration-200"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmCheckInShift}
-                className="flex-1 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-2xl text-sm font-extrabold shadow-md hover:shadow-lg transition-all duration-200"
-              >
-                Confirm today's mode
-              </button>
-            </div>
           </div>
         </div>
       )}
