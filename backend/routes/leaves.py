@@ -254,10 +254,10 @@ def apply_leave():
                     "error": f"You already have an {status_label} permission request for {leave.permission_date}. Only one permission request per day is allowed."
                 }), 400
 
-            if abs(duration_minutes - 30.0) > 0.1 and abs(duration_minutes - 60.0) > 0.1 and abs(duration_minutes - 120.0) > 0.1:
+            if abs(duration_minutes - 60.0) > 0.1:
                 return jsonify({
                     "success": False,
-                    "error": "Permission duration must be exactly 30 minutes, 1 hour, or 2 hours."
+                    "error": "Permission duration must be exactly 1 hour."
                 }), 400
 
             # Calculate active monthly permission cycle (25th to 24th)
