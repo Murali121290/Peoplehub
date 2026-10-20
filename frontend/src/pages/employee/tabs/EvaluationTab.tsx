@@ -4285,13 +4285,8 @@ export const EvaluationTab: React.FC = () => {
           setIsAssigning(false);
           return;
         }
-        if (mgrSubFrequency === 'daily' || mgrSubFrequency === 'weekly') {
-          effectiveStartDate = mgrPeriodFromDate || `${mgrPeriodYear}-04-01`;
-          effectiveEndDate = mgrPeriodToDate || `${mgrPeriodYear + 1}-03-31`;
-        } else {
-          effectiveStartDate = `${mgrPeriodYear}-04-01`;
-          effectiveEndDate = `${mgrPeriodYear + 1}-03-31`;
-        }
+        effectiveStartDate = mgrPeriodFromDate || `${mgrPeriodYear}-04-01`;
+        effectiveEndDate = mgrPeriodToDate || `${mgrPeriodYear + 1}-03-31`;
       }
 
       const currentMgrEmpCode = String(myCanonicalCode || currentDbUser?.employee_id || userAny?.employee_id || user?.employee_id || '');
@@ -5431,7 +5426,7 @@ export const EvaluationTab: React.FC = () => {
           }
         }
 
-        const curRecords = activeEmpResponse.monthly_records || [];
+        const curRecords = getResponseMonthlyRecords(activeEmpResponse);
         const initialYearlyInputs: Record<number, Record<string, YearlyMonthKPIEntry>> = {};
         const initialYearlyRemarks: Record<number, string> = {};
         curRecords.forEach(rec => {
@@ -5948,13 +5943,15 @@ export const EvaluationTab: React.FC = () => {
     const isSubmitted = curRec?.status === 'submitted_to_manager';
     const score = isApproved && curRec?.managerScore != null ? Number(curRec.managerScore) : null;
 
-    const prevRec = quarterlyRecords.find(q => q.quarterIndex === quarterIndex - 1);
-    const isPrevApproved = prevRec?.status === 'manager_approved';
+    const sortedQuarterRecs = [...quarterlyRecords].sort((a, b) => a.quarterIndex - b.quarterIndex);
+    const curIdx = sortedQuarterRecs.findIndex(q => q.quarterIndex === quarterIndex);
+    const prevRec = curIdx > 0 ? sortedQuarterRecs[curIdx - 1] : undefined;
+    const isPrevApproved = !prevRec || prevRec.status === 'manager_approved';
 
     const currentQuarterObj = FISCAL_QUARTERS.find(q => q.quarterIndex === quarterIndex);
     const currentQuarterLabel = curRec?.quarterLabel || currentQuarterObj?.quarterLabel || `Q${quarterIndex}`;
-    const prevQuarterObj = FISCAL_QUARTERS.find(q => q.quarterIndex === quarterIndex - 1);
-    const prevQuarterLabel = prevRec?.quarterLabel || prevQuarterObj?.quarterLabel || `Q${quarterIndex - 1}`;
+    const prevQuarterObj = prevRec ? FISCAL_QUARTERS.find(q => q.quarterIndex === prevRec.quarterIndex) : undefined;
+    const prevQuarterLabel = prevRec?.quarterLabel || prevQuarterObj?.quarterLabel || (prevRec ? `Q${prevRec.quarterIndex}` : '');
 
     const todayStr = getLocalTodayDateString();
     const curCalMonth = new Date().getMonth() + 1; // 1-12
@@ -6005,6 +6002,27 @@ export const EvaluationTab: React.FC = () => {
       };
     }
 
+    // Sequential Preceding Milestone Lock: if previous assigned quarter is not approved, lock subsequent quarters
+    if (!isPrevApproved) {
+      const isPrevSubmitted = prevRec?.status === 'submitted_to_manager';
+      const lockReason = isPrevSubmitted
+        ? `Waiting for Manager to review and approve ${prevQuarterLabel} before ${currentQuarterLabel} unlocks.`
+        : `${currentQuarterLabel} is locked. Please complete and submit your ${prevQuarterLabel} milestone first.`;
+
+      return {
+        isLocked: true,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: false,
+        status: 'locked' as const,
+        statusLabel: 'Locked',
+        lockReason,
+        currentQuarterLabel,
+        prevQuarterLabel,
+        score: null
+      };
+    }
+
     // Current ongoing fiscal quarter: open for deliverables
     if (quarterIndex === curFiscalQuarter) {
       return {
@@ -6029,26 +6047,6 @@ export const EvaluationTab: React.FC = () => {
         isEditable: true,
         status: 'pending_employee' as const,
         statusLabel: 'Past Period',
-        currentQuarterLabel,
-        prevQuarterLabel,
-        score: null
-      };
-    }
-
-    if (!isPrevApproved) {
-      const isPrevSubmitted = prevRec?.status === 'submitted_to_manager';
-      const lockReason = isPrevSubmitted
-        ? `Waiting for Manager to review and approve ${prevQuarterLabel} before ${currentQuarterLabel} unlocks.`
-        : `${currentQuarterLabel} is locked. Please complete and submit your ${prevQuarterLabel} milestone first.`;
-
-      return {
-        isLocked: true,
-        isApproved: false,
-        isSubmitted: false,
-        isEditable: false,
-        status: 'locked' as const,
-        statusLabel: 'Locked',
-        lockReason,
         currentQuarterLabel,
         prevQuarterLabel,
         score: null
@@ -6090,10 +6088,12 @@ export const EvaluationTab: React.FC = () => {
     const isSubmitted = curRec?.status === 'submitted_to_manager';
     const score = isApproved && curRec?.managerScore != null ? Number(curRec.managerScore) : null;
 
-    const prevMonthObj = FISCAL_MONTHS.find(m => m.monthIndex === monthIndex - 1);
-    const prevMonthName = prevMonthObj ? prevMonthObj.monthName : `Month ${monthIndex - 1}`;
-    const prevRec = monthlyRecords.find(m => m.monthIndex === monthIndex - 1);
-    const isPrevApproved = prevRec?.status === 'manager_approved';
+    const sortedRecs = [...monthlyRecords].sort((a, b) => a.monthIndex - b.monthIndex);
+    const curIdx = sortedRecs.findIndex(m => m.monthIndex === monthIndex);
+    const prevRec = curIdx > 0 ? sortedRecs[curIdx - 1] : undefined;
+    const prevMonthObj = prevRec ? FISCAL_MONTHS.find(m => m.monthIndex === prevRec.monthIndex) : undefined;
+    const prevMonthName = prevMonthObj ? prevMonthObj.monthName : (prevRec ? `Month ${prevRec.monthIndex}` : '');
+    const isPrevApproved = !prevRec || prevRec.status === 'manager_approved';
 
     const isFutureMonth = monthIndex > currentFiscalMonthIndex || Boolean(curRec?.startDate && todayStr < curRec.startDate);
 
@@ -6143,37 +6143,7 @@ export const EvaluationTab: React.FC = () => {
       };
     }
 
-    // 4. Current ongoing calendar month: open for deliverables
-    if (monthIndex === currentFiscalMonthIndex) {
-      return {
-        isLocked: false,
-        isApproved: false,
-        isSubmitted: false,
-        isEditable: true,
-        status: 'pending_employee' as const,
-        statusLabel: 'Open for Deliverables',
-        prevMonthName,
-        currentMonthName,
-        score: null
-      };
-    }
-
-    // 5. Past months prior to current calendar month
-    if (monthIndex < currentFiscalMonthIndex) {
-      return {
-        isLocked: false,
-        isApproved: false,
-        isSubmitted: false,
-        isEditable: true,
-        status: 'pending_employee' as const,
-        statusLabel: 'Past Period',
-        prevMonthName,
-        currentMonthName,
-        score: null
-      };
-    }
-
-    // 6. Sequential Preceding Milestone Lock
+    // 4. Sequential Preceding Milestone Lock: if previous assigned month is not approved, lock subsequent months
     if (!isPrevApproved) {
       const isPrevSubmitted = prevRec?.status === 'submitted_to_manager';
       const lockReason = isPrevSubmitted
@@ -6188,6 +6158,36 @@ export const EvaluationTab: React.FC = () => {
         status: 'locked' as const,
         statusLabel: 'Locked',
         lockReason,
+        prevMonthName,
+        currentMonthName,
+        score: null
+      };
+    }
+
+    // 5. Current ongoing calendar month: open for deliverables
+    if (monthIndex === currentFiscalMonthIndex) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: true,
+        status: 'pending_employee' as const,
+        statusLabel: 'Open for Deliverables',
+        prevMonthName,
+        currentMonthName,
+        score: null
+      };
+    }
+
+    // 6. Past months prior to current calendar month
+    if (monthIndex < currentFiscalMonthIndex) {
+      return {
+        isLocked: false,
+        isApproved: false,
+        isSubmitted: false,
+        isEditable: true,
+        status: 'pending_employee' as const,
+        statusLabel: 'Past Period',
         prevMonthName,
         currentMonthName,
         score: null
@@ -6333,6 +6333,168 @@ export const EvaluationTab: React.FC = () => {
       }
     }
     return recs;
+  };
+
+  const getResponseMonthlyRecords = (r: EvaluationResponse | null | undefined): YearlyMonthRecord[] => {
+    if (!r) return [];
+    const matchedCycle = r.cycleId ? cycles.find(c => c.id === r.cycleId) : activeCycle;
+    const rawStart = (r as any).startDate || (r as any).start_date || (r as any).fromDate || (r as any).from_date || matchedCycle?.startDate || (matchedCycle as any)?.start_date || (matchedCycle as any)?.from_date || '';
+    const rawEnd = (r as any).endDate || (r as any).end_date || (r as any).toDate || (r as any).to_date || matchedCycle?.endDate || (matchedCycle as any)?.end_date || (matchedCycle as any)?.to_date || '';
+
+    let recs: YearlyMonthRecord[] = r.monthly_records || [];
+    if (!recs || recs.length === 0) {
+      let baseYear = new Date().getFullYear();
+      if (rawStart) {
+        baseYear = parseInt(String(rawStart).slice(0, 4), 10);
+      } else if (r.periodName) {
+        const match = r.periodName.match(/\b(20\d\d)\b/);
+        if (match) baseYear = parseInt(match[1], 10);
+      }
+      recs = initializeYearlyMonthlyRecords(baseYear, rawStart, rawEnd);
+      r.monthly_records = recs;
+    }
+
+    // Filter out months outside explicit date range boundaries
+    if (rawStart && recs.length > 0) {
+      const fStart = String(rawStart).slice(0, 10);
+      const fEnd = rawEnd ? String(rawEnd).slice(0, 10) : '';
+      const filtered = recs.filter(m => {
+        let mStart = m.startDate ? m.startDate.slice(0, 10) : '';
+        let mEnd = m.endDate ? m.endDate.slice(0, 10) : '';
+        if (!mStart && m.calendarYear && m.calendarMonth) {
+          const lastDay = new Date(m.calendarYear, m.calendarMonth, 0).getDate();
+          mStart = `${m.calendarYear}-${String(m.calendarMonth).padStart(2, '0')}-01`;
+          mEnd = `${m.calendarYear}-${String(m.calendarMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        }
+        if (fStart && mEnd && mEnd < fStart) return false;
+        if (fEnd && mStart && mStart > fEnd) return false;
+        return true;
+      });
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+    return recs;
+  };
+
+  const getResponseQuarterlyRecords = (r: EvaluationResponse | null | undefined): YearlyQuarterRecord[] => {
+    if (!r) return [];
+    const matchedCycle = r.cycleId ? cycles.find(c => c.id === r.cycleId) : activeCycle;
+    const rawStart = (r as any).startDate || (r as any).start_date || (r as any).fromDate || (r as any).from_date || matchedCycle?.startDate || (matchedCycle as any)?.start_date || (matchedCycle as any)?.from_date || '';
+    const rawEnd = (r as any).endDate || (r as any).end_date || (r as any).toDate || (r as any).to_date || matchedCycle?.endDate || (matchedCycle as any)?.end_date || (matchedCycle as any)?.to_date || '';
+
+    let recs: YearlyQuarterRecord[] = r.quarterly_records || [];
+    if (!recs || recs.length === 0) {
+      let baseYear = new Date().getFullYear();
+      if (rawStart) {
+        baseYear = parseInt(String(rawStart).slice(0, 4), 10);
+      } else if (r.periodName) {
+        const match = r.periodName.match(/\b(20\d\d)\b/);
+        if (match) baseYear = parseInt(match[1], 10);
+      }
+      recs = initializeYearlyQuarterlyRecords(baseYear, rawStart, rawEnd);
+      r.quarterly_records = recs;
+    }
+
+    // Filter out quarters outside explicit date range boundaries
+    if (rawStart && recs.length > 0) {
+      const fStart = String(rawStart).slice(0, 10);
+      const fEnd = rawEnd ? String(rawEnd).slice(0, 10) : '';
+      const filtered = recs.filter(q => {
+        let qStart = q.startDate ? q.startDate.slice(0, 10) : '';
+        let qEnd = q.endDate ? q.endDate.slice(0, 10) : '';
+        if (fStart && qEnd && qEnd < fStart) return false;
+        if (fEnd && qStart && qStart > fEnd) return false;
+        return true;
+      });
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+    return recs;
+  };
+
+  /**
+   * Auto-advances manager review:
+   * 1. Checks if current employee has more pending milestones submitted to manager.
+   * 2. If so, switches directly to that next pending milestone.
+   * 3. If current employee has no more pending milestones, finds the next employee with pending reviews.
+   * 4. If all done, closes the review modal.
+   */
+  const autoAdvanceManagerReview = (
+    currentResp: EvaluationResponse,
+    approvedMilestoneType?: 'week' | 'month' | 'quarter' | 'daily' | 'cycle',
+    approvedIndex?: number
+  ) => {
+    // 1. Check if current employee has another milestone waiting for manager review
+    if (isYearlyResponse(currentResp)) {
+      const cadence = getResponseCadence(currentResp);
+
+      if (cadence === 'weekly') {
+        const weeklyRecs = getResponseWeeklyRecords(currentResp);
+        const nextPending = weeklyRecs.find(w => w.status === 'submitted_to_manager' && w.weekIndex !== approvedIndex);
+        if (nextPending) {
+          switchMgrYearlyWeek(nextPending.weekIndex);
+          if (nextPending.quarter) setMgrWeeklyQuarterFilter(nextPending.quarter);
+          showToast(`Switching to ${currentResp.employeeName || 'employee'}'s next pending milestone: ${nextPending.weekLabel || `Week ${nextPending.weekIndex}`}`);
+          return;
+        }
+      } else if (cadence === 'monthly') {
+        const monthlyRecs = getResponseMonthlyRecords(currentResp);
+        const nextPending = monthlyRecs.find(m => m.status === 'submitted_to_manager' && m.monthIndex !== approvedIndex);
+        if (nextPending) {
+          switchMgrYearlyMonth(nextPending.monthIndex);
+          const mObj = FISCAL_MONTHS.find(m => m.monthIndex === nextPending.monthIndex);
+          showToast(`Switching to ${currentResp.employeeName || 'employee'}'s next pending milestone: ${mObj?.monthName || `Month ${nextPending.monthIndex}`}`);
+          return;
+        }
+      } else if (cadence === 'quarterly') {
+        const quarterlyRecs = getResponseQuarterlyRecords(currentResp);
+        const nextPending = quarterlyRecs.find(q => q.status === 'submitted_to_manager' && q.quarterIndex !== approvedIndex);
+        if (nextPending) {
+          switchMgrYearlyQuarter(nextPending.quarterIndex);
+          const qObj = FISCAL_QUARTERS.find(q => q.quarterIndex === nextPending.quarterIndex);
+          showToast(`Switching to ${currentResp.employeeName || 'employee'}'s next pending milestone: ${qObj?.quarterName || `Quarter ${nextPending.quarterIndex}`}`);
+          return;
+        }
+      } else if (cadence === 'daily') {
+        const dailyRecs = getResponseDailyRecords(currentResp);
+        const nextPending = dailyRecs.find(d => d.status === 'submitted_to_manager' && d.dayIndex !== approvedIndex);
+        if (nextPending) {
+          switchMgrYearlyDay(nextPending.dayIndex);
+          showToast(`Switching to ${currentResp.employeeName || 'employee'}'s next pending day: ${nextPending.dayLabel || `Day ${nextPending.dayIndex}`}`);
+          return;
+        }
+      }
+    }
+
+    // 2. If current employee has no more pending milestones, check for another employee in Direct Reviews with pending reviews
+    const pendingOtherResp = (responses || []).find(r => {
+      if (r.id === currentResp.id) return false;
+      const rawSt = String(r.status || '').toLowerCase();
+      const isDirectlyPending = rawSt === 'submitted_to_manager' || rawSt === 'submitted to manager' || rawSt === 'manager_review' || rawSt.includes('submitted');
+      if (isDirectlyPending && r.managerScore == null) return true;
+
+      // Also check if they have pending milestones
+      if (isYearlyResponse(r)) {
+        const cad = getResponseCadence(r);
+        if (cad === 'weekly') return (r.weekly_records || []).some(w => w.status === 'submitted_to_manager');
+        if (cad === 'monthly') return (r.monthly_records || []).some(m => m.status === 'submitted_to_manager');
+        if (cad === 'quarterly') return (r.quarterly_records || []).some(q => q.status === 'submitted_to_manager');
+        if (cad === 'daily') return (r.daily_records || []).some(d => d.status === 'submitted_to_manager');
+      }
+      return false;
+    });
+
+    if (pendingOtherResp) {
+      handleSelectMgrResponse(pendingOtherResp);
+      showToast(`Loading next employee awaiting review: ${pendingOtherResp.employeeName || 'Next Employee'}`);
+      return;
+    }
+
+    // 3. All pending reviews completed!
+    setSelectedMgrResponseId('');
+    showToast('All pending employee reviews completed successfully! 🎉');
   };
 
   /**
@@ -6814,7 +6976,7 @@ export const EvaluationTab: React.FC = () => {
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
           showToast(`${weekLabel} milestone score approved successfully!`);
-          setSelectedMgrResponseId('');
+          autoAdvanceManagerReview(updatedResp, 'week', wIndex);
         } catch (err: any) {
           showAlert(`Failed to approve week milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
         } finally {
@@ -7150,7 +7312,7 @@ export const EvaluationTab: React.FC = () => {
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
           showToast(`${quarterLabel} milestone score approved successfully!`);
-          setSelectedMgrResponseId('');
+          autoAdvanceManagerReview(updatedResp, 'quarter', qIndex);
         } catch (err: any) {
           showAlert(`Failed to approve quarterly milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
         } finally {
@@ -7454,7 +7616,7 @@ export const EvaluationTab: React.FC = () => {
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
           showToast(`${dayLabel} milestone score approved successfully!`);
-          setSelectedMgrResponseId('');
+          autoAdvanceManagerReview(updatedResp, 'daily', dIndex);
         } catch (err: any) {
           showAlert(`Failed to approve daily milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
         } finally {
@@ -7793,7 +7955,7 @@ export const EvaluationTab: React.FC = () => {
           setResponses(prev => prev.map(r => r.id === updatedResp.id ? updatedResp : r));
           await loadAllData();
           showToast(`${monthName} milestone score approved successfully!`);
-          setSelectedMgrResponseId('');
+          autoAdvanceManagerReview(updatedResp, 'month', mIndex);
         } catch (err: any) {
           showAlert(`Failed to approve month milestone: ${err?.message || 'Unknown error'}`, 'Approval Error');
         } finally {
@@ -11732,14 +11894,14 @@ export const EvaluationTab: React.FC = () => {
           });
         });
 
-        await evaluationService.submitManagerReview(selectedMgrResponseId, {
+        const submittedResp = await evaluationService.submitManagerReview(selectedMgrResponseId, {
           kpiResponses: updatedKpiResponses,
           managerScore: mgrScore,
           managerRemarks: mgrRemarks
         });
-        setSelectedMgrResponseId('');
         await loadAllData();
         showToast('Evaluation approved! Official report published to employee.');
+        autoAdvanceManagerReview(submittedResp || resp, 'cycle');
       },
       'Submit Evaluation',
       'info',
@@ -13205,10 +13367,21 @@ export const EvaluationTab: React.FC = () => {
                     }
 
                     if (isQuarterly) {
-                      const curQuarterlyRecords = activeEmpResponse?.quarterly_records || [];
+                      const curQuarterlyRecords = getResponseQuarterlyRecords(activeEmpResponse);
                       const lockInfo = getYearlyQuarterLockInfo(activeYearlyQuarterIndex, curQuarterlyRecords);
                       const targetQuarterRecord = curQuarterlyRecords.find(q => q.quarterIndex === activeYearlyQuarterIndex);
                       const hasManagerReopenedNote = Boolean(targetQuarterRecord?.managerRemarks && targetQuarterRecord?.status === 'pending_employee');
+
+                      // Restrict displayed quarters to those configured within the evaluation cycle/period
+                      const availableFiscalQuarters = FISCAL_QUARTERS.filter(q => {
+                        if (!curQuarterlyRecords || curQuarterlyRecords.length === 0) return true;
+                        return curQuarterlyRecords.some(r => r.quarterIndex === q.quarterIndex);
+                      });
+
+                      const sortedQuarterIndices: number[] = availableFiscalQuarters.map(q => q.quarterIndex).sort((a, b) => a - b);
+                      const curQuarterPos = sortedQuarterIndices.indexOf(activeYearlyQuarterIndex);
+                      const prevQuarterIndex = curQuarterPos > 0 ? sortedQuarterIndices[curQuarterPos - 1] : sortedQuarterIndices[0];
+                      const nextQuarterIndex = curQuarterPos >= 0 && curQuarterPos < sortedQuarterIndices.length - 1 ? sortedQuarterIndices[curQuarterPos + 1] : sortedQuarterIndices[sortedQuarterIndices.length - 1];
 
                       return (
                         <div className="border-t border-slate-200/80 bg-slate-50/50 p-3 sm:p-4 space-y-3">
@@ -13224,7 +13397,7 @@ export const EvaluationTab: React.FC = () => {
                                   onChange={e => setActiveYearlyQuarterIndex(Number(e.target.value))}
                                   className="w-full bg-slate-50/70 hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
                                 >
-                                  {FISCAL_QUARTERS.map(q => {
+                                  {availableFiscalQuarters.map(q => {
                                     const qLockInfo = getYearlyQuarterLockInfo(q.quarterIndex, curQuarterlyRecords);
                                     const isCurActive = q.quarterIndex === currentQuarter;
                                     let badgeStr = '';
@@ -13247,8 +13420,8 @@ export const EvaluationTab: React.FC = () => {
                             <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                               <button
                                 type="button"
-                                disabled={activeYearlyQuarterIndex <= 1}
-                                onClick={() => setActiveYearlyQuarterIndex(prev => prev - 1)}
+                                disabled={curQuarterPos <= 0}
+                                onClick={() => setActiveYearlyQuarterIndex(prevQuarterIndex)}
                                 className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                                 title="Previous Quarter"
                               >
@@ -13256,15 +13429,15 @@ export const EvaluationTab: React.FC = () => {
                               </button>
                               <button
                                 type="button"
-                                disabled={activeYearlyQuarterIndex >= 4}
-                                onClick={() => setActiveYearlyQuarterIndex(prev => prev + 1)}
+                                disabled={curQuarterPos < 0 || curQuarterPos >= sortedQuarterIndices.length - 1}
+                                onClick={() => setActiveYearlyQuarterIndex(nextQuarterIndex)}
                                 className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                                 title="Next Quarter"
                               >
                                 Next ▶
                               </button>
 
-                              {activeYearlyQuarterIndex !== currentQuarter && (
+                              {activeYearlyQuarterIndex !== currentQuarter && sortedQuarterIndices.includes(currentQuarter) && (
                                 <button
                                   type="button"
                                   onClick={() => setActiveYearlyQuarterIndex(currentQuarter)}
@@ -13511,13 +13684,24 @@ export const EvaluationTab: React.FC = () => {
                     }
 
                     // 12-Month Stepper for Monthly Cadence
-                    const curRecords = activeEmpResponse?.monthly_records || [];
+                    const curRecords = getResponseMonthlyRecords(activeEmpResponse);
                     const calMonth = new Date().getMonth() + 1;
                     const currentFiscalMonthNum = calMonth >= 4 ? calMonth - 3 : calMonth + 9;
 
                     const lockInfo = getYearlyMonthLockInfo(activeYearlyFiscalMonth, curRecords);
                     const targetMonthRecord = curRecords.find(r => r.monthIndex === activeYearlyFiscalMonth);
                     const hasManagerReopenedNote = Boolean(targetMonthRecord?.managerRemarks && targetMonthRecord?.status === 'pending_employee');
+
+                    // Restrict displayed months to those configured within the evaluation cycle/period
+                    const availableFiscalMonths = FISCAL_MONTHS.filter(m => {
+                      if (!curRecords || curRecords.length === 0) return true;
+                      return curRecords.some(r => r.monthIndex === m.monthIndex);
+                    });
+
+                    const sortedMonthIndices = availableFiscalMonths.map(m => m.monthIndex).sort((a, b) => a - b);
+                    const curMonthPos = sortedMonthIndices.indexOf(activeYearlyFiscalMonth);
+                    const prevMonthIndex = curMonthPos > 0 ? sortedMonthIndices[curMonthPos - 1] : sortedMonthIndices[0];
+                    const nextMonthIndex = curMonthPos >= 0 && curMonthPos < sortedMonthIndices.length - 1 ? sortedMonthIndices[curMonthPos + 1] : sortedMonthIndices[sortedMonthIndices.length - 1];
 
                     return (
                       <div className="border-t border-slate-200/80 bg-slate-50/50 p-3 sm:p-4 space-y-3">
@@ -13533,7 +13717,7 @@ export const EvaluationTab: React.FC = () => {
                                 onChange={e => setActiveYearlyFiscalMonth(Number(e.target.value))}
                                 className="w-full bg-slate-50/70 hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
                               >
-                                {FISCAL_MONTHS.map(m => {
+                                {availableFiscalMonths.map(m => {
                                   const mLock = getYearlyMonthLockInfo(m.monthIndex, curRecords);
                                   const isCurActive = m.monthIndex === currentFiscalMonthNum;
                                   let badgeStr = '';
@@ -13556,8 +13740,8 @@ export const EvaluationTab: React.FC = () => {
                           <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                             <button
                               type="button"
-                              disabled={activeYearlyFiscalMonth <= 1}
-                              onClick={() => setActiveYearlyFiscalMonth(prev => prev - 1)}
+                              disabled={curMonthPos <= 0}
+                              onClick={() => setActiveYearlyFiscalMonth(prevMonthIndex)}
                               className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                               title="Previous Month"
                             >
@@ -13565,15 +13749,15 @@ export const EvaluationTab: React.FC = () => {
                             </button>
                             <button
                               type="button"
-                              disabled={activeYearlyFiscalMonth >= 12}
-                              onClick={() => setActiveYearlyFiscalMonth(prev => prev + 1)}
+                              disabled={curMonthPos < 0 || curMonthPos >= sortedMonthIndices.length - 1}
+                              onClick={() => setActiveYearlyFiscalMonth(nextMonthIndex)}
                               className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                               title="Next Month"
                             >
                               Next ▶
                             </button>
 
-                            {activeYearlyFiscalMonth !== currentFiscalMonthNum && (
+                            {activeYearlyFiscalMonth !== currentFiscalMonthNum && sortedMonthIndices.includes(currentFiscalMonthNum) && (
                               <button
                                 type="button"
                                 onClick={() => setActiveYearlyFiscalMonth(currentFiscalMonthNum)}
@@ -13608,26 +13792,61 @@ export const EvaluationTab: React.FC = () => {
                   const today = new Date();
                   const todayStr = today.toISOString().split("T")[0];
                   const cycleName = (activeCycle as any)?.name || (activeCycle as any)?.period || '';
-                  const isMonthly = activeCycle?.frequency === 'monthly' || (!activeCycle?.frequency && cycleName.toLowerCase().includes('2026') && !cycleName.toLowerCase().includes('q'));
-                  const cycleEndDateRaw = activeCycle?.endDate ? activeCycle.endDate.split("T")[0] : todayStr;
+                  const empCadence = getResponseCadence(activeEmpResponse);
+                  const isWeekly = activeCycle?.frequency === 'weekly' || activeEmpResponse?.frequency === 'weekly' || empCadence === 'weekly';
+                  const isMonthly = !isWeekly && (activeCycle?.frequency === 'monthly' || (!activeCycle?.frequency && cycleName.toLowerCase().includes('2026') && !cycleName.toLowerCase().includes('q')));
 
-                  let calculatedDueDateStr = (activeCycle as any)?.dueDate || (activeCycle as any)?.due_date;
-                  if (!calculatedDueDateStr) {
-                    if (isMonthly) {
-                      // Monthly cycle due date is 5th working day of the following month
-                      const endD = new Date(cycleEndDateRaw + 'T00:00:00');
-                      const nextMonth = endD.getMonth() === 11 ? 1 : endD.getMonth() + 2;
-                      const nextYear = endD.getMonth() === 11 ? endD.getFullYear() + 1 : endD.getFullYear();
-                      const rawCandidate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-05`;
-                      calculatedDueDateStr = getAdjustedWorkingDueDate(rawCandidate);
+                  // For weekly evaluations, determine the specific week's end date (e.g. Sunday 25/10/2026) rather than full cycle endDate
+                  let periodEndDateRaw = activeEmpResponse?.endDate ? String(activeEmpResponse.endDate).split("T")[0] : (activeCycle?.endDate ? activeCycle.endDate.split("T")[0] : todayStr);
+                  if (isWeekly) {
+                    const curWeeklyRecords = activeEmpResponse?.weekly_records || [];
+                    const activeWeekRec = curWeeklyRecords.find(w => w.weekIndex === activeYearlyWeekIndex) || curWeeklyRecords.find(w => Boolean(w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate));
+                    if (activeWeekRec?.endDate) {
+                      periodEndDateRaw = String(activeWeekRec.endDate).split("T")[0];
+                    } else if (activeEmpResponse?.endDate && activeEmpResponse.endDate !== activeCycle?.endDate) {
+                      periodEndDateRaw = String(activeEmpResponse.endDate).split("T")[0];
                     } else {
-                      calculatedDueDateStr = getAdjustedWorkingDueDate(cycleEndDateRaw);
+                      // Parse from periodName e.g. "Weekly (19/10/2026 - 25/10/2026)"
+                      const pName = String((activeEmpResponse as any)?.periodName || activeCycle?.periodName || '').trim();
+                      const match = pName.match(/(\d{2})\/(\d{2})\/(\d{4})\s*-\s*(\d{2})\/(\d{2})\/(\d{4})/);
+                      if (match) {
+                        periodEndDateRaw = `${match[6]}-${match[5]}-${match[4]}`;
+                      }
                     }
-                  } else {
-                    calculatedDueDateStr = getAdjustedWorkingDueDate(calculatedDueDateStr.split("T")[0]);
                   }
 
-                  const isMonthStillInProgress = isMonthly && todayStr < cycleEndDateRaw;
+                  let calculatedDueDateStr = '';
+                  if (isWeekly) {
+                    // Weekly cycle: week ends Sunday, submission due date is Wednesday of following week (+3 days)
+                    const endD = new Date(periodEndDateRaw + 'T00:00:00');
+                    const wednesdayDue = new Date(endD);
+                    wednesdayDue.setDate(endD.getDate() + 3);
+                    const wY = wednesdayDue.getFullYear();
+                    const wM = String(wednesdayDue.getMonth() + 1).padStart(2, '0');
+                    const wD = String(wednesdayDue.getDate()).padStart(2, '0');
+                    calculatedDueDateStr = getAdjustedWorkingDueDate(`${wY}-${wM}-${wD}`);
+                  } else {
+                    calculatedDueDateStr = (activeCycle as any)?.dueDate || (activeCycle as any)?.due_date;
+                    if (!calculatedDueDateStr) {
+                      if (isMonthly) {
+                        // Monthly cycle due date is 5th working day of the following month
+                        const endD = new Date(periodEndDateRaw + 'T00:00:00');
+                        const nextMonth = endD.getMonth() === 11 ? 1 : endD.getMonth() + 2;
+                        const nextYear = endD.getMonth() === 11 ? endD.getFullYear() + 1 : endD.getFullYear();
+                        const rawCandidate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-05`;
+                        calculatedDueDateStr = getAdjustedWorkingDueDate(rawCandidate);
+                      } else {
+                        calculatedDueDateStr = getAdjustedWorkingDueDate(periodEndDateRaw);
+                      }
+                    } else {
+                      calculatedDueDateStr = getAdjustedWorkingDueDate(calculatedDueDateStr.split("T")[0]);
+                    }
+                  }
+
+                  const isWeekStillInProgress = isWeekly && todayStr <= periodEndDateRaw;
+                  const isMonthStillInProgress = isMonthly && todayStr < periodEndDateRaw;
+                  const isPeriodStillInProgress = isWeekStillInProgress || isMonthStillInProgress;
+
                   const diffTime = new Date(calculatedDueDateStr).getTime() - new Date(todayStr).getTime();
                   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
@@ -13640,8 +13859,8 @@ export const EvaluationTab: React.FC = () => {
                     } catch { return isoStr; }
                   };
 
-                  // Show banner if within 5 days of due date or if near month end
-                  if (diffDays >= 0 && (diffDays <= 7 || isMonthStillInProgress)) {
+                  // Show banner if within 7 days of due date or if period is currently in progress
+                  if (diffDays >= 0 && (diffDays <= 7 || isPeriodStillInProgress)) {
                     return (
                       <div className="p-3.5 bg-gradient-to-r from-amber-50 via-amber-100/40 to-emerald-50 border border-amber-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
                         <div className="flex items-center gap-3">
@@ -13651,20 +13870,24 @@ export const EvaluationTab: React.FC = () => {
                           <div>
                             <div className="flex items-center gap-2">
                               <h4 className="text-xs font-bold text-amber-950">
-                                {isMonthStillInProgress ? 'Self-Assessment Window (Upcoming)' : 'Self-Assessment Submission Window Open'}
+                                {isPeriodStillInProgress ? 'Self-Assessment Window (Upcoming)' : 'Self-Assessment Submission Window Open'}
                               </h4>
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-200/80 text-amber-900 uppercase">
-                                {diffDays === 0
-                                  ? 'Due Today'
+                                {isWeekStillInProgress
+                                  ? `Due Next Wednesday (${formatDDMMYYYY(calculatedDueDateStr)})`
                                   : isMonthStillInProgress
                                     ? `Due on 5th Working Day (${formatDDMMYYYY(calculatedDueDateStr)})`
-                                    : `Due in ${diffDays} Day${diffDays > 1 ? 's' : ''} (${formatDDMMYYYY(calculatedDueDateStr)})`}
+                                    : diffDays === 0
+                                      ? 'Due Today'
+                                      : `Due in ${diffDays} Day${diffDays > 1 ? 's' : ''} (${formatDDMMYYYY(calculatedDueDateStr)})`}
                               </span>
                             </div>
                             <p className="text-[11px] text-amber-800 font-medium">
-                              {isMonthStillInProgress
-                                ? `${FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth)?.monthName || 'Current'} evaluation period is in progress. Submission window is from 1st to 5th working day of the following month.`
-                                : 'Please enter your actual deliverables and submit your self-assessment before the deadline.'}
+                              {isWeekStillInProgress
+                                ? 'Current weekly evaluation period is in progress. Self-assessment submission opens next week following the completion of this week.'
+                                : isMonthStillInProgress
+                                  ? `${FISCAL_MONTHS.find(m => m.monthIndex === activeYearlyFiscalMonth)?.monthName || 'Current'} evaluation period is in progress. Submission window is from 1st to 5th working day of the following month.`
+                                  : 'Please enter your actual deliverables and submit your self-assessment before the deadline.'}
                             </p>
                           </div>
                         </div>
@@ -17085,16 +17308,16 @@ export const EvaluationTab: React.FC = () => {
                                   onChange={e => {
                                     const newSub = e.target.value as 'monthly' | 'weekly' | 'quarterly' | 'annual' | 'daily' | '';
                                     setMgrSubFrequency(newSub);
+                                    const marchLastDate = `${mgrPeriodYear + 1}-03-31`;
                                     let candidateFrom = mgrPeriodFromDate;
-                                    let candidateTo = mgrPeriodToDate;
+                                    let candidateTo = marchLastDate;
+                                    setMgrPeriodToDate(marchLastDate);
                                     if (newSub === 'daily') {
                                       const todayStr = getLocalTodayDateString();
                                       if (!candidateFrom) { candidateFrom = todayStr; setMgrPeriodFromDate(todayStr); }
-                                      if (!candidateTo) { candidateTo = todayStr; setMgrPeriodToDate(todayStr); }
                                     } else if (newSub === 'weekly') {
                                       const week = getLocalCurrentWeekRange();
                                       if (!candidateFrom) { candidateFrom = week.from; setMgrPeriodFromDate(week.from); }
-                                      if (!candidateTo) { candidateTo = week.to; setMgrPeriodToDate(week.to); }
                                     }
                                     syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, candidateFrom, candidateTo, candidateTo, mgrAssignTeamId, undefined, undefined, newSub);
                                   }}
@@ -17110,17 +17333,19 @@ export const EvaluationTab: React.FC = () => {
                                 </select>
                               </div>
 
-                              {mgrSubFrequency === 'weekly' && (
+                              {mgrSubFrequency && (
                                 <>
                                   <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
                                     <label className="block text-xs font-medium text-slate-600 mb-1.5">
                                       From Date <span className="text-rose-500">*</span>
                                     </label>
                                     <DatePicker
-                                      value={mgrPeriodFromDate}
+                                      value={mgrPeriodFromDate || getLocalTodayDateString()}
                                       onChange={(newFrom: string) => {
                                         setMgrPeriodFromDate(newFrom);
-                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, newFrom, mgrPeriodToDate, newFrom, mgrAssignTeamId, undefined, undefined, 'weekly');
+                                        const marchEndDate = `${mgrPeriodYear + 1}-03-31`;
+                                        setMgrPeriodToDate(marchEndDate);
+                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, newFrom, marchEndDate, marchEndDate, mgrAssignTeamId, undefined, undefined, mgrSubFrequency);
                                       }}
                                       placeholder="Select From Date"
                                       className="w-full font-medium text-slate-700"
@@ -17128,48 +17353,19 @@ export const EvaluationTab: React.FC = () => {
                                   </div>
 
                                   <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-                                    <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                                      To Date <span className="text-rose-500">*</span>
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <label className="block text-xs font-medium text-slate-600">
+                                        To Date <span className="text-rose-500">*</span>
+                                      </label>
+                                      <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">
+                                        Fiscal Year End (31 March)
+                                      </span>
+                                    </div>
                                     <DatePicker
-                                      value={mgrPeriodToDate}
+                                      value={mgrPeriodToDate || `${mgrPeriodYear + 1}-03-31`}
                                       onChange={(newTo: string) => {
                                         setMgrPeriodToDate(newTo);
-                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, newTo, newTo, mgrAssignTeamId, undefined, undefined, 'weekly');
-                                      }}
-                                      placeholder="Select To Date"
-                                      className="w-full font-medium text-slate-700"
-                                    />
-                                  </div>
-                                </>
-                              )}
-
-                              {mgrSubFrequency === 'daily' && (
-                                <>
-                                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-                                    <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                                      From Date <span className="text-rose-500">*</span>
-                                    </label>
-                                    <DatePicker
-                                      value={mgrPeriodFromDate}
-                                      onChange={(newFrom: string) => {
-                                        setMgrPeriodFromDate(newFrom);
-                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, newFrom, mgrPeriodToDate, newFrom, mgrAssignTeamId);
-                                      }}
-                                      placeholder="Select From Date"
-                                      className="w-full font-medium text-slate-700"
-                                    />
-                                  </div>
-
-                                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-                                    <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                                      To Date <span className="text-rose-500">*</span>
-                                    </label>
-                                    <DatePicker
-                                      value={mgrPeriodToDate}
-                                      onChange={(newTo: string) => {
-                                        setMgrPeriodToDate(newTo);
-                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, newTo, newTo, mgrAssignTeamId);
+                                        syncPeriodAndFormName(mgrPeriodType, mgrPeriodQuarter, mgrPeriodYear, mgrPeriodMonth, mgrPeriodFromDate, newTo, newTo, mgrAssignTeamId, undefined, undefined, mgrSubFrequency);
                                       }}
                                       placeholder="Select To Date"
                                       className="w-full font-medium text-slate-700"
@@ -19784,7 +19980,7 @@ export const EvaluationTab: React.FC = () => {
           const curWeeklyRec = isWeekly ? curWeeklyRecords.find(w => w.weekIndex === activeMgrYearlyWeekIndex) : null;
           const curQuarterlyRecords = selectedMgrResponse!.quarterly_records || [];
           const curQuarterlyRec = isQuarterly ? curQuarterlyRecords.find(q => q.quarterIndex === activeMgrYearlyQuarterIndex) : null;
-          const curYearlyRecords = selectedMgrResponse!.monthly_records || [];
+          const curYearlyRecords = getResponseMonthlyRecords(selectedMgrResponse);
           const curYearlyRec = isYearly ? (isDaily || isWeekly || isQuarterly ? null : curYearlyRecords.find(m => m.monthIndex === activeMgrYearlyFiscalMonth)) : null;
           const curFiscalMonthObj = FISCAL_MONTHS.find(m => m.monthIndex === activeMgrYearlyFiscalMonth);
           const curQuarterFiscalObj = FISCAL_QUARTERS.find(q => q.quarterIndex === activeMgrYearlyQuarterIndex);
@@ -20295,13 +20491,23 @@ export const EvaluationTab: React.FC = () => {
 
                     // 4-Quarter Milestone Stepper
                     if (isQuarterly) {
-                      const curQuarterlyRecords = selectedMgrResponse?.quarterly_records || [];
+                      const curQuarterlyRecords = getResponseQuarterlyRecords(selectedMgrResponse);
                       const approvedQs = curQuarterlyRecords.filter(q => q.status === 'manager_approved');
                       const qtdScore = approvedQs.length > 0
                         ? Number((approvedQs.reduce((acc, q) => acc + (Number(q.managerScore) || 0), 0) / approvedQs.length).toFixed(1))
                         : null;
 
                       const curQuarterlyRec = curQuarterlyRecords.find(q => q.quarterIndex === activeMgrYearlyQuarterIndex);
+
+                      const availableFiscalQuarters = FISCAL_QUARTERS.filter(q => {
+                        if (!curQuarterlyRecords || curQuarterlyRecords.length === 0) return true;
+                        return curQuarterlyRecords.some(r => r.quarterIndex === q.quarterIndex);
+                      });
+
+                      const sortedQuarterIndices: number[] = availableFiscalQuarters.map(q => q.quarterIndex).sort((a, b) => a - b);
+                      const curQuarterPos = sortedQuarterIndices.indexOf(activeMgrYearlyQuarterIndex);
+                      const prevQuarterIndex = curQuarterPos > 0 ? sortedQuarterIndices[curQuarterPos - 1] : sortedQuarterIndices[0];
+                      const nextQuarterIndex = curQuarterPos >= 0 && curQuarterPos < sortedQuarterIndices.length - 1 ? sortedQuarterIndices[curQuarterPos + 1] : sortedQuarterIndices[sortedQuarterIndices.length - 1];
 
                       return (
                         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-3.5 sm:p-4 space-y-3">
@@ -20317,7 +20523,7 @@ export const EvaluationTab: React.FC = () => {
                                   onChange={e => switchMgrYearlyQuarter(Number(e.target.value))}
                                   className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
                                 >
-                                  {FISCAL_QUARTERS.map(q => {
+                                  {availableFiscalQuarters.map(q => {
                                     const qLockInfo = getYearlyQuarterLockInfo(q.quarterIndex, curQuarterlyRecords);
                                     let badgeStr = '';
                                     if (qLockInfo.isApproved) badgeStr = `✅ Approved (${qLockInfo.score != null ? `${qLockInfo.score}%` : ''})`;
@@ -20338,8 +20544,8 @@ export const EvaluationTab: React.FC = () => {
                             <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                               <button
                                 type="button"
-                                disabled={activeMgrYearlyQuarterIndex <= 1}
-                                onClick={() => switchMgrYearlyQuarter(activeMgrYearlyQuarterIndex - 1)}
+                                disabled={curQuarterPos <= 0}
+                                onClick={() => switchMgrYearlyQuarter(prevQuarterIndex)}
                                 className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                                 title="Previous Quarter"
                               >
@@ -20347,8 +20553,8 @@ export const EvaluationTab: React.FC = () => {
                               </button>
                               <button
                                 type="button"
-                                disabled={activeMgrYearlyQuarterIndex >= 4}
-                                onClick={() => switchMgrYearlyQuarter(activeMgrYearlyQuarterIndex + 1)}
+                                disabled={curQuarterPos < 0 || curQuarterPos >= sortedQuarterIndices.length - 1}
+                                onClick={() => switchMgrYearlyQuarter(nextQuarterIndex)}
                                 className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                                 title="Next Quarter"
                               >
@@ -20409,6 +20615,16 @@ export const EvaluationTab: React.FC = () => {
                       ? Number((approvedMonths.reduce((acc, m) => acc + (Number(m.managerScore) || 0), 0) / approvedMonths.length).toFixed(1))
                       : null;
 
+                    const availableFiscalMonths = FISCAL_MONTHS.filter(m => {
+                      if (!curRecords || curRecords.length === 0) return true;
+                      return curRecords.some(r => r.monthIndex === m.monthIndex);
+                    });
+
+                    const sortedMonthIndices = availableFiscalMonths.map(m => m.monthIndex).sort((a, b) => a - b);
+                    const curMonthPos = sortedMonthIndices.indexOf(activeMgrYearlyFiscalMonth);
+                    const prevMonthIndex = curMonthPos > 0 ? sortedMonthIndices[curMonthPos - 1] : sortedMonthIndices[0];
+                    const nextMonthIndex = curMonthPos >= 0 && curMonthPos < sortedMonthIndices.length - 1 ? sortedMonthIndices[curMonthPos + 1] : sortedMonthIndices[sortedMonthIndices.length - 1];
+
                     return (
                       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden p-3.5 sm:p-4 space-y-3">
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-slate-50/70 p-2.5 sm:p-3 rounded-xl border border-slate-200/80">
@@ -20423,7 +20639,7 @@ export const EvaluationTab: React.FC = () => {
                                 onChange={e => switchMgrYearlyMonth(Number(e.target.value))}
                                 className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs cursor-pointer"
                               >
-                                {FISCAL_MONTHS.map(m => {
+                                {availableFiscalMonths.map(m => {
                                   const mLock = getYearlyMonthLockInfo(m.monthIndex, curRecords);
                                   let badgeStr = '';
                                   if (mLock.isApproved) badgeStr = `✅ Approved (${mLock.score != null ? `${mLock.score}%` : ''})`;
@@ -20444,8 +20660,8 @@ export const EvaluationTab: React.FC = () => {
                           <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                             <button
                               type="button"
-                              disabled={activeMgrYearlyFiscalMonth <= 1}
-                              onClick={() => switchMgrYearlyMonth(activeMgrYearlyFiscalMonth - 1)}
+                              disabled={curMonthPos <= 0}
+                              onClick={() => switchMgrYearlyMonth(prevMonthIndex)}
                               className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                               title="Previous Month"
                             >
@@ -20453,8 +20669,8 @@ export const EvaluationTab: React.FC = () => {
                             </button>
                             <button
                               type="button"
-                              disabled={activeMgrYearlyFiscalMonth >= 12}
-                              onClick={() => switchMgrYearlyMonth(activeMgrYearlyFiscalMonth + 1)}
+                              disabled={curMonthPos < 0 || curMonthPos >= sortedMonthIndices.length - 1}
+                              onClick={() => switchMgrYearlyMonth(nextMonthIndex)}
                               className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition shadow-2xs cursor-pointer"
                               title="Next Month"
                             >
